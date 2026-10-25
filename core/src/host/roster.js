@@ -376,6 +376,14 @@ export function install(rt) {
       admin = null
     }
     if (patch.mode !== undefined && !ROOM_MODES.includes(patch.mode)) throw new Error(`Reply mode must be one of ${ROOM_MODES.join(', ')}`)
+    // The one Bot that divides this room's board (#1182). Empty clears it, and the admin plans.
+    let taskLead = room.taskLead ?? null
+    if (patch.taskLead !== undefined) {
+      if (room.origin === 'face-to-face') throw new Error('A face-to-face room has no group task board')
+      taskLead = patch.taskLead || null
+      if (taskLead !== null && !members.includes(taskLead)) throw new Error(`${rt.botOf(taskLead)?.name ?? 'That Bot'} must be a member to lead the board`)
+    }
+    if (taskLead !== null && !members.includes(taskLead)) taskLead = null
     const name = patch.name === undefined ? undefined : cleanRoomName(patch.name, room.id)
     const notice = patch.notice === undefined ? undefined : cleanNotice(patch.notice)
     const moving = patch.workDir !== undefined
@@ -401,6 +409,11 @@ export function install(rt) {
     }
     if (admin !== (room.admin ?? null)) changes.push(admin ? `made ${rt.botOf(admin).name} the admin` : 'removed the admin')
     room.admin = admin
+    if (taskLead !== (room.taskLead ?? null)) {
+      if (taskLead) room.taskLead = taskLead
+      else delete room.taskLead
+      changes.push(taskLead ? `made ${rt.botOf(taskLead).name} the task lead` : 'the admin leads the board again')
+    }
     if (patch.mode !== undefined && patch.mode !== room.mode) {
       room.mode = patch.mode
       changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
@@ -513,6 +526,7 @@ export function install(rt) {
       if (!room.members.includes(id)) continue
       room.members = room.members.filter(member => member !== id)
       if (room.admin === id) room.admin = null
+      if (room.taskLead === id) delete room.taskLead
       rt.dropGroupSession(room, id)
       touched.push(room)
     }

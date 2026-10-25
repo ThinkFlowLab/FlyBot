@@ -165,7 +165,7 @@ export function install(rt) {
   // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
   // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
   // answered the Bot's question card about work handed over from there (tools.js, #550).
-  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin }) {
+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false }) {
     const from = rt.botOf(fromId)
     const to = rt.botOf(toId)
     if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -200,6 +200,8 @@ export function install(rt) {
       ...(resumed ? { resumed: true } : {}),
       ...(retried ? { retried: true } : {}),
       ...(askedBy ? { askedBy } : {}),
+      // A board wake delivered as a room turn (#1182). A round's own room turn does not set this.
+      ...(taskDrive ? { taskDrive: true } : {}),
       ...(fromRoomId ? { senderRoomId: fromRoomId } : {}),
       // A remote member's message (FlyBot): the chat draws it as that member's bubble.
       // `typedBy`: the plugin has the server's attestation that this friend typed the line themselves.

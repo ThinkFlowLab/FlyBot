@@ -414,7 +414,7 @@ export function install(rt) {
 
   ctx.tools.register(defineTool({
     name: 'update_group',
-    description: 'Change a group chat: rename it, set its notice, add or remove members, change its admin or reply mode. Main Bots may change any group; a group\'s admin may change its own group.',
+    description: 'Change a group chat: rename it, set its notice, add or remove members, change its admin, its task lead, or its reply mode. Main Bots may change any group; a group\'s admin may change its own group.',
     parameters: {
       group: GROUP_REF,
       name: { type: 'string', description: 'New group name; an empty string names it after its members again' },
@@ -422,6 +422,7 @@ export function install(rt) {
       add_members: { type: 'array', items: { type: 'string' }, description: 'Exact names of Bots to add' },
       remove_members: { type: 'array', items: { type: 'string' }, description: 'Exact names of Bots to remove' },
       admin: { type: 'string', description: 'Member to make the admin; "none" leaves the group without one (Main Bots only)' },
+      task_lead: { type: 'string', description: 'Member that divides this room\'s task board. "none" leaves that to the admin. A face-to-face room has no board.' },
       mode: MODE_PARAM,
       work_dir: { ...WORK_DIR_PARAM, description: `${WORK_DIR_PARAM.description}. Every member works there in this group; an empty string lets each member work in its own folder again (Main Bots only)` },
     },
@@ -446,6 +447,14 @@ export function install(rt) {
           if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
         }
       }
+      let taskLead
+      if (args.task_lead !== undefined && args.task_lead !== '') {
+        if (/^(none|nobody|null|admin|无|没有)$/i.test(String(args.task_lead).trim())) taskLead = null
+        else {
+          taskLead = rt.findBot(args.task_lead)?.id
+          if (taskLead === undefined) return `No Bot named ${args.task_lead}. Team: ${teamNames()}`
+        }
+      }
       try {
         const workDir = moving ? await rt.cleanWorkDir(args.work_dir) : undefined
         // A Bot that joins a group with a folder works there from its first turn.
@@ -462,6 +471,7 @@ export function install(rt) {
           notice: args.notice,
           mode: args.mode,
           admin,
+          ...(taskLead !== undefined ? { taskLead } : {}),
           add: add.bots.map(bot => bot.id),
           remove: remove.bots.map(bot => bot.id),
           ...(moving ? { workDir: workDir ?? '' } : {}),
@@ -821,7 +831,7 @@ ${task.writeBack.body}`)
 
   ctx.tools.register(defineTool({
     name: 'track_tasks',
-    description: 'Read or update tasks on the board. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the admin or a Main Bot records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). A member links its own subtask with parent. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. In a group the task is tracked for that group.',
+    description: 'Read or update tasks on the board. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the task lead (the Bot picked for the room, or the admin when none is picked) records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). Another Main Bot does not plan. A member updates the card assigned to it, or links its own subtask with parent. Do not record a second plan. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. In a group, ask in your reply there, not in your own chat. In a group the task is tracked for that group.',
     parameters: {
       tasks: {
         type: 'array',
@@ -837,9 +847,9 @@ ${task.writeBack.body}`)
             priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'How urgent the task is.' },
             note: { type: 'string', description: 'One line on where the task stands.' },
             group: { type: 'string', description: 'Group chat name this task belongs to. In a group, the current group is used when this is omitted.' },
-            overall: { type: 'boolean', description: 'Record this as the group\'s one overall task. Only the group admin, or a Main Bot in the group, may set it. A later call updates that same open task.' },
+            overall: { type: 'boolean', description: 'Record this as the group\'s one overall task. Only the room\'s task lead may set it (the group admin, when no lead is picked). A later call updates that same open task.' },
             parent: { type: 'string', description: 'Id or title of the overall group task this subtask belongs to.' },
-            assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the group admin, or a Main Bot in the group, may name another member.' },
+            assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the room\'s task lead may name another member. The card is claimed, and that Bot starts the work without waiting for a confirmation.' },
             ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. In your own chat, call ask_user; in a group, ask in your reply.' },
             answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
             target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },

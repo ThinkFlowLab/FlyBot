@@ -223,15 +223,21 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
           : null)),
       members.map((member) => {
         const leads = room.admin === member.id
+        const boardHere = room.origin !== 'face-to-face' && room.origin !== 'inbound-share'
+        const taskLead = room.taskLead === member.id
         return h('div', { key: member.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
           h('button', { type: 'button', className: 'bt-gs-who', title: t("Open {name}'s chat", { name: member.name }), onClick: () => openBot(member.id) },
             h(BotAvatar, { bot: member, size: 26, main: isMainOf(roster, member.id), admin: leads, live: false }),
             h('span', { className: 'bt-row-title' }, member.name),
             leads ? h('span', { className: 'bt-tag' }, t('Admin')) : null,
+            taskLead ? h('span', { className: 'bt-tag' }, t('Task lead')) : null,
             (roster.humans ?? []).some(person => person.designatedChiefId === member.id) ? h('span', { className: 'bt-tag' }, t('Chief')) : null),
           leads
             ? h('button', { type: 'button', className: 'bt-mini', title: t('Leave the group without an admin'), onClick: () => update({ admin: null }) }, t('Unset'))
             : h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ admin: member.id }) }, t('Make admin')),
+          boardHere ? (taskLead
+            ? h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ taskLead: null }) }, t('Use the admin'))
+            : h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ taskLead: member.id }) }, t('Make task lead'))) : null,
           members.length > 2 ? h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Remove {name} from the group', { name: member.name }), title: t('Remove from group'), onClick: () => update({ remove: [member.id] }) }, '×') : null)
       }),
       remotes.map((person) => h('div', { key: person.handle || person.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
@@ -267,8 +273,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
       h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
         // The host checks for two members on every change, even a rename.
         members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
-          : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
-            : t('No admin yet. An admin can call members with @Name, change the group, and post here.'))),
+          : `${admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
+            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')}${room.origin === 'face-to-face' || room.origin === 'inbound-share' ? '' : ` ${t('The task lead divides the board. When unset, the admin does.')}`}`)),
       // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
       // the note on who leads, so that note stays with the members it is about (#892).
       room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions })),

@@ -393,6 +393,10 @@ var ZH = {
   "Leave the group without an admin": "让群聊不设管理员",
   Unset: "取消",
   "Make admin": "设为管理员",
+  "Task lead": "总负责人",
+  "Make task lead": "设为总负责人",
+  "Use the admin": "改由管理员负责",
+  "The task lead divides the board. When unset, the admin does.": "总负责人拆分看板任务。未指定时由管理员负责。",
   // Face room lead (#476)
   "Room lead": "总负责人",
   Lead: "总负责人",
@@ -12589,6 +12593,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
       )),
       members.map((member) => {
         const leads = room2.admin === member.id;
+        const boardHere = room2.origin !== "face-to-face" && room2.origin !== "inbound-share";
+        const taskLead = room2.taskLead === member.id;
         return (0, import_react27.createElement)(
           "div",
           { key: member.id, className: "bt-set-row bt-bs-row bt-gs-member" },
@@ -12598,9 +12604,11 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
             (0, import_react27.createElement)(BotAvatar, { bot: member, size: 26, main: isMainOf(roster, member.id), admin: leads, live: false }),
             (0, import_react27.createElement)("span", { className: "bt-row-title" }, member.name),
             leads ? (0, import_react27.createElement)("span", { className: "bt-tag" }, t("Admin")) : null,
+            taskLead ? (0, import_react27.createElement)("span", { className: "bt-tag" }, t("Task lead")) : null,
             (roster.humans ?? []).some((person) => person.designatedChiefId === member.id) ? (0, import_react27.createElement)("span", { className: "bt-tag" }, t("Chief")) : null
           ),
           leads ? (0, import_react27.createElement)("button", { type: "button", className: "bt-mini", title: t("Leave the group without an admin"), onClick: () => update({ admin: null }) }, t("Unset")) : (0, import_react27.createElement)("button", { type: "button", className: "bt-mini", onClick: () => update({ admin: member.id }) }, t("Make admin")),
+          boardHere ? taskLead ? (0, import_react27.createElement)("button", { type: "button", className: "bt-mini", onClick: () => update({ taskLead: null }) }, t("Use the admin")) : (0, import_react27.createElement)("button", { type: "button", className: "bt-mini", onClick: () => update({ taskLead: member.id }) }, t("Make task lead")) : null,
           members.length > 2 ? (0, import_react27.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Remove {name} from the group", { name: member.name }), title: t("Remove from group"), onClick: () => update({ remove: [member.id] }) }, "×") : null
         );
       }),
@@ -12655,7 +12663,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
         "span",
         { className: "bt-set-hint" },
         // The host checks for two members on every change, even a rename.
-        members.length + humans.length + remotes.length < 2 ? t("Add a Bot first: a group chat needs at least two.") : admin ? t("{name} leads this group: it can call members with @Name, change the group, and post here.", { name: admin.name }) : t("No admin yet. An admin can call members with @Name, change the group, and post here.")
+        members.length + humans.length + remotes.length < 2 ? t("Add a Bot first: a group chat needs at least two.") : `${admin ? t("{name} leads this group: it can call members with @Name, change the group, and post here.", { name: admin.name }) : t("No admin yet. An admin can call members with @Name, change the group, and post here.")}${room2.origin === "face-to-face" || room2.origin === "inbound-share" ? "" : ` ${t("The task lead divides the board. When unset, the admin does.")}`}`
       )),
       // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
       // the note on who leads, so that note stays with the members it is about (#892).

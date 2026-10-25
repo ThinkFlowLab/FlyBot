@@ -356,6 +356,7 @@ export function install(rt) {
             notice: body.notice,
             mode: body.mode,
             admin: body.admin,
+            taskLead: body.taskLead,
             members: Array.isArray(body.members) ? body.members : undefined,
             add: Array.isArray(body.add) ? body.add : undefined,
             remove: Array.isArray(body.remove) ? body.remove : undefined,

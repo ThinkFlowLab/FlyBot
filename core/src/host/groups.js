@@ -180,7 +180,6 @@ const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
   'You are this group\'s admin.',
   room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
   '"@all" calls every member. When the user asks, change the group with update_group.',
-  'When the group is given a job, record one overall task with track_tasks and a subtask for each Bot that has a part.',
 ].filter(Boolean).join(' ')
 
 const ROOM_READ_MAX = 30
@@ -277,6 +276,19 @@ export function install(rt) {
     ].filter(Boolean).join(' ')
   }
 
+  // Who divides the board (#1182). One Bot: the picked task lead, or the admin when
+  // none is picked. Everyone else does the card it was given and does not re-plan.
+  function taskBoardNote(room, member) {
+    if (isFaceRoom(room)) return ''
+    const leadId = typeof rt.taskLeadOf === 'function' ? rt.taskLeadOf(room) : undefined
+    if (!leadId) return 'This room has no task lead on the board. Do not divide the work; the user or a Main Bot picks one task lead.'
+    if (leadId === member.id) {
+      return 'You are this room\'s task lead (总负责人) for the board. When the group is given a job, record one overall task with track_tasks and assign each part to the Bot it fits (assignee is that Bot\'s name). Nobody else plans. A card you assign is claimed: that Bot starts the work and does not wait for a confirmation. A question stays in this group.'
+    }
+    const name = String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' ').slice(0, 80)
+    return `${name} is this room's task lead (总负责人) for the board: it writes the one plan and assigns the parts. Do the card it assigns you, or link your own subtask to that overall task. Do not record a new plan or assign work. Start the work; do not wait for a confirmation. A question about your card goes in your reply here, not in your own chat.`
+  }
+
   // What holds for every turn of a member in this group (#894): who is here, how calls work, the
   // notice, the member's own role here and the reply rule. It is a section of the system prompt, so
   // the model reads it on every call and a checkpoint or a new part never drops it, while the
@@ -294,6 +306,7 @@ export function install(rt) {
       members,
       room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : '',
       leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
+      taskBoardNote(room, member),
       routeRules(room, member),
       ROOM_REPLY,
     ].filter(Boolean).join('\n\n')

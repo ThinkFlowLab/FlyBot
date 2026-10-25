@@ -1,7 +1,8 @@
 // Unfinished conversation tasks wake the owning Bot (#1109). A wake is a follow-up
-// in that Bot's own chat, or in its group Session for a subtask. A task waiting on
-// an answer, a turn already open, and a wake that did not move the board do not
-// start another one. An overall group card is the plan, not a turn.
+// in that Bot's own chat. A group subtask is a room turn in that Bot's group
+// Session (#1182); the reply is posted into the room when the turn ends. A task
+// waiting on an answer, a turn already open, and a wake that did not move the
+// board do not start another one. An overall group card is the plan, not a turn.
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -241,7 +242,9 @@ test('a group subtask wakes that group session and not the room or another Bot',
     { title: 'Write the draft', parent: 'Ship the note', assignee: 'Writer', group: 'War', priority: 'high' },
   ] })
   app.idOf(body, 'Write the draft')
-  assert.match(app.text('s-war'), /\[Continue task\]/)
+  assert.match(app.text('s-war'), /\[Group chat "War" · your task\]/)
+  assert.equal(app.calls('s-war')[0].source.role, 'room')
+  assert.equal(app.calls('s-war')[0].source.taskDrive, true)
   assert.match(app.text('s-war'), /Write the draft/)
   assert.equal(app.calls('s').length, 0, 'the subtask runs in the group session')
   assert.equal(app.calls('a').length, 0, 'the overall card does not wake its owner')
@@ -268,7 +271,8 @@ test('a subtask opens the member session when the Bot has not spoken in the grou
   const sessionId = app.rt.state.rooms.war.sessions.b
   assert.equal(typeof sessionId, 'string')
   assert.notEqual(sessionId, 'b')
-  assert.match(app.text(sessionId), /\[Continue task\]/)
+  assert.match(app.text(sessionId), /\[Group chat "War" · your task\]/)
+  assert.equal(app.calls(sessionId)[0].source.role, 'room')
   assert.match(app.text(sessionId), /Bob writes/)
   assert.equal(app.calls('b').length, 0)
   assert.equal(app.calls('war').length, 0)
@@ -364,6 +368,67 @@ test('a board card that is not a conversation task does not wake', async (t) => 
   const created = await app.rt.taskEndpoint('task-create', { botId: 's', title: 'Check the figures' }, null)
   assert.equal(created.source, undefined)
   assert.equal(app.calls('s').length, 0)
+})
+
+// #1182: one planner, the assigned card is claimed, and the wake is a group turn
+// whose reply is posted into the room. Red on 2521aab: a second Main records the
+// overall task, the subtask stays open, and the wake is role `task` so the reply
+// never reaches the room. A member's own room card stays allowed.
+test('only the task lead assigns, the card is claimed, and the wake is a group turn (#1182)', async (t) => {
+  const app = await start(t)
+  await assert.rejects(app.rt.updateRoom('war', { taskLead: 'b' }, 's'), /Only the user, a Main Bot, or the admin/)
+  app.rt.state.mainBotIds = ['a', 'b']
+  const piled = await app.track('b', { tasks: [{ title: 'Take over', overall: true, group: 'War' }] })
+  assert.match(piled, /Only the group admin can record the overall task/)
+  const own = await app.track('s', { tasks: [{ title: 'My own card', group: 'War' }] })
+  assert.match(own, /My own card/)
+  const handed = await app.track('s', { tasks: [{ title: 'Extra', assignee: 'BobBot', group: 'War' }] })
+  assert.match(handed, /Only the group admin can assign a subtask/)
+  await assert.rejects(app.rt.updateRoom('war', { taskLead: 'missing' }, 'a'), /must be a member to lead the board/)
+  await app.rt.updateRoom('war', { taskLead: 's' }, 'a')
+  assert.equal(app.rt.roomOf('war').taskLead, 's')
+  await app.rt.updateRoom('war', { taskLead: null }, 'a')
+  assert.equal(app.rt.roomOf('war').taskLead, undefined)
+  await app.rt.updateRoom('war', { taskLead: 's' }, 'a')
+
+  const room = app.rt.roomOf('war')
+  room.members = ['s', 'b']
+  assert.equal(app.rt.taskLeadOf(room), 's', 'a picked lead plans while the admin is not in the room')
+  const planned = await app.track('s', { tasks: [
+    { title: 'Ship the note', overall: true, group: 'War' },
+    { title: 'Bob writes', parent: 'Ship the note', assignee: 'BobBot', group: 'War', priority: 'urgent' },
+  ] })
+  assert.match(planned, /overall/)
+  const child = Object.values(app.rt.state.tasks).find(task => task.title === 'Bob writes')
+  assert.equal(child.status, 'claimed')
+  const sessionId = room.sessions.b
+  assert.equal(typeof sessionId, 'string')
+  const wake = app.calls(sessionId).at(-1)
+  assert.equal(wake.source.role, 'room')
+  assert.equal(wake.source.taskDrive, true)
+  assert.equal(wake.source.roomId, 'war')
+  const text = wake.content.map(block => block.text).join('\n')
+  assert.match(text, /\[Group chat "War" · your task\]/)
+  assert.match(text, new RegExp(`Continue ${child.id} \\[urgent\\] Bob writes`))
+  assert.match(text, /do not wait for a confirmation/)
+  assert.match(text, /never in your own chat/)
+  assert.equal(app.calls('war').length, 0, 'the driver does not post the cue into the room')
+  assert.equal(app.calls('b').length, 0, 'the subtask does not wake the own chat')
+
+  const linked = await app.track('b', { tasks: [{ title: 'Bob extra', parent: 'Ship the note', group: 'War' }] })
+  assert.match(linked, /Bob extra/)
+  assert.equal(app.calls(sessionId).length, 1, 'linking a subtask does not queue a second wake')
+
+  app.beginWake(sessionId)
+  app.emit(sessionId, 'assistant/message', { message: { content: [{ type: 'text', text: 'Which file should the note use?' }] } })
+  app.emit(sessionId, 'turn/end', { reason: { kind: 'completed' } })
+  await app.ctx.taskDrive.settled()
+  for (let i = 0; i < 20 && app.calls('war').length === 0; i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(app.calls('war').length, 1, 'the reply is posted into the group')
+  assert.match(app.text('war'), /Which file should the note use\?/)
+  assert.equal(app.calls('war')[0].source.role, 'post')
+  assert.equal(app.calls('war')[0].source.late, true)
+  assert.equal(app.calls(sessionId).length, 1, 'a wake that did not move the board does not start another')
 })
 
 test('a Cordis context provides taskDrive instead of assigning it', async (t) => {

@@ -476,7 +476,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
-@@ -65,37 +65,73 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -65,37 +65,79 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
@@ -494,16 +494,22 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +          : null)),
        members.map((member) => {
          const leads = room.admin === member.id
++        const boardHere = room.origin !== 'face-to-face' && room.origin !== 'inbound-share'
++        const taskLead = room.taskLead === member.id
          return h('div', { key: member.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
            h('button', { type: 'button', className: 'bt-gs-who', title: t("Open {name}'s chat", { name: member.name }), onClick: () => openBot(member.id) },
              h(BotAvatar, { bot: member, size: 26, main: isMainOf(roster, member.id), admin: leads, live: false }),
              h('span', { className: 'bt-row-title' }, member.name),
 -            leads ? h('span', { className: 'bt-tag' }, t('Admin')) : null),
 +            leads ? h('span', { className: 'bt-tag' }, t('Admin')) : null,
++            taskLead ? h('span', { className: 'bt-tag' }, t('Task lead')) : null,
 +            (roster.humans ?? []).some(person => person.designatedChiefId === member.id) ? h('span', { className: 'bt-tag' }, t('Chief')) : null),
            leads
              ? h('button', { type: 'button', className: 'bt-mini', title: t('Leave the group without an admin'), onClick: () => update({ admin: null }) }, t('Unset'))
              : h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ admin: member.id }) }, t('Make admin')),
++          boardHere ? (taskLead
++            ? h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ taskLead: null }) }, t('Use the admin'))
++            : h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ taskLead: member.id }) }, t('Make task lead'))) : null,
            members.length > 2 ? h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Remove {name} from the group', { name: member.name }), title: t('Remove from group'), onClick: () => update({ remove: [member.id] }) }, '×') : null)
        }),
 -      adding
@@ -542,10 +548,11 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
        h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
          // The host checks for two members on every change, even a rename.
 -        members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
-+        members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
-           : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
+-          : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
 -            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
-+            : t('No admin yet. An admin can call members with @Name, change the group, and post here.'))),
++        members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
++          : `${admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
++            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')}${room.origin === 'face-to-face' || room.origin === 'inbound-share' ? '' : ` ${t('The task lead divides the board. When unset, the admin does.')}`}`)),
 +      // #876: a plugin's rows for this room (Invite by link), only in a group that lives here. Last, after
 +      // the note on who leads, so that note stays with the members it is about (#892).
 +      room.origin === 'face-to-face' || room.origin === 'inbound-share' ? null : h(FlyBotRoomMembers, { room, roster, actions })),
@@ -889,7 +896,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,52 +100,160 @@ const slotLabel = (slot) => {
+@@ -100,52 +100,173 @@ const slotLabel = (slot) => {
    return slot.name
  }
  
@@ -899,7 +906,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    'You are this group\'s admin.',
    room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
    '"@all" calls every member. When the user asks, change the group with update_group.',
-+  'When the group is given a job, record one overall task with track_tasks and a subtask for each Bot that has a part.',
  ].filter(Boolean).join(' ')
  
 -// The opening turn of a group the user just made without a first message.
@@ -958,20 +964,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    if (ref !== undefined) {
 -      await rt.selectSessionModel(id, splitRef(ref))
 -        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
--    }
--    await rt.applyPermission(member, id)
--      .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
--    await rt.save()
--    await rt.ensureCapabilities(id)
--    return { id, brief: await rt.ownChatBrief(member) }
 +    owners.delete(undefined)
 +    if (owners.size <= 1) return true
 +    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
-   }
- 
--  // Lines from before the round's opening message are kept apart from this round, so
--  // an earlier round (an old count-off, say) never reads as part of the current one.
--  function roomPrompt(room, member, round) {
++  }
++
 +  async function groupSessionFor(room, member) {
 +    const session = await participant.open({ room, member })
 +    return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
@@ -1022,6 +1019,27 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    ].filter(Boolean).join(' ')
 +  }
 +
++  // Who divides the board (#1182). One Bot: the picked task lead, or the admin when
++  // none is picked. Everyone else does the card it was given and does not re-plan.
++  function taskBoardNote(room, member) {
++    if (isFaceRoom(room)) return ''
++    const leadId = typeof rt.taskLeadOf === 'function' ? rt.taskLeadOf(room) : undefined
++    if (!leadId) return 'This room has no task lead on the board. Do not divide the work; the user or a Main Bot picks one task lead.'
++    if (leadId === member.id) {
++      return 'You are this room\'s task lead (总负责人) for the board. When the group is given a job, record one overall task with track_tasks and assign each part to the Bot it fits (assignee is that Bot\'s name). Nobody else plans. A card you assign is claimed: that Bot starts the work and does not wait for a confirmation. A question stays in this group.'
+     }
+-    await rt.applyPermission(member, id)
+-      .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
+-    await rt.save()
+-    await rt.ensureCapabilities(id)
+-    return { id, brief: await rt.ownChatBrief(member) }
++    const name = String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' ').slice(0, 80)
++    return `${name} is this room's task lead (总负责人) for the board: it writes the one plan and assigns the parts. Do the card it assigns you, or link your own subtask to that overall task. Do not record a new plan or assign work. Start the work; do not wait for a confirmation. A question about your card goes in your reply here, not in your own chat.`
+   }
+ 
+-  // Lines from before the round's opening message are kept apart from this round, so
+-  // an earlier round (an old count-off, say) never reads as part of the current one.
+-  function roomPrompt(room, member, round) {
 +  // What holds for every turn of a member in this group (#894): who is here, how calls work, the
 +  // notice, the member's own role here and the reply rule. It is a section of the system prompt, so
 +  // the model reads it on every call and a checkpoint or a new part never drops it, while the
@@ -1039,6 +1057,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      members,
 +      room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : '',
 +      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
++      taskBoardNote(room, member),
 +      routeRules(room, member),
 +      ROOM_REPLY,
 +    ].filter(Boolean).join('\n\n')

@@ -360,6 +360,10 @@ const ZH = {
   'Leave the group without an admin': '让群聊不设管理员',
   Unset: '取消',
   'Make admin': '设为管理员',
+  'Task lead': '总负责人',
+  'Make task lead': '设为总负责人',
+  'Use the admin': '改由管理员负责',
+  'The task lead divides the board. When unset, the admin does.': '总负责人拆分看板任务。未指定时由管理员负责。',
   // Face room lead (#476)
   'Room lead': '总负责人',
   Lead: '总负责人',

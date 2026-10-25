@@ -329,12 +329,25 @@ export function install(rt) {
     .filter(task => task.kind === 'group' && task.origin?.roomId === roomId && openTask(task))
     .sort((a, b) => b.updatedAt - a.updatedAt)[0]
   const listed = (botId) => Object.values(store()).filter(task => task.ownerBotId === botId).sort(compareForWork).slice(0, 40).map(view)
-  // The room admin, or a Main Bot that sits in the group, plans the overall task.
-  const plansRoom = (botId, room) => {
-    if (!room || !botId) return false
-    if (room.admin === botId) return true
-    if (rt.isMain?.(botId) && (room.members ?? []).includes(botId)) return true
-    return liveParticipants(room).some(person => person.kind === 'bot' && !person.remote && person.id === botId && person.role === 'admin')
+  // One planner per room (#1182). A picked task lead wins, including when the
+  // admin (often the Chief) is not in the room. With none picked, the admin plans.
+  // Another Main Bot does not: two planners is how the board gets two plans.
+  const seatedBot = (room, id) => {
+    if (!room || !id || !(room.members ?? []).includes(id)) return false
+    const bot = botRecord(id)
+    return Boolean(bot && bot.remote === undefined)
+  }
+  rt.taskLeadOf = (room) => {
+    if (!room || room.origin === 'face-to-face') return undefined
+    if (seatedBot(room, room.taskLead)) return room.taskLead
+    if (seatedBot(room, room.admin)) return room.admin
+    const person = liveParticipants(room).find(entry => entry.kind === 'bot' && !entry.remote && entry.role === 'admin' && seatedBot(room, entry.id))
+    return person?.id
+  }
+  const plansRoom = (botId, room) => Boolean(botId) && rt.taskLeadOf(room) === botId
+  const planDenied = (room, action) => {
+    const picked = room?.taskLead && rt.taskLeadOf(room) === room.taskLead
+    throw forbidden(`Only the ${picked ? "room's task lead" : 'group admin'} can ${action}`)
   }
   const memberBot = (room, name) => {
     const wanted = String(name).trim()
@@ -441,8 +454,8 @@ export function install(rt) {
       if (room?.origin === 'face-to-face' && (overall || assigneeName || parentRef)) throw invalid('A face-to-face room has no group task board')
       if (overall && assigneeName) throw invalid('The overall task is the group\'s, not a subtask')
       if (overall && parentRef) throw invalid('The overall task has no parent')
-      if (overall && !plansRoom(botId, room)) throw forbidden('Only the group admin can record the overall task')
-      if (assigneeName && !plansRoom(botId, room)) throw forbidden('Only the group admin can assign a subtask')
+      if (overall && !plansRoom(botId, room)) planDenied(room, 'record the overall task')
+      if (assigneeName && !plansRoom(botId, room)) planDenied(room, 'assign a subtask')
       let ownerBot = bot
       if (assigneeName) {
         ownerBot = memberBot(room, assigneeName)
@@ -479,6 +492,8 @@ export function install(rt) {
         if (!title) throw invalid('A new task needs a title')
         task = matchTitle(botId, title, roomId)
         if (!task) {
+          // A member still records its own room card, parented or not. Dividing
+          // the board (overall, or assignee) is refused above (#1182).
           isNew = true
           task = makeTask(bot, title, roomId)
         }
@@ -503,6 +518,8 @@ export function install(rt) {
           if (task.ownerBotId !== botId) throw forbidden('Only that Bot can mark its task waiting')
           blockForInput(task, ask)
         } else if (!answer && !isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
+        // Assigning claims the card. The assignee starts the work; nobody confirms first (#1182).
+        if (isNew && parent && task.ownerBotId !== botId && task.status === 'open') transition(task, 'claimed', null, { by: 'assigned' })
       }
       if (task.title) batch.set(task.title, task)
       batch.set(task.id, task)

@@ -1508,7 +1508,7 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 diff --git a/test/store.test.js b/test/store.test.js
 --- a/test/store.test.js
 +++ b/test/store.test.js
-@@ -139,7 +139,7 @@
+@@ -139,7 +139,7 @@ test('a state from a newer version remains untouched', async (t) => {
    const original = JSON.stringify({ version: 999, revision: 77, recoveryMarker: 'keep' })
    const { rt, statePath } = runtime(t, original)
    await rt.load()
@@ -1517,7 +1517,7 @@ diff --git a/test/store.test.js b/test/store.test.js
    rt.state.prefs.marker = 'not saved'
    await rt.save()
    assert.equal(fs.readFileSync(statePath, 'utf8'), original)
-@@ -285,3 +285,20 @@
+@@ -285,3 +285,20 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
      restore()
    }
  })

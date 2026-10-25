@@ -1,0 +1,1 @@
+A group picks one task lead to divide the board. That Bot, or the admin when none is picked, assigns each part; the card is claimed and the assignee starts it in the group without waiting for a confirmation. A question stays in the group ([#1182](https://github.com/ThinkFlowLab/FlyBot/issues/1182)).

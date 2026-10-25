@@ -464,7 +464,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -12,6 +12,67 @@
+@@ -12,6 +12,67 @@ const ZH = {
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -532,7 +532,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +26,21 @@
+@@ -26,6 +26,21 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -554,7 +554,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,69 @@
+@@ -41,22 +41,69 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -627,7 +627,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +93,59 @@
+@@ -93,6 +93,59 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -687,7 +687,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,44 @@
+@@ -105,17 +105,44 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -736,7 +736,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -128,8 +128,6 @@
+@@ -128,8 +128,6 @@ const ZH = {
    New: '新',
  
    // New chat
@@ -745,7 +745,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,9 +154,20 @@
+@@ -154,9 +154,24 @@ const ZH = {
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -754,6 +754,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Leave the group without an admin': '让群聊不设管理员',
    Unset: '取消',
    'Make admin': '设为管理员',
++  'Task lead': '总负责人',
++  'Make task lead': '设为总负责人',
++  'Use the admin': '改由管理员负责',
++  'The task lead divides the board. When unset, the admin does.': '总负责人拆分看板任务。未指定时由管理员负责。',
 +  // Face room lead (#476)
 +  'Room lead': '总负责人',
 +  Lead: '总负责人',
@@ -766,7 +770,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
-@@ -215,6 +215,25 @@
+@@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
    'Applies from the next message.': '从下一条消息开始生效。',
@@ -792,7 +796,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Profile: '资料',
    Label: '标签',
    'Optional. Shown under the name.': '可选，显示在名字下方。',
-@@ -238,6 +238,7 @@
+@@ -238,6 +238,7 @@ const ZH = {
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
    Manage: '管理',
@@ -800,7 +804,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
-@@ -274,6 +274,8 @@
+@@ -274,6 +274,8 @@ const ZH = {
    'Harness default': 'Harness 默认',
    Saving: '保存中',
    'Manage models': '管理模型',
@@ -809,7 +813,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,9 +312,10 @@
+@@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
@@ -822,7 +826,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +324,6 @@
+@@ -324,7 +324,6 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
@@ -830,7 +834,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
-@@ -333,6 +333,8 @@
+@@ -333,6 +333,8 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
@@ -839,7 +843,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',
-@@ -344,13 +344,13 @@
+@@ -344,13 +344,13 @@ const ZH = {
    '{n} d': '{n} 天',
  
    // Plugin updates
@@ -859,7 +863,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,71 @@
+@@ -360,9 +360,71 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -932,7 +936,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,6 +390,7 @@
+@@ -390,6 +390,7 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -940,7 +944,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Reactions: '表情',
    'Message actions': '消息操作',
    Download: '下载',
-@@ -403,6 +403,9 @@
+@@ -403,6 +403,9 @@ const ZH = {
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
    'Message from': '收到消息：',
@@ -950,7 +954,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -412,6 +412,8 @@
+@@ -412,6 +412,8 @@ const ZH = {
    'Working out a plan': '理一下思路',
    'Sorting out the details': '梳理细节',
    'On it': '在做了',
@@ -959,7 +963,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Busy with it': '正在处理',
    'Moving ahead': '推进中',
    'Taking care of it': '处理中',
-@@ -439,7 +439,6 @@
+@@ -439,7 +439,6 @@ const ZH = {
    'Looking back through the chat': '翻看聊天记录',
    '{name} looked up its own chat': '{name} 查看了自己的对话',
    '{name} looked up its own chat for “{text}”': '{name} 在自己的对话里查找「{text}」',
@@ -967,7 +971,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +450,30 @@
+@@ -450,12 +450,30 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -999,7 +1003,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
-@@ -478,6 +478,7 @@
+@@ -478,6 +478,7 @@ const ZH = {
    Selected: '已选',
    Skip: '跳过',
    Submit: '提交',
@@ -1007,7 +1011,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Choose all that apply': '可多选',
    'Dismiss question': '关闭问题',
    Dismiss: '关闭',
-@@ -485,7 +485,7 @@
+@@ -485,7 +485,7 @@ const ZH = {
    'Your answer': '你的回答',
  
    // Secrets
@@ -1016,7 +1020,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No Bot': '没有 Bot',
    'Paste or type the key': '粘贴或输入密钥',
    'Only {name}': '只给 {name}',
-@@ -528,7 +528,7 @@
+@@ -528,7 +528,7 @@ const ZH = {
    'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
    'What it is for': '用途',
    Value: '值',
@@ -1025,7 +1029,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -697,11 +697,11 @@
+@@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
    // About
@@ -1040,7 +1044,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +711,13 @@
+@@ -711,6 +711,13 @@ const ZH = {
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1054,7 +1058,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
-@@ -726,7 +726,7 @@
+@@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
    'GitHub issue': 'GitHub issue',
@@ -1063,7 +1067,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +738,7 @@
+@@ -738,7 +738,7 @@ const ZH = {
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -1072,7 +1076,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +771,14 @@
+@@ -771,6 +771,14 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1087,7 +1091,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
-@@ -784,7 +784,15 @@
+@@ -784,7 +784,15 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1103,7 +1107,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
-@@ -806,8 +806,8 @@
+@@ -806,8 +806,8 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1114,7 +1118,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New task': '新建任务',
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
-@@ -823,6 +823,12 @@
+@@ -823,6 +823,12 @@ const ZH = {
    'Repeat every 1 minute to 7 days': '重复间隔要在 1 分钟到 7 天之间',
    'Pick when it runs': '选择什么时候运行',
    'No such task': '没有这个任务',
@@ -1127,7 +1131,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -855,6 +855,8 @@
+@@ -855,6 +855,8 @@ const HOST_ERRORS = [
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
    [/^(.+) is not saved yet$/, '$1 还没有保存'],
    [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
@@ -1136,7 +1140,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +883,20 @@
+@@ -883,6 +883,20 @@ const HOST_ZH = {
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1157,7 +1161,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,8 @@
+@@ -905,6 +905,8 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -3650,7 +3654,7 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -4,30 +4,41 @@
+@@ -4,30 +4,42 @@
  const TEAM_RULES = [
    '## How your Bot team works',
    '- Every Bot is its own long-lived conversation with the user, with its own memory and computer.',
@@ -3675,11 +3679,12 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
    '- Your conversations are long-lived. When one grows long, either its older messages are condensed in place into a summary you wrote (a "[Checkpoint N]" message), or it moves on to a fresh part that opens with a handoff note you wrote and your latest messages (a "[Handoff · part N]" message). What leaves your working context stays saved. When you need the exact earlier wording or a detail the summary or note does not show in full (a full path, a figure, every item of a complete list or a final summary), call read_own_chat with words to look for, or with part N to read the note that closed an earlier part; never fill such a detail in from memory. Each line it returns starts with an anchor such as [part 2 #1234 · 10-08 14:22]; pass the anchor as around to read what was said around it.',
    '- Reply in the user\'s language.',
 +  '- You keep a task list with track_tasks, and you use it to plan work and carry it, not only to show a status. When the user gives you work, or a group hands you work, record it there. Do not record work nobody asked for.',
-+  '- In a group, the admin (or a Main Bot in that group) records one overall task for the whole job (overall: true) and a subtask for each Bot that has a part (parent is that overall task\'s id or title, assignee is that Bot\'s name). A member records and updates only its own subtask, with parent set to the overall task. One group has one open overall task; recording it again updates that same task.',
++  '- In a group, the task lead records one overall task for the whole job (overall: true) and a subtask for each Bot that has a part (parent is that overall task\'s id or title, assignee is that Bot\'s name). The task lead is the Bot picked for that room, or the group admin when none is picked. Another Bot, including another Main Bot, does not divide the board. A member updates the card assigned to it, or links its own subtask with parent set to the overall task. One group has one open overall task; recording it again updates that same task.',
++  '- When a card is assigned to you, start the work. Do not wait for the user to confirm before you begin.',
 +  '- Each task has a short title, a column (not-started, in-progress, done), how far along from 0 to 100, a priority (low, normal, high, urgent) and a short note. Update that same task as it moves, so the column and progress stay current.',
 +  '- When you are given work, or you already have unfinished tasks from work you were given, continue the task track_tasks names next instead of inventing new work. Call track_tasks with no tasks to read the list. It prefers a higher priority (urgent, then high, then normal, then low), and an in-progress task before one that has not started when the priority is the same.',
 +  '- A "[Continue task]" message is unfinished work you were already given. Do that task now and update it with track_tasks. Do not invent another job, send a status, or start a group round. In a group, post only when that task needs the group to see a result.',
-+  '- When you cannot continue without an answer, pass ask with the one question on that task. Then ask it: ask_user in your own chat, or in your reply when you are in a group. When the answer arrives, pass answer with what they said and update the task. Do not leave the task waiting without that question.',
++  '- When you cannot continue without an answer, pass ask with the one question on that task. Then ask it: in a group, in your reply there (never ask_user in your own chat); in your own chat, ask_user. When the answer arrives, pass answer with what they said and update the task. Do not leave the task waiting without that question.',
  ].join('\n')
  
  const MAIN_RULES = [
@@ -7385,7 +7390,7 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -60,11 +60,16 @@
+@@ -60,11 +60,16 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
@@ -7402,7 +7407,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on approval/request (prepend)',
      'on agent/inbox/discarded',
      'on session/event',
-@@ -91,12 +96,23 @@
+@@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -7426,7 +7431,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
-@@ -137,6 +153,17 @@
+@@ -137,6 +137,17 @@ test('the client channel answers from the saved state', async (t) => {
    assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
    assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
    assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
@@ -8175,7 +8180,7 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
    ]
    for (const id of ['main', 'worker']) {
      for (const rule of rules) {
-@@ -43,3 +43,32 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
+@@ -43,3 +43,35 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
    assert.doesNotMatch(prompt('room'), /progress|milestone/)
    assert.equal(prompt('outside'), '')
  })
@@ -8201,6 +8206,9 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
 +  assert.match(prompt('worker'), /A "\[Continue task\]" message is unfinished work you were already given/)
 +  assert.match(prompt('worker'), /Do not invent another job/)
 +  assert.match(prompt('worker'), /overall: true/)
++  assert.match(prompt('worker'), /the task lead records one overall task/)
++  assert.match(prompt('worker'), /Do not wait for the user to confirm/)
++  assert.match(prompt('worker'), /never ask_user in your own chat/)
 +  assert.match(prompt('worker'), /pass ask with the one question/)
 +  assert.equal(prompt('worker').split('overall: true').length - 1, 1)
 +  assert.doesNotMatch(prompt('worker'), /coordinator/, 'the coordinator wording belongs to the Main Bot')

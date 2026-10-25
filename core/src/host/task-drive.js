@@ -1,7 +1,9 @@
 // Unfinished conversation tasks wake the Bot that owns them (#1109). The board
 // stays the one in tasks.js: this module only decides when an idle Session should
-// continue the task track_tasks would name next. A wake is a follow-up in that
-// Session, never a post into the group, so the driver does not open a round.
+// continue the task track_tasks would name next. An own-chat task is a follow-up
+// in that chat. A group subtask is a turn in that Bot's group Session (#1182):
+// the reply is posted into the room when the turn ends, and the driver does not
+// open a round of its own.
 import { compareForWork } from '../shared/task-board.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
@@ -33,13 +35,19 @@ const cueFor = (task) => {
   const post = task.writeBack?.state === 'pending'
     ? ` Then post the decision comment on ${task.writeBack.target} with your GitHub connector and record it with track_tasks postResult {task: '${task.id}', ok: true}, or ok: false with the error.`
     : ''
-  return `Continue ${task.id} [${priority}] ${title}. Do this task now. Update it with track_tasks as it moves. Stop when it is done or waiting on an answer. Do not invent other work or start a group round.${post}`
+  const lead = `Continue ${task.id} [${priority}] ${title}. Do this task now. Update it with track_tasks as it moves. Stop when it is done or waiting on an answer. Do not invent other work`
+  if (task.origin?.roomId) {
+    return `${lead} or record a new plan. This card is already yours: start the work and do not wait for a confirmation. If you need an answer, ask that one question in your reply here, never in your own chat.${post}`
+  }
+  return `${lead} or start a group round.${post}`
 }
 
 const messageText = (message) => (Array.isArray(message?.content) ? message.content : []).map(block => block?.text ?? '').join('\n')
 
+// An own-chat wake is role `task`. A group wake is a room turn (`taskDrive`), so
+// the same inbox check has to see it or the next board write queues a second one.
 const taskMessages = (agent) => [...(agent?.inbox?.nextTurn ?? []), ...(agent?.inbox?.nextStep ?? [])]
-  .filter(message => message?.source?.role === 'task')
+  .filter(message => message?.source?.role === 'task' || message?.source?.taskDrive === true)
 
 // The cue names one task. A later board write that makes a different task next
 // replaces a wake that has not started; a note on the same task does not.
@@ -220,8 +228,18 @@ export function install(rt) {
         continue
       }
       inflight.set(sessionId, { fingerprint: fp, started: false })
+      const roomId = next.origin?.roomId
       try {
-        await rt.deliver({ toId: botId, sessionId, role: 'task', text: cueFor(next) })
+        // A group card is a room turn: the reply posts into the group when the
+        // turn ends (turns.js, no waiter), so a question stays there (#1182).
+        // noteWake counts only a wake that left, including this room turn (#1172).
+        await rt.deliver({
+          toId: botId,
+          sessionId,
+          role: roomId ? 'room' : 'task',
+          text: cueFor(next),
+          ...(roomId ? { roomId, note: 'your task', taskDrive: true } : {}),
+        })
         await noteWake(next)
       } catch (error) {
         inflight.delete(sessionId)
@@ -240,7 +258,7 @@ export function install(rt) {
 
   rt.considerTaskDrive = consider
   rt.noteTaskDriveTrigger = (sessionId, info) => {
-    if (info?.role !== 'task') return
+    if (info?.role !== 'task' && info?.taskDrive !== true) return
     const job = inflight.get(sessionId)
     if (job) job.started = true
   }
