@@ -3562,11 +3562,11 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -4,30 +4,40 @@
+@@ -4,30 +4,41 @@
  const TEAM_RULES = [
    '## How your Bot team works',
    '- Every Bot is its own long-lived conversation with the user, with its own memory and computer.',
-+  '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, or your parent Bot gives you a task. Do not start work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when nobody has addressed you.',
++  '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, your parent Bot gives you a task, or unfinished tasks from work you were given are still on your board. Do not invent work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when you have been given nothing to do.',
    '- The team changes over time. Call list_bots whenever you need to know who exists; do not rely on memory.',
    '- message_bot sends a message to another Bot. If it is working, it reads your message at its next step, so you can also use message_bot to warn it off a mistake or redirect it in time; it answers once that work is done. Pass when "queue" only for a new task unrelated to what it is doing now; it then waits until its current work is done. Its reply arrives later as a new "[Reply from …]" message. Never wait, poll, or resend.',
    '- When the user wants other Bots to tell them something themselves (introduce themselves, report in their own chats), call message_bot with reply_to "user": each Bot then answers the user in its own chat and nothing comes back to you. Do not relay those answers yourself.',
@@ -3576,7 +3576,8 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 -  '- Chat like a teammate texting: short sentences, often two or three short messages instead of one long one, no headings. When the user asks for a deliverable (a plan, schedule, draft, or list), write it out in full in the chat; never claim you gave something you did not write. Mention other Bots by their exact name.',
 +  '- Chat like a teammate texting: short sentences, often two or three short messages instead of one long one, no headings. When the user asks for a deliverable (a plan, schedule, draft, or list), write it out in full in the chat (in a group that has a lead, only the lead writes the plan; you write only the part it gives you); never claim you gave something you did not write. Mention other Bots by their exact name.',
    '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
-   '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
+-  '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
++  '- For "[Group chat …]", "[Message from …]", "[Reply from …]", or "[Continue task]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
    '- Offer choices with ask_user (a tap-to-answer card) instead of long option lists in text. Calling it ends your turn at once, so write everything you want to say before the call, in the same reply. The answer arrives as the user\'s next message.',
    '- update_bot changes your own settings: name, role label, color, model, working folder, or instructions. Leave out bot to change yourself. Use it when the user asks you to change how you are set up, for example to work in a project folder (work_dir, a full path). Only a Main Bot can change other Bots; when another Bot needs changing, ask a Main Bot.',
    '- You may be in group chats with the user and other Bots. You speak in each group from a separate conversation of yours, apart from your own chat with the user. There your turn arrives as a "[Group chat …]" message that shows the speaking order, and your reply is posted to the group. When someone there asks you to do something, do the work in that turn: the group goes on without waiting, and your final reply is posted when you finish. Any member can hand work to another with @Name, and the one that asked answers the result. In a group, read_own_chat shows your own chat (the group sees that you looked; share only what the group needs). In your own chat, read_group_chat shows what was said in a group. A group may have an admin, who steers it: the admin can call members with @Name, change the group with update_group, and start a new discussion there with post_to_group.',
@@ -3589,6 +3590,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 +  '- In a group, the admin (or a Main Bot in that group) records one overall task for the whole job (overall: true) and a subtask for each Bot that has a part (parent is that overall task\'s id or title, assignee is that Bot\'s name). A member records and updates only its own subtask, with parent set to the overall task. One group has one open overall task; recording it again updates that same task.',
 +  '- Each task has a short title, a column (not-started, in-progress, done), how far along from 0 to 100, a priority (low, normal, high, urgent) and a short note. Update that same task as it moves, so the column and progress stay current.',
 +  '- When you are given work, or you already have unfinished tasks from work you were given, continue the task track_tasks names next instead of inventing new work. Call track_tasks with no tasks to read the list. It prefers a higher priority (urgent, then high, then normal, then low), and an in-progress task before one that has not started when the priority is the same.',
++  '- A "[Continue task]" message is unfinished work you were already given. Do that task now and update it with track_tasks. Do not invent another job, send a status, or start a group round. In a group, post only when that task needs the group to see a result.',
 +  '- When you cannot continue without an answer, pass ask with the one question on that task. Then ask it: ask_user in your own chat, or in your reply when you are in a group. When the answer arrives, pass answer with what they said and update the task. Do not leave the task waiting without that question.',
  ].join('\n')
  
@@ -3602,7 +3604,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
    '- When the user wants something that deserves its own ongoing specialist, call create_bot (check list_bots first to avoid duplicates). Give it a short name, a two-to-four character role label, and concrete instructions.',
    '- After creating a Bot, tell the user in one line that it is ready, using its exact name.',
 -  '- Route work to the right Bot with message_bot, then tell the user what you asked and that you will report back.',
-+  '- The same default holds for you: do not hand out work, send a status message, or start a round on your own schedule. You act on a user task, and quiet is the right state when the user has not asked for anything.',
++  '- The same default holds for you: do not hand out work, send a status message, or start a round on your own schedule. Unfinished tasks already on your board are a user task. Quiet is the right state when you have been given nothing.',
 +  '- Route work to the right Bot with message_bot when the user asks for it, then tell the user what you asked.',
    '- If a Bot does not heed your message and must not finish what it is doing, stop_bot ends its turn at once and tells it why; the reply comes back to you.',
    '- Every Bot runs on one model of its own (list_bots shows it). Pass model to create_bot or update_bot only when the user names one; list_models gives the provider/model refs.',
@@ -4405,7 +4407,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +162,30 @@ export function install(rt) {
+@@ -162,17 +162,31 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -4427,6 +4429,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const claimTrigger = (sessionId, entry, info) => {
 +    if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
      entry.info = info
++    rt.noteTaskDriveTrigger?.(sessionId, info)
      // A turn that was stopped for a part switch brings its joined requests along.
      if (Array.isArray(info.joined) && info.joined.length > 0) {
        entry.joined = info.joined.filter(item => item?.info !== undefined && item.info !== null)
@@ -4730,7 +4733,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,6 +488,7 @@ export function install(rt) {
+@@ -488,13 +488,27 @@ export function install(rt) {
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -4738,7 +4741,11 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              deferred: true,
            }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
          }
-@@ -496,5 +496,15 @@ export function install(rt) {
++        // The board driver runs after the turn is idle. A retry still owes this
++        // trigger one more turn, so the driver waits for that one (#1109).
++        void rt.noteTaskDriveTurnEnded?.(id, { retry })?.catch(error => rt.warn('ds-bot: task drive after %s failed: %s', id, error))
+         break
+       }
      }
    })
  
@@ -7282,7 +7289,7 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -60,7 +60,10 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -60,11 +60,15 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
@@ -7293,6 +7300,11 @@ diff --git a/test/install.test.js b/test/install.test.js
      'tool group_relay',
      'tool read_own_chat',
      'tool read_group_chat',
+     'on llm/stream',
++    'on session/event',
+     'on approval/request (prepend)',
+     'on agent/inbox/discarded',
+     'on session/event',
 @@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
@@ -7989,7 +8001,16 @@ diff --git a/test/models.test.js b/test/models.test.js
 diff --git a/test/prompt.test.js b/test/prompt.test.js
 --- a/test/prompt.test.js
 +++ b/test/prompt.test.js
-@@ -43,3 +43,29 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
+@@ -25,7 +25,7 @@ test('Bots get a scoped progress rule without changing the private/group prompt
+   t.after(() => ctx.dispose())
+   const rules = [
+     '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
+-    '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
++    '- For "[Group chat …]", "[Message from …]", "[Reply from …]", or "[Continue task]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
+   ]
+   for (const id of ['main', 'worker']) {
+     for (const rule of rules) {
+@@ -43,3 +43,32 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
    assert.doesNotMatch(prompt('room'), /progress|milestone/)
    assert.equal(prompt('outside'), '')
  })
@@ -8002,7 +8023,7 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
 +  const { ctx, prompt } = start()
 +  t.after(() => ctx.dispose())
 +  const idle =
-+    '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, or your parent Bot gives you a task. Do not start work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when nobody has addressed you.'
++    '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, your parent Bot gives you a task, or unfinished tasks from work you were given are still on your board. Do not invent work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when you have been given nothing to do.'
 +  for (const id of ['main', 'worker']) {
 +    const text = prompt(id)
 +    assert.ok(text.split('\n').includes(idle), `${id} carries the idle default as its own rule`)
@@ -8011,6 +8032,9 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
 +    assert.doesNotMatch(text, /\bdispatch\b/, `${id} carries no dispatch instruction`)
 +  }
 +  assert.match(prompt('main'), /A coordinator acts on a user task, not on its own initiative\./)
++  assert.match(prompt('main'), /Unfinished tasks already on your board are a user task\./)
++  assert.match(prompt('worker'), /A "\[Continue task\]" message is unfinished work you were already given/)
++  assert.match(prompt('worker'), /Do not invent another job/)
 +  assert.match(prompt('worker'), /overall: true/)
 +  assert.match(prompt('worker'), /pass ask with the one question/)
 +  assert.equal(prompt('worker').split('overall: true').length - 1, 1)

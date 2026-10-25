@@ -1005,12 +1005,13 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
      if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
      if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
-@@ -22,15 +22,73 @@ export function install(rt) {
+@@ -22,15 +22,74 @@ export function install(rt) {
      if (role === 'stopped') return `[Stopped by ${fromName}]`
      if (role === 'room') return `[Group chat "${roomName}" · ${note}]`
      if (role === 'report') return `[Group chat "${roomName}" · replies to your post]`
 -    if (role === 'kickoff') return '[Bot team setup]'
      if (role === 'secret') return '[Secret card]'
++    if (role === 'task') return '[Continue task]'
      if (audience === 'user') return `[Message from ${fromName} · the user sees your reply here]`
      return `[Message from ${fromName}]`
    }

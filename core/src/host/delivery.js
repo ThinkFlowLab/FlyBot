@@ -81,6 +81,7 @@ export function install(rt) {
     if (role === 'room') return `[Group chat "${roomName}" · ${note}]`
     if (role === 'report') return `[Group chat "${roomName}" · replies to your post]`
     if (role === 'secret') return '[Secret card]'
+    if (role === 'task') return '[Continue task]'
     if (audience === 'user') return `[Message from ${fromName} · the user sees your reply here]`
     return `[Message from ${fromName}]`
   }

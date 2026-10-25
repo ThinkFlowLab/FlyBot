@@ -25,7 +25,7 @@ test('Bots get a scoped progress rule without changing the private/group prompt 
   t.after(() => ctx.dispose())
   const rules = [
     '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
-    '- For "[Group chat …]", "[Message from …]", or "[Reply from …]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
+    '- For "[Group chat …]", "[Message from …]", "[Reply from …]", or "[Continue task]" messages, do not write plans or progress updates: use tools silently, then reply with the answer. Simple answers do not need progress messages.',
   ]
   for (const id of ['main', 'worker']) {
     for (const rule of rules) {
@@ -52,7 +52,7 @@ test('a Bot stays idle until it is addressed or given a task (part B of #645)', 
   const { ctx, prompt } = start()
   t.after(() => ctx.dispose())
   const idle =
-    '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, or your parent Bot gives you a task. Do not start work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when nobody has addressed you.'
+    '- By default you stay idle: you do nothing until the user addresses you, you are @-mentioned in a group, your parent Bot gives you a task, or unfinished tasks from work you were given are still on your board. Do not invent work, send messages, or report on your own initiative. Being addressed still gets an answer as usual — this rule is about the default when you have been given nothing to do.'
   for (const id of ['main', 'worker']) {
     const text = prompt(id)
     assert.ok(text.split('\n').includes(idle), `${id} carries the idle default as its own rule`)
@@ -61,6 +61,9 @@ test('a Bot stays idle until it is addressed or given a task (part B of #645)', 
     assert.doesNotMatch(text, /\bdispatch\b/, `${id} carries no dispatch instruction`)
   }
   assert.match(prompt('main'), /A coordinator acts on a user task, not on its own initiative\./)
+  assert.match(prompt('main'), /Unfinished tasks already on your board are a user task\./)
+  assert.match(prompt('worker'), /A "\[Continue task\]" message is unfinished work you were already given/)
+  assert.match(prompt('worker'), /Do not invent another job/)
   assert.match(prompt('worker'), /overall: true/)
   assert.match(prompt('worker'), /pass ask with the one question/)
   assert.equal(prompt('worker').split('overall: true').length - 1, 1)

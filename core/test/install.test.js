@@ -68,6 +68,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'tool read_own_chat',
     'tool read_group_chat',
     'on llm/stream',
+    'on session/event',
     'on approval/request (prepend)',
     'on agent/inbox/discarded',
     'on session/event',

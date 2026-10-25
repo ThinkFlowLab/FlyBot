@@ -10,6 +10,7 @@ import * as authz from './src/host/authz.js'
 import * as roomMembership from './src/host/room-membership.js'
 import * as reach from './src/host/reach.js'
 import * as tasks from './src/host/tasks.js'
+import * as taskDrive from './src/host/task-drive.js'
 import * as models from './src/host/models.js'
 import * as permissions from './src/host/permissions.js'
 import * as turns from './src/host/turns.js'
@@ -51,7 +52,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, channel]
+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

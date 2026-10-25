@@ -211,6 +211,7 @@ export function install(rt) {
   const claimTrigger = (sessionId, entry, info) => {
     if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
     entry.info = info
+    rt.noteTaskDriveTrigger?.(sessionId, info)
     // A turn that was stopped for a part switch brings its joined requests along.
     if (Array.isArray(info.joined) && info.joined.length > 0) {
       entry.joined = info.joined.filter(item => item?.info !== undefined && item.info !== null)
@@ -664,6 +665,9 @@ export function install(rt) {
             deferred: true,
           }).catch(error => rt.warn('ds-bot: deferred request delivery failed: %s', error))
         }
+        // The board driver runs after the turn is idle. A retry still owes this
+        // trigger one more turn, so the driver waits for that one (#1109).
+        void rt.noteTaskDriveTurnEnded?.(id, { retry })?.catch(error => rt.warn('ds-bot: task drive after %s failed: %s', id, error))
         break
       }
     }

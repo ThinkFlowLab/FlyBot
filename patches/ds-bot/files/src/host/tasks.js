@@ -141,7 +141,12 @@ export function install(rt) {
     const droppable = all.filter(task => !PROTECTED.has(task.status)).sort((a, b) => a.updatedAt - b.updatedAt)
     for (const task of droppable.slice(0, Math.max(0, all.length - KEPT))) delete store()[task.id]
   }
-  const save = () => rt.save()
+  // A board write is what makes unfinished work visible. The driver wakes an idle
+  // Session after the save, and a failure there must not fail the write itself.
+  const save = async () => {
+    await rt.save()
+    await rt.considerTaskDrive?.()
+  }
 
   const botRecord = id => state.bots?.[id]
   // The human who owns this Bot. With no signed-in member the single-human product

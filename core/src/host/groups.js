@@ -222,6 +222,17 @@ export function install(rt) {
     return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
   }
 
+  // The task driver opens a member Session the first time a subtask needs it.
+  // The one-time own-chat brief stays with the first round; this turn's text is
+  // the continue cue (#1109).
+  rt.memberSession = async (room, botId) => {
+    const member = rt.botOf(botId)
+    if (!room || !member || member.remote !== undefined) return undefined
+    if (!(room.members ?? []).includes(member.id)) return undefined
+    const session = await participant.open({ room, member })
+    return session.id
+  }
+
   // A plain line in a face-to-face room (#299): the Bots decide who answers. The rule for such lines is
   // in the room's standing section (routeRules); each routed turn carries this short note with what
   // only this line can say, so one Bot answers a specific question, a follow-up goes to the Bot that
