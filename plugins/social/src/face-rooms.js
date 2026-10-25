@@ -668,7 +668,24 @@ export function faceEventKey(event) {
   const from = viewed.from?.handle || viewed.member?.handle || ''
   const text = viewed.untrustedText ?? viewed.text ?? ''
   if (!from && !text) return ''
-  return `unkeyed:${viewed.type}|${from}|${viewed.createdAt ?? ''}|${text}`
+  // The key names the line, but it never *is* the line: `seen` is persisted in the owner's settings, so on
+  // a server that sends no ids it must not become a copy of the conversation (#1062). A bounded digest
+  // carries the body; the two FNV-1a passes are ours and stable across runs, with no time or counter in
+  // them — the same line handed back by a later poll has to key the same, or the duplicate comes back.
+  return `unkeyed:${viewed.type}|${from}|${viewed.createdAt ?? ''}|${lineDigest(text)}`
+}
+
+function lineDigest(text) {
+  let low = 0x811c9dc5
+  let high = 0x9e3779b9
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i)
+    low = Math.imul(low ^ code, 0x01000193) >>> 0
+    high = Math.imul(high ^ code, 0x85ebca6b) >>> 0
+    high = (high ^ (high >>> 13)) >>> 0
+  }
+  const hex = value => value.toString(16).padStart(8, '0')
+  return `${text.length}:${hex(low)}${hex(high)}`
 }
 
 const normHandle = (handle) => {

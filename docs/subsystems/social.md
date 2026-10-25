@@ -122,7 +122,7 @@ Creating a group opens its Session with zero turns, and the host draws no sessio
 ### Face-room poll identity (#122)
 
 - `list` / `poll` must not persist or send `as=@`. An empty, missing, or literal `@` handle stays empty; GET omits `as` unless it is a real Bot handle. Rooms first seen from `list` seed `asBot` from `my_bots[].handle` (or a local member already in the snapshot). A stored bogus `@` is healed, and `face_room_not_found` for a still-listed room repairs local meta (clear `as`, retry with `my_bots` or no `as`) instead of warning on every poll.
-- An event that arrives without an `event_id` (#1045) is keyed by the line itself — `faceEventKey`, from the event type, the sender handle, the server time and the text — so a poll that is handed the same untracked line back does not post it into the room a second time; a line with a real id still keys by that id, and an event with neither an id nor anything to name it by keeps no key.
+- An event that arrives without an `event_id` (#1045) is keyed by the line itself — `faceEventKey`, from the event type, the sender handle, the server time and a bounded digest of the text (`seen` sits in the owner's settings, so the key never carries the line itself, #1062) — so a poll that is handed the same untracked line back does not post it into the room a second time; a line with a real id still keys by that id, and an event with neither an id nor anything to name it by keeps no key.
 
 ### Approval waiting notice (#123)
 

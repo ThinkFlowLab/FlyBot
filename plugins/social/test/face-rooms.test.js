@@ -273,13 +273,41 @@ test('event rendering: join, leave, start, and inbox names', () => {
 
 test('#1045: an event without an id still gets a key, and the key names the line itself', () => {
   const event = { type: 'room.message', from: { handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob' }, untrusted_content: { text: 'hi' }, created_at: '2026-10-25T01:00:34.242Z' }
-  assert.equal(faceEventKey(event), 'unkeyed:room.message|@chief.bob.home|2026-10-25T01:00:34.242Z|hi')
-  assert.equal(faceEventKey({ ...event }), faceEventKey(event), 'the same line keys the same on every poll')
+  const key = faceEventKey(event)
+  assert.match(key, /^unkeyed:room\.message\|@chief\.bob\.home\|2026-10-25T01:00:34\.242Z\|\d+:[0-9a-f]{16}$/)
+  assert.equal(faceEventKey({ ...event }), key, 'the same line keys the same on every poll')
   assert.equal(faceEventKey({ ...event, event_id: 'fev_9' }), 'fev_9', 'a real id wins')
   assert.equal(faceEventKey({ type: 'room.message' }), '', 'nothing to name the line by: no key, not a shared one')
-  const seen = rememberEvent([], faceEventKey(event))
-  assert.deepEqual(seen, ['unkeyed:room.message|@chief.bob.home|2026-10-25T01:00:34.242Z|hi'])
+  const seen = rememberEvent([], key)
+  assert.deepEqual(seen, [key])
   assert.deepEqual(rememberEvent(seen, faceEventKey(event)), seen, 'and the second poll does not remember it twice')
+})
+
+test('#1062: the key is bounded, so a persisted seen never holds the line itself', () => {
+  const body = 'ze'.repeat(2000) + ' and a tail only the digest knows'
+  const event = { type: 'room.message', from: { handle: '@chief.bob.home' }, untrusted_content: { text: body }, created_at: '2026-10-25T01:00:34.242Z' }
+  const key = faceEventKey(event)
+  assert.ok(key.length <= 96, `the key stays short for a ${body.length}-char line: ${key.length}`)
+  assert.equal(key.includes(body.slice(0, 16)), false, 'no part of the sentence is kept')
+  assert.deepEqual(rememberEvent([], key), [key])
+  // same length, different tail: the digest still tells them apart
+  const swapped = { ...event, untrusted_content: { text: body.slice(0, -1) + '?' } }
+  assert.notEqual(faceEventKey(swapped), key)
+  const longer = { ...event, untrusted_content: { text: `${body}!` } }
+  assert.notEqual(faceEventKey(longer), key)
+})
+
+test('#1062: two lines from one sender key apart, and one line keys the same when it is read again', async () => {
+  const at = '2026-10-25T01:00:34.242Z'
+  const event = { type: 'room.message', from: { handle: '@chief.bob.home' }, untrusted_content: { text: 'hi' }, created_at: at }
+  const key = faceEventKey(event)
+  assert.notEqual(faceEventKey({ ...event, untrusted_content: { text: 'hi there' } }), key, 'a longer line')
+  assert.notEqual(faceEventKey({ ...event, untrusted_content: { text: 'ho' } }), key, 'same length, other line')
+  // nothing clock- or counter-shaped in the key: two reads of the same event key the same, a moment apart
+  const reread = JSON.parse(JSON.stringify(event))
+  assert.equal(faceEventKey(reread), key)
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(faceEventKey(reread), key, 'a clock reading in the key would have drifted by now')
 })
 
 test('roomOnlyForJoin is the default; a person-grant is the exception', () => {
