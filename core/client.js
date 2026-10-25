@@ -1906,12 +1906,22 @@ var localBots = [];
 function setLocalBots(bots) {
   localBots = (Array.isArray(bots) ? bots : []).filter((item) => item && !item.remote);
 }
+var displayName = (bot) => String(bot?.name ?? "").trim().toLowerCase();
+var sameDrawnLook = (a, b) => {
+  const keys = lookKeys(a);
+  return lookKeys(b).some((key) => keys.includes(key));
+};
 function lookAvoidingLocals(bot, locals = localBots) {
   const look = lookOf(bot);
   const avatar = bot?.avatar ?? {};
-  if (avatar.image || typeof avatar.emoji === "string" && avatar.emoji || hasShape(avatar.shape)) return look;
+  if (avatar.image || typeof avatar.emoji === "string" && avatar.emoji) return look;
   const own = (Array.isArray(locals) ? locals : []).filter((item) => item && !item.remote);
   if (own.length === 0) return look;
+  if (hasShape(avatar.shape)) {
+    const name = displayName(bot);
+    const named = name === "" ? [] : own.filter((item) => displayName(item) === name);
+    if (!named.some((item) => sameDrawnLook(look, lookOf(item)))) return look;
+  }
   const taken = new Set(own.flatMap((item) => lookKeys(lookOf(item))));
   const free = (candidate) => !lookKeys(candidate).some((key) => taken.has(key));
   if (free(look)) return look;

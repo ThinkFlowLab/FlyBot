@@ -123,15 +123,29 @@ export function setLocalBots(bots) {
   localBots = (Array.isArray(bots) ? bots : []).filter(item => item && !item.remote)
 }
 
+const displayName = bot => String(bot?.name ?? '').trim().toLowerCase()
+const sameDrawnLook = (a, b) => {
+  const keys = lookKeys(a)
+  return lookKeys(b).some(key => keys.includes(key))
+}
+
 // A friend's Bot with no published look: step the seeded shape (then the color) until it
-// differs from every local Bot's look. A stored image/emoji/shape is left alone (that is
-// the friend's real look).
+// differs from every local Bot's look. A stored image or emoji is the friend's real mark
+// and is left alone. A stored preset is left alone too, unless it is the same drawn look
+// as a local Bot with the same display name (#1069): the default Chief on every home is
+// the blue whale, so two rows named Chief would otherwise be the same picture. The local
+// Bot is never restyled, and the friend record is not rewritten.
 export function lookAvoidingLocals(bot, locals = localBots) {
   const look = lookOf(bot)
   const avatar = bot?.avatar ?? {}
-  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji) || hasShape(avatar.shape)) return look
+  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji)) return look
   const own = (Array.isArray(locals) ? locals : []).filter(item => item && !item.remote)
   if (own.length === 0) return look
+  if (hasShape(avatar.shape)) {
+    const name = displayName(bot)
+    const named = name === '' ? [] : own.filter(item => displayName(item) === name)
+    if (!named.some(item => sameDrawnLook(look, lookOf(item)))) return look
+  }
   const taken = new Set(own.flatMap(item => lookKeys(lookOf(item))))
   const free = candidate => !lookKeys(candidate).some(key => taken.has(key))
   if (free(look)) return look

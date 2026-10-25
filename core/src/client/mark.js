@@ -50,7 +50,8 @@ function useGaze(ref, enabled) {
 // of animations.
 const FIDGETS = ['hop', 'sway', 'stretch', 'look']
 export function BotMark({ bot, look: given, size = 36, state = 'idle', live = false, gaze = false, pokeable = false, label }) {
-  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384).
+  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384),
+  // and a published preset steps off a local Bot of the same display name (#1069).
   const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot))
   const ref = useRef(null)
   const maskId = useRef('')

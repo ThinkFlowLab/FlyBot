@@ -3,7 +3,7 @@ FlyBot patch 0005-social-seams on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Genera
 diff --git a/src/client/characters.js b/src/client/characters.js
 --- a/src/client/characters.js
 +++ b/src/client/characters.js
-@@ -63,17 +63,91 @@ export function defaultShape(id) {
+@@ -63,17 +63,105 @@ export function defaultShape(id) {
    return DEFAULT_SHAPES[((value ^ (value >>> 16)) >>> 0) % DEFAULT_SHAPES.length]
  }
  
@@ -70,15 +70,29 @@ diff --git a/src/client/characters.js b/src/client/characters.js
 +  localBots = (Array.isArray(bots) ? bots : []).filter(item => item && !item.remote)
 +}
 +
++const displayName = bot => String(bot?.name ?? '').trim().toLowerCase()
++const sameDrawnLook = (a, b) => {
++  const keys = lookKeys(a)
++  return lookKeys(b).some(key => keys.includes(key))
++}
++
 +// A friend's Bot with no published look: step the seeded shape (then the color) until it
-+// differs from every local Bot's look. A stored image/emoji/shape is left alone (that is
-+// the friend's real look).
++// differs from every local Bot's look. A stored image or emoji is the friend's real mark
++// and is left alone. A stored preset is left alone too, unless it is the same drawn look
++// as a local Bot with the same display name (#1069): the default Chief on every home is
++// the blue whale, so two rows named Chief would otherwise be the same picture. The local
++// Bot is never restyled, and the friend record is not rewritten.
 +export function lookAvoidingLocals(bot, locals = localBots) {
 +  const look = lookOf(bot)
 +  const avatar = bot?.avatar ?? {}
-+  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji) || hasShape(avatar.shape)) return look
++  if (avatar.image || (typeof avatar.emoji === 'string' && avatar.emoji)) return look
 +  const own = (Array.isArray(locals) ? locals : []).filter(item => item && !item.remote)
 +  if (own.length === 0) return look
++  if (hasShape(avatar.shape)) {
++    const name = displayName(bot)
++    const named = name === '' ? [] : own.filter(item => displayName(item) === name)
++    if (!named.some(item => sameDrawnLook(look, lookOf(item)))) return look
++  }
 +  const taken = new Set(own.flatMap(item => lookKeys(lookOf(item))))
 +  const free = candidate => !lookKeys(candidate).some(key => taken.has(key))
 +  if (free(look)) return look
@@ -115,12 +129,13 @@ diff --git a/src/client/mark.js b/src/client/mark.js
  
  // -------------------------------------------------------------------------
  // Bot mark: the Bot's character (or its uploaded photo), looked up by lookOf.
-@@ -47,7 +47,8 @@ function useGaze(ref, enabled) {
+@@ -47,7 +47,9 @@ function useGaze(ref, enabled) {
  // of animations.
  const FIDGETS = ['hop', 'sway', 'stretch', 'look']
  export function BotMark({ bot, look: given, size = 36, state = 'idle', live = false, gaze = false, pokeable = false, label }) {
 -  const look = given ?? lookOf(bot)
-+  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384).
++  // A friend's Bot never shares the exact fallback look of one of my own Bots (#384),
++  // and a published preset steps off a local Bot of the same display name (#1069).
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot))
    const ref = useRef(null)
    const maskId = useRef('')

@@ -81,9 +81,9 @@ test('the whole Settings dialog is Settings; one Bot opens as Edit Bot or Bot se
 
 test('a friend\'s Bot fallback look never matches one of my own Bots exactly (#384)', () => {
   const mine = { id: 'chief', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
-  // Force a remote seed that would otherwise collide: same shape+color as mine via stored fields cleared.
-  const friend = { id: 'remote-1', name: 'Chief', remote: { handle: '@chief.friend.home' }, color: 'deepseek', avatar: { shape: 'whale' } }
-  // Stored shape is the friend's real look — leave it (sync already happened).
+  // A stored shape is the friend's real look. A different display name keeps it, even when
+  // the picture matches a local Bot (#384). The same name steps off it (#1069).
+  const friend = { id: 'remote-1', name: 'Scout', remote: { handle: '@chief.friend.home' }, color: 'deepseek', avatar: { shape: 'whale' } }
   assert.deepEqual(lookAvoidingLocals(friend, [mine]), lookOf(friend))
   // Seeded fallback that collides: no avatar.shape, color matches MAIN whale via explicit color + lucky seed.
   // Build a remote whose lookOf equals mine by copying shape/color through seed collision is hard;
@@ -101,6 +101,37 @@ test('a friend\'s Bot fallback look never matches one of my own Bots exactly (#3
   // Image / emoji keep the published look even if a local matches.
   const pictured = { ...seeded, avatar: { image: 'https://example.test/a.png' } }
   assert.equal(lookAvoidingLocals(pictured, [twin]).image, 'https://example.test/a.png')
+})
+
+test('a friend Bot that shares a display name does not wear that local Bot\'s look (#1069)', () => {
+  const local = { id: 'chief', name: 'Chief', color: 'deepseek', avatar: { shape: 'whale' } }
+  const localLook = lookOf(local)
+  // Bot Social publishes the other home's default Chief as the same whale, color as lowercase hex.
+  const friend = { id: 'remote-1', name: 'Chief', color: '#4d6bfe', avatar: { shape: 'whale' }, remote: { handle: '@chief.selfa1025.home' } }
+  const drawn = lookAvoidingLocals(friend, [local])
+  assert.deepEqual(lookOf(local), localLook, 'the local Bot keeps its stored look')
+  assert.deepEqual(friend.avatar, { shape: 'whale' }, 'the friend record is not rewritten')
+  assert.ok(!lookKeys(drawn).some(key => lookKeys(localLook).includes(key)), 'same display name must not share the drawn look')
+  assert.notEqual(drawn.shape, 'whale')
+  assert.equal(drawn.color, '#4d6bfe', 'shape steps first; the published color stays')
+  // Spacing and case are the same name.
+  const cased = lookAvoidingLocals({ ...friend, name: ' chief ' }, [local])
+  assert.ok(!lookKeys(cased).some(key => lookKeys(localLook).includes(key)))
+  // A different name keeps the published look, even when the picture matches a local Bot.
+  const helper = { id: 'remote-2', name: 'Helper', color: '#4d6bfe', avatar: { shape: 'whale' }, remote: { handle: '@helper.selfa1025.home' } }
+  assert.deepEqual(lookAvoidingLocals(helper, [local]), lookOf(helper))
+  // A same-named friend with its own look stays on that look.
+  const pink = { id: 'remote-3', name: 'Chief', color: '#ff5eb1', avatar: { shape: 'moon' }, remote: { handle: '@chief.other.home' } }
+  assert.deepEqual(lookAvoidingLocals(pink, [local]), lookOf(pink))
+  // An image or emoji is the friend's real mark.
+  const photo = { ...friend, avatar: { image: 'https://example.test/chief.png', shape: 'whale' } }
+  assert.equal(lookAvoidingLocals(photo, [local]).image, 'https://example.test/chief.png')
+  const emoji = { ...friend, avatar: { emoji: '🐳', shape: 'whale' } }
+  assert.equal(lookAvoidingLocals(emoji, [local]).emoji, '🐳')
+  // The roster index is what the sidebar draws from: no explicit locals argument.
+  indexRoster({ bots: [local, friend], rooms: [], mainBotIds: ['chief'] })
+  assert.ok(!lookKeys(lookAvoidingLocals(friend)).some(key => lookKeys(localLook).includes(key)))
+  indexRoster({ bots: [], rooms: [] })
 })
 
 test('fallback avoidance treats a named ink and its published hex as one color, and survives a full shape set (#384)', () => {
