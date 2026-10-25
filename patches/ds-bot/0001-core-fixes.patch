@@ -4128,11 +4128,35 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
-@@ -5,6 +5,7 @@
+@@ -3,8 +3,31 @@
+ //
+ // Turn tracking: which turns were triggered by another Bot, and what they said.
  import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
++import { unwrapUntrusted } from './delivery.js'
  import { textOf } from './text.js'
  import { reminderText } from './schedules.js'
 +import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
++
++// What a friend's DM is told when the turn that should have answered died (#1068). Two fixed
++// sentences, never the provider's text: a missing-key failure can echo part of a key. The social
++// plugin allows only these, so a lookalike stays a normal held reply. Kept equal by its test.
++export const NO_MODEL_NOTICE = 'Could not reply: this Bot has no model set up yet.'
++export const COULD_NOT_NOTICE = 'Could not reply: this Bot could not answer right now.'
++export const REMOTE_FAILURE_NOTICES = Object.freeze([NO_MODEL_NOTICE, COULD_NOT_NOTICE])
++// The client's missingModelKey (model-menu.js) reads the same provider line. AUTH is not this:
++// a rejected key is a different failure, and its message is already dropped by turnFailure.
++const MISSING_KEY = /\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i
++
++export function remoteFailureNotice(failure) {
++  const code = typeof failure?.code === 'string' ? failure.code : ''
++  const message = typeof failure?.message === 'string' ? failure.message : ''
++  if (code === 'MISSING_CREDENTIAL' || code === 'NO_KEY' || (code !== 'AUTH' && MISSING_KEY.test(message))) return NO_MODEL_NOTICE
++  return COULD_NOT_NOTICE
++}
++
++export function isRemoteFailureNotice(text) {
++  return REMOTE_FAILURE_NOTICES.includes(String(text ?? '').trim())
++}
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
@@ -4145,7 +4169,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -51,9 +51,10 @@ export function install(rt) {
+@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
+ 
+ export function install(rt) {
+   const { ctx, state } = rt
++  // A friend's line whose body is already a failure notice. Answering it with another would
++  // bounce the same sentence between two homes that cannot run a model.
++  const failureEchoes = new WeakSet()
++  const noticeBody = (content) => {
++    const raw = textOf(content).replace(/^\[[^\]\n]*\]\n?/, '').trim()
++    return isRemoteFailureNotice(unwrapUntrusted(raw)) || isRemoteFailureNotice(raw)
++  }
  
    // The retry goes where the turn's trigger came from: a group round's waiter or a
    // Bot's request keeps its exchange; anything else is a nudge in the Bot's own chat.
@@ -4346,7 +4380,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,14 +331,25 @@ export function install(rt) {
+@@ -331,15 +331,27 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -4372,8 +4406,10 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 -        } else if (source?.kind === SOURCE_KIND && source.role === 'kickoff' && rt.roomOf(id)) {
 -          queueRoomMessage(id, { text: '', kickoff: true })
          } else if (source?.kind === SOURCE_KIND) {
++          if (fromRemote(source) && noticeBody(event.data?.content)) failureEchoes.add(source)
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
+           else if (expectsReply(source) && !answersUser(source)
 @@ -363,12 +363,15 @@ export function install(rt) {
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
@@ -4438,13 +4474,22 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +419,15 @@ export function install(rt) {
+@@ -419,6 +419,24 @@ export function install(rt) {
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
 +          if (fromRemote(source)) {
-+            if (failure === undefined && reply !== '') {
-+              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn } })
++            // A hard failure owes the sender a sentence (#1068). Without it their DM stays on
++            // "Weighing the options…" until the wait expires, and a missing credential never expires
++            // into an explanation. The sentence is fixed; the provider text stays here.
++            const notice = failure !== undefined && !failureEchoes.has(source)
++            if (notice || (failure === undefined && reply !== '')) {
++              void rt.flybotReplyRemote?.({
++                from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home,
++                text: notice ? remoteFailureNotice(failure) : reply,
++                replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn },
++                ...(notice ? { failure: true } : {}),
++              })
 +                // A refused reply resolves, it does not throw: say so, or it is lost without a trace (#272).
 +                .then(result => { if (result?.action === 'deny') rt.warn('ds-bot: reply to %s not sent: %s', source.remote.handle, result.reason) })
 +                .catch(error => rt.warn('ds-bot: reply to %s failed: %s', source.remote.handle, error))
@@ -5123,7 +5168,11 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
 --- a/test/bot-messages.test.js
 +++ b/test/bot-messages.test.js
-@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
+@@ -1,10 +1,10 @@
+ import assert from 'node:assert/strict'
+-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { setTimeout as delay } from 'node:timers/promises'
  import { test } from 'node:test'
@@ -5160,6 +5209,116 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    }
    installTurns(rt)
    let seq = 0
+@@ -356,6 +356,109 @@ test('a joined request gets the failure notice when the model call fails', () =>
+   assert.match(delivered[0].text, /^Writer could not answer your message: its model call failed \(SERVER 503: upstream busy\)/)
+ })
+ 
++// #1068: a friend's DM stays on "Weighing the options…" when the remote home's turn dies, because
++// that home never sends anything back. The notice is a fixed sentence: the provider text can echo a key.
++const remoteSource = (extra = {}) => replySource('request', {
++  senderSessionId: undefined,
++  remote: { handle: '@coder.bob.home', home: '@bob.home', ...extra.remote },
++  exchangeId: 'r1',
++  ...extra,
++})
++const fenced = text => textBlock(`[Message from Coder (@coder.bob.home)]\n<untrusted-message from="Coder">\n${text}\n</untrusted-message>`)
++function withRemote(rt) {
++  const sent = []
++  rt.flybotReplyRemote = async (args) => { sent.push(args); return { action: 'allow' } }
++  return sent
++}
++
++test('#1068: a friend line whose turn fails hard is answered with a fixed sentence, and the provider text stays out', () => {
++  const { rt, emit, delivered } = turnsHost()
++  const sent = withRemote(rt)
++  emit('b', 'turn/start', { turn: 4 })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
++  emit('b', 'turn/end', { turn: 4, reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'no API key for provider route "deepseek-official" sk-secret' } } })
++  assert.equal(delivered.length, 0, 'a remote failure is not a local Bot-to-Bot delivery')
++  assert.equal(sent.length, 1)
++  assert.equal(sent[0].failure, true)
++  assert.equal(sent[0].from, 'b')
++  assert.equal(sent[0].handle, '@coder.bob.home')
++  assert.equal(sent[0].home, '@bob.home')
++  assert.equal(sent[0].replyTo, 'r1')
++  assert.deepEqual(sent[0].replyIn, { sessionId: 'b', turn: 4 })
++  assert.equal(sent[0].text, 'Could not reply: this Bot has no model set up yet.')
++  assert.equal(sent[0].text.includes('sk-secret'), false)
++  assert.equal(sent[0].text.includes('deepseek'), false)
++})
++
++test('#1068: any other hard failure gets the generic sentence, still without the provider text', () => {
++  const { rt, emit } = turnsHost()
++  const sent = withRemote(rt)
++  emit('b', 'turn/start', { turn: 1 })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
++  emit('b', 'turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'SERVER', message: 'upstream busy sk-secret', status: 503 } } })
++  assert.equal(sent.length, 1)
++  assert.equal(sent[0].failure, true)
++  assert.equal(sent[0].text, 'Could not reply: this Bot could not answer right now.')
++  assert.equal(sent[0].text.includes('sk-secret'), false)
++  assert.equal(sent[0].text.includes('503'), false)
++  assert.equal(sent[0].text.includes('SERVER'), false)
++})
++
++test('#1068: a missing-key message under another code uses the no-model sentence', () => {
++  const { rt, emit } = turnsHost()
++  const sent = withRemote(rt)
++  emit('b', 'turn/start', { turn: 1 })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
++  emit('b', 'turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'PROVIDER', message: 'llm-deepseek: no API key for provider route "deepseek-official"' } } })
++  assert.equal(sent[0].text, 'Could not reply: this Bot has no model set up yet.')
++  assert.equal(sent[0].text.includes('llm-deepseek'), false)
++})
++
++test('#1068: a finished remote reply is the reply itself; a stopped turn and an echoed notice send nothing', () => {
++  const { rt, emit } = turnsHost()
++  const sent = withRemote(rt)
++  emit('b', 'turn/start', { turn: 1 })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'ok' }) })
++  emit('b', 'assistant/message', assistantText('pong'))
++  emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
++  assert.equal(sent.length, 1)
++  assert.equal(sent[0].failure, undefined)
++  assert.equal(sent[0].text, 'pong')
++  assert.equal(sent[0].replyTo, 'ok')
++
++  emit('b', 'turn/start', { turn: 2 })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'stop' }) })
++  emit('b', 'turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'ds-bot/stopped' } } })
++  assert.equal(sent.length, 1, 'stopping the turn is not a hard failure')
++
++  const notice = 'Could not reply: this Bot has no model set up yet.'
++  emit('b', 'turn/start', { turn: 3 })
++  emit('b', 'user/message', { content: fenced(notice), source: remoteSource({ exchangeId: 'echo' }) })
++  emit('b', 'turn/end', { turn: 3, reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'no API key' } } })
++  assert.equal(sent.length, 1, 'a notice that came back does not earn another')
++})
++
++test('#1068: a remote request that joined a failed turn is told the same way', () => {
++  const { rt, emit, delivered } = turnsHost()
++  const sent = withRemote(rt)
++  emit('b', 'turn/start', { turn: 2 })
++  emit('b', 'user/message', { content: textBlock('write the letter'), source: { kind: 'user' } })
++  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'join' }) })
++  emit('b', 'turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'AUTH', message: 'sk-secret rejected' } } })
++  assert.equal(delivered.length, 0)
++  assert.equal(sent.length, 1)
++  assert.equal(sent[0].replyTo, 'join')
++  assert.equal(sent[0].failure, true)
++  assert.equal(sent[0].text, 'Could not reply: this Bot could not answer right now.')
++  assert.equal(sent[0].text.includes('sk-secret'), false)
++})
++
++test('#1068: the failure notice is not an auto-reply, so the hold on model replies does not keep it', () => {
++  const src = readFileSync(new URL('../src/host/hooks.js', import.meta.url), 'utf8')
++  assert.match(src, /failure === true \? 'turn-failed' : 'auto-reply'/)
++  assert.match(src, /notice: 'turn-failed'/)
++})
++
+ test('a joined request never claims the next turn', () => {
+   const { rt, emit, delivered } = turnsHost()
+   emit('b', 'turn/start', { turn: 1 })
 @@ -510,3 +510,64 @@ test('a request the model keeps turning down moves the Bot on, without its lates
    await delay(30)
    assert.equal(made, 2)
@@ -6049,33 +6208,19 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    started.set(home, [...(started.get(home) ?? []), host])
    return host
  }
-@@ -69,21 +85,52 @@
- const freshHome = (t) => {
-   const home = mkdtempSync(join(tmpdir(), 'ds-bot-follow-'))
-   writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
--  t.after(async () => {
--    await Promise.all((started.get(home) ?? []).map(host => host.stop()))
--    started.delete(home)
--    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
--  })
--  return home
--}
+@@ -72,15 +72,46 @@ const freshHome = (t) => {
+   t.after(async () => {
+     await Promise.all((started.get(home) ?? []).map(host => host.stop()))
+     started.delete(home)
++    durable.delete(home)
+     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
+   })
+   return home
+ }
 -const settle = async (check) => {
 -  const until = Date.now() + 3000
 -  while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
 -  assert.ok(check(), 'condition not reached')
--}
--const text = message => message.content.map(block => block.text ?? '').join('\n')
--const notes = (home) => {
--  try { return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')) } catch { return { turns: {}, queued: {} } }
-+  t.after(async () => {
-+    await Promise.all((started.get(home) ?? []).map(host => host.stop()))
-+    started.delete(home)
-+    durable.delete(home)
-+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
-+  })
-+  return home
-+}
 +// The timers a case mocked, if any. A wait must advance that clock: `setImmediate` rounds alone can
 +// never fire a mocked `setTimeout`, so a wall-clock deadline would decide a race the test controls (#821).
 +let mockedTimers
@@ -6105,18 +6250,15 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 +    await new Promise(resolve => setImmediate(resolve))
 +  }
 +  return check()
-+}
+ }
 +const settle = async (check) => { assert.ok(await waitFor(check), 'condition not reached') }
 +// Writes to `inflight.json` land on a later tick; after a mock-timer tick and after `stop()` the file
 +// can still hold the previous write. Wait for them rather than reading early (the note of a failed
 +// pickup is only proved kept once the clearing write has landed and been replaced).
 +const flushWrites = async (rounds = 20) => { for (let i = 0; i < rounds; i++) await new Promise(resolve => setImmediate(resolve)) }
-+const text = message => message.content.map(block => block.text ?? '').join('\n')
-+const notes = (home) => {
-+  try { return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')) } catch { return { turns: {}, queued: {} } }
- }
- const inflight = home => notes(home).turns ?? {}
- // A message as DSH would replay it: the turn starts and takes it up.
+ const text = message => message.content.map(block => block.text ?? '').join('\n')
+ const notes = (home) => {
+   try { return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')) } catch { return { turns: {}, queued: {} } }
 @@ -104,7 +104,7 @@ async function openRoomTurn(t, host) {
  }
  
@@ -6335,7 +6477,8 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  const WRITTEN = 'Checking now.\n<tool_call>\n<function=pwsh>\n<parameter=command>\nGet-ChildItem E:\\\n</parameter>\n</function>\n</tool_call>'
  
  test('a tool call written as text gets one more turn on the same round slot', async (t) => {
-@@ -284,5 +284,17 @@
+@@ -283,6 +283,18 @@ test('in its own chat, a Bot that wrote a tool call as text is asked to make it'
+   assert.match(text(retry), /^\[Your last reply wrote a tool call as text, so nothing ran\]/)
  })
  
 +test('a real-clock wait outlives its round budget (#1012)', async () => {
@@ -6353,7 +6496,6 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  test('a written tool call is told apart from text about one', () => {
    assert.equal(writesToolCall(WRITTEN), true)
    assert.equal(writesToolCall('<function=read>\n<parameter=path>a.md</parameter></function>'), true)
-
 diff --git a/test/group-status.test.js b/test/group-status.test.js
 --- a/test/group-status.test.js
 +++ b/test/group-status.test.js
@@ -6705,7 +6847,7 @@ diff --git a/test/history.test.js b/test/history.test.js
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
  import { hostname, tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -6714,7 +6856,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
  import { homeLock } from '../src/host/home-lock.js'
  import { fakeContext } from './fake-ctx.js'
  
-@@ -118,10 +118,14 @@
+@@ -118,10 +118,14 @@ function start(t, home) {
      route = options
      return register(options)
    }
@@ -6814,7 +6956,6 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 +  fb.remote.publish([{ handle: '@a.b.home', name: 'A' }])
 +  assert.deepEqual(fb.remote.list(), [])
 +})
-
 diff --git a/test/images.test.js b/test/images.test.js
 --- a/test/images.test.js
 +++ b/test/images.test.js

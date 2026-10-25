@@ -3,9 +3,31 @@
 //
 // Turn tracking: which turns were triggered by another Bot, and what they said.
 import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
+import { unwrapUntrusted } from './delivery.js'
 import { textOf } from './text.js'
 import { reminderText } from './schedules.js'
 import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
+
+// What a friend's DM is told when the turn that should have answered died (#1068). Two fixed
+// sentences, never the provider's text: a missing-key failure can echo part of a key. The social
+// plugin allows only these, so a lookalike stays a normal held reply. Kept equal by its test.
+export const NO_MODEL_NOTICE = 'Could not reply: this Bot has no model set up yet.'
+export const COULD_NOT_NOTICE = 'Could not reply: this Bot could not answer right now.'
+export const REMOTE_FAILURE_NOTICES = Object.freeze([NO_MODEL_NOTICE, COULD_NOT_NOTICE])
+// The client's missingModelKey (model-menu.js) reads the same provider line. AUTH is not this:
+// a rejected key is a different failure, and its message is already dropped by turnFailure.
+const MISSING_KEY = /\bno api key\b|\bmissing (?:an? )?api key\b|\bapi key (?:is )?(?:missing|not set|not configured)\b/i
+
+export function remoteFailureNotice(failure) {
+  const code = typeof failure?.code === 'string' ? failure.code : ''
+  const message = typeof failure?.message === 'string' ? failure.message : ''
+  if (code === 'MISSING_CREDENTIAL' || code === 'NO_KEY' || (code !== 'AUTH' && MISSING_KEY.test(message))) return NO_MODEL_NOTICE
+  return COULD_NOT_NOTICE
+}
+
+export function isRemoteFailureNotice(text) {
+  return REMOTE_FAILURE_NOTICES.includes(String(text ?? '').trim())
+}
 
 // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
 // error row, an AUTH failure loses its message: providers may echo part of the key.
@@ -49,6 +71,13 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
 
 export function install(rt) {
   const { ctx, state } = rt
+  // A friend's line whose body is already a failure notice. Answering it with another would
+  // bounce the same sentence between two homes that cannot run a model.
+  const failureEchoes = new WeakSet()
+  const noticeBody = (content) => {
+    const raw = textOf(content).replace(/^\[[^\]\n]*\]\n?/, '').trim()
+    return isRemoteFailureNotice(unwrapUntrusted(raw)) || isRemoteFailureNotice(raw)
+  }
 
   // The retry goes where the turn's trigger came from: a group round's waiter or a
   // Bot's request keeps its exchange; anything else is a nudge in the Bot's own chat.
@@ -449,6 +478,7 @@ export function install(rt) {
             ...(typeof source.origin === 'string' ? { origin: source.origin } : {}),
           })
         } else if (source?.kind === SOURCE_KIND) {
+          if (fromRemote(source) && noticeBody(event.data?.content)) failureEchoes.add(source)
           if (entry.turn === undefined) entry.pending = source
           else if (!opened) claimTrigger(id, entry, source)
           else if (expectsReply(source) && !answersUser(source)
@@ -542,8 +572,17 @@ export function install(rt) {
         // the turn's text (or a stopped-before-answer line), or nothing.
         const answer = (source, reply) => {
           if (fromRemote(source)) {
-            if (failure === undefined && reply !== '') {
-              void rt.flybotReplyRemote?.({ from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home, text: reply, replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn } })
+            // A hard failure owes the sender a sentence (#1068). Without it their DM stays on
+            // "Weighing the options…" until the wait expires, and a missing credential never expires
+            // into an explanation. The sentence is fixed; the provider text stays here.
+            const notice = failure !== undefined && !failureEchoes.has(source)
+            if (notice || (failure === undefined && reply !== '')) {
+              void rt.flybotReplyRemote?.({
+                from: rt.selfOf(id), handle: source.remote.handle, home: source.remote.home,
+                text: notice ? remoteFailureNotice(failure) : reply,
+                replyTo: source.exchangeId, replyIn: { sessionId: id, turn: answeredTurn },
+                ...(notice ? { failure: true } : {}),
+              })
                 // A refused reply resolves, it does not throw: say so, or it is lost without a trace (#272).
                 .then(result => { if (result?.action === 'deny') rt.warn('ds-bot: reply to %s not sent: %s', source.remote.handle, result.reason) })
                 .catch(error => rt.warn('ds-bot: reply to %s failed: %s', source.remote.handle, error))

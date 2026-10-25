@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -355,6 +355,109 @@ test('a joined request gets the failure notice when the model call fails', () =>
   assert.equal(delivered.length, 1)
   assert.equal(delivered[0].replyTo, 'e1')
   assert.match(delivered[0].text, /^Writer could not answer your message: its model call failed \(SERVER 503: upstream busy\)/)
+})
+
+// #1068: a friend's DM stays on "Weighing the options…" when the remote home's turn dies, because
+// that home never sends anything back. The notice is a fixed sentence: the provider text can echo a key.
+const remoteSource = (extra = {}) => replySource('request', {
+  senderSessionId: undefined,
+  remote: { handle: '@coder.bob.home', home: '@bob.home', ...extra.remote },
+  exchangeId: 'r1',
+  ...extra,
+})
+const fenced = text => textBlock(`[Message from Coder (@coder.bob.home)]\n<untrusted-message from="Coder">\n${text}\n</untrusted-message>`)
+function withRemote(rt) {
+  const sent = []
+  rt.flybotReplyRemote = async (args) => { sent.push(args); return { action: 'allow' } }
+  return sent
+}
+
+test('#1068: a friend line whose turn fails hard is answered with a fixed sentence, and the provider text stays out', () => {
+  const { rt, emit, delivered } = turnsHost()
+  const sent = withRemote(rt)
+  emit('b', 'turn/start', { turn: 4 })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
+  emit('b', 'turn/end', { turn: 4, reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'no API key for provider route "deepseek-official" sk-secret' } } })
+  assert.equal(delivered.length, 0, 'a remote failure is not a local Bot-to-Bot delivery')
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].failure, true)
+  assert.equal(sent[0].from, 'b')
+  assert.equal(sent[0].handle, '@coder.bob.home')
+  assert.equal(sent[0].home, '@bob.home')
+  assert.equal(sent[0].replyTo, 'r1')
+  assert.deepEqual(sent[0].replyIn, { sessionId: 'b', turn: 4 })
+  assert.equal(sent[0].text, 'Could not reply: this Bot has no model set up yet.')
+  assert.equal(sent[0].text.includes('sk-secret'), false)
+  assert.equal(sent[0].text.includes('deepseek'), false)
+})
+
+test('#1068: any other hard failure gets the generic sentence, still without the provider text', () => {
+  const { rt, emit } = turnsHost()
+  const sent = withRemote(rt)
+  emit('b', 'turn/start', { turn: 1 })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
+  emit('b', 'turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'SERVER', message: 'upstream busy sk-secret', status: 503 } } })
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].failure, true)
+  assert.equal(sent[0].text, 'Could not reply: this Bot could not answer right now.')
+  assert.equal(sent[0].text.includes('sk-secret'), false)
+  assert.equal(sent[0].text.includes('503'), false)
+  assert.equal(sent[0].text.includes('SERVER'), false)
+})
+
+test('#1068: a missing-key message under another code uses the no-model sentence', () => {
+  const { rt, emit } = turnsHost()
+  const sent = withRemote(rt)
+  emit('b', 'turn/start', { turn: 1 })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource() })
+  emit('b', 'turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'PROVIDER', message: 'llm-deepseek: no API key for provider route "deepseek-official"' } } })
+  assert.equal(sent[0].text, 'Could not reply: this Bot has no model set up yet.')
+  assert.equal(sent[0].text.includes('llm-deepseek'), false)
+})
+
+test('#1068: a finished remote reply is the reply itself; a stopped turn and an echoed notice send nothing', () => {
+  const { rt, emit } = turnsHost()
+  const sent = withRemote(rt)
+  emit('b', 'turn/start', { turn: 1 })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'ok' }) })
+  emit('b', 'assistant/message', assistantText('pong'))
+  emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].failure, undefined)
+  assert.equal(sent[0].text, 'pong')
+  assert.equal(sent[0].replyTo, 'ok')
+
+  emit('b', 'turn/start', { turn: 2 })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'stop' }) })
+  emit('b', 'turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'ds-bot/stopped' } } })
+  assert.equal(sent.length, 1, 'stopping the turn is not a hard failure')
+
+  const notice = 'Could not reply: this Bot has no model set up yet.'
+  emit('b', 'turn/start', { turn: 3 })
+  emit('b', 'user/message', { content: fenced(notice), source: remoteSource({ exchangeId: 'echo' }) })
+  emit('b', 'turn/end', { turn: 3, reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'no API key' } } })
+  assert.equal(sent.length, 1, 'a notice that came back does not earn another')
+})
+
+test('#1068: a remote request that joined a failed turn is told the same way', () => {
+  const { rt, emit, delivered } = turnsHost()
+  const sent = withRemote(rt)
+  emit('b', 'turn/start', { turn: 2 })
+  emit('b', 'user/message', { content: textBlock('write the letter'), source: { kind: 'user' } })
+  emit('b', 'user/message', { content: fenced('hi'), source: remoteSource({ exchangeId: 'join' }) })
+  emit('b', 'turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'AUTH', message: 'sk-secret rejected' } } })
+  assert.equal(delivered.length, 0)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].replyTo, 'join')
+  assert.equal(sent[0].failure, true)
+  assert.equal(sent[0].text, 'Could not reply: this Bot could not answer right now.')
+  assert.equal(sent[0].text.includes('sk-secret'), false)
+})
+
+test('#1068: the failure notice is not an auto-reply, so the hold on model replies does not keep it', () => {
+  const src = readFileSync(new URL('../src/host/hooks.js', import.meta.url), 'utf8')
+  assert.match(src, /failure === true \? 'turn-failed' : 'auto-reply'/)
+  assert.match(src, /notice: 'turn-failed'/)
 })
 
 test('a joined request never claims the next turn', () => {

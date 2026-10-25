@@ -131,6 +131,18 @@ export function holdReasons(item) {
 // DLP category or a risk flag still holds the line (#766); an absent field is not "not blanket", or
 // every hold on an older server would strand.
 const BLANKET_HOLD = 'mvp.all_outbound_requires_approval'
+// The two sentences turns.js `remoteFailureNotice` sends (#1068). A shipped plugin cannot import
+// core, so they are repeated here; the social test asserts the lists stay equal. Only this exact
+// text on `via: 'turn-failed'` skips the reply hold. A lookalike is a normal reply.
+export const TURN_FAILURE_NOTICES = Object.freeze([
+  'Could not reply: this Bot has no model set up yet.',
+  'Could not reply: this Bot could not answer right now.',
+])
+export function isTurnFailureNotice(msg) {
+  if (msg?.via !== 'turn-failed' || msg?.meta?.notice !== 'turn-failed') return false
+  return TURN_FAILURE_NOTICES.includes(String(msg.text ?? '').trim())
+}
+
 export function holdIsBlanket(item) {
   const reason = typeof item?.hold_reason === 'string' ? item.hold_reason : ''
   if (reason) return reason === 'blanket_outbound'
@@ -1484,6 +1496,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // The friendship may be gone since the roster was cached (#666): deny now, never ask the owner
       // to approve a line that can no longer leave, and let the row go with it.
       if (!roomId && !(await friendshipActive(bot.home, msg.from))) return { action: 'deny', reason: `${msg.target.handle} is not a Bot a friend shared with you, so your Bots cannot message it. Its owner can share it with you in that Bot's settings → Sharing.` }
+      // A hard failure of the turn that answered this friend (#1068). The text is a host sentence,
+      // not the model's, so it does not wait on the reply card: the sender's DM would otherwise stay
+      // on "Weighing the options…". The same words on any other via are a normal reply, held below.
+      if (isTurnFailureNotice(msg)) return { action: 'allow' }
       // Auto-send on for this pair (#417): it leaves without a card, and the chat marks it Auto-sent.
       if (approvalFor(msg.from, bot.home) === 'auto') return { action: 'allow', autoSent: true, ...named }
       return { action: 'hold', reason: `messages to ${bot.home}'s Bots need your approval`, ...named }
@@ -1684,6 +1700,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // different (the friend's owner decides those), so this branch leaves them alone; a blanket
           // hold on a room's own envelope is cleared below by autoSendRoomEnvelope (#847).
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
+          // A failure notice has no FlyBot card (#1068). Bot Social's blanket hold would park it the
+          // same way, so it is cleared like an Auto-sent line; a finding of its own keeps its card.
+          else if (isTurnFailureNotice(msg)) await autoSendRemoteLine(sent)
           // Auto-send (#417) let this line out without a FlyBot card, so Bot Social's own hold would
           // park it with nobody left to decide it: the owner's switch already answered the same
           // question (#737). A hold with a finding of its own keeps its card. Only Auto-send on this

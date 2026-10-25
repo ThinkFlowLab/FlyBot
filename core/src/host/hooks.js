@@ -1185,9 +1185,17 @@ export function install(rt) {
   // A local Bot's answer to a friend's Bot (turns.js): back through bot.send, so the
   // plugin's middleware still decides (auto-accept, or the approval hold).
   // `replyIn` names the chat and turn whose text this is, so a held reply is drawn on that turn (#418).
-  const replyRemote = ({ from, handle, home, text, replyTo, replyIn }) => send({
-    from, to: { kind: 'remote', handle, ...(home ? { home } : {}) }, text, role: 'reply', via: 'auto-reply',
-    meta: { replyTo, ...(typeof replyIn?.sessionId === 'string' && (Number.isInteger(replyIn.turn) || (typeof replyIn.turn === 'string' && replyIn.turn !== '')) ? { replyIn: { sessionId: replyIn.sessionId, turn: replyIn.turn } } : {}) },
+  // `failure` is the host's own sentence for a turn that died (#1068): via `turn-failed`, not an
+  // auto-reply, so the model-reply hold does not keep the sender weighing. The plugin allows it
+  // only when the text is one of the two fixed sentences.
+  const replyRemote = ({ from, handle, home, text, replyTo, replyIn, failure }) => send({
+    from, to: { kind: 'remote', handle, ...(home ? { home } : {}) }, text, role: 'reply',
+    via: failure === true ? 'turn-failed' : 'auto-reply',
+    meta: {
+      replyTo,
+      ...(failure === true ? { notice: 'turn-failed' } : {}),
+      ...(typeof replyIn?.sessionId === 'string' && (Number.isInteger(replyIn.turn) || (typeof replyIn.turn === 'string' && replyIn.turn !== '')) ? { replyIn: { sessionId: replyIn.sessionId, turn: replyIn.turn } } : {}),
+    },
   })
   rt.flybotGrantsChanged = botId => { const bot = rt.botOf(botId); if (bot !== undefined && bot.remote === undefined) fire('bot.grants', view(bot)) }
   Object.assign(rt, { flybot, flybotReplyRemote: replyRemote, flybotEndpoint: endpoint, flybotRemoteMembers: remoteMembers.list, flybotSend: send, flybotIsRead: isReadEndpoint, flybotHideTools: hidePluginTools })

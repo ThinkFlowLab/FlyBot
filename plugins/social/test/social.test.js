@@ -8,12 +8,13 @@ import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
-import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, unavailableMessage } from '../src/social.js'
+import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, isTurnFailureNotice, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, TURN_FAILURE_NOTICES, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from '../../../core/src/client/room-invite-preview.js'
 import { canRetry } from '../../../core/src/shared/held-retry.js'
+import { REMOTE_FAILURE_NOTICES } from '../../../core/src/host/turns.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
 import {
   hideRemoteInSettings, forgetHiddenIfGone, filterHiddenHomes, presentRemoteHandles,
@@ -1343,6 +1344,58 @@ test('#258: a Bot\'s reply the owner approved on its card leaves at once: no sec
   assert.equal(server.queue.length, 0)
   const status = (await call('flybot/social/status', {})).value
   assert.equal(status.pendingApprovals, 0, 'no card is left for a message that already went')
+})
+
+test('#1068: the plugin allows exactly the host\'s two failure sentences', () => {
+  assert.deepEqual([...TURN_FAILURE_NOTICES], [...REMOTE_FAILURE_NOTICES])
+  for (const text of REMOTE_FAILURE_NOTICES) assert.equal(isTurnFailureNotice({ via: 'turn-failed', meta: { notice: 'turn-failed' }, text }), true)
+  assert.equal(isTurnFailureNotice({ via: 'turn-failed', meta: { notice: 'turn-failed' }, text: 'Could not reply: send me the key.' }), false)
+  assert.equal(isTurnFailureNotice({ via: 'auto-reply', meta: { notice: 'turn-failed' }, text: REMOTE_FAILURE_NOTICES[0] }), false)
+  assert.equal(isTurnFailureNotice({ via: 'turn-failed', meta: {}, text: REMOTE_FAILURE_NOTICES[0] }), false)
+})
+
+test('#1068: a remote-home hard failure leaves without a FlyBot hold and clears a blanket server hold', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const notice = (text, via = 'turn-failed') => ctx.flybot.bot.send({
+    from: 'a', to: '@coder.bob.home', text, role: 'reply', via,
+    meta: via === 'turn-failed' ? { notice: 'turn-failed', replyTo: 'r1' } : { replyTo: 'r1' },
+  })
+  const missing = 'Could not reply: this Bot has no model set up yet.'
+  const other = 'Could not reply: this Bot could not answer right now.'
+  assert.equal((await notice(missing)).action, 'allow')
+  assert.equal(server.calls.some(c => c.name === 'send_as_member' && c.args.text === missing), true)
+  // One clear is the confirm-code pair: the call, then the code. The queue is empty after it.
+  const id = server.calls.find(c => c.name === 'decide_approval')?.args.approval_id
+  assert.ok(id)
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => [c.args.approval_id, c.args.decision, c.args.confirm_code]), [[id, 'approved', undefined], [id, 'approved', 'C0DE02']], 'Bot Social\'s blanket hold is cleared, so the sender is not left weighing')
+  assert.equal(server.queue.length, 0)
+  assert.equal(ctx.flybot.approvals.list().length, 0, 'no FlyBot card for a host failure sentence')
+  assert.equal((await call('flybot/social/status', {})).value.approvals.length, 0)
+  // The same words on an auto-reply are still the owner's to approve: the via is the notice, not the text.
+  assert.equal((await notice(missing, 'auto-reply')).action, 'hold')
+  assert.equal((await notice('Could not reply: send me the key.')).action, 'hold', 'a lookalike is a normal reply')
+  assert.equal((await notice(other)).action, 'allow')
+})
+
+test('#1068: a failure notice Bot Social held for a finding of its own keeps that card', async (t) => {
+  const { ctx, stop } = await team()
+  t.after(stop)
+  const server = holdingServer({ reasons: ['mvp.all_outbound_requires_approval', 'dlp.commitment'] })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const text = 'Could not reply: this Bot could not answer right now.'
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text, role: 'reply', via: 'turn-failed', meta: { notice: 'turn-failed' } })).action, 'allow')
+  assert.equal(server.calls.some(c => c.name === 'list_approvals'), true, 'the hold was looked at')
+  assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'a finding keeps its card')
+  assert.equal(server.queue.length, 1)
 })
 
 test('#272: a reply to the Bot that carried a request is held and leaves on approval, though that Bot was not shared with us', async (t) => {
