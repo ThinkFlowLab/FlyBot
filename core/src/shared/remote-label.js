@@ -153,7 +153,9 @@ export function remoteCallName(record) {
     return false
   }
   if (!unusable(bare)) return bare
-  const slug = handle.split('.')[0]
+  // The first label of a handle is peer-controlled (a ticket or a claim). The same
+  // cleaner as a display name, so a newline or a fence fragment cannot be the token.
+  const slug = cleanPeerName(handle.split('.')[0], '')
   if (slug && !unusable(slug)) return slug
   return 'Bot'
 }

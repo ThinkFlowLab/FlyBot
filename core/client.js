@@ -1587,7 +1587,7 @@ function remoteCallName(record) {
     return false;
   };
   if (!unusable(bare2)) return bare2;
-  const slug = handle.split(".")[0];
+  const slug = cleanPeerName(handle.split(".")[0], "");
   if (slug && !unusable(slug)) return slug;
   return "Bot";
 }
