@@ -152,8 +152,9 @@ export function holdIsBlanket(item) {
   return reasons.length > 0 && reasons.every(entry => String(entry) === BLANKET_HOLD) && flags.length === 0
 }
 // Instruction-override half of Bot Social's injection detector. The other half (`token`, `password`,
-// `扮演`) matches ordinary group chat, so a room line held only for those words is not a finding
-// once the owner turned Auto-send on for that pair (#1113). A direct message never uses this.
+// `扮演`) matches ordinary group chat, so a room line held only for those words is not a finding:
+// both homes already seated the Bots, and that room is the consent (#1113, #1118). A direct message
+// never uses this.
 const ROOM_INSTRUCTION_OVERRIDE = [
   /ignore (all |any )?(previous|prior|above) (instructions|prompts)/i,
   /忽略(之前|以上|前面|先前)的?(所有)?(指令|提示|设定)/,
@@ -175,10 +176,10 @@ export function roomPolicyClears(item) {
 // `face_room_auto_send_off` for a face-room line when nothing but the room's own Auto-send switch is
 // holding it, and that switch is the owner's standing consent (the owner pressed it for this Bot), so a
 // Bot whose switch is on has to be able to send. Only `autoSendFaceLine` reads this. `autoSendRemoteLine`
-// stays on `holdIsBlanket` alone. `autoSendRoomEnvelope` clears a blanket hold on its own (#847) and,
-// when pair Auto-send is on, a room `policy` hold `roomPolicyClears` accepts (#1113). Neither outbound
-// path clears `face_room_auto_send_off`. The field still decides: a row with no `hold_reason` is never
-// cleared here, or an older server's holds would strand.
+// stays on `holdIsBlanket` alone. `autoSendRoomEnvelope` clears a blanket hold on its own (#847) and an
+// ordinary room `policy` hold `roomPolicyClears` accepts, with or without pair Auto-send (#1113, #1118).
+// Neither outbound path clears `face_room_auto_send_off`. The field still decides: a row with no
+// `hold_reason` is never cleared here, or an older server's holds would strand.
 const FACE_ROOM_AUTO_SEND_OFF = 'face_room_auto_send_off'
 export function holdAllowsFaceAutoSend(item) {
   if (holdIsBlanket(item)) return true
@@ -1562,8 +1563,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const recipient = cleanText(friend?.owner || peerOwners.get(norm(msg.target.handle)) || friend?.name || '')
       const named = recipient ? { recipient } : {}
       if (msg.attachments?.length && msg.via !== 'composer') return { action: 'hold', reason: 'a Bot attaches files: check them before they leave', ...named }
-      // Adding a friend's Bot to a group (or a line in that group) is the owner's consent
-      // to share that room. The invited owner's Bot replies still go through the hold.
+      // Adding a friend's Bot to a group, a line in that group, and the invited Bot's reply are
+      // the room's own traffic (#1118). The local hold is skipped. Bot Social's blanket hold and an
+      // ordinary policy hold are cleared by the transport; a finding still waits on its card.
       if (msg.via === 'room' || msg.via === 'room-share') return undefined
       // The friendship may be gone since the roster was cached (#666): deny now, never ask the owner
       // to approve a line that can no longer leave, and let the row go with it.
@@ -1769,8 +1771,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // The owner already approved this very send on a FlyBot card (the host says so, never the
           // text): Bot Social's own hold on it would ask the same question a second time, on a card
           // nobody sees in the Bot's chat, and the reply would never leave (#258). Room lines are
-          // different (the friend's owner decides those), so this branch leaves them alone; a blanket
-          // hold on a room's own envelope is cleared below by autoSendRoomEnvelope (#847).
+          // the room's own traffic, so this branch leaves them alone; the transport clears a blanket
+          // hold and an ordinary policy hold below (`autoSendRoomEnvelope`, #847, #1118).
           if (msg.approved === true && msg.via !== 'room' && msg.via !== 'room-share') await approveTypedLine(sent)
           // A failure notice has no FlyBot card (#1068). Bot Social's blanket hold would park it the
           // same way, so it is cleared like an Auto-sent line; a finding of its own keeps its card.
@@ -1780,15 +1782,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // question (#737). A hold with a finding of its own keeps its card. Only Auto-send on this
           // pair reaches here unapproved: the chain holds every other send before the transport runs.
           else if (msg.via !== 'room' && msg.via !== 'room-share' && typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto') await autoSendRemoteLine(sent)
-          // A room's own envelope is the click that added the Bot, not a line whose text the friend's
-          // owner reads first (#847): Bot Social's blanket hold on it asks the same question again, in
-          // a chat nobody opens, and the group never reaches the invited home. Pair Auto-send (#1113)
-          // also clears an ordinary group line held only as suspected injection. A risk flag, a file,
+          // A room's own envelope is the click that added the Bot, and a later line in that room —
+          // including the invited Bot's reply — is the same consent (#847, #1118): Bot Social's blanket
+          // hold, and an ordinary `policy` hold, would otherwise ask again in a chat nobody can decide,
+          // and the group shows "Waiting for the owner's approval" with no buttons. A risk flag, a file,
           // a DLP reason, or an instruction-override keeps its card.
-          else if ((msg.via === 'room' || msg.via === 'room-share') && !msg.attachments?.length) {
-            const pair = typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto'
-            await autoSendRoomEnvelope(sent, { pair })
-          }
+          else if ((msg.via === 'room' || msg.via === 'room-share') && !msg.attachments?.length) await autoSendRoomEnvelope(sent)
         }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
@@ -1834,12 +1833,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
 
   // The room's own envelope clears Bot Social's blanket hold by itself (#847): the click on "Add
   // member" is the owner's consent for the room, and `docs/subsystems/social.md` already promises the
-  // invited home sees the group as soon as the Bot is added. The allow-list is the face-room one
-  // (#737, #766): a reason this build does not know, another DLP category or a risk flag is a
-  // finding, so that envelope keeps its card and its owner still decides it. `pair` is this sender's
-  // Auto-send for that home (#1113): it also clears a `policy` hold `roomPolicyClears` accepts.
-  // A direct message never reaches here.
-  async function autoSendRoomEnvelope(sent, { pair = false } = {}) {
+  // invited home sees the group as soon as the Bot is added. The same consent covers an ordinary later
+  // line, including the invited Bot's reply (#1118): a `policy` hold `roomPolicyClears` accepts leaves
+  // too, whether or not pair Auto-send is on. The allow-list is the face-room one (#737, #766): a
+  // reason this build does not know, another DLP category, a risk flag, or an instruction-override is
+  // a finding, so that envelope keeps its card and its owner still decides it. A direct message never
+  // reaches here.
+  async function autoSendRoomEnvelope(sent) {
     const approvalId = sent?.message?.approval_id ?? sent?.approval_id
     if (!approvalId) return false
     try {
@@ -1852,7 +1852,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         warn(`room envelope: Bot Social has not listed the hold ${approvalId} yet; it waits on its card`)
         return false
       }
-      if (!(holdIsBlanket(held) || (pair && roomPolicyClears(held)))) return false
+      if (!(holdIsBlanket(held) || roomPolicyClears(held))) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       return true
     } catch (error) {
@@ -3365,8 +3365,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   const roomPolicyClearing = new Set()
   // The send path clears an ordinary group line when the list already has the row. A list that
-  // lagged leaves the card (#766); the next poll finishes that one clear. Blanket holds stay on
-  // the send path, so a file the approval row does not mention is not decided here (#882).
+  // lagged leaves the card (#766); the next poll finishes that one clear. The room is the consent,
+  // so this does not ask whether pair Auto-send is on (#1118). Blanket holds stay on the send path,
+  // so a file the approval row does not mention is not decided here (#882).
   async function clearLaggedRoomHolds(raw) {
     const cleared = new Set()
     for (const item of raw) {
@@ -3375,9 +3376,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (typeof text !== 'string' || !text.startsWith('FLYBOT-ROOM-SHARE\n')) continue
       if (Array.isArray(item?.message?.attachments) && item.message.attachments.length > 0) continue
       if (!roomPolicyClears(item)) continue
-      const local = flybot.bot.list().find(bot => memberOf(bot.id)?.bot_id === item.bot_id)
-      const handle = item?.message?.to?.handle
-      if (!local || typeof handle !== 'string' || approvalFor(local.id, homeOfPeer(handle)) !== 'auto') continue
       const id = String(item.approval_id ?? item.id ?? '')
       if (!id || roomPolicyClearing.has(id)) continue
       roomPolicyClearing.add(id)
