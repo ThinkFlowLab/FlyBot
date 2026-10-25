@@ -151,13 +151,34 @@ export function holdIsBlanket(item) {
   const flags = Array.isArray(item?.risk_flags) ? item.risk_flags : []
   return reasons.length > 0 && reasons.every(entry => String(entry) === BLANKET_HOLD) && flags.length === 0
 }
+// Instruction-override half of Bot Social's injection detector. The other half (`token`, `password`,
+// `扮演`) matches ordinary group chat, so a room line held only for those words is not a finding
+// once the owner turned Auto-send on for that pair (#1113). A direct message never uses this.
+const ROOM_INSTRUCTION_OVERRIDE = [
+  /ignore (all |any )?(previous|prior|above) (instructions|prompts)/i,
+  /忽略(之前|以上|前面|先前)的?(所有)?(指令|提示|设定)/,
+  /(system prompt|系统提示|developer message)/i,
+  /\[(SYSTEM|ADMIN|PLATFORM)\]|<\/?system>/i,
+  /(send|forward|reveal|leak) (me )?(all|every|your owner'?s?)/i,
+]
+export function roomPolicyClears(item) {
+  if (item?.hold_reason !== 'policy') return false
+  const flags = Array.isArray(item?.risk_flags) ? item.risk_flags : []
+  if (flags.length > 0) return false
+  const reasons = Array.isArray(item?.reasons) ? item.reasons : []
+  if (!reasons.every(entry => String(entry) === BLANKET_HOLD)) return false
+  const payload = item?.message?.payload
+  const text = typeof payload === 'string' ? payload : (typeof payload?.text === 'string' ? payload.text : '')
+  return !ROOM_INSTRUCTION_OVERRIDE.some(pattern => pattern.test(text))
+}
 // #457: the face-room path clears one more hold than the blanket rule. Bot Social writes
 // `face_room_auto_send_off` for a face-room line when nothing but the room's own Auto-send switch is
 // holding it, and that switch is the owner's standing consent (the owner pressed it for this Bot), so a
-// Bot whose switch is on has to be able to send. Only `autoSendFaceLine` reads this; `autoSendRemoteLine`
-// and `autoSendRoomEnvelope` stay on `holdIsBlanket` alone, so #865's strict rule for outbound lines is
-// untouched. The field still decides: a row with no `hold_reason` is never cleared here, or an older
-// server's holds would strand.
+// Bot whose switch is on has to be able to send. Only `autoSendFaceLine` reads this. `autoSendRemoteLine`
+// stays on `holdIsBlanket` alone. `autoSendRoomEnvelope` clears a blanket hold on its own (#847) and,
+// when pair Auto-send is on, a room `policy` hold `roomPolicyClears` accepts (#1113). Neither outbound
+// path clears `face_room_auto_send_off`. The field still decides: a row with no `hold_reason` is never
+// cleared here, or an older server's holds would strand.
 const FACE_ROOM_AUTO_SEND_OFF = 'face_room_auto_send_off'
 export function holdAllowsFaceAutoSend(item) {
   if (holdIsBlanket(item)) return true
@@ -1761,9 +1782,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           else if (msg.via !== 'room' && msg.via !== 'room-share' && typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto') await autoSendRemoteLine(sent)
           // A room's own envelope is the click that added the Bot, not a line whose text the friend's
           // owner reads first (#847): Bot Social's blanket hold on it asks the same question again, in
-          // a chat nobody opens, and the group never reaches the invited home. Only a hold with no
-          // finding of its own is cleared; anything else keeps its card.
-          else if ((msg.via === 'room' || msg.via === 'room-share') && !msg.attachments?.length) await autoSendRoomEnvelope(sent)
+          // a chat nobody opens, and the group never reaches the invited home. Pair Auto-send (#1113)
+          // also clears an ordinary group line held only as suspected injection. A risk flag, a file,
+          // a DLP reason, or an instruction-override keeps its card.
+          else if ((msg.via === 'room' || msg.via === 'room-share') && !msg.attachments?.length) {
+            const pair = typeof msg.from === 'string' && approvalFor(msg.from, bot.home) === 'auto'
+            await autoSendRoomEnvelope(sent, { pair })
+          }
         }
         return { exchangeId: sent?.message?.message_id ?? msg.exchangeId }
       }
@@ -1811,8 +1836,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // member" is the owner's consent for the room, and `docs/subsystems/social.md` already promises the
   // invited home sees the group as soon as the Bot is added. The allow-list is the face-room one
   // (#737, #766): a reason this build does not know, another DLP category or a risk flag is a
-  // finding, so that envelope keeps its card and its owner still decides it.
-  async function autoSendRoomEnvelope(sent) {
+  // finding, so that envelope keeps its card and its owner still decides it. `pair` is this sender's
+  // Auto-send for that home (#1113): it also clears a `policy` hold `roomPolicyClears` accepts.
+  // A direct message never reaches here.
+  async function autoSendRoomEnvelope(sent, { pair = false } = {}) {
     const approvalId = sent?.message?.approval_id ?? sent?.approval_id
     if (!approvalId) return false
     try {
@@ -1825,7 +1852,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         warn(`room envelope: Bot Social has not listed the hold ${approvalId} yet; it waits on its card`)
         return false
       }
-      if (!holdIsBlanket(held)) return false
+      if (!(holdIsBlanket(held) || (pair && roomPolicyClears(held)))) return false
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       return true
     } catch (error) {
@@ -3336,13 +3363,44 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     pendingCache = { at: now(), items }
     if (changed) flybot.chatApprovals?.changed?.()
   }
+  const roomPolicyClearing = new Set()
+  // The send path clears an ordinary group line when the list already has the row. A list that
+  // lagged leaves the card (#766); the next poll finishes that one clear. Blanket holds stay on
+  // the send path, so a file the approval row does not mention is not decided here (#882).
+  async function clearLaggedRoomHolds(raw) {
+    const cleared = new Set()
+    for (const item of raw) {
+      const payload = item?.message?.payload
+      const text = typeof payload === 'string' ? payload : payload?.text
+      if (typeof text !== 'string' || !text.startsWith('FLYBOT-ROOM-SHARE\n')) continue
+      if (Array.isArray(item?.message?.attachments) && item.message.attachments.length > 0) continue
+      if (!roomPolicyClears(item)) continue
+      const local = flybot.bot.list().find(bot => memberOf(bot.id)?.bot_id === item.bot_id)
+      const handle = item?.message?.to?.handle
+      if (!local || typeof handle !== 'string' || approvalFor(local.id, homeOfPeer(handle)) !== 'auto') continue
+      const id = String(item.approval_id ?? item.id ?? '')
+      if (!id || roomPolicyClearing.has(id)) continue
+      roomPolicyClearing.add(id)
+      try {
+        await confirmedCall('decide_approval', { approval_id: id, decision: 'approved' })
+        cleared.add(id)
+      } catch (error) {
+        warn('room line held as policy not cleared; it waits on its card', error)
+      } finally {
+        roomPolicyClearing.delete(id)
+      }
+    }
+    return cleared
+  }
   async function pendingApprovals({ fresh = false } = {}) {
     if (flybot.readOnly?.()) return []
     if (!fresh && now() - pendingCache.at < 5_000) return pendingCache.items
     try {
       const result = await client.callTool('list_approvals', { status: 'pending' })
       const raw = result?.approvals ?? (Array.isArray(result) ? result : [])
+      const cleared = await clearLaggedRoomHolds(raw)
       const items = raw
+        .filter(item => !cleared.has(String(item?.approval_id ?? item?.id ?? '')))
         .map(item => approvalView(item, { localName: localNameOf }))
         .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
         // A local Bot's own send shows in its chat when the friend's chat is hidden or gone, so a hold is never
