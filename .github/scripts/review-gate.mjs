@@ -11,6 +11,11 @@
 //   - it is not the pull request author's own report, unless the author is listed in the policy's
 //     `selfReview` (owner decision 2026-10-19: the owner's Bot/agent, acting as Birfy, may PASS
 //     its own pull requests; any other author still needs someone else);
+//   - when that login is the pull request author, `selfReview` is not the review (#644, option B,
+//     first slice). The header must also carry `Attestation: <40-character sha> role=<Bot>`: the sha
+//     is the whole tip, the role is the `Written-by` name, and that role is not an Owner of the pull
+//     request. A comment with no such line is the author's own identity, and it does not count. A
+//     conclusion from a different GitHub login is unchanged. The line is parsed, not signed;
 //   - the login is tied to this repository (#676, #925): `author_association` is OWNER, MEMBER or
 //     COLLABORATOR, the login is this pull request's own author listed in `selfReview`, or
 //     `adminsFor` found repo admin. A CONTRIBUTOR who is none of those is not a conclusion;
@@ -24,8 +29,8 @@
 //   - `Not run:` is recommended but not checked (owner decision 2026-10-22 09:57 Asia/Shanghai, #667):
 //     `hasNotRun` is still parsed for the summary, and a PASS without it is not refused.
 // The newest qualifying report that names this tip decides, so a later FAIL at the same tip
-// vetoes an earlier PASS. A tip that moves past the report is not reviewed: the old tip is
-// not a prefix of the new head and stops counting.
+// vetoes an earlier PASS. A tip that moves past the report is not reviewed: the report names
+// the whole 40-character sha (#1112), so an older head stops counting.
 //
 // The pull request is read only through the GitHub API; no PR code is checked out or run.
 import { readFileSync, appendFileSync } from 'node:fs'
@@ -90,7 +95,7 @@ export function parseReport(body) {
   // markdown emphasis, line for line, for everything else.
   const raw = String(body ?? '').split('\n')
   const lines = raw.map((line) => line.replace(/[*`]/g, ''))
-  const out = { tip: null, verdict: null, ran: [], hasNotRun: false, writer: null }
+  const out = { tip: null, verdict: null, ran: [], hasNotRun: false, writer: null, attestation: null }
   // The fixed format (#637): the first non-empty line is the whole conclusion,
   // `Verdict: PASS at <sha>` (or INC / REQUEST_CHANGES). The attribution line and the evidence go
   // below it, so a verdict Chief posts for a Reviewer with no write channel parses the same way.
@@ -136,7 +141,64 @@ export function parseReport(body) {
     if (/^Not run\b[^:\n]*:/i.test(line)) out.hasNotRun = true
   }
   out.writer = parseWriter(lines)
+  // #644: the attestation is part of the conclusion header, the lines before the first blank. A copy
+  // quoted under `Ran:` sits after that blank and must not lend this report a marker it did not open with.
+  out.attestation = attestationInHeader(lines)
   return out
+}
+
+// The header is the non-empty lines before the first blank, and never more than this many: a body with
+// no blank line must not pick up an `Attestation:` buried in a quote. #1112: the sha is the whole tip,
+// so 7–40 hex is parsed and a short one is refused later as "not the full tip", the same way a short
+// `Verdict:` is.
+const ATTEST_CAP = 8
+const ATTEST_LINE = /^Attestation:\s*([0-9a-f]{7,40})\s+role=([A-Za-z][A-Za-z0-9-]*)\s*$/i
+function attestationInHeader(lines) {
+  let seen = 0
+  for (const line of lines) {
+    const text = line.trim()
+    if (!text) {
+      if (seen > 0) return null
+      continue
+    }
+    if (++seen > ATTEST_CAP) return null
+    if (!/^Attestation\s*:/i.test(text)) continue
+    const m = ATTEST_LINE.exec(text)
+    if (!m) return { malformed: true }
+    return { sha: m[1].toLowerCase(), role: m[2] }
+  }
+  return null
+}
+
+// The same Owner line `enqueue-rules.mjs` reads, copied here because that module imports this one.
+// First 20 lines, comma-separated, a leading `@` stripped. An absent line is an empty list, which is
+// not the same as a caller that passed no body at all.
+const OWNER_HEADER = 20
+function ownerNames(body) {
+  const lines = String(body ?? '').split(/\r?\n/).slice(0, OWNER_HEADER)
+  const owner = lines.find((line) => /^\s*Owner:/i.test(line))
+  if (!owner) return []
+  return [...new Set(owner.replace(/^\s*Owner:/i, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean))]
+}
+
+// #644: why an author-login conclusion does not count, or null when the attestation is the one this
+// tip can trust. `ownersKnown` is false when the caller passed neither a body nor an owner list —
+// fail closed, because "no owners" would otherwise let the author name their own role.
+function attestationRefusal({ parsed, headSha, owners, ownersKnown }) {
+  const att = parsed.attestation
+  if (!att) return 'the pull request author\'s own GitHub identity is not an attestation (no Attestation line binding this tip and a reviewer role)'
+  if (att.malformed) return 'Attestation line is not `Attestation: <sha> role=<Bot>`'
+  if (att.sha !== headSha) {
+    return att.sha.length < 40
+      ? `Attestation names ${att.sha.slice(0, SHORT)} (${att.sha.length} characters), not the full tip ${headSha} — an attestation names the whole 40-character sha`
+      : `Attestation names ${att.sha.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`
+  }
+  if (att.role.toLowerCase() !== String(parsed.writer ?? '').toLowerCase()) {
+    return `Attestation role "${att.role}" is not the Written-by name "${parsed.writer}"`
+  }
+  if (!ownersKnown) return 'no Owner list was supplied, so an author-login conclusion cannot be attested'
+  if (owners.has(att.role.toLowerCase())) return `Attestation role "${att.role}" is the Owner of this pull request`
+  return null
 }
 
 // #627: the attribution line, `Written-by: <Bot>` (the older prose `Written by: Reviewer. Posted by:
@@ -192,9 +254,13 @@ const isBotAccount = (r) => String(r.type ?? '').toLowerCase() === 'bot' || /\[b
 const botKind = (r) => (String(r.type ?? '').toLowerCase() === 'bot' ? 'account type Bot' : 'login ends with [bot]')
 
 // reports: [{ login, body, at, kind, id }] from the comments and review bodies of one PR.
-export function decide({ head, author, reports, policy, admins } = {}) {
+// `body` is the pull request body (live entry points pass it). `owners` is that list already parsed;
+// either one makes the Owner check possible. Neither one refuses an author-login conclusion.
+export function decide({ head, author, reports, policy, admins, body, owners } = {}) {
   const headSha = String(head ?? '').toLowerCase()
   const authorLogin = String(author ?? '').toLowerCase()
+  const ownersKnown = owners !== undefined || body !== undefined
+  const ownerSet = new Set((owners !== undefined ? owners : ownersKnown ? ownerNames(body) : []).map((name) => String(name).toLowerCase()))
   const reviewers = new Set((policy?.reviewers ?? []).map((l) => String(l).toLowerCase()))
   const selfReview = new Set((policy?.selfReview ?? []).map((l) => String(l).toLowerCase()))
   const writers = new Set((policy?.writers ?? []).map((w) => String(w).toLowerCase()))
@@ -254,6 +320,13 @@ export function decide({ head, author, reports, policy, admins } = {}) {
     if (!writers.has(parsed.writer.toLowerCase())) { entry.why = `${where(r)}: Written-by names "${parsed.writer}", who is not in the writers list of .github/agent/review-policy.json`; continue }
     if (login(r) === authorLogin && !selfReview.has(authorLogin)) { entry.why = `${where(r)}: the pull request's own author is not a reviewer (not in selfReview)`; continue }
     if (!reviewers.has(login(r))) { entry.why = `${where(r)}: not a reviewer listed in .github/agent/review-policy.json`; continue }
+    // #644: `selfReview` lets the shared account PASS its own pull request. That comment is still the
+    // author's GitHub identity. It counts only with an attestation the header binds to this tip and to
+    // a reviewer role that is not the Owner. A different login never reaches this check.
+    if (login(r) === authorLogin) {
+      const why = attestationRefusal({ parsed, headSha, owners: ownerSet, ownersKnown })
+      if (why) { entry.why = `${where(r)}: ${why}`; continue }
+    }
     entry.counts = true
   }
 
@@ -329,7 +402,7 @@ function main() {
   ]
 
   const policy = loadPolicy(policyPath)
-  const result = decide({ head, author, reports, policy, admins: adminsFor({ gh, repo, reports, policy, author }) })
+  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }) })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')

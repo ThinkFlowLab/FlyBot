@@ -28,8 +28,16 @@ const NO_SHARED_LOGIN = policyFile({ reviewers: ['reviewer-agent'] })
 
 // The fixed format (#637): the first line is the conclusion, the evidence below it. `Ran:` is what
 // makes a PASS evidence rather than a claim (review-gate's rule, reused here).
-const report = ({ tip = HEAD, verdict = 'PASS', extra = [] } = {}) =>
-  [`Verdict: ${verdict} at ${tip}`, 'Written-by: reviewer-agent', '', 'Ran: npm run verify → pass', 'Not run: smoke', ...extra].join('\n')
+const report = ({ tip = HEAD, verdict = 'PASS', extra = [], attest = null } = {}) =>
+  [
+    `Verdict: ${verdict} at ${tip}`,
+    'Written-by: reviewer-agent',
+    ...(attest ? [`Attestation: ${tip} role=${attest}`] : []),
+    '',
+    'Ran: npm run verify → pass',
+    'Not run: smoke',
+    ...extra,
+  ].join('\n')
 
 // #676: only a comment GitHub ties to this repository can be a conclusion, so the fixture carries the
 // association the API sends for the shared `Birfy` account.
@@ -171,7 +179,21 @@ test('#602: hold refuses a T0/T1 pull request too', () => {
   assert.equal(r.held, true)
 })
 
-test('#602: the self-gate case (author Birfy, PASS by Birfy) is allowed', () => {
+test('#602: the self-gate case (author Birfy, PASS by Birfy) is allowed when the comment attests a role that is not the Owner', () => {
+  const r = main({
+    gh: fakeGh({
+      files: [HOST_FILE],
+      author: 'Birfy',
+      comments: [{ user: { login: 'Birfy' }, body: report({ attest: 'reviewer-agent' }), created_at: '2026-10-21T10:31:00Z', author_association: 'OWNER' }],
+    }),
+    env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' },
+    repo: 'ThinkFlowLab/FlyBot',
+    pr: 566,
+  })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#644: the self-gate case with only the author\'s Verdict comment is refused', () => {
   const r = main({
     gh: fakeGh({
       files: [HOST_FILE],
@@ -182,7 +204,8 @@ test('#602: the self-gate case (author Birfy, PASS by Birfy) is allowed', () => 
     repo: 'ThinkFlowLab/FlyBot',
     pr: 566,
   })
-  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /not an attestation/)
 })
 
 // #718: a pull request with no issue behind it, or with no `agent-pr` label, is refused before the
@@ -274,8 +297,8 @@ test('#718: a fork stays exempt under any --repo spelling', () => {
 
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise
 // the next agent runs `gh pr merge` from memory and #602 is back.
-const contributor = (login, at = '2026-10-24T03:42:31Z') =>
-  ({ user: { login }, body: report(), submitted_at: at, author_association: 'CONTRIBUTOR' })
+const contributor = (login, at = '2026-10-24T03:42:31Z', body = report()) =>
+  ({ user: { login }, body, submitted_at: at, author_association: 'CONTRIBUTOR' })
 
 test('#925: a MEMBER PASS is accepted and does not ask the permission API', () => {
   const gh = fakeGh({ files: [HOST_FILE], comments: [comment()] })
@@ -302,7 +325,7 @@ test('#925: a selfReview login stamped CONTRIBUTOR is accepted on its own pull r
   const gh = fakeGh({
     files: [HOST_FILE],
     author: 'Birfy',
-    reviews: [contributor('Birfy')],
+    reviews: [contributor('Birfy', '2026-10-24T03:42:31Z', report({ attest: 'reviewer-agent' }))],
     permission: 'throw',
   })
   const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })

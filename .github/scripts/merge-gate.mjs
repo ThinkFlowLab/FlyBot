@@ -100,7 +100,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 // expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
 // refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
 // prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo } = {}) {
+export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo, body, owners } = {}) {
   const reasons = []
   const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -120,7 +120,7 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // A tier that needs no PASS also needs no permission lookup.
   const verdict = exempt
     ? { ok: true, verdict: null, by: null, exempt: true }
-    : decide({ head: target, author, reports, policy, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }) })
+    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }) })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
@@ -217,7 +217,7 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   // base copy of risk-gate.mjs (see exemptFromPass).
   const files = list(`repos/${repo}/pulls/${pr}/files?per_page=100`)
   const policy = loadPolicy(policyPath)
-  const result = judge({ labels, files, head, author, reports, policy, gh, repo, expectedHead: arg('--sha'), mode })
+  const result = judge({ labels, files, head, author, reports, policy, gh, repo, expectedHead: arg('--sha'), mode, body: pull.body })
   // #960 (B): `enqueue-guard` is not a required context today, so `merge-gate` is the only gate on a
   // queue entry — and `judge` reads neither the body nor the labels. The fallback runs the guard's own
   // `guard()` over the same pull request, so a body with no `Owner:`/`Reviewer:`, no `Fixes #<n>`, or no

@@ -11,7 +11,9 @@
 //
 // So this is the step immediately before that call. It refuses — exit 1, the reason printed — when
 // the pull request carries `hold`, when the newest conclusion at its head is not a PASS, or when that
-// conclusion is itself marked "record only — do not merge". It also refuses a pull request that names
+// conclusion is itself marked "record only — do not merge". A PASS whose GitHub login is the pull
+// request author counts only with an `Attestation:` line (#644); `judge` reads that from `decide`.
+// It also refuses a pull request that names
 // no issue in its body or carries no `agent-pr` label (#718; a mechanical release PR and a fork are
 // exempt), so
 // "one issue, one pull request" is checked rather than remembered. It reuses `judge({ mode: 'queue' })`, so
@@ -80,7 +82,7 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // believes it has, and `--sha` lets a caller insist on the head it read a moment ago.
   // `judge` asks `adminsFor` when this tier needs a PASS.
   const policy = loadPolicy(policyPath)
-  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue' })
+  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue', body: pull.body })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
   // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is

@@ -384,13 +384,13 @@ test('#654: the workflow hands the script the merge_group base and entry shas', 
 const REAL = JSON.parse(readFileSync(new URL('./fixtures/review-reports-660-663.json', import.meta.url), 'utf8')).reports
 const REAL_POLICY = fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
 
-const queueReal = (fx, body = fx.comment.body) => main({
+const queueReal = (fx, body = fx.comment.body, pullBody) => main({
   gh: (...args) => {
     const path = args[args.length - 1]
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
     if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: ['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n') })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? ['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n') })
     throw new Error('fake gh: unexpected ' + path)
   },
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: REAL_POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: `refs/heads/gh-readonly-queue/main/pr-${fx.pr}-c74e1207${'0'.repeat(32)}`, MODE: 'queue' },
@@ -416,14 +416,28 @@ test('#660: the real PASS, which names what it did not run, passes the queue ent
 
 // Owner decision 2026-10-22 09:57 Asia/Shanghai (#667): "Not run:" is no longer checked, so the three
 // reports without one pass as they were written.
-test('#660-#663: all four real PASS reports pass the queue entry end to end, as written', () => {
+test('#660-#663: a PASS from another GitHub login still passes; the author\'s own comment does not (#644)', () => {
   for (const fx of REAL) {
     const result = queueReal(fx)
-    assert.equal(result.ok, true, `#${fx.pr}: ${result.reasons.join('; ')}`)
-    assert.equal(result.verdict.by, 'Birfy')
     assert.equal(result.head, fx.head)
+    if (fx.author === fx.comment.login) {
+      assert.equal(result.ok, false, `#${fx.pr} is the author's own comment and carries no attestation`)
+      assert.match(result.reasons.join('; '), /not an attestation/)
+    } else {
+      assert.equal(result.ok, true, `#${fx.pr}: ${result.reasons.join('; ')}`)
+      assert.equal(result.verdict.by, 'Birfy')
+    }
   }
   assert.equal(REAL.filter((fx) => !/^Not run\b/m.test(fx.comment.body)).length, 3, '#661-#663 carry no Not run line')
+  assert.equal(REAL.filter((fx) => fx.author === fx.comment.login).map((fx) => fx.pr).join(','), '663')
+})
+
+test('#644: #663 passes once the author comment attests a role that is not the Owner', () => {
+  const fx = REAL.find((f) => f.pr === 663)
+  const body = fx.comment.body.replace('Written-by: Reviewer\n', `Written-by: Reviewer\nAttestation: ${fx.head} role=Reviewer\n`)
+  const result = queueReal(fx, body, `Owner: Dev\nReviewer: Birfy\nFixes #${fx.pr}\n`)
+  assert.equal(result.ok, true, result.reasons.join('; '))
+  assert.equal(result.verdict.by, 'Birfy')
 })
 
 test('#660-#663: the real reports still refuse at the queue on a wrong tip, an INC after them, or hold', () => {

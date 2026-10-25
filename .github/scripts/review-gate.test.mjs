@@ -8,10 +8,11 @@ const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
 const policy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], writers: ['Reviewer', 'Chief'] }
 
-const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → pass'], notRun = true, writer = 'Reviewer' } = {}) =>
+const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → pass'], notRun = true, writer = 'Reviewer', attest = false } = {}) =>
   [
     `Tip SHA: ${tip}`,
     `Written-by: ${writer}`,
+    ...(attest ? [`Attestation: ${tip} role=${writer}`] : []),
     'Ran:',
     ...ran,
     ...(notRun ? ['Not run:', '  - smoke — host code unchanged'] : []),
@@ -48,22 +49,25 @@ test('the pull request author does not review their own tip unless listed in sel
 
 test('self-review: a listed author may PASS their own pull request at the tip (owner decision 2026-10-19)', () => {
   const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }
-  const r = decide({ head: HEAD, author: 'Birfy', reports: [comment('Birfy')], policy: selfPolicy })
-  assert.equal(r.ok, true)
+  const bare = decide({ head: HEAD, author: 'Birfy', reports: [comment('Birfy')], policy: selfPolicy, owners: ['Dev'] })
+  assert.equal(bare.ok, false, 'a self-PASS with no Attestation line is the author\'s own comment (#644)')
+  assert.match(bare.reason, /not an attestation/)
+  const r = decide({ head: HEAD, author: 'Birfy', reports: [comment('Birfy', report({ attest: true }))], policy: selfPolicy, owners: ['Dev'] })
+  assert.equal(r.ok, true, r.reason)
   assert.equal(r.by, 'Birfy')
-  assert.equal(decide({ head: HEAD, author: 'birfy', reports: [comment('Birfy')], policy: selfPolicy }).ok, true, 'logins compare case-insensitively')
+  assert.equal(decide({ head: HEAD, author: 'birfy', reports: [comment('Birfy', report({ attest: true }))], policy: selfPolicy, owners: ['Dev'] }).ok, true, 'logins compare case-insensitively')
 })
 
 test('self-review keeps every other rule: tip, evidence, listed reviewer, newest wins', () => {
   const selfPolicy = { reviewers: ['reviewer-agent', 'Birfy'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }
   const own = (body, at) => comment('Birfy', body, at)
-  const run = (reports, policy = selfPolicy) => decide({ head: HEAD, author: 'Birfy', reports, policy })
-  assert.equal(run([own(report({ tip: OLD }))]).ok, false, 'a new commit voids the self-PASS')
-  assert.equal(run([own(report({ ran: [] }))]).ok, false, 'no Ran: command, no evidence')
-  assert.equal(run([own(report({ notRun: false }))]).ok, true, 'no Not run: line is no longer checked (owner decision 2026-10-22)')
-  assert.equal(run([own(report({ verdict: 'FAIL' }))]).verdict, 'FAIL')
-  assert.equal(run([own(report(), '2026-10-18T01:00:00Z'), own(report({ verdict: 'FAIL' }), '2026-10-18T02:00:00Z')]).ok, false, 'a later FAIL vetoes a self-PASS')
-  assert.equal(run([own(report())], { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }).ok, false, 'selfReview does not make an unlisted login a reviewer')
+  const run = (reports, policy = selfPolicy) => decide({ head: HEAD, author: 'Birfy', reports, policy, owners: ['Dev'] })
+  assert.equal(run([own(report({ tip: OLD, attest: true }))]).ok, false, 'a new commit voids the self-PASS')
+  assert.equal(run([own(report({ ran: [], attest: true }))]).ok, false, 'no Ran: command, no evidence')
+  assert.equal(run([own(report({ notRun: false, attest: true }))]).ok, true, 'no Not run: line is no longer checked (owner decision 2026-10-22)')
+  assert.equal(run([own(report({ verdict: 'FAIL', attest: true }))]).verdict, 'FAIL')
+  assert.equal(run([own(report({ attest: true }), '2026-10-18T01:00:00Z'), own(report({ verdict: 'FAIL', attest: true }), '2026-10-18T02:00:00Z')]).ok, false, 'a later FAIL vetoes a self-PASS')
+  assert.equal(run([own(report({ attest: true }))], { reviewers: ['reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }).ok, false, 'selfReview does not make an unlisted login a reviewer')
   assert.equal(run([comment('reviewer-agent')]).ok, true, 'another listed reviewer still counts on that pull request')
 })
 
@@ -502,9 +506,9 @@ test('#676: a conclusion from outside the repository counts for nothing', () => 
 // and #676 still refuses everyone nobody listed.
 test('#928: a listed self-reviewer who is a CONTRIBUTOR counts, only on their own pull request', () => {
   const selfPolicy = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer', 'hsliuustc0106'] }
-  const own = (login = 'hsliuustc0106') => comment(login, report({ writer: 'hsliuustc0106' }), '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')
+  const own = (login = 'hsliuustc0106', body = report({ writer: 'hsliuustc0106', attest: true })) => comment(login, body, '2026-10-18T01:00:00Z', 'comment', 'CONTRIBUTOR')
 
-  const mine = decide({ head: HEAD, author: 'hsliuustc0106', reports: [own()], policy: selfPolicy })
+  const mine = decide({ head: HEAD, author: 'hsliuustc0106', reports: [own()], policy: selfPolicy, owners: ['Dev'] })
   assert.equal(mine.ok, true, 'listed in selfReview on its own pull request: the PASS counts')
   assert.equal(mine.by, 'hsliuustc0106')
   assert.equal(mine.judged[0].counts, true)
@@ -703,4 +707,112 @@ test('#943: at one tip the bot report does not count and the shared account\'s r
   const entry = r.judged.find((e) => e.login === 'cursor[bot]')
   assert.equal(entry.counts, false)
   assert.match(String(entry.why), /bot account/)
+})
+
+// #644 option B, first slice. Every Bot writes as the pull request author, so a Verdict comment
+// from that login is the author talking. It counts only when the header binds this tip to a reviewer
+// role that is not the Owner. A different GitHub login still needs no attestation line.
+const attestPolicy = { reviewers: ['Birfy', 'reviewer-agent'], selfReview: ['Birfy'], writers: ['Reviewer', 'Dev'] }
+const fixedPass = ({ attest = null, writer = 'Reviewer', tip = HEAD, ran = 'Ran: npm test → pass' } = {}) => [
+  `Verdict: PASS at ${tip}`,
+  `Written-by: ${writer}`,
+  'Posted-by: Chief',
+  ...(attest ? [`Attestation: ${attest}`] : []),
+  '',
+  ran,
+].join('\n')
+const authorPass = (body, owners = ['Dev']) => decide({
+  head: HEAD,
+  author: 'Birfy',
+  reports: [comment('Birfy', body)],
+  policy: attestPolicy,
+  owners,
+})
+
+test('#644: the author\'s own Verdict comment is not an attestation', () => {
+  const bare = authorPass(fixedPass())
+  assert.equal(bare.ok, false)
+  assert.match(bare.reason, /not an attestation/)
+  assert.equal(bare.judged[0].counts, false)
+
+  const prose = authorPass('Looks good, I PASS this tip. Attestation: ' + HEAD + ' role=Reviewer')
+  assert.equal(prose.ok, false)
+  assert.match(prose.reason, /no Verifier report names the tip/)
+})
+
+test('#644: a header attestation at the full tip, for a role that is not the Owner, counts', () => {
+  const ok = authorPass(fixedPass({ attest: `${HEAD} role=Reviewer` }))
+  assert.equal(ok.ok, true, ok.reason)
+  assert.equal(ok.by, 'Birfy')
+  // The same shape read from the pull request body, which is what the live entry points pass.
+  const fromBody = decide({
+    head: HEAD,
+    author: 'Birfy',
+    reports: [comment('Birfy', fixedPass({ attest: `${HEAD} role=Reviewer` }))],
+    policy: attestPolicy,
+    body: 'Owner: Dev\nReviewer: Reviewer\nFixes #644\n',
+  })
+  assert.equal(fromBody.ok, true, fromBody.reason)
+})
+
+test('#644: a short sha, a quoted line, a mismatched role, the Owner role, or no Owner list refuses', () => {
+  const short = authorPass(fixedPass({ attest: `${HEAD.slice(0, 7)} role=Reviewer` }))
+  assert.equal(short.ok, false)
+  assert.match(short.reason, /7 characters/)
+
+  const otherTip = 'b'.repeat(40)
+  const wrong = authorPass(fixedPass({ attest: `${otherTip} role=Reviewer` }))
+  assert.equal(wrong.ok, false)
+  assert.match(wrong.reason, /not the tip/)
+
+  const quoted = authorPass([
+    `Verdict: PASS at ${HEAD}`,
+    'Written-by: Reviewer',
+    '',
+    'The draft below is not this conclusion:',
+    `Attestation: ${HEAD} role=Reviewer`,
+    'Ran: npm test → pass',
+  ].join('\n'))
+  assert.equal(quoted.ok, false)
+  assert.match(quoted.reason, /not an attestation/)
+
+  const proseLine = authorPass(fixedPass({ attest: 'please review role=Reviewer' }))
+  assert.equal(proseLine.ok, false)
+  assert.match(proseLine.reason, /Attestation: <sha> role=<Bot>/)
+
+  const mismatch = authorPass(fixedPass({ attest: `${HEAD} role=Dev` }))
+  assert.equal(mismatch.ok, false)
+  assert.match(mismatch.reason, /not the Written-by name/)
+
+  const owner = authorPass(fixedPass({ attest: `${HEAD} role=Reviewer` }), ['Reviewer'])
+  assert.equal(owner.ok, false)
+  assert.match(owner.reason, /is the Owner of this pull request/)
+  const fromAt = decide({
+    head: HEAD,
+    author: 'Birfy',
+    reports: [comment('Birfy', fixedPass({ attest: `${HEAD} role=Reviewer` }))],
+    policy: attestPolicy,
+    body: 'Owner: @Reviewer, Dev\nReviewer: Birfy\n',
+  })
+  assert.equal(fromAt.ok, false)
+  assert.match(fromAt.reason, /is the Owner/)
+
+  const noOwners = decide({
+    head: HEAD,
+    author: 'Birfy',
+    reports: [comment('Birfy', fixedPass({ attest: `${HEAD} role=Reviewer` }))],
+    policy: attestPolicy,
+  })
+  assert.equal(noOwners.ok, false)
+  assert.match(noOwners.reason, /no Owner list/)
+})
+
+test('#644: a conclusion from a different GitHub login needs no attestation line', () => {
+  const other = decide({
+    head: HEAD,
+    author: 'opener',
+    reports: [comment('reviewer-agent', fixedPass())],
+    policy: attestPolicy,
+  })
+  assert.equal(other.ok, true, other.reason)
 })

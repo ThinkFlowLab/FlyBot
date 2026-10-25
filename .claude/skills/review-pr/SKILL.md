@@ -37,9 +37,10 @@ Owned paths and what each subsystem owns live in [docs/subsystems/](../../../doc
 Always include:
 
 ```text
-Verdict: PASS | FAIL | INC at <full or 12+ hex>
+Verdict: PASS | FAIL | INC at <full 40-character sha>
 Written-by: Reviewer
 Posted-by: <who actually posted it, when the writer could not post it themselves>
+Attestation: <full 40-character sha> role=Reviewer
 
 Ran:
   - <command> → pass|fail
@@ -49,9 +50,11 @@ Not run:
 ```
 
 The first line is the whole conclusion (#637): nothing may come before it, because the gates read the
-first line and treat any other shape as no conclusion. The `Written-by:` line is the attribution every write carries (#627): it names a Bot from the policy's
+first line and treat any other shape as no conclusion. The sha is the whole 40 characters (#1112). The `Written-by:` line is the attribution every write carries (#627): it names a Bot from the policy's
 `writers`, the gates refuse a report without it, and it is a self-report, not proof — see
 [AGENTS.md](../../../AGENTS.md#every-state-changing-write-says-who-wrote-it-627), which is the single source.
+
+`Attestation:` is required when the GitHub login posting the conclusion is the pull request author (#644, first slice). It stays in the header, before the blank line above `Ran:`. `role` is the `Written-by` name and is not an `Owner:` of the pull request. A conclusion posted by a different GitHub login omits the line. The gate parses the line; it does not check a signature.
 
 What the gates read as evidence (`review-gate.mjs` `parseReport`; #660–#663 refused at the queue for
 the first point):
@@ -127,7 +130,7 @@ Do not fill contributor checkboxes or flip draft status unless asked.
 Post the report as a **pull request comment** (or the review body) only when a human asks for it, and
 only from the reviewer's own login: `.github/scripts/review-gate.mjs` reads the newest Verifier block
 that names the head, from a login in `.github/agent/review-policy.json`. The pull request's own
-author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR). Keep the block intact — the `Verdict: … at <sha>` first line, the attribution line, `Ran:`, and `Not run:` when you skipped something — because a
+author counts only when listed in the policy's `selfReview` (the owner's Bot/agent, `Birfy`, may PASS its own PR) and, when that login is the author, the header also carries `Attestation: <full sha> role=<Bot>` (#644). Keep the block intact — the `Verdict: … at <sha>` first line, the attribution line, the attestation line when the login is the author, `Ran:`, and `Not run:` when you skipped something — because a
 missing `Ran:` command is reported as incomplete evidence (`Not run:` is not checked, owner decision 2026-10-22 09:57 Asia/Shanghai), and a PASS at an older
 sha stops counting the moment the tip moves. Posting it is not merge authority: see AGENTS.md step 6.
 T0/T1 need no PASS; T2/T3 need a PASS at the tip, and the agent that gated the PR then enqueues it itself (owner decision 2026-10-21).
