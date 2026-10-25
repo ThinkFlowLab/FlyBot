@@ -221,10 +221,25 @@ export function install(rt) {
     if (event.data?.source?.kind === 'user') clearMiss(session?.id)
   })
 
-  ctx.taskDrive = {
+  // A live Cordis context refuses `ctx.taskDrive = …` once the plugin fiber is
+  // active (`cannot set property "taskDrive" without provide`). Same order as
+  // provideFlyBot: provide, then reflect.provide, then set, then a plain write.
+  const api = {
     get now() { return clock.now },
     set now(fn) { clock.now = fn },
     settled: () => tail,
     consider: () => consider(),
   }
+  const provide = typeof ctx.provide === 'function' ? ctx.provide.bind(ctx) : typeof ctx.reflect?.provide === 'function' ? ctx.reflect.provide.bind(ctx.reflect) : undefined
+  if (provide) {
+    provide('taskDrive', api)
+    return
+  }
+  if (typeof ctx.set === 'function') {
+    try {
+      ctx.set('taskDrive', api)
+      return
+    } catch { /* the key is refused: fall through to the plain property */ }
+  }
+  ctx.taskDrive = api
 }

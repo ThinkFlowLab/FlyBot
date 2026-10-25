@@ -361,6 +361,52 @@ test('a board card that is not a conversation task does not wake', async (t) => 
   assert.equal(app.calls('s').length, 0)
 })
 
+test('a Cordis context provides taskDrive instead of assigning it', async (t) => {
+  // Live dsh applies this plugin on a Cordis 4 context whose fiber is already
+  // active, and that proxy throws `cannot set property "taskDrive" without
+  // provide` on a bare write (#1120). The fake context used above allows the
+  // write, so this case is the host that actually starts.
+  const { Context } = await import('@deepseek-ai/cordis')
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-drive-cordis-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify({ version: 2, revision: 1, mainBotIds: [], members: {}, bots: {}, rooms: {}, grants: {}, agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {} }))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const fake = fakeContext()
+  Object.assign(fake, {
+    llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}), stream: async function* () {} },
+    workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
+    sessionController: {
+      create: async () => ({ sessionId: 'made-1' }),
+      resolveAgent: async id => ({ agent: { id, session: { id } } }),
+      selectModel: async () => {},
+      page: async () => ({ records: [], hasMore: false }),
+    },
+    sessionTitle: { rename: async () => {} },
+    sessions: { flush: async () => {} },
+  })
+  const root = new Context()
+  for (const name of ['tools', 'systemPrompt', 'connection', 'llm', 'workspaceRegistry', 'sessionController', 'sessions', 'sessionTitle']) {
+    root.provide(name, fake[name])
+  }
+  let pluginCtx
+  const fiber = root.plugin({
+    name: 'ds-bot',
+    apply(ctx) {
+      pluginCtx = ctx
+      createRuntime(ctx, { home })
+    },
+  })
+  t.after(() => fiber.dispose())
+  await fiber
+  const drive = pluginCtx.taskDrive
+  assert.equal(typeof drive.settled, 'function')
+  assert.equal(typeof drive.consider, 'function')
+  let now = 42
+  drive.now = () => now
+  assert.equal(drive.now(), 42)
+  await drive.settled()
+  await drive.consider()
+})
+
 test('asking during the wake does not schedule another wake', async (t) => {
   const app = await start(t)
   const body = await app.track('s', { tasks: [{ title: 'Draft the note', column: 'in-progress', progress: 10 }] })
