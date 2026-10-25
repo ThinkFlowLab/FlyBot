@@ -791,6 +791,7 @@ var ZH = {
   "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
   "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
   "Waiting for your approval": "等你批准",
+  "Waiting for their approval": "等对方批准",
   "Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.": "你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。",
   "Turn on auto-send": "打开自动发送",
   "Approve and always auto-send in this room": "批准并在此房间始终自动发送",
@@ -6578,6 +6579,14 @@ function awaitingReply(roster, sessionId, now = Date.now()) {
   return now - at < AWAIT_REPLY_MS;
 }
 
+// src/client/remote-approval-wait.js
+var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
+function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
+  if (!remote) return null;
+  if (tool && inputAt <= (tool.at ?? 0)) return null;
+  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
+}
+
 // src/client/activity-row.js
 var import_react9 = require("react");
 var import_react_dom2 = require("react-dom");
@@ -6748,7 +6757,8 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const inputRef = (0, import_react9.useRef)(0);
   const inputAt = Math.max(inputRef.current, pendingInput);
   inputRef.current = inputAt;
-  const want = !visible ? null : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
+  const phrase = visible ? remoteApprovalPhrase(bot?.remote !== void 0, { tool, inputAt }) : null;
+  const want = !visible ? null : phrase ? { ...phrase, label: t(phrase.label) } : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
   const [shown, setShown] = (0, import_react9.useState)(null);
   const wantKey = want?.key ?? null;
   const markState = (0, import_react9.useRef)("thinking");
@@ -6818,7 +6828,7 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
   return (0, import_react_dom2.createPortal)((0, import_react9.createElement)(
     "div",
-    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "aria-hidden": true },
+    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "data-flybot": shown.key === "remote-approval" ? "remote-approval" : void 0, "aria-hidden": true },
     bot ? (0, import_react9.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react9.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
     (0, import_react9.createElement)(
       "span",

@@ -735,6 +735,7 @@ const ZH = {
   '{first} and {second} are waiting for your approval': '{first}、{second} 等你批准',
   '{first}, {second} and {count} more are waiting for your approval': '{first}、{second} 等 {total} 个等你批准',
   'Waiting for your approval': '等你批准',
+  'Waiting for their approval': '等对方批准',
   'Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.': '你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。',
   'Turn on auto-send': '打开自动发送',
   'Approve and always auto-send in this room': '批准并在此房间始终自动发送',

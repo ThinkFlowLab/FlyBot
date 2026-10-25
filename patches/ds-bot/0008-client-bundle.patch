@@ -476,7 +476,7 @@ diff --git a/client.js b/client.js
    "{name} didn't answer in time": "{name} 没有及时回应",
    "{name} paused for your approval": "{name} 停下来等你批准",
    "{name} started on it": "{name} 开始做了",
-@@ -506,12 +506,29 @@ var ZH = {
+@@ -506,12 +506,30 @@ var ZH = {
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
    "{name} is waiting for your approval": "{name} 等你批准",
@@ -491,6 +491,7 @@ diff --git a/client.js b/client.js
    "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
    "Waiting for your approval": "等你批准",
 -  "in its own chat": "在自己的对话里",
++  "Waiting for their approval": "等对方批准",
 +  "Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.": "你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。",
 +  "Turn on auto-send": "打开自动发送",
 +  "Approve and always auto-send in this room": "批准并在此房间始终自动发送",
@@ -3076,80 +3077,74 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2818,1962 +2818,3620 @@ function compileFragmentSelectors(text, names) {
-     return compiled.get(fragment);
-   });
- }
--function installCompiledStyles(text, tag) {
--  const style = installStyles("", tag);
--  const cache = /* @__PURE__ */ new WeakMap();
--  const render = () => {
--    const names = /* @__PURE__ */ new Set();
--    for (const sheet of document.styleSheets) {
--      if (sheet.ownerNode?.dataset?.dshBot) continue;
--      let list = cache.get(sheet);
--      if (!list) {
--        list = sheetClassNames(sheet);
--        cache.set(sheet, list);
--      }
--      for (const name of list) names.add(name);
--    }
--    const next = compileFragmentSelectors(text, names);
--    if (style.textContent !== next) style.textContent = next;
--  };
--  render();
--  let timer;
--  const schedule = () => {
--    clearTimeout(timer);
--    timer = setTimeout(render, 120);
--  };
--  const onLoad = (event) => {
--    if (event.target instanceof HTMLLinkElement) schedule();
--  };
--  const observer = new MutationObserver(schedule);
--  observer.observe(document.head, { childList: true });
--  document.addEventListener("load", onLoad, true);
--  return () => {
--    observer.disconnect();
--    document.removeEventListener("load", onLoad, true);
--    clearTimeout(timer);
--    style.remove();
--  };
-+function installCompiledStyles(text, tag) {
-+  const style = installStyles("", tag);
-+  const cache = /* @__PURE__ */ new WeakMap();
-+  const render = () => {
-+    const names = /* @__PURE__ */ new Set();
-+    for (const sheet of document.styleSheets) {
-+      if (sheet.ownerNode?.dataset?.dshBot) continue;
-+      let list = cache.get(sheet);
-+      if (!list) {
-+        list = sheetClassNames(sheet);
-+        cache.set(sheet, list);
-+      }
-+      for (const name of list) names.add(name);
-+    }
-+    const next = compileFragmentSelectors(text, names);
-+    if (style.textContent !== next) style.textContent = next;
-+  };
-+  render();
-+  let timer;
-+  const schedule = () => {
-+    clearTimeout(timer);
-+    timer = setTimeout(render, 120);
-+  };
-+  const onLoad = (event) => {
-+    if (event.target instanceof HTMLLinkElement) schedule();
-+  };
-+  const observer = new MutationObserver(schedule);
-+  observer.observe(document.head, { childList: true });
-+  document.addEventListener("load", onLoad, true);
-+  return () => {
-+    observer.disconnect();
-+    document.removeEventListener("load", onLoad, true);
-+    clearTimeout(timer);
-+    style.remove();
-+  };
+@@ -2853,1927 +2853,3594 @@ function installCompiledStyles(text, tag) {
+     clearTimeout(timer);
+     style.remove();
+   };
+-}
+-
+-// src/client/mark.js
+-var import_react2 = require("react");
+-var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
+-var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
+-var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
+-function useGaze(ref, enabled) {
+-  (0, import_react2.useEffect)(() => {
+-    if (!enabled) return void 0;
+-    let frame = 0;
+-    let point = null;
+-    const place = () => {
+-      frame = 0;
+-      const node = ref.current;
+-      if (!node || !point) return;
+-      const box = node.getBoundingClientRect();
+-      const clamp = (value) => Math.max(-1, Math.min(1, value));
+-      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
+-      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
+-    };
+-    const onMove = (event) => {
+-      point = { x: event.clientX, y: event.clientY };
+-      if (!frame) frame = requestAnimationFrame(place);
+-    };
+-    const onLeave = () => {
+-      point = null;
+-      ref.current?.style.setProperty("--bt-gx", "0");
+-      ref.current?.style.setProperty("--bt-gy", "0");
+-    };
+-    window.addEventListener("pointermove", onMove, { passive: true });
+-    document.documentElement.addEventListener("pointerleave", onLeave);
+-    return () => {
+-      cancelAnimationFrame(frame);
+-      window.removeEventListener("pointermove", onMove);
+-      document.documentElement.removeEventListener("pointerleave", onLeave);
+-    };
+-  }, [enabled]);
+-}
+-var FIDGETS = ["hop", "sway", "stretch", "look"];
+-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot);
+-  const ref = (0, import_react2.useRef)(null);
+-  const maskId = (0, import_react2.useRef)("");
+-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+-  const [poked, setPoked] = (0, import_react2.useState)(false);
+-  useGaze(ref, gaze);
+-  const common = {
+-    ref,
+-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+-    "data-shape": look.image ? "image" : shapeId(look.shape),
+-    "data-state": STATES.includes(state) ? state : "idle",
+-    "data-live": live ? "" : void 0,
+-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+-    "data-gaze": gaze ? "" : void 0,
+-    "data-poke": pokeable ? "" : void 0,
+-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+-    role: label ? "img" : void 0,
+-    "aria-label": label,
+-    "aria-hidden": label ? void 0 : true,
+-    onClick: pokeable ? () => setPoked(true) : void 0,
+-    onAnimationEnd: poked ? (event) => {
+-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+-    } : void 0
 +}
 +
 +// src/shared/face-title.js
@@ -3259,8 +3254,13 @@ diff --git a/client.js b/client.js
 +  return () => {
 +    offSessions?.();
 +    offRoster?.();
-+  };
-+}
+   };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
+ }
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -3298,24 +3298,41 @@ diff --git a/client.js b/client.js
 +}
 +function PeopleIcon() {
 +  return (0, import_react4.createElement)(
-+    "svg",
+     "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react4.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
 +    (0, import_react4.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
 +    (0, import_react4.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
-+  );
-+}
+   );
+ }
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
 +function ArrowUpIcon() {
 +  return (0, import_react4.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react4.createElement)("path", { d: "M10 16V4M5 9l5-5 5 5", stroke: "currentColor", strokeWidth: 1.8, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }));
-+}
+ }
+-function MainStar() {
+-  return (0, import_react2.createElement)(
 +function MicIcon({ size = 16 }) {
 +  return (0, import_react4.createElement)(
-+    "svg",
+     "svg",
+-    { viewBox: "0 0 20 20", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
 +    { width: size, height: size, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": true },
 +    (0, import_react4.createElement)("rect", { x: 7, y: 2.5, width: 6, height: 10, rx: 3, fill: "currentColor", stroke: "none" }),
 +    (0, import_react4.createElement)("path", { d: "M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" })
-+  );
-+}
+   );
+ }
+-function useSettled(state) {
+-  const prev = (0, import_react2.useRef)(state);
+-  const [settled, setSettled] = (0, import_react2.useState)(false);
+-  (0, import_react2.useEffect)(() => {
+-    const was = prev.current;
+-    prev.current = state;
+-    if (state !== "idle") {
+-      setSettled(false);
+-      return void 0;
 +function WaveIcon({ size = 16 }) {
 +  return (0, import_react4.createElement)(
 +    "svg",
@@ -3417,42 +3434,8 @@ diff --git a/client.js b/client.js
 +    (0, import_react4.createElement)("circle", { className: "bt-flybot-body", cx: 256, cy: 100, r: 22 }),
 +    (0, import_react4.createElement)("rect", { className: "bt-flybot-body", x: 248, y: 104, width: 16, height: 34 })
 +  );
- }
- 
--// src/client/mark.js
--var import_react2 = require("react");
--var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
--var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
--var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
--function useGaze(ref, enabled) {
--  (0, import_react2.useEffect)(() => {
--    if (!enabled) return void 0;
--    let frame = 0;
--    let point = null;
--    const place = () => {
--      frame = 0;
--      const node = ref.current;
--      if (!node || !point) return;
--      const box = node.getBoundingClientRect();
--      const clamp = (value) => Math.max(-1, Math.min(1, value));
--      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
--      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
--    };
--    const onMove = (event) => {
--      point = { x: event.clientX, y: event.clientY };
--      if (!frame) frame = requestAnimationFrame(place);
--    };
--    const onLeave = () => {
--      point = null;
--      ref.current?.style.setProperty("--bt-gx", "0");
--      ref.current?.style.setProperty("--bt-gy", "0");
--    };
--    window.addEventListener("pointermove", onMove, { passive: true });
--    document.documentElement.addEventListener("pointerleave", onLeave);
--    return () => {
--      cancelAnimationFrame(frame);
--      window.removeEventListener("pointermove", onMove);
--      document.documentElement.removeEventListener("pointerleave", onLeave);
++}
++
 +// src/client/questions.js
 +var import_react5 = require("react");
 +var keyLetter = (index) => String.fromCharCode(65 + index);
@@ -3475,37 +3458,11 @@ diff --git a/client.js b/client.js
 +        event.preventDefault();
 +        ownRef.current.focus();
 +      }
-     };
--  }, [enabled]);
++    };
 +    document.addEventListener("keydown", onKey, true);
 +    return () => document.removeEventListener("keydown", onKey, true);
 +  }, [count, ownRef]);
- }
--var FIDGETS = ["hop", "sway", "stretch", "look"];
--function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
--  const look = given ?? lookOf(bot);
--  const ref = (0, import_react2.useRef)(null);
--  const maskId = (0, import_react2.useRef)("");
--  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
--  const [poked, setPoked] = (0, import_react2.useState)(false);
--  useGaze(ref, gaze);
--  const common = {
--    ref,
--    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
--    "data-shape": look.image ? "image" : shapeId(look.shape),
--    "data-state": STATES.includes(state) ? state : "idle",
--    "data-live": live ? "" : void 0,
--    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
--    "data-gaze": gaze ? "" : void 0,
--    "data-poke": pokeable ? "" : void 0,
--    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
--    role: label ? "img" : void 0,
--    "aria-label": label,
--    "aria-hidden": label ? void 0 : true,
--    onClick: pokeable ? () => setPoked(true) : void 0,
--    onAnimationEnd: poked ? (event) => {
--      if (/^bt-poke/.test(event.animationName)) setPoked(false);
--    } : void 0
++}
 +function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
 +  const [own, setOwn] = (0, import_react5.useState)("");
 +  const [picked, setPicked] = (0, import_react5.useState)([]);
@@ -3521,16 +3478,7 @@ diff --git a/client.js b/client.js
 +      return;
 +    }
 +    onAnswer({ selected: [label] });
-   };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
--}
--function StarIcon({ size = 8 }) {
--  return (0, import_react2.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
++  };
 +  const submit = () => {
 +    if (!canSubmit) return;
 +    onAnswer({ selected: multi ? picked : [], ...custom ? { custom } : {} });
@@ -3625,16 +3573,8 @@ diff --git a/client.js b/client.js
 +      !multi && canSubmit ? (0, import_react5.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")) : null
 +    ) : null,
 +    foot
-   );
- }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
--}
--function MainStar() {
--  return (0, import_react2.createElement)(
--    "svg",
--    { viewBox: "0 0 20 20", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
++  );
++}
 +function SettledQuestion({ question, answer }) {
 +  const options = optionsOf(question);
 +  const prompt = question?.question ?? "";
@@ -3665,17 +3605,8 @@ diff --git a/client.js b/client.js
 +        (0, import_react5.createElement)("span", { className: "bt-q-check", title: t("Selected") }, (0, import_react5.createElement)(CheckIcon))
 +      );
 +    }))
-   );
- }
--function useSettled(state) {
--  const prev = (0, import_react2.useRef)(state);
--  const [settled, setSettled] = (0, import_react2.useState)(false);
--  (0, import_react2.useEffect)(() => {
--    const was = prev.current;
--    prev.current = state;
--    if (state !== "idle") {
--      setSettled(false);
--      return void 0;
++  );
++}
 +function QuestionCard({ matched }) {
 +  const pending = matched;
 +  const questions = pending.questions ?? [];
@@ -5262,6 +5193,18 @@ diff --git a/client.js b/client.js
    };
 -  return (0, import_react5.createElement)(
 +  return (0, import_react8.createElement)(
++    "div",
++    { className: "bt-file-chips" },
++    files.map((file) => (0, import_react8.createElement)(
++      "button",
++      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
++      `📎 ${file.name} · ${fileSize(file.size)}`
++    )),
++    error ? (0, import_react8.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
++  );
++}
++function GroupEvent({ prefix, room: room2, name, roster, actions }) {
++  return (0, import_react8.createElement)(
      "div",
 -    { className: "bt-secret-edit-block" },
 -    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Replace the value")),
@@ -5272,13 +5215,9 @@ diff --git a/client.js b/client.js
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
 -    ),
 -    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
-+    { className: "bt-file-chips" },
-+    files.map((file) => (0, import_react8.createElement)(
-+      "button",
-+      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
-+      `📎 ${file.name} · ${fileSize(file.size)}`
-+    )),
-+    error ? (0, import_react8.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
++    { className: "bt-event" },
++    (0, import_react8.createElement)("span", null, prefix),
++    room2 ? (0, import_react8.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react8.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react8.createElement)("span", null, name) : null
    );
  }
 -function SecretRow({ secret, roster, actions, run, open, onToggle }) {
@@ -5290,7 +5229,14 @@ diff --git a/client.js b/client.js
 -  const allowed = secret.scope === "all" ? [] : secret.scope.map((id) => roster.byId[id]).filter(Boolean);
 -  const meta = [t("Asked by {name}", { name: asker }), t("added {time}", { time: when(secret.createdAt) }), secret.lastUsedAt ? t("last used {time}", { time: when(secret.lastUsedAt) }) : t("not used yet")].join(" · ");
 -  return (0, import_react5.createElement)(
-+function GroupEvent({ prefix, room: room2, name, roster, actions }) {
++function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
++  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
++  const self = roster.byId[sessionId];
++  const team = /^(team|团队|共享)$/i.test(String(scope ?? "").trim());
++  const other = team || !scope ? void 0 : findBot(scope);
++  const target = other && other.id !== self?.id ? other : self;
++  if (!target) return null;
++  const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
 +  return (0, import_react8.createElement)(
      "div",
 -    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
@@ -5325,8 +5271,7 @@ diff --git a/client.js b/client.js
 -      )
 -    ) : null
 +    { className: "bt-event" },
-+    (0, import_react8.createElement)("span", null, prefix),
-+    room2 ? (0, import_react8.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react8.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react8.createElement)("span", null, name) : null
++    (0, import_react8.createElement)("button", { type: "button", title: result, onClick: () => actions.openMemory(target.id) }, (0, import_react8.createElement)(MemoryIcon), label)
    );
  }
 -function AddSecret({ actions, run, onDone }) {
@@ -5341,20 +5286,6 @@ diff --git a/client.js b/client.js
 -        setValue("");
 -        onDone();
 -      }
-+function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
-+  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
-+  const self = roster.byId[sessionId];
-+  const team = /^(team|团队|共享)$/i.test(String(scope ?? "").trim());
-+  const other = team || !scope ? void 0 : findBot(scope);
-+  const target = other && other.id !== self?.id ? other : self;
-+  if (!target) return null;
-+  const label = team ? t("Team memory updated") : target === self ? t("Memory updated") : t("Updated {name}'s memory", { name: target.name });
-+  return (0, import_react8.createElement)(
-+    "div",
-+    { className: "bt-event" },
-+    (0, import_react8.createElement)("button", { type: "button", title: result, onClick: () => actions.openMemory(target.id) }, (0, import_react8.createElement)(MemoryIcon), label)
-+  );
-+}
 +function PartLine({ time }) {
 +  return (0, import_react8.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react8.createElement)("span", null, dayLabel(time)) : null);
 +}
@@ -6302,6 +6233,14 @@ diff --git a/client.js b/client.js
 -  }
 -  return null;
 +
++// src/client/remote-approval-wait.js
++var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
++function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
++  if (!remote) return null;
++  if (tool && inputAt <= (tool.at ?? 0)) return null;
++  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
++}
++
 +// src/client/activity-row.js
 +var import_react9 = require("react");
 +var import_react_dom2 = require("react-dom");
@@ -6617,7 +6556,8 @@ diff --git a/client.js b/client.js
 +  const inputRef = (0, import_react9.useRef)(0);
 +  const inputAt = Math.max(inputRef.current, pendingInput);
 +  inputRef.current = inputAt;
-+  const want = !visible ? null : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
++  const phrase = visible ? remoteApprovalPhrase(bot?.remote !== void 0, { tool, inputAt }) : null;
++  const want = !visible ? null : phrase ? { ...phrase, label: t(phrase.label) } : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
 +  const [shown, setShown] = (0, import_react9.useState)(null);
 +  const wantKey = want?.key ?? null;
 +  const markState = (0, import_react9.useRef)("thinking");
@@ -6633,6 +6573,10 @@ diff --git a/client.js b/client.js
 -    if (source.kind === "schedule") {
 -      const prompts = reminderPrompts(contentText(data.content));
 -      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
+-    }
+-    if (source.kind === "user-question-reply") return null;
+-    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
+-  }
 +    const timer = setTimeout(make, wait);
 +    return () => clearTimeout(timer);
 +  }, [wantKey, shown]);
@@ -6645,10 +6589,7 @@ diff --git a/client.js b/client.js
 +    if (visible) {
 +      setPhase("in");
 +      return void 0;
-     }
--    if (source.kind === "user-question-reply") return null;
--    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
--  }
++    }
 +    let timer;
 +    const leave = () => {
 +      setPhase((current) => current === "in" ? "out" : current);
@@ -6693,7 +6634,7 @@ diff --git a/client.js b/client.js
 +  const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
 +  return (0, import_react_dom2.createPortal)((0, import_react9.createElement)(
 +    "div",
-+    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "aria-hidden": true },
++    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "data-flybot": shown.key === "remote-approval" ? "remote-approval" : void 0, "aria-hidden": true },
 +    bot ? (0, import_react9.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react9.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
 +    (0, import_react9.createElement)(
 +      "span",

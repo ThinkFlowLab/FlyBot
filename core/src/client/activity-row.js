@@ -5,6 +5,7 @@ import { Shimmer, PHRASES } from './cells.js'
 import { reducedMotion } from './motion.js'
 import { t } from './i18n.js'
 import { AWAIT_REPLY_MS, awaitingReply } from './awaiting.js'
+import { remoteApprovalPhrase } from './remote-approval-wait.js'
 
 // -------------------------------------------------------------------------
 // The activity row: the Bot's mark and a shimmering phrase at the transcript
@@ -178,7 +179,10 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   // the newest activity, and the phrase and the clock restart from the send.
   const inputAt = Math.max(inputRef.current, pendingInput)
   inputRef.current = inputAt
+  // Their home may be holding the reply. Say so, unless a local tool is newer (#1087).
+  const phrase = visible ? remoteApprovalPhrase(bot?.remote !== undefined, { tool, inputAt }) : null
   const want = !visible ? null
+    : phrase ? { ...phrase, label: t(phrase.label) }
     : inputAt > (tool?.at ?? 0)
       ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: 'thinking' }
       : tool ? { key: tool.label ? `tool:${tool.label}` : 'working', label: tool.label, pool: PHRASES.working, state: tool.state ?? 'working' }
@@ -245,7 +249,7 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
   useEffect(() => { drawn.current = Boolean(host && phase !== null && shown) }, [host, phase, shown])
   if (!host || phase === null || !shown) return null
   const elapsed = now - shown.at >= 60000 ? elapsedLabel(now - shown.at) : null
-  return createPortal(h('div', { className: 'bt-typing', 'data-exiting': phase === 'out' ? '' : undefined, 'data-carry': carry && phase !== 'out' ? '' : undefined, 'data-remote': remote ? '' : undefined, 'aria-hidden': true },
+  return createPortal(h('div', { className: 'bt-typing', 'data-exiting': phase === 'out' ? '' : undefined, 'data-carry': carry && phase !== 'out' ? '' : undefined, 'data-remote': remote ? '' : undefined, 'data-flybot': shown.key === 'remote-approval' ? 'remote-approval' : undefined, 'aria-hidden': true },
     bot ? h(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : h(RoomAvatar, { room, roster, size: 28 }),
     h('span', { className: 'bt-typing-text' },
       h('span', { key: `${shown.key}:${shown.at}`, className: 'bt-typing-label' },

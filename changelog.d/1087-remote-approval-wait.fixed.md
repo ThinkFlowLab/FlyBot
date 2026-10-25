@@ -1,0 +1,1 @@
+A friend's direct chat says "Waiting for their approval" (等对方批准) while you wait for their reply, instead of a generic thinking line such as "Sorting out the details…", so a reply their home is holding for approval is not presented as this side still working it out (#1087).
