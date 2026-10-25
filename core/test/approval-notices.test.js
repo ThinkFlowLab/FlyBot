@@ -251,8 +251,8 @@ test('the host lists finished and failed turns of my own Bots, not stopped, aske
   turn('g2', 1, completed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r2x' })
   assert.deepEqual(rt.endedView().map(({ id, at, ...entry }) => [id.split(':').slice(0, 2).join(':'), entry]), [
     ['b:1', { botId: 'b', sessionId: 'b' }],
-    ['b:2', { botId: 'b', sessionId: 'b', failed: 'upstream busy' }],
-    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy' }],
+    ['b:2', { botId: 'b', sessionId: 'b', failed: 'upstream busy', silent: true, streak: 1 }],
+    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy', silent: true, streak: 1 }],
   ])
   for (let n = 10; n < 40; n++) turn('b', n, completed)
   // Past the last 20, the failure in r1 stays: it is still the latest turn there (#471).

@@ -1,4 +1,7 @@
 import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
+import { createElement as h } from 'react'
+import { registry as flybotSlots } from './flybot-registry.js'
+import { TURN_FAILURES_CSS, TurnFailures } from './turn-failures.js'
 import { call } from './api.js'
 import { isHex } from './inks.js'
 import { SHAPES, markupCache } from './characters.js'
@@ -932,6 +935,12 @@ export function apply(ctx) {
     shadow('conversation.input.dock', { id: 'bot-secret', order: -90, inject: face }, SecretDock),
     shadow('conversation.input.dock', { id: 'flybot-session', order: -80, inject: face }, FlyBotSessionDock),
   ]
+  // A turn that died before writing a word says so above the composer, in every chat (#1044).
+  ctx.effect(() => {
+    const style = installStyles(TURN_FAILURES_CSS, 'turn-failures')
+    const off = flybotSlots().register('flybot.session.dock', { id: 'flybot-turn-failures', order: 20, component: props => h(TurnFailures, { ...props, work }) })
+    return () => { off(); style.remove() }
+  }, 'ds-bot: dead turn lines')
   // The return button belongs to neither group: it renders only in Agent mode.
   ctx.effect(() => {
     const style = installStyles(RETURN_CSS, 'return')

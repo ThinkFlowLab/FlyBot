@@ -464,7 +464,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -12,6 +12,59 @@ const ZH = {
+@@ -12,6 +12,63 @@
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -483,6 +483,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Enter a number, or paste a group invite link': '输入数字面对面建群，或粘贴邀请链接加入',
 +  'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.': '选好你的 Bot。和身边的人输入同一组 6 位数字一起建群，或粘贴群邀请链接、扫描二维码加入那个群。',
 +  'Or paste a group invite link (https://…/r/…)': '或粘贴群邀请链接（https://…/r/…）',
++  // #1044: a turn that died before writing anything still says so where the chat is.
++  'Could not run: {error}': '这一轮没能跑起来：{error}',
++  'the model call failed': '模型调用失败',
++  '{count} turns in a row': '连续 {count} 轮',
 +  'Group invite link': '群邀请链接',
 +  'Room-only: friends do not see these Bots unless you invite them.': '仅限这个房间：除非你邀请，好友看不到这些 Bot。',
 +  '6 digits': '6 位数字',
@@ -524,7 +528,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +26,21 @@ const ZH = {
+@@ -26,6 +83,21 @@
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -546,7 +550,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,69 @@ const ZH = {
+@@ -41,22 +113,69 @@
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -619,7 +623,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +93,59 @@ const ZH = {
+@@ -93,6 +212,59 @@
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -679,7 +683,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,44 @@ const ZH = {
+@@ -105,17 +277,44 @@
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -728,7 +732,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -128,8 +128,6 @@ const ZH = {
+@@ -128,8 +327,6 @@
    New: '新',
  
    // New chat
@@ -737,7 +741,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,9 +154,20 @@ const ZH = {
+@@ -154,9 +351,20 @@
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -758,7 +762,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
-@@ -215,6 +215,25 @@ const ZH = {
+@@ -215,6 +423,25 @@
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
    'Applies from the next message.': '从下一条消息开始生效。',
@@ -784,7 +788,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Profile: '资料',
    Label: '标签',
    'Optional. Shown under the name.': '可选，显示在名字下方。',
-@@ -238,6 +238,7 @@ const ZH = {
+@@ -238,6 +465,7 @@
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
    Manage: '管理',
@@ -792,7 +796,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
-@@ -274,6 +274,8 @@ const ZH = {
+@@ -274,6 +502,8 @@
    'Harness default': 'Harness 默认',
    Saving: '保存中',
    'Manage models': '管理模型',
@@ -801,7 +805,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,9 +312,10 @@ const ZH = {
+@@ -312,9 +542,10 @@
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
@@ -814,7 +818,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +324,6 @@ const ZH = {
+@@ -324,7 +555,6 @@
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
@@ -822,7 +826,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
-@@ -333,6 +333,8 @@ const ZH = {
+@@ -333,6 +563,8 @@
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
@@ -831,7 +835,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',
-@@ -344,13 +344,13 @@ const ZH = {
+@@ -344,13 +576,13 @@
    '{n} d': '{n} 天',
  
    // Plugin updates
@@ -851,7 +855,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,62 @@ const ZH = {
+@@ -360,9 +592,62 @@
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -915,7 +919,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,6 +390,7 @@ const ZH = {
+@@ -390,6 +675,7 @@
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -923,7 +927,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Reactions: '表情',
    'Message actions': '消息操作',
    Download: '下载',
-@@ -403,6 +403,9 @@ const ZH = {
+@@ -403,6 +689,9 @@
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
    'Message from': '收到消息：',
@@ -933,7 +937,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -412,6 +412,8 @@ const ZH = {
+@@ -412,6 +701,8 @@
    'Working out a plan': '理一下思路',
    'Sorting out the details': '梳理细节',
    'On it': '在做了',
@@ -942,7 +946,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Busy with it': '正在处理',
    'Moving ahead': '推进中',
    'Taking care of it': '处理中',
-@@ -439,7 +439,6 @@ const ZH = {
+@@ -439,7 +730,6 @@
    'Looking back through the chat': '翻看聊天记录',
    '{name} looked up its own chat': '{name} 查看了自己的对话',
    '{name} looked up its own chat for “{text}”': '{name} 在自己的对话里查找「{text}」',
@@ -950,7 +954,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +450,30 @@ const ZH = {
+@@ -450,12 +740,30 @@
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -982,7 +986,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
-@@ -485,7 +485,7 @@ const ZH = {
+@@ -485,7 +793,7 @@
    'Your answer': '你的回答',
  
    // Secrets
@@ -991,7 +995,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No Bot': '没有 Bot',
    'Paste or type the key': '粘贴或输入密钥',
    'Only {name}': '只给 {name}',
-@@ -528,7 +528,7 @@ const ZH = {
+@@ -528,7 +836,7 @@
    'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
    'What it is for': '用途',
    Value: '值',
@@ -1000,7 +1004,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -697,11 +697,11 @@ const ZH = {
+@@ -697,11 +1005,11 @@
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
    // About
@@ -1015,7 +1019,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +711,13 @@ const ZH = {
+@@ -711,6 +1019,13 @@
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1029,7 +1033,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
-@@ -726,7 +726,7 @@ const ZH = {
+@@ -726,7 +1041,7 @@
    Show: '查看',
    Hide: '收起',
    'GitHub issue': 'GitHub issue',
@@ -1038,7 +1042,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +738,7 @@ const ZH = {
+@@ -738,7 +1053,7 @@
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -1047,7 +1051,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +771,14 @@ const ZH = {
+@@ -771,6 +1086,14 @@
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1062,7 +1066,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
-@@ -784,7 +784,15 @@ const ZH = {
+@@ -784,7 +1107,15 @@
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1078,7 +1082,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
-@@ -806,8 +806,8 @@ const ZH = {
+@@ -806,8 +1137,8 @@
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1089,7 +1093,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New task': '新建任务',
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
-@@ -823,6 +823,12 @@ const ZH = {
+@@ -823,6 +1154,12 @@
    'Repeat every 1 minute to 7 days': '重复间隔要在 1 分钟到 7 天之间',
    'Pick when it runs': '选择什么时候运行',
    'No such task': '没有这个任务',
@@ -1102,7 +1106,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -855,6 +855,8 @@ const HOST_ERRORS = [
+@@ -855,6 +1192,8 @@
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
    [/^(.+) is not saved yet$/, '$1 还没有保存'],
    [/^The Bot team in (.+) is open in another dsh \((.+)\)\. This window shows the team but cannot change it; close the other one and reload\.$/, '$1 里的 Bot 团队已在另一个 dsh 中打开（$2）。这个窗口只能查看，不能修改；关掉另一个后刷新。'],
@@ -1111,7 +1115,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +883,20 @@ const HOST_ZH = {
+@@ -883,6 +1222,20 @@
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1132,7 +1136,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,8 @@ const HOST_ZH = {
+@@ -905,6 +1258,8 @@
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -4360,7 +4364,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
+@@ -24,7 +47,7 @@
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -4369,7 +4373,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
+@@ -48,12 +71,20 @@
  
  export function install(rt) {
    const { ctx, state } = rt
@@ -4391,7 +4395,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +70,13 @@ export function install(rt) {
+@@ -70,13 +101,13 @@
      })
    }
  
@@ -4407,7 +4411,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +162,31 @@ export function install(rt) {
+@@ -162,17 +193,31 @@
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -4440,7 +4444,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +196,33 @@ export function install(rt) {
+@@ -196,7 +241,33 @@
      return merged
    }
  
@@ -4475,7 +4479,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +204,9 @@ export function install(rt) {
+@@ -204,7 +275,9 @@
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
@@ -4486,7 +4490,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
      return bots
    }
-@@ -221,6 +221,7 @@ export function install(rt) {
+@@ -221,6 +294,7 @@
          botId: owner.botId,
          since: entry.since,
          ...(entry.tool ? { tool: entry.tool } : {}),
@@ -4494,7 +4498,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +238,45 @@ export function install(rt) {
+@@ -238,6 +312,53 @@
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -4515,7 +4519,10 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
 +    return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
 +  }
-+  const noteEnded = (id, turn, info, reason, failure, calls) => {
++  // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
++  // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
++  // same place: one blip and a provider that has been refusing for hours read differently.
++  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0) => {
 +    if (failure === undefined && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
 +    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -4524,6 +4531,10 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
 +    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
 +    const at = Date.now()
++    const place = `${bot.id}|${owner?.roomId ?? ''}`
++    const silent = failure !== undefined && texts === 0
++    const lastHere = ended.findLast?.(entry => placeOfEnded(entry) === place) ?? [...ended].reverse().find(entry => placeOfEnded(entry) === place)
++    const streak = silent ? (lastHere?.silent === true ? (lastHere.streak ?? 0) + 1 : 1) : 0
 +    ended = trimEnded([...ended, {
 +      id: `${id}:${turn}:${at}`,
 +      botId: bot.id,
@@ -4531,6 +4542,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      at,
 +      ...(calls > 0 ? { calls } : {}),
 +      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
++      ...(silent ? { silent: true, streak } : {}),
 +    }], at)
 +  }
 +  const endedView = () => ended
@@ -4540,7 +4552,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -266,6 +266,7 @@ export function install(rt) {
+@@ -266,6 +387,7 @@
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
          startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
@@ -4548,7 +4560,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
-@@ -288,11 +288,17 @@ export function install(rt) {
+@@ -288,11 +410,17 @@
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
@@ -4566,7 +4578,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +300,14 @@ export function install(rt) {
+@@ -300,6 +428,14 @@
          break
        case 'user/message': {
          const source = event.data?.source
@@ -4581,7 +4593,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,15 +331,27 @@ export function install(rt) {
+@@ -331,15 +467,27 @@
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -4611,7 +4623,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
            else if (expectsReply(source) && !answersUser(source)
-@@ -363,12 +363,15 @@ export function install(rt) {
+@@ -363,12 +511,15 @@
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -4632,7 +4644,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +386,17 @@ export function install(rt) {
+@@ -386,11 +537,17 @@
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -4650,7 +4662,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -399,11 +399,14 @@ export function install(rt) {
+@@ -399,11 +556,14 @@
          entry.since = undefined
          entry.tool = undefined
          entry.calls = undefined
@@ -4665,17 +4677,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (switched) break
          // A model that writes its tool call as text ends the turn as if it were done,
          // though nothing ran. It gets one more turn on the same trigger, so a waiting
-@@ -411,7 +411,8 @@ export function install(rt) {
+@@ -411,7 +571,8 @@
          // the call.
          const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
          const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
 -        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
 +        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls)
++        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length)
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +419,24 @@ export function install(rt) {
+@@ -419,6 +580,24 @@
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
@@ -4700,7 +4712,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +434,7 @@ export function install(rt) {
+@@ -434,6 +613,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -4708,7 +4720,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +446,7 @@ export function install(rt) {
+@@ -446,6 +626,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -4716,7 +4728,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +460,14 @@ export function install(rt) {
+@@ -460,14 +641,14 @@
            } else if (!stopped && reason?.kind !== 'aborted') {
              // The round moved on without this member; how its turn ends still reaches the group.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
@@ -4733,7 +4745,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,13 +488,27 @@ export function install(rt) {
+@@ -488,13 +669,27 @@
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -5087,7 +5099,7 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 --- a/test/approval-notices.test.js
 +++ b/test/approval-notices.test.js
-@@ -3,6 +3,8 @@ import { test } from 'node:test'
+@@ -3,6 +3,8 @@
  import { fileURLToPath } from 'node:url'
  import { runInNewContext } from 'node:vm'
  import { build } from 'esbuild'
@@ -5096,7 +5108,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
  
  const bundle = await build({
    entryPoints: [fileURLToPath(new URL('../src/client/approval-notices.js', import.meta.url))],
-@@ -10,7 +10,7 @@ const bundle = await build({
+@@ -10,7 +12,7 @@
  })
  
  // One window: the platform's Notification, whether the page shows, and the work source.
@@ -5105,7 +5117,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    const shown = []
    const opened = []
    function Notification(title, options) {
-@@ -26,14 +26,16 @@ function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
+@@ -26,14 +28,16 @@
      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
      set: (next) => { snapshot = next; for (const listener of listeners) listener() },
    }
@@ -5124,7 +5136,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
  }
  
  test('an approval that starts waiting while another conversation shows gets one notification', () => {
-@@ -41,7 +41,7 @@ test('an approval that starts waiting while another conversation shows gets one
+@@ -41,7 +45,7 @@
    page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
    page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
    page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
@@ -5133,7 +5145,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    page.shown[0].onclick()
    assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
  })
-@@ -62,3 +62,236 @@ test('no notification for the conversation on screen, for approvals older than t
+@@ -62,3 +66,236 @@
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -5322,8 +5334,8 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  turn('g2', 1, completed, { kind: SOURCE_KIND, role: 'room', exchangeId: 'r2x' })
 +  assert.deepEqual(rt.endedView().map(({ id, at, ...entry }) => [id.split(':').slice(0, 2).join(':'), entry]), [
 +    ['b:1', { botId: 'b', sessionId: 'b' }],
-+    ['b:2', { botId: 'b', sessionId: 'b', failed: 'upstream busy' }],
-+    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy' }],
++    ['b:2', { botId: 'b', sessionId: 'b', failed: 'upstream busy', silent: true, streak: 1 }],
++    ['g1:1', { botId: 'b', roomId: 'r1', failed: 'upstream busy', silent: true, streak: 1 }],
 +  ])
 +  for (let n = 10; n < 40; n++) turn('b', n, completed)
 +  // Past the last 20, the failure in r1 stays: it is still the latest turn there (#471).

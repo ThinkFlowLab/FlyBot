@@ -329,7 +329,10 @@ export function install(rt) {
       .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
     return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
   }
-  const noteEnded = (id, turn, info, reason, failure, calls) => {
+  // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
+  // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
+  // same place: one blip and a provider that has been refusing for hours read differently.
+  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0) => {
     if (failure === undefined && reason?.kind !== 'completed') return
     const owner = rt.groupOwners.get(id)
     const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -338,6 +341,10 @@ export function install(rt) {
     if (owner === undefined && state.exchangeTurns?.[id]?.includes(turn)) return
     if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
     const at = Date.now()
+    const place = `${bot.id}|${owner?.roomId ?? ''}`
+    const silent = failure !== undefined && texts === 0
+    const lastHere = ended.findLast?.(entry => placeOfEnded(entry) === place) ?? [...ended].reverse().find(entry => placeOfEnded(entry) === place)
+    const streak = silent ? (lastHere?.silent === true ? (lastHere.streak ?? 0) + 1 : 1) : 0
     ended = trimEnded([...ended, {
       id: `${id}:${turn}:${at}`,
       botId: bot.id,
@@ -345,6 +352,7 @@ export function install(rt) {
       at,
       ...(calls > 0 ? { calls } : {}),
       ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
+      ...(silent ? { silent: true, streak } : {}),
     }], at)
   }
   const endedView = () => ended
@@ -564,7 +572,7 @@ export function install(rt) {
         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
         if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls)
+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length)
         const replyText = () => {
           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply

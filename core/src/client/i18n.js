@@ -27,6 +27,10 @@ const ZH = {
   'Enter a number, or paste a group invite link': '输入数字面对面建群，或粘贴邀请链接加入',
   'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.': '选好你的 Bot。和身边的人输入同一组 6 位数字一起建群，或粘贴群邀请链接、扫描二维码加入那个群。',
   'Or paste a group invite link (https://…/r/…)': '或粘贴群邀请链接（https://…/r/…）',
+  // #1044: a turn that died before writing anything still says so where the chat is.
+  'Could not run: {error}': '这一轮没能跑起来：{error}',
+  'the model call failed': '模型调用失败',
+  '{count} turns in a row': '连续 {count} 轮',
   'Group invite link': '群邀请链接',
   'Room-only: friends do not see these Bots unless you invite them.': '仅限这个房间：除非你邀请，好友看不到这些 Bot。',
   '6 digits': '6 位数字',
