@@ -6210,6 +6210,10 @@ test('#496: the panel shows an already-had Bot as neutral text, a restored one a
     [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true }, 'info', 'Your Bot is shared back, so they can reach you too.'],
     // #1037: an owner who already named their Bot "Your Bot" keeps that one "Your", not two.
     [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Your Bot' }, 'info', 'Your Bot is shared back, so they can reach you too.'],
+    // #1060: the guard is `/^your\b/i`, so a name that merely starts with those letters is still ours to
+    // prefix — `YourBot` reads as "Your YourBot", not as a Bot that already calls itself ours.
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'YourBot' }, 'info', 'Your YourBot is shared back, so they can reach you too.'],
+    [{ alreadyHave: true, status: 'active', restored: [], sharedBack: true, sharedBackBotName: 'Yours' }, 'info', 'Your Yours is shared back, so they can reach you too.'],
     [{ alreadyHave: true, status: 'active', restored: [] }, 'info', "You already have this friend's Bot."],
     [{ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [{ handle: '@chief.selfa1233.home', name: 'Chief', owner: 'SelfA1233' }] }, 'ok', 'Chief (SelfA1233) is back in your list.'],
   ]) {
@@ -7272,7 +7276,9 @@ test('#1026: both homes run a Bot called Chief, so the shared-back line says whi
   const reaccept = await say({ alreadyHave: true, status: 'active', botName: 'Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Chief' })
   const fresh = await say({ status: 'active', inviter: '@chief.selfb2.home', inviterName: 'SelfB2', inviterBotName: 'Chief', sharedBack: true, sharedBackBotName: 'Chief' })
   for (const [text, friend] of [[reaccept, 'Chief (SelfA1233)'], [fresh, 'SelfB2 shared Chief']]) {
-    assert.match(text, /Your Chief is shared back, so they can reach you too\./, `the joining side is ours: ${text}`)
+    // #1060: anchored after a sentence break — an unanchored pattern also matches "Your Your Chief is
+    // shared back", so this line would pass while #1026 is reversed.
+    assert.match(text, /\. Your Chief is shared back, so they can reach you too\.$/, `the joining side is ours: ${text}`)
     assert.ok(text.includes(friend), `the friend's side stays named apart: ${text}`)
     assert.doesNotMatch(text, /(?<!Your )Chief is shared back/, `a bare name never claims the share, either home runs a Chief: ${text}`)
     assert.doesNotMatch(text, /Your Your/, `the fallback is not stacked on itself: ${text}`)
@@ -7281,7 +7287,7 @@ test('#1026: both homes run a Bot called Chief, so the shared-back line says whi
   // #1037: an owner may already have named the Bot "Your Chief" — that name is ours already, so it is
   // printed as it is; prefixing it again is where "Your Your Chief" came from.
   const namedOurs = await say({ alreadyHave: true, status: 'active', botName: 'Your Chief', ownerName: 'SelfA1233', restored: [], sharedBack: true, sharedBackBotName: 'Your Chief' })
-  assert.match(namedOurs, /Your Chief is shared back, so they can reach you too\./, namedOurs)
+  assert.match(namedOurs, /\. Your Chief is shared back, so they can reach you too\.$/, namedOurs)
   assert.doesNotMatch(namedOurs, /Your Your/, namedOurs)
 })
 
