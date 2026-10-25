@@ -256,6 +256,7 @@ The Bot team:
 5. **`client.js` is generated.** Change `core/src/client/`, then run `npm run build` in `core/` and commit both files. Never edit `client.js` by hand.
 6. **Do not touch the user's own DSH data.** The test bench keeps its data in `.dsh-test-<name>/`. Never point a test at `~/.dsh` or at a DSH that the user runs.
 7. **Reference-first.** An architecture change updates the matching subsystem doc (or a valid `Docs-not-needed:` trailer). Edit `.claude/skills/review-pr` only when the Verifier protocol itself changes. See [Reference-first](#reference-first).
+8. **Read bytes, never re-decode.** A file rewritten from an outside source, or regenerated (`core/client.js`, `patches/ds-bot/*`, the `files/` mirrors), is read back as bytes and re-encoded by its generator — never decoded as UTF-8 from a fetch that may have split a multi-byte character, because `errors: 'replace'` turns the rest of that character into U+FFFD and the damage survives the build and the patch generation. The byte-level scan `node .github/scripts/check-mojibake.mjs --check` is the gate (a decode-first scan cannot be: it reports 22 binary files and ~2,065,422 replacement characters on a clean `main`, #1188); a red scan means "regenerate", not "retype the text".
 
 ## Commands
 
