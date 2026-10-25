@@ -1,0 +1,1 @@
+The group strip no longer offers **Invite by link** before it has read the room's own links, so a fast click cannot mint a second ticket the panel was about to discover, and a chat that draws no strip (a face room, a Bot chat, a chat with turns) no longer issues that read at all ([#1038](https://github.com/ThinkFlowLab/FlyBot/issues/1038)).

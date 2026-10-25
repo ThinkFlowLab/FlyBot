@@ -1009,7 +1009,8 @@ window.__ModuleLoader__.load({
     // Which link of a room a panel may show (#1019): one that still works. The host answers `room-invite`
     // with the newest open link and every open link, so an expired newest one (an older Bot Social still
     // dates links) does not hide a later one that is still good, and a link nobody can join with is never
-    // called live. Shared by the Members card's read and the group strip's.
+    // called live. The rule is the Members card's own (#876, `client.js:1201`); the card reads its answer
+    // inline and this helper is the strip's, so the two agree on the rule without sharing the code (#1038).
     const liveInviteOf = (value) => {
       // The host keeps a deadline in milliseconds and this card reads an ISO time, the same unit the
       // Members card converts (#876): handing the number straight to `qrJoinable` makes Date.parse return
@@ -2165,6 +2166,9 @@ window.__ModuleLoader__.load({
     // until the first turn, so a new group showed only its sidebar row. This strip stands in for that
     // header while — and only while — the chat is still blank: the group's name, who is in it, and the
     // way to invite someone. The first message ends it and the host's own header takes over.
+    // #998/#1019/#1038: the strip exists only for a blank local group. Hooks cannot sit behind that test
+    // (they must run in the same order on every render), so the test gates the work instead: a face room, a
+    // Bot chat and a chat with turns read nothing — no `room-invite` for a panel that would not draw it.
     function GroupStrip({ room, roster, blank } = {}) {
       useStyles()
       const roomId = room?.id
@@ -2176,19 +2180,25 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState(null)
       const [copied, setCopied] = useState(false)
+      // #1038: until this room's own answer is in, the panel does not know whether a link exists — and a
+      // button drawn now can be clicked before the read lands, minting the second ticket #1019 removed.
+      // `read` carries the room id, so switching rooms hides the button again in the same render.
+      const [read, setRead] = useState({ roomId: '', done: false })
       const invite = shown.roomId === roomId ? shown.invite : null
+      const known = read.roomId === roomId && read.done
       // The link this room already has (#1019): coming back to a group nobody has spoken in must show the
       // link that was minted before, not mint another one. Same read the Members card's row makes (#876),
       // so a group with a live link has nothing to mint and its list does not grow on every visit.
       useEffect(() => {
-        if (!roomId) return undefined
+        if (blank !== true || !roomId || room?.face) return undefined
         let gone = false
         host('room-invite', { roomId }).then((value) => {
           if (gone) return
           setShown({ roomId, invite: liveInviteOf(value) })
-        }, () => {})
+          setRead({ roomId, done: true })
+        }, () => { if (!gone) setRead({ roomId, done: true }) })
         return () => { gone = true }
-      }, [roomId])
+      }, [blank, roomId, room?.face ? 'face' : ''])
       if (blank !== true || !roomId || room?.face) return null
       const memberNames = (Array.isArray(room.members) ? room.members : [])
         .map(id => oneLine(roster?.byId?.[id]?.name ?? roster?.bots?.find?.(bot => bot.id === id)?.name ?? ''))
@@ -2218,7 +2228,9 @@ window.__ModuleLoader__.load({
             ? h(Fragment, null,
               h('code', { className: 'fs-invite-url', 'data-flybot': 'group-strip-url' }, invite.url),
               h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'group-strip-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link')))
-            : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'group-strip-invite', disabled: busy, onClick: mint }, tr('Invite by link'))),
+            : known
+              ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'group-strip-invite', disabled: busy, onClick: mint }, tr('Invite by link'))
+              : null),
         note ? h('div', { className: 'fs-hint', 'data-flybot': 'group-strip-note', role: 'status' }, note) : null)
     }
 

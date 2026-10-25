@@ -6665,7 +6665,9 @@ test('#998: a zero-turn group draws its own strip above the composer, and drops 
   const json = JSON.stringify(strip)
   assert.match(json, /Launch plan/, 'the group names itself')
   assert.match(json, /Chief, Writer/, 'and says who is in it')
-  assert.match(json, /Invite by link/, 'with the one way to add someone')
+  // The button is drawn from this room's read, so a first render without an answer has none (#1038);
+  // #1019 and #1038 pin the button itself.
+  assert.doesNotMatch(json, /Invite by link/, 'no invite button until the room answers')
   assert.match(json, /group-strip/)
   assert.equal(plugin.GroupStrip({ room, roster, blank: false }), null, 'the first message: the host header takes over, never two')
   assert.equal(plugin.GroupStrip({ room, roster }), null, 'a dock that is not told the chat is blank draws nothing')
@@ -6749,6 +6751,56 @@ test('#1019: the group strip shows the room\'s live link and mints only when the
   assert.ok(button(panel), 'and the button is back for it')
 })
 
+// #1038: the strip's own read is the thing that decides whether a link exists, so the button cannot be
+// drawn before that answer is in (a fast click could mint the second ticket #1019 removed), and a chat that
+// draws no strip reads nothing at all.
+test('#1038: the invite button waits for the room\'s answer, and a chat without a strip reads nothing', async () => {
+  const link = { ticket: 'LiveAbCdEfGhIjKlMnOpQr', handle: '@chief.alice.home', url: 'https://s/r/@chief.alice.home/LiveAbCdEfGhIjKlMnOpQr', expiresAt: null, server: true }
+  const calls = []
+  const reads = []
+  const host = sharingHost(async () => ({}), async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'room-invite') return await new Promise(resolve => reads.push(() => resolve(payload.roomId === 'room-1' ? { invite: null, invites: [] } : { invite: link, invites: [link] })))
+    if (endpoint === 'room-invite-mint') return { invite: { ...link, ticket: 'FreshAbCdEfGhIjKlMnOp' } }
+    return {}
+  })
+  const mints = () => calls.filter(([endpoint]) => endpoint === 'room-invite-mint').length
+  const roster = { byId: { b1: { id: 'b1', name: 'Chief' } }, bots: [] }
+  const room = { id: 'room-1', name: 'Launch plan', members: ['b1'] }
+  // Nothing to read for a chat that draws no strip: a Bot chat, a face room, a chat with a turn.
+  for (const props of [
+    { room, roster, blank: false },
+    { room: { ...room, face: { status: 'open' } }, roster, blank: true },
+    { room: undefined, roster, blank: true },
+  ]) {
+    const panel = host.mount('GroupStrip', props)
+    await panel.settle()
+    assert.equal(panel.has('group-strip'), false, 'no strip is drawn')
+  }
+  assert.equal(reads.length, 0, 'and nothing was read')
+  assert.equal(mints(), 0, 'nor minted')
+  // The room with no live link: no button until its own answer is in, then the button.
+  let panel = host.mount('GroupStrip', { room, roster, blank: true })
+  assert.equal(panel.has('group-strip'), true, 'the strip itself is up at once')
+  assert.equal(panel.has('group-strip-invite'), false, 'but the button waits for the answer')
+  reads.shift()()
+  await panel.settle()
+  assert.equal(panel.has('group-strip-invite'), true, 'no live link: inviting is the one action left')
+  assert.equal(mints(), 0, 'and reading never mints')
+  // A live link: still no button while the read is in flight, and none after it either.
+  panel = host.mount('GroupStrip', { room: { ...room, id: 'room-2' }, roster, blank: true })
+  assert.equal(panel.has('group-strip-invite'), false, 'no button before the answer, even with a link waiting')
+  reads.shift()()
+  await panel.settle()
+  assert.equal(panel.nodes().find(n => n.props?.['data-flybot'] === 'group-strip-url')?.props.children.join(''), link.url, 'the live link is shown')
+  assert.equal(panel.has('group-strip-invite'), false, 'and there is still nothing to mint')
+  assert.equal(mints(), 0)
+  // Switching to a room whose answer has not arrived yet hides the button again in the same render.
+  reads.length = 0
+  panel.update({ room: { ...room, id: 'room-3', name: 'Plan C' } })
+  assert.equal(panel.has('group-strip-url'), false, 'the previous room\'s link is off screen')
+  assert.equal(panel.has('group-strip-invite'), false, 'and no button until this room answers')
+})
 test('#297: the thinking line is a plain session dock below the approval card, styled like the other quiet notes', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /register\('flybot\.session\.dock', \{ id: 'social-thinking', order: 60, component: PeerThinking \}\)/)
