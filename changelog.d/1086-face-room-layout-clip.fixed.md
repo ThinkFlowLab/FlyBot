@@ -1,0 +1,1 @@
+Dismissing an Enter-chat error and typing in the room composer no longer shifts the window sideways. The page and the app frame cannot scroll horizontally, and the error toast stays inside the viewport ([#1086](https://github.com/ThinkFlowLab/FlyBot/issues/1086)).

@@ -32,7 +32,7 @@ import { SCHEDULE_CSS } from './schedules.js'
 import { INBOX_CSS } from './inbox.js'
 import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
-import { PANE_MIN_WIDTH_CSS } from './panes.js'
+import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -864,6 +864,7 @@ export function apply(ctx) {
     installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
     installCompiledStyles(MOBILE_CSS, 'mobile'),
     installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
+    typeof document !== 'undefined' ? watchShellLevel(document) : null,
     browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
     installTheme(),
     shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),

@@ -14820,14 +14820,14 @@ var FEEDBACK_CSS = `
 .bt-fb-text{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
 .bt-fb-code{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .bt-event-error{color:#e02135}
-.bt-toast{position:fixed;left:50%;bottom:28px;z-index:1000;display:flex;align-items:center;gap:8px;max-width:min(560px,calc(100vw - 32px));padding:8px 8px 8px 14px;border-radius:12px;background:var(--bt-card,#fff);color:var(--bt-ink,#141414);border:1px solid var(--bt-line-2,rgba(0,0,0,.15));box-shadow:0 8px 28px rgba(0,0,0,.14);font-size:13px;line-height:18px;transform:translateX(-50%);animation:bt-toast-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
-.bt-toast[data-leaving]{opacity:0;transform:translate(-50%,6px) scale(.98);filter:blur(3px);transition:opacity .18s ease-in,transform .18s ease-in,filter .18s ease-in}
+.bt-toast{position:fixed;left:0;right:0;bottom:28px;z-index:1000;display:flex;align-items:center;gap:8px;width:fit-content;max-width:min(560px,calc(100vw - 32px));margin-inline:auto;padding:8px 8px 8px 14px;border-radius:12px;background:var(--bt-card,#fff);color:var(--bt-ink,#141414);border:1px solid var(--bt-line-2,rgba(0,0,0,.15));box-shadow:0 8px 28px rgba(0,0,0,.14);font-size:13px;line-height:18px;animation:bt-toast-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+.bt-toast[data-leaving]{opacity:0;transform:translateY(6px) scale(.98);filter:blur(3px);transition:opacity .18s ease-in,transform .18s ease-in,filter .18s ease-in}
 .bt-toast-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .bt-toast-text::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#e02135;margin:0 8px 1px 0}
 .bt-toast-link{flex:none;border:0;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:6px}
 .bt-toast-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bt-toast-close{flex:none}
-@keyframes bt-toast-in{from{transform:translate(-50%,16px) scale(.94)}}
+@keyframes bt-toast-in{from{transform:translateY(16px) scale(.94)}}
 @media (prefers-reduced-motion:reduce){.bt-toast{animation:none}.bt-toast[data-leaving]{transition:none}}
 `;
 
@@ -17500,7 +17500,61 @@ var PANE_MIN_WIDTH_CSS = `
 .bt-panel :is(.bt-member,.bt-members,.bt-bcard-row,.bt-drawer-model,.bt-usage-row){min-width:0}
 .bt-panel :is(.bt-muted,.bt-note){white-space:normal}
 [class*="_centerCol"]{min-width:0}
+html,body,#root{overflow-x:clip}
+[class*="_frame"]>[class*="_centerCol"]{overflow-x:clip}
+[class*="_frame"]:has(> [class*="_centerCol"]){overflow-x:clip}
 `;
+var COMPOSER = "[data-composer-input], [data-composer-card]";
+function clipScroll(el) {
+  if (el && el.scrollLeft > 0) el.scrollLeft = 0;
+}
+function appFrameOf(doc) {
+  if (typeof doc.querySelector !== "function") return null;
+  const col = doc.querySelector('[class*="_centerCol"]');
+  const frame = col?.parentElement;
+  if (!frame) return null;
+  const name = frame.className;
+  const text = typeof name === "string" ? name : name?.baseVal ?? "";
+  return text.includes("_frame") ? frame : null;
+}
+function levelShell(doc, from) {
+  const page = doc.scrollingElement || doc.documentElement;
+  clipScroll(page);
+  clipScroll(doc.documentElement);
+  clipScroll(doc.body);
+  clipScroll(appFrameOf(doc));
+  for (let at = from?.parentElement || null; at; at = at.parentElement) clipScroll(at);
+}
+function composerOf(node) {
+  let el = node;
+  if (el && el.nodeType !== 1) el = el.parentElement;
+  if (!el || typeof el.closest !== "function") return null;
+  return el.closest(COMPOSER);
+}
+function watchShellLevel(doc) {
+  const later = (from) => {
+    const reset = () => levelShell(doc, from);
+    reset();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(reset));
+  };
+  const onFocus = (event) => later(composerOf(event.target) || void 0);
+  const onInput = (event) => {
+    const composer = composerOf(event.target);
+    if (composer) later(composer);
+  };
+  const onScroll = (event) => {
+    const target = event.target;
+    if (target === doc || target === doc.documentElement || target === doc.body) levelShell(doc);
+  };
+  doc.addEventListener("focusin", onFocus);
+  doc.addEventListener("input", onInput);
+  doc.addEventListener("scroll", onScroll, true);
+  return () => {
+    doc.removeEventListener("focusin", onFocus);
+    doc.removeEventListener("input", onInput);
+    doc.removeEventListener("scroll", onScroll, true);
+  };
+}
 
 // src/client/friend-lines.js
 function friendLineNews(bots, known, isOpen, selfId) {
@@ -18731,6 +18785,7 @@ function apply(ctx) {
     installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
     installCompiledStyles(MOBILE_CSS, "mobile"),
     installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
+    typeof document !== "undefined" ? watchShellLevel(document) : null,
     browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
     installTheme(),
     shadow("sidebar.workspaces", { priority: -10, inject: face }, TeamSidebar),

@@ -1219,7 +1219,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +import { INBOX_CSS } from './inbox.js'
 +import { KANBAN_CSS } from './kanban.js'
 +import { MOBILE_CSS } from './mobile.js'
-+import { PANE_MIN_WIDTH_CSS } from './panes.js'
++import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1530,7 +1530,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,45 @@ export function apply(ctx) {
+@@ -752,33 +752,46 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1547,6 +1547,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
 +    installCompiledStyles(MOBILE_CSS, 'mobile'),
 +    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
++    typeof document !== 'undefined' ? watchShellLevel(document) : null,
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
      installTheme(),
      shadow('sidebar.workspaces', { priority: -10, inject: face }, TeamSidebar),
