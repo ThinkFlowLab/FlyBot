@@ -706,15 +706,21 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
     let response
     let data
     const sentAt = Date.now()
+    // A POST or PUT with no body never reaches the handler on the deployed Bot Social
+    // (social.botawaken.com, 2026-10-25): it answers 500 "internal error" before auth.
+    // The same call with `{}` is an empty JSON body and the handler runs. Enter chat
+    // is POST /face-rooms/:id/start, which otherwise sends nothing (#1085).
+    const verb = String(method || 'GET').toUpperCase()
+    const payload = body === undefined && (verb === 'POST' || verb === 'PUT' || verb === 'PATCH') ? {} : body
     try {
       response = await fetchImpl(url, {
         method,
         headers: {
           authorization: `Bearer ${token}`,
           accept: 'application/json',
-          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(payload !== undefined ? { 'content-type': 'application/json' } : {}),
         },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: payload !== undefined ? JSON.stringify(payload) : undefined,
         signal,
       })
       const offset = serverClockOffset(response.headers?.get?.('date'), sentAt, Date.now())

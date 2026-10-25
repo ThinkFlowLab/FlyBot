@@ -1,0 +1,1 @@
+Enter chat in a face-to-face room no longer shows "internal error" after the other person has joined. The start request sends an empty JSON body, which Bot Social accepts ([#1085](https://github.com/ThinkFlowLab/FlyBot/issues/1085)).

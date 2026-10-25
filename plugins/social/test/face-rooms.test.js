@@ -439,6 +439,30 @@ test('REST join, poll, start, leave, and pending_approval send', async () => {
   assert.equal(left.status, 'closed')
 })
 
+test('#1085: Enter chat sends a JSON body, so a bodyless POST is not an internal error', async () => {
+  // social.botawaken.com (2026-10-25): POST /v1/face-rooms/:id/start with no body
+  // answers 500 { code: "internal_error", message: "internal error" } before auth.
+  // The same POST with `{}` reaches the handler. Enter chat is that POST.
+  const fetch = async (url, init) => {
+    assert.equal(String(url), 'https://s/v1/face-rooms/frm_1/start')
+    assert.equal(init.method, 'POST')
+    const raw = init.body
+    if (raw === undefined || raw === '') {
+      return new Response(JSON.stringify({ error: { code: 'internal_error', message: 'internal error' } }), { status: 500 })
+    }
+    assert.equal(init.headers['content-type'], 'application/json')
+    assert.equal(raw, '{}')
+    return new Response(JSON.stringify({
+      room_id: 'frm_1', status: 'open', members: [], events: [], event_cursor: 1,
+      started_at: '2026-10-25T00:00:00.000Z',
+    }), { status: 200 })
+  }
+  const api = createFaceRoomApi({ server: 'https://s', token: 'otk_test', fetch })
+  const started = await api.start('frm_1')
+  assert.equal(started.status, 'open')
+  assert.equal(started.roomId, 'frm_1')
+})
+
 test('failed join never includes members or events', () => {
   const err = mapFaceError({ error: { code: 'room_full', members: [{ handle: '@x' }], events: [1], room_id: 'frm_leak' } }, 409)
   assert.equal(err.message.includes('frm_leak'), false)
