@@ -16,8 +16,8 @@
 // are terminal, and accepted is reachable only from result-ready. A cancelled or
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
-import { columnOf } from '../shared/task-board.js'
-import { currentParticipants } from './room-membership.js'
+import { columnOf, compareForWork } from '../shared/task-board.js'
+import { currentParticipants, deriveParticipants } from './room-membership.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
 // result-ready still waits for the requester: prune must not evict it with terminals (#111).
@@ -60,6 +60,12 @@ const readTitle = value => oneLine(value, 300)
 const readNote = (value) => {
   if (value === undefined || value === null) return undefined
   return oneLine(value, 300)
+}
+const readOptionalLine = (value, name) => {
+  if (value === undefined || value === null || String(value).trim() === '') return undefined
+  const text = oneLine(value, 300)
+  if (!text) throw invalid(`${name} needs text`)
+  return text
 }
 const readColumn = (value) => {
   if (value === undefined || value === null || value === '') return undefined
@@ -157,11 +163,18 @@ export function install(rt) {
     }
     return false
   }
+  // A room written before participants existed still has members and an admin.
+  // Listing must see those Bots; an empty participants field is not that shape.
+  const liveParticipants = (room) => {
+    if (!room) return []
+    const list = Array.isArray(room.participants) ? room.participants : deriveParticipants(room, state)
+    return list.filter(person => person.leftSeq === undefined)
+  }
   // A group admin is a current human participant with that role, or the owner of
   // the Bot that administers the group. Membership alone is not enough.
   const roomAdmin = (actor, room) => {
     if (!room || !actor?.memberId) return false
-    const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
+    const me = liveParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
     if (me?.role === 'admin') return true
     return owns(actor, room.admin)
   }
@@ -169,11 +182,15 @@ export function install(rt) {
     if (!rt.authzEnforced?.()) return true
     return mayAct(task, actor) || owns(actor, task.ownerBotId)
   }
-  const view = task => ({
-    ...task,
-    actors: [...task.actors ?? []],
-    ...(botRecord(task.ownerBotId)?.name ? { ownerBotName: botRecord(task.ownerBotId).name } : {}),
-  })
+  const view = (task) => {
+    const parent = task.parentId ? store()[task.parentId] : undefined
+    return {
+      ...task,
+      actors: [...task.actors ?? []],
+      ...(botRecord(task.ownerBotId)?.name ? { ownerBotName: botRecord(task.ownerBotId).name } : {}),
+      ...(parent?.title ? { parentTitle: parent.title } : {}),
+    }
+  }
 
   // Move a card along the existing states. Not started is open/claimed, In progress
   // is working (or blocked / result-ready), Done is accepted. Reverse moves and a
@@ -223,15 +240,71 @@ export function install(rt) {
     if (group === undefined || group === null || String(group).trim() === '') return fallback || undefined
     return roomByName(botId, String(group).trim())
   }
+  const sameRoom = (task, roomId) => (task.origin?.roomId ?? undefined) === roomId
+  const openTask = (task) => !TERMINAL_MATCH.has(task.status)
   const matchTitle = (botId, title, roomId) => {
-    const found = Object.values(store()).filter(task => task.ownerBotId === botId && task.title === title && !TERMINAL_MATCH.has(task.status) && (task.origin?.roomId ?? undefined) === roomId)
+    const found = Object.values(store()).filter(task => task.ownerBotId === botId && task.kind !== 'group' && task.title === title && openTask(task) && sameRoom(task, roomId))
     if (found.length > 1) throw invalid(`Two open tasks are named "${title}". Pass an id.`)
     return found[0]
   }
-  const listed = (botId) => Object.values(store()).filter(task => task.ownerBotId === botId).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40).map(view)
+  const matchChild = (botId, title, roomId, parentId) => {
+    const found = Object.values(store()).filter(task => task.ownerBotId === botId && task.kind !== 'group' && task.title === title && task.parentId === parentId && openTask(task) && sameRoom(task, roomId))
+    if (found.length > 1) throw invalid(`Two open tasks are named "${title}". Pass an id.`)
+    return found[0]
+  }
+  const openOverall = (roomId) => Object.values(store())
+    .filter(task => task.kind === 'group' && task.origin?.roomId === roomId && openTask(task))
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+  const listed = (botId) => Object.values(store()).filter(task => task.ownerBotId === botId).sort(compareForWork).slice(0, 40).map(view)
+  // The room admin, or a Main Bot that sits in the group, plans the overall task.
+  const plansRoom = (botId, room) => {
+    if (!room || !botId) return false
+    if (room.admin === botId) return true
+    if (rt.isMain?.(botId) && (room.members ?? []).includes(botId)) return true
+    return liveParticipants(room).some(person => person.kind === 'bot' && !person.remote && person.id === botId && person.role === 'admin')
+  }
+  const memberBot = (room, name) => {
+    const wanted = String(name).trim()
+    const ids = liveParticipants(room).filter(person => person.kind === 'bot' && !person.remote).map(person => person.id)
+    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && candidate.name === wanted)
+    if (matches.length !== 1) throw invalid(`No single Bot named "${wanted.slice(0, 80)}" in this group`)
+    return matches[0]
+  }
+  const isOverall = (task, roomId) => task?.kind === 'group' && task.origin?.roomId === roomId && openTask(task)
+  const resolveParent = (roomId, ref, batch) => {
+    const text = String(ref).trim()
+    const direct = [find(text), batch.get(text)].find(task => isOverall(task, roomId))
+    if (direct) return direct
+    const byTitle = Object.values(store()).find(task => isOverall(task, roomId) && task.title === text)
+    if (byTitle) return byTitle
+    throw invalid(`No overall task "${text.slice(0, 80)}" in this group`)
+  }
+  // A question parks the task on the same input wait the board already shows.
+  // The owner sees it in the inbox; the tool tells the Bot to ask as well.
+  function blockForInput(task, question) {
+    if (TERMINAL_MATCH.has(task.status) || task.status === 'result-ready') throw stale('A finished task cannot wait on a question')
+    if (task.status === 'blocked' && !waitingForInput(task)) throw stale('A blocked task stays put until its wait is cleared')
+    if (waitingForInput(task)) {
+      task.inputRequest = { ...task.inputRequest, question }
+      record(task, null, { by: 'conversation' })
+      return
+    }
+    if (task.status !== 'working') applyColumn(task, 'in-progress', null, 'conversation')
+    const questionId = `input-${randomBytes(8).toString('hex')}`
+    transition(task, 'blocked', null, { questionId, by: 'input requested' })
+    task.waitingFor = 'input'
+    task.inputRequest = { id: questionId, question, requestedAt: task.updatedAt }
+  }
+  function resumeFromAnswer(task, answer) {
+    if (!waitingForInput(task)) throw stale('This task is not waiting on an answer')
+    if (task.approvalId || task.inputApprovalIds?.length) throw stale('Approval is still required before resuming')
+    transition(task, 'working', null, { questionId: task.inputRequest?.id, by: 'input answered' })
+    task.inputRequest = { ...task.inputRequest, answer, answeredAt: task.updatedAt }
+  }
 
-  // The Bot's own list, written from the conversation. The caller is the Bot;
-  // the requester stays the Bot's owner, so the owner can still move the card.
+  // The Bot's own list, written from the conversation. The caller is the Bot.
+  // The requester of a task is that task's Bot's owner, so a group admin who
+  // does not own the Bot can plan a subtask and still cannot move the card.
   rt.trackBotTasks = async function trackBotTasks(botId, body, origin = {}) {
     const bot = botRecord(botId)
     if (!bot || bot.remote !== undefined) throw forbidden('No such Bot')
@@ -239,45 +312,107 @@ export function install(rt) {
     if (items === undefined) return listed(botId)
     if (!Array.isArray(items)) throw invalid('tasks must be a list')
     if (items.length > 20) throw invalid('Track at most 20 tasks at once')
-    const actor = bot.ownerId ? { memberId: bot.ownerId } : null
+    const makeTask = (ownerBot, title, roomId) => {
+      const at = stamp()
+      const actor = ownerBot.ownerId ? { memberId: ownerBot.ownerId } : null
+      const task = {
+        id: `task-${randomBytes(8).toString('hex')}`,
+        status: 'open',
+        createdAt: at,
+        updatedAt: at,
+        requesterId: ownerBot.ownerId ?? null,
+        ownerBotId: ownerBot.id,
+        title,
+        source: 'conversation',
+        origin: { ...(roomId ? { roomId } : {}), ...(origin.sessionId ? { sessionId: String(origin.sessionId) } : {}) },
+        actors: [{ status: 'open', at, by: 'conversation', ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
+      }
+      store()[task.id] = task
+      return task
+    }
     const saved = []
+    const batch = new Map()
     for (const item of items) {
       if (item === null || typeof item !== 'object' || Array.isArray(item)) throw invalid('Each task must be an object')
       const column = readColumn(item.column)
       const title = item.title !== undefined ? readTitle(item.title) : undefined
+      const ask = readOptionalLine(item.ask, 'A question')
+      const answer = readOptionalLine(item.answer, 'An answer')
+      const overall = item.overall === true
+      const assigneeName = item.assignee === undefined || item.assignee === null ? '' : String(item.assignee).trim()
+      const parentRef = item.parent === undefined || item.parent === null ? '' : String(item.parent).trim()
+      if (ask && column === 'done') throw invalid('A task that needs an answer cannot be done')
       const roomId = resolveRoom(botId, item.group, origin.roomId)
+      const room = roomId ? state.rooms?.[roomId] : undefined
+      if ((overall || assigneeName || parentRef) && !room) throw invalid('A group task needs a group')
+      if (room?.origin === 'face-to-face' && (overall || assigneeName || parentRef)) throw invalid('A face-to-face room has no group task board')
+      if (overall && assigneeName) throw invalid('The overall task is the group\'s, not a subtask')
+      if (overall && parentRef) throw invalid('The overall task has no parent')
+      if (overall && !plansRoom(botId, room)) throw forbidden('Only the group admin can record the overall task')
+      if (assigneeName && !plansRoom(botId, room)) throw forbidden('Only the group admin can assign a subtask')
+      let ownerBot = bot
+      if (assigneeName) {
+        ownerBot = memberBot(room, assigneeName)
+        if (ownerBot.id !== botId && !parentRef) throw invalid('A subtask needs the overall task (parent)')
+      }
+      const parent = parentRef ? resolveParent(roomId, parentRef, batch) : undefined
       let task
       let isNew = false
-      if (item.id !== undefined && item.id !== null && String(item.id) !== '') {
+      let frozen = false
+      const givenId = item.id !== undefined && item.id !== null && String(item.id) !== ''
+      if (givenId) {
         task = find(item.id)
         if (!task || task.ownerBotId !== botId) throw forbidden('That task is not yours')
+        if (overall && task.kind !== 'group') throw invalid('That task is not the overall task')
+      } else if (overall) {
+        task = openOverall(roomId)
+        if (task && task.ownerBotId !== botId) throw forbidden('That overall task belongs to another Bot')
+        if (!task) {
+          if (!title) throw invalid('A new task needs a title')
+          isNew = true
+          task = makeTask(bot, title, roomId)
+          task.kind = 'group'
+        }
+      } else if (ownerBot.id !== botId) {
+        if (!title) throw invalid('A new task needs a title')
+        task = matchChild(ownerBot.id, title, roomId, parent.id)
+        if (task) frozen = true
+        else {
+          isNew = true
+          task = makeTask(ownerBot, title, roomId)
+          task.parentId = parent.id
+        }
       } else {
         if (!title) throw invalid('A new task needs a title')
         task = matchTitle(botId, title, roomId)
-      }
-      if (!task) {
-        isNew = true
-        const at = stamp()
-        task = {
-          id: `task-${randomBytes(8).toString('hex')}`,
-          status: 'open',
-          createdAt: at,
-          updatedAt: at,
-          requesterId: bot.ownerId ?? null,
-          ownerBotId: botId,
-          title,
-          source: 'conversation',
-          origin: { ...(roomId ? { roomId } : {}), ...(origin.sessionId ? { sessionId: String(origin.sessionId) } : {}) },
-          actors: [{ status: 'open', at, by: 'conversation', ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
+        if (!task) {
+          isNew = true
+          task = makeTask(bot, title, roomId)
         }
-        store()[task.id] = task
-      } else if (title) task.title = title
-      const { progress } = applyFields(task, item)
-      if (!task.source) task.source = 'conversation'
-      const before = task.updatedAt
-      const moved = applyColumn(task, column, null, 'conversation')
-      if (column === 'done' && progress === undefined) task.progress = 100
-      if (!isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
+      }
+      if (!frozen) {
+        if (parent && task.kind !== 'group') {
+          task.parentId = parent.id
+          task.origin = { ...task.origin, roomId: parent.origin?.roomId ?? roomId }
+        }
+        if (overall) task.kind = 'group'
+        if (!answer && waitingForInput(task) && (column !== undefined || item.progress !== undefined)) {
+          throw stale('This task is waiting on an answer. Ask, then pass answer with what was said.')
+        }
+        if (title && task.title !== title) task.title = title
+        const { progress } = applyFields(task, item)
+        if (!task.source) task.source = 'conversation'
+        const before = task.updatedAt
+        if (answer) resumeFromAnswer(task, answer)
+        const moved = applyColumn(task, column, null, 'conversation')
+        if (column === 'done' && progress === undefined) task.progress = 100
+        if (ask) {
+          if (task.ownerBotId !== botId) throw forbidden('Only that Bot can mark its task waiting')
+          blockForInput(task, ask)
+        } else if (!answer && !isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
+      }
+      if (task.title) batch.set(task.title, task)
+      batch.set(task.id, task)
       saved.push(task)
     }
     prune()
@@ -376,7 +511,7 @@ export function install(rt) {
           const room = state.rooms?.[roomId]
           if (room === undefined) throw forbidden('No such group')
           if (rt.authzEnforced?.() && !roomAdmin(actor, room)) throw forbidden('Only a group admin can see that group\'s tasks')
-          const members = new Set(currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote).map(p => p.id))
+          const members = new Set(liveParticipants(room).filter(p => p.kind === 'bot' && !p.remote).map(p => p.id))
           rows = all.filter(task => task.origin?.roomId === roomId && members.has(task.ownerBotId))
         } else if (botId) {
           const bot = botRecord(botId)

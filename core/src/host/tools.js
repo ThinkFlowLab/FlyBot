@@ -1,7 +1,7 @@
 // Team tools: the roster, bot-to-bot messages, group chat settings and posts, and the
 // question card. Group rounds and reading chats are in groups.js.
 import { randomUUID } from 'node:crypto'
-import { columnOf } from '../shared/task-board.js'
+import { columnOf, compareForWork } from '../shared/task-board.js'
 import { defineTool } from './tool-schema.js'
 import { COLORS, EXTRA_COLORS, MAX_HOPS, MAX_UNREAD_REQUESTS, ROOM_MODES, SOURCE_KIND } from './constants.js'
 import { unquote } from './text.js'
@@ -760,9 +760,35 @@ export function install(rt) {
     }))
   }
 
+  const actionable = task => task.status === 'open' || task.status === 'claimed' || task.status === 'working'
+  function formatTasks(tasks, { inGroup, withNext }) {
+    const ordered = [...tasks].sort(compareForWork)
+    const cues = []
+    for (const task of ordered) {
+      if (task.waitingFor !== 'input' || !task.inputRequest?.question) continue
+      cues.push(inGroup
+        ? `Waiting ${task.id}: ask the group in your reply: ${task.inputRequest.question}`
+        : `Waiting ${task.id}: call ask_user to ask the user: ${task.inputRequest.question}`)
+    }
+    if (withNext) {
+      const next = ordered.find(actionable)
+      if (next) {
+        const part = next.parentTitle ? ` (part of ${next.parentTitle})` : ''
+        cues.push(`Next: ${next.id} [${columnOf(next)} ${next.priority ?? 'normal'}] ${next.title}${part}`)
+      }
+    }
+    const lines = ordered.map((task) => {
+      const part = task.parentTitle ? ` (part of ${task.parentTitle})` : ''
+      const waiting = task.waitingFor === 'input' && task.inputRequest?.question ? ` waiting: ${task.inputRequest.question}` : ''
+      const mark = `${columnOf(task)} ${task.progress ?? 0}% ${task.priority ?? 'normal'}${task.kind === 'group' ? ' overall' : ''}`
+      return `- ${task.id} [${mark}] ${task.title}${part}${waiting}`
+    })
+    return [...cues, ...lines].join('\n')
+  }
+
   ctx.tools.register(defineTool({
     name: 'track_tasks',
-    description: 'Read or update your own task list. Call it when the user gives you work, or when a task starts, moves, or finishes, so the board stays current. Omit tasks to read the list. Pass tasks to create or update: match an id you already have, or the title of a task you are still tracking. Each task has a title, a column (not-started, in-progress, done), a progress percent from 0 to 100, a priority (low, normal, high, urgent) and a short note. In a group the task is tracked for that group.',
+    description: 'Read or update tasks on the board. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the admin or a Main Bot records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). A member links its own subtask with parent. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. In a group the task is tracked for that group.',
     parameters: {
       tasks: {
         type: 'array',
@@ -778,6 +804,11 @@ export function install(rt) {
             priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'How urgent the task is.' },
             note: { type: 'string', description: 'One line on where the task stands.' },
             group: { type: 'string', description: 'Group chat name this task belongs to. In a group, the current group is used when this is omitted.' },
+            overall: { type: 'boolean', description: 'Record this as the group\'s one overall task. Only the group admin, or a Main Bot in the group, may set it. A later call updates that same open task.' },
+            parent: { type: 'string', description: 'Id or title of the overall group task this subtask belongs to.' },
+            assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the group admin, or a Main Bot in the group, may name another member.' },
+            ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. In your own chat, call ask_user; in a group, ask in your reply.' },
+            answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
           },
         },
       },
@@ -791,7 +822,7 @@ export function install(rt) {
       try {
         const tasks = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
         if (!Array.isArray(tasks) || tasks.length === 0) return 'No tasks.'
-        return tasks.map(task => `- ${task.id} [${columnOf(task)} ${task.progress ?? 0}% ${task.priority ?? 'normal'}] ${task.title}`).join('\n')
+        return formatTasks(tasks, { inGroup: Boolean(roomId), withNext: args?.tasks === undefined })
       } catch (error) {
         return error?.message ?? String(error)
       }

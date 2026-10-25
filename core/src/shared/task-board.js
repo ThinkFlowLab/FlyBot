@@ -24,6 +24,26 @@ export function priorityOf(task) {
   return PRIORITIES.includes(task?.priority) ? task.priority : 'normal'
 }
 
+const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 }
+
+function workBucket(task) {
+  if (task?.status === 'open' || task?.status === 'claimed' || task?.status === 'working') return 0
+  if (task?.status === 'blocked' || task?.status === 'result-ready') return 1
+  return 2
+}
+
+// What to continue next (#1099): unfinished before finished, higher priority
+// before lower, and an in-progress task before one that has not started.
+export function compareForWork(a, b) {
+  const byBucket = workBucket(a) - workBucket(b)
+  if (byBucket !== 0) return byBucket
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2)
+  if (byPriority !== 0) return byPriority
+  const byWorking = (a?.status === 'working' ? 0 : 1) - (b?.status === 'working' ? 0 : 1)
+  if (byWorking !== 0) return byWorking
+  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0)
+}
+
 export function progressOf(task) {
   const value = task?.progress
   if (typeof value !== 'number' || !Number.isFinite(value)) return columnOf(task) === 'done' && task?.status !== 'cancelled' && task?.status !== 'failed' ? 100 : 0

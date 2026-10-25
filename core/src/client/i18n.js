@@ -632,6 +632,8 @@ const ZH = {
   'Start task': '开始任务',
   'Complete task': '完成任务',
   'Add task': '添加任务',
+  'Group task': '群任务',
+  'Part of {title}': '属于 {title}',
   'Task title': '任务标题',
   Progress: '进度',
   Group: '群',

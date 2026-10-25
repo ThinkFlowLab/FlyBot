@@ -27,7 +27,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { BoardView, boardColumns, boardRail, canMoveTask, shortId } = module.exports
+const { BoardView, boardColumns, boardRail, canMoveTask, columnTree, shortId } = module.exports
 
 const expand = (node) => {
   if (Array.isArray(node)) return node.flatMap(expand)
@@ -131,4 +131,36 @@ test('the board draws the three columns, nests the child, and moves only the own
   assert.match(textOf(group), /Other/)
   assert.equal(all(group).some(node => node.type === 'button' && (textOf(node) === 'Start' || textOf(node) === 'Complete')), false)
   assert.equal(byClass(group, 'bt-board-card')[0].props.draggable, undefined)
+})
+
+test('a group column nests subtasks under the overall task', () => {
+  const overall = task('task-aaaaaa111111', 'open', { title: 'Ship it', kind: 'group', ownerBotId: 'a', priority: 'high', updatedAt: 5 })
+  const child = task('task-bbbbbb222222', 'open', { title: 'Write it', ownerBotId: 's', parentId: overall.id, parentTitle: 'Ship it', priority: 'urgent', updatedAt: 6 })
+  const later = task('task-cccccc333333', 'working', { title: 'Check it', ownerBotId: 'b', ownerBotName: 'Other', parentId: overall.id, parentTitle: 'Ship it', progress: 10, updatedAt: 7 })
+  const open = columnTree([overall, child, tasks[3]])
+  assert.equal(open.nests.length, 1)
+  assert.equal(open.nests[0].task.id, overall.id)
+  // Ids come back from the bundled module's realm; join avoids deepEqual's cross-realm miss.
+  assert.equal(open.nests[0].children.map(item => item.id).join('|'), child.id)
+  assert.equal(open.loose.map(item => item.id).join('|'), tasks[3].id)
+  const tree = expand({
+    type: BoardView,
+    props: {
+      roster,
+      tasks: [overall, child, later, tasks[3]],
+      rail: boardRail(roster),
+      scope: { kind: 'group', roomId: 'war' },
+      onMove: () => {},
+    },
+    children: [],
+  })
+  const notStarted = byClass(tree, 'bt-board-column').find(node => node.props['data-column'] === 'not-started')
+  const progress = byClass(tree, 'bt-board-column').find(node => node.props['data-column'] === 'in-progress')
+  assert.match(textOf(notStarted), /Group task/)
+  assert.match(textOf(notStarted), /Ship it/)
+  assert.match(textOf(notStarted), /Write it/)
+  assert.equal(all(notStarted).some(node => node.props?.['data-parent'] === overall.id), true)
+  assert.match(textOf(progress), /Part of Ship it/)
+  assert.match(textOf(progress), /Check it/)
+  assert.match(textOf(notStarted), /Theirs/)
 })

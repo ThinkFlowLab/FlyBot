@@ -180,6 +180,7 @@ const adminNote = room => isFaceRoom(room) ? FACE_LEAD_NOTE : [
   'You are this group\'s admin.',
   room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
   '"@all" calls every member. When the user asks, change the group with update_group.',
+  'When the group is given a job, record one overall task with track_tasks and a subtask for each Bot that has a part.',
 ].filter(Boolean).join(' ')
 
 const ROOM_READ_MAX = 30

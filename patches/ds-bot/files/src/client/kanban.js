@@ -31,6 +31,32 @@ export function boardColumns(tasks) {
   return columns
 }
 
+// Group scope: an overall task (kind group) keeps the subtasks that share its
+// column nested under it. A subtask whose parent sits in another column stays
+// loose so the column can name the parent.
+export function columnTree(tasks) {
+  const ids = new Set((tasks ?? []).map(task => task.id))
+  const childrenOf = new Map()
+  const nested = new Set()
+  for (const task of tasks ?? []) {
+    if (!task.parentId || !ids.has(task.parentId)) continue
+    const parent = tasks.find(item => item.id === task.parentId)
+    if (parent?.kind !== 'group') continue
+    const list = childrenOf.get(parent.id) ?? []
+    list.push(task)
+    childrenOf.set(parent.id, list)
+    nested.add(task.id)
+  }
+  const nests = []
+  const loose = []
+  for (const task of tasks ?? []) {
+    if (nested.has(task.id)) continue
+    if (task.kind === 'group') nests.push({ task, children: childrenOf.get(task.id) ?? [] })
+    else loose.push(task)
+  }
+  return { nests, loose }
+}
+
 function adminOf(roster, room) {
   const me = roster?.self?.memberId
   if (!me) return room?.origin !== 'face-to-face'
@@ -166,16 +192,19 @@ function RailButton({ row, selected, meta, onSelect }) {
   meta ? h('span', { className: 'bt-board-rail-meta' }, meta) : null)
 }
 
-export function BoardCard({ task, roster, movable, onMove, onDrag }) {
+export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   const column = columnOf(task)
   const priority = priorityOf(task)
   const progress = progressOf(task)
   const who = botName(roster, task)
+  const question = task.waitingFor === 'input' ? task.inputRequest?.question : ''
+  const overall = task.kind === 'group'
   return h('article', {
     className: 'bt-board-card',
     'data-task': task.id,
     'data-column': column,
     'data-priority': priority,
+    'data-kind': overall ? 'group' : undefined,
     draggable: movable || undefined,
     onDragStart: (event) => {
       event.dataTransfer?.setData('text/plain', task.id)
@@ -189,7 +218,10 @@ export function BoardCard({ task, roster, movable, onMove, onDrag }) {
     h('span', { className: 'bt-board-priority', 'data-priority': priority }, priorityLabel(priority)),
     h('span', { className: 'bt-board-status' }, statusLabel(task.status))),
   h('span', { className: 'bt-board-title' }, task.title || t('Untitled task')),
+  overall ? h('span', { className: 'bt-board-kind' }, t('Group task')) : null,
+  partOf ? h('span', { className: 'bt-board-part' }, t('Part of {title}', { title: partOf })) : null,
   task.note ? h('span', { className: 'bt-board-note' }, task.note) : null,
+  question ? h('span', { className: 'bt-board-wait' }, question) : null,
   h('span', { className: 'bt-board-foot' },
     who ? h('span', { className: 'bt-board-who' }, who) : null,
     h('span', { className: 'bt-board-progress' },
@@ -200,7 +232,14 @@ export function BoardCard({ task, roster, movable, onMove, onDrag }) {
   movable && column === 'in-progress' && task.status !== 'blocked' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onMove?.(task.id, 'done') }, t('Complete')) : null)
 }
 
+function cardProps(task, roster, onMove, onDrag, partOf) {
+  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf }
+}
+
 function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
+  const tree = lanes ? columnTree(tasks) : null
+  const linked = tree ? tree.loose.filter(task => task.parentId || task.parentTitle) : []
+  const plain = tree ? tree.loose.filter(task => !task.parentId && !task.parentTitle) : tasks
   return h('section', {
     className: 'bt-board-column',
     'data-column': column,
@@ -217,13 +256,17 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
     h('span', null, columnTitle(column)),
     h('span', { className: 'bt-board-count' }, String(tasks.length))),
   dragging ? h('div', { className: 'bt-board-drop' }, dropLabel(column)) : null,
-  tasks.length === 0 && !dragging
-    ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.'))
-    : lanes
-      ? lanesOf(tasks, roster).map(lane => h('div', { key: lane.id, className: 'bt-board-lane' },
-          h('span', { className: 'bt-board-lane-name' }, lane.name),
-          lane.tasks.map(task => h(BoardCard, { key: task.id, task, roster, movable: canMoveTask(roster, task), onMove, onDrag }))))
-      : tasks.map(task => h(BoardCard, { key: task.id, task, roster, movable: canMoveTask(roster, task), onMove, onDrag })))
+  tasks.length === 0 && !dragging ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.')) : null,
+  tree ? tree.nests.map(nest => h('div', { key: nest.task.id, className: 'bt-board-nest' },
+    h(BoardCard, cardProps(nest.task, roster, onMove, onDrag)),
+    nest.children.map(child => h('div', { key: child.id, className: 'bt-board-subtask', 'data-parent': nest.task.id },
+      h(BoardCard, cardProps(child, roster, onMove, onDrag)))))) : null,
+  linked.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || '') })),
+  lanes
+    ? lanesOf(plain, roster).map(lane => h('div', { key: lane.id, className: 'bt-board-lane' },
+        h('span', { className: 'bt-board-lane-name' }, lane.name),
+        lane.tasks.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))))
+    : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) })))
 }
 
 export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
@@ -350,6 +393,11 @@ export const KANBAN_CSS = `
 .bt-board-error{margin:0;font-size:13px;line-height:18px;color:#c21d2e}
 .bt-board-lane{display:flex;flex-direction:column;gap:6px}
 .bt-board-lane-name{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-3);padding:0 2px}
+.bt-board-nest{display:flex;flex-direction:column;gap:6px}
+.bt-board-subtask{margin-left:12px;padding-left:8px;border-left:2px solid var(--bt-line)}
+.bt-board-kind{font-size:11px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
+.bt-board-part{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-board-wait{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 .bt-board-card{display:flex;flex-direction:column;gap:6px;padding:10px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main));cursor:grab}
 .bt-board-card-top{display:flex;align-items:center;gap:6px;min-width:0}
 .bt-board-id{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}

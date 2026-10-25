@@ -834,7 +834,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,52 +100,138 @@ const slotLabel = (slot) => {
+@@ -100,52 +100,139 @@ const slotLabel = (slot) => {
    return slot.name
  }
  
@@ -844,6 +844,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    'You are this group\'s admin.',
    room.mode === 'admin' ? 'Plain messages come to you first: answer them, or call the members who should answer with @Name.' : '',
    '"@all" calls every member. When the user asks, change the group with update_group.',
++  'When the group is given a job, record one overall task with track_tasks and a subtask for each Bot that has a part.',
  ].filter(Boolean).join(' ')
  
 -// The opening turn of a group the user just made without a first message.

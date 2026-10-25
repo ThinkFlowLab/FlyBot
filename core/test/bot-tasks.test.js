@@ -243,3 +243,116 @@ test('a tree parent can read a child, and only a group admin can read other Bots
   assert.match(stolen, /not yours/)
   assert.equal((await list(next.call, bob.sessionToken, { botId: 'b' })).find(task => task.title === 'Private draft').status, 'open')
 })
+
+test('a group keeps one overall task and a subtask per Bot, and unfinished work follows priority', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const planned = await app.track('a', { tasks: [
+    { title: 'Ship the note', overall: true, group: 'War', priority: 'high' },
+    { title: 'Write the draft', parent: 'Ship the note', assignee: 'Writer', group: 'War', priority: 'urgent' },
+    { title: 'Review the draft', parent: 'Ship the note', assignee: 'ChiefA', group: 'War', priority: 'low' },
+  ] })
+  assert.match(planned, /overall/)
+  const roomTasks = await list(app.call, alice.sessionToken, { roomId: 'war' })
+  const overall = roomTasks.find(task => task.kind === 'group')
+  assert.ok(overall, 'the group has an overall task')
+  assert.equal(overall.title, 'Ship the note')
+  assert.equal(overall.ownerBotId, 'a')
+  const draft = roomTasks.find(task => task.title === 'Write the draft')
+  const review = roomTasks.find(task => task.title === 'Review the draft')
+  assert.equal(draft.ownerBotId, 's')
+  assert.equal(draft.priority, 'urgent')
+  assert.equal(draft.parentId, overall.id)
+  assert.equal(draft.parentTitle, 'Ship the note')
+  assert.equal(review.ownerBotId, 'a')
+  assert.equal(review.parentId, overall.id)
+
+  const renamed = await app.track('a', { tasks: [{ title: 'Ship the notes', overall: true, group: 'War' }] })
+  assert.match(renamed, new RegExp(overall.id))
+  const again = await list(app.call, alice.sessionToken, { roomId: 'war' })
+  assert.equal(again.filter(task => task.kind === 'group').length, 1, 'a second overall updates the open one')
+  assert.equal(again.find(task => task.kind === 'group').title, 'Ship the notes')
+  assert.equal(again.find(task => task.title === 'Write the draft').parentId, overall.id)
+
+  const member = await app.track('s', { tasks: [{ title: 'Ship something else', overall: true, group: 'War' }] })
+  assert.match(member, /Only the group admin/)
+  const assigned = await app.track('s', { tasks: [{ title: 'Extra', parent: 'Ship the notes', assignee: 'ChiefA', group: 'War' }] })
+  assert.match(assigned, /Only the group admin/)
+
+  await app.track('s-war', { tasks: [
+    { title: 'Write the draft', column: 'in-progress', progress: 20 },
+    { title: 'File the draft', parent: 'Ship the notes', column: 'in-progress', priority: 'low', progress: 5 },
+  ] })
+  const read = await app.track('s-war', {})
+  assert.match(read, new RegExp(`Next: ${draft.id} \\[in-progress urgent\\] Write the draft`))
+
+  await app.track('a', { tasks: [
+    { title: 'Fresh high', priority: 'high', column: 'not-started' },
+    { title: 'Going high', priority: 'high', column: 'in-progress', progress: 15 },
+  ] })
+  const chief = await app.track('a', {})
+  assert.match(chief, /Next: \S+ \[in-progress high\] Going high/)
+
+  const asked = await app.track('s-war', { tasks: [{ id: draft.id, ask: 'Which tone?' }] })
+  assert.match(asked, /ask the group in your reply: Which tone\?/)
+  const waiting = (await list(app.call, alice.sessionToken, { botId: 's' })).find(task => task.id === draft.id)
+  assert.equal(waiting.status, 'blocked')
+  assert.equal(waiting.waitingFor, 'input')
+  assert.equal(waiting.inputRequest.question, 'Which tone?')
+  const early = await app.track('s-war', { tasks: [{ id: draft.id, column: 'done' }] })
+  assert.match(early, /waiting on an answer/)
+  assert.equal((await list(app.call, alice.sessionToken, { botId: 's' })).find(task => task.id === draft.id).status, 'blocked')
+  const resumed = await app.track('s-war', { tasks: [{ id: draft.id, answer: 'Warm', progress: 55 }] })
+  assert.match(resumed, /in-progress/)
+  const back = (await list(app.call, alice.sessionToken, { botId: 's' })).find(task => task.id === draft.id)
+  assert.equal(back.status, 'working')
+  assert.equal(back.progress, 55)
+  assert.equal(back.inputRequest.answer, 'Warm')
+
+  const solo = await app.track('s', { tasks: [{ title: 'Solo note', ask: 'Which file?' }] })
+  assert.match(solo, /call ask_user to ask the user: Which file\?/)
+  assert.match(app.ctx.sections.get('bot-identity').text({ agent: { id: 'a' } }), /overall: true/)
+})
+
+test('a classic group without participants still lists the overall task and another owner\'s subtask', async (t) => {
+  const first = await start(t)
+  let app = first
+  t.after(() => app.stop())
+  const alice = await first.signIn('Alice')
+  const bob = await first.signIn('Bob', alice.sessionToken)
+  await first.stop({ keepHome: true })
+  const saved = JSON.parse(readFileSync(first.statePath, 'utf8'))
+  saved.bots.b = { id: 'b', name: 'BobBot', role: 'Help', sessionId: 'b', createdAt: 4, ownerId: bob.memberId }
+  saved.rooms.old = {
+    id: 'old', name: 'Old', members: ['a', 'b'], admin: 'a', mode: 'everyone', named: true,
+    sessions: { a: 'a-old', b: 'b-old' }, log: [], seq: 0, seen: {},
+  }
+  writeFileSync(first.statePath, JSON.stringify(saved))
+  const next = await start(t, { home: first.home })
+  app = next
+
+  await next.track('a-old', { tasks: [
+    { title: 'Ship the note', overall: true, priority: 'high' },
+    { title: 'Bob writes', parent: 'Ship the note', assignee: 'BobBot', priority: 'high' },
+  ] })
+  const roomTasks = await list(next.call, alice.sessionToken, { roomId: 'old' })
+  assert.deepEqual(roomTasks.map(task => task.title).sort(), ['Bob writes', 'Ship the note'])
+  const overall = roomTasks.find(task => task.kind === 'group')
+  const child = roomTasks.find(task => task.title === 'Bob writes')
+  assert.equal(child.ownerBotId, 'b')
+  assert.equal(child.requesterId, bob.memberId)
+  assert.equal(child.parentId, overall.id)
+  assert.equal(child.parentTitle, 'Ship the note')
+
+  const edited = await next.call('task-update', { id: child.id, column: 'done' }, alice.sessionToken)
+  assert.equal(edited.ok, false)
+  assert.equal(edited.error.code, 'bot/forbidden')
+  const updated = await next.track('b-old', { tasks: [{ title: 'Bob writes', column: 'in-progress', progress: 40 }] })
+  assert.match(updated, /in-progress/)
+  assert.equal((await list(next.call, bob.sessionToken, { botId: 'b' })).find(task => task.id === child.id).progress, 40)
+  const denied = await next.track('b-old', { tasks: [{ title: 'Another job', overall: true }] })
+  assert.match(denied, /Only the group admin/)
+  assert.match(next.ctx.sections.get('bot-room').text({ agent: { id: 'a-old' } }), /overall task/)
+  assert.equal((await list(next.call, bob.sessionToken)).some(task => task.kind === 'group'), false)
+})

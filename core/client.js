@@ -691,6 +691,8 @@ var ZH = {
   "Start task": "开始任务",
   "Complete task": "完成任务",
   "Add task": "添加任务",
+  "Group task": "群任务",
+  "Part of {title}": "属于 {title}",
   "Task title": "任务标题",
   Progress: "进度",
   Group: "群",
@@ -7599,6 +7601,21 @@ function columnOf(task) {
 function priorityOf(task) {
   return PRIORITIES.includes(task?.priority) ? task.priority : "normal";
 }
+var PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+function workBucket(task) {
+  if (task?.status === "open" || task?.status === "claimed" || task?.status === "working") return 0;
+  if (task?.status === "blocked" || task?.status === "result-ready") return 1;
+  return 2;
+}
+function compareForWork(a, b) {
+  const byBucket = workBucket(a) - workBucket(b);
+  if (byBucket !== 0) return byBucket;
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
+  if (byPriority !== 0) return byPriority;
+  const byWorking = (a?.status === "working" ? 0 : 1) - (b?.status === "working" ? 0 : 1);
+  if (byWorking !== 0) return byWorking;
+  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
+}
 function progressOf(task) {
   const value = task?.progress;
   if (typeof value !== "number" || !Number.isFinite(value)) return columnOf(task) === "done" && task?.status !== "cancelled" && task?.status !== "failed" ? 100 : 0;
@@ -7629,6 +7646,28 @@ function boardColumns(tasks) {
   }
   for (const list of Object.values(columns)) list.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   return columns;
+}
+function columnTree(tasks) {
+  const ids = new Set((tasks ?? []).map((task) => task.id));
+  const childrenOf = /* @__PURE__ */ new Map();
+  const nested = /* @__PURE__ */ new Set();
+  for (const task of tasks ?? []) {
+    if (!task.parentId || !ids.has(task.parentId)) continue;
+    const parent = tasks.find((item) => item.id === task.parentId);
+    if (parent?.kind !== "group") continue;
+    const list = childrenOf.get(parent.id) ?? [];
+    list.push(task);
+    childrenOf.set(parent.id, list);
+    nested.add(task.id);
+  }
+  const nests = [];
+  const loose = [];
+  for (const task of tasks ?? []) {
+    if (nested.has(task.id)) continue;
+    if (task.kind === "group") nests.push({ task, children: childrenOf.get(task.id) ?? [] });
+    else loose.push(task);
+  }
+  return { nests, loose };
 }
 function adminOf(roster, room2) {
   const me = roster?.self?.memberId;
@@ -7765,11 +7804,13 @@ function RailButton({ row, selected, meta, onSelect }) {
     meta ? (0, import_react13.createElement)("span", { className: "bt-board-rail-meta" }, meta) : null
   );
 }
-function BoardCard({ task, roster, movable, onMove, onDrag }) {
+function BoardCard({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) {
   const column = columnOf(task);
   const priority = priorityOf(task);
   const progress = progressOf(task);
   const who = botName(roster, task);
+  const question = task.waitingFor === "input" ? task.inputRequest?.question : "";
+  const overall = task.kind === "group";
   return (0, import_react13.createElement)(
     "article",
     {
@@ -7777,6 +7818,7 @@ function BoardCard({ task, roster, movable, onMove, onDrag }) {
       "data-task": task.id,
       "data-column": column,
       "data-priority": priority,
+      "data-kind": overall ? "group" : void 0,
       draggable: movable || void 0,
       onDragStart: (event) => {
         event.dataTransfer?.setData("text/plain", task.id);
@@ -7793,7 +7835,10 @@ function BoardCard({ task, roster, movable, onMove, onDrag }) {
       (0, import_react13.createElement)("span", { className: "bt-board-status" }, statusLabel(task.status))
     ),
     (0, import_react13.createElement)("span", { className: "bt-board-title" }, task.title || t("Untitled task")),
+    overall ? (0, import_react13.createElement)("span", { className: "bt-board-kind" }, t("Group task")) : null,
+    partOf2 ? (0, import_react13.createElement)("span", { className: "bt-board-part" }, t("Part of {title}", { title: partOf2 })) : null,
     task.note ? (0, import_react13.createElement)("span", { className: "bt-board-note" }, task.note) : null,
+    question ? (0, import_react13.createElement)("span", { className: "bt-board-wait" }, question) : null,
     (0, import_react13.createElement)(
       "span",
       { className: "bt-board-foot" },
@@ -7813,7 +7858,13 @@ function BoardCard({ task, roster, movable, onMove, onDrag }) {
     movable && column === "in-progress" && task.status !== "blocked" ? (0, import_react13.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onMove?.(task.id, "done") }, t("Complete")) : null
   );
 }
+function cardProps(task, roster, onMove, onDrag, partOf2) {
+  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
+}
 function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
+  const tree = lanes ? columnTree(tasks) : null;
+  const linked = tree ? tree.loose.filter((task) => task.parentId || task.parentTitle) : [];
+  const plain = tree ? tree.loose.filter((task) => !task.parentId && !task.parentTitle) : tasks;
   return (0, import_react13.createElement)(
     "section",
     {
@@ -7838,12 +7889,24 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
       (0, import_react13.createElement)("span", { className: "bt-board-count" }, String(tasks.length))
     ),
     dragging ? (0, import_react13.createElement)("div", { className: "bt-board-drop" }, dropLabel(column)) : null,
-    tasks.length === 0 && !dragging ? (0, import_react13.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : lanes ? lanesOf(tasks, roster).map((lane) => (0, import_react13.createElement)(
+    tasks.length === 0 && !dragging ? (0, import_react13.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : null,
+    tree ? tree.nests.map((nest) => (0, import_react13.createElement)(
+      "div",
+      { key: nest.task.id, className: "bt-board-nest" },
+      (0, import_react13.createElement)(BoardCard, cardProps(nest.task, roster, onMove, onDrag)),
+      nest.children.map((child) => (0, import_react13.createElement)(
+        "div",
+        { key: child.id, className: "bt-board-subtask", "data-parent": nest.task.id },
+        (0, import_react13.createElement)(BoardCard, cardProps(child, roster, onMove, onDrag))
+      ))
+    )) : null,
+    linked.map((task) => (0, import_react13.createElement)(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || "") })),
+    lanes ? lanesOf(plain, roster).map((lane) => (0, import_react13.createElement)(
       "div",
       { key: lane.id, className: "bt-board-lane" },
       (0, import_react13.createElement)("span", { className: "bt-board-lane-name" }, lane.name),
-      lane.tasks.map((task) => (0, import_react13.createElement)(BoardCard, { key: task.id, task, roster, movable: canMoveTask(roster, task), onMove, onDrag }))
-    )) : tasks.map((task) => (0, import_react13.createElement)(BoardCard, { key: task.id, task, roster, movable: canMoveTask(roster, task), onMove, onDrag }))
+      lane.tasks.map((task) => (0, import_react13.createElement)(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
+    )) : plain.map((task) => (0, import_react13.createElement)(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
   );
 }
 function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
@@ -8022,6 +8085,11 @@ var KANBAN_CSS = `
 .bt-board-error{margin:0;font-size:13px;line-height:18px;color:#c21d2e}
 .bt-board-lane{display:flex;flex-direction:column;gap:6px}
 .bt-board-lane-name{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-3);padding:0 2px}
+.bt-board-nest{display:flex;flex-direction:column;gap:6px}
+.bt-board-subtask{margin-left:12px;padding-left:8px;border-left:2px solid var(--bt-line)}
+.bt-board-kind{font-size:11px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
+.bt-board-part{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-board-wait{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 .bt-board-card{display:flex;flex-direction:column;gap:6px;padding:10px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main));cursor:grab}
 .bt-board-card-top{display:flex;align-items:center;gap:6px;min-width:0}
 .bt-board-id{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}

@@ -61,6 +61,9 @@ test('a Bot stays idle until it is addressed or given a task (part B of #645)', 
     assert.doesNotMatch(text, /\bdispatch\b/, `${id} carries no dispatch instruction`)
   }
   assert.match(prompt('main'), /A coordinator acts on a user task, not on its own initiative\./)
+  assert.match(prompt('worker'), /overall: true/)
+  assert.match(prompt('worker'), /pass ask with the one question/)
+  assert.equal(prompt('worker').split('overall: true').length - 1, 1)
   assert.doesNotMatch(prompt('worker'), /coordinator/, 'the coordinator wording belongs to the Main Bot')
   // A Bot that is addressed answers exactly as before: the reply rule is still there, unchanged.
   const replyRule = '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.'
