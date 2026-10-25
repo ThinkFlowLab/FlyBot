@@ -584,6 +584,58 @@ test('mentions (#143): a group @ of a friend Bot that is not in the room still n
   assert.equal((await fb.bot.send({ from: 'a', to: '@helper.friend.home', text: 'hi from Chief' })).action, 'deny')
 })
 
+test('mentions (#1126): a group @ of a live seat that was not granted still leaves; a stranger is refused', async (t) => {
+  const handle = '@chief.other.home'
+  const { ctx, fb, stop, agents } = await start({
+    rooms: {
+      // The line is typed in a group that does not itself hold the seat, so the in-room skip
+      // (#143) does not apply. The seat lives in another group this Bot is in.
+      side: {
+        id: 'side', name: 'Side', members: ['a', 'b'], admin: 'a', mode: 'admin', notice: '', createdAt: 1, createdBy: null,
+        participants: [
+          { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+          { kind: 'bot', id: 'b', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
+        ],
+      },
+      rnd: {
+        id: 'rnd', name: '研发组', members: ['a'], admin: 'a', mode: 'admin', notice: '', createdAt: 1, createdBy: null,
+        participants: [
+          { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+          { kind: 'bot', remote: true, id: handle, handle, displayName: 'Chief', role: 'member', joinedSeq: 0, joinedAt: 1 },
+        ],
+      },
+    },
+  })
+  t.after(stop)
+  const out = []
+  fb.transports.add('bot-social', { send: async msg => { out.push(msg); return { exchangeId: `r${out.length}` } } })
+  fb.scope('social').remote.publish([{ handle, name: 'Chief', home: '@other.home' }, { handle: '@stranger.evil.home', name: 'Stranger', home: '@evil.home' }])
+  const receipts = () => (agents.get('side')?.calls ?? []).map(([, m]) => m.content.map(b => b.text).join('\n'))
+  ctx.emitArgs('session/event', { id: 'side' }, {
+    type: 'user/message', seq: 1,
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: `${handle} hello` }] },
+  })
+  await delay(30)
+  assert.equal(out.length, 1, 'the live seat is the share, so the mention is not refused')
+  assert.equal(out[0].via, 'user-mention')
+  assert.equal(out[0].to.handle, handle)
+  assert.equal(receipts().length, 0)
+  ctx.emitArgs('session/event', { id: 'side' }, {
+    type: 'user/message', seq: 2,
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@stranger.evil.home hi' }] },
+  })
+  await delay(30)
+  assert.equal(out.filter(msg => msg.via === 'user-mention').length, 1, 'a stranger outside every shared room is not sent')
+  assert.match(receipts().at(-1) ?? '', /Stranger: not sent/)
+  // In the room that holds the seat, the human line is the delivery (#143): no second 1:1.
+  ctx.emitArgs('session/event', { id: 'rnd' }, {
+    type: 'user/message', seq: 1,
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: `${handle} in the room` }] },
+  })
+  await delay(30)
+  assert.equal(out.filter(msg => msg.via === 'user-mention').length, 1)
+})
+
 test('host API (#18): reserved names and the shared scope throw, listeners get copies, changes carry an epoch', async (t) => {
   const { fb, call, stop } = await start()
   t.after(stop)

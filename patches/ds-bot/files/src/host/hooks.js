@@ -1073,6 +1073,15 @@ export function install(rt) {
           face: room.face,
           members: [...(room.members ?? [])],
           participants: (room.participants ?? []).map(p => ({ ...p })),
+          // #1126: an inbound mirror's host room id. The plugin names that id inside a mention's
+          // room-share line; a local room has none, and this is not a Bot Social room_id.
+          ...(room.sharedFrom ? {
+            sharedFrom: {
+              ...(room.sharedFrom.remoteRoomId ? { remoteRoomId: String(room.sharedFrom.remoteRoomId) } : {}),
+              ...(room.sharedFrom.ticket ? { ticket: String(room.sharedFrom.ticket) } : {}),
+              ...(room.sharedFrom.inviterHandle ? { inviterHandle: String(room.sharedFrom.inviterHandle) } : {}),
+            },
+          } : {}),
         }))
       },
       removeParticipant: (roomId, ref) => rt.removeRoomParticipant?.(roomId, ref),

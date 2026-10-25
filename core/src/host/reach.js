@@ -225,6 +225,22 @@ export function sharedRoom(state, botId, peer) {
   return room === undefined ? undefined : String(room.id)
 }
 
+// #1126: a mention of a Bot that already sits in a live local or inbound group with the sender.
+// The seat is the consent, so the mention does not also need a Sharing grant. Face-to-face stays
+// on sharedRoom (it names a server room). A link's ticket seat stays on ticketPeers: a mention is
+// not that pair. A plain line and message_bot do not come here — the caller passes `via`.
+export function mentionRoom(state, botId, peer) {
+  if (typeof botId !== 'string' || state.bots?.[botId] === undefined) return undefined
+  const key = handleKey(peer)
+  if (!key) return undefined
+  const room = Object.values(state.rooms ?? {}).find(candidate => candidate
+    && candidate.origin !== 'face-to-face'
+    && !candidate.hidden
+    && (candidate.members ?? []).includes(botId)
+    && remotesInRoom(candidate).some(seat => seat.admittedBy !== 'ticket' && handleKey(seat.handle || seat.id) === key))
+  return room === undefined ? undefined : String(room.id)
+}
+
 // The seats each link of this room admitted: the invite's own `homes` (home → the handles it seated)
 // is written on the accept and survives even when the seat record itself did not keep the ticket.
 // #929: a link accepted before that field was written keeps the same fact in `acceptedBy` + `seats`, and
@@ -346,9 +362,14 @@ export function install(rt) {
     const from = msg.remote?.handle ? { kind: 'remote', handle: msg.remote.handle } : (msg.from ?? msg.fromId)
     const to = msg.to ?? msg.toId
     const named = msg.meta?.roomId ?? msg.roomId ?? msg.fromRoomId ?? msg.deliverArgs?.roomId ?? msg.deliverArgs?.fromRoomId
+    // #1126: a user mention of a live local-group seat is judged under that room even when the send
+    // names none. Any other via keeps asking for a grant or an explicit roomId.
+    const mentioned = named === undefined && msg.via === 'user-mention' && isRemoteRef(to) && !isRemoteRef(from)
+      ? mentionRoom(state, from, to)
+      : undefined
     // #948: a local Bot's line to a friend's Bot is judged under the room the two of them are still in,
     // even when the send names no room: that room is the consent, and the transport names it outbound.
-    const roomId = named ?? (isRemoteRef(to) && !isRemoteRef(from) ? sharedRoom(state, from, to) : undefined)
+    const roomId = named ?? mentioned ?? (isRemoteRef(to) && !isRemoteRef(from) ? sharedRoom(state, from, to) : undefined)
     return reach(state, { from, to, roomId, scope: msg.meta?.scope })
   }
   rt.ticketPeers = () => ticketPeers(state)

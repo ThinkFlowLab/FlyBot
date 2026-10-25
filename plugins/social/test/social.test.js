@@ -11750,6 +11750,8 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
     ['another Bot of theirs', { from: 'a', to: '@other.eve.home', text: share, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
     // The text itself must be the host's envelope for that room, whole.
     ['plain text wearing the room via', { from: 'a', to: '@guest.eve.home', text: 'hello there', via: 'room', meta: { roomId: 'war', scope: 'war' } }],
+    // #1126 stays off this pair: a mention is not a link, and a ticket seat is not a local-group seat.
+    ['a user mention of the seat', { from: 'a', to: '@guest.eve.home', text: '@guest.eve.home hi', via: 'user-mention' }],
     ['an envelope for another room', { from: 'a', to: '@guest.eve.home', text: share.replace('"war"', '"other"'), via: 'room', meta: { roomId: 'war', scope: 'war' } }],
     ['the marker inside a plain line', { from: 'a', to: '@guest.eve.home', text: `look: ${share}`, via: 'room', meta: { roomId: 'war', scope: 'war' } }],
   ]
@@ -11769,6 +11771,86 @@ test('#883: a room share reaches a seat a link opened, under that room only, and
   for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
   const seat = ctx.flybot.rooms.list().find(r => r.id === 'war').participants.find(p => p.handle === '@guest.eve.home')
   assert.equal(seat.leftSeq, undefined, 'the seat stays: its link decides, not the roster')
+})
+
+// #1126: two homes already share a local group. A mention of the seated Bot is that group's line,
+// not a 1:1 that waits on a Sharing grant. The seat is absent from list_remote_bots on purpose.
+const SHARED_GROUP = {
+  rnd: {
+    id: 'rnd', name: '研发组', members: ['a'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+    participants: [
+      { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@chief.other.home', handle: '@chief.other.home', ownerHome: '@other.home', ownerName: 'Other', displayName: 'Chief', role: 'member', joinedSeq: 1, joinedAt: 1 },
+    ],
+  },
+  mirror: {
+    id: 'mirror', name: '研发组', origin: 'inbound-share', members: ['a'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+    sharedFrom: { remoteRoomId: 'host-room', inviterHandle: '@chief.flybot682b8a43.home', inviterHome: '@flybot682b8a43.home' },
+    participants: [
+      { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', remote: true, id: '@chief.flybot682b8a43.home', handle: '@chief.flybot682b8a43.home', ownerHome: '@flybot682b8a43.home', ownerName: 'Owner', displayName: 'Chief', role: 'member', joinedSeq: 1, joinedAt: 1 },
+    ],
+  },
+}
+
+test('#1126: a mention of a live shared-room seat is a room line; a stranger and a left seat stay refused', async (t) => {
+  const { ctx, home, stop } = await team({ rooms: SHARED_GROUP })
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  // A grant to someone else gives this Bot an identity. It does not grant the seated peer.
+  await grantTeam(ctx.flybot, '@bob.home')
+  await social.registerAll()
+  const sends = () => server.calls.filter(c => c.name === 'send_as_member')
+  const lineOf = call => {
+    const text = String(call?.args?.text ?? '')
+    assert.equal(text.startsWith('FLYBOT-ROOM-SHARE\n'), true, text)
+    return JSON.parse(text.slice('FLYBOT-ROOM-SHARE\n'.length))
+  }
+
+  const mentioned = await ctx.flybot.bot.send({
+    from: 'a', to: '@chief.other.home', text: '@chief.other.home hello from the group', via: 'user-mention',
+  })
+  assert.equal(mentioned.action, 'allow', JSON.stringify(mentioned))
+  assert.equal(mentioned.reason ?? '', '', 'a live seat is not the unshared refusal')
+  assert.equal(sends().length, 1)
+  assert.equal(sends()[0].args.to, '@chief.other.home')
+  assert.equal('room_id' in sends()[0].args, false, 'a local room has no server room id')
+  const line = lineOf(sends()[0])
+  assert.equal(line.op, 'line')
+  assert.equal(line.roomId, 'rnd')
+  assert.match(line.text, /hello from the group/)
+
+  const inbound = await ctx.flybot.bot.send({
+    from: 'a', to: '@chief.flybot682b8a43.home', text: '@chief.flybot682b8a43.home in the mirror', via: 'user-mention',
+  })
+  assert.equal(inbound.action, 'allow', JSON.stringify(inbound))
+  assert.equal(sends().at(-1).args.to, '@chief.flybot682b8a43.home')
+  assert.equal('room_id' in sends().at(-1).args, false)
+  assert.equal(lineOf(sends().at(-1)).roomId, 'host-room', 'an inbound mirror names the host room, not its local id')
+
+  const beforeStranger = sends().length
+  const stranger = await ctx.flybot.bot.send({
+    from: 'a', to: '@stranger.evil.home', text: '@stranger.evil.home hello', via: 'user-mention',
+  })
+  assert.equal(stranger.action, 'deny', JSON.stringify(stranger))
+  assert.match(stranger.reason, /not a Bot a friend shared with you|is not shared with that friend|has not been granted/)
+  assert.equal(sends().length, beforeStranger, 'a stranger outside every shared room is not sent')
+
+  const plain = await ctx.flybot.bot.send({ from: 'a', to: '@chief.other.home', text: 'a private line', via: 'message_bot' })
+  assert.equal(plain.action, 'deny', JSON.stringify(plain))
+  assert.equal(sends().length, beforeStranger, 'a 1:1 to the same seat still needs a share')
+
+  await ctx.flybot.rooms.removeParticipant('rnd', { kind: 'bot', id: '@chief.other.home', remote: true })
+  const left = await ctx.flybot.bot.send({
+    from: 'a', to: '@chief.other.home', text: '@chief.other.home after leaving', via: 'user-mention',
+  })
+  assert.equal(left.action, 'deny', JSON.stringify(left))
+  assert.equal(sends().filter(call => String(call.args?.text ?? '').includes('after leaving')).length, 0)
 })
 
 
