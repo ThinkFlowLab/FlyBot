@@ -229,9 +229,18 @@ test('a part move that fails before the handoff keeps the old part current', asy
   ctx.sessions.flush = async (session) => {
     if (fail && String(session?.id ?? '').startsWith('s')) { fail = false; throw new Error('the handoff package was not written') }
   }
+  // The rollback archives the fresh part it never handed over. Wait for that call, not for a
+  // fixed pause: under load the failing flush above can still be in flight when a sleep expires,
+  // and the pointer is already on the fresh part when it throws (#1059).
+  const archivedFresh = []
+  const archive = ctx.workspaceRegistry.archiveSession
+  ctx.workspaceRegistry.archiveSession = async (sessionId, options) => {
+    if (sessionId === 's1') archivedFresh.push(sessionId)
+    return archive(sessionId, options)
+  }
   await call('update-bot', { id: 'b', workDir: project })
-  await until(() => created.length > 0) // the move created its fresh Session
-  await settle()
+  await until(() => archivedFresh.length > 0)
+  assert.equal(created.length, 1, 'the move did create its fresh Session first')
   assert.equal(state().bots.b.sessionId, 'b', 'the old part stays current')
   assert.equal((state().bots.b.segments ?? []).length, 0, 'no empty fresh part was recorded')
 })
