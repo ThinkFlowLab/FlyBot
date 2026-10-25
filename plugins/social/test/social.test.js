@@ -11636,11 +11636,14 @@ test('#876: each refusal of a group link is its own sentence, never "not an invi
     seen.add(text)
   }
   assert.equal(seen.size, 7, 'seven refusals, seven sentences')
-  // A link this home already joined with is said before anyone presses Join.
-  const taken = localLinkDialog(async () => ({ preview: { name: 'Trip plan', lead: 'Chief', expiresAt: Date.now() + 60_000, claimed: true, joined: true } }))
+  // A room this home already holds is said before anyone presses Join — the link seated it, or the host
+  // added a Bot by add-member (#1176: `joined` without `claimed`, so a claim is not the only way in).
+  const taken = localLinkDialog(async () => ({ preview: { name: 'Trip plan', lead: 'Chief', expiresAt: Date.now() + 60_000, claimed: false, joined: true } }))
   taken.render().find(n => n.props['data-flybot'] === 'face-link-join-go').props.onClick()
   await settleUi()
-  assert.match(taken.last().status.text, /You already joined this group with that link/, '#892: claimed is this home\'s own claim, never someone else\'s')
+  assert.equal(taken.last().status.text, 'This group is already in your sidebar.', '#1176: the room is here, so the link is no knock')
+  assert.equal(taken.last().preview, undefined, 'no card, so nothing to Join from')
+  assert.deepEqual(taken.hostCalls.map(call => call[0]), ['room-invite-preview'], 'and no claim is sent')
   // #899: a claim whose room never arrived is not "joined": it waits, and Join knocks again.
   const stale = localLinkDialog(async (endpoint) => (endpoint === 'room-invite-ask'
     ? { sent: 'allow', claimed: true, bots: ['@chief.bob.home'] }

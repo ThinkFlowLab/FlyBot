@@ -1543,17 +1543,21 @@ export function install(rt) {
     try {
       const seen = await rt.roomInviteServer.preview(parsed.ticket)
       if (!seen) return { handle: parsed.handle, ticket: parsed.ticket }
+      const roomId = String(seen.roomId ?? '')
       return {
         handle: parsed.handle,
         ticket: parsed.ticket,
         server: true,
+        // #1176: the room the link is for, so a copy this home already holds can be recognised.
+        ...(roomId ? { roomId } : {}),
         name: cleanPeerName(seen.name, ''),
         lead: cleanPeerName(seen.lead?.name, cleanPeerName(seen.lead?.handle, '')),
         owner: cleanPeerName(seen.lead?.ownerName, ''),
         expiresAt: Number(seen.expiresAt) || undefined,
         claimed: seen.claimed === true,
-        // #899: a claim is not a seat: the room is here only once the inviter's home seated this one.
-        ...(seen.claimed === true ? { joined: joinedByTicket(parsed.ticket) } : {}),
+        // #899/#1176: a claim is not a room and a room is not a claim. The room is here when this home
+        // holds it — the ticket seated it, or the host added this Bot by add-member (remote room id, no ticket).
+        joined: roomIsHere({ ticket: parsed.ticket, roomId }),
       }
     } catch (error) {
       const code = String(error?.code ?? '')
@@ -1561,8 +1565,10 @@ export function install(rt) {
       return { handle: parsed.handle, ticket: parsed.ticket, refused: refusalOf(code) }
     }
   }
-  const joinedByTicket = ticket => Object.values(state.rooms || {}).some(room => room.origin === 'inbound-share' && !room.hidden
-    && room.sharedFrom?.ticket === ticket && currentParticipants(room).some(p => p.kind === 'bot' && !p.remote))
+  const roomIsHere = ({ ticket, roomId }) => Object.values(state.rooms || {}).some(room => room.origin === 'inbound-share' && !room.hidden
+    && currentParticipants(room).some(p => p.kind === 'bot' && !p.remote)
+    && ((ticket && room.sharedFrom?.ticket === ticket)
+      || (roomId && String(room.sharedFrom?.remoteRoomId ?? '') === String(roomId))))
   // Bot Social's refusal code, as the one reason the dialog names.
   function refusalOf(code) {
     switch (code) {

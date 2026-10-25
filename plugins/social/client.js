@@ -1695,9 +1695,10 @@ window.__ModuleLoader__.load({
           return
         }
         const card = invitePreview({ name: seen?.name, lead: seen?.owner ? `${seen.lead || 'Bot'} (${seen.owner})` : seen?.lead, expiresAt: isoAt(seen?.expiresAt) })
-        if (seen?.claimed && seen?.joined) {
-          // `claimed` is this home's own claim (#892); `joined` says the room really is here (#899).
-          setInvite({ link: text, status: { tone: 'hint', text: 'You already joined this group with that link. It is in your sidebar.' } })
+        if (seen?.joined) {
+          // #1176: the room is here however it arrived — a link this home claimed (#899), or the host
+          // adding one of these Bots by add-member. Neither is a knock: no Join card, no claim sent.
+          setInvite({ link: text, status: { tone: 'hint', text: 'This group is already in your sidebar.' } })
           return
         }
         if (seen?.claimed) {

@@ -501,6 +501,39 @@ test('#899: a room-only identity is promoted for the link it makes and the link 
   assert.equal((await b.rt.previewLocalInvite(invite.url)).joined, true)
 })
 
+test('#1176: a link for a room this home was added to by add-member says it is here, not that it knocked', async (t) => {
+  const { a, b } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  // The ordinary add-member shape: a join that names no ticket at all, so the copy here is keyed by the
+  // remote room id (sharedFrom.remoteRoomId) and a ticket match can never find it.
+  const added = encodeRoomShare({ op: 'join', roomId: 'war', name: 'Launch plan', invitedHandle: '@chief.bob.home', inviterHandle: '@chief.alice.home', inviterName: 'Alice' })
+  const out = await b.rt.applyInboundRoomShare({ text: added, fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'chief-b' })
+  assert.equal(out.refused, undefined, 'the add-member join projects the room')
+  const mirror = guestRoomOf(b.rt)
+  assert.ok(mirror, 'the room is on this side')
+  assert.equal(mirror.sharedFrom.ticket, undefined, 'add-member wrote no ticket for this room')
+  assert.equal(mirror.sharedFrom.remoteRoomId, 'war')
+
+  const preview = await b.rt.previewLocalInvite(invite.url)
+  assert.equal(preview.roomId, 'war', 'the preview names the room the link is for')
+  assert.equal(preview.claimed, false, 'this home never claimed this link')
+  assert.equal(preview.joined, true, 'the room is already here, so the link is not a knock')
+})
+
+test('#1176: a link whose room is not here is still a knock, whatever the room id says', async (t) => {
+  const { a, b } = await twoHomes(t)
+  const invite = await a.rt.mintRoomInvite('war', { memberId: 'owner-1' })
+  // Same remote room id, but the copy here was hidden (the host removed this Bot, #1167): it is not a room
+  // this person can be told they are in.
+  const added = encodeRoomShare({ op: 'join', roomId: 'war', name: 'Launch plan', invitedHandle: '@chief.bob.home', inviterHandle: '@chief.alice.home', inviterName: 'Alice' })
+  await b.rt.applyInboundRoomShare({ text: added, fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Bot', localBotId: 'chief-b' })
+  const mirror = guestRoomOf(b.rt)
+  mirror.hidden = true
+  const preview = await b.rt.previewLocalInvite(invite.url)
+  assert.equal(preview.roomId, 'war')
+  assert.equal(preview.joined, false, 'a hidden room is not one this person is in')
+})
+
 test('a ticket seat shows the other home\'s lines in the room session, including lines from before the join', async (t) => {
   const { a, b, log, settle } = await twoHomes(t)
   const shown = { a: [], b: [] }
