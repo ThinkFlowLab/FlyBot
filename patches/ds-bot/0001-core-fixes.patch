@@ -1836,7 +1836,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +231,122 @@
+@@ -166,56 +231,131 @@
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -1873,14 +1873,23 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const [error, setError] = useState('')
 +  const [from, setFrom] = useState(quiet.from ?? '22:00')
 +  const [to, setTo] = useState(quiet.to ?? '07:00')
-+  const unchecked = view.tasks.some(task => task.kind === 'every' || task.kind === 'cron')
++  // #1199: the one computation lives in the host's `schedulesView()`, which knows both the quiet
++  // guard and the stored task list. The page renders that flag instead of scanning the tasks again.
++  const unchecked = view.quietUnchecked === true
++  // The flag is the host's, so after a save the page asks again instead of predicting it: the line
++  // appears (or goes) in the same rendering, not at the next 30-second poll.
++  const refresh = () => {
++    void Promise.resolve(actions.schedules?.())
++      .then((next) => { if (next) publish(next) })
++      .catch(() => { /* the settings write above is what the owner sees */ })
++  }
 +  const save = (next) => {
 +    if (busy) return
 +    setBusy(true)
 +    setError('')
 +    const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false }
 +    void Promise.resolve(actions.setPrefs({ quietHours: next }))
-+      .then(() => publish({ ...view, quietHours: shown }), (failure) => setError(hostText(failure?.message ?? String(failure))))
++      .then(() => { publish({ ...view, quietHours: shown }); refresh() }, (failure) => setError(hostText(failure?.message ?? String(failure))))
 +      .finally(() => setBusy(false))
 +  }
 +  return h('section', { className: 'bt-set-section' },
@@ -1976,7 +1985,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,7 +356,7 @@
+@@ -225,7 +365,7 @@
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -1985,7 +1994,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
  }
-@@ -239,6 +370,12 @@
+@@ -239,6 +379,12 @@
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
@@ -1998,7 +2007,6 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  .bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
  .bt-task-head{display:flex;align-items:center;gap:6px}
  .bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
-
 diff --git a/src/client/text.js b/src/client/text.js
 --- a/src/client/text.js
 +++ b/src/client/text.js

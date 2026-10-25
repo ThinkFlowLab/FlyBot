@@ -11413,13 +11413,22 @@ function QuietHoursCard({ view, actions }) {
   const [error, setError] = (0, import_react22.useState)("");
   const [from, setFrom] = (0, import_react22.useState)(quiet.from ?? "22:00");
   const [to, setTo] = (0, import_react22.useState)(quiet.to ?? "07:00");
-  const unchecked = view.tasks.some((task) => task.kind === "every" || task.kind === "cron");
+  const unchecked = view.quietUnchecked === true;
+  const refresh = () => {
+    void Promise.resolve(actions.schedules?.()).then((next) => {
+      if (next) publish(next);
+    }).catch(() => {
+    });
+  };
   const save = (next) => {
     if (busy) return;
     setBusy(true);
     setError("");
     const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false };
-    void Promise.resolve(actions.setPrefs({ quietHours: next })).then(() => publish({ ...view, quietHours: shown }), (failure) => setError(hostText(failure?.message ?? String(failure)))).finally(() => setBusy(false));
+    void Promise.resolve(actions.setPrefs({ quietHours: next })).then(() => {
+      publish({ ...view, quietHours: shown });
+      refresh();
+    }, (failure) => setError(hostText(failure?.message ?? String(failure)))).finally(() => setBusy(false));
   };
   return (0, import_react22.createElement)(
     "section",

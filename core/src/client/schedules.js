@@ -260,14 +260,23 @@ function QuietHoursCard({ view, actions }) {
   const [error, setError] = useState('')
   const [from, setFrom] = useState(quiet.from ?? '22:00')
   const [to, setTo] = useState(quiet.to ?? '07:00')
-  const unchecked = view.tasks.some(task => task.kind === 'every' || task.kind === 'cron')
+  // #1199: the one computation lives in the host's `schedulesView()`, which knows both the quiet
+  // guard and the stored task list. The page renders that flag instead of scanning the tasks again.
+  const unchecked = view.quietUnchecked === true
+  // The flag is the host's, so after a save the page asks again instead of predicting it: the line
+  // appears (or goes) in the same rendering, not at the next 30-second poll.
+  const refresh = () => {
+    void Promise.resolve(actions.schedules?.())
+      .then((next) => { if (next) publish(next) })
+      .catch(() => { /* the settings write above is what the owner sees */ })
+  }
   const save = (next) => {
     if (busy) return
     setBusy(true)
     setError('')
     const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false }
     void Promise.resolve(actions.setPrefs({ quietHours: next }))
-      .then(() => publish({ ...view, quietHours: shown }), (failure) => setError(hostText(failure?.message ?? String(failure))))
+      .then(() => { publish({ ...view, quietHours: shown }); refresh() }, (failure) => setError(hostText(failure?.message ?? String(failure))))
       .finally(() => setBusy(false))
   }
   return h('section', { className: 'bt-set-section' },

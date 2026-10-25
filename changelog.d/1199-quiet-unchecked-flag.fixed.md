@@ -1,0 +1,1 @@
+The quiet-hours warning on the Scheduled tasks page now renders the host's `quietUnchecked` flag instead of scanning the task list a second time (#1199), so the line and the check cannot drift apart, and it still appears at once after the window is switched on. The subsystem page no longer calls the window one team-wide clock: a task's due time is read in that task's own zone.

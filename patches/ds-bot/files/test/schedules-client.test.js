@@ -208,6 +208,36 @@ test('a once task sends its zone, so the host reads its wall clock (#1166)', asy
   assert.notEqual(when.timeZone, '')
 })
 
+test('the repeat-task warning is the view flag, not the page scanning its tasks (#1199)', () => {
+  // The realistic drift: a repeat task was deleted between two polls, so the list says nothing while
+  // the host's flag still does. The page renders the host's line, not a line of its own.
+  seeded.push({ available: true, tasks: [{ ...ACTIVE }], quietHours: QUIET, quietUnchecked: true })
+  const flagged = text(render(SchedulesPage({ roster: ROSTER, actions: spy(), start: null })))
+  assert.ok(flagged.some(line => /still run inside quiet hours/.test(line)), 'the view flag alone renders the line')
+  // The other way: a repeat task in the list is not the page's business. Without the flag the host made
+  // no uncheckable-rule claim, so the page says nothing.
+  seeded.push({ available: true, tasks: [{ ...ACTIVE, kind: 'every', everySeconds: 3600 }], quietHours: QUIET })
+  const plain = text(render(SchedulesPage({ roster: ROSTER, actions: spy(), start: null })))
+  assert.ok(!plain.some(line => /still run inside quiet hours/.test(line)), 'a repeat task alone is not a claim')
+})
+
+test('after the quiet-hours write the page reads the host view again, not a predicted flag (#1199)', async () => {
+  let asked = 0
+  const actions = {
+    ...spy(),
+    setPrefs: async () => ({}),
+    schedules: async () => { asked += 1; return { available: true, tasks: [{ ...ACTIVE, kind: 'every', everySeconds: 3600 }], quietHours: QUIET, quietUnchecked: true } },
+  }
+  seeded.push({ available: true, tasks: [], quietHours: { on: false } })
+  const page = render(SchedulesPage({ roster: ROSTER, actions, start: null }))
+  const on = buttonsOf(page).find(button => text(button).includes('Turn on'))
+  assert.ok(on)
+  on.props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(asked >= 1, 'the flag is asked for again, so the line appears now and not at the next 30-second poll')
+})
+
 test('the quiet-hours copy has Chinese entries, including the refusal with the window end (#1166)', () => {
   const source = readFileSync(new URL('../src/client/i18n.js', import.meta.url), 'utf8')
   assert.match(source, /'Quiet hours': '安静时段'/)
