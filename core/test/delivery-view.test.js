@@ -149,7 +149,7 @@ test('loading counts the seconds and promises the columns (#1211)', () => {
   // assertion here pinned 60_000 for `failed`, which is what made the 10 s / 30 s levels dead code.
   const now = Date.parse('2026-10-25T04:00:00Z')
   assert.equal(pollDelay('failed', { retryAt: now + 10_000 }, now), 10_000)
-  assert.equal(pollDelay('failed', { retryAt: now + 120_000 }, now), 60_000, 'a retryAt further out is looked at once a minute, not skipped')
+  assert.equal(pollDelay('failed', { retryAt: now + 120_000 }, now), 120_000, 'the 2 min level is not flattened to a minute')
   assert.equal(pollDelay('stale', { retryAt: now + 30_000 }, now), 30_000, 'a stale board waits for the same retry')
   assert.equal(pollDelay('failed', { retryAt: now - 5_000 }, now), 1_000, 'a past retryAt does not spin')
   for (const state of ['fresh', 'stale', 'partial', 'failed']) assert.equal(pollDelay(state, { retryAt: null }, now), 60_000, `${state} polls slowly`)
@@ -270,9 +270,8 @@ test('a failed round retries on the host backoff, not on a fixed minute (#1211)'
   const poller = createPoller({ load, onView: view => views.push(view.state), now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer })
   poller.start()
   await new Promise(resolve => setImmediate(resolve))
-  // Four reads to reach the two-minute round: 10 s, 30 s, a 60 s look that starts nothing because the
-  // host is still cooling down, and then the round at its own 160 s mark.
-  for (let i = 0; i < 4; i += 1) await c.advance()
+  // Three advances is exactly the three backoff levels: 10 s, 30 s, then the two-minute one.
+  for (let i = 0; i < 3; i += 1) await c.advance()
 
   // The rounds the host really started: now, 10 s, 40 s (30 s later), 160 s (2 min later).
   assert.deepEqual(started, [0, 10_000, 40_000, 160_000], 'each backoff level produces its own request')
