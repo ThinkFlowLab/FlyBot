@@ -61,6 +61,9 @@ async function call(ctx, endpoint, payload) {
 }
 
 const row = (view, id = 'feishu') => (view?.connectors ?? view ?? []).find(entry => entry.id === id)
+// #1266: the same row now carries the inbound state (off, no socket, app pair not saved). It is
+// spelled out here instead of spread, so a value leaking into the row cannot pass unnoticed.
+const INBOUND_OFF = { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' }
 const said = (warns, needle) => warns.filter(args => args.some(value => String(value).includes(needle)))
 
 // A fake Feishu that records each POST and answers from the script (the last answer repeats).
@@ -78,7 +81,7 @@ test('#1263: Feishu is a sender row of its own, off until a webhook is pasted', 
   const { ctx, home } = setup()
   t.after(async () => { await ctx.dispose(); cleanHome(home) })
   const state = await call(ctx, 'state', {})
-  assert.deepEqual(row(state.value), { id: 'feishu', name: 'Feishu', state: 'off', kind: 'sender', account: null })
+  assert.deepEqual(row(state.value), { id: 'feishu', name: 'Feishu', state: 'off', kind: 'sender', account: null, inbound: INBOUND_OFF })
   // A sender has no tools, so it is not a name a saved capability may take either way.
   assert.deepEqual(state.value.connectors.map(entry => entry.id), ['github', 'composio', 'feishu'])
 })
@@ -94,7 +97,7 @@ test('#1263: connecting posts one test message, turns ready, and keeps the webho
 
   const connected = await call(ctx, 'connector-connect', { id: 'feishu', token: ` ${webhook} ` })
   assert.equal(connected.ok, true, JSON.stringify(connected))
-  assert.deepEqual(row(connected.value), { id: 'feishu', name: 'Feishu', state: 'ready', kind: 'sender', account: null })
+  assert.deepEqual(row(connected.value), { id: 'feishu', name: 'Feishu', state: 'ready', kind: 'sender', account: null, inbound: INBOUND_OFF })
 
   assert.equal(feishu.posts.length, 1, 'one test POST on connect')
   assert.equal(feishu.posts[0].url, webhook)

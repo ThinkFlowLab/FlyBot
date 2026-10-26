@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto'
 import { createNotifier } from './notify.js'
 import { appCredentials, createInbound } from './feishu-inbound.js'
+import { createFeishuTransport } from './feishu-sdk.js'
 
 export const GITHUB = 'github'
 export const GITHUB_SECRET = 'GITHUB_TOKEN'
@@ -421,10 +422,21 @@ export function install(rt) {
   // it starts nothing rather than pretend. The message lands through `remote-chat.deliver` — the same
   // seam a friend's Bot uses — and the reply comes back through the sender above (`onSend`), so there
   // is no second path into or out of a chat.
+  //
+  // The default adapter is the official SDK, and it is put on the runtime *before* the policy reads
+  // it. That read happens on every `start()` rather than once here, so an adapter installed later
+  // (a test's stub, a plugin's own client) is the one the next start dials instead of a snapshot
+  // taken while it was missing.
+  if (rt.feishuTransport === undefined) {
+    rt.feishuTransport = createFeishuTransport({
+      credentials: () => appCredentials(name => rt.secretValue(name)),
+      log: (format, ...args) => rt.warn(`ds-bot: ${format}`, ...args),
+    })
+  }
   const feishuInbound = createInbound({
     enabled: rt.config?.feishu?.enabled === true,
     ownerOpenId: rt.config?.feishu?.ownerOpenId,
-    transport: rt.feishuTransport,
+    transport: () => rt.feishuTransport,
     deliver: async ({ handle, text, name }) => {
       if (typeof rt.remoteChats?.deliver !== 'function') throw new Error('no chat seam is installed for a Feishu message')
       await rt.remoteChats.deliver({ handle, text, name })
@@ -690,6 +702,10 @@ export function install(rt) {
       const c = known(body.id)
       await rt.loadSecrets()
       await sync(c, true)
+      // "Try again" is one press for the whole row: a Feishu row proves the webhook and, when the
+      // long connection is switched on, dials it again — which is how an adapter installed after the
+      // first attempt comes up without a restart.
+      if (c.def.id === FEISHU) await feishuInbound.start()
       return connectorsView()
     },
     // One message, on demand, once. Nothing posts room traffic on its own: that is a spam
@@ -725,11 +741,14 @@ export function install(rt) {
     await rt.save()
   }
 
-  void feishuInbound.start()
-
   ctx.effect(() => {
     stopped = false
-    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(syncAll)
+    // The long connection dials once the secrets are loaded: the app pair lives there, so starting
+    // before that read would report a missing app that is in fact saved.
+    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(async () => {
+      await syncAll()
+      if (!stopped) await feishuInbound.start()
+    })
     return () => {
       stopped = true
       void feishuInbound.stop()

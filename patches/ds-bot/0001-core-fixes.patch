@@ -2601,7 +2601,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,56 @@
+@@ -1,27 +1,57 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
@@ -2632,6 +2632,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +import { randomUUID } from 'node:crypto'
 +import { createNotifier } from './notify.js'
 +import { appCredentials, createInbound } from './feishu-inbound.js'
++import { createFeishuTransport } from './feishu-sdk.js'
  
  export const GITHUB = 'github'
  export const GITHUB_SECRET = 'GITHUB_TOKEN'
@@ -2670,7 +2671,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,675 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,693 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -3038,10 +3039,21 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  // it starts nothing rather than pretend. The message lands through `remote-chat.deliver` — the same
 +  // seam a friend's Bot uses — and the reply comes back through the sender above (`onSend`), so there
 +  // is no second path into or out of a chat.
++  //
++  // The default adapter is the official SDK, and it is put on the runtime *before* the policy reads
++  // it. That read happens on every `start()` rather than once here, so an adapter installed later
++  // (a test's stub, a plugin's own client) is the one the next start dials instead of a snapshot
++  // taken while it was missing.
++  if (rt.feishuTransport === undefined) {
++    rt.feishuTransport = createFeishuTransport({
++      credentials: () => appCredentials(name => rt.secretValue(name)),
++      log: (format, ...args) => rt.warn(`ds-bot: ${format}`, ...args),
++    })
++  }
 +  const feishuInbound = createInbound({
 +    enabled: rt.config?.feishu?.enabled === true,
 +    ownerOpenId: rt.config?.feishu?.ownerOpenId,
-+    transport: rt.feishuTransport,
++    transport: () => rt.feishuTransport,
 +    deliver: async ({ handle, text, name }) => {
 +      if (typeof rt.remoteChats?.deliver !== 'function') throw new Error('no chat seam is installed for a Feishu message')
 +      await rt.remoteChats.deliver({ handle, text, name })
@@ -3055,8 +3067,9 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    const fiber = c.mount?.fiber
 +    c.mount = null
 +    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
-+  }
-+
+   }
+ 
+-  // The MCP client wraps the server's answer (a 401, say) as the cause.
 +  // A sender's retry policy is notify.js's, not a second one written here: one transport per
 +  // sender, reading the saved webhook when it is called, so a reconnect needs no rebuild.
 +  const notifiers = new Map(connectors.filter(c => c.def.kind === 'sender').map(c => [c.def.id, createNotifier({
@@ -3082,9 +3095,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      c.status = { state: 'error', error: reason(error) }
 +      rt.warn('ds-bot: %s connector failed: %s', c.def.name, c.status.error)
 +    }
-   }
- 
--  // The MCP client wraps the server's answer (a 401, say) as the cause.
++  }
++
 +  // The MCP client wraps the server's answer (a 401, say) as the cause. The session address of a
 +  // mount in progress is not kept anywhere, so it is also taken out of what is shown or logged.
 +  let addresses = []
@@ -3357,6 +3369,10 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      const c = known(body.id)
 +      await rt.loadSecrets()
 +      await sync(c, true)
++      // "Try again" is one press for the whole row: a Feishu row proves the webhook and, when the
++      // long connection is switched on, dials it again — which is how an adapter installed after the
++      // first attempt comes up without a restart.
++      if (c.def.id === FEISHU) await feishuInbound.start()
 +      return connectorsView()
 +    },
 +    // One message, on demand, once. Nothing posts room traffic on its own: that is a spam
@@ -3393,12 +3409,15 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    await rt.save()
 +  }
 +
-+  void feishuInbound.start()
-+
    ctx.effect(() => {
      stopped = false
 -    void rt.loadSecrets().then(() => sync())
-+    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(syncAll)
++    // The long connection dials once the secrets are loaded: the app pair lives there, so starting
++    // before that read would report a missing app that is in fact saved.
++    void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(async () => {
++      await syncAll()
++      if (!stopped) await feishuInbound.start()
++    })
      return () => {
        stopped = true
 -      void unmount()
@@ -6220,8 +6239,9 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
- import { apply } from '../index.js'
+-import { apply } from '../index.js'
 -import { signIn } from '../src/host/connectors.js'
++import { apply, createRuntime } from '../index.js'
 +import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
  import { fakeContext } from './fake-ctx.js'
  
@@ -6399,7 +6419,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +165,618 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -165,10 +165,647 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -6608,6 +6628,35 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  // without ever showing a value. Nothing dialled: the long connection is off by default.
 +  assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' })
 +
++})
++
++// #1266: the inbound socket is read from the runtime on every start, not copied while module install
++// runs. This is the shape a plugin (or a test) has when it puts its own adapter on the runtime after
++// the connectors module was installed: the next Try again has to dial that one.
++test('an adapter installed after the connectors module is the one the next Try again dials (#1266)', async (t) => {
++  const home = teamHome()
++  const ctx = fakeContext()
++  capture(ctx)
++  const rt = createRuntime(ctx, { home, feishu: { enabled: true, ownerOpenId: 'ou_owner_1' } })
++  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
++
++  const inboundOf = async () => (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'feishu').inbound
++  // Boot dialled the default adapter, which refuses because no app pair is saved: the error proves a
++  // socket was attempted, and that it was not the stub installed below.
++  const until = Date.now() + 2000
++  let boot = await inboundOf()
++  while (boot.error === undefined && Date.now() < until) {
++    await new Promise(resolve => setTimeout(resolve, 10))
++    boot = await inboundOf()
++  }
++  assert.match(boot.error ?? '', /app id and app secret/, JSON.stringify(boot))
++
++  const dials = []
++  rt.feishuTransport = { connect: async (onEvent) => { dials.push(onEvent); return { close: async () => {} } } }
++  const after = (await call(ctx, 'connector-retry', { id: 'feishu' })).value.find(entry => entry.id === 'feishu')
++  assert.equal(after.inbound.state, 'ready')
++  assert.equal(after.inbound.connected, 1)
++  assert.equal(dials.length, 1, 'the adapter installed late is the one that dialled')
 +})
 +
 +test('a Composio address without https refuses to send the key', async (t) => {

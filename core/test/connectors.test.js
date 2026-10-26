@@ -6,7 +6,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply, createRuntime } from '../index.js'
 import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -420,6 +420,35 @@ test('deleting COMPOSIO_API_KEY on the Secrets page unmounts Composio, and GitHu
   // without ever showing a value. Nothing dialled: the long connection is off by default.
   assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' })
 
+})
+
+// #1266: the inbound socket is read from the runtime on every start, not copied while module install
+// runs. This is the shape a plugin (or a test) has when it puts its own adapter on the runtime after
+// the connectors module was installed: the next Try again has to dial that one.
+test('an adapter installed after the connectors module is the one the next Try again dials (#1266)', async (t) => {
+  const home = teamHome()
+  const ctx = fakeContext()
+  capture(ctx)
+  const rt = createRuntime(ctx, { home, feishu: { enabled: true, ownerOpenId: 'ou_owner_1' } })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
+
+  const inboundOf = async () => (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'feishu').inbound
+  // Boot dialled the default adapter, which refuses because no app pair is saved: the error proves a
+  // socket was attempted, and that it was not the stub installed below.
+  const until = Date.now() + 2000
+  let boot = await inboundOf()
+  while (boot.error === undefined && Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    boot = await inboundOf()
+  }
+  assert.match(boot.error ?? '', /app id and app secret/, JSON.stringify(boot))
+
+  const dials = []
+  rt.feishuTransport = { connect: async (onEvent) => { dials.push(onEvent); return { close: async () => {} } } }
+  const after = (await call(ctx, 'connector-retry', { id: 'feishu' })).value.find(entry => entry.id === 'feishu')
+  assert.equal(after.inbound.state, 'ready')
+  assert.equal(after.inbound.connected, 1)
+  assert.equal(dials.length, 1, 'the adapter installed late is the one that dialled')
 })
 
 test('a Composio address without https refuses to send the key', async (t) => {

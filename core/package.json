@@ -59,6 +59,9 @@
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/dsh-web": "*"
   },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.76.0"
+  },
   "dsh": {
     "client": {
       "platform": "web"

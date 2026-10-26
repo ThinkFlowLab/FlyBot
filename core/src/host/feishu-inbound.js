@@ -68,6 +68,9 @@ export const handleOf = chatId => `feishu:${chatId}`
 
 // `transport` is the only piece the dependency decision can change:
 //   { connect(onEvent) -> Promise<{ close(): Promise<void>|void }>, nameOf(openId) -> Promise<string|undefined> }
+// It may also be a function answering that object, in which case it is called again on every
+// `start()`: an adapter that is installed after this module still comes up, and one replaced while
+// the connection is off is the one the next start dials.
 // `deliver({ handle, text, name })` is `remote-chat`'s seam, and `redact` is `rt.redactSecrets`.
 export function createInbound({
   enabled = false,
@@ -84,6 +87,12 @@ export function createInbound({
   const view = { state: enabled ? 'connecting' : 'off', connected: 0, duplicates: 0, refused: 0, ignored: 0 }
   let closer
   let starting
+  // Bumped by `stop()`: a dial that was already in flight when the owner stopped the connector is
+  // not the socket this module wants open any more, so the one that arrives is hung up instead of
+  // adopted, and the row does not flip back to `ready` behind the owner's back.
+  let generation = 0
+
+  const socketOf = () => (typeof transport === 'function' ? transport() : transport)
 
   const remember = (id) => {
     if (seen.has(id)) return false
@@ -136,30 +145,47 @@ export function createInbound({
   function start() {
     if (!enabled) return Promise.resolve('off')
     if (starting !== undefined) return starting
-    starting = (async () => {
-      if (typeof transport?.connect !== 'function') {
-        view.state = 'error'
-        view.error = 'no long-connection transport is installed'
-        log('the Feishu long connection has no transport: %s', view.error)
-        return 'error'
-      }
+    const socket = socketOf()
+    // No adapter yet is a configuration state, not a failed dial: nothing is remembered, so a later
+    // start — a person pressing Try again, once the adapter is there — still dials instead of reading
+    // the same error back forever.
+    if (typeof socket?.connect !== 'function') {
+      view.state = 'error'
+      view.error = 'no long-connection transport is installed'
+      log('the Feishu long connection has no transport: %s', view.error)
+      return Promise.resolve('error')
+    }
+    const mine = generation
+    const attempt = (async () => {
       try {
-        closer = await transport.connect(handleEvent)
+        const opened = await socket.connect(handleEvent)
+        if (mine !== generation) {
+          // `stop()` ran while this socket dialled. Hang up what arrived; report it neither ready nor
+          // as another connection.
+          await Promise.resolve().then(() => opened?.close?.()).catch(() => { /* an already-dead socket is not an error */ })
+          return 'stopped'
+        }
+        closer = opened
         view.state = 'ready'
         view.connected += 1
         delete view.error
         return 'ready'
       } catch (error) {
+        if (mine !== generation) return 'stopped'
         view.state = 'error'
         view.error = redact([error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'connect failed').slice(0, 300)
         log('the Feishu long connection failed: %s', view.error)
         return 'error'
       }
     })()
-    return starting
+    starting = attempt
+    // A failed dial is not shared either: the next start tries again with whatever is installed then.
+    void attempt.then(result => { if (starting === attempt && result !== 'ready') starting = undefined })
+    return attempt
   }
 
   async function stop() {
+    generation += 1
     starting = undefined
     const closing = closer
     closer = undefined

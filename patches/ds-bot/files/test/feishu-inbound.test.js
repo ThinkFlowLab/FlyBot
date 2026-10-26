@@ -178,3 +178,43 @@ test('with no socket adapter installed it says so instead of pretending (#1266)'
   assert.deepEqual(inbound.view().error, 'no long-connection transport is installed')
   assert.equal(inbound.view().connected, 0)
 })
+
+test('an adapter installed after the first start is the one the next start dials (#1266)', async () => {
+  // The policy is made before the adapter exists — the shape a module that installs its socket later
+  // has. A missing adapter must not be remembered as the answer.
+  const transport = { current: undefined }
+  const dials = []
+  const inbound = createInbound({
+    enabled: true,
+    ownerOpenId: OWNER,
+    transport: () => transport.current,
+    deliver: async () => {},
+  })
+  assert.equal(await inbound.start(), 'error')
+  assert.equal(inbound.view().error, 'no long-connection transport is installed')
+  transport.current = { connect: async onEvent => { dials.push(onEvent); return { close: async () => {} } } }
+  assert.equal(await inbound.start(), 'ready')
+  assert.equal(dials.length, 1, 'the adapter that arrived late is the one that dialled')
+  assert.equal(inbound.view().connected, 1)
+})
+
+test('a stop while the socket dials hangs up the one that arrives and never reports ready (#1266)', async () => {
+  let release
+  const dialling = new Promise(resolve => { release = resolve })
+  const closed = []
+  const inbound = createInbound({
+    enabled: true,
+    ownerOpenId: OWNER,
+    transport: {
+      connect: async () => { await dialling; return { close: async () => { closed.push(1) } } },
+    },
+    deliver: async () => {},
+  })
+  const started = inbound.start()
+  await inbound.stop()
+  release()
+  assert.equal(await started, 'stopped', 'the dial that outlived stop is not adopted')
+  assert.deepEqual(closed, [1], 'the socket that arrived after stop is hung up, not leaked')
+  assert.equal(inbound.view().state, 'connecting', 'the row does not flip back to ready behind the owner')
+  assert.equal(inbound.view().connected, 0)
+})
