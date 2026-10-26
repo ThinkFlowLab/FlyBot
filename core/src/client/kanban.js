@@ -3,6 +3,8 @@
 // owner. Tasks opens one Bot's board, a child of that Bot, or a group an admin can see.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { columnOf, priorityOf, progressOf } from '../shared/task-board.js'
+import { taskCard } from '../shared/board-card.js'
+import { BoardCard as BoardCardFrame, TASK_SKIN } from './board-card.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
 import { DeliveryView, DELIVERY_CSS } from './delivery-view.js'
@@ -193,6 +195,8 @@ function RailButton({ row, selected, meta, onSelect }) {
   meta ? h('span', { className: 'bt-board-rail-meta' }, meta) : null)
 }
 
+// A task record as a card on the one board (#1265 step 1): the same component the delivery cards
+// use, with the task's own attributes and actions hanging off it.
 export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   const column = columnOf(task)
   const priority = priorityOf(task)
@@ -200,37 +204,46 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   const who = botName(roster, task)
   const question = task.waitingFor === 'input' ? task.inputRequest?.question : ''
   const overall = task.kind === 'group'
-  return h('article', {
-    className: 'bt-board-card',
-    'data-task': task.id,
-    'data-column': column,
-    'data-priority': priority,
-    'data-kind': overall ? 'group' : undefined,
-    draggable: movable || undefined,
-    onDragStart: (event) => {
-      event.dataTransfer?.setData('text/plain', task.id)
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-      onDrag?.(task.id)
+  return h(BoardCardFrame, {
+    card: taskCard(task),
+    skin: TASK_SKIN,
+    attrs: {
+      'data-task': task.id,
+      'data-column': column,
+      'data-priority': priority,
+      'data-kind': overall ? 'group' : undefined,
     },
+    idText: shortId(task.id),
+    emptyTitle: t('Untitled task'),
+    topExtra: [
+      h('span', { key: 'priority', className: 'bt-board-priority', 'data-priority': priority }, priorityLabel(priority)),
+      h('span', { key: 'status', className: 'bt-board-status' }, statusLabel(task.status)),
+    ],
+    note: task.note ?? '',
+    meta: [
+      overall ? h('span', { key: 'kind', className: 'bt-board-kind' }, t('Group task')) : null,
+      partOf ? h('span', { key: 'part', className: 'bt-board-part' }, t('Part of {title}', { title: partOf })) : null,
+      question ? h('span', { key: 'wait', className: 'bt-board-wait' }, question) : null,
+    ],
+    footer: h('span', { className: 'bt-board-foot' },
+      who ? h('span', { className: 'bt-board-who' }, who) : null,
+      h('span', { className: 'bt-board-progress' },
+        h('span', { className: 'bt-board-progress-bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': progress, 'aria-label': t('Progress') },
+          h('span', { style: { width: `${progress}%` } })),
+        h('span', { className: 'bt-board-percent' }, t('{percent}%', { percent: progress })))),
+    actions: [
+      movable && column === 'not-started'
+        ? h('button', { key: 'start', type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onMove?.(task.id, 'in-progress') }, t('Start'))
+        : null,
+      movable && column === 'in-progress' && task.status !== 'blocked'
+        ? h('button', { key: 'complete', type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onMove?.(task.id, 'done') }, t('Complete'))
+        : null,
+    ],
+    draggable: movable,
+    dragValue: task.id,
+    onDragStart: () => onDrag?.(task.id),
     onDragEnd: () => onDrag?.(null),
-  },
-  h('span', { className: 'bt-board-card-top' },
-    h('span', { className: 'bt-board-id' }, shortId(task.id)),
-    h('span', { className: 'bt-board-priority', 'data-priority': priority }, priorityLabel(priority)),
-    h('span', { className: 'bt-board-status' }, statusLabel(task.status))),
-  h('span', { className: 'bt-board-title' }, task.title || t('Untitled task')),
-  overall ? h('span', { className: 'bt-board-kind' }, t('Group task')) : null,
-  partOf ? h('span', { className: 'bt-board-part' }, t('Part of {title}', { title: partOf })) : null,
-  task.note ? h('span', { className: 'bt-board-note' }, task.note) : null,
-  question ? h('span', { className: 'bt-board-wait' }, question) : null,
-  h('span', { className: 'bt-board-foot' },
-    who ? h('span', { className: 'bt-board-who' }, who) : null,
-    h('span', { className: 'bt-board-progress' },
-      h('span', { className: 'bt-board-progress-bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': progress, 'aria-label': t('Progress') },
-        h('span', { style: { width: `${progress}%` } })),
-      h('span', { className: 'bt-board-percent' }, t('{percent}%', { percent: progress })))),
-  movable && column === 'not-started' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onMove?.(task.id, 'in-progress') }, t('Start')) : null,
-  movable && column === 'in-progress' && task.status !== 'blocked' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onMove?.(task.id, 'done') }, t('Complete')) : null)
+  })
 }
 
 function cardProps(task, roster, onMove, onDrag, partOf) {

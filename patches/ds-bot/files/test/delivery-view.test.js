@@ -293,12 +293,16 @@ test('a partial day prints its time once, in the task zone, instead of twice (#1
 })
 
 test('the board renders all five columns and a card with labels, owner and link (#1173)', () => {
-  const board = DeliveryBoard({ snapshot: { ...snapshot, columns: snapshot.columns }, message: '' })
+  const board = DeliveryBoard({ snapshot: { ...snapshot, repo: 'o/r', columns: snapshot.columns }, message: '' })
   const sections = walk(board).filter(node => node.type === 'section' && node.props?.['data-column'])
   assert.deepEqual([...sections.map(node => node.props['data-column'])], ['raw', 'ready', 'working', 'review', 'done-today'])
   const review = sections.find(node => node.props['data-column'] === 'review')
   assert.equal(review.children[0].children[1].children[0], '1')
   const card = walk(review).find(node => node.props?.['data-badge'] === 'inc')
+  // The card names its source and its repository-scoped identity (#1265 step 1): one issue is one
+  // card, keyed `owner/name#number`, whichever row of the snapshot it arrived in.
+  assert.equal(card.props['data-source'], 'github')
+  assert.equal(card.props['data-key'], 'o/r#41')
   const words = text(card)
   assert.match(words, /Fix/)
   assert.match(words, /INC · rework/)

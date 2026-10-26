@@ -109,6 +109,10 @@ test('the board draws the three columns, nests the child, and moves only the own
   assert.match(textOf(tree), /Halfway/)
   assert.match(textOf(tree), /Start task/)
   assert.match(textOf(tree), /Complete task/)
+  // A task card names its source and its identity on the one card model (#1265 step 1).
+  const card = all(tree).find(node => node.props?.['data-task'] === 'task-abcdef123456')
+  assert.equal(card.props['data-source'], 'task')
+  assert.equal(card.props['data-key'], 'task:task-abcdef123456')
   const writer = all(tree).find(node => node.props?.['data-id'] === 's')
   assert.equal(writer.props.style.paddingLeft, '24px')
   assert.equal(all(tree).some(node => node.props?.['data-id'] === 'ops'), false)

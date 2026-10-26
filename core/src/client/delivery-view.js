@@ -9,6 +9,8 @@
 import { createElement as h, useEffect, useState } from 'react'
 import { t } from './i18n.js'
 import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
+import { githubCard } from '../shared/board-card.js'
+import { BoardCard, DELIVERY_SKIN } from './board-card.js'
 
 const POLL_MS = 60_000
 // While the host is still building there is nothing to see, so ask often; once the board is up,
@@ -391,7 +393,7 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
           h('span', { className: 'bt-board-count' }, String((columns[column.id] ?? []).length))),
         (columns[column.id] ?? []).length === 0
           ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-          : (columns[column.id] ?? []).map(card => h(DeliveryCard, { key: `${card.kind}-${card.number}`, card }))))))
+          : (columns[column.id] ?? []).map(card => h(DeliveryCard, { key: `${card.kind}-${card.number}`, card, repo: payload.repo }))))))
 }
 
 export function DeliveryView({ actions }) {
@@ -404,22 +406,17 @@ export function DeliveryView({ actions }) {
   })
 }
 
-function Label({ name }) {
-  return h('span', { className: 'bt-del-label', 'data-label': name }, name)
-}
-
-export function DeliveryCard({ card }) {
-  const badge = badgeLabel(card?.badge)
-  return h('article', { className: 'bt-del-card', 'data-kind': card?.kind, 'data-number': card?.number, 'data-badge': card?.badge ?? undefined },
-    h('span', { className: 'bt-del-card-top' },
-      h('span', { className: 'bt-del-id' }, `#${card?.number ?? '?'}`),
-      badge ? h('span', { className: 'bt-del-badge', 'data-badge': card?.badge }, badge) : null),
-    h('span', { className: 'bt-del-title' }, card?.title ?? ''),
-    card?.labels?.length ? h('span', { className: 'bt-del-labels' }, card.labels.map(name => h(Label, { key: name, name }))) : null,
-    card?.owner ? h('span', { className: 'bt-del-owner', 'data-kind': card.ownerKind ?? 'human' }, card.owner) : null,
-    card?.linked ? h('span', { className: 'bt-del-linked' }, t('linked to #{number}', { number: card.linked })) : null,
-    card?.sha ? h('span', { className: 'bt-del-sha' }, card.sha) : null,
-    card?.url ? h('a', { className: 'bt-del-sha', href: card.url, target: '_blank', rel: 'noreferrer' }, t('open on GitHub')) : null)
+// A repository row as a card on the one board (#1265 step 1): the same component the task cards
+// use, keyed `owner/name#number` so an issue and the pull request that closes it are one identity.
+export function DeliveryCard({ card, repo = null }) {
+  const model = githubCard(card, repo) ?? { source: 'github', key: null, title: card?.title ?? '', badge: card?.badge ?? null }
+  return h(BoardCard, {
+    card: model,
+    skin: DELIVERY_SKIN,
+    attrs: { 'data-kind': card?.kind, 'data-number': card?.number, 'data-badge': card?.badge ?? undefined },
+    idText: `#${card?.number ?? '?'}`,
+    badge: badgeLabel(card?.badge),
+  })
 }
 
 export const DELIVERY_CSS = `

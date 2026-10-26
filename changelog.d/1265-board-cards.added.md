@@ -1,0 +1,1 @@
+The Delivery board and the task board now draw their cards through one component, and a card says which side it came from: a repository card is keyed `owner/name#number` — one key for an issue and the pull request that closes it — and a task card `task:<id>` (#1265, first step).
