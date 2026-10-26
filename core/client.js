@@ -8040,6 +8040,16 @@ function compareForWork(a, b) {
   if (byWorking !== 0) return byWorking;
   return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
 }
+function sameRole(a, b) {
+  const left = String(a ?? "").trim().toLowerCase();
+  const right = String(b ?? "").trim().toLowerCase();
+  return left !== "" && left === right;
+}
+function compareForQueue(a, b) {
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
+  if (byPriority !== 0) return byPriority;
+  return (a?.createdAt ?? 0) - (b?.createdAt ?? 0);
+}
 function progressOf(task) {
   const value = task?.progress;
   if (typeof value !== "number" || !Number.isFinite(value)) return columnOf(task) === "done" && task?.status !== "cancelled" && task?.status !== "failed" ? 100 : 0;

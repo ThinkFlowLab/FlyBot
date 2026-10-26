@@ -1404,7 +1404,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
              .join('')
            return `${verb} ${args.name} ${args.bot ? `to ${result.bot}` : 'to yourself'}. Changes apply from ${result.bot}'s next message.${endpoint === 'attach' ? approvals : ''}`
          } catch (error) { return error.message }
-@@ -595,5 +595,93 @@ export function install(rt) {
+@@ -595,5 +595,121 @@ export function install(rt) {
      }))
    }
  
@@ -1443,8 +1443,19 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +
 +  ctx.tools.register(defineTool({
 +    name: 'track_tasks',
-+    description: 'Read or update tasks on the board. Assigning work, claiming it, and recording progress are this tool, not a chat message. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the task lead (the Bot picked for the room, or the admin when none is picked) records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). Another Main Bot does not plan. A member claims the card assigned to it by setting its column to in-progress, updates that card\'s column and progress as it moves, or links its own subtask with parent. Do not record a second plan. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. A group card is worked in your own chat. Post one short question in the group only when a person has to decide. In a group the task is tracked for that group.',
++    description: 'Read or update tasks on the board. Assigning work, claiming it, and recording progress are this tool, not a chat message. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the task lead (the Bot picked for the room, or the admin when none is picked) records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). Another Main Bot does not plan. A member claims the card assigned to it by setting its column to in-progress, updates that card\'s column and progress as it moves, or links its own subtask with parent. A lead can also enqueue work: pass queue with a role and no assignee, and an idle member of that role takes it with claim, which hands one item to exactly one member; release returns an item you claimed, with a one-line reason and a retryAt. Do not record a second plan. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. A group card is worked in your own chat. Post one short question in the group only when a person has to decide. In a group the task is tracked for that group.',
 +    parameters: {
++      claim: { type: 'boolean', description: 'Take one queued item in this group. The highest priority first, then the one that has waited longest, for a role that matches yours; pass id to claim a named item. One member holds one card in progress, so a member already holding one gets nothing. A role mismatch is refused by name. Returns the item.' },
++      release: {
++        type: 'object',
++        description: 'Return a queued item you claimed to the group queue with a one-line reason. It is not offered again before retryAt.',
++        properties: {
++          task: { type: 'string', description: 'The queued item to return.' },
++          reason: { type: 'string', description: 'One line on why you could not finish it.' },
++          retryInSec: { type: 'integer', description: 'Seconds before the item is offered again. Defaults to 60.' },
++        },
++        additionalProperties: false,
++      },
 +      tasks: {
 +        type: 'array',
 +        description: 'Tasks to create or update. Omit to read your list.',
@@ -1462,6 +1473,8 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +            overall: { type: 'boolean', description: 'Record this as the group\'s one overall task. Only the room\'s task lead may set it (the group admin, when no lead is picked). A later call updates that same open task.' },
 +            parent: { type: 'string', description: 'Id or title of the overall group task this subtask belongs to.' },
 +            assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the room\'s task lead may name another member. The card is claimed, and that Bot starts the work without waiting for a confirmation.' },
++            queue: { type: 'boolean', description: 'Enqueue this item for a role instead of naming an assignee. Only the room\'s task lead may enqueue. Pass role with it: the item belongs to the room until a member of that role claims it, and enqueuing wakes one idle member of that role.' },
++            role: { type: 'string', description: 'The role a queued item is for: the Bot role label, matched case-insensitively. It is not a group membership role.' },
 +            ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. Call ask_user in your own chat. For a group card, post one short question in the group only when a person has to decide.' },
 +            answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
 +            target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },
@@ -1487,6 +1500,21 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +      const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
 +      try {
 +        if (args?.postResult !== undefined) await rt.recordTaskPostResult(self, args.postResult)
++        // A claim arrives with tasks omitted, so it is taken before the read path (#1247).
++        if (args?.claim === true) {
++          const result = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
++          if (result?.item) {
++            return `Claimed ${result.item.id} [${result.item.priority ?? 'normal'}] ${result.item.title}\nSet its column to in-progress with track_tasks as you start, and update its note as it moves. Do not post a status in the group.`
++          }
++          const role = rt.botOf(self)?.role ?? ''
++          const why = result?.reason === 'wip' ? ` You already hold an in-progress card (${result.held}).` : ''
++          return `No queued item for ${role === '' ? 'your role' : role} right now.${why}`
++        }
++        if (args?.release !== undefined) {
++          const returned = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
++          const seconds = Math.max(0, Math.round(((returned.retryAt ?? 0) - Date.now()) / 1000))
++          return `Returned ${returned.id} to the queue: ${returned.queueReason}. Not offered again for ${seconds} s.`
++        }
 +        const tasks = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
 +        if (!Array.isArray(tasks) || tasks.length === 0) return 'No tasks.'
 +        return formatTasks(tasks, { inGroup: Boolean(roomId), withNext: args?.tasks === undefined })

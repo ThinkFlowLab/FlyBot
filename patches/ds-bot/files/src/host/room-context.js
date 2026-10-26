@@ -134,19 +134,54 @@ export function fitRoomLines(lines, { budget = ROOM_CONTEXT_BUDGET, render, prep
   }
 }
 
-function cardLine(task, nameOf) {
-  const who = oneLine(typeof nameOf === 'function' ? nameOf(task) : '', 40) || 'unassigned'
+// How long an item has waited (#1247). Same shape as the presence age: minutes, then hours,
+// then days — one compact token, because it rides inside the card's bracket.
+const ageLabel = (ms) => {
+  const minutes = Math.max(0, Math.round(ms / 60000))
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 48) return `${hours}h`
+  return `${Math.round(hours / 24)}d`
+}
+
+// An unclaimed queue item has no holder yet, so the card says `unassigned` and carries which
+// role it is queued for and how long it has waited (#1247) — the same card line the board
+// already had, with the queue's two extra facts in the bracket.
+function cardLine(task, nameOf, now) {
+  const queued = Boolean(task.queueRole) && !task.claimedBy
+  const who = queued ? 'unassigned' : oneLine(typeof nameOf === 'function' ? nameOf(task) : '', 40) || 'unassigned'
   const title = oneLine(task.title || '(untitled)', 80)
   const status = oneLine(task.status || 'open', 24)
   const pct = typeof task.progress === 'number' && Number.isFinite(task.progress) ? ` ${progressOf(task)}%` : ''
   const wait = task.waitingFor === 'input' ? ' waiting' : ''
+  const created = Number.isFinite(task.createdAt) ? task.createdAt : now
+  const queue = queued ? ` ${ageLabel(now - created)} ${oneLine(task.queueRole, 24)}` : ''
   const note = task.note ? ` — ${oneLine(task.note, 80)}` : ''
-  return `${who} [${status}${pct}${wait}] ${title}${note}`
+  return `${who} [${status}${pct}${wait}${queue}] ${title}${note}`
+}
+
+// One line per role that has something waiting: depth and the age of the oldest item, so
+// starvation is visible without reading every card (#1247). A role with nothing waiting is
+// omitted; the count is unclaimed items only, because a claimed one is already a card above.
+function queueLines(open, now) {
+  const roles = new Map()
+  for (const task of open) {
+    if (!task.queueRole || task.claimedBy) continue
+    const role = oneLine(task.queueRole, 24)
+    const key = role.toLowerCase()
+    const entry = roles.get(key) ?? { role, count: 0, oldest: now }
+    entry.count += 1
+    entry.oldest = Math.min(entry.oldest, Number.isFinite(task.createdAt) ? task.createdAt : now)
+    roles.set(key, entry)
+  }
+  return [...roles.values()]
+    .sort((a, b) => a.role.localeCompare(b.role))
+    .map(entry => `- Queue ${entry.role}: ${entry.count} waiting, oldest ${ageLabel(now - entry.oldest)}`)
 }
 
 // Open cards for one room: the newest overall task, then its subtasks and any
 // room card that is not under a different overall task. Done cards stay off.
-export function formatRoomBoard(tasks, { roomId, nameOf, limit = 8 } = {}) {
+export function formatRoomBoard(tasks, { roomId, nameOf, limit = 8, now = Date.now() } = {}) {
   if (!roomId) return ''
   const open = Object.values(tasks ?? {}).filter(task => task && task.origin?.roomId === roomId && !TERMINAL.has(task.status))
   if (open.length === 0) return ''
@@ -160,9 +195,10 @@ export function formatRoomBoard(tasks, { roomId, nameOf, limit = 8 } = {}) {
   }
   if (cards.length === 0) return ''
   const lines = ['Task board (assign, claim, and progress live here; update it with track_tasks, do not restate it in chat):']
-  for (const { task, indent } of cards) lines.push(`${indent}- ${cardLine(task, nameOf)}`)
+  for (const { task, indent } of cards) lines.push(`${indent}- ${cardLine(task, nameOf, now)}`)
   const hidden = open.length - cards.length
   if (hidden > 0) lines.push(`- ${hidden} more open card(s) not shown`)
+  lines.push(...queueLines(open, now))
   return lines.join('\n')
 }
 

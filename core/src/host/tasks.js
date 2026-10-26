@@ -16,7 +16,7 @@
 // are terminal, and accepted is reachable only from result-ready. A cancelled or
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
-import { columnOf, compareForWork } from '../shared/task-board.js'
+import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
@@ -40,6 +40,20 @@ const invalid = message => Object.assign(new Error(message), { code: 'bot/invali
 const waitingForInput = task => task.status === 'blocked' && task.waitingFor === 'input'
 const canLinkSend = task => task.status === 'working' || waitingForInput(task)
 const PRIORITY = new Set(['urgent', 'high', 'normal', 'low'])
+// A queue item names the role that may claim it (#1247). The label is the Bot's own role text
+// (`roster.js`: free text, trimmed to 24 characters), never a group membership role.
+const ROLE_MAX = 24
+const QUEUE_RETRY_DEFAULT_SEC = 60
+const QUEUE_RETRY_MAX_SEC = 7 * 24 * 60 * 60
+const readRole = (value) => {
+  if (value === undefined || value === null) return undefined
+  const role = oneLine(value, ROLE_MAX)
+  if (role === '') throw invalid('A queued item needs a role')
+  return role
+}
+// A refusal is named, never a silent null (#1247): the code and the message both carry the
+// reason, so the tool's own error text says which refusal it was.
+const refuse = (code, message) => Object.assign(new Error(`${code}: ${message}`), { code: `bot/${code}` })
 const WALK = ['open', 'claimed', 'working', 'result-ready', 'accepted']
 const TERMINAL_MATCH = new Set(['accepted', 'cancelled', 'failed'])
 
@@ -357,6 +371,32 @@ export function install(rt) {
     return matches[0]
   }
   const isOverall = (task, roomId) => task?.kind === 'group' && task.origin?.roomId === roomId && openTask(task)
+  // ---------------------------------------------------------------- the pull queue (#1247)
+  // An item belongs to the room, not to a Bot: `queueRole` names who may claim it, `queueBy` is
+  // the lead that enqueued it, and `claimedBy` names the member that took it. `ownerBotId` stays
+  // the enqueuer until a claim, so every existing reader (owns, mayAct, prune, view) keeps
+  // working; task-drive skips an item that has a role and no claimer, so the enqueuer is not
+  // woken for its own item.
+  const unclaimed = task => Boolean(task?.queueRole) && !task?.claimedBy
+  const roleCarriers = (room, role) => liveParticipants(room)
+    .filter(person => person.kind === 'bot' && !person.remote)
+    .map(person => botRecord(person.id))
+    .filter(bot => Boolean(bot) && sameRole(bot.role, role))
+  // blocked → open is the queue's own edge: a member that cannot finish returns the item, and
+  // no other path sends a card back to the queue, so the edge is not on TRANSITIONS.
+  function requeue(task, reason, retryInSec) {
+    delete task.waitingFor
+    delete task.inputRequest
+    delete task.inputApprovalIds
+    delete task.approvalId
+    delete task.claimedBy
+    task.status = 'open'
+    task.ownerBotId = task.queueBy ?? task.ownerBotId
+    task.progress = 0
+    task.retryAt = Date.now() + retryInSec * 1000
+    task.queueReason = reason
+    record(task, null, { by: 'returned to the queue', retryInSec })
+  }
   const resolveParent = (roomId, ref, batch) => {
     const text = String(ref).trim()
     const direct = [find(text), batch.get(text)].find(task => isOverall(task, roomId))
@@ -408,12 +448,82 @@ export function install(rt) {
     return view(task)
   }
 
+  // A member claims from the room's queue (#1247). The claim is a board write: it sets the
+  // owner and moves the card to claimed, so the delivery view and the room board read the same
+  // card with no second row.
+  async function claimQueued(botId, body, roomId) {
+    const room = resolveRoom(botId, body.group, roomId)
+    const entry = room ? state.rooms?.[room] : undefined
+    if (!entry) throw invalid('A claim needs a group')
+    const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
+    if (myRole === '') throw refuse('not-in-role', 'this Bot has no role to claim with')
+    // WIP = 1: one card in progress fills the member's slot. A blocked card waits on a person,
+    // so counting it would let one unanswered question freeze the member out of the queue.
+    const holding = Object.values(store())
+      .filter(task => task.ownerBotId === botId && columnOf(task) === 'in-progress' && task.status !== 'blocked')
+    if (holding.length > 0) return { item: null, reason: 'wip', held: holding.sort(compareForWork)[0].id }
+    const now = Date.now()
+    const offered = task => !(Number.isFinite(task.retryAt) && task.retryAt > now)
+    const wantedId = body.id !== undefined && body.id !== null && String(body.id) !== '' ? String(body.id) : undefined
+    let pick
+    if (wantedId !== undefined) {
+      pick = find(wantedId)
+      if (pick === undefined) throw stale(`no task ${wantedId}`)
+      if (!unclaimed(pick) || pick.origin?.roomId !== entry.id) throw stale(`no queued item ${wantedId} in this group`)
+      if (!sameRole(pick.queueRole, myRole)) throw refuse('not-in-role', `that item is queued for ${pick.queueRole}, and this Bot is ${myRole}`)
+      if (!offered(pick)) return { item: null, reason: 'waiting' }
+    } else {
+      pick = Object.values(store())
+        .filter(task => unclaimed(task) && task.status === 'open' && task.origin?.roomId === entry.id && sameRole(task.queueRole, myRole) && offered(task))
+        .sort(compareForQueue)[0]
+    }
+    if (pick === undefined) return { item: null, reason: 'empty' }
+    // Pick and write are two steps: the tool's own load and the save both yield, so a second
+    // member can pick the same item inside the first claim's stack. The item is read again
+    // after the yield and only one still open is taken — compare-and-set, not a read (#1247).
+    await rt.load()
+    const live = find(pick.id)
+    if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    live.claimedBy = botId
+    live.ownerBotId = botId
+    delete live.retryAt
+    delete live.queueReason
+    transition(live, 'claimed', null, { by: 'claimed from the queue' })
+    await save()
+    return { item: view(live) }
+  }
+
+  // A member that cannot finish returns the item with one line of why; it is not offered
+  // again before `retryAt` (#1247).
+  async function releaseQueued(botId, spec) {
+    const task = find(spec?.task ?? spec?.id)
+    if (task === undefined) throw stale(`no task ${String(spec?.task ?? spec?.id ?? '')}`)
+    if (task.claimedBy !== botId) throw forbidden('Only the member that claimed this item may return it')
+    if (task.status !== 'claimed' && task.status !== 'working' && task.status !== 'blocked') {
+      throw stale(`a task that is ${task.status} cannot return to the queue`)
+    }
+    const reason = readOptionalLine(spec?.reason, 'A reason')
+    if (reason === undefined) throw invalid('Returning an item to the queue needs a one-line reason')
+    const raw = spec?.retryInSec
+    const seconds = raw === undefined || raw === null || raw === '' ? QUEUE_RETRY_DEFAULT_SEC : Number(raw)
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > QUEUE_RETRY_MAX_SEC) {
+      throw invalid(`retryInSec must be a whole number of seconds from 0 to ${QUEUE_RETRY_MAX_SEC}`)
+    }
+    requeue(task, reason, seconds)
+    await save()
+    return view(task)
+  }
+
   // The Bot's own list, written from the conversation. The caller is the Bot.
   // The requester of a task is that task's Bot's owner, so a group admin who
   // does not own the Bot can plan a subtask and still cannot move the card.
   rt.trackBotTasks = async function trackBotTasks(botId, body, origin = {}) {
     const bot = botRecord(botId)
     if (!bot || bot.remote !== undefined) throw forbidden('No such Bot')
+    // Both come before the read path: a claim arrives with `tasks` omitted, so reading first
+    // would return the list instead of the item (#1247).
+    if (body?.release !== undefined) return releaseQueued(botId, body.release)
+    if (body?.claim === true) return claimQueued(botId, body, origin.roomId)
     const items = body?.tasks
     if (items === undefined) return listed(botId)
     if (!Array.isArray(items)) throw invalid('tasks must be a list')
@@ -456,6 +566,19 @@ export function install(rt) {
       if (overall && parentRef) throw invalid('The overall task has no parent')
       if (overall && !plansRoom(botId, room)) planDenied(room, 'record the overall task')
       if (assigneeName && !plansRoom(botId, room)) planDenied(room, 'assign a subtask')
+      // A queued item names a role instead of an assignee (#1247). Only the room's lead
+      // enqueues, and an item whose role no live member carries is refused here: left open it
+      // would sit for ever and the age on the board would name a wait nobody can take.
+      const queue = item.queue === true
+      const role = readRole(item.role)
+      if (queue && !room) throw invalid('A queued item needs a group')
+      if (queue && room?.origin === 'face-to-face') throw invalid('A face-to-face room has no group task board')
+      if (queue && overall) throw invalid('A queued item is not the overall task')
+      if (queue && assigneeName) throw invalid('A queued item has no assignee; a member claims it from the queue')
+      if (queue && !plansRoom(botId, room)) planDenied(room, 'enqueue work')
+      if (queue && role === undefined) throw invalid('A queued item needs a role')
+      if (!queue && role !== undefined) throw invalid('role belongs to a queued item; pass queue: true with it')
+      if (queue && roleCarriers(room, role).length === 0) throw refuse('no-member-with-role', `no member of this group has the role ${role}`)
       let ownerBot = bot
       if (assigneeName) {
         ownerBot = memberBot(room, assigneeName)
@@ -504,6 +627,13 @@ export function install(rt) {
           task.origin = { ...task.origin, roomId: parent.origin?.roomId ?? roomId }
         }
         if (overall) task.kind = 'group'
+        if (queue) {
+          if (task.claimedBy) throw invalid('That queued item is already claimed; enqueue a new one')
+          task.queueRole = role
+          task.queueBy = botId
+          delete task.retryAt
+          delete task.queueReason
+        }
         if (!answer && waitingForInput(task) && (column !== undefined || item.progress !== undefined)) {
           throw stale('This task is waiting on an answer. Ask, then pass answer with what was said.')
         }

@@ -3190,7 +3190,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2574,2206 +2574,4862 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2206 +2574,4872 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -8373,6 +8373,16 @@ diff --git a/client.js b/client.js
 +  const byWorking = (a?.status === "working" ? 0 : 1) - (b?.status === "working" ? 0 : 1);
 +  if (byWorking !== 0) return byWorking;
 +  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
++}
++function sameRole(a, b) {
++  const left = String(a ?? "").trim().toLowerCase();
++  const right = String(b ?? "").trim().toLowerCase();
++  return left !== "" && left === right;
++}
++function compareForQueue(a, b) {
++  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
++  if (byPriority !== 0) return byPriority;
++  return (a?.createdAt ?? 0) - (b?.createdAt ?? 0);
 +}
 +function progressOf(task) {
 +  const value = task?.progress;

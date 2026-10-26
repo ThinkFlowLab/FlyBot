@@ -44,6 +44,23 @@ export function compareForWork(a, b) {
   return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0)
 }
 
+// A role label, matched the way a person reads it (#1247): free text, trimmed, case-insensitive.
+// The label is not a membership role (`admin` / `member`), so nothing here reads that field.
+export function sameRole(a, b) {
+  const left = String(a ?? '').trim().toLowerCase()
+  const right = String(b ?? '').trim().toLowerCase()
+  return left !== '' && left === right
+}
+
+// Queue order (#1247): the highest priority first, then the item that has waited longest.
+// compareForWork cannot be reused — its tiebreak is newest first (`task-board.js`), which
+// starves the oldest item and would make the "oldest wait" on the board a lie.
+export function compareForQueue(a, b) {
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2)
+  if (byPriority !== 0) return byPriority
+  return (a?.createdAt ?? 0) - (b?.createdAt ?? 0)
+}
+
 export function progressOf(task) {
   const value = task?.progress
   if (typeof value !== 'number' || !Number.isFinite(value)) return columnOf(task) === 'done' && task?.status !== 'cancelled' && task?.status !== 'failed' ? 100 : 0

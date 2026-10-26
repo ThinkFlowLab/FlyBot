@@ -4,7 +4,7 @@
 // subtask, is a follow-up in that Bot's own chat (#1205). The driver does not
 // open a group Session and does not post the reply into the room. Assigning,
 // progress, and the next assignee are board writes; chat is not the scheduler.
-import { compareForWork } from '../shared/task-board.js'
+import { compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
 import { formatRoomBoard } from './room-context.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
@@ -29,6 +29,25 @@ const fingerprint = (tasks) => tasks.map(task => [
   task.title ?? '',
   task.writeBack ? `${task.writeBack.state}:${task.writeBack.target}` : '',
 ].join('\u0000')).sort().join('\u0001')
+
+// A queue item is offered, not owned: this cue names the item and the claim, never its note —
+// the note is the body, and reading it is the turn's job, not the wake's (#1247).
+const queueCueFor = (task) => {
+  const title = String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+  const priority = task.priority ?? 'normal'
+  return `Take ${task.id} [${priority}] ${title} — queued for ${task.queueRole}. Claim it with track_tasks {claim: true, id: '${task.id}'}, then set its column to in-progress. Do not post a status in the group. Stop when it is done or waiting on an answer. Do not invent other work.`
+}
+
+// What the queue pass compares between passes: an item nobody claimed is still the same offer.
+const queueFingerprint = (task) => (task === undefined ? '' : [
+  task.id,
+  task.status,
+  task.priority ?? 'normal',
+  task.claimedBy ?? '',
+  task.retryAt ?? '',
+  task.note ?? '',
+  task.title ?? '',
+].join('\u0000'))
 
 const cueFor = (task) => {
   const title = String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
@@ -73,6 +92,10 @@ export function install(rt) {
     if (!bot || bot.remote !== undefined) return []
     return Object.values(rt.state.tasks ?? {}).filter((task) => {
       if (task.ownerBotId !== botId || task.waitingFor === 'input') return false
+      // An item with a role and no claimer belongs to the room, not to this Bot: the enqueuer
+      // must not be woken for its own item (#1247). A claimed one names the member and is
+      // driven above like any other card.
+      if (task.queueRole && !task.claimedBy) return false
       // A decision waiting to be posted is work even when the task is accepted: the Bot holds the
       // connector, so the comment goes out on its next turn (#1154). The reminder stops after two
       // wakes (#1172) — a Bot that never posts must not be woken for ever. The status path below is
@@ -128,23 +151,35 @@ export function install(rt) {
     const owner = rt.groupOwners.get(sessionId)
     const botId = owner?.botId ?? rt.selfOf(sessionId)
     const round = owner !== undefined && roundLive(owner.roomId)
-    const still = !round && drivingTasks(botId).some(task => ownsSession(task, sessionId))
+    const queued = job.queue !== undefined && (() => {
+      const task = rt.state.tasks?.[job.queue]
+      return Boolean(task && task.queueRole && !task.claimedBy && task.status === 'open')
+    })()
+    const still = !round && (drivingTasks(botId).some(task => ownsSession(task, sessionId)) || queued)
     if (still) return
     const agent = await rt.resolveAgent(sessionId).catch(() => undefined)
     if (!dropQueued(agent)) return
     inflight.delete(sessionId)
   }
 
-  const noteMiss = (sessionId, fp) => {
+  const noteMiss = (sessionId, fp, kind = 'work') => {
     const count = (misses.get(sessionId) ?? 0) + 1
     misses.set(sessionId, count)
     const delay = TASK_DRIVE_BACKOFF_MS[Math.min(count - 1, TASK_DRIVE_BACKOFF_MS.length - 1)]
-    held.set(sessionId, { until: clock.now() + delay, fingerprint: fp })
+    held.set(sessionId, { until: clock.now() + delay, fingerprint: fp, kind })
   }
 
-  const clearMiss = (sessionId) => {
+  // Only the pass that set the hold may clear it: the queue pass and the work pass compare
+  // different fingerprints, so without the kind each would wipe the other's wait (#1247).
+  const clearMiss = (sessionId, kind) => {
+    const hold = held.get(sessionId)
+    if (kind !== undefined && hold !== undefined && hold.kind !== kind) return
     misses.delete(sessionId)
     held.delete(sessionId)
+  }
+  const heldFor = (sessionId, kind) => {
+    const hold = held.get(sessionId)
+    return hold !== undefined && hold.kind === kind ? hold : undefined
   }
 
   // Only a wake that actually left for a pending decision counts (#1172): a hold that never delivered
@@ -196,8 +231,8 @@ export function install(rt) {
       if (!sessionId) continue
       if (inflight.get(sessionId)?.started) continue
       const fp = fingerprint(list)
-      const hold = held.get(sessionId)
-      if (hold && hold.fingerprint !== fp) clearMiss(sessionId)
+      const hold = heldFor(sessionId, 'work')
+      if (hold && hold.fingerprint !== fp) clearMiss(sessionId, 'work')
       else if (hold && clock.now() < hold.until) continue
       let agent
       try {
@@ -239,6 +274,59 @@ export function install(rt) {
         rt.warn('ds-bot: task drive could not wake %s: %s', botId, error)
       }
     }
+    await offerQueue()
+  }
+
+  // The pull wake (#1247): an unclaimed item wakes one idle member of its role in that member's
+  // own chat. One offer per room and role per pass — a queue of five must not start five turns —
+  // and one member, so the item is pulled by one person instead of broadcast to the whole role.
+  // The item's age is on the board; this pass adds no second presence block.
+  async function offerQueue() {
+    const byRoomRole = new Map()
+    for (const task of Object.values(rt.state.tasks ?? {})) {
+      if (!task?.queueRole || task.claimedBy || task.status !== 'open') continue
+      const roomId = task.origin?.roomId
+      const room = roomId ? rt.roomOf(roomId) : undefined
+      if (!room || room.origin === 'face-to-face') continue
+      if (Number.isFinite(task.retryAt) && task.retryAt > clock.now()) continue
+      const key = `${roomId}\u0000${String(task.queueRole).toLowerCase()}`
+      const list = byRoomRole.get(key) ?? []
+      list.push(task)
+      byRoomRole.set(key, list)
+    }
+    for (const list of byRoomRole.values()) {
+      const item = list.slice().sort(compareForQueue)[0]
+      const room = rt.roomOf(item.origin.roomId)
+      const carriers = (room?.members ?? [])
+        .filter(id => { const bot = rt.botOf(id); return Boolean(bot) && bot.remote === undefined && sameRole(bot.role, item.queueRole) })
+      for (const botId of carriers) {
+        const sessionId = rt.chatOf(botId)
+        if (!sessionId || rt.roomOf(sessionId)) continue
+        if (busy(sessionId)) continue
+        const fp = queueFingerprint(item)
+        const hold = heldFor(sessionId, 'queue')
+        if (hold && hold.fingerprint !== fp) clearMiss(sessionId, 'queue')
+        else if (hold && clock.now() < hold.until) continue
+        let agent
+        try {
+          agent = await rt.resolveAgent(sessionId)
+        } catch (error) {
+          rt.warn('ds-bot: task drive could not reach %s: %s', sessionId, error)
+          continue
+        }
+        if (busy(sessionId)) continue
+        // A queued wake for this member already waits for a turn: keep that one.
+        if (taskMessages(agent).some(message => messageText(message).includes(item.id))) continue
+        inflight.set(sessionId, { fingerprint: fp, started: false, queue: item.id })
+        try {
+          await rt.deliver({ toId: botId, sessionId, role: 'task', text: queueCueFor(item) })
+        } catch (error) {
+          inflight.delete(sessionId)
+          rt.warn('ds-bot: task drive could not offer %s to %s: %s', item.id, botId, error)
+        }
+        break
+      }
+    }
   }
 
   function consider() {
@@ -260,9 +348,10 @@ export function install(rt) {
     if (retry && job?.started) return undefined
     if (job?.started) {
       inflight.delete(sessionId)
-      const fp = fingerprint(drivingTasks(rt.selfOf(sessionId)))
-      if (fp === job.fingerprint) noteMiss(sessionId, fp)
-      else clearMiss(sessionId)
+      const kind = job.queue !== undefined ? 'queue' : 'work'
+      const fp = kind === 'queue' ? queueFingerprint(rt.state.tasks?.[job.queue]) : fingerprint(drivingTasks(rt.selfOf(sessionId)))
+      if (fp === job.fingerprint) noteMiss(sessionId, fp, kind)
+      else clearMiss(sessionId, kind)
     }
     return consider()
   }
