@@ -795,6 +795,27 @@ test('#1202: the summary counts sentences as written, so a version number is not
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
+test('#1202: a Chinese summary counts its sentences — `。` ends one with no space after it', () => {
+  // `SENTENCE_END` required whitespace after the terminator, so `第一句。第二句。第三句。` counted as one
+  // sentence and a Chinese handoff was refused however good the text was (#1210). The full-width forms need
+  // no space after them; the ASCII ones still do, or `v0.2.3` would be three sentences.
+  const bodies = [
+    '第一句说明改了什么。第二句说明边界在哪。第三句说下一步是什么。',
+    '第一句说明改了什么！第二句说明边界在哪？第三句说下一步是什么。',
+    'The guard reads a block. 它一次只拒一个字段。接下来交给 Reviewer。',
+  ]
+  for (const summary of bodies) {
+    const r = run({ raw: true, comments: [comment()], body: `${HEADERS}Fixes #602\n\n${checkpoint({ summary })}` })
+    assert.equal(r.ok, true, `${summary} — ${r.reasons.join('; ')}`)
+  }
+})
+
+test('#1202: a Chinese summary shorter than three sentences is refused, and the count is read', () => {
+  const r = run({ raw: true, comments: [comment()], body: `${HEADERS}Fixes #602\n\n${checkpoint({ summary: '只有一句说明改动。还有一句说明边界。' })}` })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /checkpoint field "summary": 2 sentences — write 3 to 5/)
+})
+
 test('#1202: the format reads a real merged pull request of this repository', () => {
   // The body of #1206, verbatim as GitHub returned it, with the checkpoint it would have carried. A format
   // that cannot read the bodies we actually write is a format nobody will fill in.

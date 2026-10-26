@@ -153,10 +153,11 @@ const SHA40 = /^[0-9a-f]{40}$/i
 // A path, not a sentence: no whitespace, not absolute, and not so long that it is prose. `Makefile` and
 // `Dockerfile` have no extension, so a dot is not required.
 const FILE_PATH = /^[^\s/][^\s]{0,199}$/
-// One sentence ends at `.`, `!`, `?` or their full-width forms, and only where whitespace (or the text's
-// end) follows: without that `v0.2.3` would be three sentences and every summary that names a version
-// would be refused.
-const SENTENCE_END = /[.!?。！？]+(?:\s+|$)/
+// One sentence ends at `.`, `!`, `?` or their full-width forms. The ASCII ones count only where whitespace
+// (or the text's end) follows: without that `v0.2.3` would be three sentences and every summary naming a
+// version would be refused. The full-width ones take no such condition, because Chinese writes `。` with no
+// space after it — requiring one counted a three-sentence Chinese handoff as a single sentence (#1210).
+const SENTENCE_END = /[.!?]+(?:\s+|$)|[。！？]+/
 const FENCE_LINE = /^\s*```[a-z]*\s*$/i
 
 // The block as written, or why it cannot be read. `present: false` is "no `## Checkpoint` section at
@@ -275,8 +276,10 @@ export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, 
     if (!draft && !merged) {
       reasons.push(...headerReasons(body, policy))
       // #1202: the same exemption list, for the same reason. A release PR is generated and has no Bot to
-      // claim it; a fork's author keeps their own workflow. The block is read on the queue entry only —
-      // there is no ready event — so this is where "a checkpoint is required" is a fact rather than a hope.
+      // claim it; a fork's author keeps their own workflow. Read at the queue entry rather than on the
+      // `ready_for_review` event — the workflow does listen for that one — because `edited` is not among its
+      // types: a body fixed after a green check starts no run, so the queue entry is the first read of the
+      // body as it will merge.
       reasons.push(...checkpointReasons(body, { pr, files }))
     }
   }

@@ -210,12 +210,12 @@ A pull request hands itself over in one block in the body, under `## Checkpoint`
 | `pr` | this pull request's number — catches a body copied from another |
 | `claim` | the Bot on the `Owner:` line; one claimant per pull request |
 | `issue` | a number the body closes with `Fixes`/`Closes` |
-| `summary` | 3–5 sentences, ≤ 600 characters |
+| `summary` | 3–5 sentences, ≤ 600 characters; English or Chinese — `.`, `!`, `?` and `。`, `！`, `？` all end one |
 | `files` | 1–12 paths, at least one in this diff |
-| `checks` | `ran`, `result` ∈ `green\|red\|none` (`none` needs `why`), `at` the full tip sha |
+| `checks` | `ran`, `result` ∈ `green\|red\|none` (`none` needs `why`), `at` the full sha the checks ran at — read, not compared with the head, so a sha from an earlier tip is accepted |
 | `next` | ≤ 300 characters; `none — ready for review` is allowed |
 
-The whole block stays under 1500 characters, between `<!-- flybot:checkpoint -->` and `<!-- /flybot:checkpoint -->`; the template in [`.github/pull_request_template.md`](.github/pull_request_template.md) carries the skeleton. `enqueue-guard` reads it at **queue entry** — there is no "ready" event to hang a check on — and refuses a missing or wrong field by name, the way it refuses `missing line: Owner:`. Writing it at claim time and refreshing it on every push is a convention, not a check: only the queue entry is enforced. The same two exemptions apply (a mechanical release PR, a fork).
+The whole block stays under 1500 characters, between `<!-- flybot:checkpoint -->` and `<!-- /flybot:checkpoint -->`; the template in [`.github/pull_request_template.md`](.github/pull_request_template.md) carries the skeleton. `enqueue-guard` reads it at **queue entry** and refuses a missing or wrong field by name, the way it refuses `missing line: Owner:`. That read is the live one because of the events, not for want of a ready event: [`enqueue-guard.yml`](.github/workflows/enqueue-guard.yml) already lists `ready_for_review` among its `pull_request_target` types, and none of those types is `edited` — so a body fixed after the check went green starts no run at all, and the old green would stand until the queue entry reads the body it is about to merge. Writing the block at claim time and refreshing it on every push is a convention, not a check: only the queue entry is enforced. The same two exemptions apply (a mechanical release PR, a fork).
 
 #### Docs-not-needed: why both places
 
