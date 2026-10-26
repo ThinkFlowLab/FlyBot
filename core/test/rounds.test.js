@@ -16,6 +16,9 @@ function start() {
   const ctx = fakeContext()
   const workspaces = new Map()
   const sent = []
+  // A line steered into a running turn is a different thing from a turn's own delivery (#1267): the
+  // member's Session gets it at its next step, so it is kept apart from `sent`.
+  const steered = []
   const inboxes = new Map()
   const inboxOf = (sessionId) => {
     if (!inboxes.has(sessionId)) {
@@ -53,7 +56,7 @@ function start() {
     },
     sessionController: {
       create: async () => ({ sessionId: `s${++sessions}` }),
-      resolveAgent: async sessionId => ({ agent: { session: { id: sessionId }, followup: message => sent.push({ sessionId, message }) } }),
+      resolveAgent: async sessionId => ({ agent: { session: { id: sessionId }, followup: message => sent.push({ sessionId, message }), steer: message => steered.push({ sessionId, message }), cancel: () => {} } }),
       selectModel: async () => {},
       prompt: async (request) => {
         const inbox = inboxOf(request.sessionId)
@@ -101,7 +104,7 @@ function start() {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { call, emit, userMessage, compose, relay, inboxOf, answer, stop, sent, ctx, home, rt }
+  return { call, emit, userMessage, compose, relay, inboxOf, answer, stop, sent, steered, ctx, home, rt }
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 20))
@@ -180,6 +183,95 @@ test('a message the composer queues mid-round joins the round and leaves the Ses
   assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'User', 'Writer'])
   // Taken out of the queue, the message opens no second round after this one.
   assert.deepEqual(inboxOf(room.id).nextTurn, [])
+})
+
+test('#1267: a line the user sends while a member speaks reaches that member at its next step, not after its turn', async (t) => {
+  const { call, emit, userMessage, compose, relay, answer, stop, sent, steered, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+
+  await emit(room.id, userMessage('Tell me a long story'))
+  const running = relay(room.id, 'relay')
+  const first = await turnFor(sent)
+  assert.ok(first, 'the admin speaks first')
+
+  // The user types while the admin is still inside its turn.
+  await compose(room.id, 'One thing: say the conclusion first')
+  const mid = await waitFor(() => steered.find(entry => entry.message.content[0].text.includes('say the conclusion first')))
+  assert.ok(mid, 'the line reaches the member that is speaking, not the next slot')
+  assert.equal(mid.sessionId, first.sessionId)
+  // It says the line arrived after the turn started, so it is never answered as if it had been there from the start.
+  assert.match(mid.message.content[0].text, /^\[Group chat "R1" · the user sent this while you were speaking; answer it now\]\nOne thing: say the conclusion first$/)
+  // The room shows it at once: the log and the running round carry it before the turn ends.
+  assert.ok(rt.state.rooms[room.id].log.some(line => line.text === 'One thing: say the conclusion first'), 'logged while the turn runs')
+  assert.ok(rt.roomProgress.get('relay').replies.some(reply => reply.kind === 'user' && reply.text === 'One thing: say the conclusion first'), 'in the running round')
+  // No second slot was opened for it: the member that is speaking got no other delivery.
+  assert.equal(sent.filter(entry => entry.message.source.role === 'room').length, 1)
+
+  await answer(first.sessionId, first.message.source.exchangeId, 'Conclusion first, then the story.', 1)
+  const second = await turnFor(sent, first)
+  assert.notEqual(second.sessionId, first.sessionId, 'the line opened no second turn for the member that was speaking')
+
+  await answer(second.sessionId, second.message.source.exchangeId, 'Noted.', 2)
+  const result = JSON.parse(await running)
+  // Answered once: by the member that was speaking mid-turn, not again as the next slot's opener.
+  assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['User', 'Chief', 'Writer'])
+  assert.equal(result.replies.filter(reply => reply.text === 'One thing: say the conclusion first').length, 1)
+})
+
+test('#1267: the line reaches the room once and leaves the relay queue behind', async (t) => {
+  const { call, emit, userMessage, compose, relay, answer, stop, sent, steered, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+
+  await emit(room.id, userMessage('Start'))
+  const running = relay(room.id, 'relay')
+  const first = await turnFor(sent)
+  // The shell both prompts the room's Session and announces the line to it, as the real one does.
+  await compose(room.id, 'while you speak')
+  await emit(room.id, userMessage('while you speak'))
+  assert.ok(await waitFor(() => steered.find(entry => entry.message.content[0].text.includes('while you speak'))), 'the speaker has it')
+
+  // The relay's pending copy goes with it, so the next relay can neither log it again nor answer it again.
+  assert.equal((rt.roomInbox.get(room.id) ?? []).some(item => item.text === 'while you speak'), false)
+  await answer(first.sessionId, first.message.source.exchangeId, 'one', 1)
+  const second = await turnFor(sent, first)
+  await answer(second.sessionId, second.message.source.exchangeId, 'two', 2)
+  const result = JSON.parse(await running)
+  assert.equal(result.replies.filter(reply => reply.text === 'while you speak').length, 1)
+  assert.equal(rt.state.rooms[room.id].log.filter(line => line.text === 'while you speak').length, 1)
+})
+
+test('#1267: a line that only says stop supersedes the speaking slot, and its answer is not posted', async (t) => {
+  const { call, emit, userMessage, compose, relay, answer, stop, sent, steered, rt } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+
+  await emit(room.id, userMessage('Long job'))
+  const running = relay(room.id, 'relay')
+  const first = await turnFor(sent)
+  // The member's turn runs with this delivery, and the person's stop lands inside it.
+  await emit(first.sessionId, { type: 'turn/start', data: { turn: 1 } })
+  await emit(first.sessionId, { type: 'user/message', data: { source: first.message.source, content: first.message.content } })
+  await compose(room.id, '停')
+  const slot = await waitFor(() => rt.roomProgress.get('relay').slots.find(entry => entry.status === 'superseded'))
+  assert.ok(slot, 'the speaking slot is superseded')
+  assert.equal(steered.length, 0, 'a stop line is not handed to the member as work to answer')
+
+  // The stopped turn's own text never reaches the room.
+  await emit(first.sessionId, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Half done' }] } } })
+  await emit(first.sessionId, { type: 'turn/end', data: { reason: { kind: 'stop' } } })
+  // The line stayed in the Session's queue, so the head drain opens it as a fresh line for the room.
+  const next = await turnFor(sent, first)
+  assert.match(next.message.content[0].text, /停/)
+  await answer(next.sessionId, next.message.source.exchangeId, 'Stopped.', 2)
+  const third = await turnFor(sent, first, next)
+  await answer(third.sessionId, third.message.source.exchangeId, 'Nothing running here.', 3)
+  const result = JSON.parse(await running)
+  assert.equal(result.replies.some(reply => reply.text === 'Half done'), false, 'the stopped answer is not posted')
+  assert.equal(rt.state.rooms[room.id].log.some(line => line.text === 'Half done'), false)
+  assert.ok(result.replies.some(reply => reply.kind === 'stopped'))
+  assert.equal(result.replies.filter(reply => reply.text === '停').length, 1, 'the line shows once in the round')
 })
 
 test('a display-only shared line is not logged again and calls no Bot', async (t) => {

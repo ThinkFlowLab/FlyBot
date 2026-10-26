@@ -164,6 +164,16 @@ const ROOM_REPLY_BOARD = 'Reply with your message for the group, no name prefix:
 const ROOM_REPLY_NOW = 'Reply now with your message for the group, no name prefix, or [PASS] to stay silent.'
 // Words that address the whole room: a plain line with one of them may get an answer from each Bot (#299).
 const ROOM_EVERYONE = /大家|你们|各位|所有人|所有 ?[Bb]ot|每个人|每位|各自|分别|everyone|everybody|y'?all|you all|all of you|each of you|introduce yourselves/i
+// A line that only means "stop what you are doing" (#1267): in a group it ends the speaking member's
+// turn instead of being handed to it. It is the one place where a person's line supersedes work in
+// flight, and the words are the ones a person uses to call stop_bot on a Bot.
+const ROOM_STOP = /^(?:停|停下|停止|别做了|不要做了|stop|stop it)[\s。.!！?]*$/i
+// What a member reads when a person's line reaches it mid-turn (#1267): it has to know the line came
+// after its turn started, so it never answers it as if it had been there from the start.
+const ROOM_MID_LINE = 'the user sent this while you were speaking; answer it now'
+// How often a running round looks at its own Session's inbox for that line (#1267): the member's turn
+// cannot be interrupted, so the round watches the one queue it drains at its head.
+const ROOM_MID_LINE_POLL_MS = 100
 const ROOM_REPLY_FORCED = 'This turn is the exception to the [PASS] rule: reply with your message for the group, no name prefix, short. Do not reply [PASS].'
 const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
 // Same wake, on a room that has a board: the call does not assign or record progress.
@@ -173,6 +183,7 @@ const slotLabel = (slot) => {
   if (slot.status === 'speaking') return `${slot.name} (you, now)`
   if (slot.status === 'posted') return `${slot.name} (posted)`
   if (slot.status === 'passed') return `${slot.name} (passed)`
+  if (slot.status === 'superseded') return `${slot.name} (stopped by the user)`
   if (slot.status === 'missed') return `${slot.name} (no answer)`
   if (slot.status === 'working') return `${slot.name} (working on it; posts when done)`
   if (slot.status === 'waiting-approval') return `${slot.name} (waiting for the user's approval; posts when done)`
@@ -456,8 +467,13 @@ export function install(rt) {
     const starting = round.route === undefined && round.slots.length === 0
     delete round.route
     for (const line of lines) {
-      if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
-      round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
+      // A line the round already showed when it arrived (#1267): its stop left it in this queue, so the
+      // head drain opens the fresh line without showing it a second time.
+      const shown = round.midLineIds?.delete(line.id) === true
+      if (!shown) {
+        if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
+        round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
+      }
       const { all, found } = mentionsIn(line.text, members)
       const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
       let speakers = openingSpeakers(room, { text: line.text })
@@ -479,6 +495,58 @@ export function install(rt) {
     room.lateRounds = 0
     void rt.save().catch(() => {})
     return round.slots.length - before
+  }
+
+  // One line that reaches the round while a member speaks (#1267). It is logged at once — the room
+  // shows it when it is sent, not at the next slot — and `notePostedLine` keeps the next relay from
+  // logging it a second time. Its pending copy leaves the relay's queue, because this round answers
+  // it: the head drain must not open a second slot for the same line.
+  function speakMidLine(room, round, slot, member, sessionId, exchangeId, line) {
+    if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
+    rt.notePostedLine?.(room.id, line.text)
+    const queued = rt.roomInbox?.get(room.id)
+    const at = queued?.findIndex(item => item.botId === undefined && item.text === line.text) ?? -1
+    if (at !== -1) rt.roomInbox.set(room.id, queued.toSpliced(at, 1))
+    round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
+    // The user spoke in this room, so late replies may be answered again.
+    room.lateRounds = 0
+    void rt.save().catch(() => {})
+    // The one line that ends work in flight (#1267 B): the slot is superseded, its turn is cancelled,
+    // and nothing it says when it stops is posted. The line stays in the Session's queue, so the head
+    // drain opens it as a fresh line (admin first) for the room to answer.
+    if (ROOM_STOP.test(String(line.text).trim())) {
+      round.midLineIds ??= new Set()
+      round.midLineIds.add(line.id)
+      slot.status = 'superseded'
+      round.replies.push({ kind: 'stopped', botId: member.id, name: member.name, color: member.color, time: Date.now() })
+      void participant.cancel({ sessionId, exchangeId }).catch(error => rt.warn('ds-bot: stopping %s in %s failed: %s', member.name, room.name, error))
+      return
+    }
+    // Every other line is the default shape (#1267 A): the member that is speaking gets it at its next
+    // step, marked as a line that arrived after its turn started.
+    void rt.deliver({ fromId: undefined, toId: member.id, sessionId, role: 'room', roomId: room.id, text: line.text, steer: true, note: ROOM_MID_LINE })
+      .catch(error => rt.warn('ds-bot: a line sent while %s was speaking did not reach it: %s', member.name, error))
+  }
+
+  // While a member's turn runs, the round watches the queue it drains at its head for the user's lines
+  // (#1267): a member turn is not interrupted from outside, so the wait is watched, and what arrives is
+  // handed over by speakMidLine. The queue is left alone for a stop line, whose slot it supersedes.
+  function watchSpeakerLines(room, round, slot, member, sessionId, exchangeId, agent) {
+    let stopped = false
+    const take = () => {
+      if (stopped) return
+      for (const line of waitingLines(agent)) {
+        if (ROOM_STOP.test(String(line.text).trim())) {
+          stopped = true
+          speakMidLine(room, round, slot, member, sessionId, exchangeId, line)
+          return
+        }
+        if (agent.inbox.remove(line.id)) speakMidLine(room, round, slot, member, sessionId, exchangeId, line)
+      }
+    }
+    const timer = setInterval(take, ROOM_MID_LINE_POLL_MS)
+    timer.unref?.()
+    return () => { stopped = true; clearInterval(timer) }
   }
 
   // The routing of a person's plain line in a face-to-face room (not @all): who decides, whether it is to everyone,
@@ -623,9 +691,18 @@ export function install(rt) {
       // A turn asked for this line may post late; it still counts as this line's answer (#456).
       const asked = currentFaceLine(room, round.faceLine)
       if (asked !== undefined) asked.asked = [...asked.asked, exchangeId].slice(-FACE_ASKED_KEPT)
-      const result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by, origin: roundOrigins.get(round), exchangeId })
+      // A line the user sends while this member speaks reaches it at its next step (#1267).
+      const stopWatching = watchSpeakerLines(room, round, slot, member, session.id, exchangeId, agent)
+      let result
+      try {
+        result = await participant.runTurn({ room, member, sessionId: session.id, text, note: slot.note ?? 'your turn', signal, started: round.started, by: slot.by, origin: roundOrigins.get(round), exchangeId })
+      } finally {
+        stopWatching()
+      }
       const reply = result === null || typeof result === 'object' ? result : stripOwnName(member.name, String(result ?? '').trim())
       round.speaking = null
+      // A stop line ended this turn (#1267): what it had in flight is not this room's answer.
+      if (slot.status === 'superseded') continue
       if (reply?.failure !== undefined) {
         // Not a pass: the user sees why the member is silent, and the round goes on.
         slot.status = 'failed'
