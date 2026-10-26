@@ -1,7 +1,8 @@
-// Team quiet hours (#1166, the E half of #645). A window in the team's own clock that
-// refuses a new or edited task whose time lands inside it. It is not a mute: nothing here
-// runs when a reminder is delivered, because DSH has no hook before one — a task that
-// already fires inside the window keeps firing (docs/subsystems/core-host.md).
+// Team quiet hours (#1166, the E half of #645). A window in wall-clock time that refuses a
+// new or edited task whose time lands inside it — the due time is read in that task's own
+// zone, so the two are compared as instants, not in one team-wide clock. It is not a mute:
+// nothing here runs when a reminder is delivered, because DSH has no hook before one — a
+// task that already fires inside the window keeps firing (docs/subsystems/core-host.md).
 //
 // The window is half-open, `[from, to)`: `from` is quiet and `to` is not, so `22:00–07:00`
 // is quiet at 22:00 and free at 07:00. A window whose end is earlier than its start crosses
