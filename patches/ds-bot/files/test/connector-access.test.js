@@ -14,6 +14,8 @@ import { fakeContext } from './fake-ctx.js'
 const COMPOSIO = ['mcp__composio__COMPOSIO_SEARCH_TOOLS', 'mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL']
 const GITHUB = ['mcp__github__create_issue', 'mcp__github__get_me']
 const OWN = ['read', 'ask_user']
+// #1237: the four tools @deepseek-ai/dsh-tool-schedule registers, and the ones a room turn drops.
+const SCHEDULE = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
 
 const team = () => ({
   version: 1,
@@ -40,7 +42,7 @@ async function setup({ state = team() } = {}) {
   const agents = new Map()
   const sent = []
   const masks = new Map()
-  const live = { served: [...OWN, ...COMPOSIO, ...GITHUB] }
+  const live = { served: [...OWN, ...COMPOSIO, ...GITHUB, ...SCHEDULE] }
   const created = agent => Promise.all((ctx.listeners.get('agent/created') ?? []).map(listener => listener({ agent })))
   const hiddenFrom = id => new Set([...(masks.get(id) ?? [])].flatMap(mask => [...mask]).filter(name => connectorOfTool(name) !== undefined))
   const agentFor = async (id, { parent } = {}) => {
@@ -103,7 +105,7 @@ async function setup({ state = team() } = {}) {
     begin(id)
     return () => end(id)
   }
-  return { ctx, rt, home, live, agentFor, hiddenFrom, guard, call, stop, sent, event, begin, take, end, turn }
+  return { ctx, rt, home, live, agentFor, hiddenFrom, allHidden, guard, call, stop, sent, event, begin, take, end, turn }
 }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
@@ -121,12 +123,12 @@ test('connector tool names map to their connector, and nothing else does', () =>
   for (const name of ['read', 'ask_user', 'mcp__notes__search', 'mcp__composioish__x', undefined]) assert.equal(connectorOfTool(name), undefined)
 })
 
-test('default: a connected connector is on for every Bot, old or new, in its chat, its group Session and its parts; plain Sessions keep it too', async (t) => {
+test('default: a connected connector is on for every Bot, old or new, in its chat and its parts; a group Session keeps only github (#1237); plain Sessions keep it too', async (t) => {
   const { agentFor, hiddenFrom, guard, turn, stop } = await setup()
   t.after(stop)
   for (const id of ['chief', 'writer', 'room-writer', 'plain', 'elsewhere']) await agentFor(id)
-  // Nothing is hidden from anyone, and the saved teams of #346 (no record at all) read as on.
-  for (const id of ['chief', 'writer', 'room-writer', 'plain', 'elsewhere']) assert.deepEqual([...hiddenFrom(id)], [], id)
+  // Nothing is hidden from a Bot Session, and the saved teams of #346 (no record at all) read as on.
+  for (const id of ['chief', 'writer', 'plain', 'elsewhere']) assert.deepEqual([...hiddenFrom(id)], [], id)
   for (const id of ['chief', 'writer']) {
     const done = await turn(id, TYPED)
     for (const name of [...COMPOSIO, ...GITHUB]) assert.equal(guard(name, id), undefined, `${id} ${name}`)
@@ -134,8 +136,11 @@ test('default: a connected connector is on for every Bot, old or new, in its cha
     done()
   }
   // The group Session answers the room's round (stamped as the host's own), in a room of the owner's own Bots.
+  // #1237: it is the one Session that carries neither the composio tools nor the schedule ones.
+  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'the mask lands with the Agent, not with the turn')
   const done = await turn('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: 'rr', senderName: 'You', hop: 0, origin: 'owner' })
-  assert.equal(guard(COMPOSIO[0], 'room-writer'), undefined)
+  assert.match(guard(COMPOSIO[0], 'room-writer'), /own chat, not in a group room/)
+  assert.equal(guard(GITHUB[0], 'room-writer'), undefined, 'github stays: a room judges pull requests')
   done()
   assert.equal(guard(COMPOSIO[0], 'plain'), undefined)
   assert.equal(guard(COMPOSIO[0], 'elsewhere'), undefined)
@@ -186,8 +191,48 @@ test('#601: every turn of the owner\'s own Bot uses the connectors, whoever star
   assert.equal(guard(COMPOSIO[0], 'writer'), undefined, 'outside any turn')
 })
 
-test('#601: a group round of any origin keeps the tools, also with a friend in the room', async (t) => {
-  const { rt, agentFor, hiddenFrom, guard, begin, take, end, stop } = await setup()
+// #1237: 8 tools, ~20.4k characters re-sent on every call of every room turn. A room round uses
+// neither source, so both leave the room Session's tool list — and only that list.
+test('#1237: a room turn drops the composio and schedule tools and keeps github and the built-ins', async (t) => {
+  const { agentFor, hiddenFrom, allHidden, guard, stop } = await setup()
+  t.after(stop)
+  await agentFor('room-writer')
+  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'every composio tool goes')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'and the four schedule tools, nothing else')
+  for (const name of [...GITHUB, ...OWN]) assert.equal(allHidden('room-writer').has(name), false, `${name} stays`)
+  for (const name of [...GITHUB, ...OWN]) assert.equal(guard(name, 'room-writer'), undefined, `${name}`)
+  for (const name of [...COMPOSIO, ...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, name)
+  assert.equal(guard('schedule_list', 'room-writer'), 'Schedules are managed in your own chat, not in a group room (#1237).')
+  assert.equal(guard(COMPOSIO[0], 'room-writer'), 'The composio connector is available in your own chat, not in a group room (#1237).')
+})
+
+test('#1237: a Bot\'s own chat keeps composio and the schedule tools', async (t) => {
+  const { agentFor, allHidden, guard, stop } = await setup()
+  t.after(stop)
+  // The room Session and the chat Session are two Agents of one Bot; only the room one is narrowed.
+  await agentFor('room-writer')
+  await agentFor('writer')
+  assert.deepEqual([...allHidden('writer')], [], 'a chat Session is untouched')
+  for (const name of [...COMPOSIO, ...SCHEDULE, ...GITHUB, ...OWN]) assert.equal(guard(name, 'writer'), undefined, name)
+})
+
+test('#1237: a schedule tool that appears after the mask landed is denied on the next tools/change', async (t) => {
+  const { ctx, live, agentFor, allHidden, stop } = await setup()
+  t.after(stop)
+  // A DSH that does not serve the schedule plugin yet: the four names are not in the profile's list, so
+  // the mask cannot name them (restrict() refuses a name the profile does not serve).
+  live.served = live.served.filter(name => !SCHEDULE.includes(name))
+  await agentFor('room-writer')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO].sort())
+  // The plugin loads after the room Session is up; the registry says so and the room mask is recomputed.
+  live.served.push(...SCHEDULE)
+  ctx.emit('tools/change')
+  await tick()
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the late tools are denied too')
+})
+
+test('#601: a group round of any origin keeps the github tools, also with a friend in the room; #1237 keeps composio and schedule out', async (t) => {
+  const { rt, agentFor, allHidden, guard, begin, take, end, stop } = await setup()
   t.after(stop)
   const owner = rt.botOf('writer').ownerId
   rt.state.rooms.room.participants = [
@@ -202,8 +247,9 @@ test('#601: a group round of any origin keeps the tools, also with a friend in t
     take('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: `rr-${origin}`, senderName: 'You', hop: 0, ...(origin ? { origin } : {}) })
     begin('room-writer')
     await tick()
-    for (const name of [...COMPOSIO, ...GITHUB]) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
-    assert.deepEqual([...hiddenFrom('room-writer')], [], `${origin}: nothing hidden`)
+    for (const name of GITHUB) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
+    for (const name of [...COMPOSIO, ...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, `${origin}: ${name}`)
+    assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), `${origin}: the mask is the same in every origin`)
     end('room-writer')
   }
 })

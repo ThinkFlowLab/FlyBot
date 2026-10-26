@@ -11,6 +11,13 @@
 //   - A friend's Bot (`remote`) never gets them, and neither does a Session whose Bot or parent chain
 //     cannot be resolved (fail closed). Sessions that belong to no Bot (the DSH Agent, plain DSH
 //     sessions) are not touched: they are the owner's own, and no friend can reach them.
+//   - A group room turn carries neither the composio tools nor the four schedule tools (#1237): 8
+//     tools, ~20.4k characters (≈5.2k tokens at the measured 3.92 chars/token) re-sent on every call
+//     of every room turn, and a room round uses neither — an outside app is reached from the Bot's own
+//     chat, and a schedule is created, listed and changed there too (#628: a schedule belongs to a
+//     Session, so managing it from a member's room Session would write to the wrong place). The github
+//     tools stay: judging a pull request in a room needs them, and taking them away is a separate
+//     decision (#1237 「不做」). The Bot's own chat and its parts are unchanged.
 //   - The tools are taken out of the Bot's tool list (restrict, per Agent) and every call is refused by
 //     a guard that looks at the answer when the call happens.
 //
@@ -22,6 +29,11 @@ import { OWNER, OTHER, settled } from './turn-origin.js'
 export const CONNECTOR_IDS = [GITHUB, COMPOSIO]
 const prefixOf = id => `mcp__${id}__`
 export const connectorOfTool = name => (typeof name === 'string' ? CONNECTOR_IDS.find(id => name.startsWith(prefixOf(id))) : undefined)
+// The four tools @deepseek-ai/dsh-tool-schedule registers (0.2.0-rc.2, the version
+// core/dev/harness/package.json pins). Spelled out rather than read from the profile: restrict()
+// refuses a name this profile does not serve, so a name missing here only means the tool stays.
+export const SCHEDULE_TOOLS = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
+const SCHEDULES = new Set(SCHEDULE_TOOLS)
 const MAX_DEPTH = 8
 
 export function install(rt) {
@@ -63,6 +75,11 @@ export function install(rt) {
   // secrets.js follows a shell call to its Bot along the same chain (#601).
   rt.whoseAgent = whoseAgent
 
+  // #1237: a group room turn carries no composio tools and no schedule tools. `groupOwners` is the
+  // store's Session -> room index, so this is the same Session a room round answers in.
+  const inRoom = who => who.sessionId !== undefined && rt.groupOwners?.has(who.sessionId) === true
+  const roomHidden = (who, name) => inRoom(who) && (connectorOfTool(name) === COMPOSIO || SCHEDULES.has(name))
+
   // The origin an Agent's request to another Bot carries on (message_bot, stop_bot, post_to_group): the
   // strictest answer, OTHER when it cannot be told. Not a Bot's Agent (the DSH Agent): the owner's own.
   // Connector tools no longer read it (#601); standing approvals and resumed turns still do.
@@ -73,10 +90,21 @@ export function install(rt) {
   }
 
   ctx.tools.guard(exec => {
-    const id = connectorOfTool(exec?.name)
-    if (id === undefined) return undefined
+    const name = exec?.name
+    const id = connectorOfTool(name)
+    const schedule = SCHEDULES.has(name)
+    if (id === undefined && !schedule) return undefined
     const who = whoseAgent(exec.agent)
     if (who.plain === true) return undefined
+    // #1237: a room Session is one of the Bot's own Sessions (store.js indexes it as groupOwners), so
+    // the room rule reads the same session id whoseAgent already resolved. The tip is in the reason:
+    // a Bot that reads it knows where the tool went, and the refusal is the same for every origin.
+    if (roomHidden(who, name)) {
+      return id === COMPOSIO
+        ? `The ${COMPOSIO} connector is available in your own chat, not in a group room (#1237).`
+        : `Schedules are managed in your own chat, not in a group room (#1237).`
+    }
+    if (id === undefined) return undefined
     if (who.unknown === true) return `The ${id} connector is not available here: the Bot this Agent works for could not be determined.`
     const { bot } = who
     if (allowed(bot, id)) return undefined
@@ -98,7 +126,8 @@ export function install(rt) {
   }
   const denied = (who, names) => [...names].filter((name) => {
     const id = connectorOfTool(name)
-    return id !== undefined && (who.bot === undefined || !allowed(who.bot, id))
+    if (id !== undefined && (who.bot === undefined || !allowed(who.bot, id))) return true
+    return roomHidden(who, name)
   }).sort()
 
   function hideConnectorTools(agent) {
