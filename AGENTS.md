@@ -105,6 +105,14 @@ Decided by the owner (Danyang, GitHub `Birfy`) on 2026-10-18/19; what runs today
 
 One read of the open state per round — issues, pull requests, checks — is the budget, not a step to repeat. Whoever reads it writes the facts down where the next Bot will look: the pull request body or a comment, as text. Nobody else re-pulls the same list, restates it in a group chat, or pastes more than five lines of a log; they read the comment. A second opinion needs a second question, not a second fetch. #796 measures what a round actually costs.
 
+#### One round-trip per new fact (#796)
+
+**Spend a round-trip on what is new.** A round-trip exists to bring back something the room did not have — spend it on all of it at once, and never on what it already has. Independent reads go in one call: one `bash` that runs the greps and the API calls the question needs, one call that reads the files, not three round-trips of one read each. A fact already read is quoted from the last answer with its anchor, and the line above about a list holds for every read.
+
+**A round-trip carries its facts out in the same message:** the tip sha it saw, the CI state at that tip (green, or the failing check and its reason), and which files it read. That is what the next Bot acts on; a round that brings back less leaves it to open one to ask.
+
+**An empty round-trip looks like this:** "let me take a look and get back to you" followed by a turn that reads only what the previous one read; a second `gh pr view` to confirm what the verdict already said; three rounds of one `grep` each. Every one of those re-sends the whole context — ~150k tokens on this machine — and the count multiplies: #796 measures 7.4 model calls per member-turn, 6.8 members woken by one group message, 13,136 calls and 1.96B prompt tokens a day, so a round the room did not need is paid once per member that repeats it.
+
 #### A schedule is per session, not per Bot (#628)
 
 `schedule_list` answers for **the session the call runs in**, not for the Bot. A schedule the owner created in another session of the same Bot is simply absent from the answer, and nothing in the response says which session it answered for — so `[]` is indistinguishable from "nothing is scheduled". This cost two wrong conclusions on 2026-10-21: a Bot reported "0 timers" and the team concluded a live schedule had never existed, and another run came close to deleting and recreating a schedule that was running.
