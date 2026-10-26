@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
+import { combineRepos, createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installChannel } from '../src/host/channel.js'
 
@@ -956,4 +956,134 @@ test('a repository the token cannot read fails naming the repository and the end
   // The same failure shape as #1211/#1232, now naming whose 404 it is.
   assert.match(answer.error.message, /acme\/widget/)
   assert.match(answer.error.message, /\/repos\/acme\/widget\/issues/)
+})
+
+// #1265 step 4: one board with more than one repository. Each name resolves with its own source,
+// each repository keeps its own snapshot and cache, and one that cannot be read no longer takes the
+// board with it.
+test('two repositories are two blocks of one board, each with its own source (#1265)', async () => {
+  const one = fakeGitHub({ slug: 'acme/one' })
+  const two = fakeGitHub({ slug: 'acme/two' })
+  const request = (url, init) => (url.includes('/repos/acme/two') ? two.request(url, init) : one.request(url, init))
+  const installed = hostWith({ request, calls: [] }, { config: { delivery: { repos: ['acme/one', 'acme/two'] } } })
+  const loading = await installed.deliveryBoard()
+  assert.equal(loading.state, 'loading')
+  assert.equal(loading.repo, null, 'no single repository owns a shared board')
+  assert.deepEqual(loading.repos.map(entry => [entry.repo, entry.repoSource, entry.state]),
+    [['acme/one', 'config', 'loading'], ['acme/two', 'config', 'loading']])
+  const settled = await installed.deliveryBoard({ wait: true })
+  assert.equal(settled.state, 'fresh')
+  assert.equal(settled.repo, null)
+  assert.equal(settled.repoSource, null)
+  assert.deepEqual(settled.repos.map(entry => [entry.repo, entry.repoSource, entry.state]),
+    [['acme/one', 'config', 'fresh'], ['acme/two', 'config', 'fresh']])
+  // Each repository's reads went to its own API path: one board, two sources, never one line.
+  assert.ok(one.calls.length > 0 && two.calls.length > 0)
+  assert.ok(one.calls.every(call => call.url.startsWith('https://api.github.com/repos/acme/one')))
+  assert.ok(two.calls.every(call => call.url.startsWith('https://api.github.com/repos/acme/two')))
+  // The union carries both repositories' cards: the same issue number in two repositories is two
+  // cards, and the second one does not disappear behind the first.
+  assert.deepEqual(settled.repos[0].columns.raw.map(card => card.number).sort(), [10, 13])
+  assert.deepEqual(settled.repos[1].columns.raw.map(card => card.number).sort(), [10, 13])
+  assert.equal(settled.columns.raw.length, 4, 'the same number from each repository is its own card')
+  // The header's numbers are the repositories' sums; a median across repositories is not a median,
+  // so it is unknown instead of invented.
+  assert.equal(settled.metrics.today.newIssues,
+    settled.repos[0].metrics.today.newIssues + settled.repos[1].metrics.today.newIssues)
+  assert.equal(settled.metrics.open.issues,
+    settled.repos[0].metrics.open.issues + settled.repos[1].metrics.open.issues)
+  assert.equal(settled.metrics.today.medianIssueCloseMs, null)
+  assert.equal(settled.metrics.open.medianIssueAgeMs, null)
+  // The probe asks each repository and names it on every row, so a status can be acted on.
+  const probe = await installed.deliveryProbe()
+  assert.equal(probe.repo, null)
+  assert.deepEqual(probe.repos.map(entry => entry.repo), ['acme/one', 'acme/two'])
+  assert.ok(probe.rows.length > 0)
+  assert.deepEqual([...new Set(probe.rows.map(row => row.repo))].sort(), ['acme/one', 'acme/two'])
+})
+
+test('one repository that cannot be read leaves the other on the board as partial (#1265)', async () => {
+  const one = fakeGitHub({ slug: 'acme/one' })
+  const two = fakeGitHub({ slug: 'acme/two', failures: { '/issues': { status: 404 } } })
+  const request = (url, init) => (url.includes('/repos/acme/two') ? two.request(url, init) : one.request(url, init))
+  const installed = hostWith({ request, calls: [] }, { config: { delivery: { repos: ['acme/one', 'acme/two'] } } })
+  const settled = await installed.deliveryBoard({ wait: true })
+  assert.equal(settled.state, 'partial', 'a failed repository is partial, not a failed board')
+  const good = settled.repos.find(entry => entry.repo === 'acme/one')
+  const bad = settled.repos.find(entry => entry.repo === 'acme/two')
+  assert.equal(good.state, 'fresh')
+  assert.ok(good.columns)
+  assert.equal(bad.state, 'failed')
+  assert.equal(bad.columns, undefined)
+  assert.equal(bad.error.kind, 'not-found')
+  // The failure names its own repository, so the page can say whose read it was.
+  assert.match(bad.error.endpoint, /\/repos\/acme\/two\//)
+  assert.equal(settled.error.kind, 'not-found')
+  assert.equal(settled.missing.length, 0, 'a failed round answers its error, not a partial list')
+  assert.equal(settled.columns, undefined, 'a partial union is not passed off as a whole one')
+})
+
+test('a one-repository instance answers the payload it always answered (#1265)', async () => {
+  const github = fakeGitHub({ slug: 'acme/widget' })
+  const installed = hostWith(github, { config: { delivery: { repos: ['acme/widget'] } } })
+  const settled = await installed.deliveryBoard({ wait: true })
+  assert.equal(settled.repo, 'acme/widget')
+  assert.equal(settled.repoSource, 'config')
+  assert.equal(settled.state, 'fresh')
+  // One entry in the list, so the view can tell one repository from many without guessing.
+  assert.equal(settled.repos.length, 1)
+  assert.deepEqual(Object.keys(settled.columns), DELIVERY_COLUMNS)
+})
+
+test('the aggregation rules: oldest snapshot, partial body, and no invented median (#1265)', () => {
+  const stamp = '2026-10-25T04:00:00Z'
+  const view = (repo, extra = {}) => ({
+    ok: true, state: 'fresh', repo, repoSource: 'config', asOf: stamp, since: stamp, attempt: 1, elapsedMs: 10,
+    computedMs: 10, columns: { raw: [], ready: [], working: [], review: [], 'done-today': [] },
+    counts: { raw: 0, ready: 0, working: 0, review: 0, 'done-today': 0 },
+    metrics: {
+      dayStart: stamp, timeZone: 'Asia/Shanghai',
+      today: { newIssues: 1, closedIssues: 0, newPullRequests: 0, mergedPullRequests: 0, medianIssueCloseMs: 1, medianPullMergeMs: 2, ci: { failed: 0, total: 1, counted: 1, superseded: 0 } },
+      week: null, daily: null,
+      open: { issues: 1, pullRequests: 0, needsHuman: 0, medianIssueAgeMs: 3 },
+    },
+    ...extra,
+  })
+  const single = combineRepos([view('acme/one')])
+  assert.equal(single.state, 'fresh')
+  assert.equal(single.repo, 'acme/one', 'one repository answers with today\'s payload')
+  assert.equal(single.repos.length, 1)
+
+  const mixed = combineRepos([
+    view('acme/one', { state: 'stale', stale: true, asOf: '2026-10-25T03:00:00Z', retryAt: 5_000 }),
+    view('acme/two', { asOf: '2026-10-25T02:00:00Z' }),
+  ])
+  assert.equal(mixed.state, 'stale')
+  assert.equal(mixed.asOf, '2026-10-25T02:00:00Z', 'the oldest snapshot, never a fresher claim')
+  assert.equal(mixed.metrics.today.newIssues, 2)
+  // Nothing that could not be read becomes a zero, and no median is invented from two medians.
+  assert.equal(mixed.metrics.today.medianIssueCloseMs, null)
+  assert.equal(mixed.metrics.week, null)
+  assert.equal(mixed.metrics.daily, null)
+  assert.equal(mixed.metrics.open.medianIssueAgeMs, null)
+
+  const partial = combineRepos([
+    view('acme/one'),
+    { ok: false, state: 'failed', repo: 'acme/two', repoSource: 'config', since: null, attempt: 0, elapsedMs: 0, error: { message: 'GitHub answered 404 for /repos/acme/two/issues', kind: 'not-found' }, retryAt: 10_000 },
+  ])
+  assert.equal(partial.state, 'partial')
+  assert.equal(partial.partial, true)
+  assert.ok(partial.repos[0].columns)
+  assert.equal(partial.repos[1].columns, undefined)
+  // Nothing readable is left out.
+  assert.equal(partial.columns, undefined)
+  assert.equal(partial.retryAt, 10_000)
+
+  // A part that could not be read names its repository too, so one line cannot be read as another's.
+  const withMissing = combineRepos([
+    view('acme/one', { state: 'partial', partial: true, missing: [{ part: 'ci', message: 'GitHub answered 404' }] }),
+    view('acme/two'),
+  ])
+  assert.equal(withMissing.state, 'partial')
+  assert.deepEqual(withMissing.missing.map(entry => [entry.repo, entry.part]), [['acme/one', 'ci']])
 })

@@ -1359,6 +1359,7 @@ const HOST_ZH = {
   // #1250: whose repository the board read, and where that name came from — a package default
   // shown as a fact is what put one instance's numbers on another.
   'no repository — set delivery.repo': '没有仓库 —— 请设置 delivery.repo',
+  '{count} repositories': '{count} 个仓库',
   'from config': '来自 config',
   'from remote': '来自 remote',
   'from the package (default)': '来自安装包（默认值）',

@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { gitConfigPath, gitOriginRepo, instanceRepoSetting, NO_REPO_MESSAGE, originUrlIn, parseRepoName, resolveRepo } from '../src/host/delivery-repo.js'
+import { gitConfigPath, gitOriginRepo, instanceRepoSetting, instanceRepoSettings, NO_REPO_MESSAGE, originUrlIn, parseRepoName, resolveRepo, resolveRepos } from '../src/host/delivery-repo.js'
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'delivery-repo-'))
 const cleanup = dir => rmSync(dir, { recursive: true, force: true })
@@ -166,16 +166,55 @@ test('the instance setting is read in all three spellings a profile can write it
     { repo: 'acme/widget', source: 'config' })
 })
 
-test('the probe is a shell over this resolver, and refuses before it asks (#1250)', () => {
+test('the probe is a shell over this resolver, and refuses before it asks (#1250, #1265)', () => {
   const source = readFileSync(new URL('../scripts/delivery-probe.mjs', import.meta.url), 'utf8')
   // One resolver, imported — a second copy in the CLI is how the two drift.
-  assert.match(source, /import \{ NO_REPO_MESSAGE, resolveRepo \} from '\.\.\/src\/host\/delivery-repo\.js'/)
-  assert.match(source, /resolveRepo\(\{/)
+  assert.match(source, /import \{ NO_REPO_MESSAGE, resolveRepos \} from '\.\.\/src\/host\/delivery-repo\.js'/)
+  assert.match(source, /resolveRepos\(\{/)
   // The same refusal the host gives, with a non-zero exit and no request before it.
-  assert.match(source, /if \(found\.repo === null\) \{[\s\S]{0,240}process\.exit\(2\)/)
+  assert.match(source, /if \(repos\.length === 0\) \{[\s\S]{0,240}process\.exit\(2\)/)
   assert.match(source, /NO_REPO_MESSAGE/)
-  // Its order is --repo, then --workspace, then the package: no third source.
-  assert.match(source, /setting: argOf\('--repo'\)/)
+  // Its order is --repo (repeatable), then --workspace, then the package: no third source.
+  assert.match(source, /setting: allOf\('--repo'\)/)
   assert.match(source, /workspace: argOf\('--workspace', process\.cwd\(\)\)/)
   assert.match(source, /packageSlug: repoSlug\(\)/)
+})
+
+test('delivery.repos is a list, and the older single spelling is a list of one (#1265)', () => {
+  assert.deepEqual(instanceRepoSettings({ delivery: { repos: ['acme/one', 'acme/two'] } }), ['acme/one', 'acme/two'])
+  assert.deepEqual(instanceRepoSettings({ 'delivery.repos': ['acme/one'] }), ['acme/one'])
+  assert.deepEqual(instanceRepoSettings({ deliveryRepos: ['acme/one'] }), ['acme/one'])
+  // Every spelling a profile written before #1265 carries still names one repository.
+  assert.deepEqual(instanceRepoSettings({ delivery: { repo: 'acme/widget' } }), ['acme/widget'])
+  assert.deepEqual(instanceRepoSettings({ 'delivery.repo': 'acme/widget' }), ['acme/widget'])
+  assert.deepEqual(instanceRepoSettings({ deliveryRepo: 'acme/widget' }), ['acme/widget'])
+  // The list is the documented spelling, so it wins when a profile carries both.
+  assert.deepEqual(instanceRepoSettings({ delivery: { repos: ['acme/one'], repo: 'z/z' } }), ['acme/one'])
+  // An empty list or a blank entry is "nothing written": the next level still answers.
+  assert.deepEqual(instanceRepoSettings({ delivery: { repos: [] } }), [])
+  assert.deepEqual(instanceRepoSettings({ delivery: { repos: ['', '  '] } }), [])
+  assert.deepEqual(instanceRepoSettings({ delivery: { repos: [' '] }, deliveryRepo: 'acme/widget' }), ['acme/widget'])
+  assert.deepEqual(instanceRepoSettings({}), [])
+  assert.deepEqual(instanceRepoSettings(null), [])
+})
+
+test('every configured repository keeps its own source, and a repeat is one repository (#1265)', () => {
+  const dir = workspaceWith('https://github.com/remote/other.git')
+  try {
+    assert.deepEqual(resolveRepos({ setting: ['acme/one', 'acme/two'], workspace: dir, packageSlug: 'x/y' }),
+      [{ repo: 'acme/one', source: 'config' }, { repo: 'acme/two', source: 'config' }])
+    // The same name written twice — as a URL and as `owner/name` — is one repository, not two boards
+    // of the same thing.
+    assert.deepEqual(resolveRepos({ setting: ['acme/one', 'https://github.com/acme/one.git'] }),
+      [{ repo: 'acme/one', source: 'config' }])
+    // A refused entry does not take the good one with it, and a list with nothing valid falls through
+    // as a whole: the levels answer once, they are not unioned.
+    assert.deepEqual(resolveRepos({ setting: ['not a repo', 'acme/one'] }), [{ repo: 'acme/one', source: 'config' }])
+    assert.deepEqual(resolveRepos({ setting: ['not a repo'], workspace: dir }), [{ repo: 'remote/other', source: 'remote' }])
+    assert.deepEqual(resolveRepos({ setting: ['not a repo'], workspace: '/nonexistent/folder', packageSlug: 'x/y' }),
+      [{ repo: 'x/y', source: 'package' }])
+    assert.deepEqual(resolveRepos({}), [])
+    // The single-answer call the probe used to make still answers the first of the list.
+    assert.deepEqual(resolveRepo({ setting: ['acme/one', 'acme/two'] }), { repo: 'acme/one', source: 'config' })
+  } finally { cleanup(dir) }
 })

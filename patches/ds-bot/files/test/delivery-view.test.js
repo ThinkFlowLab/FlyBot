@@ -103,7 +103,7 @@ const mount = (Component, props) => {
 }
 const {
   createPoller, DELIVERY_COLUMNS, DeliveryBoard, DeliveryHeader, badgeLabel, duration, metricRows, pollDelay, retryCountdown,
-  loadingText, staleText, hintFor, missingText, probeText,
+  loadingText, staleText, hintFor, missingText, probeText, stagesOf,
 } = module.exports
 
 const text = (node) => {
@@ -601,4 +601,111 @@ test('a host that cannot name a repository says so, and does not send the person
   assert.match(words, /Set delivery\.repo/)
   // Missing settings is not a missing credential; pointing at GITHUB_TOKEN would be the wrong fix.
   assert.doesNotMatch(words, /GITHUB_TOKEN/)
+})
+
+// #1265 step 4: one board with more than one repository. A repository keeps its own block, its own
+// columns and its own state, and one that cannot be read no longer empties the page.
+const repoSample = (repo, extra = {}) => ({
+  repo, repoSource: 'config', state: 'fresh', ok: true, asOf: '2026-10-25T04:00:00Z',
+  columns: {
+    raw: [{ kind: 'issue', number: 10, title: `${repo} untriaged`, labels: [], url: `https://x/${repo}/10` }],
+    ready: [], working: [], review: [], 'done-today': [],
+  },
+  metrics: {
+    dayStart: '2026-10-24T16:00:00.000Z',
+    today: { newIssues: 1, closedIssues: 0, newPullRequests: 0, mergedPullRequests: 0, medianIssueCloseMs: null, medianPullMergeMs: null, ci: { failed: 0, total: 2, counted: 2, superseded: 0 } },
+    week: { newIssues: 2, closedIssues: 0, newPullRequests: 0, mergedPullRequests: 0, medianIssueCloseMs: null, medianPullMergeMs: null, ci: { failed: 0, total: 2, counted: 2, superseded: 0 } },
+    daily: null,
+    open: { issues: 1, pullRequests: 0, needsHuman: 0, medianIssueAgeMs: null },
+  },
+  ...extra,
+})
+
+test('the visible columns come from the payload through one entry point (#1265)', () => {
+  assert.equal(stagesOf({ columns: snapshot.columns }).map(column => column.id).join('|'), DELIVERY_COLUMNS.map(column => column.id).join('|'))
+  // The snapshot says which columns exist; a definition that ships three draws three, not five.
+  assert.equal(stagesOf({ columns: { raw: [], working: [], 'done-today': [] } }).map(column => column.id).join('|'), 'raw|working|done-today')
+  // An id this build has no label for still renders under its own id rather than disappearing.
+  assert.equal(stagesOf({ columns: { review: [], triage: [] } }).map(column => column.id).join('|'), 'review|triage')
+  assert.equal(stagesOf({}).map(column => column.id).join('|'), DELIVERY_COLUMNS.map(column => column.id).join('|'))
+})
+
+test('more than one repository draws one block each, one repository draws none (#1265)', () => {
+  // One repository keeps today's shape: the header names it and no block wrapper is rendered.
+  const single = DeliveryBoard({ snapshot: { ...snapshot, repo: 'acme/one' }, repo: 'acme/one', message: '' })
+  assert.equal(walk(single).filter(node => node.props?.className === 'bt-del-repo-block').length, 0)
+  assert.equal(walk(single).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+  // The host always sends repos[] now, one entry included (#1265 step 4): that shape is still
+  // today's single board, with the repository named in the header rather than counted.
+  const singleView = repoSample('acme/one')
+  const one = DeliveryBoard({ view: { ...singleView, repos: [singleView] } })
+  assert.equal(walk(one).filter(node => node.props?.className === 'bt-del-repo-block').length, 0)
+  assert.equal(walk(one).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+  const oneHead = walk(one).find(node => node.props?.className === 'bt-del-repo')
+  assert.equal(oneHead.props['data-repo'], 'acme/one')
+  assert.equal(oneHead.props['data-repos'], undefined)
+  assert.doesNotMatch(text(oneHead), /1 repositories/)
+
+  const board = DeliveryBoard({
+    view: { state: 'fresh', repo: null, repoSource: null, asOf: '2026-10-25T04:00:00Z', repos: [repoSample('acme/one'), repoSample('acme/two')] },
+  })
+  const blocks = walk(board).filter(node => node.props?.className === 'bt-del-repo-block')
+  assert.deepEqual(blocks.map(node => [node.props['data-repo'], node.props['data-state']]),
+    [['acme/one', 'fresh'], ['acme/two', 'fresh']])
+  for (const block of blocks) {
+    assert.equal(walk(block).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+    const card = walk(block).find(node => node.type === 'article')
+    // The same issue number in two repositories is two cards with two identities.
+    assert.equal(card.props['data-key'], `${block.props['data-repo']}#10`)
+  }
+  // Each block's head names the repository and where its name came from; the shared header counts.
+  assert.match(text(blocks[1]), /acme\/two\s+· from config/)
+  const head = walk(board).find(node => node.props?.className === 'bt-del-repo')
+  assert.equal(head.props['data-repos'], '2')
+  assert.equal(head.props['data-repo'], undefined)
+  assert.match(text(head), /2 repositories/)
+})
+
+test('a failed repository keeps its block, and the readable repository still draws (#1265)', () => {
+  const broken = repoSample('acme/two', {
+    state: 'failed', columns: undefined,
+    error: { message: 'GitHub answered 404 for /repos/acme/two/issues', kind: 'not-found', scope: 'issues', status: 404, endpoint: '/repos/acme/two/issues' },
+  })
+  const board = DeliveryBoard({
+    view: {
+      state: 'partial', partial: true, repo: null, repoSource: null,
+      repos: [repoSample('acme/one'), broken],
+      missing: [{ part: 'issues', repo: 'acme/two', message: 'GitHub answered 404 for /repos/acme/two/issues', status: 404, kind: 'not-found', scope: 'issues' }],
+      asOf: '2026-10-25T04:00:00Z',
+    },
+  })
+  const blocks = walk(board).filter(node => node.props?.className === 'bt-del-repo-block')
+  assert.equal(blocks.length, 2, 'a failed repository does not take the board with it')
+  assert.equal(blocks[1].props['data-state'], 'failed')
+  assert.equal(walk(blocks[0]).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+  assert.equal(walk(blocks[1]).some(node => node.type === 'section' && node.props?.['data-column']), false)
+  assert.match(text(blocks[1]), /GitHub answered 404 for \/repos\/acme\/two\/issues/)
+  // The partial line names whose part it was, so one repository's failure is not read as another's.
+  assert.match(text(board), /acme\/two · issues was not fetched this time/)
+})
+
+test('no token names the GitHub side, never an empty board (#1211, #1265)', () => {
+  const error = { message: 'no GITHUB_TOKEN', kind: 'no-token', scope: 'repo', endpoint: null, status: null, at: null }
+  const board = DeliveryBoard({ view: { state: 'failed', repo: null, repos: [], error, retryAt: Date.now() + 10_000 }, onRetry: () => {} })
+  const words = text(board)
+  assert.match(words, /Add a GITHUB_TOKEN/)
+  assert.match(words, /no GITHUB_TOKEN/)
+  // A failed read is a sentence with a next step; it is not a board with nothing on it.
+  assert.doesNotMatch(words, /Nothing here\./)
+  assert.equal(board.props['data-state'], 'failed')
+  // More than one repository with every read failed still says one failure, not an empty page.
+  const all = DeliveryBoard({
+    view: {
+      state: 'failed', repo: null,
+      error,
+      repos: [repoSample('acme/one', { state: 'failed', columns: undefined, error }), repoSample('acme/two', { state: 'failed', columns: undefined, error })],
+    },
+  })
+  assert.equal(all.props['data-state'], 'failed')
+  assert.doesNotMatch(text(all), /Nothing here\./)
 })

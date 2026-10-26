@@ -193,3 +193,23 @@ test('the Delivery view drops the Bot rail, while Tasks keeps it (#1173)', () =>
   // No snapshot yet is the honest one-line empty state until the first read lands.
   assert.match(textOf(deliveryView), /No snapshot yet/)
 })
+
+test('a delivery read with no token leaves the task cards and their tab in place (#1211, #1265)', () => {
+  // The two halves meet in one dialog: the delivery board can only say "the GitHub side is not
+  // available" (core/test/delivery-view.test.js holds that sentence), and it must not take the task
+  // board with it — the cards are the other view, and its tab still opens them.
+  const failed = {
+    ok: false, state: 'failed', repo: null, repos: [],
+    error: { message: 'no GITHUB_TOKEN', kind: 'no-token', scope: 'repo', endpoint: null, status: null, at: null },
+    retryAt: null,
+  }
+  const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => failed }
+  const mine = task('task-abcdef123456', 'open', { title: 'Draft the note', ownerBotId: 's', priority: 'high' })
+  // view, scope, dragging, error, draft, then the list the board would have read from the host.
+  states.length = 0
+  states.push('tasks', { kind: 'bot', botId: 's' }, null, '', '', [mine])
+  const tasksView = expand(KanbanDialog({ roster, actions }))
+  assert.match(textOf(tasksView), /Draft the note/)
+  assert.equal(byClass(tasksView, 'bt-board-card').length, 1)
+  assert.deepEqual(all(tasksView).filter(node => node.props?.role === 'tab').map(node => node.props['data-view']), ['tasks', 'delivery'])
+})

@@ -1406,6 +1406,7 @@ var HOST_ZH = {
   // #1250: whose repository the board read, and where that name came from — a package default
   // shown as a fact is what put one instance's numbers on another.
   "no repository — set delivery.repo": "没有仓库 —— 请设置 delivery.repo",
+  "{count} repositories": "{count} 个仓库",
   "from config": "来自 config",
   "from remote": "来自 remote",
   "from the package (default)": "来自安装包（默认值）",
@@ -8413,6 +8414,15 @@ var DELIVERY_COLUMNS = [
   { id: "review", label: "In review" },
   { id: "done-today", label: "Done today" }
 ];
+function stagesOf(view) {
+  const columns = view?.columns;
+  if (columns === null || typeof columns !== "object") return DELIVERY_COLUMNS;
+  const present = Object.keys(columns);
+  if (present.length === 0) return DELIVERY_COLUMNS;
+  const known = DELIVERY_COLUMNS.filter((column) => present.includes(column.id));
+  const unlabelled = present.filter((id) => !DELIVERY_COLUMNS.some((column) => column.id === id)).map((id) => ({ id, label: id }));
+  return [...known, ...unlabelled];
+}
 var BADGES = {
   inc: "INC · rework",
   "pass-enqueue": "PASS · waiting for enqueue",
@@ -8467,7 +8477,8 @@ function hintFor(error, { repo = null } = {}) {
 function missingText(entry) {
   const status = entry?.status === null || entry?.status === void 0 ? "" : ` · ${entry.status}`;
   const part = entry?.part === "ci" ? t("CI data") : entry?.part === "budget" ? t("The rest of the board") : entry?.part ?? t("Part of the board");
-  return t("{part} was not fetched this time: {message}", { part, message: `${String(entry?.message ?? "")}${status}` });
+  const where = entry?.repo ? `${entry.repo} · ` : "";
+  return t("{part} was not fetched this time: {message}", { part: `${where}${part}`, message: `${String(entry?.message ?? "")}${status}` });
 }
 var clockOf = (iso) => {
   const at = Date.parse(iso ?? "");
@@ -8603,10 +8614,13 @@ function useDeliveryBoard(actions) {
 }
 function probeText(report) {
   if (!report) return "";
-  const lines = [`${report.repo ?? ""}${report.repoSource ? ` · ${report.repoSource}` : ""} · ${timeOf(report.at)}`];
+  const repos = Array.isArray(report.repos) ? report.repos : [];
+  const head = report.repo ?? `${repos.length} repositories`;
+  const lines = [`${head}${report.repoSource ? ` · ${report.repoSource}` : ""} · ${timeOf(report.at)}`];
   for (const row of report.rows ?? []) {
     const status = row.status === null || row.status === void 0 ? "—" : String(row.status);
-    lines.push(`${row.ok ? "ok" : "FAIL"} ${status.padEnd(4)} ${row.endpoint}${row.ok ? "" : `  ${row.kind ?? ""}`}`);
+    const where = report.repo === null && row.repo ? `${row.repo} ` : "";
+    lines.push(`${where}${row.ok ? "ok" : "FAIL"} ${status.padEnd(4)} ${row.endpoint}${row.ok ? "" : `  ${row.kind ?? ""}`}`);
   }
   if (report.error) lines.push(String(report.error));
   return lines.join("\n");
@@ -8653,6 +8667,9 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
   const repoName = payload.repo ?? repo ?? null;
   const repoSource = payload.repoSource ?? null;
   const sourceText = repoSourceText(repoSource);
+  const repoCount = Array.isArray(payload.repos) ? payload.repos.length : 0;
+  const shared2 = repoCount > 1;
+  const openCount = (value) => value === null || value === void 0 ? "—" : String(value);
   const partial = state !== "loading" && todayPartial(metricsPayload.daily);
   return (0, import_react16.createElement)(
     "header",
@@ -8661,9 +8678,9 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
     // like a fact is what showed one instance another repository's board.
     (0, import_react16.createElement)(
       "p",
-      { className: "bt-del-repo", "data-repo": repoName ?? void 0, "data-repo-source": repoSource ?? void 0 },
-      repoName === null ? t("no repository — set delivery.repo") : repoName,
-      sourceText === null ? "" : ` · ${sourceText}`
+      { className: "bt-del-repo", "data-repo": shared2 ? void 0 : repoName ?? void 0, "data-repo-source": shared2 ? void 0 : repoSource ?? void 0, "data-repos": shared2 ? String(repoCount) : void 0 },
+      shared2 ? t("{count} repositories", { count: repoCount }) : repoName === null ? t("no repository — set delivery.repo") : repoName,
+      shared2 || sourceText === null ? "" : ` · ${sourceText}`
     ),
     (0, import_react16.createElement)(
       "div",
@@ -8679,9 +8696,9 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
         ci !== null && ci.unknownDays?.length ? ` · ${t("{count} day(s) not read", { count: ci.unknownDays.length })}` : ""
       ),
       (0, import_react16.createElement)("p", { className: "bt-del-open" }, t("Open: {issues} issues ({needs} need a human), {prs} pull requests", {
-        issues: open.issues ?? 0,
-        needs: open.needsHuman ?? 0,
-        prs: open.pullRequests ?? 0
+        issues: openCount(open.issues),
+        needs: openCount(open.needsHuman),
+        prs: openCount(open.pullRequests)
       }), open.medianIssueAgeMs !== null && open.medianIssueAgeMs !== void 0 ? ` · ${t("median open age {age}", { age: duration(open.medianIssueAgeMs) })}` : "")
     ),
     (0, import_react16.createElement)(
@@ -8694,6 +8711,44 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
       onRetry ? (0, import_react16.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null,
       onProbe ? (0, import_react16.createElement)(Diagnose, { onProbe }) : null
     )
+  );
+}
+function DeliveryColumns({ view, repo = null }) {
+  const columns = view?.columns ?? {};
+  return (0, import_react16.createElement)(
+    "div",
+    { className: "bt-del-columns" },
+    stagesOf(view).map((column) => (0, import_react16.createElement)(
+      "section",
+      { key: column.id, className: "bt-del-column", "data-column": column.id },
+      (0, import_react16.createElement)(
+        "h3",
+        { className: "bt-board-column-head" },
+        (0, import_react16.createElement)("span", null, t(column.label)),
+        (0, import_react16.createElement)("span", { className: "bt-board-count" }, String((columns[column.id] ?? []).length))
+      ),
+      (columns[column.id] ?? []).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : (columns[column.id] ?? []).map((card) => (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? ""}-${card.kind}-${card.number}`, card, repo }))
+    ))
+  );
+}
+function DeliveryRepoBlock({ entry }) {
+  const state = entry?.state ?? "fresh";
+  const source = repoSourceText(entry?.repoSource);
+  return (0, import_react16.createElement)(
+    "section",
+    { className: "bt-del-repo-block", "data-repo": entry?.repo ?? void 0, "data-state": state },
+    (0, import_react16.createElement)(
+      "h3",
+      { className: "bt-del-repo-head" },
+      entry?.repo ?? t("no repository — set delivery.repo"),
+      source === null ? "" : ` · ${source}`
+    ),
+    entry?.columns === void 0 ? (0, import_react16.createElement)(
+      "p",
+      { className: "bt-del-block-state", role: "status" },
+      state === "loading" ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t("The delivery board is not ready yet.")),
+      entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : ""
+    ) : (0, import_react16.createElement)(DeliveryColumns, { view: entry, repo: entry.repo })
   );
 }
 function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = null, onProbe = null }) {
@@ -8709,6 +8764,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
     return () => clearInterval(timer);
   }, [ticking, retryAt]);
   const countdown = retryCountdown(payload.retryAt, now);
+  const entries2 = Array.isArray(payload.repos) && payload.repos.length > 1 ? payload.repos : null;
   if (state === "idle") {
     return (0, import_react16.createElement)(
       "div",
@@ -8724,7 +8780,8 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
       (0, import_react16.createElement)("p", { className: "bt-del-hint" }, t("The first round reads the repository once; the columns appear as soon as it lands."))
     );
   }
-  if (state === "failed" || !payload.columns) {
+  const hasBoard = Boolean(payload.columns) || entries2 !== null && entries2.some((entry) => entry.columns !== void 0);
+  if (state === "failed" || !hasBoard) {
     const error = payload.error ?? null;
     return (0, import_react16.createElement)(
       "div",
@@ -8743,7 +8800,6 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
       )
     );
   }
-  const columns = payload.columns ?? {};
   const missing = payload.missing ?? [];
   return (0, import_react16.createElement)(
     "div",
@@ -8758,20 +8814,10 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
     ) : null,
     state !== "stale" && missing.length > 0 ? (0, import_react16.createElement)("p", { className: "bt-del-partial", role: "status" }, missing.map((entry) => missingText(entry)).join(" · ")) : null,
     (0, import_react16.createElement)(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
-    (0, import_react16.createElement)(
+    entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null }) : (0, import_react16.createElement)(
       "div",
-      { className: "bt-del-columns" },
-      DELIVERY_COLUMNS.map((column) => (0, import_react16.createElement)(
-        "section",
-        { key: column.id, className: "bt-del-column", "data-column": column.id },
-        (0, import_react16.createElement)(
-          "h3",
-          { className: "bt-board-column-head" },
-          (0, import_react16.createElement)("span", null, t(column.label)),
-          (0, import_react16.createElement)("span", { className: "bt-board-count" }, String((columns[column.id] ?? []).length))
-        ),
-        (columns[column.id] ?? []).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : (columns[column.id] ?? []).map((card) => (0, import_react16.createElement)(DeliveryCard, { key: `${card.kind}-${card.number}`, card, repo: payload.repo }))
-      ))
+      { className: "bt-del-repos" },
+      entries2.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, { key: entry.repo ?? "unknown", entry }))
     )
   );
 }
@@ -8813,6 +8859,10 @@ var DELIVERY_CSS = `
 .bt-del-diag-text{margin:0;font-size:11px;line-height:15px;white-space:pre-wrap;word-break:break-all;color:var(--bt-ink-2);max-height:220px;overflow:auto}
 .bt-del-columns{flex:1 1 auto;min-height:0;display:flex;gap:10px;overflow:auto}
 .bt-del-column{flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;background:var(--bt-hover);overflow:auto}
+.bt-del-repos{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:auto}
+.bt-del-repo-block{display:flex;flex-direction:column;gap:8px;min-height:0}
+.bt-del-repo-head{position:sticky;top:0;z-index:1;margin:0;padding:2px 4px;font-size:13px;line-height:18px;color:var(--bt-ink-2);background:var(--bt-main,var(--bt-card));border-radius:8px}
+.bt-del-block-state{margin:0;padding:12px 8px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
 .bt-del-card{display:flex;flex-direction:column;gap:5px;padding:10px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-del-card-top{display:flex;align-items:center;gap:6px}
 .bt-del-id{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}

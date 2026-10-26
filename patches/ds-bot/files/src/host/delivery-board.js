@@ -11,7 +11,7 @@
 // `{ message, endpoint, status, kind, scope, at }` so the view can say what failed, where, and what
 // to do about it. "No GitHub connection yet" is reserved for a host that has never tried.
 import { repoSlug } from './update.js'
-import { NO_REPO_MESSAGE, instanceRepoSetting, resolveRepo } from './delivery-repo.js'
+import { NO_REPO_MESSAGE, instanceRepoSettings, resolveRepos } from './delivery-repo.js'
 
 export const DELIVERY_COLUMNS = ['raw', 'ready', 'working', 'review', 'done-today']
 
@@ -744,6 +744,144 @@ export function createDeliveryBoard({ repo, repoSource = null, token, request = 
   }
 }
 
+// One board out of several repositories (#1265 step 4). A repository that cannot be read does not
+// take the board with it: it keeps its own entry and its own `data-state`, and the body says
+// `partial`, the same word a half-read round uses (#1211). A single repository answers exactly the
+// view it answered alone, so nothing about a one-repository instance changes on screen.
+const sumOf = (values) => (values.every(value => Number.isFinite(value)) ? values.reduce((total, value) => total + value, 0) : null)
+
+const mergeCi = (list) => {
+  if (list.length === 0 || list.some(ci => ci === null || ci === undefined)) return null
+  return {
+    failed: sumOf(list.map(ci => Number(ci.failed ?? 0))),
+    total: sumOf(list.map(ci => Number(ci.total ?? 0))),
+    counted: sumOf(list.map(ci => Number(ci.counted ?? 0))),
+    superseded: sumOf(list.map(ci => Number(ci.superseded ?? 0))),
+    unknownDays: list.flatMap(ci => ci.unknownDays ?? []),
+  }
+}
+
+// Seven days added day by day; a field any repository could not count stays `null` rather than
+// becoming a smaller number (#1211, #1222).
+const mergeDaily = (series) => {
+  if (series.length === 0 || series.some(days => !Array.isArray(days) || days.length !== series[0]?.length)) return null
+  const length = series[0].length
+  return Array.from({ length }, (_, index) => {
+    const field = (key) => sumOf(series.map(days => days[index]?.[key]))
+    return {
+      date: series[0][index]?.date ?? null,
+      ...(series.some(days => days[index]?.partial === true) ? { partial: true } : {}),
+      newIssues: field('newIssues'),
+      closedIssues: field('closedIssues'),
+      newPullRequests: field('newPullRequests'),
+      mergedPullRequests: field('mergedPullRequests'),
+      ci: mergeCi(series.map(days => days[index]?.ci ?? null)),
+    }
+  })
+}
+
+const mergeWindow = (windows) => {
+  if (windows.length === 0 || windows.some(window => window === null || window === undefined)) return null
+  return {
+    newIssues: sumOf(windows.map(window => window.newIssues)),
+    closedIssues: sumOf(windows.map(window => window.closedIssues)),
+    closedReasons: {
+      completed: sumOf(windows.map(window => window.closedReasons?.completed ?? 0)),
+      notPlanned: sumOf(windows.map(window => window.closedReasons?.notPlanned ?? 0)),
+      duplicate: sumOf(windows.map(window => window.closedReasons?.duplicate ?? 0)),
+    },
+    newPullRequests: sumOf(windows.map(window => window.newPullRequests)),
+    mergedPullRequests: sumOf(windows.map(window => window.mergedPullRequests)),
+    // A median across repositories is not the sum of their medians, and an invented one is worse
+    // than none: the header reads '—' for both while the board shows more than one repository.
+    medianIssueCloseMs: null,
+    medianPullMergeMs: null,
+    ci: mergeCi(windows.map(window => window.ci ?? null)),
+  }
+}
+
+const mergeMetrics = (list) => {
+  if (list.length === 0) return null
+  const opens = list.map(entry => entry.open ?? null)
+  return {
+    dayStart: list[0].dayStart ?? null,
+    timeZone: list[0].timeZone ?? 'Asia/Shanghai',
+    today: mergeWindow(list.map(entry => entry.today ?? null)),
+    week: mergeWindow(list.map(entry => entry.week ?? null)),
+    daily: mergeDaily(list.map(entry => entry.daily)),
+    open: opens.some(open => open === null) ? null : {
+      issues: sumOf(opens.map(open => open.issues)),
+      pullRequests: sumOf(opens.map(open => open.pullRequests)),
+      needsHuman: sumOf(opens.map(open => open.needsHuman)),
+      medianIssueAgeMs: null,
+    },
+  }
+}
+
+export function combineRepos(views) {
+  if (!Array.isArray(views) || views.length === 0) return null
+  const entries = views.map(view => ({
+    repo: view.repo ?? null,
+    repoSource: view.repoSource ?? null,
+    state: view.state ?? 'fresh',
+    ok: view.ok !== false,
+    since: view.since ?? null,
+    attempt: view.attempt ?? 0,
+    elapsedMs: view.elapsedMs ?? 0,
+    asOf: view.asOf ?? null,
+    computedMs: view.computedMs ?? 0,
+    columns: view.columns,
+    counts: view.counts ?? null,
+    metrics: view.metrics ?? null,
+    error: view.error ?? null,
+    retryAt: view.retryAt ?? null,
+    stale: view.stale === true,
+    refreshing: view.refreshing === true,
+    missing: view.missing ?? [],
+    partial: view.partial === true,
+  }))
+  // A one-repository instance answers with today's payload: the top-level fields are that
+  // repository's own, and `repos` is the same view for a caller that reads the list.
+  if (entries.length === 1) return { ...entries[0], repos: [{ ...entries[0] }] }
+  const withBoard = entries.filter(entry => entry.columns !== undefined)
+  const state = withBoard.length === 0
+    ? (entries.every(entry => entry.state === 'idle') ? 'idle' : entries.some(entry => entry.state === 'loading') ? 'loading' : 'failed')
+    : withBoard.length < entries.length ? 'partial'
+      : entries.some(entry => entry.state === 'stale') ? 'stale'
+        : entries.some(entry => entry.state === 'partial') ? 'partial' : 'fresh'
+  const stamps = entries.map(entry => entry.asOf).filter(Boolean).sort()
+  const startsAt = entries.map(entry => entry.since).filter(Boolean).sort()
+  const retries = entries.map(entry => Number(entry.retryAt)).filter(at => Number.isFinite(at) && at > 0)
+  const missing = entries.flatMap(entry => (entry.missing ?? []).map(item => ({ ...item, repo: entry.repo })))
+  // Every column the readable repositories have, in one list; the per-repository blocks draw their
+  // own slices of it, so this top-level copy is the union the payload always carried.
+  const columns = withBoard.length === entries.length
+    ? Object.fromEntries(DELIVERY_COLUMNS.map(id => [id, withBoard.flatMap(entry => entry.columns?.[id] ?? [])]))
+    : undefined
+  return {
+    ok: entries.every(entry => entry.ok),
+    state,
+    // No single repository owns a shared board, so the header names the count instead (#1265).
+    repo: null,
+    repoSource: null,
+    repos: entries,
+    asOf: stamps[0] ?? null,
+    since: startsAt[0] ?? null,
+    attempt: Math.max(...entries.map(entry => entry.attempt ?? 0)),
+    elapsedMs: Math.max(...entries.map(entry => entry.elapsedMs ?? 0)),
+    computedMs: Math.max(...entries.map(entry => entry.computedMs ?? 0)),
+    error: entries.find(entry => entry.error !== null)?.error ?? null,
+    retryAt: retries.length > 0 ? Math.min(...retries) : null,
+    stale: entries.some(entry => entry.stale),
+    refreshing: entries.some(entry => entry.refreshing),
+    partial: entries.some(entry => entry.partial) || withBoard.length < entries.length,
+    missing,
+    columns,
+    counts: columns === undefined ? null : Object.fromEntries(DELIVERY_COLUMNS.map(id => [id, columns[id].length])),
+    metrics: mergeMetrics(entries.map(entry => entry.metrics).filter(Boolean)),
+  }
+}
+
 export function install(rt) {
   // One board per repository, not one global board with a repo baked in (#1250): a changed
   // `delivery.repo` resolves to a new name, and the new name's first read is its own `loading`
@@ -761,7 +899,7 @@ export function install(rt) {
     try { return rt.ctx?.workspaceRegistry?.get?.(rt.state?.workspaceId)?.path ?? null } catch { return null }
   }
   const setting = () => {
-    try { return instanceRepoSetting(rt.config) } catch { return null }
+    try { return instanceRepoSettings(rt.config) } catch { return [] }
   }
   // Level 3 is the package's own repository, not the instance's choice. The shipped package carries
   // it; a host whose package.json has none (or a test) hands in '' and the board refuses rather than
@@ -769,14 +907,16 @@ export function install(rt) {
   const packageSlug = () => {
     try { return rt.packageRepository === undefined ? repoSlug() : rt.packageRepository } catch { return null }
   }
-  // Resolved on every call, so the setting is read live and the cache below is keyed by its answer.
+  // Resolved on every call, so the setting is read live and the caches below are keyed by its
+  // answer. Each repository keeps its own source, so two of them cannot share one line (#1265).
   const resolveNow = () => {
-    const found = resolveRepo({ setting: setting(), workspace: workspace(), packageSlug: packageSlug() })
+    const found = resolveRepos({ setting: setting(), workspace: workspace(), packageSlug: packageSlug() })
     // A default is acceptable only while it is visible as a default: the page labels it, and this
     // line records it too, so nothing falls back silently (#1250).
-    if (found.source === 'package' && !notedDefaults.has(found.repo)) {
-      notedDefaults.add(found.repo)
-      warn('ds-bot: delivery board: no delivery.repo and no git remote in the workspace; reading the package repository %s (default)', found.repo)
+    for (const entry of found) {
+      if (entry.source !== 'package' || notedDefaults.has(entry.repo)) continue
+      notedDefaults.add(entry.repo)
+      warn('ds-bot: delivery board: no delivery.repos and no git remote in the workspace; reading the package repository %s (default)', entry.repo)
     }
     return found
   }
@@ -791,27 +931,46 @@ export function install(rt) {
   // Nothing resolves: the answer is a failure, and it is answered before any board exists so no
   // request can be made for `/repos/null` (#1250).
   const noRepo = () => ({
-    ok: false, state: 'failed', repo: null, repoSource: null, since: null, attempt: 0, elapsedMs: 0,
+    ok: false, state: 'failed', repo: null, repoSource: null, repos: [], since: null, attempt: 0, elapsedMs: 0,
     error: { message: NO_REPO_MESSAGE, endpoint: null, status: null, kind: 'no-repo', scope: 'repo', retryAfterMs: null, at: new Date().toISOString() },
     retryAt: null,
   })
   rt.deliveryBoard = async (payload = {}) => {
     const found = resolveNow()
-    if (found.repo === null) return noRepo()
-    const board = boardFor(found)
+    if (found.length === 0) return noRepo()
     // The channel answers before a host restart would; load once so the first read is signed.
     // The answer is `loading` either way — the round runs behind `inflight` (#1211).
     await rt.loadSecrets?.().catch(error => warn('ds-bot: delivery board: secrets did not load: %s', error?.message ?? error))
-    return { ...(await board.read({ force: payload?.force === true, wait: payload?.wait === true })), repoSource: found.source }
+    const views = []
+    for (const entry of found) {
+      const view = await boardFor(entry).read({ force: payload?.force === true, wait: payload?.wait === true })
+      views.push({ ...view, repo: entry.repo, repoSource: entry.source })
+    }
+    return combineRepos(views)
   }
-  // The 诊断 button and `--probe` run this one function (#1211): same reads, same statuses.
+  // The 诊断 button and `--probe` run this one function (#1211): same reads, same statuses. One
+  // repository answers exactly as before; more than one is one report with the repository named on
+  // every row, because a status without its repository cannot be acted on.
   rt.deliveryProbe = async () => {
     const found = resolveNow()
-    if (found.repo === null) return { ok: false, repo: null, repoSource: null, at: new Date().toISOString(), rows: [], error: NO_REPO_MESSAGE }
-    const board = boardFor(found)
+    if (found.length === 0) return { ok: false, repo: null, repoSource: null, repos: [], at: new Date().toISOString(), rows: [], error: NO_REPO_MESSAGE }
     await rt.loadSecrets?.().catch(error => warn('ds-bot: delivery probe: secrets did not load: %s', error?.message ?? error))
-    try { return { ...(await board.probe()), repoSource: found.source } } catch (error) {
-      return { ok: false, repo: found.repo, repoSource: found.source, at: new Date().toISOString(), rows: [], error: String(error?.message ?? error) }
+    const reports = []
+    for (const entry of found) {
+      try { reports.push({ repo: entry.repo, repoSource: entry.source, ...(await boardFor(entry).probe()) }) } catch (error) {
+        reports.push({ repo: entry.repo, repoSource: entry.source, ok: false, at: new Date().toISOString(), rows: [], error: String(error?.message ?? error) })
+      }
+    }
+    const single = reports.length === 1
+    const at = new Date().toISOString()
+    return {
+      ok: reports.every(report => report.ok),
+      repo: single ? reports[0].repo : null,
+      repoSource: single ? reports[0].repoSource : null,
+      repos: reports.map(report => ({ repo: report.repo, repoSource: report.repoSource, ok: report.ok })),
+      at,
+      rows: single ? reports[0].rows : reports.flatMap(report => (report.rows ?? []).map(row => ({ ...row, repo: report.repo }))),
+      ...(reports.some(report => report.error !== undefined) ? { error: reports.find(report => report.error !== undefined)?.error } : {}),
     }
   }
 }

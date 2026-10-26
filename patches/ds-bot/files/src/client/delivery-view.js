@@ -40,6 +40,20 @@ export const DELIVERY_COLUMNS = [
   { id: 'done-today', label: 'Done today' },
 ]
 
+// The columns to draw for one payload, in one place (#1265 step 4). The snapshot names which
+// columns exist (its own `columns` map) and DELIVERY_COLUMNS gives their order and labels; an id
+// this build does not label still renders, under its own id. When a workflow definition becomes the
+// source (#1272) it replaces this function's data, not the renderer.
+export function stagesOf(view) {
+  const columns = view?.columns
+  if (columns === null || typeof columns !== 'object') return DELIVERY_COLUMNS
+  const present = Object.keys(columns)
+  if (present.length === 0) return DELIVERY_COLUMNS
+  const known = DELIVERY_COLUMNS.filter(column => present.includes(column.id))
+  const unlabelled = present.filter(id => !DELIVERY_COLUMNS.some(column => column.id === id)).map(id => ({ id, label: id }))
+  return [...known, ...unlabelled]
+}
+
 const BADGES = {
   inc: 'INC · rework',
   'pass-enqueue': 'PASS · waiting for enqueue',
@@ -107,13 +121,15 @@ export function hintFor(error, { repo = null } = {}) {
   return t('The next attempt happens while this page is open; the reason above names what failed.')
 }
 
-// A part that could not be read is named where it is missing, not hidden (#1211).
+// A part that could not be read is named where it is missing, not hidden (#1211). With more than
+// one repository the failing read is one repository's, so the line says which (#1265).
 export function missingText(entry) {
   const status = entry?.status === null || entry?.status === undefined ? '' : ` · ${entry.status}`
   const part = entry?.part === 'ci' ? t('CI data')
     : entry?.part === 'budget' ? t('The rest of the board')
       : entry?.part ?? t('Part of the board')
-  return t('{part} was not fetched this time: {message}', { part, message: `${String(entry?.message ?? '')}${status}` })
+  const where = entry?.repo ? `${entry.repo} · ` : ''
+  return t('{part} was not fetched this time: {message}', { part: `${where}${part}`, message: `${String(entry?.message ?? '')}${status}` })
 }
 
 const clockOf = (iso) => {
@@ -259,10 +275,13 @@ export function useDeliveryBoard(actions) {
 // `--probe` CLI prints (#1211).
 export function probeText(report) {
   if (!report) return ''
-  const lines = [`${report.repo ?? ''}${report.repoSource ? ` · ${report.repoSource}` : ''} · ${timeOf(report.at)}`]
+  const repos = Array.isArray(report.repos) ? report.repos : []
+  const head = report.repo ?? `${repos.length} repositories`
+  const lines = [`${head}${report.repoSource ? ` · ${report.repoSource}` : ''} · ${timeOf(report.at)}`]
   for (const row of report.rows ?? []) {
     const status = row.status === null || row.status === undefined ? '—' : String(row.status)
-    lines.push(`${row.ok ? 'ok' : 'FAIL'} ${status.padEnd(4)} ${row.endpoint}${row.ok ? '' : `  ${row.kind ?? ''}`}`)
+    const where = report.repo === null && row.repo ? `${row.repo} ` : ''
+    lines.push(`${where}${row.ok ? 'ok' : 'FAIL'} ${status.padEnd(4)} ${row.endpoint}${row.ok ? '' : `  ${row.kind ?? ''}`}`)
   }
   if (report.error) lines.push(String(report.error))
   return lines.join('\n')
@@ -302,6 +321,11 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
   const repoName = payload.repo ?? repo ?? null
   const repoSource = payload.repoSource ?? null
   const sourceText = repoSourceText(repoSource)
+  // More than one repository has no single name to print, so the line carries the count instead
+  // (#1265 step 4); each repository block names itself below.
+  const repoCount = Array.isArray(payload.repos) ? payload.repos.length : 0
+  const shared = repoCount > 1
+  const openCount = value => (value === null || value === undefined ? '—' : String(value))
   // One time, one source (#1244): while today is still running the hint follows the time, so the
   // paragraph prints the zone-clocked time once instead of repeating a local-clock rendering of the
   // same instant — the two can disagree, not merely repeat.
@@ -309,9 +333,9 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
   return h('header', { className: 'bt-del-head' },
     // Whose numbers these are, and where the name came from (#1250): a package default that looks
     // like a fact is what showed one instance another repository's board.
-    h('p', { className: 'bt-del-repo', 'data-repo': repoName ?? undefined, 'data-repo-source': repoSource ?? undefined },
-      repoName === null ? t('no repository — set delivery.repo') : repoName,
-      sourceText === null ? '' : ` · ${sourceText}`),
+    h('p', { className: 'bt-del-repo', 'data-repo': shared ? undefined : repoName ?? undefined, 'data-repo-source': shared ? undefined : repoSource ?? undefined, 'data-repos': shared ? String(repoCount) : undefined },
+      shared ? t('{count} repositories', { count: repoCount }) : repoName === null ? t('no repository — set delivery.repo') : repoName,
+      shared || sourceText === null ? '' : ` · ${sourceText}`),
     h('div', { className: 'bt-del-metrics' },
       h(DeliveryMetrics, { rows, daily: metricsPayload.daily }),
       // An unreadable CI number is "unknown", never "0 of 0" (#1211).
@@ -321,7 +345,7 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
         ci !== null && ci.superseded ? ` · ${t('{count} superseded', { count: ci.superseded })}` : '',
         ci !== null && ci.unknownDays?.length ? ` · ${t('{count} day(s) not read', { count: ci.unknownDays.length })}` : ''),
       h('p', { className: 'bt-del-open' }, t('Open: {issues} issues ({needs} need a human), {prs} pull requests', {
-        issues: open.issues ?? 0, needs: open.needsHuman ?? 0, prs: open.pullRequests ?? 0,
+        issues: openCount(open.issues), needs: openCount(open.needsHuman), prs: openCount(open.pullRequests),
       }), open.medianIssueAgeMs !== null && open.medianIssueAgeMs !== undefined
         ? ` · ${t('median open age {age}', { age: duration(open.medianIssueAgeMs) })}` : '')),
     h('p', { className: 'bt-del-asof' },
@@ -331,6 +355,35 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
       error ? ` · ${hintFor(error, { repo })}` : '',
       onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null,
       onProbe ? h(Diagnose, { onProbe }) : null))
+}
+
+// One repository's columns (#1265 step 4). The card key carries the repository, so the same issue
+// number in two repositories is two cards and neither is mistaken for the other.
+function DeliveryColumns({ view, repo = null }) {
+  const columns = view?.columns ?? {}
+  return h('div', { className: 'bt-del-columns' },
+    stagesOf(view).map(column => h('section', { key: column.id, className: 'bt-del-column', 'data-column': column.id },
+      h('h3', { className: 'bt-board-column-head' },
+        h('span', null, t(column.label)),
+        h('span', { className: 'bt-board-count' }, String((columns[column.id] ?? []).length))),
+      (columns[column.id] ?? []).length === 0
+        ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
+        : (columns[column.id] ?? []).map(card => h(DeliveryCard, { key: `${repo ?? ''}-${card.kind}-${card.number}`, card, repo })))))
+}
+
+// A repository that cannot be read keeps its block and says so; the readable ones are drawn beside
+// it, which is why one failure no longer empties the board (#1265, #1211).
+function DeliveryRepoBlock({ entry }) {
+  const state = entry?.state ?? 'fresh'
+  const source = repoSourceText(entry?.repoSource)
+  return h('section', { className: 'bt-del-repo-block', 'data-repo': entry?.repo ?? undefined, 'data-state': state },
+    h('h3', { className: 'bt-del-repo-head' }, entry?.repo ?? t('no repository — set delivery.repo'),
+      source === null ? '' : ` · ${source}`),
+    entry?.columns === undefined
+      ? h('p', { className: 'bt-del-block-state', role: 'status' },
+        state === 'loading' ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t('The delivery board is not ready yet.')),
+        entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : '')
+      : h(DeliveryColumns, { view: entry, repo: entry.repo }))
 }
 
 export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRetry = null, onProbe = null }) {
@@ -349,6 +402,8 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
     return () => clearInterval(timer)
   }, [ticking, retryAt])
   const countdown = retryCountdown(payload.retryAt, now)
+  // More than one repository is one block per repository; exactly one is today's single board.
+  const entries = Array.isArray(payload.repos) && payload.repos.length > 1 ? payload.repos : null
   // "No snapshot yet." belongs to a host that has never tried; every attempt has a better word.
   if (state === 'idle') {
     return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
@@ -361,7 +416,10 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
       h('p', { className: 'bt-del-loading', role: 'status' }, loadingText(payload.elapsedMs)),
       h('p', { className: 'bt-del-hint' }, t('The first round reads the repository once; the columns appear as soon as it lands.')))
   }
-  if (state === 'failed' || !payload.columns) {
+  // A board exists when the payload carries its columns, or when at least one repository does; with
+  // several repositories one failure is `partial`, not an empty page (#1265).
+  const hasBoard = Boolean(payload.columns) || (entries !== null && entries.some(entry => entry.columns !== undefined))
+  if (state === 'failed' || !hasBoard) {
     const error = payload.error ?? null
     return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
       h('div', { className: 'bt-board-error', role: 'alert' },
@@ -373,7 +431,6 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
             : t('Retrying in {seconds} s · press Retry to try again now', { seconds: countdown })),
         onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null))
   }
-  const columns = payload.columns ?? {}
   const missing = payload.missing ?? []
   return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
     message ? h('p', { className: 'bt-board-error', role: 'alert' }, message) : null,
@@ -386,14 +443,10 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
       ? h('p', { className: 'bt-del-partial', role: 'status' }, missing.map(entry => missingText(entry)).join(' · '))
       : null,
     h(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
-    h('div', { className: 'bt-del-columns' },
-      DELIVERY_COLUMNS.map(column => h('section', { key: column.id, className: 'bt-del-column', 'data-column': column.id },
-        h('h3', { className: 'bt-board-column-head' },
-          h('span', null, t(column.label)),
-          h('span', { className: 'bt-board-count' }, String((columns[column.id] ?? []).length))),
-        (columns[column.id] ?? []).length === 0
-          ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-          : (columns[column.id] ?? []).map(card => h(DeliveryCard, { key: `${card.kind}-${card.number}`, card, repo: payload.repo }))))))
+    entries === null
+      ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null })
+      : h('div', { className: 'bt-del-repos' },
+        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry }))))
 }
 
 export function DeliveryView({ actions }) {
@@ -438,6 +491,10 @@ export const DELIVERY_CSS = `
 .bt-del-diag-text{margin:0;font-size:11px;line-height:15px;white-space:pre-wrap;word-break:break-all;color:var(--bt-ink-2);max-height:220px;overflow:auto}
 .bt-del-columns{flex:1 1 auto;min-height:0;display:flex;gap:10px;overflow:auto}
 .bt-del-column{flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;background:var(--bt-hover);overflow:auto}
+.bt-del-repos{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:auto}
+.bt-del-repo-block{display:flex;flex-direction:column;gap:8px;min-height:0}
+.bt-del-repo-head{position:sticky;top:0;z-index:1;margin:0;padding:2px 4px;font-size:13px;line-height:18px;color:var(--bt-ink-2);background:var(--bt-main,var(--bt-card));border-radius:8px}
+.bt-del-block-state{margin:0;padding:12px 8px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
 .bt-del-card{display:flex;flex-direction:column;gap:5px;padding:10px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-del-card-top{display:flex;align-items:center;gap:6px}
 .bt-del-id{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
