@@ -1373,7 +1373,34 @@ var HOST_ZH = {
   "as of {time}": "截至 {time}",
   "refreshing…": "刷新中…",
   "No snapshot yet.": "还没有快照。",
-  "Nothing here.": "这里还没有。"
+  "Nothing here.": "这里还没有。",
+  "First load in progress, {seconds} s elapsed": "首次加载中，已 {seconds} 秒",
+  "Showing the snapshot from {time} · refresh failed: {message}": "显示 {time} 的快照 · 刷新失败：{message}",
+  "The first round reads the repository once; the columns appear as soon as it lands.": "首轮要把这个仓读一遍，列会在拿到的同时出现。",
+  "It retries on its own (10 s → 30 s → 2 min).": "会自动重试（10 秒 → 30 秒 → 2 分钟）。",
+  "Checks unknown": "检查结果未取到",
+  "CI not available this time": "本次未取到 CI 数据",
+  "{count} day(s) not read": "{count} 天没取到",
+  "Diagnose": "诊断",
+  "Checking…": "检查中…",
+  Copy: "复制",
+  Close: "关闭",
+  "this repository": "这个仓",
+  "Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.": "在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。",
+  "GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).": "GitHub 在限流这个实例，会自动重试（10 秒 → 30 秒 → 2 分钟）。",
+  "GitHub is rate-limiting this instance; it retries on its own in {seconds} s.": "GitHub 在限流这个实例，{seconds} 秒后自动重试。",
+  "GitHub did not answer in time; the next attempt is automatic.": "GitHub 没在时限内回应，下一次重试会自动进行。",
+  "Give the token Actions: Read.": "去设置里给 token 勾 Actions: Read。",
+  "Give the token Checks: Read.": "去设置里给 token 勾 Checks: Read。",
+  "Give the token Issues: Read.": "去设置里给 token 勾 Issues: Read。",
+  "Give the token Pull requests: Read.": "去设置里给 token 勾 Pull requests: Read。",
+  "Check the repository name, and that the token can see {repo}.": "检查仓库名对不对、token 有没有 {repo} 的访问权。",
+  "GitHub is not answering this instance right now; retry in a moment.": "GitHub 现在没回应这个实例，稍后重试。",
+  "The next attempt is automatic; the reason above names what failed.": "下一次重试会自动进行，上面那句话说明是哪一步失败了。",
+  "{part} was not fetched this time: {message}": "{part}这次没取到：{message}",
+  "CI data": "CI 数据",
+  "The rest of the board": "看板剩下的部分",
+  "Part of the board": "看板的一部分"
 };
 Object.assign(ZH, HOST_ZH);
 var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
@@ -8003,6 +8030,8 @@ function progressOf(task) {
 // src/client/delivery-view.js
 var import_react14 = require("react");
 var POLL_MS3 = 6e4;
+var LOADING_POLL_MS = 2e3;
+var pollDelay = (state) => state === "loading" || state === "idle" ? LOADING_POLL_MS : POLL_MS3;
 var DELIVERY_COLUMNS = [
   { id: "raw", label: "Original issue" },
   { id: "ready", label: "Ready to start" },
@@ -8016,7 +8045,10 @@ var BADGES = {
   "pass-merge": "PASS · waiting for merge",
   "ci-red": "CI red",
   "ci-running": "CI running",
-  "no-verdict": "No verdict"
+  "no-verdict": "No verdict",
+  // The checks could not be read: that is not "no verdict", and saying so blamed the pull request
+  // for a permission the instance is missing (#1211).
+  "checks-unknown": "Checks unknown"
 };
 var badgeLabel = (badge) => badge ? t(BADGES[badge] ?? badge) : "";
 function duration(ms) {
@@ -8026,10 +8058,51 @@ function duration(ms) {
   if (hours < 48) return `${Math.round(hours)}h`;
   return `${Math.round(hours / 24)}d`;
 }
+var secondsOf = (ms) => String(Math.max(0, Math.round((Number(ms) || 0) / 1e3)));
+var loadingText = (elapsedMs) => t("First load in progress, {seconds} s elapsed", { seconds: secondsOf(elapsedMs) });
+var staleText = (asOf, error) => t("Showing the snapshot from {time} · refresh failed: {message}", {
+  time: clockOf(asOf),
+  message: String(error?.message ?? error ?? "")
+});
+function hintFor(error, { repo = null } = {}) {
+  if (!error) return "";
+  const scope = error.scope ?? null;
+  const kind = error.kind ?? null;
+  const target = repo ?? t("this repository");
+  if (kind === "no-token") return t("Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.", { repo: target });
+  if (kind === "rate-limit") {
+    return error.retryAfterMs === null || error.retryAfterMs === void 0 ? t("GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).") : t("GitHub is rate-limiting this instance; it retries on its own in {seconds} s.", { seconds: secondsOf(error.retryAfterMs) });
+  }
+  if (kind === "timeout") return t("GitHub did not answer in time; the next attempt is automatic.");
+  if (scope === "actions" && (kind === "not-found" || kind === "forbidden")) return t("Give the token Actions: Read.");
+  if (scope === "checks" && (kind === "not-found" || kind === "forbidden")) return t("Give the token Checks: Read.");
+  if ((scope === "comments" || scope === "issues") && (kind === "not-found" || kind === "forbidden")) return t("Give the token Issues: Read.");
+  if (scope === "pulls" && (kind === "not-found" || kind === "forbidden")) return t("Give the token Pull requests: Read.");
+  if (scope === "repo" || kind === "not-found" || kind === "forbidden" || kind === "auth") {
+    return t("Check the repository name, and that the token can see {repo}.", { repo: target });
+  }
+  if (kind === "server" || kind === "network") return t("GitHub is not answering this instance right now; retry in a moment.");
+  return t("The next attempt is automatic; the reason above names what failed.");
+}
+function missingText(entry) {
+  const status = entry?.status === null || entry?.status === void 0 ? "" : ` · ${entry.status}`;
+  const part = entry?.part === "ci" ? t("CI data") : entry?.part === "budget" ? t("The rest of the board") : entry?.part ?? t("Part of the board");
+  return t("{part} was not fetched this time: {message}", { part, message: `${String(entry?.message ?? "")}${status}` });
+}
+var clockOf = (iso) => {
+  const at = Date.parse(iso ?? "");
+  if (!Number.isFinite(at)) return "—";
+  return new Date(at).toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" });
+};
+var timeOf = (iso) => {
+  const at = Date.parse(iso ?? "");
+  if (!Number.isFinite(at)) return "—";
+  return new Date(at).toLocaleString(void 0, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+};
 function metricRows(snapshot) {
   const today = snapshot?.today ?? {};
   const week = snapshot?.week ?? {};
-  const ci = today.ci ?? {};
+  const ci = today.ci ?? null;
   const count = (value) => value === null || value === void 0 ? "—" : String(value);
   const rows = [
     { label: t("New issues"), key: "newIssues" },
@@ -8045,49 +8118,222 @@ function metricRows(snapshot) {
   return {
     dayStart: snapshot?.dayStart ?? null,
     rows,
-    ci: {
+    // `null` is "not read this time", which the header prints as unknown; a real 0 stays a 0.
+    ci: ci === null ? null : {
       failed: ci.failed ?? 0,
       total: ci.total ?? 0,
       counted: ci.counted ?? 0,
       caveat: Number.isFinite(ci.total) && Number.isFinite(ci.counted) && ci.counted < ci.total,
-      superseded: ci.superseded ?? 0
+      superseded: ci.superseded ?? 0,
+      unknownDays: ci.unknownDays ?? []
     },
     open: snapshot?.open ?? {}
   };
 }
 function useDeliveryBoard(actions) {
-  const [snapshot, setSnapshot] = (0, import_react14.useState)(null);
-  const [message, setMessage] = (0, import_react14.useState)("");
+  const [view, setView] = (0, import_react14.useState)({ state: "idle" });
   (0, import_react14.useEffect)(() => {
     let stopped = false;
-    const load = () => {
-      const job = Promise.resolve(actions?.deliveryBoard?.());
+    let timer = null;
+    let state = "idle";
+    const schedule = () => {
+      if (stopped) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        load();
+      }, pollDelay(state));
+    };
+    const load = (force = false) => {
+      const job = Promise.resolve(actions?.deliveryBoard?.(force ? { force: true } : {}));
       void job.then((next) => {
         if (stopped || !next || typeof next !== "object") return;
-        if (next.ok === false) {
-          setMessage(next.reason === "no-github" ? t("No GitHub connection yet; the board fills in once one is added.") : t("The delivery board is not ready yet."));
-          return;
-        }
-        setSnapshot(next);
-        setMessage(next.error ? t("Showing the last snapshot from {time}: {error}", { time: timeOf(next.asOf), error: next.error }) : "");
+        state = typeof next.state === "string" ? next.state : "fresh";
+        setView(next);
+        schedule();
       }).catch((error) => {
-        if (!stopped) setMessage(String(error?.message ?? error));
+        if (stopped) return;
+        state = "failed";
+        setView({ state: "failed", error: { message: String(error?.message ?? error), kind: "network", endpoint: null, status: null, at: null } });
+        schedule();
       });
     };
     load();
-    const timer = setInterval(load, POLL_MS3);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      if (timer !== null) clearTimeout(timer);
     };
   }, [actions]);
-  return { snapshot, message };
+  return view;
 }
-var timeOf = (iso) => {
-  const at = Date.parse(iso ?? "");
-  if (!Number.isFinite(at)) return "—";
-  return new Date(at).toLocaleString(void 0, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-};
+function probeText(report) {
+  if (!report) return "";
+  const lines = [`${report.repo ?? ""} · ${timeOf(report.at)}`];
+  for (const row of report.rows ?? []) {
+    const status = row.status === null || row.status === void 0 ? "—" : String(row.status);
+    lines.push(`${row.ok ? "ok" : "FAIL"} ${status.padEnd(4)} ${row.endpoint}${row.ok ? "" : `  ${row.kind ?? ""}`}`);
+  }
+  if (report.error) lines.push(String(report.error));
+  return lines.join("\n");
+}
+function Diagnose({ onProbe }) {
+  const [report, setReport] = (0, import_react14.useState)(null);
+  const [busy, setBusy] = (0, import_react14.useState)(false);
+  const run = () => {
+    if (busy) return;
+    setBusy(true);
+    Promise.resolve(onProbe?.()).then((next) => {
+      setReport(next ?? { rows: [], error: "no answer" });
+    }).catch((error) => setReport({ rows: [], error: String(error?.message ?? error) })).finally(() => setBusy(false));
+  };
+  return (0, import_react14.createElement)(
+    "span",
+    { className: "bt-del-diag" },
+    (0, import_react14.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: run, "aria-label": t("Diagnose") }, busy ? t("Checking…") : t("Diagnose")),
+    report ? (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-diag-box" },
+      (0, import_react14.createElement)("pre", { className: "bt-del-diag-text", "data-probe": "report" }, probeText(report)),
+      (0, import_react14.createElement)("button", {
+        type: "button",
+        className: "bt-soft bt-soft-sm",
+        onClick: () => {
+          try {
+            globalThis.navigator?.clipboard?.writeText?.(probeText(report));
+          } catch {
+          }
+        }
+      }, t("Copy")),
+      (0, import_react14.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setReport(null) }, t("Close"))
+    ) : null
+  );
+}
+function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe = null }) {
+  const payload = view ?? snapshot;
+  if (!payload) return null;
+  const { rows, ci, open } = metricRows(payload.metrics ?? payload);
+  const error = payload.error ?? null;
+  const state = payload.state ?? "fresh";
+  return (0, import_react14.createElement)(
+    "header",
+    { className: "bt-del-head" },
+    (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-metrics" },
+      (0, import_react14.createElement)(
+        "table",
+        { className: "bt-del-table" },
+        (0, import_react14.createElement)("thead", null, (0, import_react14.createElement)("tr", null, (0, import_react14.createElement)("th", null, ""), (0, import_react14.createElement)("th", null, t("Today")), (0, import_react14.createElement)("th", null, t("7 days")))),
+        (0, import_react14.createElement)("tbody", null, rows.map((row) => (0, import_react14.createElement)(
+          "tr",
+          { key: row.label },
+          (0, import_react14.createElement)("th", { scope: "row" }, row.label),
+          (0, import_react14.createElement)("td", null, row.today),
+          (0, import_react14.createElement)("td", null, row.week)
+        )))
+      ),
+      // An unreadable CI number is "unknown", never "0 of 0" (#1211).
+      (0, import_react14.createElement)(
+        "p",
+        { className: "bt-del-ci", "data-ci": ci === null ? "unknown" : "read" },
+        ci === null ? t("CI not available this time") : t("CI failed {failed} of {total}", { failed: ci.failed, total: ci.total }),
+        ci !== null && ci.caveat ? ` · ${t("counted {counted} of {total}", { counted: ci.counted, total: ci.total })}` : "",
+        ci !== null && ci.superseded ? ` · ${t("{count} superseded", { count: ci.superseded })}` : "",
+        ci !== null && ci.unknownDays?.length ? ` · ${t("{count} day(s) not read", { count: ci.unknownDays.length })}` : ""
+      ),
+      (0, import_react14.createElement)("p", { className: "bt-del-open" }, t("Open: {issues} issues ({needs} need a human), {prs} pull requests", {
+        issues: open.issues ?? 0,
+        needs: open.needsHuman ?? 0,
+        prs: open.pullRequests ?? 0
+      }), open.medianIssueAgeMs !== null && open.medianIssueAgeMs !== void 0 ? ` · ${t("median open age {age}", { age: duration(open.medianIssueAgeMs) })}` : "")
+    ),
+    (0, import_react14.createElement)(
+      "p",
+      { className: "bt-del-asof" },
+      state === "loading" ? loadingText(payload.elapsedMs) : t("as of {time}", { time: timeOf(payload.asOf) }),
+      payload.refreshing ? ` · ${t("refreshing…")}` : "",
+      error ? ` · ${hintFor(error, { repo })}` : "",
+      onRetry ? (0, import_react14.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null,
+      onProbe ? (0, import_react14.createElement)(Diagnose, { onProbe }) : null
+    )
+  );
+}
+function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = null, onProbe = null }) {
+  const payload = view ?? (snapshot ? { ...snapshot, state: "fresh" } : { state: "idle" });
+  const state = payload.state ?? "fresh";
+  if (state === "idle") {
+    return (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
+      message ? (0, import_react14.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : (0, import_react14.createElement)("p", { className: "bt-board-empty" }, t("No snapshot yet."))
+    );
+  }
+  if (state === "loading") {
+    return (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
+      (0, import_react14.createElement)("p", { className: "bt-del-loading", role: "status" }, loadingText(payload.elapsedMs)),
+      (0, import_react14.createElement)("p", { className: "bt-del-hint" }, t("The first round reads the repository once; the columns appear as soon as it lands."))
+    );
+  }
+  if (state === "failed" || !payload.columns) {
+    const error = payload.error ?? null;
+    return (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
+      (0, import_react14.createElement)(
+        "div",
+        { className: "bt-board-error", role: "alert" },
+        (0, import_react14.createElement)("p", null, String(error?.message ?? message ?? t("The delivery board is not ready yet."))),
+        error ? (0, import_react14.createElement)("p", { className: "bt-del-hint" }, hintFor(error, { repo })) : null,
+        (0, import_react14.createElement)("p", { className: "bt-del-hint" }, t("It retries on its own (10 s → 30 s → 2 min).")),
+        onRetry ? (0, import_react14.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null
+      )
+    );
+  }
+  const columns = payload.columns ?? {};
+  const missing = payload.missing ?? [];
+  return (0, import_react14.createElement)(
+    "div",
+    { className: "bt-del-body", "data-view": "delivery", "data-state": state },
+    message ? (0, import_react14.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : null,
+    state === "stale" && payload.error ? (0, import_react14.createElement)(
+      "p",
+      { className: "bt-del-stale", role: "status" },
+      staleText(payload.asOf, payload.error),
+      ` · ${hintFor(payload.error, { repo })}`
+    ) : null,
+    state !== "stale" && missing.length > 0 ? (0, import_react14.createElement)("p", { className: "bt-del-partial", role: "status" }, missing.map((entry) => missingText(entry)).join(" · ")) : null,
+    (0, import_react14.createElement)(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
+    (0, import_react14.createElement)(
+      "div",
+      { className: "bt-del-columns" },
+      DELIVERY_COLUMNS.map((column) => (0, import_react14.createElement)(
+        "section",
+        { key: column.id, className: "bt-del-column", "data-column": column.id },
+        (0, import_react14.createElement)(
+          "h3",
+          { className: "bt-board-column-head" },
+          (0, import_react14.createElement)("span", null, t(column.label)),
+          (0, import_react14.createElement)("span", { className: "bt-board-count" }, String((columns[column.id] ?? []).length))
+        ),
+        (columns[column.id] ?? []).length === 0 ? (0, import_react14.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : (columns[column.id] ?? []).map((card) => (0, import_react14.createElement)(DeliveryCard, { key: `${card.kind}-${card.number}`, card }))
+      ))
+    )
+  );
+}
+function DeliveryView({ actions }) {
+  const view = useDeliveryBoard(actions);
+  const retry = () => {
+    void actions?.deliveryBoard?.({ force: true });
+  };
+  return (0, import_react14.createElement)(DeliveryBoard, {
+    view,
+    repo: view?.repo ?? null,
+    onRetry: actions?.deliveryBoard ? retry : null,
+    onProbe: actions?.deliveryProbe ? () => actions.deliveryProbe() : null
+  });
+}
 function Label({ name }) {
   return (0, import_react14.createElement)("span", { className: "bt-del-label", "data-label": name }, name);
 }
@@ -8107,85 +8353,8 @@ function DeliveryCard({ card }) {
     card?.owner ? (0, import_react14.createElement)("span", { className: "bt-del-owner", "data-kind": card.ownerKind ?? "human" }, card.owner) : null,
     card?.linked ? (0, import_react14.createElement)("span", { className: "bt-del-linked" }, t("linked to #{number}", { number: card.linked })) : null,
     card?.sha ? (0, import_react14.createElement)("span", { className: "bt-del-sha" }, card.sha) : null,
-    card?.url ? (0, import_react14.createElement)("a", { className: "bt-del-open", href: card.url, target: "_blank", rel: "noreferrer" }, t("Open")) : null
+    card?.url ? (0, import_react14.createElement)("a", { className: "bt-del-sha", href: card.url, target: "_blank", rel: "noreferrer" }, t("open on GitHub")) : null
   );
-}
-function DeliveryHeader({ snapshot }) {
-  if (!snapshot) return null;
-  const { rows, ci, open } = metricRows(snapshot);
-  return (0, import_react14.createElement)(
-    "header",
-    { className: "bt-del-head" },
-    (0, import_react14.createElement)(
-      "div",
-      { className: "bt-del-metrics" },
-      (0, import_react14.createElement)(
-        "table",
-        { className: "bt-del-table" },
-        (0, import_react14.createElement)("thead", null, (0, import_react14.createElement)("tr", null, (0, import_react14.createElement)("th", null, ""), (0, import_react14.createElement)("th", null, t("Today")), (0, import_react14.createElement)("th", null, t("7 days")))),
-        (0, import_react14.createElement)("tbody", null, rows.map((row) => (0, import_react14.createElement)(
-          "tr",
-          { key: row.label },
-          (0, import_react14.createElement)("th", { scope: "row" }, row.label),
-          (0, import_react14.createElement)("td", null, row.today),
-          (0, import_react14.createElement)("td", null, row.week)
-        )))
-      ),
-      (0, import_react14.createElement)(
-        "p",
-        { className: "bt-del-ci" },
-        t("CI failed {failed} of {total}", { failed: ci.failed, total: ci.total }),
-        ci.caveat ? ` · ${t("counted {counted} of {total}", { counted: ci.counted, total: ci.total })}` : "",
-        ci.superseded ? ` · ${t("{count} superseded", { count: ci.superseded })}` : ""
-      ),
-      (0, import_react14.createElement)("p", { className: "bt-del-open" }, t("Open: {issues} issues ({needs} need a human), {prs} pull requests", {
-        issues: open.issues ?? 0,
-        needs: open.needsHuman ?? 0,
-        prs: open.pullRequests ?? 0
-      }), open.medianIssueAgeMs !== null && open.medianIssueAgeMs !== void 0 ? ` · ${t("median open age {age}", { age: duration(open.medianIssueAgeMs) })}` : "")
-    ),
-    (0, import_react14.createElement)(
-      "p",
-      { className: "bt-del-asof" },
-      t("as of {time}", { time: timeOf(snapshot.asOf) }),
-      snapshot.refreshing ? ` · ${t("refreshing…")}` : ""
-    )
-  );
-}
-function DeliveryBoard({ snapshot, message }) {
-  if (!snapshot) {
-    return (0, import_react14.createElement)(
-      "div",
-      { className: "bt-del-body", "data-view": "delivery" },
-      message ? (0, import_react14.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : (0, import_react14.createElement)("p", { className: "bt-board-empty" }, t("No snapshot yet."))
-    );
-  }
-  const columns = snapshot.columns ?? {};
-  return (0, import_react14.createElement)(
-    "div",
-    { className: "bt-del-body", "data-view": "delivery" },
-    message ? (0, import_react14.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : null,
-    (0, import_react14.createElement)(DeliveryHeader, { snapshot: snapshot.metrics ? { ...snapshot.metrics, asOf: snapshot.asOf, refreshing: snapshot.refreshing } : null }),
-    (0, import_react14.createElement)(
-      "div",
-      { className: "bt-del-columns" },
-      DELIVERY_COLUMNS.map((column) => (0, import_react14.createElement)(
-        "section",
-        { key: column.id, className: "bt-del-column", "data-column": column.id },
-        (0, import_react14.createElement)(
-          "h3",
-          { className: "bt-board-column-head" },
-          (0, import_react14.createElement)("span", null, t(column.label)),
-          (0, import_react14.createElement)("span", { className: "bt-board-count" }, String((columns[column.id] ?? []).length))
-        ),
-        (columns[column.id] ?? []).length === 0 ? (0, import_react14.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : (columns[column.id] ?? []).map((card) => (0, import_react14.createElement)(DeliveryCard, { key: `${card.kind}-${card.number}`, card }))
-      ))
-    )
-  );
-}
-function DeliveryView({ actions }) {
-  const { snapshot, message } = useDeliveryBoard(actions);
-  return (0, import_react14.createElement)(DeliveryBoard, { snapshot, message });
 }
 var DELIVERY_CSS = `
 .bt-del-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:10px;padding:12px 14px 16px}
@@ -8196,7 +8365,14 @@ var DELIVERY_CSS = `
 .bt-del-table th[scope=row]{text-align:left;font-weight:500;color:var(--bt-ink-2)}
 .bt-del-table thead th{font-weight:600;color:var(--bt-ink-3)}
 .bt-del-ci,.bt-del-open{margin:0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bt-del-asof{margin:0;font-size:11.5px;line-height:15px;color:var(--bt-ink-3)}
+.bt-del-asof{margin:0;font-size:11.5px;line-height:15px;color:var(--bt-ink-3);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.bt-del-loading{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2);font-variant-numeric:tabular-nums}
+.bt-del-hint{margin:2px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-del-stale,.bt-del-partial{margin:0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
+.bt-del-stale[role=status],.bt-del-partial[role=status]{padding:6px 8px;border-radius:10px;background:var(--bt-hover)}
+.bt-del-diag{display:inline-flex;position:relative}
+.bt-del-diag-box{position:absolute;top:100%;left:0;z-index:3;display:flex;flex-direction:column;gap:6px;padding:8px;border:.5px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card,var(--bt-main));min-width:320px}
+.bt-del-diag-text{margin:0;font-size:11px;line-height:15px;white-space:pre-wrap;word-break:break-all;color:var(--bt-ink-2);max-height:220px;overflow:auto}
 .bt-del-columns{flex:1 1 auto;min-height:0;display:flex;gap:10px;overflow:auto}
 .bt-del-column{flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;background:var(--bt-hover);overflow:auto}
 .bt-del-card{display:flex;flex-direction:column;gap:5px;padding:10px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
@@ -8205,6 +8381,7 @@ var DELIVERY_CSS = `
 .bt-del-badge{margin-left:auto;font-size:10.5px;line-height:16px;padding:0 6px;border-radius:999px;background:var(--bt-hover);color:var(--bt-ink-2)}
 .bt-del-badge[data-badge=inc]{background:rgba(224,33,53,.12);color:#c21d2e}
 .bt-del-badge[data-badge=ci-red]{background:rgba(224,33,53,.12);color:#c21d2e}
+.bt-del-badge[data-badge=checks-unknown]{background:var(--bt-hover);color:var(--bt-ink-3)}
 .bt-del-badge[data-badge=pass-enqueue],.bt-del-badge[data-badge=pass-merge]{background:color-mix(in srgb,var(--bt-green) 16%,transparent);color:color-mix(in srgb,var(--bt-green) 70%,var(--bt-ink))}
 .bt-del-title{font-size:13.5px;line-height:19px;color:var(--bt-ink)}
 .bt-del-labels{display:flex;flex-wrap:wrap;gap:4px}
@@ -19348,6 +19525,7 @@ function apply(ctx) {
     setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
     tasks: (payload) => call("tasks", payload ?? {}),
     deliveryBoard: (payload) => call("delivery-board", payload ?? {}),
+    deliveryProbe: (payload) => call("delivery-probe", payload ?? {}),
     taskUpdate: (payload) => call("task-update", payload),
     taskCreate: (payload) => call("task-create", payload),
     schedules: () => call("schedules"),

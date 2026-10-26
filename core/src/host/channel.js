@@ -651,6 +651,9 @@ export function install(rt) {
         case 'delivery-board':
           await rt.load()
           return ok(await rt.deliveryBoard(body))
+        case 'delivery-probe':
+          await rt.load()
+          return ok(await rt.deliveryProbe(body))
         case 'share-brief':
           await rt.load()
           await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

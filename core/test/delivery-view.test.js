@@ -1,5 +1,7 @@
 // The delivery board view (#1173): five columns from one snapshot, a read-only card, and the
-// header numbers with the CI counted caveat. The host module is tested in delivery-board.test.js.
+// header numbers with the CI counted caveat. #1211 added the four states: loading with a counter,
+// failed with a reason and a retry, stale with the old board and the reason beside it, partial with
+// the part that was not read named. The host module is tested in delivery-board.test.js.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +29,10 @@ runInNewContext(bundle.outputFiles[0].text, {
     }
   },
 })
-const { DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows } = module.exports
+const {
+  DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows, pollDelay,
+  loadingText, staleText, hintFor, missingText, probeText,
+} = module.exports
 
 const text = (node) => {
   if (node === null || node === undefined || typeof node !== 'object') return String(node ?? '')
@@ -39,6 +44,7 @@ const walk = (node, out = []) => {
   for (const child of node.children ?? []) walk(child, out)
   return out
 }
+const buttons = (node) => walk(node).filter(item => item.type === 'button')
 
 const snapshot = {
   asOf: '2026-10-25T04:00:00Z',
@@ -72,6 +78,8 @@ test('five delivery columns, localized labels, badge wording (#1173)', () => {
   assert.equal(badgeLabel('pass-merge'), 'PASS · waiting for merge')
   assert.equal(badgeLabel('ci-red'), 'CI red')
   assert.equal(badgeLabel('no-verdict'), 'No verdict')
+  // Unreadable checks are their own badge, not "no verdict" (#1211).
+  assert.equal(badgeLabel('checks-unknown'), 'Checks unknown')
   assert.equal(duration(45_000), '1m')
   assert.equal(duration(3_600_000), '1h')
   assert.equal(duration(90_000_000), '25h')
@@ -114,4 +122,98 @@ test('an honest message replaces the board when there is no GitHub connection (#
   const board = DeliveryBoard({ snapshot: null, message: 'No GitHub connection yet; the board fills in once one is added.' })
   assert.match(text(board), /No GitHub connection yet/)
   assert.equal(walk(board).some(node => node.type === 'section'), false)
+})
+
+test('"no snapshot yet" belongs to a host that has never tried (#1211)', () => {
+  const idle = DeliveryBoard({ view: { state: 'idle' } })
+  assert.match(text(idle), /No snapshot yet\./)
+  assert.equal(idle.props['data-state'], 'idle')
+  // Every other state has its own words; none of them says "no snapshot".
+  for (const state of ['loading', 'failed', 'stale', 'partial']) {
+    const view = state === 'loading' ? { state, elapsedMs: 12_000 }
+      : state === 'failed' ? { state, error: { message: 'GitHub answered 404 for /repos/o/r/issues', status: 404, kind: 'not-found', scope: 'issues' } }
+        : state === 'stale' ? { ...snapshot, state, error: { message: 'GitHub answered 404 for /repos/o/r/actions/runs', status: 404, kind: 'not-found', scope: 'actions' } }
+          : { ...snapshot, state, missing: [{ part: 'ci', message: 'GitHub answered 404 for /repos/o/r/actions/runs', status: 404, kind: 'not-found', scope: 'actions' }] }
+    assert.doesNotMatch(text(DeliveryBoard({ view })), /No snapshot yet/, `${state} must not reuse it`)
+  }
+})
+
+test('loading counts the seconds and promises the columns (#1211)', () => {
+  const board = DeliveryBoard({ view: { state: 'loading', elapsedMs: 12_000 } })
+  assert.equal(loadingText(12_000), 'First load in progress, 12 s elapsed')
+  assert.match(text(board), /First load in progress, 12 s elapsed/)
+  assert.equal(walk(board).some(node => node.type === 'section'), false, 'no half-built columns')
+  assert.equal(pollDelay('loading'), 2_000)
+  assert.equal(pollDelay('idle'), 2_000)
+  for (const state of ['fresh', 'stale', 'partial', 'failed']) assert.equal(pollDelay(state), 60_000, `${state} polls slowly`)
+})
+
+test('a failed round names the endpoint, the advice and a retry button (#1211)', () => {
+  const error = { message: 'GitHub answered 404 for /repos/o/r/actions/runs', endpoint: '/repos/o/r/actions/runs', status: 404, kind: 'not-found', scope: 'actions', at: '2026-10-25T04:00:00Z' }
+  let retried = 0
+  const board = DeliveryBoard({ view: { state: 'failed', error }, repo: 'o/r', onRetry: () => { retried += 1 } })
+  const words = text(board)
+  assert.match(words, /GitHub answered 404 for \/repos\/o\/r\/actions\/runs/)
+  assert.match(words, /Give the token Actions: Read\./)
+  const retry = buttons(board).find(button => text(button).trim() === 'Retry')
+  assert.ok(retry, 'there is a retry button')
+  retry.props.onClick()
+  assert.equal(retried, 1)
+  assert.equal(board.props['data-state'], 'failed')
+})
+
+test('the five failures do not borrow each other\'s words (#1211)', () => {
+  const hint = (error) => hintFor(error, { repo: 'o/r' })
+  assert.match(hint({ kind: 'no-token' }), /GITHUB_TOKEN/)
+  assert.match(hint({ kind: 'no-token' }), /o\/r/)
+  assert.match(hint({ kind: 'not-found', scope: 'repo' }), /Check the repository name, and that the token can see o\/r/)
+  assert.match(hint({ kind: 'not-found', scope: 'actions' }), /Actions: Read/)
+  assert.match(hint({ kind: 'not-found', scope: 'checks' }), /Checks: Read/)
+  assert.match(hint({ kind: 'not-found', scope: 'comments' }), /Issues: Read/)
+  assert.match(hint({ kind: 'timeout' }), /did not answer in time/)
+  // A wait is printed only when GitHub gave one: no invented "60 seconds".
+  assert.match(hint({ kind: 'rate-limit', retryAfterMs: null }), /10 s → 30 s → 2 min/)
+  assert.doesNotMatch(hint({ kind: 'rate-limit', retryAfterMs: null }), /\b60\b/)
+  assert.match(hint({ kind: 'rate-limit', retryAfterMs: 30_000 }), /in 30 s/)
+})
+
+test('a stale board keeps the columns and hangs the reason beside them (#1211)', () => {
+  const error = { message: 'GitHub answered 404 for /repos/o/r/actions/runs', endpoint: '/repos/o/r/actions/runs', status: 404, kind: 'not-found', scope: 'actions' }
+  const view = { ...snapshot, state: 'stale', error, stale: true }
+  const board = DeliveryBoard({ view, repo: 'o/r', onRetry: () => {} })
+  assert.equal(walk(board).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5, 'the old board is still rendered')
+  const words = text(board)
+  assert.match(words, /Showing the snapshot from/)
+  assert.match(words, /refresh failed: GitHub answered 404 for \/repos\/o\/r\/actions\/runs/)
+  assert.match(staleText('2026-10-25T04:00:00Z', error), /Showing the snapshot from /)
+})
+
+test('a partial board names the part that was not read, and CI says unknown not zero (#1211)', () => {
+  const missing = [{ part: 'ci', message: 'GitHub answered 404 for /repos/o/r/actions/runs', status: 404, kind: 'not-found', scope: 'actions' }]
+  const metrics = { ...snapshot.metrics, today: { ...snapshot.metrics.today, ci: null } }
+  const view = { ...snapshot, metrics, state: 'partial', missing, partial: true }
+  const board = DeliveryBoard({ view })
+  const words = text(board)
+  assert.match(words, /CI data was not fetched this time/)
+  assert.match(words, /CI not available this time/)
+  assert.doesNotMatch(words, /CI failed 0 of 0/)
+  assert.equal(walk(board).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+  // The rows whose numbers were read still show; the CI one is the only unknown.
+  const rows = metricRows(metrics)
+  assert.equal(rows.ci, null)
+  assert.equal(rows.rows[0].today, '4')
+  assert.match(missingText(missing[0]), /\/repos\/o\/r\/actions\/runs/)
+})
+
+test('the diagnostic report prints the five lines the CLI prints (#1211)', () => {
+  const report = {
+    repo: 'o/r', at: '2026-10-25T04:00:00Z',
+    rows: [
+      { key: 'repo', ok: true, status: 200, endpoint: '/repos/o/r' },
+      { key: 'actions', ok: false, status: 404, endpoint: '/repos/o/r/actions/runs', kind: 'not-found' },
+    ],
+  }
+  const output = probeText(report)
+  assert.match(output, /ok 200 {2}\/repos\/o\/r/)
+  assert.match(output, /FAIL 404 {2}\/repos\/o\/r\/actions\/runs {2}not-found/)
 })

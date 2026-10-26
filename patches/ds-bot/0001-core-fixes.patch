@@ -37,7 +37,6 @@ diff --git a/README.md b/README.md
  - Keep API keys out of the repository. Use dsh's own key storage or environment variables.
  
  ## Memory
-
 diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 --- a/src/client/approval-notices.js
 +++ b/src/client/approval-notices.js
@@ -141,7 +140,6 @@ diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 +    timers.clearTimeout?.(timer)
 +  }
  }
-
 diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 --- a/src/client/bot-browsers.js
 +++ b/src/client/bot-browsers.js
@@ -172,7 +170,6 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
        if (shown === tabId) await show(null)
        await release(tabId)
        owner.delete(tabId)
-
 diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 --- a/src/client/browser-pane.js
 +++ b/src/client/browser-pane.js
@@ -212,7 +209,6 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  
  // The conversation column's right margin lives in one rule of our own, matched on the
  // column's exact class. A custom property on <body> would restyle the whole page, tens
-
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
@@ -400,7 +396,6 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 -      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, actions }))))
 +      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, roster, actions }))))
  }
-
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
@@ -466,11 +461,10 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 +@keyframes bt-toast-in{from{transform:translateY(16px) scale(.94)}}
  @media (prefers-reduced-motion:reduce){.bt-toast{animation:none}.bt-toast[data-leaving]{transition:none}}
  `
-
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -12,6 +12,67 @@
+@@ -12,6 +12,67 @@ const ZH = {
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -538,7 +532,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +87,21 @@
+@@ -26,6 +26,21 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -560,7 +554,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +117,69 @@
+@@ -41,22 +41,69 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -633,7 +627,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +216,59 @@
+@@ -93,6 +93,59 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -693,7 +687,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +281,44 @@
+@@ -105,17 +105,44 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -742,7 +736,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -128,8 +331,6 @@
+@@ -128,8 +128,6 @@ const ZH = {
    New: '新',
  
    // New chat
@@ -751,7 +745,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,9 +355,24 @@
+@@ -154,9 +154,24 @@ const ZH = {
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -776,7 +770,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
-@@ -215,6 +431,25 @@
+@@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
    'Applies from the next message.': '从下一条消息开始生效。',
@@ -802,7 +796,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Profile: '资料',
    Label: '标签',
    'Optional. Shown under the name.': '可选，显示在名字下方。',
-@@ -238,6 +473,7 @@
+@@ -238,6 +238,7 @@ const ZH = {
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
    Manage: '管理',
@@ -810,7 +804,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
-@@ -274,6 +510,8 @@
+@@ -274,6 +274,8 @@ const ZH = {
    'Harness default': 'Harness 默认',
    Saving: '保存中',
    'Manage models': '管理模型',
@@ -819,7 +813,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,9 +550,10 @@
+@@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
@@ -832,7 +826,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +563,6 @@
+@@ -324,7 +324,6 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
@@ -840,7 +834,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
-@@ -333,6 +571,8 @@
+@@ -333,6 +333,8 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
@@ -849,7 +843,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',
-@@ -344,13 +584,13 @@
+@@ -344,13 +344,13 @@ const ZH = {
    '{n} d': '{n} 天',
  
    // Plugin updates
@@ -869,7 +863,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +600,72 @@
+@@ -360,9 +360,72 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -943,7 +937,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,6 +692,7 @@
+@@ -390,6 +390,7 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -951,7 +945,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Reactions: '表情',
    'Message actions': '消息操作',
    Download: '下载',
-@@ -403,6 +706,9 @@
+@@ -403,6 +403,9 @@ const ZH = {
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
    'Message from': '收到消息：',
@@ -961,7 +955,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -412,6 +718,8 @@
+@@ -412,6 +412,8 @@ const ZH = {
    'Working out a plan': '理一下思路',
    'Sorting out the details': '梳理细节',
    'On it': '在做了',
@@ -970,7 +964,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Busy with it': '正在处理',
    'Moving ahead': '推进中',
    'Taking care of it': '处理中',
-@@ -439,7 +747,6 @@
+@@ -439,7 +439,6 @@ const ZH = {
    'Looking back through the chat': '翻看聊天记录',
    '{name} looked up its own chat': '{name} 查看了自己的对话',
    '{name} looked up its own chat for “{text}”': '{name} 在自己的对话里查找「{text}」',
@@ -978,7 +972,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +757,30 @@
+@@ -450,12 +450,30 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -1010,7 +1004,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
-@@ -478,6 +803,7 @@
+@@ -478,6 +478,7 @@ const ZH = {
    Selected: '已选',
    Skip: '跳过',
    Submit: '提交',
@@ -1018,7 +1012,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Choose all that apply': '可多选',
    'Dismiss question': '关闭问题',
    Dismiss: '关闭',
-@@ -485,7 +811,7 @@
+@@ -485,7 +485,7 @@ const ZH = {
    'Your answer': '你的回答',
  
    // Secrets
@@ -1027,7 +1021,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No Bot': '没有 Bot',
    'Paste or type the key': '粘贴或输入密钥',
    'Only {name}': '只给 {name}',
-@@ -528,7 +854,7 @@
+@@ -528,7 +528,7 @@ const ZH = {
    'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
    'What it is for': '用途',
    Value: '值',
@@ -1036,7 +1030,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -697,11 +1023,11 @@
+@@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
    // About
@@ -1051,7 +1045,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +1037,13 @@
+@@ -711,6 +711,13 @@ const ZH = {
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1065,7 +1059,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
-@@ -726,7 +1059,7 @@
+@@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
    'GitHub issue': 'GitHub issue',
@@ -1074,7 +1068,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +1071,7 @@
+@@ -738,7 +738,7 @@ const ZH = {
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -1083,7 +1077,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +1104,14 @@
+@@ -771,6 +771,14 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1098,7 +1092,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
-@@ -784,7 +1125,15 @@
+@@ -784,7 +784,15 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1114,7 +1108,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
-@@ -806,9 +1155,20 @@
+@@ -806,9 +806,20 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1137,7 +1131,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
    'Automation tasks are off in DSH': 'DSH 的「自动化任务」没有打开',
-@@ -819,10 +1179,19 @@
+@@ -819,10 +819,19 @@ const ZH = {
    'Pick a date and time': '选一个日期和时间',
    'Pick a time in the future': '选一个将来的时间',
    'Pick a time of day': '选一个时间',
@@ -1157,7 +1151,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -853,8 +1222,11 @@
+@@ -853,8 +853,11 @@ const HOST_ERRORS = [
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
@@ -1169,7 +1163,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +1255,20 @@
+@@ -883,6 +883,20 @@ const HOST_ZH = {
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1190,7 +1184,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +1291,41 @@
+@@ -905,6 +905,68 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1229,10 +1223,36 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'refreshing…': '刷新中…',
 +  'No snapshot yet.': '还没有快照。',
 +  'Nothing here.': '这里还没有。',
++  'First load in progress, {seconds} s elapsed': '首次加载中，已 {seconds} 秒',
++  'Showing the snapshot from {time} · refresh failed: {message}': '显示 {time} 的快照 · 刷新失败：{message}',
++  'The first round reads the repository once; the columns appear as soon as it lands.': '首轮要把这个仓读一遍，列会在拿到的同时出现。',
++  'It retries on its own (10 s → 30 s → 2 min).': '会自动重试（10 秒 → 30 秒 → 2 分钟）。',
++  'Checks unknown': '检查结果未取到',
++  'CI not available this time': '本次未取到 CI 数据',
++  '{count} day(s) not read': '{count} 天没取到',
++  'Diagnose': '诊断',
++  'Checking…': '检查中…',
++  Copy: '复制',
++  Close: '关闭',
++  'this repository': '这个仓',
++  'Add a GITHUB_TOKEN in this instance\'s settings — one that can read {repo}.': '在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。',
++  'GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).': 'GitHub 在限流这个实例，会自动重试（10 秒 → 30 秒 → 2 分钟）。',
++  'GitHub is rate-limiting this instance; it retries on its own in {seconds} s.': 'GitHub 在限流这个实例，{seconds} 秒后自动重试。',
++  'GitHub did not answer in time; the next attempt is automatic.': 'GitHub 没在时限内回应，下一次重试会自动进行。',
++  'Give the token Actions: Read.': '去设置里给 token 勾 Actions: Read。',
++  'Give the token Checks: Read.': '去设置里给 token 勾 Checks: Read。',
++  'Give the token Issues: Read.': '去设置里给 token 勾 Issues: Read。',
++  'Give the token Pull requests: Read.': '去设置里给 token 勾 Pull requests: Read。',
++  'Check the repository name, and that the token can see {repo}.': '检查仓库名对不对、token 有没有 {repo} 的访问权。',
++  'GitHub is not answering this instance right now; retry in a moment.': 'GitHub 现在没回应这个实例，稍后重试。',
++  'The next attempt is automatic; the reason above names what failed.': '下一次重试会自动进行，上面那句话说明是哪一步失败了。',
++  '{part} was not fetched this time: {message}': '{part}这次没取到：{message}',
++  'CI data': 'CI 数据',
++  'The rest of the board': '看板剩下的部分',
++  'Part of the board': '看板的一部分',
  }
  Object.assign(ZH, HOST_ZH)
  
-
 diff --git a/src/client/member-status.js b/src/client/member-status.js
 --- a/src/client/member-status.js
 +++ b/src/client/member-status.js
@@ -1471,7 +1491,6 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 -@media (prefers-reduced-motion:reduce){.bt-mw-dock>button,.bt-mw-row{animation:none}}
 +@media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
  `
-
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
@@ -1484,7 +1503,6 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
      return () => { stop = true; countListeners.delete(listener) }
    }, [botId])
    return count
-
 diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 --- a/src/client/model-menu.js
 +++ b/src/client/model-menu.js
@@ -1671,7 +1689,6 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
  .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
  .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
-
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
@@ -1690,7 +1707,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
-@@ -70,9 +71,22 @@
+@@ -70,9 +70,22 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -1715,7 +1732,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
    useEffect(() => {
-@@ -85,14 +99,33 @@
+@@ -85,14 +85,33 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
      setBusy(true)
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
    }
@@ -1751,7 +1768,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
-@@ -108,23 +141,52 @@
+@@ -108,23 +108,52 @@ function inAnHour() {
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
  const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
  
@@ -1816,7 +1833,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    }
    const submit = (event) => {
      event.preventDefault()
-@@ -133,8 +195,10 @@
+@@ -133,8 +133,10 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      setError('')
      let when
      try { when = timing() } catch { setError(t('Pick a date and time')); setBusy(false); return }
@@ -1829,7 +1846,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    }
    const toggleDay = day => setWeekdays(days => (days.includes(day) ? days.filter(item => item !== day) : [...days, day].sort()))
    return h('form', { className: 'bt-set-card bt-task-form', onSubmit: submit },
-@@ -153,6 +217,7 @@
+@@ -153,6 +153,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
        h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
        h('div', { key: kind, className: 'bt-task-when bt-veil' },
@@ -1837,22 +1854,22 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +231,131 @@
+@@ -166,56 +166,131 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 -      h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' }, busy ? t('Creating…') : t('Create task'))))
 +      h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' },
 +        task ? (busy ? t('Saving…') : t('Save changes')) : busy ? t('Creating…') : t('Create task'))))
- }
- 
++}
++
 +// The switch for Automation tasks is DSH's Plugins panel, not its settings dialog. The
 +// Settings dialog closes first so the panel is not left behind it.
 +export function openPlugins(actions) {
 +  actions.closeSettings()
 +  actions.selectPanel('plugins')
-+}
-+
+ }
+ 
  // Settings has no schedule service to show: Automation tasks are off in DSH.
 -function AutomationOff() {
 +function AutomationOff({ actions }) {
@@ -1863,8 +1880,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 -    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: openHarnessSettings }, t('Open Harness settings')))
 +    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins')))
- }
- 
++}
++
 +// Quiet hours (#1166): a window checked when a task is created or edited, never a mute —
 +// nothing here runs at delivery time. A repeat or cron task can still fire inside it, and
 +// the card says so instead of claiming a silence FlyBot cannot keep.
@@ -1915,8 +1932,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +      quiet.on && unchecked
 +        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.')))
 +        : null))
-+}
-+
+ }
+ 
  export function SchedulesPage({ roster, actions, start }) {
    const view = useSchedules(actions)
    const [adding, setAdding] = useState(Boolean(start))
@@ -1986,7 +2003,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,7 +365,7 @@
+@@ -225,7 +225,7 @@ export function ScheduleSummary({ bot, actions }) {
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -1995,7 +2012,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
  }
-@@ -239,6 +379,12 @@
+@@ -239,6 +239,12 @@ export const SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
@@ -2204,7 +2221,6 @@ diff --git a/src/client/text.js b/src/client/text.js
 +export function awayGroups(groups, roomsById) {
 +  return (groups ?? []).filter(entry => roomsById?.[entry.id]?.origin !== 'face-to-face')
 +}
-
 diff --git a/src/client/voice.js b/src/client/voice.js
 --- a/src/client/voice.js
 +++ b/src/client/voice.js
@@ -2217,7 +2233,6 @@ diff --git a/src/client/voice.js b/src/client/voice.js
        if (stopped) { media.getTracks().forEach(track => track.stop()); return }
        stream = media
        audio = new AudioContext()
-
 diff --git a/src/host/agents.js b/src/host/agents.js
 --- a/src/host/agents.js
 +++ b/src/host/agents.js
@@ -2361,7 +2376,6 @@ diff --git a/src/host/agents.js b/src/host/agents.js
    }
  
    Object.assign(rt, { agentOf, addAgent, createAgentSession, adoptAgentSession, archiveAgentSession, renameAgentSession, removeAgent })
-
 diff --git a/src/host/approvals.js b/src/host/approvals.js
 --- a/src/host/approvals.js
 +++ b/src/host/approvals.js
@@ -2487,7 +2501,6 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 -  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals })
 +  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals, removeStandingApproval })
  }
-
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
@@ -2517,7 +2530,6 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    const mountOne = async (agent, bot, agentMounts, name) => {
      const sessionId = agent.session.id
-
 diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 --- a/src/host/chat-index.js
 +++ b/src/host/chat-index.js
@@ -2530,7 +2542,6 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
            return createIndex(new DatabaseSync(indexPath))
          } catch (error) {
            if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
-
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
@@ -3011,15 +3022,16 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
        const token = typeof body.token === 'string' ? body.token.trim() : ''
 -      if (token === '') throw new Error('Paste a token first')
 -      if (insecure) throw new Error(INSECURE)
-+      if (token === '') throw new Error(c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first')
-+      if (c.insecure) throw new Error(INSECURE(c.def.name))
-       await rt.loadSecrets()
+-      await rt.loadSecrets()
 -      const kept = rt.secretValue(GITHUB_SECRET) !== undefined
 -      const { login } = await signIn(token, { api: options.api })
 -      await rt.secretEndpoint('secret-set', { name: GITHUB_SECRET, value: token, purpose: 'GitHub connector', ...(kept ? {} : { scope: [] }) })
 -      state.connectors = { ...state.connectors, [GITHUB]: { login, connectedAt: Date.now() } }
 -      await rt.save()
 -      await sync()
++      if (token === '') throw new Error(c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
++      await rt.loadSecrets()
 +      const oldToken = rt.secretValue(c.def.secret)
 +      const previous = saved(c)
 +      const record = await c.def.check({ token, options: c.options, saved: previous, body })
@@ -3036,8 +3048,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [oldToken, token] })
 +      await sync(c)
-       return connectorsView()
-     },
++      return connectorsView()
++    },
 +    // Changes which apps a connected gateway offers, without asking for the key again.
 +    async 'connector-apps'(body) {
 +      const c = known(body.id)
@@ -3056,8 +3068,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [token] })
 +      await sync(c)
-+      return connectorsView()
-+    },
+       return connectorsView()
+     },
 +    // Searches Composio's app list: with the saved key, or before connecting with the key being pasted
 +    // (sent only to Composio, never saved by this call).
 +    async 'connector-app-search'(body) {
@@ -3147,7 +3159,6 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 -  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void sync() } })
 +  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
  }
-
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
@@ -3210,7 +3221,6 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      const list = await entries()
      return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
    }
-
 diff --git a/src/host/images.js b/src/host/images.js
 --- a/src/host/images.js
 +++ b/src/host/images.js
@@ -3338,7 +3348,6 @@ diff --git a/src/host/images.js b/src/host/images.js
          }
        : message))
    }
-
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
@@ -3581,7 +3590,6 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +    botMemoryRead, botMemoryAppend,
    })
  }
-
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js
@@ -3783,7 +3791,6 @@ diff --git a/src/host/models.js b/src/host/models.js
 +    selectSessionModel, applyModel, rebindSessionModel, waitForModel, syncModels,
    })
  }
-
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
@@ -3848,7 +3855,6 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
          '',
          rt.isMain(self) ? `${MAIN_RULES}\n\n${TEAM_RULES}` : TEAM_RULES,
        ].join('\n')
-
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
@@ -4075,7 +4081,6 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    }
  
    ctx.effect(() => {
-
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
@@ -4100,13 +4105,13 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +// or the Bot's turn errored; a turn that ends without an answer has run. Retry sends the
 +// task's prompt once now, framed as DSH frames a reminder; it never backfills missed times.
 +// A failure also joins the ended turns the notifications and the Agent inbox read (#353).
- 
++
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
 +import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 +import { defineTool } from './tool-schema.js'
 +import { textOf } from './text.js'
 +import { output } from './tools.js'
-+
+ 
  const MAX_TITLE = 120
 +// How long a due task may stay undelivered while the app runs before it counts as failed.
 +const MISSED_MS = 120_000
@@ -4115,7 +4120,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-@@ -28,6 +55,28 @@
+@@ -28,6 +28,28 @@ export function reminderText(text) {
    return lines.length === 0 ? text : lines.map(prompt => `[Scheduled task] ${prompt}`).join('\n')
  }
  
@@ -4144,7 +4149,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The create request that gives a stored record its timing again, for a move.
  function requestOf(record) {
    const base = { title: record.title, prompt: record.prompt }
-@@ -39,6 +88,28 @@
+@@ -39,6 +39,28 @@ function requestOf(record) {
    return null
  }
  
@@ -4173,7 +4178,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -89,36 +160,360 @@
+@@ -89,36 +89,360 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -4190,7 +4195,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  // The Session a Bot's or group chat's new task goes to: the Bot's current part.
 +  const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
 +  const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
- 
++
 +  // Team quiet hours (#1166): a window the user set, checked when a task is created or
 +  // edited. It never mutes anything — a task that already fires inside the window keeps
 +  // firing, because DSH has no hook before a delivery (docs/subsystems/core-host.md).
@@ -4319,7 +4324,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +
 +  // One stored task as DSH has it, active or finished, or undefined.
 +  const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
-+
+ 
    async function schedulesView() {
 -    if (service === null) return { available: false, tasks: [] }
 +    const quietHours = quietNow()
@@ -4345,8 +4350,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
 +    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
-   }
- 
++  }
++
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
 +  // place on the same Session, otherwise created anew before the old one is deleted.
 +  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
@@ -4477,8 +4482,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const name = rt.roomOf(owner.roomId)?.name
 +    const place = name === undefined ? 'a group chat' : `group chat "${name}"`
 +    return { botId: owner.botId, place: live === undefined ? `${place}, earlier part` : place }
-+  }
-+
+   }
+ 
 +  // DSH's own `schedule_list` answers for the Session the call runs in, and its empty
 +  // answer is indistinguishable from "this Bot has nothing scheduled" (#628): a task the
 +  // owner sees in the UI is invisible from another Session of the same Bot. This tool
@@ -4548,7 +4553,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
        await service.delete({ sessionId: body.sessionId, id: body.id })
        return schedulesView()
      },
-@@ -147,5 +542,12 @@
+@@ -147,5 +147,12 @@ export function install(rt) {
      }
    }
  
@@ -4562,7 +4567,6 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    checkMissedSchedules: checkMissed,
 +  })
  }
-
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -4587,7 +4591,6 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
      // A loaded DSH clock covers every step itself. Its listener may run before or
      // after this one (a reload reorders them), so its presence is read from its
      // projection, not from the messages added so far.
-
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
@@ -5033,7 +5036,6 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +
 +  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
  }
-
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
 +++ b/src/host/usage.js
@@ -5328,7 +5330,6 @@ diff --git a/src/host/usage.js b/src/host/usage.js
 -  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest })
 +  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest, noteUsageIssuePr, noteUsageHarness })
  }
-
 diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 --- a/src/shared/mentions.js
 +++ b/src/shared/mentions.js
@@ -5357,7 +5358,6 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 +  }
 +  return missing
 +}
-
 diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 --- a/test/approval-notices.test.js
 +++ b/test/approval-notices.test.js
@@ -5644,7 +5644,6 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 +  assert.match(settings, /\['approval', 'Waiting for approval', 'Once more if it still waits after 15 min\.'\],\n {2}\['finished', 'Finished'\],\n {2}\['failed', 'Failed'\],/)
 +  assert.match(settings, /disabled: prefs\.notifications === false,\n\s*on: prefs\.notify\?\.\[kind\] !== false, onChange: on => run\(actions\.setPrefs\(\{ notify: \{ \[kind\]: on \} \}\)\)/)
 +})
-
 diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
 --- a/test/bot-messages.test.js
 +++ b/test/bot-messages.test.js
@@ -5864,7 +5863,6 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
 +  assert.match(third, /## Latest messages[^#]*\(none\)/, 'the rescued part carried the messages it was supposed to leave out')
 +  assert.equal(made, 2)
 +})
-
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
 +++ b/test/client-bundle.test.js
@@ -5877,7 +5875,6 @@ diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
      'react-dom': { createPortal: node => node },
      '@deepseek-ai/dsh-client-ui-primitives': { MarkdownText: () => null },
    }
-
 diff --git a/test/connectors.test.js b/test/connectors.test.js
 --- a/test/connectors.test.js
 +++ b/test/connectors.test.js
@@ -6622,7 +6619,6 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.equal(github.ok, false)
 +  assert.match(github.error.message, /no apps to pick/)
 +})
-
 diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 --- a/test/follow-through.test.js
 +++ b/test/follow-through.test.js
@@ -6714,7 +6710,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 +  t.mock.timers.enable({ apis: ['setTimeout'] })
 +  mockedTimers = t.mock.timers
 +  t.after(() => { if (mockedTimers === t.mock.timers) mockedTimers = undefined })
-+}
+ }
 +// How long a wait may take on the real clock, and how finely it steps.
 +const REAL_WAIT_MS = 5000
 +const REAL_WAIT_STEP_MS = 5
@@ -6744,7 +6740,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 +    await new Promise(resolve => setImmediate(resolve))
 +  }
 +  return check()
- }
++}
 +const settle = async (check) => { assert.ok(await waitFor(check), 'condition not reached') }
 +// Writes to `inflight.json` land on a later tick; after a mock-timer tick and after `stop()` the file
 +// can still hold the previous write. Wait for them rather than reading early (the note of a failed
@@ -7001,7 +6997,6 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  test('a written tool call is told apart from text about one', () => {
    assert.equal(writesToolCall(WRITTEN), true)
    assert.equal(writesToolCall('<function=read>\n<parameter=path>a.md</parameter></function>'), true)
-
 diff --git a/test/group-status.test.js b/test/group-status.test.js
 --- a/test/group-status.test.js
 +++ b/test/group-status.test.js
@@ -7224,7 +7219,6 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 +    assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
 +  })
 +}
-
 diff --git a/test/group-work.test.js b/test/group-work.test.js
 --- a/test/group-work.test.js
 +++ b/test/group-work.test.js
@@ -7340,7 +7334,6 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  assert.deepEqual(added.map(call => [call.source.role, call.source.senderRoomId]), [['request', 'r1']])
 +  assert.match(text(added[0]), /Answer: the release branch/)
 +})
-
 diff --git a/test/history.test.js b/test/history.test.js
 --- a/test/history.test.js
 +++ b/test/history.test.js
@@ -7352,7 +7345,6 @@ diff --git a/test/history.test.js b/test/history.test.js
    assert.deepEqual(historyEntry(said('[Bot team setup]\nhi', { kind: 'bot', role: 'kickoff' }), false), { answer: false, who: 'bot', text: '', keepAnswers: false })
    assert.deepEqual(historyEntry(said('[Handoff · part 2]', { kind: 'bot', handoff: true }), false), { answer: false, who: 'bot', text: '', keepAnswers: false })
    assert.deepEqual(historyEntry(said('[Handoff · part 2]', { kind: 'bot', handoff: true, resume: true }), false), { answer: false, who: 'bot', text: '', keepAnswers: true })
-
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
@@ -7492,7 +7484,6 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 +  fb.remote.publish([{ handle: '@a.b.home', name: 'A' }])
 +  assert.deepEqual(fb.remote.list(), [])
 +})
-
 diff --git a/test/images.test.js b/test/images.test.js
 --- a/test/images.test.js
 +++ b/test/images.test.js
@@ -7591,7 +7582,6 @@ diff --git a/test/images.test.js b/test/images.test.js
 +  // An unnamed image keeps the sha prefix the host has always shown.
 +  assert.match(imagePlaceholder({ attachmentId: id }), /\[Image sha256:bdc77c70:/)
 +})
-
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
@@ -7654,7 +7644,6 @@ diff --git a/test/install.test.js b/test/install.test.js
    // A refusal from the team code keeps its message for the user.
    assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
    // Off the Desktop profile there are no Bot browsers.
-
 diff --git a/test/member-status.test.js b/test/member-status.test.js
 --- a/test/member-status.test.js
 +++ b/test/member-status.test.js
@@ -7834,7 +7823,6 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 +  assert.match(rule, /flex-wrap:wrap/, 'the four-button row wraps rather than overflowing to the left')
 +  assert.match(rule, /justify-content:flex-end/, 'each wrapped line stays right-aligned')
 +})
-
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
 +++ b/test/memory.test.js
@@ -8077,7 +8065,6 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.match(out, /- \[\[memory\]\] — linked/)
 +  assert.match(await tool('recall', { related: 'nothinghere' }, 'b2'), /Nothing in your memory and the team memory links "nothinghere"/)
 +})
-
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
 +++ b/test/model-menu.test.js
@@ -8158,7 +8145,6 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 +  assert.equal(link.props.rel, 'noopener noreferrer')
 +  assert.deepEqual([...link.children], ['How to set a DeepSeek API key'])
 +})
-
 diff --git a/test/models.test.js b/test/models.test.js
 --- a/test/models.test.js
 +++ b/test/models.test.js
@@ -8377,7 +8363,6 @@ diff --git a/test/models.test.js b/test/models.test.js
 +  await assert.rejects(rt.testModel('missing'), error => error.code === 'bot/not-found')
 +  assert.equal(calls.length, 2)
 +})
-
 diff --git a/test/prompt.test.js b/test/prompt.test.js
 --- a/test/prompt.test.js
 +++ b/test/prompt.test.js
@@ -8431,7 +8416,6 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
 +  const replyRule = '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.'
 +  for (const id of ['main', 'worker']) assert.ok(prompt(id).split('\n').includes(replyRule), `${id} still answers a reply`)
 +})
-
 diff --git a/test/schedules.test.js b/test/schedules.test.js
 --- a/test/schedules.test.js
 +++ b/test/schedules.test.js
@@ -8442,7 +8426,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -21,22 +21,48 @@
+@@ -21,22 +21,48 @@ const TEAM = {
    questions: {},
  }
  
@@ -8495,7 +8479,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
        if (tasks.get(id)?.sessionId !== sessionId) return { id, deleted: false, code: 'schedule_not_found' }
        tasks.delete(id)
        return { id, deleted: true }
-@@ -44,9 +70,9 @@
+@@ -44,9 +44,9 @@ function scheduleService() {
    }
  }
  
@@ -8507,7 +8491,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
    const ctx = fakeContext({ services })
    const register = ctx.connection.fetch.register
    ctx.connection.fetch.register = (route) => { ctx.route = route; return register(route) }
-@@ -58,7 +84,7 @@
+@@ -58,7 +58,7 @@ function setup(services = {}) {
  test('without the schedule service the page says so and creating is refused', async (t) => {
    const { ctx, home, call } = setup()
    t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
@@ -8516,7 +8500,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
    const refused = await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } })
    assert.equal(refused.ok, false)
    assert.match(refused.error.message, /Automation tasks are off/)
-@@ -121,3 +147,341 @@
+@@ -121,3 +121,341 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -8858,7 +8842,6 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
 +  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
 +})
-
 diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 --- a/test/session-identity.test.js
 +++ b/test/session-identity.test.js
@@ -9005,7 +8988,6 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 +  await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
 +  assert.ok(!bench.requests[0].messages[0].content[0].text.includes(home), bench.requests[0].messages[0].content[0].text)
 +})
-
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js
@@ -9101,7 +9083,6 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 +  assert.deepEqual(radios([]), [['All my Bots', false], ['Chosen Bots', false], ['No Bot', true]])
 +  assert.deepEqual(radios(['writer']), [['All my Bots', false], ['Chosen Bots', true], ['No Bot', false]])
 +})
-
 diff --git a/test/tool-node.test.js b/test/tool-node.test.js
 --- a/test/tool-node.test.js
 +++ b/test/tool-node.test.js
@@ -9120,7 +9101,6 @@ diff --git a/test/tool-node.test.js b/test/tool-node.test.js
 -  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[10]])
 +  assert.deepEqual(relaysBefore(contexts, steps, steps[1]), [contexts[9]])
  })
-
 diff --git a/test/work-dir.test.js b/test/work-dir.test.js
 --- a/test/work-dir.test.js
 +++ b/test/work-dir.test.js

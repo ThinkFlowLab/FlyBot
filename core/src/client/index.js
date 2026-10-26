@@ -609,6 +609,7 @@ export function apply(ctx) {
     setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
     tasks: (payload) => call('tasks', payload ?? {}),
     deliveryBoard: (payload) => call('delivery-board', payload ?? {}),
+    deliveryProbe: (payload) => call('delivery-probe', payload ?? {}),
     taskUpdate: (payload) => call('task-update', payload),
     taskCreate: (payload) => call('task-create', payload),
     schedules: () => call('schedules'),
