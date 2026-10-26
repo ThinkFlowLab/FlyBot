@@ -1,1 +1,0 @@
-Pasting a group invite link for a room this home already holds no longer ends on "Asked to join": the preview now says the group is already in the sidebar and draws no Join card, when the link seated the room and when the host added one of these Bots to it by add-member (#1176).

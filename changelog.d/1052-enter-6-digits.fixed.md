@@ -1,1 +1,0 @@
-Typing a room number that is not exactly six digits keeps Join disabled and shows "Enter 6 digits" under the field (Chinese: 请输入 6 位数字). An empty field stays quiet, and six digits still join ([#1052](https://github.com/ThinkFlowLab/FlyBot/issues/1052)).

@@ -1,1 +1,0 @@
-A finished task can now be accepted or sent back right in the inbox ([#401](https://github.com/ThinkFlowLab/FlyBot/issues/401)): the result card shows the Bot's evidence links and model, **Accept** closes the task as done, and **Send back** asks for one line about what should change and returns the same task to the Bot.

@@ -1,1 +1,0 @@
-Two controls in the social panel that stayed at their desk size on a phone are now touch-sized: the face-to-face room header's small buttons are 40 px instead of 22 px, and the account menu's links keep a 40 px hit area instead of collapsing to a 12 px text run (#1156).

@@ -1,1 +1,0 @@
-A friend DM shows when the other home's Bot could not reply (for example it has no API key) instead of staying on "Weighing the options…" ([#1068](https://github.com/ThinkFlowLab/FlyBot/issues/1068)).

@@ -1,1 +1,0 @@
-A group's Tasks board shows one overall task and the per-Bot subtasks under it. Bots record that plan with track_tasks, continue the highest-priority unfinished task, and ask the user or the group when a task is waiting on an answer ([#1099](https://github.com/ThinkFlowLab/FlyBot/issues/1099)).

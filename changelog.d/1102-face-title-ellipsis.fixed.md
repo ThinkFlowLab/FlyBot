@@ -1,1 +1,0 @@
-Face lobby names and face-room titles stay readable. Labels under the avatars wrap, and the sidebar, header, and session title show both names instead of cutting the second one to an ellipsis ([#1102](https://github.com/ThinkFlowLab/FlyBot/issues/1102)).

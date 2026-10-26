@@ -1,1 +1,0 @@
-A group turn shows a character-budgeted room history, with long CI and merge essays collapsed, and a compact task-board snapshot. Assigning, claiming, and progress go through that board (overall task, subtask, assignee, column, and progress); @ only wakes a member ([#1203](https://github.com/ThinkFlowLab/FlyBot/issues/1203)).

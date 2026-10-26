@@ -1,1 +1,0 @@
-A friend's Bot in the @ menu and in a mention chip uses the same picture as its sidebar row. A face-room Chief no longer shows a handle-seeded green moon there while the sidebar shows the stored blue whale ([#1088](https://github.com/ThinkFlowLab/FlyBot/issues/1088)).

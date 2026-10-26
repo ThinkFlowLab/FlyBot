@@ -1,1 +1,0 @@
-A face-room line the server sends without an `event_id` is posted into the room once: the poll keys it by the line itself (type, sender, server time, text), instead of appending a second copy on the next poll — the duplicate the room drew as the same sentence twice, often seconds after both people had left ([#1045](https://github.com/ThinkFlowLab/FlyBot/issues/1045)).

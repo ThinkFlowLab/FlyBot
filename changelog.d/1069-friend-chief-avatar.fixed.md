@@ -1,1 +1,0 @@
-A friend's Bot that shares a local Bot's display name no longer wears that local Bot's picture: two default Chiefs both store the blue whale, and the friend's row now steps to a different shape while the local Chief keeps its own look ([#1069](https://github.com/ThinkFlowLab/FlyBot/issues/1069)).

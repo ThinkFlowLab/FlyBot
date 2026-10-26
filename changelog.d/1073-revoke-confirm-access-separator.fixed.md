@@ -1,1 +1,0 @@
-**People with access** asks before **Revoke** (`Revoke <name>?` with **Revoke** and **Keep**, naming the rooms that share is used in), and the row separates the handle from "In use in N rooms" with a middle dot (`@handle · In use in 3 rooms`) instead of running the two together ([#1073](https://github.com/ThinkFlowLab/FlyBot/issues/1073)).

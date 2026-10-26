@@ -1,1 +1,0 @@
-A fresh 6-digit code no longer answers with an empty-result line. When nobody is waiting, the dialog's primary line is **Start a new room with …** and **Start a new room** is the first button; the note under it still says to ask for an invite link if that room already opened ([#1053](https://github.com/ThinkFlowLab/FlyBot/issues/1053)).

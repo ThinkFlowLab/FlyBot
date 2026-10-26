@@ -1,1 +1,0 @@
-The delivery board links an issue to a pull request only when the pull request closes it, and a verdict past the first hundred comments still decides the badge ([#1189](https://github.com/ThinkFlowLab/FlyBot/issues/1189)).

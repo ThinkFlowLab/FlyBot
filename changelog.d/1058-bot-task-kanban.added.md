@@ -1,1 +1,0 @@
-Each Bot keeps a task list it updates from the conversation, and a board shows Not started, In progress and Done for that Bot, a child Bot, and — for a group admin — the tasks member Bots are tracking in the group ([#1058](https://github.com/ThinkFlowLab/FlyBot/issues/1058)).

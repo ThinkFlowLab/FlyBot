@@ -1,1 +1,0 @@
-When someone accepts your invite, the sidebar says who joined and People with access lists them even if the grant list is still empty, with one step to ask them to share a Bot back ([#1054](https://github.com/ThinkFlowLab/FlyBot/issues/1054)).

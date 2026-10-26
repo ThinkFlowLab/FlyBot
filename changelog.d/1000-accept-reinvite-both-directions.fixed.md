@@ -1,1 +1,0 @@
-Accepting a friend's invite again now shares your Bot back with them ([#1000](https://github.com/ThinkFlowLab/FlyBot/issues/1000)): the two of you can message each other right away instead of one direction staying silently absent until they share again.

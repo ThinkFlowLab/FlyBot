@@ -1,1 +1,0 @@
-Settings → Bot Social now lists friends and links each of your Bots to People with access, so sharing and revoke are findable without opening each Bot first. Add friend stays on the + menu, and the same panel is also on that page ([#1074](https://github.com/ThinkFlowLab/FlyBot/issues/1074)).

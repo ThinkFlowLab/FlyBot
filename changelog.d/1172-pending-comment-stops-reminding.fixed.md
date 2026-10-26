@@ -1,1 +1,0 @@
-A decision comment that never went out now stops asking for it ([#1172](https://github.com/ThinkFlowLab/FlyBot/issues/1172)): after two wakes the reminder ends, and a day later the card says the comment could not be confirmed instead of the Bot being woken about it for ever. A task that is still real work keeps waking the same way.
