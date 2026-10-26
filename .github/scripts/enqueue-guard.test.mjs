@@ -425,8 +425,10 @@ test('#943, reworded by #947: a Reviewer: outside both vocabularies is refused a
   assert.ok(r.reasons.includes('Reviewer names "someone-else", who is not a writers Bot name'), r.reasons.join('; '))
 })
 
+// `Birfy` used to stand here as the second spelling; since #1228 it is the one value neither line may name,
+// so the @ and the case are shown on the listed login itself.
 test('#943: an @ and any case are fine on a login `reviewers` lists', () => {
-  const r = run({ body: 'Owner: Dev\nReviewer: @Reviewer-Agent, BIRFY\nFixes #943\n', comments: [comment()] })
+  const r = run({ body: 'Owner: Dev\nReviewer: @Reviewer-Agent, REVIEWER-AGENT\nFixes #943\n', comments: [comment()] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
@@ -440,7 +442,9 @@ test('#947: a Reviewer: naming a writers Bot name is accepted', () => {
 })
 
 test('#947: either vocabulary is accepted, with an @ and in any case', () => {
-  for (const line of ['Reviewer: @Reviewer2', 'Reviewer: reviewer', 'Reviewer: Birfy', 'Reviewer: Reviewer2, Birfy', 'Reviewer: reviewer-agent, @REVIEWER2']) {
+  // `Reviewer: Birfy` and `Reviewer: Reviewer2, Birfy` sat in this list until #1228 made the shared identity
+  // a refusal of its own; the cases that keep them out are the `#1228:` ones below.
+  for (const line of ['Reviewer: @Reviewer2', 'Reviewer: reviewer', 'Reviewer: reviewer-agent, @REVIEWER2']) {
     const r = run({ body: `Owner: Dev\n${line}\nFixes #947\n`, comments: [comment()] })
     assert.equal(r.ok, true, `${line}: ${r.reasons.join('; ')}`)
   }
@@ -571,8 +575,10 @@ test('#951: overlap in either direction, in a list, or through @ and case is ref
   assert.equal(ok.ok, true, ok.reasons.join('; '))
 })
 
-// `Birfy` is both a `reviewers` login and the one identity every Bot writes as, so it is the sharpest
-// fixture: each line alone is perfectly valid, and only the comparison can refuse it.
+// `Birfy` is both a `reviewers` login and the one identity every Bot writes as. Until #1228 that made it the
+// sharpest fixture for this comparison — each line alone looked valid and only the comparison could refuse
+// it; the value is now refused on its own too (:the `#1228:` cases below), so this one pins that the overlap
+// refusal is still there beside it, unchanged.
 test('#951: a name that is both a login and a writers name is refused on both lines', () => {
   const r = run({ body: 'Owner: Birfy\nReviewer: Birfy\nFixes #951\n', comments: [comment()] })
   assert.equal(r.ok, false)
@@ -663,6 +669,63 @@ test('#962: Docs is registered in writers; Owner: Docs passes and an unknown own
   assert.ok(refused.reasons.includes('Owner names "somebody", who is not a writers Bot name'), refused.reasons.join('; '))
 })
 
+
+// #1228: the two lines name a workstation, but `reviewers` (logins) and `writers` (Bot names) overlap on
+// exactly one value — `Birfy`, the shared identity every Bot writes as. Each line alone looked valid, so a
+// body could name no Bot at all and still enter the queue; #1214 merged with `Reviewer: Birfy`. The value is
+// refused on either line, with the same normalisation (`@`, case) the two vocabularies already use.
+const SHARED_OWNER = 'Owner names "birfy", who is the shared write identity every Bot writes as — name the Bot that claims this pull request'
+const SHARED_REVIEWER = 'Reviewer names "birfy", who is the shared write identity every Bot writes as — name the Bot that reviews'
+const sharedRefusals = (r) => r.reasons.filter((reason) => /is the shared write identity/.test(reason))
+
+test('#1228: Reviewer: Birfy names no reviewer, and the refusal names the line and the value', () => {
+  const r = run({ body: 'Owner: Dev3\nReviewer: Birfy\nFixes #1228\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_REVIEWER])
+})
+
+test('#1228: Owner: Birfy claims no owner, and the refusal names the line and the value', () => {
+  const r = run({ body: 'Owner: Birfy\nReviewer: Reviewer\nFixes #1228\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_OWNER])
+})
+
+test('#1228: two real Bots on the two lines are still accepted', () => {
+  for (const body of ['Owner: Dev3\nReviewer: Reviewer\nFixes #1228\n', 'Owner: Dev3\nReviewer: reviewer-agent\nFixes #1228\n']) {
+    const r = run({ body, comments: [comment()] })
+    assert.equal(r.ok, true, `${body}: ${r.reasons.join('; ')}`)
+    assert.deepEqual(sharedRefusals(r), [], `${body}: the rule is about one value, not about the lines`)
+  }
+})
+
+test('#1228: @ and case are normalised first, so the shared identity is refused once, not twice', () => {
+  const r = run({ body: 'Owner: Dev3\nReviewer: @BIRFY\nFixes #1228\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_REVIEWER])
+})
+
+test('#1228: one unusable name in a list is enough', () => {
+  const r = run({ body: 'Owner: Dev3\nReviewer: Birfy, Reviewer\nFixes #1228\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_REVIEWER])
+})
+
+test('#1228: the shared identity on both lines is refused on both, and the overlap refusal is unchanged', () => {
+  const r = run({ body: 'Owner: Birfy\nReviewer: Birfy\nFixes #1228\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_OWNER, SHARED_REVIEWER])
+  assert.deepEqual(selfReviewRefusals(r), ['Reviewer names "birfy", who is also the Owner of this pull request'])
+})
+
+// The checkpoint compares `claim` with the Owner names, so it cannot become the way in: an Owner line that
+// names nobody is already refused, and nothing new is added to the block.
+test('#1228: the checkpoint cannot become the way in — claim "Birfy" under Owner: Birfy is refused', () => {
+  const body = `Owner: Birfy\nReviewer: Reviewer\nFixes #1228\n\n${checkpoint({ claim: 'Birfy', issue: 1228 })}`
+  const r = run({ raw: true, body, comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.deepEqual(sharedRefusals(r), [SHARED_OWNER])
+  assert.equal(r.reasons.some((reason) => /checkpoint field "claim"/.test(reason)), false, 'no new field rule: the Owner line is what refuses it')
+})
 
 // ---- #1112: the guard reported a PASS that had not been posted yet, and a re-push could go green again.
 // The three cases below are one per failure mode the issue names; each is red on the code before it.

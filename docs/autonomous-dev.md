@@ -294,7 +294,8 @@ PASS is never a queue permit on its own (#602); on a live, non-draft pull reques
 Bot name, or a Bot name whose shared `Birfy` identity is not in `reviewers`, #947, or a `Reviewer:` naming the same Bot as
 the `Owner:`, compared per name after commas, `@` and case, #951; both lines need a value the policy knows — an `Owner:`
 outside `writers` is refused and a line with no value is the missing line, so an empty `Owner:` cannot clear the
-comparison, #951), naming the missing line or the word
+comparison, #951; and neither line may name the shared `Birfy` identity, the one value both vocabularies list and so the
+one value that names no workstation, #1228), naming the missing line or the word
 that missed both lists (#943) — a merged pull request is not re-judged, because this check also runs on every comment; the
 same call refuses a body whose `## Checkpoint` block is missing or wrong, one field at a time ([AGENTS.md → The checkpoint
 block](../AGENTS.md#the-checkpoint-block-a-hand-off-the-next-bot-can-read-1202), skeleton in

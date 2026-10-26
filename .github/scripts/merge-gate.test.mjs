@@ -409,7 +409,7 @@ const queueReal = (fx, body = fx.comment.body, pullBody) => main({
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
     if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? bodyWithCheckpoint(['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n'), fx.files, fx.pr) })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? bodyWithCheckpoint(['Owner: Reviewer', 'Reviewer: Reviewer2', 'Fixes #' + fx.pr, ''].join('\n'), fx.files, fx.pr) })
     throw new Error('fake gh: unexpected ' + path)
   },
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: REAL_POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: `refs/heads/gh-readonly-queue/main/pr-${fx.pr}-c74e1207${'0'.repeat(32)}`, MODE: 'queue' },
@@ -454,7 +454,7 @@ test('#660-#663: a PASS from another GitHub login still passes; the author\'s ow
 test('#644: #663 passes once the author comment attests a role that is not the Owner', () => {
   const fx = REAL.find((f) => f.pr === 663)
   const body = fx.comment.body.replace('Written-by: Reviewer\n', `Written-by: Reviewer\nAttestation: ${fx.head} role=Reviewer\n`)
-  const result = queueReal(fx, body, bodyWithCheckpoint(`Owner: Dev\nReviewer: Birfy\nFixes #${fx.pr}\n`, fx.files, fx.pr))
+  const result = queueReal(fx, body, bodyWithCheckpoint(`Owner: Dev\nReviewer: Reviewer2\nFixes #${fx.pr}\n`, fx.files, fx.pr))
   assert.equal(result.ok, true, result.reasons.join('; '))
   assert.equal(result.verdict.by, 'Birfy')
 })

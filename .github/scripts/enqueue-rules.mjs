@@ -56,6 +56,12 @@ const labelNames = (labels) => (labels ?? []).map((l) => String(typeof l === 'st
 // A Bot name can only through the one identity every Bot writes as, `Birfy`, so it names a reviewer only
 // while that account is in `reviewers`; with it gone the name is vocabulary and the line is refused.
 const SHARED_WRITE_LOGIN = 'Birfy'
+// #1228: that same account is the one value both vocabularies contain, so both lines accepted it: a body
+// could name `Birfy` on `Owner:` (a `writers` name) or on `Reviewer:` (a `reviewers` login) and the queue
+// entry read it as a workstation. #1214 merged with `Reviewer: Birfy` for exactly that reason. Neither line
+// is about the account; each asks which Bot claims, and which Bot reviews, so the shared identity is refused
+// before either vocabulary is consulted — otherwise "listed" would keep standing in for "named a Bot".
+const SHARED_WRITE_NAME = SHARED_WRITE_LOGIN.toLowerCase()
 // One line's names: split on commas, strip a leading `@`, compare case-insensitively. Both header lines
 // read their values this way so `@Dev`, `dev` and `DEV` are one name wherever they appear (#951).
 const headerNames = (line, pattern) => line.replace(pattern, '').split(',').map((value) => value.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
@@ -73,7 +79,8 @@ function headerReasons(body, policy) {
   const ownerNames = owner ? [...new Set(headerNames(owner, OWNER_LINE))] : []
   if (!ownerNames.length) reasons.push('missing line: Owner:')
   for (const name of ownerNames) {
-    if (!bots.has(name)) reasons.push(`Owner names "${name}", who is not a writers Bot name`)
+    if (name === SHARED_WRITE_NAME) reasons.push(`Owner names "${name}", who is the shared write identity every Bot writes as — name the Bot that claims this pull request`)
+    else if (!bots.has(name)) reasons.push(`Owner names "${name}", who is not a writers Bot name`)
   }
   const owners = new Set(ownerNames)
   const reviewer = lines.find((line) => REVIEWER_LINE.test(line))
@@ -84,6 +91,11 @@ function headerReasons(body, policy) {
     if (!names.length) reasons.push('missing line: Reviewer:')
     let passable = false
     for (const name of names) {
+      // #1228: refused before the vocabularies, because this value is the one both of them list.
+      if (name === SHARED_WRITE_NAME) {
+        reasons.push(`Reviewer names "${name}", who is the shared write identity every Bot writes as — name the Bot that reviews`)
+        continue
+      }
       if (logins.has(name)) {
         passable = true
         continue
