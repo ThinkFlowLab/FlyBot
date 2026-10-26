@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import fsp from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -75,7 +77,7 @@ const teamHome = () => {
 }
 
 // A loader that hands out a fake MCP client and records each mount.
-function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome() } = {}) {
+function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
   const mounts = []
   const plugin = { name: 'mcp-client', apply() {} }
   const loader = {
@@ -83,6 +85,7 @@ function setup({ fail = false, github = { api: 'https://gh.test' }, composio = {
     unwrapExports: exports => exports.default,
   }
   const ctx = fakeContext({ services: { loader } })
+  if (warns !== undefined) ctx.logger.warn = (format, line) => warns.push(String(line ?? format))
   ctx.plugin = (given, config) => {
     assert.equal(given, plugin)
     const mount = { config, disposed: false }
@@ -583,19 +586,25 @@ test('a new key makes its own session and deletes the old key\'s session with th
 
 // --- The session address is not kept in state.json (#335) ---
 
-// #1081: the install-time scrub (src/host/connectors.js scrubAddresses) writes state.json on a
-// path of its own, and a mount reached through another sync (secrets -> rt.secretsChanged ->
-// syncAll) can appear while that write is still in flight. Under load the file was measured to
-// still carry the old line 2-91 ms after the mount, so wait for the file to hold the new state
-// instead of reading once. A write that never lands still fails: the deadline returns the old
-// text and the assertions below read it.
-const untilState = async (file, done) => {
+// #1081: the mount and the save that drops an older version's address are two start-up paths, and
+// the mount can win — the write was measured still in flight 2-91 ms after it under load. Hold this
+// home's state.json writes (400 ms) inside this case, so every run walks the wait below instead of
+// passing whenever the write happens to land first. Restored in finally; no product change.
+const SLOW_WRITE_MS = 400
+
+// Wait for the observable state, never a fixed sleep: the file is written whole, so one more read is
+// the same question one turn later. A deadline throws with what the file still says and with the
+// store's own read-only lines, so a dropped save reads as product and not as a flaky test (#1081).
+async function untilFile(file, done, what, warns = () => []) {
   const end = Date.now() + 3000
   for (;;) {
     const text = readFileSync(file, 'utf8')
     if (done(text)) return text
-    if (Date.now() > end) return text
-    await new Promise(resolve => setTimeout(resolve, 10))
+    if (Date.now() > end) {
+      const said = warns().filter(line => /not saving the Bot team|open in another dsh|has closed/.test(line))
+      throw new Error(`until: ${what} did not land within 3 s; state.json still says ${text.slice(0, 300)}; the store said: ${said.length > 0 ? said.join(' | ') : 'nothing — it never refused the write'}`)
+    }
+    await new Promise(resolve => setTimeout(resolve, 20))
   }
 }
 
@@ -645,16 +654,28 @@ test('an address saved by an older version is dropped from state.json at start, 
   old.connectors.composio.session.url = 'https://composio.test/tool_router/trs_1/mcp?legacy=LEGACYCREDENTIAL'
   writeFileSync(file, JSON.stringify(old))
 
-  const second = setup({ home })
+  const warns = []
+  const realRename = fsp.rename
+  fsp.rename = async (from, to) => {
+    if (to === file) await new Promise(resolve => setTimeout(resolve, SLOW_WRITE_MS))
+    return realRename(from, to)
+  }
+  syncBuiltinESMExports()
+  const second = setup({ home, warns })
   t.after(() => second.ctx.dispose())
-  await untilMounted(second.mounts, 1)
-  assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
-  assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
-  assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
-  const text = await untilState(file, value => !value.includes('LEGACYCREDENTIAL') && !value.includes('composio.test/tool_router'))
-  assert.ok(!text.includes('LEGACYCREDENTIAL'))
-  assert.ok(!text.includes('composio.test/tool_router'))
-  assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
+  try {
+    await untilMounted(second.mounts, 1)
+    assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
+    assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
+    assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
+    const text = await untilFile(file, value => !value.includes('LEGACYCREDENTIAL') && !value.includes('composio.test/tool_router'), 'the legacy session address to be dropped', () => warns)
+    assert.ok(!text.includes('LEGACYCREDENTIAL'))
+    assert.ok(!text.includes('composio.test/tool_router'))
+    assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
+  } finally {
+    fsp.rename = realRename
+    syncBuiltinESMExports()
+  }
 })
 
 test('a session whose answer names no address on Composio\'s host is made again, and the address it named is never mounted', async (t) => {

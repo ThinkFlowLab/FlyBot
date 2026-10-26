@@ -5881,7 +5881,13 @@ diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 diff --git a/test/connectors.test.js b/test/connectors.test.js
 --- a/test/connectors.test.js
 +++ b/test/connectors.test.js
-@@ -5,11 +5,45 @@ import { tmpdir } from 'node:os'
+@@ -1,15 +1,51 @@
+ import assert from 'node:assert/strict'
+ import { randomBytes } from 'node:crypto'
+ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
++import fsp from 'node:fs/promises'
++import { syncBuiltinESMExports } from 'node:module'
+ import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
  import { apply } from '../index.js'
@@ -5929,17 +5935,23 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  
  test('signIn asks GitHub who owns the token', async () => {
    const token = fresh()
-@@ -41,8 +41,7 @@ const teamHome = () => {
+@@ -41,8 +41,7 @@
  }
  
  // A loader that hands out a fake MCP client and records each mount.
 -function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
 -  const home = teamHome()
-+function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome() } = {}) {
++function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
    const mounts = []
    const plugin = { name: 'mcp-client', apply() {} }
    const loader = {
-@@ -55,12 +55,15 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
+@@ -50,17 +50,21 @@
+     unwrapExports: exports => exports.default,
+   }
+   const ctx = fakeContext({ services: { loader } })
++  if (warns !== undefined) ctx.logger.warn = (format, line) => warns.push(String(line ?? format))
+   ctx.plugin = (given, config) => {
+     assert.equal(given, plugin)
      const mount = { config, disposed: false }
      mounts.push(mount)
      return {
@@ -5957,7 +5969,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    return { ctx, home, mounts }
  }
  
-@@ -75,20 +75,20 @@ async function call(ctx, endpoint, payload) {
+@@ -75,20 +75,20 @@
    return response.json()
  }
  
@@ -5982,7 +5994,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts.length, 1)
    assert.deepEqual(mounts[0].config, {
      transport: 'streamable-http',
-@@ -98,12 +98,12 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
+@@ -98,12 +98,12 @@
      failOnStartupError: true,
    })
    const state = await call(ctx, 'state', {})
@@ -5997,7 +6009,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts[0].disposed, true)
    assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
  })
-@@ -113,7 +113,7 @@ test('a token GitHub refuses is not saved', async (t) => {
+@@ -113,7 +113,7 @@
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(401, {})
    const { ctx, home, mounts } = setup()
@@ -6006,7 +6018,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    assert.equal(result.ok, false)
    assert.match(result.error.message, /did not accept/)
-@@ -126,10 +126,10 @@ test('a failed MCP connection shows the error without the token, and Try again m
+@@ -126,10 +126,10 @@
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup({ fail: true })
@@ -6019,7 +6031,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(github.state, 'error')
    assert.ok(!github.error.includes(token), github.error)
    assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
-@@ -142,7 +142,7 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
+@@ -142,7 +142,7 @@
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup()
@@ -6028,7 +6040,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    await call(ctx, 'secret-delete', { name: 'GITHUB_TOKEN' })
    const state = await call(ctx, 'state', {})
-@@ -150,13 +150,19 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
+@@ -150,13 +150,19 @@
    assert.equal(state.value.connectors[0].state, 'off')
  })
  
@@ -6051,7 +6063,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +165,569 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -165,10 +165,603 @@
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -6432,6 +6444,28 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +
 +// --- The session address is not kept in state.json (#335) ---
 +
++// #1081: the mount and the save that drops an older version's address are two start-up paths, and
++// the mount can win — the write was measured still in flight 2-91 ms after it under load. Hold this
++// home's state.json writes (400 ms) inside this case, so every run walks the wait below instead of
++// passing whenever the write happens to land first. Restored in finally; no product change.
++const SLOW_WRITE_MS = 400
++
++// Wait for the observable state, never a fixed sleep: the file is written whole, so one more read is
++// the same question one turn later. A deadline throws with what the file still says and with the
++// store's own read-only lines, so a dropped save reads as product and not as a flaky test (#1081).
++async function untilFile(file, done, what, warns = () => []) {
++  const end = Date.now() + 3000
++  for (;;) {
++    const text = readFileSync(file, 'utf8')
++    if (done(text)) return text
++    if (Date.now() > end) {
++      const said = warns().filter(line => /not saving the Bot team|open in another dsh|has closed/.test(line))
++      throw new Error(`until: ${what} did not land within 3 s; state.json still says ${text.slice(0, 300)}; the store said: ${said.length > 0 ? said.join(' | ') : 'nothing — it never refused the write'}`)
++    }
++    await new Promise(resolve => setTimeout(resolve, 20))
++  }
++}
++
 +const untilMounted = async (mounts, count) => {
 +  const end = Date.now() + 3000
 +  while (mounts.length < count) {
@@ -6478,16 +6512,28 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  old.connectors.composio.session.url = 'https://composio.test/tool_router/trs_1/mcp?legacy=LEGACYCREDENTIAL'
 +  writeFileSync(file, JSON.stringify(old))
 +
-+  const second = setup({ home })
++  const warns = []
++  const realRename = fsp.rename
++  fsp.rename = async (from, to) => {
++    if (to === file) await new Promise(resolve => setTimeout(resolve, SLOW_WRITE_MS))
++    return realRename(from, to)
++  }
++  syncBuiltinESMExports()
++  const second = setup({ home, warns })
 +  t.after(() => second.ctx.dispose())
-+  await untilMounted(second.mounts, 1)
-+  assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
-+  assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
-+  assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
-+  const text = readFileSync(file, 'utf8')
-+  assert.ok(!text.includes('LEGACYCREDENTIAL'))
-+  assert.ok(!text.includes('composio.test/tool_router'))
-+  assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
++  try {
++    await untilMounted(second.mounts, 1)
++    assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
++    assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
++    assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
++    const text = await untilFile(file, value => !value.includes('LEGACYCREDENTIAL') && !value.includes('composio.test/tool_router'), 'the legacy session address to be dropped', () => warns)
++    assert.ok(!text.includes('LEGACYCREDENTIAL'))
++    assert.ok(!text.includes('composio.test/tool_router'))
++    assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
++  } finally {
++    fsp.rename = realRename
++    syncBuiltinESMExports()
++  }
 +})
 +
 +test('a session whose answer names no address on Composio\'s host is made again, and the address it named is never mounted', async (t) => {
