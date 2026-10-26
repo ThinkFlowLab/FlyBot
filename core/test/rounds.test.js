@@ -1996,6 +1996,22 @@ test('a Bot @ whose open card already shows the line passes without a turn (#120
   assert.ok(covered.passed.includes('Writer'))
 
   sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer Writer implements the rollback instead'))
+  const redirecting = relay(room.id, 'r1205-redirect', controller.signal)
+  const redirected = await turnFor(sent)
+  await answer(redirected.sessionId, redirected.message.source.exchangeId, 'Leaving the draft.', 4)
+  await redirecting
+  assert.equal(redirected.sessionId, live.sessions[writer.id], 'a title plus a new instruction still opens a turn')
+
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer Writer implements, then delete the notes file'))
+  const deleting = relay(room.id, 'r1205-delete', controller.signal)
+  const deleted = await turnFor(sent)
+  await answer(deleted.sessionId, deleted.message.source.exchangeId, 'Deleting the notes file.', 5)
+  await deleting
+  assert.equal(deleted.sessionId, live.sessions[writer.id], 'a title plus another new instruction still opens a turn')
+
+  sent.length = 0
   await emit(room.id, botLine(chief, 'Chief', '@Writer the draft is wrong, redo paragraph two'))
   const asking = relay(room.id, 'r1205-ask', controller.signal)
   const asked = await turnFor(sent)

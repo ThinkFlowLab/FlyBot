@@ -91,7 +91,10 @@ test('an open card covers a status @ and not a question or a new ask', () => {
   }
   const cue = { roomId: 'room', botId: 'writer' }
   assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer Writer implements' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer Writer implements — draft is in' }), true)
   assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer draft is in' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer Writer implements the rollback instead' }), false)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer Writer implements, then delete the notes file' }), false)
   assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer done' }), true)
   assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer' }), true)
   assert.equal(boardCoversCue(tasks, { ...cue, text: essay('@Writer') }), true)

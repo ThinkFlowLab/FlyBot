@@ -1707,7 +1707,7 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
  test('a message sent between rounds still opens a full round', async (t) => {
    const { call, emit, userMessage, relay, answer, stop, sent } = start()
    t.after(stop)
-@@ -347,3 +347,1258 @@
+@@ -347,3 +347,1274 @@
    const result = JSON.parse(await running)
    assert.deepEqual(result.replies.map(reply => reply.name ?? 'User'), ['Chief', 'Writer'])
  })
@@ -2941,6 +2941,22 @@ diff --git a/test/rounds.test.js b/test/rounds.test.js
 +  const covered = JSON.parse(await relay(room.id, 'r1205-cover', controller.signal))
 +  assert.equal(sent.length, 0, 'the card already shows the line, so Writer is not given a turn')
 +  assert.ok(covered.passed.includes('Writer'))
++
++  sent.length = 0
++  await emit(room.id, botLine(chief, 'Chief', '@Writer Writer implements the rollback instead'))
++  const redirecting = relay(room.id, 'r1205-redirect', controller.signal)
++  const redirected = await turnFor(sent)
++  await answer(redirected.sessionId, redirected.message.source.exchangeId, 'Leaving the draft.', 4)
++  await redirecting
++  assert.equal(redirected.sessionId, live.sessions[writer.id], 'a title plus a new instruction still opens a turn')
++
++  sent.length = 0
++  await emit(room.id, botLine(chief, 'Chief', '@Writer Writer implements, then delete the notes file'))
++  const deleting = relay(room.id, 'r1205-delete', controller.signal)
++  const deleted = await turnFor(sent)
++  await answer(deleted.sessionId, deleted.message.source.exchangeId, 'Deleting the notes file.', 5)
++  await deleting
++  assert.equal(deleted.sessionId, live.sessions[writer.id], 'a title plus another new instruction still opens a turn')
 +
 +  sent.length = 0
 +  await emit(room.id, botLine(chief, 'Chief', '@Writer the draft is wrong, redo paragraph two'))
