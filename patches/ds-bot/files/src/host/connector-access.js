@@ -101,7 +101,7 @@ export function install(rt) {
     // a Bot that reads it knows where the tool went, and the refusal is the same for every origin.
     if (roomHidden(who, name)) {
       return id === COMPOSIO
-        ? `The ${COMPOSIO} connector is available in your own chat, not in a group room (#1237).`
+        ? `The ${COMPOSIO} connector is not available in a group room (#1237).`
         : `Schedules are managed in your own chat, not in a group room (#1237).`
     }
     if (id === undefined) return undefined
