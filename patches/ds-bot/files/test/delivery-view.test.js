@@ -161,14 +161,50 @@ test('five delivery columns, localized labels, badge wording (#1173)', () => {
 
 test('the header carries today, the 7-day comparison, the CI caveat and open ages (#1173)', () => {
   const rows = metricRows(snapshot.metrics)
-  assert.equal(rows.rows.length, 6)
-  assert.deepEqual({ ...rows.rows[0] }, { label: 'New issues', today: '4', week: '30' })
-  assert.deepEqual({ ...rows.rows[4] }, { label: 'Median issue close', today: '1h', week: '2h' })
+  // #1212 adds the CI red share as a seventh row: it draws a line like the counts, but as a ratio
+  // it never carries a Σ total.
+  assert.equal(rows.rows.length, 7)
+  // #1212: every row carries the metric key the chart looks its series up by, so the expectation
+  // names all six — the shape change is deliberate, not something to hide from the assertion.
+  assert.deepEqual({ ...rows.rows[0] }, { key: 'newIssues', label: 'New issues', today: '4', week: '30' })
+  assert.deepEqual({ ...rows.rows[4] }, { key: 'ci', label: 'CI red share', today: '0%', week: '100%' })
+  assert.deepEqual({ ...rows.rows[5] }, { key: 'medianIssueCloseMs', label: 'Median issue close', today: '1h', week: '2h' })
+  assert.deepEqual([...rows.rows.map(row => row.key)],
+    ['newIssues', 'closedIssues', 'newPullRequests', 'mergedPullRequests', 'ci', 'medianIssueCloseMs', 'medianPullMergeMs'])
   assert.equal(rows.ci.failed, 2)
   assert.equal(rows.ci.total, 1200)
   assert.equal(rows.ci.caveat, true)
   assert.equal(rows.ci.superseded, 3)
   assert.equal(rows.open.needsHuman, 4)
+})
+
+test('the CI red share reaches the page as a line, and the medians draw none (#1212)', () => {
+  // A key the table has no row for would draw no line: the CI share has to be a row, not a key only
+  // the chart knows about.
+  const daily = [
+    { date: '2026-10-19', newIssues: 1, closedIssues: 1, newPullRequests: 1, mergedPullRequests: 0, ci: { failed: 0, counted: 10 } },
+    { date: '2026-10-20', newIssues: 2, closedIssues: 1, newPullRequests: 1, mergedPullRequests: 1, ci: { failed: 2, counted: 10 } },
+    { date: '2026-10-21', newIssues: 0, closedIssues: 3, newPullRequests: 2, mergedPullRequests: 1, ci: { failed: 1, counted: 4 } },
+    { date: '2026-10-22', newIssues: 4, closedIssues: 2, newPullRequests: 0, mergedPullRequests: 2, ci: { failed: null, counted: null } },
+    { date: '2026-10-23', newIssues: 3, closedIssues: 3, newPullRequests: 1, mergedPullRequests: 1, ci: { failed: 0, counted: 8 } },
+    { date: '2026-10-24', newIssues: 5, closedIssues: 4, newPullRequests: 3, mergedPullRequests: 2, ci: { failed: 3, counted: 12 } },
+    { date: '2026-10-25', partial: true, newIssues: 4, closedIssues: 2, newPullRequests: 5, mergedPullRequests: 3, ci: { failed: 2, counted: 10 } },
+  ]
+  const board = DeliveryBoard({ snapshot: { ...snapshot, metrics: { ...snapshot.metrics, daily } }, message: '' })
+  const charts = walk(board).filter(node => node.props?.className === 'bt-del-chart')
+  assert.deepEqual([...charts.map(node => node.props['data-metric'])],
+    ['newIssues', 'closedIssues', 'newPullRequests', 'mergedPullRequests', 'ci'])
+  const rows = walk(board).filter(node => node.props?.className === 'bt-del-dm-row')
+  const ciRow = rows.find(node => node.props['data-metric'] === 'ci')
+  assert.ok(ciRow, 'the CI share is a row of the table, not only a chart key')
+  // A share of the week, never a sum.
+  assert.match(text(ciRow), /100%/)
+  assert.equal(text(ciRow).includes('Σ'), false)
+  // Medians cannot be added up and get no chart at all.
+  for (const key of ['medianIssueCloseMs', 'medianPullMergeMs']) {
+    const row = rows.find(node => node.props['data-metric'] === key)
+    assert.equal(walk(row).some(node => node.props?.className === 'bt-del-chart'), false)
+  }
 })
 
 test('the board renders all five columns and a card with labels, owner and link (#1173)', () => {

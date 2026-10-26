@@ -8,6 +8,7 @@
 // read. The poll is fast while a round is running (2 s) and slow once there is something to read.
 import { createElement as h, useEffect, useState } from 'react'
 import { t } from './i18n.js'
+import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
 
 const POLL_MS = 60_000
 // While the host is still building there is nothing to see, so ask often; once the board is up,
@@ -129,17 +130,26 @@ export function metricRows(snapshot) {
   const today = snapshot?.today ?? {}
   const week = snapshot?.week ?? {}
   const ci = today.ci ?? null
+  // The CI share is a ratio of the runs that counted, so it is written as a percentage and is
+  // never summed; a window with nothing counted reads '—', not 0%.
+  const share = (entry) => (entry && Number.isFinite(entry.counted) && entry.counted > 0
+    ? `${Math.round((entry.failed / entry.counted) * 100)}%` : '—')
   const count = (value) => (value === null || value === undefined ? '—' : String(value))
   const rows = [
     { label: t('New issues'), key: 'newIssues' },
     { label: t('Closed issues'), key: 'closedIssues' },
     { label: t('New pull requests'), key: 'newPullRequests' },
     { label: t('Merged pull requests'), key: 'mergedPullRequests' },
+    { key: 'ci', label: t('CI red share'), today: share(today.ci), week: share(week.ci) },
     { label: t('Median issue close'), key: 'medianIssueCloseMs', format: duration },
     { label: t('Median PR merge'), key: 'medianPullMergeMs', format: duration },
   ].map(row => {
+    // The CI row already carries its own formatted share; every other row reads its number from
+    // today/week by key.
+    if (row.today !== undefined) return { key: row.key, label: row.label, today: row.today, week: row.week }
     const format = row.format ?? count
-    return { label: row.label, today: format(today[row.key]), week: format(week[row.key]) }
+    // `key` travels with the row so the chart finds its own series by name, not by position.
+    return { key: row.key, label: row.label, today: format(today[row.key]), week: format(week[row.key]) }
   })
   return {
     dayStart: snapshot?.dayStart ?? null,
@@ -266,17 +276,13 @@ function Diagnose({ onProbe }) {
 export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? snapshot
   if (!payload) return null
-  const { rows, ci, open } = metricRows(payload.metrics ?? payload)
+  const metricsPayload = payload.metrics ?? payload
+  const { rows, ci, open } = metricRows(metricsPayload)
   const error = payload.error ?? null
   const state = payload.state ?? 'fresh'
   return h('header', { className: 'bt-del-head' },
     h('div', { className: 'bt-del-metrics' },
-      h('table', { className: 'bt-del-table' },
-        h('thead', null, h('tr', null, h('th', null, ''), h('th', null, t('Today')), h('th', null, t('7 days')))),
-        h('tbody', null, rows.map(row => h('tr', { key: row.label },
-          h('th', { scope: 'row' }, row.label),
-          h('td', null, row.today),
-          h('td', null, row.week))))),
+      h(DeliveryMetrics, { rows, daily: metricsPayload.daily }),
       // An unreadable CI number is "unknown", never "0 of 0" (#1211).
       h('p', { className: 'bt-del-ci', 'data-ci': ci === null ? 'unknown' : 'read' },
         ci === null ? t('CI not available this time') : t('CI failed {failed} of {total}', { failed: ci.failed, total: ci.total }),
@@ -289,6 +295,7 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
         ? ` · ${t('median open age {age}', { age: duration(open.medianIssueAgeMs) })}` : '')),
     h('p', { className: 'bt-del-asof' },
       state === 'loading' ? loadingText(payload.elapsedMs) : t('as of {time}', { time: timeOf(payload.asOf) }),
+      state !== 'loading' && todayPartial(metricsPayload.daily) ? ` · ${t('today is partial · as of {time}', { time: clockOf(payload.asOf) })}` : '',
       payload.refreshing ? ` · ${t('refreshing…')}` : '',
       error ? ` · ${hintFor(error, { repo })}` : '',
       onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null,
@@ -428,4 +435,4 @@ export const DELIVERY_CSS = `
   .bt-del-columns{flex-direction:column}
   .bt-del-column{min-width:0}
 }
-`
+` + DELIVERY_CHART_CSS

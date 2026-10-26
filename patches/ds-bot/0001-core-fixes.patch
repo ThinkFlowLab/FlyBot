@@ -1184,7 +1184,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,70 @@ const HOST_ZH = {
+@@ -905,6 +905,80 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1222,6 +1222,16 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'median open age {age}': '开着的单中位 {age}',
 +  'as of {time}': '截至 {time}',
 +  'refreshing…': '刷新中…',
++  // #1212: the 7-day lines. A day the host could not read, and a snapshot with no series at all.
++  'not available': '未取到',
++  'No 7-day data yet.': '7 天数据未取到',
++  '{label} over the last 7 days': '{label}近 7 天',
++  'Last 7 days': '近 7 天',
++  'so far': '截至现在',
++  'today is partial · as of {time}': '今天为部分日 · 截至 {time}',
++  '* {count} of 7 days had data': '* 7 天中 {count} 天有数',
++  '* {count} of {days} days had data': '* {days} 天中 {count} 天有数',
++  'CI red share': 'CI 红占比',
 +  'No snapshot yet.': '还没有快照。',
 +  'Nothing here.': '这里还没有。',
 +  'First load in progress, {seconds} s elapsed': '首次加载中，已 {seconds} 秒',
@@ -3024,16 +3034,15 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
        const token = typeof body.token === 'string' ? body.token.trim() : ''
 -      if (token === '') throw new Error('Paste a token first')
 -      if (insecure) throw new Error(INSECURE)
--      await rt.loadSecrets()
++      if (token === '') throw new Error(c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first')
++      if (c.insecure) throw new Error(INSECURE(c.def.name))
+       await rt.loadSecrets()
 -      const kept = rt.secretValue(GITHUB_SECRET) !== undefined
 -      const { login } = await signIn(token, { api: options.api })
 -      await rt.secretEndpoint('secret-set', { name: GITHUB_SECRET, value: token, purpose: 'GitHub connector', ...(kept ? {} : { scope: [] }) })
 -      state.connectors = { ...state.connectors, [GITHUB]: { login, connectedAt: Date.now() } }
 -      await rt.save()
 -      await sync()
-+      if (token === '') throw new Error(c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first')
-+      if (c.insecure) throw new Error(INSECURE(c.def.name))
-+      await rt.loadSecrets()
 +      const oldToken = rt.secretValue(c.def.secret)
 +      const previous = saved(c)
 +      const record = await c.def.check({ token, options: c.options, saved: previous, body })
@@ -3050,8 +3059,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [oldToken, token] })
 +      await sync(c)
-+      return connectorsView()
-+    },
+       return connectorsView()
+     },
 +    // Changes which apps a connected gateway offers, without asking for the key again.
 +    async 'connector-apps'(body) {
 +      const c = known(body.id)
@@ -3070,8 +3079,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [token] })
 +      await sync(c)
-       return connectorsView()
-     },
++      return connectorsView()
++    },
 +    // Searches Composio's app list: with the saved key, or before connecting with the key being pasted
 +    // (sent only to Composio, never saved by this call).
 +    async 'connector-app-search'(body) {
@@ -4340,8 +4349,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -      tasks.push({ ...entry, ...owner })
 +      const lastRun = lastRunOf(entry)
 +      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
-     }
--    return { available: true, tasks }
++    }
 +    for (const entry of Object.values(paused())) {
 +      const owner = ownerOf(entry.sessionId)
 +      if (!known(owner)) continue
@@ -4462,7 +4470,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        void rt.save().catch(() => {})
 +      }
 +      throw error
-+    }
+     }
+-    return { available: true, tasks }
 +    return schedulesView()
 +  }
 +
@@ -5934,7 +5943,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  
  test('signIn asks GitHub who owns the token', async () => {
    const token = fresh()
-@@ -41,8 +41,7 @@
+@@ -41,8 +41,7 @@ const teamHome = () => {
  }
  
  // A loader that hands out a fake MCP client and records each mount.
@@ -5944,7 +5953,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    const mounts = []
    const plugin = { name: 'mcp-client', apply() {} }
    const loader = {
-@@ -50,17 +50,21 @@
+@@ -50,17 +50,21 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
      unwrapExports: exports => exports.default,
    }
    const ctx = fakeContext({ services: { loader } })
@@ -5968,7 +5977,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    return { ctx, home, mounts }
  }
  
-@@ -75,20 +75,20 @@
+@@ -75,20 +75,20 @@ async function call(ctx, endpoint, payload) {
    return response.json()
  }
  
@@ -5993,7 +6002,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts.length, 1)
    assert.deepEqual(mounts[0].config, {
      transport: 'streamable-http',
-@@ -98,12 +98,12 @@
+@@ -98,12 +98,12 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
      failOnStartupError: true,
    })
    const state = await call(ctx, 'state', {})
@@ -6008,7 +6017,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts[0].disposed, true)
    assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
  })
-@@ -113,7 +113,7 @@
+@@ -113,7 +113,7 @@ test('a token GitHub refuses is not saved', async (t) => {
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(401, {})
    const { ctx, home, mounts } = setup()
@@ -6017,7 +6026,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    assert.equal(result.ok, false)
    assert.match(result.error.message, /did not accept/)
-@@ -126,10 +126,10 @@
+@@ -126,10 +126,10 @@ test('a failed MCP connection shows the error without the token, and Try again m
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup({ fail: true })
@@ -6030,7 +6039,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(github.state, 'error')
    assert.ok(!github.error.includes(token), github.error)
    assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
-@@ -142,7 +142,7 @@
+@@ -142,7 +142,7 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup()
@@ -6039,7 +6048,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    await call(ctx, 'secret-delete', { name: 'GITHUB_TOKEN' })
    const state = await call(ctx, 'state', {})
-@@ -150,13 +150,19 @@
+@@ -150,13 +150,19 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
    assert.equal(state.value.connectors[0].state, 'off')
  })
  
@@ -6062,7 +6071,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +165,603 @@
+@@ -165,10 +165,603 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -6758,7 +6767,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 +  t.mock.timers.enable({ apis: ['setTimeout'] })
 +  mockedTimers = t.mock.timers
 +  t.after(() => { if (mockedTimers === t.mock.timers) mockedTimers = undefined })
- }
++}
 +// How long a wait may take on the real clock, and how finely it steps.
 +const REAL_WAIT_MS = 5000
 +const REAL_WAIT_STEP_MS = 5
@@ -6788,7 +6797,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 +    await new Promise(resolve => setImmediate(resolve))
 +  }
 +  return check()
-+}
+ }
 +const settle = async (check) => { assert.ok(await waitFor(check), 'condition not reached') }
 +// Writes to `inflight.json` land on a later tick; after a mock-timer tick and after `stop()` the file
 +// can still hold the previous write. Wait for them rather than reading early (the note of a failed
@@ -7396,7 +7405,7 @@ diff --git a/test/history.test.js b/test/history.test.js
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
  import { hostname, tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -7405,7 +7414,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
  import { homeLock } from '../src/host/home-lock.js'
  import { fakeContext } from './fake-ctx.js'
  
-@@ -118,10 +118,14 @@
+@@ -118,10 +118,14 @@ function start(t, home) {
      route = options
      return register(options)
    }
@@ -7421,7 +7430,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
    return call
  }
  
-@@ -185,3 +185,135 @@
+@@ -185,3 +185,135 @@ test('a reading host follows the other host\'s keys, never writes them, and keep
    const saved = JSON.parse(readFileSync(secretsPath, 'utf8')).secrets.map(secret => secret.name).sort()
    assert.deepEqual(saved, ['FIRST_KEY', 'MINE', 'SECOND_KEY', 'THIRD_KEY'])
  })
@@ -7557,7 +7566,6 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 +  assert.equal((await call('set-prefs', { theme: 'dark' })).error.code, 'bot/read-only')
 +  assert.equal((await call('secret-set', { name: 'MINE', value: 'mine-value-1' })).error.code, 'bot/read-only')
 +})
-
 diff --git a/test/images.test.js b/test/images.test.js
 --- a/test/images.test.js
 +++ b/test/images.test.js
