@@ -143,7 +143,7 @@ While checking labels and state, a write that carries no `Written-by:` line gets
 
 #### Claim one line (#1213)
 
-**Claim one line.** When you claim a card, post one line in the room naming the card and the first step — `Claimed #1212 — first step: the pure path builder`. That is the only status line required. Progress stays on the board (`track_tasks`); per-step updates, "running the tests", CI state, queue state and verdicts never come back as chat text, and a verdict is posted once as a verdict.
+**Claim one line.** When you claim a card, post one line in the room naming the card and the first step — `Claimed #1234 — first step: the pure path builder`. That is the only status line required. Progress stays on the board (`track_tasks`); per-step updates, "running the tests", CI state, queue state and verdicts never come back as chat text, and a verdict is posted once as a verdict.
 
 The rule is here because the norm we wrote made silence the default: the group notice said progress lives on the board, members did exactly that, and on 2026-10-26 two of them worked most of an hour with live cards while the room showed nothing — the owner read the silence as idle. The claim line is the one moment a reader needs, and a presence line cannot supply it: presence shows a turn in flight, not a card claimed with the pull request still to come.
 
