@@ -408,6 +408,18 @@ independent public reports say the same for `gh pr merge --auto` run with `GITHU
 - To check it once, with the maintainers' consent: merge one trivial PR with auto-merge enabled by the intended
   credential, then `gh run list --workflow Test --branch main --limit 3` should show a `push` run on the merge commit.
 
+## Release beat watchdog (#1209)
+
+The daily release is a timer on a workstation, and DSH runs only the latest missed occurrence after downtime: one offline minute at 02:00 Asia/Shanghai and that day's version is never published — no run, no log, no alert. `.github/workflows/release-beat.yml` (cron `30 18 * * *` = 02:30 Asia/Shanghai) is the outside observer for exactly that case.
+
+1. **The metric is the newest `v*` tag.** `release.yml` triggers on `push: tags: ['v*']` and has no cron, so "a release run happened" is never a signal: a missed beat produces no run at all. The job takes the newest tag in semver order, resolves it (`git/tags` → `tagger.date` for an annotated tag, `git/commits` → `committer.date` for a lightweight one) and converts that instant to the Asia/Shanghai date. A tag dated today is `ok`; a tag dated after today is a clock disagreement and also stays quiet.
+2. **One issue per day.** When no tag carries today's date the job files `Release beat missing: <YYYY-MM-DD>` with `bug` + `area:release`, naming the newest tag, how many hours ago it was, and where to look first — the routine's own catch-up. Before filing it searches that day's exact title, open **and** closed, so a rerun adds nothing.
+3. **A release in flight is not a miss.** An open pull request titled `Release v…` writes a summary line and files nothing: CI being slow looks exactly like a missed beat otherwise.
+4. **Failure is red, not a false alert.** An API error exits non-zero and files nothing, so one GitHub hiccup cannot leave an issue nobody retracts.
+5. **`workflow_dispatch` takes `date` and `dry_run`** (default `true`), so the alert path can be proven the day it is built instead of the next morning.
+
+The decision is a pure function (`decide({ today, latestTag, latestTagDate, openReleasePr })` in `.github/scripts/release-beat.mjs`); the search, the issue and the summary line live at the CLI entry, which is why `.github/scripts/release-beat.test.mjs` drives every branch without a network.
+
 ## Next phases (not built)
 
 1. **Merge plumbing.** The queue is on and its merges start the `push` run (above). Still to do: test the push behavior of an

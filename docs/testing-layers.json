@@ -237,6 +237,15 @@
       "gate": false,
       "runs": "pull_request (opened, edited, synchronize, reopened, ready_for_review), issue_comment (created) and workflow_dispatch",
       "reason": "Reads the body's Owner:/Reviewer: lines and the calls written after the current tip, and prints where they disagree (#911). Report only: continue-on-error, read-only permissions, no comment and no label, so it gates nothing."
+    },
+    {
+      "id": "release-beat",
+      "workflow": ".github/workflows/release-beat.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "daily 02:30 Asia/Shanghai, and workflow_dispatch",
+      "reason": "The release-beat watchdog (#1209, second half): reads the newest `v*` tag, and files at most one `Release beat missing: <date>` issue per day when no tag carries today. It runs no tests of its own, does not touch release.yml, and gates nothing."
     }
   ]
 }
