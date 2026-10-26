@@ -42,6 +42,7 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 | `scripts/ds-bot-patches.mjs` | generate / check patches. |
 | `core/dev/eval/` | User-scenario runner (#358): pure rubrics (`rubric.mjs`), canonical journey specs (`specs.mjs`), optional model judge (`judge.mjs`), grader hashing (#398, `guard.mjs`) and a CLI (`run.mjs`). Dev only, not part of `npm test`. |
 | `core/dev/token-report.mjs` | Reads the usage ledger into per-Bot, per-Session and per-day token numbers and each Session's prompt growth, keeping fresh input, cache read and cache write apart (#799). Read-only; `--db`, `--from`, `--to`, `--tz`, `--bot`, `--top`, `--growth`, `--json`. |
+| `core/dev/turn-split.mjs` | Reads Session logs into the split of one turn's prompt: the fixed block (system prompt plus tool schemas) measured as each Session's fit intercept, then history, tool results and task by character share (#796). Read-only; `--sessions`, `--session`, `--turn`, `--tz`, `--days`, `--top`, `--json`. |
 | `core/dev/experience/` | Offline experience library (#874 Step 2): JSON lessons under `repos/<owner>/<name>/` and `stacks/<techStack>/`. The read API is `core/src/host/experience.js` (see [core-host](core-host.md)). `check.mjs` validates the tree and can add one entry file. Not part of the npm `files` list, and not injected into a harness tier. |
 | `core/src/host/hooks.js` (approvals) | Held sends bound to their owner — provenance, owner-bound decisions, stale revalidation. Chief replacement invalidates sender-side holds eagerly on `setMain` (not via `staleReason`). The authority contract lives in [team](team.md) (#52). |
 
@@ -96,6 +97,16 @@ path when it is missing. The report it produced and its sample are in
 [docs/reports/2026-10-23-token-spend.md](../../docs/reports/2026-10-23-token-spend.md);
 `core/test/token-report.test.js` asserts hand-computed sums on a fixture ledger, the
 missing-`--db` exit, and that every row of that report still carries its provenance.
+
+The composition the ledger cannot show is read from the Session logs instead.
+`core/dev/turn-split.mjs` (#796) folds one Session's events into the surface each call
+sent — the surviving system prompt, the `request/header` tool list, every message and every
+`tool/result` — and splits that call's provider-reported prompt into the fixed block,
+history, tool results and task. The fixed block is measured, not assumed: it is the
+intercept of `prompt = fixed + k × messageChars` fitted over the same Session's own calls,
+so a per-part token figure stays a share of a measured total. The report it backs is
+[docs/reports/2026-10-26-turn-input-split.md](../../docs/reports/2026-10-26-turn-input-split.md)
+and `core/test/turn-split.test.js` pins the four rules behind the split.
 
 ## Common mistakes
 
