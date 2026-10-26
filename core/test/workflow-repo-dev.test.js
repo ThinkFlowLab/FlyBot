@@ -223,3 +223,21 @@ test('a fact nobody could read is unreadable, and no fact is guessed (acceptance
 function githubMergeableNothing() {
   return workflowFact('github.mergeable', {})
 }
+
+test('a check run with no conclusion is unreadable, not a fact whose value is null (#1298)', () => {
+  const quiet = githubCheckAtSha({ token: 'x', name: 'tests-ok', sha: 'abaf938b0c1d' })
+  assert.equal(quiet.ok, false)
+  assert.equal(quiet.reason, 'unreadable')
+  assert.equal(quiet.input, null)
+  assert.match(quiet.why, /conclusion/)
+  // The same answer as a run with no sha and one with no name: none of them was read.
+  assert.equal(githubCheckAtSha({ token: 'x', name: 'tests-ok' }).reason, 'unreadable')
+  assert.equal(githubCheckAtSha({ token: 'x', sha: 'abaf938b0c1d' }).reason, 'unreadable')
+  // `conclusion: null` is GitHub saying the run has not concluded yet: still no reading.
+  assert.equal(githubCheckAtSha({ token: 'x', name: 'tests-ok', sha: 'abaf938b0c1d', conclusion: null }).ok, false)
+  // A run that did conclude is the fact, whatever it concluded.
+  const failed = githubCheckAtSha({ token: 'x', name: 'tests-ok', sha: 'abaf938b0c1d', conclusion: 'failure' })
+  assert.equal(failed.ok, true)
+  assert.equal(failed.input.value, 'failure')
+  assert.equal(failed.input.revision, 'abaf938b0c1d')
+})

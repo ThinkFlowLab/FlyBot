@@ -14,6 +14,7 @@ import {
   sameRevision,
 } from '../src/shared/artifact.js'
 import {
+  dependencyEdges,
   enterNode,
   holderOf,
   inputStates,
@@ -340,6 +341,34 @@ test('a stale input refuses with both revisions, so a card reads without asking 
     ['verdict', true, true, true, 'unreadable'],
     ['check:tests-ok', true, true, true, 'unreadable'],
   ])
+})
+
+test('a fact is looked up by its parsed spec, not by the spelling the definition used (#1298)', () => {
+  const def = {
+    inputs: ['text:topic'],
+    deliverables: ['issue'],
+    nodes: [
+      { id: 'draft', name: 'Draft', role: 'Dev', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'edit', name: 'Edit', role: 'Editor', inputs: ['text: draft'], outputs: ['issue'] },
+    ],
+    edges: [],
+  }
+  // The definition is valid and the dependency is there: everything that decides whether it can run
+  // keys on the parsed spec.
+  const checked = validateWorkflow(def)
+  assert.equal(checked.ok, true, JSON.stringify(checked.problems))
+  assert.deepEqual(dependencyEdges(def), [{ from: 'draft', to: 'edit' }])
+  const present = { 'text:draft': artifact('text:draft', 'abc1234') }
+  const current = { 'text:draft': 'abc1234' }
+  const ran = enterNode(def, 'edit', { present, current })
+  assert.equal(ran.ok, true, JSON.stringify(ran))
+  assert.equal(ran.refusal, null)
+  // The card still shows the spec as the node wrote it, and reads it current.
+  const states = inputStates(def, 'edit', { present, current })
+  assert.deepEqual(states.map((state) => [state.spec, state.present, state.reason]), [['text: draft', true, 'current']])
+  // A map keyed by the spelling as written is still found, and staleness reads through the same lookup.
+  assert.equal(enterNode(def, 'edit', { present: { 'text: draft': present['text:draft'] }, current: { 'text: draft': 'abc1234' } }).ok, true)
+  assert.equal(enterNode(def, 'edit', { present, current: { 'text:draft': 'def5678' } }).stale.length, 1)
 })
 
 test('a guard is a predicate over a fact, and its refusal says what the fact said', () => {

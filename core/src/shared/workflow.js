@@ -368,15 +368,31 @@ export function inputStates(raw, nodeId, facts = {}) {
     if (!have) return { spec, present: false, revision: null, stale: false, now: null, reason: 'missing', unreadable: false }
     // A card draws `stale` as a refusal, so an input `enterNode` refuses must never read
     // `stale: false` here: a source nobody could read is stale until it is read.
-    const state = freshness(have, current[spec])
+    const state = freshness(have, currentAt(current, spec))
     return { spec, present: true, revision: have.revision, stale: !state.fresh, now: state.now, reason: state.reason, unreadable: state.reason === 'unreadable' }
   })
 }
 
+// A fact is stored under the spelling `artifact()` gives it (`formatArtifactSpec`), and a definition
+// may spell the same fact with a space (#1298). Every lookup goes through the parsed spec first and
+// keeps the spelling as written as a second try, for a caller that keyed a map by hand.
+function factKey(spec) {
+  return canonicalSpec(spec) ?? spec
+}
+
 function artifactAt(present, spec) {
   if (!spec) return null
-  if (Array.isArray(present)) return present.find((item) => item?.spec === spec) ?? null
-  return present?.[spec] ?? null
+  const key = factKey(spec)
+  if (Array.isArray(present)) {
+    return present.find((item) => item?.spec === key) ?? present.find((item) => item?.spec === spec) ?? null
+  }
+  return present?.[key] ?? present?.[spec] ?? null
+}
+
+function currentAt(current, spec) {
+  if (!spec) return null
+  const key = factKey(spec)
+  return current?.[key] ?? current?.[spec] ?? null
 }
 
 function guardRefusals(node, facts) {
@@ -396,7 +412,7 @@ function guardRefusals(node, facts) {
       continue
     }
     const have = artifactAt(present, spec)
-    const state = freshness(have, current[spec])
+    const state = freshness(have, currentAt(current, spec))
     if (!have) {
       // A guard's own sentence says what the fact said, and a fact that is not there said nothing:
       // the node's wording answers this one, or the sentence would name two revisions that do not exist.
@@ -435,7 +451,7 @@ export function enterNode(raw, nodeId, facts = {}) {
     }
     // A revision nobody could read is asked as `unreadable`, never skipped: a key missing from
     // `current` is not evidence that the fact is current, and `null` is the same answer.
-    const state = freshness(have, current[spec])
+    const state = freshness(have, currentAt(current, spec))
     if (!state.fresh) stale.push({ spec, have: state.have, now: state.now, reason: state.reason })
   }
   if (missing.length > 0) {

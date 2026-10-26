@@ -48,11 +48,16 @@ export function githubLabels({ token, head, labels } = {}) {
 }
 
 // `check:<name>` at the sha the check ran on, valued with its conclusion. A check that never reported
-// has no sha to be at, so it is unreadable rather than a check at the tip that failed.
+// has no sha to be at, and one that ran but has not concluded has no answer either — `conclusion: null`
+// is GitHub's word for "still running", so both are unreadable rather than a check at the tip that
+// failed (#1298).
 export function githubCheckAtSha({ token, name, sha, conclusion } = {}) {
   if (!hasToken(token)) return unreadable('github.checkAtSha', 'no GITHUB_TOKEN')
   if (!name || !sha) return unreadable('github.checkAtSha', 'the check run was not read')
-  return read('github.checkAtSha', artifact(`check:${name}`, sha, { value: conclusion ?? null }))
+  if (typeof conclusion !== 'string' || conclusion.trim() === '') {
+    return unreadable('github.checkAtSha', 'the check run reported no conclusion')
+  }
+  return read('github.checkAtSha', artifact(`check:${name}`, sha, { value: conclusion }))
 }
 
 // `verdict` at the tip the conclusion names, valued PASS / INC / FAIL / REQUEST_CHANGES and carrying
