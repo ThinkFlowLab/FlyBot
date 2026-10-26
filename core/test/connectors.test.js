@@ -656,14 +656,24 @@ test('an address saved by an older version is dropped from state.json at start, 
 
   const warns = []
   const realRename = fsp.rename
-  fsp.rename = async (from, to) => {
-    if (to === file) await new Promise(resolve => setTimeout(resolve, SLOW_WRITE_MS))
-    return realRename(from, to)
-  }
-  syncBuiltinESMExports()
-  const second = setup({ home, warns })
-  t.after(() => second.ctx.dispose())
+  // #1224: the count is what keeps this case honest. The delay only bites while `store.js` takes
+  // `rename` from `node:fs/promises` as a named import — any other path (a callback promisify, a
+  // copy) leaves the wrapper installed and never called, and the case then passes on timing instead
+  // of on the wait below. Pinned, not assumed: the wrapper must have run at least once by the end.
+  // It pins the path being used, not that the delay took effect (`SLOW_WRITE_MS = 0` still calls it).
+  let renameCalls = 0
+  let second
+  t.after(() => second?.ctx.dispose())
+  // #1224: installed inside the try, so a `setup()` that throws cannot leave the wrapper on
+  // `fsp.rename` for the tests after this one; the finally below still restores it.
   try {
+    fsp.rename = async (from, to) => {
+      renameCalls += 1
+      if (to === file) await new Promise(resolve => setTimeout(resolve, SLOW_WRITE_MS))
+      return realRename(from, to)
+    }
+    syncBuiltinESMExports()
+    second = setup({ home, warns })
     await untilMounted(second.mounts, 1)
     assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
     assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
@@ -672,6 +682,7 @@ test('an address saved by an older version is dropped from state.json at start, 
     assert.ok(!text.includes('LEGACYCREDENTIAL'))
     assert.ok(!text.includes('composio.test/tool_router'))
     assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
+    assert.ok(renameCalls >= 1, 'the wrapper never ran — store no longer uses the named rename import')
   } finally {
     fsp.rename = realRename
     syncBuiltinESMExports()
