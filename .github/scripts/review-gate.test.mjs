@@ -114,6 +114,63 @@ test('INC is not PASS', () => {
   assert.equal(r.verdict, 'INC')
 })
 
+// #1239: a misspelt verdict word was not refused, it was invisible. `Verdict: Incorrect at <tip>` fell out of
+// `decide` as "not a Verifier report", so the PASS it meant to withdraw stayed the newest word and merged.
+const misspelt = (word, tip = HEAD) =>
+  [`Verdict: ${word} at ${tip}`, 'Written-by: Reviewer', 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke — no host change'].join('\n')
+
+test('#1239: an unreadable verdict word at the tip vetoes the older PASS there', () => {
+  const reports = [
+    comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'),
+    comment('reviewer-agent', misspelt('Incorrect'), '2026-10-18T02:00:00Z'),
+  ]
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports, policy })
+  assert.equal(r.ok, false, 'the newer unreadable conclusion must not leave the older PASS in force')
+  assert.match(r.reason, /Incorrect/)
+  assert.match(r.reason, /PASS, FAIL, INC or REQUEST_CHANGES/)
+  assert.equal(r.judged.length, 2, 'it is read as a conclusion, not skipped as an ordinary comment')
+  assert.equal(parseReport(misspelt('Incorrect')).unknownVerdict, 'Incorrect')
+  assert.equal(parseReport(misspelt('Incorrect')).tip, HEAD, 'the word carries the tip it names')
+})
+
+test('#1239: an unreadable word alone at the tip still refuses, and the reason names the word', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', misspelt('banana'))], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /"banana"/)
+})
+
+test('#1239: an unreadable word with no tip is an ordinary comment and leaves the PASS alone', () => {
+  const reports = [
+    comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'),
+    comment('reviewer-agent', ['Verdict: banana', 'Written-by: Reviewer'].join('\n'), '2026-10-18T02:00:00Z'),
+  ]
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports, policy })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(parseReport(['Verdict: banana'].join('\n')).tip, null)
+})
+
+test('#1239: the legacy Tip SHA block needs the same read as the first line', () => {
+  const body = ['Tip SHA: ' + HEAD, 'Written-by: Reviewer', 'Ran:', '- npm test', 'Verdict: Incorrect'].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.unknownVerdict, 'Incorrect', 'the loop at the second Verdict: line reads it too')
+  assert.equal(parsed.tip, HEAD)
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /Incorrect/)
+})
+
+test('#1239: the four words the gate reads behave exactly as before', () => {
+  for (const word of ['PASS', 'FAIL', 'INC', 'REQUEST_CHANGES']) {
+    const parsed = parseReport(misspelt(word))
+    assert.equal(parsed.unknownVerdict, null, word)
+    assert.equal(parsed.verdict, word)
+    assert.equal(parsed.tip, HEAD)
+  }
+  const view = render(decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent')], policy }), { pr: 6, head: HEAD, author: 'opencode-agent' })
+  assert.match(view, /Reviewed tip: PASS/)
+  assert.doesNotMatch(view, /the four verdict words the gate reads/)
+})
+
 test('a PASS that lists no command it ran is not evidence', () => {
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report({ ran: [] }))], policy })
   assert.equal(r.ok, false)

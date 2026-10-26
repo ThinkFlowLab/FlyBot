@@ -43,6 +43,9 @@ const SHORT = 12
 // above makes any newest conclusion refuse, so without this an outside comment saying `Verdict: INC`
 // could hold a merge. A comment from anyone else is not a conclusion: it can neither pass nor block.
 const ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
+// #1239: the four words a `Verdict:` line may carry. Nothing else is read, and a fifth word is named
+// in the refusal rather than added as an alias — an alias would leave "how many words do we read" a guess.
+const VERDICT_TOKENS = new Set(['PASS', 'FAIL', 'INC', 'REQUEST_CHANGES'])
 
 // A conclusion GitHub did not already tie to the repo (OWNER/MEMBER/COLLABORATOR), from a login
 // in `reviewers`, asked once via the collaborator permission API. Anyone else can never pass the
@@ -96,12 +99,18 @@ export function parseReport(body) {
   // markdown emphasis, line for line, for everything else.
   const raw = String(body ?? '').split('\n')
   const lines = raw.map((line) => line.replace(/[*`]/g, ''))
-  const out = { tip: null, verdict: null, ran: [], hasNotRun: false, writer: null, attestation: null }
+  const out = { tip: null, verdict: null, unknownVerdict: null, ran: [], hasNotRun: false, writer: null, attestation: null }
   // The fixed format (#637): the first non-empty line is the whole conclusion,
   // `Verdict: PASS at <sha>` (or INC / REQUEST_CHANGES). The attribution line and the evidence go
   // below it, so a verdict Chief posts for a Reviewer with no write channel parses the same way.
   const firstLine = lines.find((line) => line.trim() !== '') ?? ''
   const first = /^Verdict\s*:\s*(PASS|INC|REQUEST_CHANGES|FAIL)\s+(?:at\s+)?([0-9a-f]{7,40})\s*$/i.exec(firstLine.trim())
+  // #1239: the same header with a word the gate does not read. The `\b` above cannot match `Incorrect`
+  // (`INC` is followed by a letter, not a word boundary), so before this the whole line was not a
+  // conclusion at all: the PASS it meant to withdraw stayed the newest word and the merge went ahead.
+  // The tip is read here too, which is what makes it a conclusion at that tip rather than a stray
+  // sentence — a word with no tip below is still an ordinary comment.
+  const firstUnknown = first ? null : /^Verdict\s*:\s*(\S+?)\s+(?:at\s+)?([0-9a-f]{7,40})\s*$/i.exec(firstLine.trim())
   let start = -1
   for (let i = 0; i < lines.length; i++) {
     if (/^Tip SHA\s*:/i.test(lines[i].trim())) start = i
@@ -109,13 +118,18 @@ export function parseReport(body) {
   if (first) {
     out.verdict = first[1].toUpperCase()
     out.tip = first[2].toLowerCase()
+  } else if (firstUnknown) {
+    out.unknownVerdict = firstUnknown[1]
+    out.tip = firstUnknown[2].toLowerCase()
   }
   // #643, #640: once the first line is the conclusion, the loop below must write neither field again.
   // A body quotes older reports (a `Tip SHA: <sha>` block with an older `Verdict: PASS`), and letting
   // either field through turned an INC at this tip into a PASS, or into a conclusion about some other
   // tip that `decide` then dropped while the PASS it refused came back to life. Both fail open.
   let ranSeen = false
-  const firstIsVerdict = first !== null
+  // An unreadable first-line conclusion is still the header: the quote rules below keep a later block
+  // from overwriting the first one (#643, #640), and they protect this one the same way.
+  const firstIsVerdict = first !== null || firstUnknown !== null
   // With the first line as the conclusion the evidence is below it, so scan from the top; a
   // legacy body is judged by its last block.
   const from = firstIsVerdict || start < 0 ? 0 : start
@@ -128,6 +142,11 @@ export function parseReport(body) {
     }
     const verdictLine = /^Verdict\s*:\s*(PASS|FAIL|INC|REQUEST_CHANGES)\b/i.exec(line)
     if (verdictLine && !firstIsVerdict) out.verdict = verdictLine[1].toUpperCase()
+    // #1239: the loop needs its own read. A `Tip SHA:` block whose `Verdict:` line says anything else is
+    // the same defect as the first-line form; without this the block reads as "no verdict" and an older
+    // PASS survives. A line that already gave a readable verdict is not read again for an unknown word.
+    const unknownLine = verdictLine || firstIsVerdict ? null : /^Verdict\s*:\s*(\S+)/i.exec(line)
+    if (unknownLine && !VERDICT_TOKENS.has(unknownLine[1].toUpperCase())) out.unknownVerdict = unknownLine[1]
     // `Ran: <command>`, or a heading such as `Ran at this tip (tarball of the tip):` — the shape the
     // reviewer actually writes (#660-#663: every one of those PASSes refused as "lists no command"
     // because only a bare `Ran:` was read). A longer heading is only a heading: words after its colon
@@ -141,6 +160,9 @@ export function parseReport(body) {
     }
     if (/^Not run\b[^:\n]*:/i.test(line)) out.hasNotRun = true
   }
+  // #1239: a readable verdict is this report's word; an unreadable `Verdict:` line below it is quoted
+  // text (the rule #643 and #640 keep a quote from overwriting the header), so it decides nothing here.
+  if (out.verdict) out.unknownVerdict = null
   out.writer = parseWriter(lines)
   // #644: the attestation is part of the conclusion header, the lines before the first blank. A copy
   // quoted under `Ran:` sits after that blank and must not lend this report a marker it did not open with.
@@ -299,8 +321,8 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
 
   for (const r of reports ?? []) {
     const parsed = parseReport(r.body)
-    if (!parsed.tip && !parsed.verdict) continue // not a Verifier report
-    const entry = { id: r.id, login: r.login, verdict: parsed.verdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
+    if (!parsed.tip && !parsed.verdict && !parsed.unknownVerdict) continue // not a Verifier report
+    const entry = { id: r.id, login: r.login, verdict: parsed.verdict, unknownVerdict: parsed.unknownVerdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
     judged.push(entry)
     if (!parsed.tip) { reasons.push(`${where(r)}: no Tip SHA`); continue }
     // #1112: the comparison is the whole sha, not a prefix. A conclusion written `at abaf938` is a
@@ -313,7 +335,9 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
         : `${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
       continue
     }
-    if (!parsed.verdict) continue // a `Tip SHA` block with no verdict is not a conclusion
+    // #1239: an unreadable word is not "no verdict" — it is a conclusion at this tip that nobody can
+    // read, and the newest one has to be able to veto an older PASS.
+    if (!parsed.verdict && !parsed.unknownVerdict) continue // a `Tip SHA` block with no verdict is not a conclusion
     // #943: refused before the association test, with its own reason: a bot account is not a
     // conclusion for a reason unlisted logins cannot explain, and the log has to say which defect fired.
     if (isBotAccount(r)) {
@@ -352,6 +376,13 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     // newer refusal invisible: an INC with no `Written-by:` line left an older PASS in force, and a
     // human REQUEST_CHANGES from an unlisted login did the same.
     atTip.push(entry)
+    // #1239: a word outside the four the gate reads counts for nothing, but it still takes its place in
+    // the newest-word scan, carrying a reason that names it. Dropping the line is the defect: an INC the
+    // reviewer meant became invisible and the older PASS it withdrew stayed in force on #1221.
+    if (parsed.unknownVerdict) {
+      entry.why = `${where(r)}: reads "${parsed.unknownVerdict}" as its verdict, which is not one of PASS, FAIL, INC or REQUEST_CHANGES, so this conclusion cannot be read`
+      continue
+    }
     // #627: a *conclusion* has to say who wrote it, refused on two separate grounds — a report with no
     // attribution line and one that names a writer the policy does not list are different defects, and
     // the log has to say which one fired. Both fail closed. An ordinary comment is not a conclusion, so
@@ -412,8 +443,18 @@ export function render(result, { pr, head, author } = {}) {
     out.push('', 'Unverified — not read as conclusions:')
     for (const e of unverifiedReports.slice(0, 10)) out.push(`- unverified: ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${(e.tip ?? 'no tip').slice(0, SHORT)} — ${String(e.why ?? '').replace(/^[^:]+: unverified — /, '')}`)
   }
-  const seen = result.judged.filter((e) => e.counts || e.verdict)
-  if (seen.length) out.push('', 'Verifier reports read:', ...seen.slice(0, 10).map((e) => `- ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${(e.tip ?? 'no tip').slice(0, SHORT)}, written-by ${e.writer ?? 'nothing'}${e.counts ? '' : ' (not counted)'}`))
+  const seen = result.judged.filter((e) => e.counts || e.verdict || e.unknownVerdict)
+  if (seen.length) {
+    out.push('', 'Verifier reports read:')
+    for (const e of seen.slice(0, 10)) {
+      // #1239: an unreadable word is named with its reason, so the next reader does not have to rediscover
+      // that `Incorrect` was never read as `INC`.
+      const word = e.unknownVerdict ? `"${e.unknownVerdict}", which is not a verdict word` : (e.verdict ?? 'no verdict')
+      const why = e.unknownVerdict ? ` — ${String(e.why ?? '').replace(/^[^:]+:\s*/, '')}` : ''
+      out.push(`- ${e.login} (${e.kind}): ${word} at ${(e.tip ?? 'no tip').slice(0, SHORT)}, written-by ${e.writer ?? 'nothing'}${e.counts ? '' : ' (not counted)'}${why}`)
+    }
+    if (seen.some((e) => e.unknownVerdict)) out.push('- the four verdict words the gate reads: PASS, FAIL, INC, REQUEST_CHANGES — any other word is unreadable and refuses this tip (#1239)')
+  }
   out.push('', '_Report only (Phase 1): this does not block, label, approve or merge anything. Rules: `.github/agent/review-policy.json`; see [`docs/autonomous-dev.md`](../../docs/autonomous-dev.md)._')
   return out.join('\n')
 }
