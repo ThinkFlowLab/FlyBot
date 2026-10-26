@@ -1966,3 +1966,56 @@ test('#1203 a group turn budgets room context and reads progress from the board'
   assert.match(memberStanding, /@Name only wakes someone; it does not assign/)
   assert.doesNotMatch(memberStanding, /one short handoff line/)
 })
+
+test('a Bot @ whose open card already shows the line passes without a turn (#1205)', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  const chief = (await call('state', {})).value.mainBotId
+  const writer = (await call('create-bot', { name: 'Writer' })).value
+  const room = (await call('create-room', { name: 'R1205', members: [chief, writer.id] })).value
+  await call('update-room', { id: room.id, mode: 'everyone' })
+  await rt.load()
+  const live = rt.roomOf(room.id)
+  rt.state.tasks ??= {}
+  Object.assign(rt.state.tasks, {
+    'task-overall': {
+      id: 'task-overall', status: 'open', kind: 'group', title: 'Ship the note',
+      ownerBotId: chief, source: 'conversation', origin: { roomId: room.id }, updatedAt: 1, createdAt: 1,
+    },
+    'task-sub': {
+      id: 'task-sub', status: 'working', title: 'Writer implements', progress: 40, note: 'draft is in',
+      ownerBotId: writer.id, source: 'conversation', origin: { roomId: room.id }, updatedAt: 2, createdAt: 1,
+    },
+  })
+  const controller = new AbortController()
+  t.after(() => controller.abort())
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer Writer implements — draft is in'))
+  const covered = JSON.parse(await relay(room.id, 'r1205-cover', controller.signal))
+  assert.equal(sent.length, 0, 'the card already shows the line, so Writer is not given a turn')
+  assert.ok(covered.passed.includes('Writer'))
+
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer the draft is wrong, redo paragraph two'))
+  const asking = relay(room.id, 'r1205-ask', controller.signal)
+  const asked = await turnFor(sent)
+  await answer(asked.sessionId, asked.message.source.exchangeId, 'Rewriting paragraph two.', 1)
+  await asking
+  assert.equal(asked.sessionId, live.sessions[writer.id], 'a new ask still opens a turn')
+
+  sent.length = 0
+  await emit(room.id, botLine(chief, 'Chief', '@Writer which file should the note use?'))
+  const questioning = relay(room.id, 'r1205-question', controller.signal)
+  const question = await turnFor(sent)
+  await answer(question.sessionId, question.message.source.exchangeId, 'The notes file.', 2)
+  await questioning
+  assert.equal(question.sessionId, live.sessions[writer.id])
+
+  sent.length = 0
+  await emit(room.id, userMessage('@Writer Writer implements'))
+  const personRound = relay(room.id, 'r1205-person', controller.signal)
+  const person = await turnFor(sent)
+  await answer(person.sessionId, person.message.source.exchangeId, 'On it.', 3)
+  await personRound
+  assert.equal(person.sessionId, live.sessions[writer.id], 'a person @ still gets an answer')
+})

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ROOM_CONTEXT_BUDGET, compactStatus, fitRoomLines, formatRoomBoard, prepareRoomLine, statusShaped } from '../src/host/room-context.js'
+import { ROOM_CONTEXT_BUDGET, boardCoversCue, compactStatus, fitRoomLines, formatRoomBoard, prepareRoomLine, statusShaped } from '../src/host/room-context.js'
 
 const render = line => `${line.who}: ${line.text}`
 const essay = (tail) => `CI on tip abcdef12 is green. tests-ok passed. enqueue when mergeable. merge_group is next. PASS at abcdef12. @Chief ${'detail '.repeat(80)}${tail}`
@@ -82,4 +82,21 @@ test('the board snapshot is the open overall task and its subtasks', () => {
   assert.doesNotMatch(board, /FINISHED_MARKER|OTHER_ROOM|Older plan|<|>/)
   assert.equal(formatRoomBoard({}, { roomId: 'room' }), '')
   assert.equal(formatRoomBoard(tasks, { roomId: 'missing' }), '')
+})
+
+test('an open card covers a status @ and not a question or a new ask', () => {
+  const tasks = {
+    child: { id: 'child', status: 'working', title: 'Writer implements', note: 'draft is in', progress: 40, ownerBotId: 'writer', origin: { roomId: 'room' } },
+    waiting: { id: 'waiting', status: 'blocked', title: 'Need a name', waitingFor: 'input', ownerBotId: 'writer', origin: { roomId: 'room' } },
+  }
+  const cue = { roomId: 'room', botId: 'writer' }
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer Writer implements' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer draft is in' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer done' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer' }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: essay('@Writer') }), true)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer which file?' }), false)
+  assert.equal(boardCoversCue(tasks, { ...cue, text: '@Writer the draft is wrong, redo paragraph two' }), false)
+  assert.equal(boardCoversCue(tasks, { roomId: 'room', botId: 'other', text: '@Other Writer implements' }), false)
+  assert.equal(boardCoversCue({ only: { ...tasks.waiting } }, { ...cue, text: '@Writer done' }), false)
 })

@@ -295,7 +295,7 @@ test('a group keeps one overall task and a subtask per Bot, and unfinished work 
   assert.match(chief, /Next: \S+ \[in-progress high\] Going high/)
 
   const asked = await app.track('s-war', { tasks: [{ id: draft.id, ask: 'Which tone?' }] })
-  assert.match(asked, /ask the group in your reply: Which tone\?/)
+  assert.match(asked, /Post one short question in the group only when a person there has to decide: Which tone\?/)
   const waiting = (await list(app.call, alice.sessionToken, { botId: 's' })).find(task => task.id === draft.id)
   assert.equal(waiting.status, 'blocked')
   assert.equal(waiting.waitingFor, 'input')

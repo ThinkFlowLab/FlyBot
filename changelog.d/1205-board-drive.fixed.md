@@ -1,0 +1,1 @@
+A group card wakes its assignee in that Bot's own chat. Assigning, progress, and handoff are board writes; the group stays quiet, and a Bot @ whose open card already shows the line passes ([#1205](https://github.com/ThinkFlowLab/FlyBot/issues/1205)).

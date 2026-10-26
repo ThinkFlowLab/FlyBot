@@ -810,7 +810,7 @@ ${task.writeBack.body}`)
     for (const task of ordered) {
       if (task.waitingFor !== 'input' || !task.inputRequest?.question) continue
       cues.push(inGroup
-        ? `Waiting ${task.id}: ask the group in your reply: ${task.inputRequest.question}`
+        ? `Waiting ${task.id}: the card is waiting. Call ask_user for the user. Post one short question in the group only when a person there has to decide: ${task.inputRequest.question}`
         : `Waiting ${task.id}: call ask_user to ask the user: ${task.inputRequest.question}`)
     }
     if (withNext) {
@@ -831,7 +831,7 @@ ${task.writeBack.body}`)
 
   ctx.tools.register(defineTool({
     name: 'track_tasks',
-    description: 'Read or update tasks on the board. Assigning work, claiming it, and recording progress are this tool, not a chat message. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the task lead (the Bot picked for the room, or the admin when none is picked) records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). Another Main Bot does not plan. A member claims the card assigned to it by setting its column to in-progress, updates that card\'s column and progress as it moves, or links its own subtask with parent. Do not record a second plan. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. In a group, ask in your reply there, not in your own chat. In a group the task is tracked for that group.',
+    description: 'Read or update tasks on the board. Assigning work, claiming it, and recording progress are this tool, not a chat message. Omit tasks to read your list: the first lines name the unfinished task to continue (higher priority first) and any task waiting on an answer. Pass tasks to create or update your own. In a group, the task lead (the Bot picked for the room, or the admin when none is picked) records one overall task (overall: true) and a subtask per Bot (parent is the overall task\'s id or title, assignee is that Bot\'s name). Another Main Bot does not plan. A member claims the card assigned to it by setting its column to in-progress, updates that card\'s column and progress as it moves, or links its own subtask with parent. Do not record a second plan. Match an id, or the title of a task still open. Each task has a title, a column (not-started, in-progress, done), progress from 0 to 100, a priority (low, normal, high, urgent) and a note. Pass ask when you need an answer before the task can continue, and answer when the user or the group has answered. A group card is worked in your own chat. Post one short question in the group only when a person has to decide. In a group the task is tracked for that group.',
     parameters: {
       tasks: {
         type: 'array',
@@ -850,7 +850,7 @@ ${task.writeBack.body}`)
             overall: { type: 'boolean', description: 'Record this as the group\'s one overall task. Only the room\'s task lead may set it (the group admin, when no lead is picked). A later call updates that same open task.' },
             parent: { type: 'string', description: 'Id or title of the overall group task this subtask belongs to.' },
             assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the room\'s task lead may name another member. The card is claimed, and that Bot starts the work without waiting for a confirmation.' },
-            ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. In your own chat, call ask_user; in a group, ask in your reply.' },
+            ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. Call ask_user in your own chat. For a group card, post one short question in the group only when a person has to decide.' },
             answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
             target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },
             postResult: {

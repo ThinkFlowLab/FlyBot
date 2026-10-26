@@ -50,6 +50,45 @@ export function statusShaped(text) {
   return hits >= 2
 }
 
+const DRIVING_STATUS = new Set(['open', 'claimed', 'working', 'blocked', 'result-ready'])
+
+// A bare acknowledgement. Anything that asks for work stays a turn.
+const CUE_ACK = /^(done|ok|okay|noted|shipped|passed|继续|好了|完成|已完成|搞定|收到)[.!。！]?$/i
+
+const foldCue = (value) => String(value ?? '')
+  .replace(/@[^\s@,，。]{1,40}/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase()
+
+// A Bot @ is already on the board when this member has an open card in the room
+// and the line does not ask anything the card does not already say (#1205).
+// A question is never covered: that line is the one short ask a person may need.
+export function boardCoversCue(tasks, { roomId, botId, text } = {}) {
+  if (!roomId || !botId) return false
+  const cards = Object.values(tasks ?? {}).filter(task =>
+    task?.origin?.roomId === roomId
+    && task.ownerBotId === botId
+    && task.kind !== 'group'
+    && task.waitingFor !== 'input'
+    && DRIVING_STATUS.has(task.status))
+  if (cards.length === 0) return false
+  const line = String(text ?? '')
+  if (/[?？]/.test(line)) return false
+  if (statusShaped(line)) return true
+  const body = foldCue(line)
+  if (body.length === 0 || CUE_ACK.test(body)) return true
+  const hay = foldCue(cards.map(task => `${task.title ?? ''} ${task.note ?? ''}`).join('\n'))
+  if (body.length >= 8 && hay.includes(body)) return true
+  for (const task of cards) {
+    const title = foldCue(task.title)
+    if (title.length >= 8 && body.includes(title)) return true
+    const note = foldCue(task.note)
+    if (note.length >= 8 && body.includes(note)) return true
+  }
+  return false
+}
+
 // The first hundred characters, plus up to four @names, so a call is still visible
 // after the essay is gone. The character count is the length before the cut.
 export function compactStatus(text) {

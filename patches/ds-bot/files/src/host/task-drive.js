@@ -1,9 +1,9 @@
 // Unfinished conversation tasks wake the Bot that owns them (#1109). The board
 // stays the one in tasks.js: this module only decides when an idle Session should
-// continue the task track_tasks would name next. An own-chat task is a follow-up
-// in that chat. A group subtask is a turn in that Bot's group Session (#1182):
-// the reply is posted into the room when the turn ends, and the driver does not
-// open a round of its own.
+// continue the task track_tasks would name next. Every wake, including a group
+// subtask, is a follow-up in that Bot's own chat (#1205). The driver does not
+// open a group Session and does not post the reply into the room. Assigning,
+// progress, and the next assignee are board writes; chat is not the scheduler.
 import { compareForWork } from '../shared/task-board.js'
 import { formatRoomBoard } from './room-context.js'
 
@@ -39,15 +39,16 @@ const cueFor = (task) => {
   const head = `Continue ${task.id} [${priority}] ${title}. Do this task now.`
   const stop = 'Stop when it is done or waiting on an answer. Do not invent other work'
   if (task.origin?.roomId) {
-    return `${head} Taking it and moving it are board writes: set this card's column and progress with track_tasks, and do not post a status in the group. ${stop} or record a new plan. This card is already yours: set its column to in-progress and start the work, and do not wait for a confirmation. If you need an answer, ask that one question in your reply here, never in your own chat.${post}`
+    return `${head} Taking it and moving it are board writes: set this card's column and progress with track_tasks, and do not post a status in the group. ${stop} or record a new plan. This card is already yours: set its column to in-progress and start the work, and do not wait for a confirmation. Update the note on the card as it moves. The group stays quiet. If a person has to decide, post one short question in the group; do not @ a Bot to hand the work on. Completing or updating this card wakes the next assignee.${post}`
   }
   return `${head} Set this card's column and progress with track_tasks as it moves. ${stop} or start a group round.${post}`
 }
 
 const messageText = (message) => (Array.isArray(message?.content) ? message.content : []).map(block => block?.text ?? '').join('\n')
 
-// An own-chat wake is role `task`. A group wake is a room turn (`taskDrive`), so
-// the same inbox check has to see it or the next board write queues a second one.
+// A wake is role `task` in the Bot's own chat, including a group card (#1205).
+// A room turn left from an older driver (`taskDrive`) still counts, so a board
+// write does not queue a second wake beside one that has not started.
 const taskMessages = (agent) => [...(agent?.inbox?.nextTurn ?? []), ...(agent?.inbox?.nextStep ?? [])]
   .filter(message => message?.source?.role === 'task' || message?.source?.taskDrive === true)
 
@@ -88,34 +89,22 @@ export function install(rt) {
     return false
   }
 
+  // The wake always lands in the owner's own chat. A group card still has to
+  // name a member of that room; a face-to-face room has no board.
   const ownsSession = (task, sessionId) => {
-    const roomId = task.origin?.roomId
-    if (!roomId) return rt.chatOf(task.ownerBotId) === sessionId
-    return rt.roomOf(roomId)?.sessions?.[task.ownerBotId] === sessionId
+    const chat = rt.chatOf(task.ownerBotId)
+    return chat === sessionId && !rt.roomOf(sessionId)
   }
 
-  // The group Session when this Bot already has one there, or a new one when the
-  // subtask is the first thing it does in that group. A live round waits: the
-  // driver must not add a member turn beside the round.
-  const sessionFor = async (task) => {
+  const sessionFor = (task) => {
     const roomId = task.origin?.roomId
-    if (!roomId) {
-      const id = rt.chatOf(task.ownerBotId)
-      return id && !rt.roomOf(id) ? id : undefined
+    if (roomId) {
+      const room = rt.roomOf(roomId)
+      if (!room || room.origin === 'face-to-face') return undefined
+      if (!(room.members ?? []).includes(task.ownerBotId)) return undefined
     }
-    const room = rt.roomOf(roomId)
-    if (!room || room.origin === 'face-to-face') return undefined
-    if (!(room.members ?? []).includes(task.ownerBotId)) return undefined
-    if (roundLive(room.id)) return undefined
-    const existing = room.sessions?.[task.ownerBotId]
-    if (existing) return existing
-    if (typeof rt.memberSession !== 'function') return undefined
-    try {
-      return await rt.memberSession(room, task.ownerBotId)
-    } catch (error) {
-      rt.warn('ds-bot: task drive could not open a group session for %s: %s', task.ownerBotId, error)
-      return undefined
-    }
+    const id = rt.chatOf(task.ownerBotId)
+    return id && !rt.roomOf(id) ? id : undefined
   }
 
   // `live` is cleared before the turn-end hook runs. The Agent's status can still
@@ -196,10 +185,10 @@ export function install(rt) {
       if (!list.includes(task)) continue
       byBot.set(task.ownerBotId, list)
     }
-    // One pass wakes every owner. A group assignment starts each member's own
-    // subtask in that same drive, in that member's Session. One Bot still gets
-    // only the task compareForWork names next, and a Session that already has
-    // a turn is left until that turn ends.
+    // One pass wakes every owner, in that owner's own chat. A group assignment
+    // starts each assignee there in the same drive and does not open a round.
+    // One Bot still gets only the task compareForWork names next, and a Session
+    // that already has a turn is left until that turn ends.
     for (const [botId, owned] of byBot) {
       const list = owned.slice().sort(compareForWork)
       const next = list[0]
@@ -232,18 +221,17 @@ export function install(rt) {
       inflight.set(sessionId, { fingerprint: fp, started: false })
       const roomId = next.origin?.roomId
       try {
-        // A group card is a room turn: the reply posts into the group when the
-        // turn ends (turns.js, no waiter), so a question stays there (#1182).
-        // noteWake counts only a wake that left, including this room turn (#1172).
+        // Own chat, even for a group card (#1205). The reply is not a room turn,
+        // so it is not posted into the group when the turn ends. noteWake counts
+        // only a wake that left (#1172). The board snapshot is the progress.
         const board = roomId
           ? formatRoomBoard(rt.state.tasks, { roomId, nameOf: task => rt.botOf(task.ownerBotId)?.name })
           : ''
         await rt.deliver({
           toId: botId,
           sessionId,
-          role: roomId ? 'room' : 'task',
+          role: 'task',
           text: board ? `${cueFor(next)}\n\n${board}` : cueFor(next),
-          ...(roomId ? { roomId, note: 'your task', taskDrive: true } : {}),
         })
         await noteWake(next)
       } catch (error) {
