@@ -7,7 +7,9 @@
 // so the view can tell "no token" from "no permission" from "too slow".
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installChannel } from '../src/host/channel.js'
@@ -23,13 +25,13 @@ const respond = (body, status = 200, headerMap = {}) => ({
   json: async () => body,
 })
 
-function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [], openPullsExtra = [], failures = {}, hang = false, runsTruncated = false, listsCapped = false, listsStale = false, listsStopLate = false } = {}) {
+function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [], openPullsExtra = [], failures = {}, hang = false, runsTruncated = false, listsCapped = false, listsStale = false, listsStopLate = false, slug = 'o/r' } = {}) {
   const calls = []
   const request = async (url, init = {}) => {
     const parsed = new URL(url)
-    const path = parsed.pathname.replace('/repos/o/r', '') || '/'
+    const path = parsed.pathname.replace(`/repos/${slug}`, '') || '/'
     const page = Number(parsed.searchParams.get('page') ?? 1)
-    calls.push({ path, method: init.method, headers: init.headers ?? {}, query: parsed.search })
+    calls.push({ path, url, method: init.method, headers: init.headers ?? {}, query: parsed.search })
     if (init.method !== 'GET') throw new Error(`the delivery board must not send ${init.method}`)
     if (hang) return new Promise(() => {})
     for (const [key, failure] of Object.entries(failures)) {
@@ -479,7 +481,7 @@ test('the token is read per request, and install loads the secrets before the ro
   let loads = 0
   let loaded
   const rt = {
-    repoSlug: () => 'o/r',
+    config: { deliveryRepo: 'o/r' },
     // The secrets file is read asynchronously, so at install time there is nothing to read yet.
     secretValue: name => (name === 'GITHUB_TOKEN' ? loaded : undefined),
     loadSecrets: async () => { loads += 1; loaded = 'SECRET-TOKEN' },
@@ -492,6 +494,8 @@ test('the token is read per request, and install loads the secrets before the ro
   // before any request went out.
   const loading = await installed.deliveryBoard()
   assert.equal(loading.state, 'loading')
+  assert.equal(loading.repo, 'o/r')
+  assert.equal(loading.repoSource, 'config')
   assert.equal(loads, 1)
   const settled = await installed.deliveryBoard({ wait: true })
   assert.equal(settled.state, 'fresh')
@@ -502,6 +506,8 @@ test('the token is read per request, and install loads the secrets before the ro
   const probe = await installed.deliveryProbe()
   assert.ok(Array.isArray(probe.rows))
   assert.ok(probe.rows.every(row => row.ok))
+  assert.equal(probe.repo, 'o/r')
+  assert.equal(probe.repoSource, 'config')
 })
 
 test('a PR badge reads the verdict at its own tip, and CI when there is none (#1173)', async () => {
@@ -808,4 +814,132 @@ test('the Diagnose entry is on the API route, and refused without a session (#12
     assert.equal(answer.ok, false, endpoint + ' must not answer without a session')
     assert.equal(answer.error.code, 'bot/unauthorized', JSON.stringify(answer))
   }
+})
+
+// #1250: the host resolves which repository it reads before any board exists, says where the name
+// came from, and keeps one board per repository. The resolver's own levels are in
+// delivery-repo.test.js; these tests hold the host wiring around it.
+const hostWith = (github, extra = {}) => {
+  const rt = {
+    config: {},
+    secretValue: () => 'SECRET-TOKEN',
+    loadSecrets: async () => {},
+    fetch: github.request,
+    warn: () => {},
+    ...extra,
+  }
+  const installed = Object.assign({}, rt)
+  install(installed)
+  return installed
+}
+
+test('the instance setting names the repository for the board and the probe, and says "config" (#1250)', async () => {
+  const github = fakeGitHub({ slug: 'acme/widget' })
+  const installed = hostWith(github, { config: { deliveryRepo: 'acme/widget' } })
+  const loading = await installed.deliveryBoard()
+  assert.equal(loading.repo, 'acme/widget')
+  assert.equal(loading.repoSource, 'config')
+  const settled = await installed.deliveryBoard({ wait: true })
+  assert.equal(settled.state, 'fresh')
+  assert.equal(settled.repo, 'acme/widget')
+  assert.equal(settled.repoSource, 'config')
+  // Every read, not only the repo call, went to the repository the instance named.
+  assert.ok(github.calls.length > 0)
+  for (const call of github.calls) assert.match(call.url, /^https:\/\/api\.github\.com\/repos\/acme\/widget(\/|$|\?)/, call.url)
+  const probe = await installed.deliveryProbe()
+  assert.equal(probe.repo, 'acme/widget')
+  assert.equal(probe.repoSource, 'config')
+  assert.ok(probe.rows.every(row => row.ok))
+})
+
+test('the workspace git remote names the repository when there is no setting (#1250)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'delivery-install-'))
+  try {
+    mkdirSync(join(dir, '.git'))
+    writeFileSync(join(dir, '.git', 'config'), '[remote "origin"]\n\turl = git@github.com:acme/widget.git\n')
+    const github = fakeGitHub({ slug: 'acme/widget' })
+    const installed = hostWith(github, {
+      // The team folder is the instance's workspace, which is where the board's one repository lives.
+      ctx: { workspaceRegistry: { get: id => (id === 'team' ? { path: dir } : undefined) } },
+      state: { workspaceId: 'team' },
+    })
+    const settled = await installed.deliveryBoard({ wait: true })
+    assert.equal(settled.repo, 'acme/widget')
+    assert.equal(settled.repoSource, 'remote')
+    assert.equal(settled.state, 'fresh')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a changed setting re-resolves, and the new repository starts at loading (#1250)', async () => {
+  // The cache is keyed by repository, so the previous repository's snapshot can never answer for
+  // the new name: the new board's first read is its own `loading`.
+  const one = fakeGitHub({ slug: 'o/r' })
+  const two = fakeGitHub({ slug: 'acme/widget' })
+  const request = (url, init) => (url.includes('/repos/acme/widget') ? two.request(url, init) : one.request(url, init))
+  const config = { deliveryRepo: 'o/r' }
+  const installed = hostWith({ request, calls: [] }, { config })
+  const before = await installed.deliveryBoard({ wait: true })
+  assert.equal(before.state, 'fresh')
+  assert.equal(before.repo, 'o/r')
+
+  config.deliveryRepo = 'acme/widget'
+  const loading = await installed.deliveryBoard()
+  assert.equal(loading.state, 'loading')
+  assert.equal(loading.repo, 'acme/widget')
+  assert.equal(loading.columns, undefined, 'the old repository columns must not be served for the new name')
+  const after = await installed.deliveryBoard({ wait: true })
+  assert.equal(after.state, 'fresh')
+  assert.equal(after.repo, 'acme/widget')
+  assert.ok(two.calls.length > 0)
+  assert.ok(two.calls.every(call => call.path === '/' || call.path.startsWith('/repos/acme/widget') || !call.path.startsWith('/repos/')))
+})
+
+test('the package repository answers only last, labelled a default, and says so in the log (#1250)', async () => {
+  const github = fakeGitHub({ slug: 'ThinkFlowLab/FlyBot' })
+  const warnings = []
+  const installed = hostWith(github, {
+    packageRepository: 'git+https://github.com/ThinkFlowLab/FlyBot.git',
+    // The host's warning log is printf-shaped; substitute so the assertion reads the message a person sees.
+    warn: (format, ...rest) => { let index = 0; warnings.push(String(format).replace(/%s/g, () => String(rest[index++] ?? ''))) },
+  })
+  const settled = await installed.deliveryBoard({ wait: true })
+  assert.equal(settled.repo, 'ThinkFlowLab/FlyBot')
+  assert.equal(settled.repoSource, 'package')
+  // A default is acceptable only while it is visible as one, in the log as well as on the page.
+  assert.equal(warnings.filter(line => /package repository ThinkFlowLab\/FlyBot \(default\)/.test(line)).length, 1)
+  const again = await installed.deliveryBoard()
+  assert.equal(again.repoSource, 'package')
+  assert.equal(warnings.filter(line => /\(default\)/.test(line)).length, 1, 'the default is recorded once, not on every read')
+})
+
+test('with nothing to read, the board and the probe refuse before any request (#1250)', async () => {
+  let requests = 0
+  const installed = hostWith({ request: async () => { requests += 1; throw new Error('must not be asked') } }, {
+    packageRepository: '',
+  })
+  const answer = await installed.deliveryBoard()
+  assert.equal(answer.state, 'failed')
+  assert.equal(answer.repo, null)
+  assert.equal(answer.repoSource, null)
+  assert.equal(answer.error.kind, 'no-repo')
+  assert.equal(answer.error.message, 'no repository — set delivery.repo')
+  const probe = await installed.deliveryProbe()
+  assert.equal(probe.ok, false)
+  assert.equal(probe.repo, null)
+  assert.equal(probe.error, 'no repository — set delivery.repo')
+  // Not `/repos/null`, not a probe of nothing: the resolution refuses first.
+  assert.equal(requests, 0)
+})
+
+test('a repository the token cannot read fails naming the repository and the endpoint (#1250)', async () => {
+  const github = fakeGitHub({ slug: 'acme/widget', failures: { '/issues': { status: 404 } } })
+  const installed = hostWith(github, { config: { deliveryRepo: 'acme/widget' } })
+  const answer = await installed.deliveryBoard({ wait: true })
+  assert.equal(answer.state, 'failed')
+  assert.equal(answer.repo, 'acme/widget')
+  assert.equal(answer.error.status, 404)
+  assert.equal(answer.error.endpoint, '/repos/acme/widget/issues')
+  // The same failure shape as #1211/#1232, now naming whose 404 it is.
+  assert.match(answer.error.message, /acme\/widget/)
+  assert.match(answer.error.message, /\/repos\/acme\/widget\/issues/)
 })

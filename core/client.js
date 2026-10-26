@@ -1398,6 +1398,13 @@ var HOST_ZH = {
   Copy: "复制",
   Close: "关闭",
   "this repository": "这个仓",
+  // #1250: whose repository the board read, and where that name came from — a package default
+  // shown as a fact is what put one instance's numbers on another.
+  "no repository — set delivery.repo": "没有仓库 —— 请设置 delivery.repo",
+  "from config": "来自 config",
+  "from remote": "来自 remote",
+  "from the package (default)": "来自安装包（默认值）",
+  "Set delivery.repo in this instance's settings to the repository this instance works in.": "在这个实例的设置里把 delivery.repo 指向本实例实际工作的仓库。",
   "Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.": "在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。",
   "GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).": "GitHub 在限流这个实例，页面开着时自动重试（10 秒 → 30 秒 → 2 分钟）。",
   "GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.": "GitHub 在限流这个实例，页面开着时 {seconds} 秒后自动重试。",
@@ -8289,6 +8296,7 @@ function hintFor(error, { repo = null } = {}) {
   const scope = error.scope ?? null;
   const kind = error.kind ?? null;
   const target = repo ?? t("this repository");
+  if (kind === "no-repo") return t("Set delivery.repo in this instance's settings to the repository this instance works in.");
   if (kind === "no-token") return t("Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.", { repo: target });
   if (kind === "rate-limit") {
     return error.retryAfterMs === null || error.retryAfterMs === void 0 ? t("GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).") : t("GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.", { seconds: secondsOf(error.retryAfterMs) });
@@ -8412,6 +8420,12 @@ function createPoller({ load, onView, now = () => Date.now(), setTimer = (fn, ms
     }
   };
 }
+function repoSourceText(source) {
+  if (source === "config") return t("from config");
+  if (source === "remote") return t("from remote");
+  if (source === "package") return t("from the package (default)");
+  return null;
+}
 function useDeliveryBoard(actions) {
   const [view, setView] = (0, import_react15.useState)({ state: "idle" });
   const [retry, setRetry] = (0, import_react15.useState)(() => () => {
@@ -8433,7 +8447,7 @@ function useDeliveryBoard(actions) {
 }
 function probeText(report) {
   if (!report) return "";
-  const lines = [`${report.repo ?? ""} · ${timeOf(report.at)}`];
+  const lines = [`${report.repo ?? ""}${report.repoSource ? ` · ${report.repoSource}` : ""} · ${timeOf(report.at)}`];
   for (const row of report.rows ?? []) {
     const status = row.status === null || row.status === void 0 ? "—" : String(row.status);
     lines.push(`${row.ok ? "ok" : "FAIL"} ${status.padEnd(4)} ${row.endpoint}${row.ok ? "" : `  ${row.kind ?? ""}`}`);
@@ -8480,9 +8494,20 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
   const { rows, ci, open } = metricRows(metricsPayload);
   const error = payload.error ?? null;
   const state = payload.state ?? "fresh";
+  const repoName = payload.repo ?? repo ?? null;
+  const repoSource = payload.repoSource ?? null;
+  const sourceText = repoSourceText(repoSource);
   return (0, import_react15.createElement)(
     "header",
     { className: "bt-del-head" },
+    // Whose numbers these are, and where the name came from (#1250): a package default that looks
+    // like a fact is what showed one instance another repository's board.
+    (0, import_react15.createElement)(
+      "p",
+      { className: "bt-del-repo", "data-repo": repoName ?? void 0, "data-repo-source": repoSource ?? void 0 },
+      repoName === null ? t("no repository — set delivery.repo") : repoName,
+      sourceText === null ? "" : ` · ${sourceText}`
+    ),
     (0, import_react15.createElement)(
       "div",
       { className: "bt-del-metrics" },

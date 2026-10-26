@@ -84,6 +84,7 @@ export function hintFor(error, { repo = null } = {}) {
   const scope = error.scope ?? null
   const kind = error.kind ?? null
   const target = repo ?? t('this repository')
+  if (kind === 'no-repo') return t('Set delivery.repo in this instance\'s settings to the repository this instance works in.')
   if (kind === 'no-token') return t('Add a GITHUB_TOKEN in this instance\'s settings — one that can read {repo}.', { repo: target })
   if (kind === 'rate-limit') {
     return error.retryAfterMs === null || error.retryAfterMs === undefined
@@ -218,6 +219,15 @@ export function createPoller({ load, onView, now = () => Date.now(), setTimer = 
   }
 }
 
+// Where the repository name came from (#1250). A bare source word is deliberate: the page says what
+// the host read, not a sentence that hides the difference between a setting and a default.
+export function repoSourceText(source) {
+  if (source === 'config') return t('from config')
+  if (source === 'remote') return t('from remote')
+  if (source === 'package') return t('from the package (default)')
+  return null
+}
+
 export function useDeliveryBoard(actions) {
   const [view, setView] = useState({ state: 'idle' })
   const [retry, setRetry] = useState(() => () => {})
@@ -240,7 +250,7 @@ export function useDeliveryBoard(actions) {
 // `--probe` CLI prints (#1211).
 export function probeText(report) {
   if (!report) return ''
-  const lines = [`${report.repo ?? ''} · ${timeOf(report.at)}`]
+  const lines = [`${report.repo ?? ''}${report.repoSource ? ` · ${report.repoSource}` : ''} · ${timeOf(report.at)}`]
   for (const row of report.rows ?? []) {
     const status = row.status === null || row.status === undefined ? '—' : String(row.status)
     lines.push(`${row.ok ? 'ok' : 'FAIL'} ${status.padEnd(4)} ${row.endpoint}${row.ok ? '' : `  ${row.kind ?? ''}`}`)
@@ -280,7 +290,15 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
   const { rows, ci, open } = metricRows(metricsPayload)
   const error = payload.error ?? null
   const state = payload.state ?? 'fresh'
+  const repoName = payload.repo ?? repo ?? null
+  const repoSource = payload.repoSource ?? null
+  const sourceText = repoSourceText(repoSource)
   return h('header', { className: 'bt-del-head' },
+    // Whose numbers these are, and where the name came from (#1250): a package default that looks
+    // like a fact is what showed one instance another repository's board.
+    h('p', { className: 'bt-del-repo', 'data-repo': repoName ?? undefined, 'data-repo-source': repoSource ?? undefined },
+      repoName === null ? t('no repository — set delivery.repo') : repoName,
+      sourceText === null ? '' : ` · ${sourceText}`),
     h('div', { className: 'bt-del-metrics' },
       h(DeliveryMetrics, { rows, daily: metricsPayload.daily }),
       // An unreadable CI number is "unknown", never "0 of 0" (#1211).

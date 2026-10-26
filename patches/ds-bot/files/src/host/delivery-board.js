@@ -11,6 +11,7 @@
 // `{ message, endpoint, status, kind, scope, at }` so the view can say what failed, where, and what
 // to do about it. "No GitHub connection yet" is reserved for a host that has never tried.
 import { repoSlug } from './update.js'
+import { NO_REPO_MESSAGE, resolveRepo } from './delivery-repo.js'
 
 export const DELIVERY_COLUMNS = ['raw', 'ready', 'working', 'review', 'done-today']
 
@@ -251,7 +252,7 @@ export async function probeGitHub({ repo, token, request = fetch, now = Date.now
   return { ok: rows.every(row => row.ok), repo, at: new Date(now()).toISOString(), rows }
 }
 
-export function createDeliveryBoard({ repo, token, request = fetch, now = Date.now, ttl = CACHE_TTL_MS, warn = () => {}, budgetMs = BUILD_BUDGET_MS } = {}) {
+export function createDeliveryBoard({ repo, repoSource = null, token, request = fetch, now = Date.now, ttl = CACHE_TTL_MS, warn = () => {}, budgetMs = BUILD_BUDGET_MS } = {}) {
   // Secrets are read asynchronously after install, so the token is resolved per request: a value
   // captured at install time is empty until the next restart (#1173).
   const tokenNow = () => (typeof token === 'function' ? token() : token)
@@ -652,15 +653,16 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
   function view(extra = {}) {
     const elapsedMs = since === null ? 0 : Math.max(0, now() - Date.parse(since))
     if (snapshot === null) {
-      if (inflight !== null) return { ok: true, state: 'loading', repo, since, attempt, elapsedMs, error: lastError, retryAt: null, ...extra }
-      if (lastError !== null) return { ok: true, state: 'failed', repo, since, attempt, elapsedMs, error: lastError, retryAt: nextAttemptAt || null, ...extra }
+      if (inflight !== null) return { ok: true, state: 'loading', repo, repoSource, since, attempt, elapsedMs, error: lastError, retryAt: null, ...extra }
+      if (lastError !== null) return { ok: true, state: 'failed', repo, repoSource, since, attempt, elapsedMs, error: lastError, retryAt: nextAttemptAt || null, ...extra }
       // Never tried: the one case where the view may say there is no snapshot yet (#1211).
-      return { ok: false, state: 'idle', repo, since: null, attempt: 0, elapsedMs: 0, error: null, retryAt: null, ...extra }
+      return { ok: false, state: 'idle', repo, repoSource, since: null, attempt: 0, elapsedMs: 0, error: null, retryAt: null, ...extra }
     }
     const state = lastError !== null || inflight !== null ? 'stale' : (snapshot.missing?.length ? 'partial' : 'fresh')
     return {
       ok: true,
       ...snapshot,
+      repoSource,
       state,
       stale: lastError !== null || inflight !== null,
       refreshing: inflight !== null,
@@ -743,30 +745,73 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
 }
 
 export function install(rt) {
-  const repo = (() => {
-    try { return rt.repoSlug?.() ?? repoSlug() } catch { return repoSlug() }
-  })()
+  // One board per repository, not one global board with a repo baked in (#1250): a changed
+  // `delivery.repo` resolves to a new name, and the new name's first read is its own `loading`
+  // instead of the previous repository's snapshot.
+  const boards = new Map()
+  const notedDefaults = new Set()
+  const warn = (...args) => rt.warn?.(...args)
   const tokenOf = () => {
     try { return rt.secretValue?.('GITHUB_TOKEN') } catch { return undefined }
   }
   const request = (url, init) => (rt.fetch ?? fetch)(url, init)
-  const board = createDeliveryBoard({
-    repo,
-    token: tokenOf,
-    request,
-    warn: (...args) => rt.warn?.(...args),
+  // The workspace is the team folder, not one Bot's folder: the board is host-level, and a Bot's
+  // folder would make the answer depend on which Bot happened to be named (#1250).
+  const workspace = () => {
+    try { return rt.ctx?.workspaceRegistry?.get?.(rt.state?.workspaceId)?.path ?? null } catch { return null }
+  }
+  const setting = () => {
+    try { return rt.config?.deliveryRepo ?? null } catch { return null }
+  }
+  // Level 3 is the package's own repository, not the instance's choice. The shipped package carries
+  // it; a host whose package.json has none (or a test) hands in '' and the board refuses rather than
+  // asking for `/repos/null` (#1250).
+  const packageSlug = () => {
+    try { return rt.packageRepository === undefined ? repoSlug() : rt.packageRepository } catch { return null }
+  }
+  // Resolved on every call, so the setting is read live and the cache below is keyed by its answer.
+  const resolveNow = () => {
+    const found = resolveRepo({ setting: setting(), workspace: workspace(), packageSlug: packageSlug() })
+    // A default is acceptable only while it is visible as a default: the page labels it, and this
+    // line records it too, so nothing falls back silently (#1250).
+    if (found.source === 'package' && !notedDefaults.has(found.repo)) {
+      notedDefaults.add(found.repo)
+      warn('ds-bot: delivery board: no delivery.repo and no git remote in the workspace; reading the package repository %s (default)', found.repo)
+    }
+    return found
+  }
+  const boardFor = ({ repo }) => {
+    let board = boards.get(repo)
+    if (board === undefined) {
+      board = createDeliveryBoard({ repo, token: tokenOf, request, warn })
+      boards.set(repo, board)
+    }
+    return board
+  }
+  // Nothing resolves: the answer is a failure, and it is answered before any board exists so no
+  // request can be made for `/repos/null` (#1250).
+  const noRepo = () => ({
+    ok: false, state: 'failed', repo: null, repoSource: null, since: null, attempt: 0, elapsedMs: 0,
+    error: { message: NO_REPO_MESSAGE, endpoint: null, status: null, kind: 'no-repo', scope: 'repo', retryAfterMs: null, at: new Date().toISOString() },
+    retryAt: null,
   })
   rt.deliveryBoard = async (payload = {}) => {
+    const found = resolveNow()
+    if (found.repo === null) return noRepo()
+    const board = boardFor(found)
     // The channel answers before a host restart would; load once so the first read is signed.
     // The answer is `loading` either way — the round runs behind `inflight` (#1211).
-    await rt.loadSecrets?.().catch(error => rt.warn?.('ds-bot: delivery board: secrets did not load: %s', error?.message ?? error))
-    return board.read({ force: payload?.force === true, wait: payload?.wait === true })
+    await rt.loadSecrets?.().catch(error => warn('ds-bot: delivery board: secrets did not load: %s', error?.message ?? error))
+    return { ...(await board.read({ force: payload?.force === true, wait: payload?.wait === true })), repoSource: found.source }
   }
   // The 诊断 button and `--probe` run this one function (#1211): same reads, same statuses.
   rt.deliveryProbe = async () => {
-    await rt.loadSecrets?.().catch(error => rt.warn?.('ds-bot: delivery probe: secrets did not load: %s', error?.message ?? error))
-    try { return await board.probe() } catch (error) {
-      return { ok: false, repo, at: new Date().toISOString(), rows: [], error: String(error?.message ?? error) }
+    const found = resolveNow()
+    if (found.repo === null) return { ok: false, repo: null, repoSource: null, at: new Date().toISOString(), rows: [], error: NO_REPO_MESSAGE }
+    const board = boardFor(found)
+    await rt.loadSecrets?.().catch(error => warn('ds-bot: delivery probe: secrets did not load: %s', error?.message ?? error))
+    try { return { ...(await board.probe()), repoSource: found.source } } catch (error) {
+      return { ok: false, repo: found.repo, repoSource: found.source, at: new Date().toISOString(), rows: [], error: String(error?.message ?? error) }
     }
   }
 }

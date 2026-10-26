@@ -1351,6 +1351,13 @@ const HOST_ZH = {
   Copy: '复制',
   Close: '关闭',
   'this repository': '这个仓',
+  // #1250: whose repository the board read, and where that name came from — a package default
+  // shown as a fact is what put one instance's numbers on another.
+  'no repository — set delivery.repo': '没有仓库 —— 请设置 delivery.repo',
+  'from config': '来自 config',
+  'from remote': '来自 remote',
+  'from the package (default)': '来自安装包（默认值）',
+  'Set delivery.repo in this instance\'s settings to the repository this instance works in.': '在这个实例的设置里把 delivery.repo 指向本实例实际工作的仓库。',
   'Add a GITHUB_TOKEN in this instance\'s settings — one that can read {repo}.': '在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。',
   'GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).': 'GitHub 在限流这个实例，页面开着时自动重试（10 秒 → 30 秒 → 2 分钟）。',
   'GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.': 'GitHub 在限流这个实例，页面开着时 {seconds} 秒后自动重试。',

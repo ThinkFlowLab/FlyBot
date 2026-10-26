@@ -479,3 +479,37 @@ test('the rate-limit and timeout hints name the page as the condition (#1227)', 
     }
   }
 })
+
+test('the header says whose repository this is, and where the name came from (#1250)', () => {
+  const lineOf = payload => walk(DeliveryBoard({ snapshot: { ...snapshot, ...payload }, message: '' }))
+    .find(node => node.props?.className === 'bt-del-repo')
+  const configured = lineOf({ repo: 'acme/widget', repoSource: 'config' })
+  assert.equal(configured.props['data-repo'], 'acme/widget')
+  assert.equal(configured.props['data-repo-source'], 'config')
+  assert.match(text(configured), /acme\/widget/)
+  assert.match(text(configured), /config/)
+  // The remote is named as where the host looked, not as something the person set.
+  const remote = lineOf({ repo: 'acme/widget', repoSource: 'remote' })
+  assert.equal(remote.props['data-repo-source'], 'remote')
+  assert.match(text(remote), /remote/)
+  // A package default reaches the page labelled as one: that is the whole difference between an
+  // instance showing its own numbers and showing ours.
+  const packaged = lineOf({ repo: 'ThinkFlowLab/FlyBot', repoSource: 'package' })
+  assert.equal(packaged.props['data-repo-source'], 'package')
+  assert.match(text(packaged), /default/)
+  // The Diagnose block names the same repository and source the header does.
+  assert.match(probeText({ repo: 'acme/widget', repoSource: 'config', at: '2026-10-26T00:00:00Z', rows: [] }),
+    /acme\/widget · config/)
+})
+
+test('a host that cannot name a repository says so, and does not send the person to a token (#1250)', () => {
+  const error = { message: 'no repository — set delivery.repo', kind: 'no-repo', scope: 'repo', endpoint: null, status: null, at: null }
+  assert.equal(hintFor(error, { repo: null }),
+    'Set delivery.repo in this instance\'s settings to the repository this instance works in.')
+  const board = DeliveryBoard({ view: { state: 'failed', repo: null, repoSource: null, error, retryAt: null }, repo: null })
+  const words = text(board)
+  assert.match(words, /no repository — set delivery\.repo/)
+  assert.match(words, /Set delivery\.repo/)
+  // Missing settings is not a missing credential; pointing at GITHUB_TOKEN would be the wrong fix.
+  assert.doesNotMatch(words, /GITHUB_TOKEN/)
+})

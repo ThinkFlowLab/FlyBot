@@ -11,7 +11,10 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -69,11 +69,14 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+@@ -66,14 +66,17 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+   config:
+     workspace: /path/to/workspace   # where the Bots work; default <home>/workspace
+     home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/bot
 -    checkRatio: 0.8                 # share of the model's usable window where the steward decides
 +    checkRatio: 0.45                # share of the model's usable window where the steward decides; default 0.45
      browser: true                   # force the Bot browser on or off; default on in Desktop only
@@ -1187,7 +1190,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,80 @@ const HOST_ZH = {
+@@ -905,6 +905,87 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1250,6 +1253,13 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  Copy: '复制',
 +  Close: '关闭',
 +  'this repository': '这个仓',
++  // #1250: whose repository the board read, and where that name came from — a package default
++  // shown as a fact is what put one instance's numbers on another.
++  'no repository — set delivery.repo': '没有仓库 —— 请设置 delivery.repo',
++  'from config': '来自 config',
++  'from remote': '来自 remote',
++  'from the package (default)': '来自安装包（默认值）',
++  'Set delivery.repo in this instance\'s settings to the repository this instance works in.': '在这个实例的设置里把 delivery.repo 指向本实例实际工作的仓库。',
 +  'Add a GITHUB_TOKEN in this instance\'s settings — one that can read {repo}.': '在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。',
 +  'GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).': 'GitHub 在限流这个实例，页面开着时自动重试（10 秒 → 30 秒 → 2 分钟）。',
 +  'GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.': 'GitHub 在限流这个实例，页面开着时 {seconds} 秒后自动重试。',
@@ -4581,6 +4591,20 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    checkMissedSchedules: checkMissed,
 +  })
  }
+diff --git a/src/host/steward.js b/src/host/steward.js
+--- a/src/host/steward.js
++++ b/src/host/steward.js
+@@ -10,7 +10,9 @@ import { estimateTokens } from './text.js'
+ 
+ // For a model that declares no window.
+ export const DEFAULT_WINDOW = 500_000
+-export const DEFAULT_CHECK_RATIO = 0.8
++// Earlier than upstream's 0.8: the fixed block is re-sent on every call and the
++// history is most of each prompt, so condensing sooner costs the prompt less (#1233).
++export const DEFAULT_CHECK_RATIO = 0.45
+ // Context sizes between requests are estimates, so the hard line stays a little
+ // below what the model can actually take.
+ const HARD_SHARE = 0.95
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -9073,6 +9097,18 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 +  await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
 +  assert.ok(!bench.requests[0].messages[0].content[0].text.includes(home), bench.requests[0].messages[0].content[0].text)
 +})
+diff --git a/test/steward.test.js b/test/steward.test.js
+--- a/test/steward.test.js
++++ b/test/steward.test.js
+@@ -16,7 +16,7 @@ test('a model without a window counts as the default, and odd settings fall back
+   // A reply that would take the whole window still leaves half of it.
+   assert.equal(linesFor({ window: 100_000, reserve: 200_000 }).usable, 50_000)
+   for (const checkRatio of [0, 1, 1.5, -1, 'x', undefined]) {
+-    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 80_000, String(checkRatio))
++    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 45_000, String(checkRatio))
+   }
+   // The check line never passes the hard line.
+   assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js
@@ -9274,27 +9310,3 @@ diff --git a/test/work-dir.test.js b/test/work-dir.test.js
    assert.deepEqual(third.created, [{ cwd: third.project }])
    assert.match(await third.tool('list_bots', {}, 'a'), new RegExp(`- Builder \\(Build, works in ${escapeRegExp(third.project)}\\)`))
  })
-diff --git a/src/host/steward.js b/src/host/steward.js
---- a/src/host/steward.js
-+++ b/src/host/steward.js
-@@ -11,6 +11,8 @@
- // For a model that declares no window.
- export const DEFAULT_WINDOW = 500_000
--export const DEFAULT_CHECK_RATIO = 0.8
-+// Earlier than upstream's 0.8: the fixed block is re-sent on every call and the
-+// history is most of each prompt, so condensing sooner costs the prompt less (#1233).
-+export const DEFAULT_CHECK_RATIO = 0.45
- // Context sizes between requests are estimates, so the hard line stays a little
- // below what the model can actually take.
- const HARD_SHARE = 0.95
-diff --git a/test/steward.test.js b/test/steward.test.js
---- a/test/steward.test.js
-+++ b/test/steward.test.js
-@@ -17,6 +17,6 @@ test('a model without a window counts as the default, and odd settings fall back', () => {
-   assert.equal(linesFor({ window: 100_000, reserve: 200_000 }).usable, 50_000)
-   for (const checkRatio of [0, 1, 1.5, -1, 'x', undefined]) {
--    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 80_000, String(checkRatio))
-+    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 45_000, String(checkRatio))
-   }
-   // The check line never passes the hard line.
-   assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)
