@@ -52,8 +52,13 @@ export function decide({ today, latestTag, latestTagDate, openReleasePr = false 
   if (!isDate(today)) throw new Error(`today must be YYYY-MM-DD, got ${today}`)
   if (!latestTag || !isDate(latestTagDate)) return { action: 'skip-no-tag', reason: 'no v* tag could be read' }
   if (latestTagDate === today) return { action: 'ok', reason: `${latestTag} is dated ${today}` }
-  // A tag dated after "today" is a clock/zone disagreement, not a miss: stay quiet instead of alerting.
-  if (latestTagDate > today) return { action: 'ok', reason: `${latestTag} is dated ${latestTagDate}, after ${today}` }
+  // A newest tag dated AFTER the judged day does not answer that day: `--date 2026-10-25` asks whether
+  // 10-25 got a tag, and a tag pushed on 10-26 is not one. Only a dispatch onto an earlier day, or a
+  // clock ahead of Asia/Shanghai, can land here — a scheduled run judges today and nothing more — and
+  // both are better seen than swallowed. Reading this branch as `ok` is what makes the manual check in
+  // the issue ("dispatch with date=<yesterday>, it must file one") unable to file anything at all once
+  // today's tag already exists.
+  if (latestTagDate > today) return { action: 'alert', reason: `no v* tag on ${today}; the newest is ${latestTag} dated ${latestTagDate}, after the judged day` }
   if (openReleasePr) return { action: 'skip-in-flight', reason: 'a Release v… pull request is open' }
   return { action: 'alert', reason: `no v* tag since ${latestTagDate}` }
 }
@@ -86,6 +91,18 @@ export function hasOpenReleasePr(gh, repo) {
   return titles.some((title) => /^Release v\d/.test(title.trim()))
 }
 
+// The newest `release.yml` run, so the alert says where to look before anything else is read (#1209,
+// triage spec 3.3). A read failure here returns null and the alert is still filed: losing this link is
+// not a reason to lose the signal, and it is the only one of these reads allowed to fail quietly.
+export function lastReleaseRun(gh, repo) {
+  try {
+    const url = apiJson(gh, `repos/${repo}/actions/workflows/release.yml/runs?per_page=1`, '.workflow_runs[0].html_url // ""').trim()
+    return url || null
+  } catch {
+    return null
+  }
+}
+
 export function alreadyAlerted(gh, repo, date) {
   const q = `repo:${repo} is:issue "${ALERT_TITLE(date)}"`
   const total = apiJson(gh, `search/issues?q=${encodeURIComponent(q)}`, '.total_count').trim()
@@ -97,7 +114,7 @@ export function fileAlert(gh, repo, { date, latestTag, latestTagDate, hours, las
     `No \`v*\` tag was created on **${date}** (Asia/Shanghai), so the daily release beat did not happen and nothing announced it.`,
     '',
     `- newest tag: \`${latestTag}\`, dated ${latestTagDate}`,
-    `- hours since that tag: ${hours}`,
+    `- hours since that tag: ${hours < 0 ? 'the tag is newer than the day judged' : hours}`,
     `- last \`release.yml\` run: ${lastReleaseRun ?? 'none found'}`,
     `- the routine's own catch-up (first half of #1209) runs first: check whether it already re-released today`,
     '',
@@ -134,7 +151,7 @@ export function run({ gh = realGh, repo, date, open = false, today = cstDate(new
   }
   if (!open) return { ...decision, filed: false, dryRun: true }
   const hours = Math.round((Date.parse(day) - Date.parse(latestTagDate)) / 36e5)
-  const number = fileAlert(gh, repo, { date: day, latestTag, latestTagDate, hours, lastReleaseRun: null })
+  const number = fileAlert(gh, repo, { date: day, latestTag, latestTagDate, hours, lastReleaseRun: lastReleaseRun(gh, repo) })
   write(`release-beat: filed #${number}`)
   return { ...decision, filed: true, number }
 }

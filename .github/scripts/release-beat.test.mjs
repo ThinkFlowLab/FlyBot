@@ -27,6 +27,7 @@ const isCommit = (args) => args.some((a) => a.startsWith(`repos/${REPO}/git/comm
 const isPulls = (args) => args.some((a) => a.startsWith(`repos/${REPO}/pulls?`))
 const isSearch = (args) => args.some((a) => a.startsWith('search/issues?'))
 const isCreate = (args) => args.includes('POST') && args.some((a) => a === `repos/${REPO}/issues`)
+const isRuns = (args) => args.some((a) => a.startsWith(`repos/${REPO}/actions/workflows/release.yml/runs`))
 
 function happyRoutes({ tagDateInstant = '2026-10-25T10:00:00Z', tags = 'v0.2.8', openTitles = '', searchTotal = '0', created = '{"number": 77}' } = {}) {
   return [
@@ -59,8 +60,14 @@ test('no v* tag at all is reported, not alerted', () => {
   assert.equal(decide({ today: '2026-10-26', latestTag: null, latestTagDate: null }).action, 'skip-no-tag')
 })
 
-test('a tag dated after today is a clock disagreement, never an alert', () => {
-  assert.equal(decide({ today: '2026-10-26', latestTag: 'v0.2.9', latestTagDate: '2026-10-27' }).action, 'ok')
+test('a newest tag dated after the judged day is an alert: that day has no tag of its own', () => {
+  // `--date 2026-10-25` asks about 10-25. A tag pushed on 10-26 is not 10-25's beat, so answering `ok`
+  // would make the manual check in #1209 ("dispatch with date=<yesterday>, it must file one") unable to
+  // file anything once today's tag already exists.
+  const r = decide({ today: '2026-10-25', latestTag: 'v0.2.8', latestTagDate: '2026-10-26' })
+  assert.equal(r.action, 'alert')
+  assert.match(r.reason, /no v\* tag on 2026-10-25/)
+  assert.match(r.reason, /after the judged day/)
 })
 
 test('a malformed date is refused instead of silently read as a miss', () => {
@@ -98,6 +105,26 @@ test('a miss files exactly one issue, with the fixed title and the two labels', 
   assert.equal(payload.title, ALERT_TITLE('2026-10-26'))
   assert.deepEqual(payload.labels, ['bug', 'area:release'])
   assert.match(payload.body, /newest tag: `v0\.2\.8`, dated 2026-10-25/)
+  // The run link is a nicety, not the signal: when it cannot be read the alert still says `none found`.
+  assert.match(payload.body, /last `release\.yml` run: none found/)
+})
+
+test('the alert names the newest release.yml run when one can be read', () => {
+  const routes = [...happyRoutes(), [isRuns, 'https://example.test/run/9\n']]
+  const { gh, calls } = fakeGh(routes)
+  run({ gh, repo: REPO, date: '2026-10-26', open: true, summary: null, write: () => {} })
+  const payload = JSON.parse(calls.filter((c) => isCreate(c.args))[0].options.input)
+  assert.match(payload.body, /last `release\.yml` run: https:\/\/example\.test\/run\/9/)
+})
+
+test('filing for a day older than the newest tag says so instead of printing negative hours', () => {
+  const routes = happyRoutes({ tagDateInstant: '2026-10-26T10:00:00Z' })
+  const { gh, calls } = fakeGh(routes)
+  const r = run({ gh, repo: REPO, date: '2026-10-25', open: true, summary: null, write: () => {} })
+  assert.equal(r.action, 'alert')
+  assert.equal(r.filed, true)
+  const payload = JSON.parse(calls.filter((c) => isCreate(c.args))[0].options.input)
+  assert.match(payload.body, /hours since that tag: the tag is newer than the day judged/)
 })
 
 test('the same day is never filed twice: a search hit writes the summary and stops', () => {
