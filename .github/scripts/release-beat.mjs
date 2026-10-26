@@ -33,6 +33,9 @@ export function cstDate(instant) {
 export const isDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 // Semver order, not string order: v0.2.10 comes after v0.2.9, and a string max would pick v0.2.9.
+// Boundary, stated rather than implied: only a plain `vX.Y.Z` counts as a beat. A pre-release tag
+// (`v0.3.0-rc.1`) is skipped, so a day whose only tag was a pre-release reports a miss. Deliberate:
+// the routine publishes final patch releases, and a pre-release is not the version a user installs.
 export function latestOf(names) {
   const parsed = names
     .map((name) => ({ name, m: /^v(\d+)\.(\d+)\.(\d+)$/.exec(String(name).trim()) }))
@@ -109,7 +112,7 @@ export function alreadyAlerted(gh, repo, date) {
   return Number(total) > 0
 }
 
-export function fileAlert(gh, repo, { date, latestTag, latestTagDate, hours, lastReleaseRun, walked }) {
+export function fileAlert(gh, repo, { date, latestTag, latestTagDate, hours, lastReleaseRun }) {
   const body = [
     `No \`v*\` tag was created on **${date}** (Asia/Shanghai), so the daily release beat did not happen and nothing announced it.`,
     '',

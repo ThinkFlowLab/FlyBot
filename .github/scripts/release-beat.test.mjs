@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ALERT_TITLE, alreadyAlerted, cstDate, decide, latestOf, run, tagDate } from './release-beat.mjs'
+import { readFileSync } from 'node:fs'
 
 const REPO = 'o/r'
 
@@ -160,4 +161,29 @@ test('alreadyAlerted asks the search API and reads its count', () => {
   const { gh, calls } = fakeGh([[isSearch, '3']])
   assert.equal(alreadyAlerted(gh, REPO, '2026-10-26'), true)
   assert.match(calls[0].args.find((a) => a.startsWith('search/issues?')), /Release%20beat%20missing/)
+})
+
+// The workflow's own text (INC at 7c8d4142): nothing in this suite read the yml, so a moved cron or a
+// widened permission stayed green. Text checks only, the way test-workflow.test.mjs does it.
+const workflow = readFileSync(new URL('../workflows/release-beat.yml', import.meta.url), 'utf8')
+
+test('the workflow runs at 02:30 Asia/Shanghai exactly, and its one comment says so', () => {
+  assert.match(workflow, /^ {4}- cron: "30 18 \* \* \*" # daily 02:30 Asia\/Shanghai \(the previous day's 18:30 UTC\)$/m)
+  assert.deepEqual(workflow.match(/cron: "[^"]*"/g), ['cron: "30 18 * * *"'], 'one cron, and it is this one')
+})
+
+test('permissions are exactly the two this job needs: read at the top, issues: write on the job', () => {
+  const top = workflow.slice(workflow.indexOf('\npermissions:'), workflow.indexOf('\nconcurrency:'))
+  assert.deepEqual(top.trim().split('\n').map(line => line.trim()), ['permissions:', 'contents: read'])
+  const job = workflow.slice(workflow.indexOf('\n  beat:'), workflow.indexOf('\n    env:'))
+  const block = job.slice(job.indexOf('    permissions:')).trim().split('\n').map(line => line.trim())
+  assert.deepEqual(block, ['permissions:', 'contents: read', 'issues: write'])
+  assert.equal((workflow.match(/^\s+[\w-]+: write$/gm) ?? []).length, 1, 'issues: write is the only write permission in the file')
+})
+
+test('a scheduled run files, and a dispatch files only when dry_run is exactly false', () => {
+  assert.match(workflow, /^ {8}default: 'true'$/m, 'dry_run defaults to a dry run')
+  assert.match(workflow, /BEAT_DRY: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.dry_run \|\| 'false' \}\}/)
+  assert.match(workflow, /if \[\[ "\$\{BEAT_DRY:-false\}" == "false" \]\]; then args\+=\(--open\); fi/, 'a schedule is a real run; only the string false opens the write path')
+  assert.equal((workflow.match(/--open/g) ?? []).length, 1, '--open appears once, behind that condition')
 })
