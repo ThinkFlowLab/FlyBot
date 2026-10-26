@@ -416,6 +416,10 @@ test('deleting COMPOSIO_API_KEY on the Secrets page unmounts Composio, and GitHu
   assert.equal(mounts[1].disposed, true)
   assert.equal(mounts[0].disposed, false)
   assert.deepEqual(view.map(entry => [entry.id, entry.state]), [['github', 'ready'], ['composio', 'off'], ['feishu', 'off']])
+  // #1266: the Feishu row carries the inbound state as well, and with no app pair saved it says so
+  // without ever showing a value. Nothing dialled: the long connection is off by default.
+  assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' })
+
 })
 
 test('a Composio address without https refuses to send the key', async (t) => {

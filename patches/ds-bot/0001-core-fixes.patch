@@ -2601,7 +2601,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,55 @@
+@@ -1,27 +1,56 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
@@ -2631,6 +2631,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +
 +import { randomUUID } from 'node:crypto'
 +import { createNotifier } from './notify.js'
++import { appCredentials, createInbound } from './feishu-inbound.js'
  
  export const GITHUB = 'github'
  export const GITHUB_SECRET = 'GITHUB_TOKEN'
@@ -2669,7 +2670,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,653 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,675 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -3031,14 +3032,31 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    }
 +  })
 +
++  // Feishu inbound (#1266): a message in Feishu starts a turn here. The socket is injected —
++  // `rt.feishuTransport` is the one adapter the SDK-versus-hand-written decision changes, so nothing
++  // below depends on which client dials. Off unless the owner turned it on, and with no socket adapter
++  // it starts nothing rather than pretend. The message lands through `remote-chat.deliver` — the same
++  // seam a friend's Bot uses — and the reply comes back through the sender above (`onSend`), so there
++  // is no second path into or out of a chat.
++  const feishuInbound = createInbound({
++    enabled: rt.config?.feishu?.enabled === true,
++    ownerOpenId: rt.config?.feishu?.ownerOpenId,
++    transport: rt.feishuTransport,
++    deliver: async ({ handle, text, name }) => {
++      if (typeof rt.remoteChats?.deliver !== 'function') throw new Error('no chat seam is installed for a Feishu message')
++      await rt.remoteChats.deliver({ handle, text, name })
++    },
++    log: (format, ...args) => rt.warn(`ds-bot: ${format}`, ...args),
++    redact: rt.redactSecrets,
++  })
++
 +  const saved = c => state.connectors?.[c.def.id]
 +  const unmount = async (c) => {
 +    const fiber = c.mount?.fiber
 +    c.mount = null
 +    if (fiber !== undefined) await Promise.resolve().then(() => fiber.dispose()).catch(() => { /* a fiber that fails to dispose must not block unloading */ })
-   }
- 
--  // The MCP client wraps the server's answer (a 401, say) as the cause.
++  }
++
 +  // A sender's retry policy is notify.js's, not a second one written here: one transport per
 +  // sender, reading the saved webhook when it is called, so a reconnect needs no rebuild.
 +  const notifiers = new Map(connectors.filter(c => c.def.kind === 'sender').map(c => [c.def.id, createNotifier({
@@ -3064,8 +3082,9 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      c.status = { state: 'error', error: reason(error) }
 +      rt.warn('ds-bot: %s connector failed: %s', c.def.name, c.status.error)
 +    }
-+  }
-+
+   }
+ 
+-  // The MCP client wraps the server's answer (a 401, say) as the cause.
 +  // The MCP client wraps the server's answer (a 401, say) as the cause. The session address of a
 +  // mount in progress is not kept anywhere, so it is also taken out of what is shown or logged.
 +  let addresses = []
@@ -3188,6 +3207,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    ...(c.def.kind !== undefined ? { kind: c.def.kind } : {}),
 +    account: rt.secretValue(c.def.secret) !== undefined ? c.def.account(saved(c)) : null,
 +    ...(c.def.extra !== undefined ? c.def.extra(rt.secretValue(c.def.secret) !== undefined ? saved(c) : undefined) : {}),
++    ...(c.def.id === FEISHU ? { inbound: { ...feishuInbound.view(), app: appCredentials(name => rt.secretValue(name)) === undefined ? 'missing' : 'set' } } : {}),
 +  })
 +  const connectorsView = () => connectors.filter(c => c.options !== null).map(view)
  
@@ -3335,8 +3355,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
      async 'connector-retry'(body) {
 -      known(body.id)
 +      const c = known(body.id)
-       await rt.loadSecrets()
--      await sync(true)
++      await rt.loadSecrets()
 +      await sync(c, true)
 +      return connectorsView()
 +    },
@@ -3348,7 +3367,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      const text = typeof body.text === 'string' ? body.text.trim() : ''
 +      if (text === '') throw new Error('Type a message first')
 +      if (c.insecure) throw new Error(INSECURE(c.def.name))
-+      await rt.loadSecrets()
+       await rt.loadSecrets()
+-      await sync(true)
 +      if (rt.secretValue(c.def.secret) === undefined) throw new Error(`Connect ${c.def.name} first`)
 +      const notifier = notifierOf(c)
 +      // A fresh key per call: two messages with the same text are two messages, not a duplicate.
@@ -3373,6 +3393,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    await rt.save()
 +  }
 +
++  void feishuInbound.start()
++
    ctx.effect(() => {
      stopped = false
 -    void rt.loadSecrets().then(() => sync())
@@ -3380,6 +3402,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
      return () => {
        stopped = true
 -      void unmount()
++      void feishuInbound.stop()
 +      for (const c of connectors) void unmount(c)
      }
    }, 'ds-bot: connectors')
@@ -6376,7 +6399,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +165,614 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -165,10 +165,618 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -6581,6 +6604,10 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  assert.equal(mounts[1].disposed, true)
 +  assert.equal(mounts[0].disposed, false)
 +  assert.deepEqual(view.map(entry => [entry.id, entry.state]), [['github', 'ready'], ['composio', 'off'], ['feishu', 'off']])
++  // #1266: the Feishu row carries the inbound state as well, and with no app pair saved it says so
++  // without ever showing a value. Nothing dialled: the long connection is off by default.
++  assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' })
++
 +})
 +
 +test('a Composio address without https refuses to send the key', async (t) => {
