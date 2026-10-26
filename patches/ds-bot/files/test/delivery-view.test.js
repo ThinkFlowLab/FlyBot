@@ -1,12 +1,71 @@
 // The delivery board view (#1173): five columns from one snapshot, a read-only card, and the
 // header numbers with the CI counted caveat. #1211 added the four states: loading with a counter,
 // failed with a reason and a retry, stale with the old board and the reason beside it, partial with
-// the part that was not read named. The host module is tested in delivery-board.test.js.
+// the part that was not read named. #1227 made the countdown move and the retry hints name their
+// condition. The host module is tested in delivery-board.test.js.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+
+// A clock the new tests can move. `wall.t === null` means "use the real one", which is how every
+// test written before #1227 keeps reading real time.
+const wall = { t: null }
+class FakeDate extends Date {
+  static now() { return wall.t ?? Date.now() }
+}
+
+// The timers the component may start. Nothing but a component under test asks for one, and only the
+// new countdown test moves them.
+const timers = {
+  seq: 0, pending: new Map(),
+  setInterval(fn, ms) { const id = ++timers.seq; timers.pending.set(id, { fn, ms }); return id },
+  clearInterval(id) { timers.pending.delete(id) },
+  tick(ms) { wall.t = (wall.t ?? Date.now()) + ms; for (const timer of [...timers.pending.values()]) timer.fn() },
+}
+
+// A tiny React with real hook slots, so a re-render can be observed (#1227). A component called
+// directly, as the older tests do, still gets the old no-op setter: nothing changes for them.
+const live = { frame: null, frames: new Map(), frameIndex: 0, effects: [], dirty: false }
+const reactStub = {
+  createElement: (type, props, ...children) => {
+    const kids = children.flat(Infinity)
+    if (typeof type !== 'function') return { type, props: props ?? {}, children: kids }
+    const key = live.frameIndex++
+    let frame = live.frames.get(key)
+    if (!frame) { frame = { hooks: [], cleanups: [] }; live.frames.set(key, frame) }
+    const outer = live.frame
+    live.frame = frame
+    frame.i = 0
+    try { return type({ ...(props ?? {}), children: kids }) } finally { live.frame = outer }
+  },
+  useState(initial) {
+    const frame = live.frame
+    const value = typeof initial === 'function' ? initial() : initial
+    if (!frame) return [value, () => {}]
+    const index = frame.i++
+    if (!(index in frame.hooks)) frame.hooks[index] = { value }
+    const slot = frame.hooks[index]
+    return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; live.dirty = true }]
+  },
+  useEffect(fn, deps) {
+    const frame = live.frame
+    if (!frame) return
+    const index = frame.i++
+    const previous = frame.hooks[index]
+    const same = previous && deps && previous.deps && deps.length === previous.deps.length
+      && deps.every((dep, at) => Object.is(dep, previous.deps[at]))
+    if (same) return
+    frame.hooks[index] = { deps }
+    live.effects.push(() => {
+      if (typeof frame.cleanups[index] === 'function') frame.cleanups[index]()
+      const cleanup = fn()
+      frame.cleanups[index] = typeof cleanup === 'function' ? cleanup : null
+    })
+  },
+}
 
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL('../src/client/delivery-view.js', import.meta.url))],
@@ -15,20 +74,33 @@ const bundle = await build({
 })
 const module = { exports: {} }
 runInNewContext(bundle.outputFiles[0].text, {
-  module, exports: module.exports, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise, Number, Math, String, Array, Object,
+  module, exports: module.exports, setTimeout, clearTimeout, Date: FakeDate, Promise, Number, Math, String, Array, Object,
+  setInterval: timers.setInterval, clearInterval: timers.clearInterval,
   require: (name) => {
     if (name !== 'react') throw new Error(`no platform module ${name}`)
-    return {
-      createElement: (type, props, ...children) => {
-        const kids = children.flat(Infinity)
-        if (typeof type === 'function') return type({ ...(props ?? {}), children: kids })
-        return { type, props: props ?? {}, children: kids }
-      },
-      useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
-      useEffect: () => {},
-    }
+    return reactStub
   },
 })
+
+// Mount a component under that little React: render, run the effects, and render again while a
+// setter fired during the pass marked the tree dirty.
+const mount = (Component, props) => {
+  live.frames = new Map()
+  const draw = () => {
+    let out = null
+    for (let pass = 0; pass < 5; pass += 1) {
+      live.dirty = false
+      live.frameIndex = 0
+      live.effects = []
+      out = reactStub.createElement(Component, props)
+      for (const effect of live.effects) effect()
+      if (!live.dirty) break
+    }
+    return out
+  }
+  draw()
+  return { draw, rerender: draw }
+}
 const {
   createPoller, DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows, pollDelay, retryCountdown,
   loadingText, staleText, hintFor, missingText, probeText,
@@ -323,4 +395,51 @@ test('the countdown is the host retryAt, and it says so when there is none (#121
   const withoutAt = DeliveryBoard({ view: { state: 'failed', error: { message: 'offline', kind: 'network' } }, onRetry: () => {} })
   assert.match(text(withoutAt), /retries on its own/)
   assert.doesNotMatch(text(withoutAt), /Retrying in/)
+})
+
+test('the failure countdown moves every second, and only while a retry is scheduled (#1227)', () => {
+  wall.t = Date.parse('2026-10-25T04:00:00Z')
+  timers.pending.clear()
+  const failed = {
+    state: 'failed',
+    error: { message: 'GitHub answered 503', kind: 'server', endpoint: '/repos/o/r', status: 503, at: null },
+    retryAt: wall.t + 120_000,
+  }
+  const board = mount(DeliveryBoard, { view: failed, onRetry: () => {} })
+  assert.match(text(board.draw()), /Retrying in 120 s/, 'the host gave two minutes, so the screen says 120')
+  timers.tick(1_000)
+  assert.match(text(board.draw()), /Retrying in 119 s/, 'the number moves when the second passes')
+  // One timer, one second: the countdown is a promise about the screen, not about the request.
+  assert.equal(timers.pending.size, 1, 'exactly one timer while a retry is scheduled')
+  assert.equal([...timers.pending.values()][0].ms, 1_000, 'the countdown timer is a one-second one')
+
+  timers.tick(118_000)
+  assert.match(text(board.draw()), /Retrying in 1 s/, 'and it keeps moving down to the last second')
+
+  // A screen with nothing scheduled gets no timer at all, so a fresh board does not tick.
+  timers.pending.clear()
+  const fresh = mount(DeliveryBoard, { view: { ...snapshot, state: 'fresh' } })
+  fresh.draw()
+  assert.equal(timers.pending.size, 0, 'a fresh board does not tick')
+  wall.t = null
+})
+
+test('the rate-limit and timeout hints name the page as the condition (#1227)', () => {
+  const rateLimitNoNumber = hintFor({ kind: 'rate-limit', retryAfterMs: null })
+  assert.match(rateLimitNoNumber, /while this page is open it retries on its own/)
+  const rateLimitNumber = hintFor({ kind: 'rate-limit', retryAfterMs: 30_000 })
+  assert.match(rateLimitNumber, /while this page is open it retries on its own in 30 s/)
+  const timeout = hintFor({ kind: 'timeout' })
+  assert.match(timeout, /the next attempt happens while this page is open/)
+
+  // Every "retries on its own" the client can print says who is doing the retrying: the open page.
+  // Nobody else does — the host installs no timer (#1173).
+  for (const file of ['src/client/delivery-view.js', 'src/client/i18n.js']) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+    for (const line of source.split('\n')) {
+      if (!/retries on its own|next attempt/.test(line)) continue
+      if (/^\s*\/\//.test(line)) continue
+      assert.match(line, /this page is open|页面开着时|页面开着/, `${file}: ${line.trim()}`)
+    }
+  }
 })

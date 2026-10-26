@@ -1378,7 +1378,6 @@ var HOST_ZH = {
   "First load in progress, {seconds} s elapsed": "首次加载中，已 {seconds} 秒",
   "Showing the snapshot from {time} · refresh failed: {message}": "显示 {time} 的快照 · 刷新失败：{message}",
   "The first round reads the repository once; the columns appear as soon as it lands.": "首轮要把这个仓读一遍，列会在拿到的同时出现。",
-  "It retries on its own (10 s → 30 s → 2 min).": "会自动重试（10 秒 → 30 秒 → 2 分钟）。",
   "While this page is open it retries on its own; press Retry to try again now.": "页面开着时自动重试，也可点重试立即再试。",
   "Retrying in {seconds} s · press Retry to try again now": "{seconds} 秒后自动重试，也可点重试立即再试。",
   "Checks unknown": "检查结果未取到",
@@ -1390,16 +1389,16 @@ var HOST_ZH = {
   Close: "关闭",
   "this repository": "这个仓",
   "Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.": "在这个实例的设置里填一个 GITHUB_TOKEN，要能读 {repo}。",
-  "GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).": "GitHub 在限流这个实例，会自动重试（10 秒 → 30 秒 → 2 分钟）。",
-  "GitHub is rate-limiting this instance; it retries on its own in {seconds} s.": "GitHub 在限流这个实例，{seconds} 秒后自动重试。",
-  "GitHub did not answer in time; the next attempt is automatic.": "GitHub 没在时限内回应，下一次重试会自动进行。",
+  "GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).": "GitHub 在限流这个实例，页面开着时自动重试（10 秒 → 30 秒 → 2 分钟）。",
+  "GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.": "GitHub 在限流这个实例，页面开着时 {seconds} 秒后自动重试。",
+  "GitHub did not answer in time; the next attempt happens while this page is open.": "GitHub 没在时限内回应，页面开着时下一次重试会自动进行。",
   "Give the token Actions: Read.": "去设置里给 token 勾 Actions: Read。",
   "Give the token Checks: Read.": "去设置里给 token 勾 Checks: Read。",
   "Give the token Issues: Read.": "去设置里给 token 勾 Issues: Read。",
   "Give the token Pull requests: Read.": "去设置里给 token 勾 Pull requests: Read。",
   "Check the repository name, and that the token can see {repo}.": "检查仓库名对不对、token 有没有 {repo} 的访问权。",
   "GitHub is not answering this instance right now; retry in a moment.": "GitHub 现在没回应这个实例，稍后重试。",
-  "The next attempt is automatic; the reason above names what failed.": "下一次重试会自动进行，上面那句话说明是哪一步失败了。",
+  "The next attempt happens while this page is open; the reason above names what failed.": "页面开着时下一次重试会自动进行，上面那句话说明是哪一步失败了。",
   "{part} was not fetched this time: {message}": "{part}这次没取到：{message}",
   "CI data": "CI 数据",
   "The rest of the board": "看板剩下的部分",
@@ -8088,9 +8087,9 @@ function hintFor(error, { repo = null } = {}) {
   const target = repo ?? t("this repository");
   if (kind === "no-token") return t("Add a GITHUB_TOKEN in this instance's settings — one that can read {repo}.", { repo: target });
   if (kind === "rate-limit") {
-    return error.retryAfterMs === null || error.retryAfterMs === void 0 ? t("GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).") : t("GitHub is rate-limiting this instance; it retries on its own in {seconds} s.", { seconds: secondsOf(error.retryAfterMs) });
+    return error.retryAfterMs === null || error.retryAfterMs === void 0 ? t("GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).") : t("GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.", { seconds: secondsOf(error.retryAfterMs) });
   }
-  if (kind === "timeout") return t("GitHub did not answer in time; the next attempt is automatic.");
+  if (kind === "timeout") return t("GitHub did not answer in time; the next attempt happens while this page is open.");
   if (scope === "actions" && (kind === "not-found" || kind === "forbidden")) return t("Give the token Actions: Read.");
   if (scope === "checks" && (kind === "not-found" || kind === "forbidden")) return t("Give the token Checks: Read.");
   if ((scope === "comments" || scope === "issues") && (kind === "not-found" || kind === "forbidden")) return t("Give the token Issues: Read.");
@@ -8099,7 +8098,7 @@ function hintFor(error, { repo = null } = {}) {
     return t("Check the repository name, and that the token can see {repo}.", { repo: target });
   }
   if (kind === "server" || kind === "network") return t("GitHub is not answering this instance right now; retry in a moment.");
-  return t("The next attempt is automatic; the reason above names what failed.");
+  return t("The next attempt happens while this page is open; the reason above names what failed.");
 }
 function missingText(entry) {
   const status = entry?.status === null || entry?.status === void 0 ? "" : ` · ${entry.status}`;
@@ -8320,7 +8319,16 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
 function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: "fresh" } : { state: "idle" });
   const state = payload.state ?? "fresh";
-  const countdown = retryCountdown(payload.retryAt);
+  const retryAt = Number(payload.retryAt);
+  const ticking = (state === "failed" || state === "stale") && Number.isFinite(retryAt) && retryAt > 0;
+  const [now, setNow] = (0, import_react14.useState)(() => Date.now());
+  (0, import_react14.useEffect)(() => {
+    if (!ticking) return void 0;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1e3);
+    return () => clearInterval(timer);
+  }, [ticking, retryAt]);
+  const countdown = retryCountdown(payload.retryAt, now);
   if (state === "idle") {
     return (0, import_react14.createElement)(
       "div",

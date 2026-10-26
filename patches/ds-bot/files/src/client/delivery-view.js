@@ -86,11 +86,12 @@ export function hintFor(error, { repo = null } = {}) {
   if (kind === 'no-token') return t('Add a GITHUB_TOKEN in this instance\'s settings — one that can read {repo}.', { repo: target })
   if (kind === 'rate-limit') {
     return error.retryAfterMs === null || error.retryAfterMs === undefined
-      // No number from GitHub means no number here: the backoff is a rule, not a measurement.
-      ? t('GitHub is rate-limiting this instance; it retries on its own (10 s → 30 s → 2 min).')
-      : t('GitHub is rate-limiting this instance; it retries on its own in {seconds} s.', { seconds: secondsOf(error.retryAfterMs) })
+      // No number from GitHub means no number here: the backoff is a rule, not a measurement. The
+      // retrying is the open page's job — the host installs no timer (#1173) (#1227).
+      ? t('GitHub is rate-limiting this instance; while this page is open it retries on its own (10 s → 30 s → 2 min).')
+      : t('GitHub is rate-limiting this instance; while this page is open it retries on its own in {seconds} s.', { seconds: secondsOf(error.retryAfterMs) })
   }
-  if (kind === 'timeout') return t('GitHub did not answer in time; the next attempt is automatic.')
+  if (kind === 'timeout') return t('GitHub did not answer in time; the next attempt happens while this page is open.')
   if (scope === 'actions' && (kind === 'not-found' || kind === 'forbidden')) return t('Give the token Actions: Read.')
   if (scope === 'checks' && (kind === 'not-found' || kind === 'forbidden')) return t('Give the token Checks: Read.')
   if ((scope === 'comments' || scope === 'issues') && (kind === 'not-found' || kind === 'forbidden')) return t('Give the token Issues: Read.')
@@ -99,7 +100,7 @@ export function hintFor(error, { repo = null } = {}) {
     return t('Check the repository name, and that the token can see {repo}.', { repo: target })
   }
   if (kind === 'server' || kind === 'network') return t('GitHub is not answering this instance right now; retry in a moment.')
-  return t('The next attempt is automatic; the reason above names what failed.')
+  return t('The next attempt happens while this page is open; the reason above names what failed.')
 }
 
 // A part that could not be read is named where it is missing, not hidden (#1211).
@@ -297,7 +298,19 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
 export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: 'fresh' } : { state: 'idle' })
   const state = payload.state ?? 'fresh'
-  const countdown = retryCountdown(payload.retryAt)
+  // The countdown promises a number that moves, so the screen redraws once a second while a retry
+  // is actually scheduled — and only then: a fresh or loading board must not tick (#1227). The
+  // timer lives in the browser, not in the host, which installs none (#1173).
+  const retryAt = Number(payload.retryAt)
+  const ticking = (state === 'failed' || state === 'stale') && Number.isFinite(retryAt) && retryAt > 0
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!ticking) return undefined
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [ticking, retryAt])
+  const countdown = retryCountdown(payload.retryAt, now)
   // "No snapshot yet." belongs to a host that has never tried; every attempt has a better word.
   if (state === 'idle') {
     return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
