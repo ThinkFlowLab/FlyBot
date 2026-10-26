@@ -159,6 +159,29 @@ test('#1239: the legacy Tip SHA block needs the same read as the first line', ()
   assert.match(r.reason, /Incorrect/)
 })
 
+// #1239, second shape (Reviewer2 on #1242): the header itself is unreadable and a readable PASS is quoted
+// right below it. The quote rules keep that PASS from becoming this report's word, so `firstIsVerdict` must
+// cover an unreadable first line too: without that half the quoted PASS is read and the tip goes green.
+test('#1239: a readable PASS quoted under an unreadable first line does not rescue it', () => {
+  const body = [
+    `Verdict: Incorrect at ${HEAD}`,
+    '',
+    'Written-by: Reviewer',
+    `Tip SHA: ${HEAD}`,
+    'Ran:',
+    '  - npm run verify → pass',
+    'Verdict: PASS',
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.unknownVerdict, 'Incorrect', 'the header is the unreadable word')
+  assert.equal(parsed.verdict, null, "the quoted PASS below it is a quote, not this report's verdict")
+  assert.equal(parsed.tip, HEAD)
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(r.ok, false, 'an unreadable header must not go green on the strength of a quoted PASS')
+  assert.equal(r.verdict, null)
+  assert.match(r.reason, /Incorrect/)
+})
+
 test('#1239: the four words the gate reads behave exactly as before', () => {
   for (const word of ['PASS', 'FAIL', 'INC', 'REQUEST_CHANGES']) {
     const parsed = parseReport(misspelt(word))
