@@ -800,8 +800,11 @@ const mergeWindow = (windows) => {
   }
 }
 
+// A repository that did not read contributes no numbers: the board's totals are then unknown, not
+// the readable repositories' sum (#1297). The entry list is handed over whole — filtering the
+// missing `metrics` out first is what printed one repository's numbers under "2 repositories".
 const mergeMetrics = (list) => {
-  if (list.length === 0) return null
+  if (list.length === 0 || list.some(entry => entry === null || entry === undefined)) return null
   const opens = list.map(entry => entry.open ?? null)
   return {
     dayStart: list[0].dayStart ?? null,
@@ -878,7 +881,9 @@ export function combineRepos(views) {
     missing,
     columns,
     counts: columns === undefined ? null : Object.fromEntries(DELIVERY_COLUMNS.map(id => [id, columns[id].length])),
-    metrics: mergeMetrics(entries.map(entry => entry.metrics).filter(Boolean)),
+    // The whole list, missing entries included: a repository that has never read answers `null`
+    // metrics, and dropping it here would make the rest look like the board's total (#1297).
+    metrics: mergeMetrics(entries.map(entry => entry.metrics ?? null)),
   }
 }
 

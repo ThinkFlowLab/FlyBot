@@ -591,6 +591,30 @@ test('the header says whose repository this is, and where the name came from (#1
     /acme\/widget · config/)
 })
 
+test('an unknown open count is —, a real zero is 0 (#1297 INC)', () => {
+  const zero = {
+    ...snapshot,
+    metrics: { ...snapshot.metrics, open: { issues: 0, pullRequests: 0, needsHuman: 0, medianIssueAgeMs: null } },
+  }
+  assert.match(text(DeliveryHeader({ view: zero })), /Open: 0 issues/)
+  // A partial board answers `metrics: null` (#1297 INC): no repository could be counted, so the
+  // header prints '—' rather than a zero it never read. Same rule as an unreadable CI number.
+  const unknown = {
+    ...snapshot,
+    state: 'partial',
+    partial: true,
+    metrics: null,
+    repos: [
+      { ...snapshot, repo: 'acme/one', repoSource: 'config' },
+      { ok: false, state: 'failed', repo: 'acme/two', repoSource: 'config' },
+    ],
+  }
+  const words = text(DeliveryHeader({ view: unknown }))
+  assert.match(words, /2 repositories/)
+  assert.match(words, /Open: — issues/)
+  assert.doesNotMatch(words, /Open: 0 issues/)
+})
+
 test('a host that cannot name a repository says so, and does not send the person to a token (#1250)', () => {
   const error = { message: 'no repository — set delivery.repo', kind: 'no-repo', scope: 'repo', endpoint: null, status: null, at: null }
   assert.equal(hintFor(error, { repo: null }),

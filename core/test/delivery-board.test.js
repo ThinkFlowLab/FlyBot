@@ -1078,6 +1078,14 @@ test('the aggregation rules: oldest snapshot, partial body, and no invented medi
   // Nothing readable is left out.
   assert.equal(partial.columns, undefined)
   assert.equal(partial.retryAt, 10_000)
+  // A partial board prints no total it can only half count (#1297 INC): one repository read and
+  // one did not, so the sums are unknown. Printing the readable half under "2 repositories" is the
+  // very "a number that looks like a fact" failure the null rule in this file exists to prevent.
+  assert.equal(partial.metrics, null)
+  assert.equal(partial.repos[0].metrics.today.newIssues, 1, 'the readable repository keeps its own numbers')
+  // While every repository reads, the sums are the board's and stay numbers, medians excepted.
+  assert.equal(mixed.metrics.open.issues, 2)
+  assert.equal(mixed.metrics.open.medianIssueAgeMs, null)
 
   // A part that could not be read names its repository too, so one line cannot be read as another's.
   const withMissing = combineRepos([
