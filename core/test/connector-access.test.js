@@ -39,6 +39,9 @@ async function setup({ state = team() } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-connector-access-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(state))
   const ctx = fakeContext()
+  // #1271: rt.warn is the logger; keep its lines so a test can read what the host said it could not do.
+  const warns = []
+  ctx.logger.warn = (...args) => warns.push(args)
   const agents = new Map()
   const sent = []
   const masks = new Map()
@@ -108,7 +111,7 @@ async function setup({ state = team() } = {}) {
     begin(id)
     return () => end(id)
   }
-  return { ctx, rt, home, live, agentFor, hiddenFrom, allHidden, guard, call, stop, sent, event, begin, take, end, turn }
+  return { ctx, rt, home, live, warns, agentFor, hiddenFrom, allHidden, guard, call, stop, sent, event, begin, take, end, turn }
 }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
@@ -241,7 +244,7 @@ test('#1237: a schedule tool that appears after the mask landed is denied on the
 // throws left the Agent with no mask at all — the list widened back to every tool. A name the profile
 // does not serve globally (one the Agent itself serves) is what makes restrict() throw.
 test('#1271: a mask that cannot be installed keeps the previous narrowing, it does not widen the list', async (t) => {
-  const { ctx, live, agentFor, allHidden, stop } = await setup()
+  const { ctx, live, agentFor, allHidden, warns, stop } = await setup()
   t.after(stop)
   await agentFor('room-writer')
   assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the room mask lands first')
@@ -250,6 +253,11 @@ test('#1271: a mask that cannot be installed keeps the previous narrowing, it do
   ctx.emit('tools/change')
   await tick()
   for (const name of [...COMPOSIO, ...SCHEDULE]) assert.ok(allHidden('room-writer').has(name), `${name} stays hidden`)
+  // #1271: and the host says which name it had to leave listed — the docs and the changelog both say it
+  // warns, so a silent filter was the other half of the defect.
+  const said = warns.map(args => args.map(arg => String(arg)).join(' ')).join('\n')
+  assert.match(said, /connector tools stay listed for Writer: mcp__composio__SOMETHING_LOCAL cannot be restricted by name/, 'the warn names the tool that stays listed')
+  assert.doesNotMatch(said, /schedule_list/, 'and only the names it dropped, not the whole deny list')
 })
 
 test('#601: a group round of any origin keeps the github tools, also with a friend in the room; #1237 keeps composio and schedule out', async (t) => {

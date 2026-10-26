@@ -157,11 +157,18 @@ export function install(rt) {
       // what a restriction can enforce and name only those: the guard still refuses a call on the rest.
       const global = fresh === undefined ? undefined : new Set((ctx.tools.schemas?.() ?? []).map(schema => schema.name))
       const enforceable = global === undefined ? deny : deny.filter(name => global.has(name))
+      // #1271: what the global view cannot name stays in the Agent's list, and the guard is the only thing
+      // left refusing it. Say which names those are — a silent narrow list is what the docs promised was
+      // not happening.
+      const listed = global === undefined ? [] : deny.filter(name => !global.has(name))
+      if (listed.length > 0) rt.warn('ds-bot: connector tools stay listed for %s: %s cannot be restricted by name', bot?.name ?? agent?.id, listed.join(', '))
       masks.set(agent, { key: deny.join(','), deny: enforceable, dispose: enforceable.length > 0 ? agent.ctx.tools.restrict({ deny: enforceable }) : undefined })
     } catch (error) {
-      // #1271: a restriction can still fail for a reason of its own. By then the old mask is lifted, so
-      // put the previous narrowing back rather than leave the list wide: the guard refuses the call either
-      // way, but a Bot reads its own list to decide what it can do.
+      // #1271: a backstop, and unreachable by construction on this API — restrict() validates against the
+      // inherited layers, and that is exactly what schemas() without an Agent returns, so a name the filter
+      // above just allowed cannot be refused as unknown. No test reaches this branch today. It stays for a
+      // DSH that refuses for a reason of its own: by then the old mask is lifted, and putting the previous
+      // narrowing back beats leaving the list wide, because a Bot reads its own list to decide what it can do.
       if (current !== undefined && current.deny.length > 0) {
         try {
           masks.set(agent, { ...current, dispose: agent.ctx.tools.restrict({ deny: current.deny }) })
