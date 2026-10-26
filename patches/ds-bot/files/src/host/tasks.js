@@ -266,8 +266,11 @@ export function install(rt) {
   }
   const view = (task) => {
     const parent = task.parentId ? store()[task.parentId] : undefined
+    // `claimCue` is the board's own memory of the line it posted (#1253); no reader of a card needs
+    // the seq and text of its last claim line, so the view leaves it out.
+    const { claimCue, ...row } = task
     return {
-      ...task,
+      ...row,
       actors: [...task.actors ?? []],
       ...(botRecord(task.ownerBotId)?.name ? { ownerBotName: botRecord(task.ownerBotId).name } : {}),
       ...(parent?.title ? { parentTitle: parent.title } : {}),
@@ -448,6 +451,19 @@ export function install(rt) {
     return view(task)
   }
 
+  // #1253: taking a card in a room is public — one line in that member's voice, logged in the room
+  // and opening no round (`groups.js` `postClaimLine`). A card outside a room, a progress tick on a
+  // card the member already holds, and an identical line at the same card stay quiet.
+  const announceClaim = (task) => {
+    if (!task.origin?.roomId) return
+    if (task.status !== 'claimed' && task.status !== 'working') return
+    try {
+      rt.postClaimLine?.(task)
+    } catch (error) {
+      rt.warn('ds-bot: the claim line for %s was not posted: %s', task.id, error)
+    }
+  }
+
   // A member claims from the room's queue (#1247). The claim is a board write: it sets the
   // owner and moves the card to claimed, so the delivery view and the room board read the same
   // card with no second row.
@@ -489,6 +505,7 @@ export function install(rt) {
     delete live.retryAt
     delete live.queueReason
     transition(live, 'claimed', null, { by: 'claimed from the queue' })
+    announceClaim(live)
     await save()
     return { item: view(live) }
   }
@@ -641,6 +658,9 @@ export function install(rt) {
         const { progress } = applyFields(task, item)
         if (!task.source) task.source = 'conversation'
         const before = task.updatedAt
+        // #1253: only the move out of the queue/not-started is a claim, so the progress ticks that
+        // follow it on the same card never reach the room.
+        const wasOpen = task.status === 'open'
         if (answer) resumeFromAnswer(task, answer)
         const moved = applyColumn(task, column, null, 'conversation')
         if (column === 'done' && progress === undefined) task.progress = 100
@@ -650,6 +670,7 @@ export function install(rt) {
         } else if (!answer && !isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
         // Assigning claims the card. The assignee starts the work; nobody confirms first (#1182).
         if (isNew && parent && task.ownerBotId !== botId && task.status === 'open') transition(task, 'claimed', null, { by: 'assigned' })
+        if (wasOpen && (task.status === 'claimed' || task.status === 'working')) announceClaim(task)
       }
       if (task.title) batch.set(task.title, task)
       batch.set(task.id, task)

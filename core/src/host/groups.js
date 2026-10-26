@@ -32,6 +32,26 @@ import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
 import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
 
+// #1253: how long an identical claim line keeps a card quiet after it was posted. A claim is a
+// beacon, not a heartbeat; a re-claim inside this window says nothing new to the room.
+export const CLAIM_CUE_REPEAT_MS = 30 * 60 * 1000
+// The claim line the room notice asks for (`接了 #1234，第一步是 <做什么>`): the reference is the issue
+// number the title carries, else the title; the first step is the card's own note, and a card with
+// neither still names itself rather than inventing a step. The wording is Chinese because the notice
+// that requires the line is (#1253), not because the room is assumed to speak Chinese.
+const CLAIM_CUE_REF_MAX = 60
+const CLAIM_CUE_STEP_MAX = 100
+const claimLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+export function claimCueText(task) {
+  const title = claimLine(task?.title, 300)
+  if (title === '') return ''
+  const found = title.match(/^#(\d{1,7})\b/) ?? title.match(/#(\d{1,7})\b/)
+  const ref = found ? `#${found[1]}` : title.slice(0, CLAIM_CUE_REF_MAX)
+  const rest = found ? title.slice(title.indexOf(found[0]) + found[0].length).trim() : ''
+  const step = claimLine(task?.note, CLAIM_CUE_STEP_MAX) || claimLine(rest, CLAIM_CUE_STEP_MAX)
+  return step === '' ? `接了 ${ref}` : `接了 ${ref}，第一步是 ${step}`
+}
+
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
 const ROOM_DELTA_MAX = 24
@@ -1153,6 +1173,29 @@ export function install(rt) {
       displayOnly: true,
       ...(local || !handle ? {} : { remote: { handle, ...(typeof spec.remote.typedBy === 'string' && spec.remote.typedBy ? { typedBy: spec.remote.typedBy } : {}) } }),
     })
+  }
+
+  // #1253: taking a card in a room is public. The line is appended to the room log — where the pane
+  // and `read_group_chat` read it — and nothing is posted into the room's Session: no followup, no
+  // model turn, no round. The card's write already woke the member in its own chat (#1205); this is
+  // only the beacon the room notice asks for. An identical line for the same card inside
+  // CLAIM_CUE_REPEAT_MS is not posted again, so a re-claim and a progress tick stay quiet.
+  rt.postClaimLine = function postClaimLine(task) {
+    const room = rt.roomOf(task?.origin?.roomId)
+    const member = rt.botOf(task?.ownerBotId)
+    if (!room || !member || isFaceRoom(room)) return false
+    if (!(room.members ?? []).includes(member.id)) return false
+    const text = claimCueText(task)
+    if (text === '') return false
+    const at = Date.now()
+    const last = task.claimCue
+    if (last?.text === text && Number.isFinite(last.at) && at - last.at < CLAIM_CUE_REPEAT_MS) return false
+    ensureRoomLog(room)
+    const line = rt.authoredRoomLine?.(room, { who: member.name, botId: member.id, authorId: member.id, authorKind: 'bot', text })
+      ?? { who: member.name, botId: member.id, text }
+    const posted = appendRoom(room, line)
+    task.claimCue = { seq: posted.seq, at, text }
+    return true
   }
 
   // A member the round moved on from (it went on working, went quiet or waited for an

@@ -761,7 +761,7 @@ diff --git a/src/client/sources.js b/src/client/sources.js
 diff --git a/src/host/groups.js b/src/host/groups.js
 --- a/src/host/groups.js
 +++ b/src/host/groups.js
-@@ -7,21 +7,30 @@
+@@ -7,21 +7,50 @@
  // the speaking order and the member's place in it. Nobody answers a room that has
  // moved on, and nobody has to count lines to know who went before. A plain message
  // goes to every member in roster order, admin first, or to the admin alone in admin
@@ -795,6 +795,26 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 +import { createRoomParticipants } from './room-participant.js'
 +import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
++
++// #1253: how long an identical claim line keeps a card quiet after it was posted. A claim is a
++// beacon, not a heartbeat; a re-claim inside this window says nothing new to the room.
++export const CLAIM_CUE_REPEAT_MS = 30 * 60 * 1000
++// The claim line the room notice asks for (`接了 #1234，第一步是 <做什么>`): the reference is the issue
++// number the title carries, else the title; the first step is the card's own note, and a card with
++// neither still names itself rather than inventing a step. The wording is Chinese because the notice
++// that requires the line is (#1253), not because the room is assumed to speak Chinese.
++const CLAIM_CUE_REF_MAX = 60
++const CLAIM_CUE_STEP_MAX = 100
++const claimLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
++export function claimCueText(task) {
++  const title = claimLine(task?.title, 300)
++  if (title === '') return ''
++  const found = title.match(/^#(\d{1,7})\b/) ?? title.match(/#(\d{1,7})\b/)
++  const ref = found ? `#${found[1]}` : title.slice(0, CLAIM_CUE_REF_MAX)
++  const rest = found ? title.slice(title.indexOf(found[0]) + found[0].length).trim() : ''
++  const step = claimLine(task?.note, CLAIM_CUE_STEP_MAX) || claimLine(rest, CLAIM_CUE_STEP_MAX)
++  return step === '' ? `接了 ${ref}` : `接了 ${ref}，第一步是 ${step}`
++}
  
  const ROOM_LOG_MAX = 60
  const ROOM_FIRST_LOOK = 12
@@ -1268,7 +1288,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (by === undefined) delete called.by
        else called.by = by
        round.slots.splice(next, 0, called)
-@@ -285,34 +285,195 @@
+@@ -285,23 +285,176 @@
    // Session's inbox, so it does not open another round when this one ends. Returns
    // the number of turns added, which the round's limit allows for.
    function drainRoomInbox(room, round, turns, index, agent) {
@@ -1314,11 +1334,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    // The user spoke in this room, so Bots may start their own rounds again.
 -    room.botRounds = 0
 +    // The user spoke in this room, so late replies may be answered again.
-     room.lateRounds = 0
-     void rt.save().catch(() => {})
-     return round.slots.length - before
-   }
- 
++    room.lateRounds = 0
++    void rt.save().catch(() => {})
++    return round.slots.length - before
++  }
++
 +  // One line that reaches the round while a member speaks (#1267). It is logged at once — the room
 +  // shows it when it is sent, not at the next slot — and `notePostedLine` keeps the next relay from
 +  // logging it a second time. Its pending copy leaves the relay's queue, because this round answers
@@ -1331,8 +1351,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    if (at !== -1) rt.roomInbox.set(room.id, queued.toSpliced(at, 1))
 +    round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
 +    // The user spoke in this room, so late replies may be answered again.
-+    room.lateRounds = 0
-+    void rt.save().catch(() => {})
+     room.lateRounds = 0
+     void rt.save().catch(() => {})
 +    // The one line that ends work in flight (#1267 B): the slot is superseded, its turn is cancelled,
 +    // and nothing it says when it stops is posted. The line stays in the Session's queue, so the head
 +    // drain opens it as a fresh line (admin first) for the room to answer.
@@ -1449,11 +1469,10 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      const uncapped = new Set(callees.filter(bot => rt.isAdminOf(room, bot.id)).map(bot => bot.id))
 +      callMembers(round, turns, index - 1, callees, `${call.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, call.by, uncapped, call.text)
 +    }
-+    return round.slots.length - before
-+  }
-+
-   async function runRound(room, round, signal, agent) {
-     let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
+     return round.slots.length - before
+   }
+ 
+@@ -310,9 +310,17 @@
      const turns = new Map()
      // The inbox check keeps a message sent during the last speaker's turn inside
      // this round: it drains at the loop's head even once the slots ran out.
@@ -1706,7 +1725,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
      },
    }))
-@@ -548,46 +548,207 @@
+@@ -548,46 +548,230 @@
    // the admin answers alone in admin mode, or first of everyone. What a member posts
    // after its round moved on is answered by the member that asked for it; work the
    // user asked for is left for the user to read.
@@ -1892,6 +1911,29 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    })
 +  }
 +
++  // #1253: taking a card in a room is public. The line is appended to the room log — where the pane
++  // and `read_group_chat` read it — and nothing is posted into the room's Session: no followup, no
++  // model turn, no round. The card's write already woke the member in its own chat (#1205); this is
++  // only the beacon the room notice asks for. An identical line for the same card inside
++  // CLAIM_CUE_REPEAT_MS is not posted again, so a re-claim and a progress tick stay quiet.
++  rt.postClaimLine = function postClaimLine(task) {
++    const room = rt.roomOf(task?.origin?.roomId)
++    const member = rt.botOf(task?.ownerBotId)
++    if (!room || !member || isFaceRoom(room)) return false
++    if (!(room.members ?? []).includes(member.id)) return false
++    const text = claimCueText(task)
++    if (text === '') return false
++    const at = Date.now()
++    const last = task.claimCue
++    if (last?.text === text && Number.isFinite(last.at) && at - last.at < CLAIM_CUE_REPEAT_MS) return false
++    ensureRoomLog(room)
++    const line = rt.authoredRoomLine?.(room, { who: member.name, botId: member.id, authorId: member.id, authorKind: 'bot', text })
++      ?? { who: member.name, botId: member.id, text }
++    const posted = appendRoom(room, line)
++    task.claimCue = { seq: posted.seq, at, text }
++    return true
++  }
++
    // A member the round moved on from (it went on working, went quiet or waited for an
    // approval) posts what its turn ended with. The member that asked for it and anyone
    // it names answer; past the late round limit nobody does, so late posts cannot keep a
@@ -1999,7 +2041,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        const latest = [...options.messages].reverse()
          .find(message => message.role === 'assistant' || message.role === 'tool' || opens(message))
        if (latest?.role !== 'user') {
-
 diff --git a/test/at-menu.test.js b/test/at-menu.test.js
 --- a/test/at-menu.test.js
 +++ b/test/at-menu.test.js
