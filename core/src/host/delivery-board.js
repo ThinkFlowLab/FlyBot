@@ -638,7 +638,11 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
       if (force) nextAttemptAt = 0
       const age = snapshot === null ? Infinity : now() - Date.parse(snapshot.asOf)
       if (inflight === null && now() >= nextAttemptAt && (force || age >= ttl)) start()
-      if (wait && inflight !== null) await inflight.catch(() => {})
+      if (wait && inflight !== null) {
+        await inflight.catch(() => {
+          // The round stores its own failure in `error`; a read must not throw it (#1211).
+        })
+      }
       return view()
     },
     // Tests and the host's own diagnostics read the cache without touching GitHub.
