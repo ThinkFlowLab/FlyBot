@@ -8035,12 +8035,11 @@ var import_react14 = require("react");
 var POLL_MS3 = 6e4;
 var LOADING_POLL_MS = 2e3;
 var RETRY_FLOOR_MS = 1e3;
-var TIMER_MAX_MS = 2 ** 31 - 1;
 function pollDelay(state, payload = null, now = Date.now()) {
   if (state === "loading" || state === "idle") return LOADING_POLL_MS;
   const at = Number(payload?.retryAt);
   if ((state === "failed" || state === "stale") && Number.isFinite(at) && at > 0) {
-    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), TIMER_MAX_MS);
+    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), POLL_MS3);
   }
   return POLL_MS3;
 }

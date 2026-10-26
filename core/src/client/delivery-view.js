@@ -15,16 +15,16 @@ const POLL_MS = 60_000
 const LOADING_POLL_MS = 2_000
 
 // A failed or stale read carries the host's `retryAt` (#1211): the next read is scheduled for it
-// instead of a fixed minute, so the host's 10 s → 30 s → 2 min backoff actually happens. The floor
-// keeps a clock skew from spinning, and the ceiling keeps `setTimeout`'s 32-bit limit from turning a
-// long wait into an immediate 0 ms re-fire.
-const RETRY_FLOOR_MS = 1_000
-const TIMER_MAX_MS = 2 ** 31 - 1
+// instead of a fixed minute, so the host's 10 s → 30 s → 2 min backoff actually happens. The delay is
+// kept inside 1 s – 60 s: the floor stops a clock skew from spinning, and the ceiling is the ordinary
+// poll, so a `retryAt` further out is still looked at once a minute (the host refuses the early read
+// and the round starts at its own 2 minute mark, which the cadence test counts).
+export const RETRY_FLOOR_MS = 1_000
 export function pollDelay(state, payload = null, now = Date.now()) {
   if (state === 'loading' || state === 'idle') return LOADING_POLL_MS
   const at = Number(payload?.retryAt)
   if ((state === 'failed' || state === 'stale') && Number.isFinite(at) && at > 0) {
-    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), TIMER_MAX_MS)
+    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), POLL_MS)
   }
   return POLL_MS
 }
