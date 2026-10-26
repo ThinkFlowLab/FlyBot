@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { createDeliveryBoard, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
+import { createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installChannel } from '../src/host/channel.js'
 
@@ -23,7 +23,7 @@ const respond = (body, status = 200, headerMap = {}) => ({
   json: async () => body,
 })
 
-function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [], openPullsExtra = [], failures = {}, hang = false } = {}) {
+function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra = [], openPullsExtra = [], failures = {}, hang = false, runsTruncated = false } = {}) {
   const calls = []
   const request = async (url, init = {}) => {
     const parsed = new URL(url)
@@ -87,6 +87,10 @@ function fakeGitHub({ comments = {}, checks = {}, closedExtra = [], mergedExtra 
       ] : [])
     }
     if (path.startsWith('/actions/runs')) {
+      // A day whose runs outnumber the page cap: every page is full, so the tail is never read.
+      if (runsTruncated) {
+        return respond({ total_count: 1000, workflow_runs: Array.from({ length: 100 }, () => ({ conclusion: 'success' })) })
+      }
       return respond({
         total_count: 3,
         workflow_runs: [
@@ -513,6 +517,103 @@ test('metrics use the Shanghai day boundary, medians, and the CI counted/total c
     NOW - AT('2026-10-20T00:00:00Z'), NOW - AT('2026-10-21T00:00:00Z'),
     NOW - AT('2026-10-19T00:00:00Z'), NOW - AT('2026-09-01T00:00:00Z'),
   ]))
+})
+
+test('metrics.daily is seven Shanghai days ending today, and only today is partial (#1222)', async () => {
+  const { board, github } = build()
+  const snapshot = await settle(board)
+  const daily = snapshot.metrics.daily
+  // Seven days, oldest first, the last one today: the window the chart draws is the same one the
+  // header's Today column sits at the end of.
+  assert.equal(daily.length, 7)
+  assert.deepEqual([...daily.map(day => day.date)],
+    ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'])
+  assert.equal(daily[6].partial, true)
+  assert.equal(daily.slice(0, 6).some(day => 'partial' in day), false, 'only today is a part of a day')
+  const byDate = Object.fromEntries(daily.map(day => [day.date, day]))
+  // A day nobody counted is 0, and 0 is a measurement: 10-22 opened and closed nothing.
+  assert.deepEqual({ ...byDate['2026-10-22'] }, {
+    date: '2026-10-22',
+    newIssues: 0,
+    closedIssues: 0,
+    newPullRequests: 1,
+    mergedPullRequests: 0,
+    ci: { failed: 1, counted: 2, total: 3 },
+  })
+  assert.equal(byDate['2026-10-19'].newIssues, 1)
+  assert.equal(byDate['2026-10-20'].newIssues, 2)
+  assert.equal(byDate['2026-10-21'].newIssues, 2)
+  assert.equal(byDate['2026-10-24'].closedIssues, 1)
+  assert.equal(byDate['2026-10-24'].mergedPullRequests, 1)
+  // Today is the same day the Today column counts, not a day behind it.
+  assert.equal(byDate['2026-10-25'].closedIssues, snapshot.metrics.today.closedIssues)
+  assert.equal(byDate['2026-10-25'].mergedPullRequests, snapshot.metrics.today.mergedPullRequests)
+  // A cancelled run never judged the code, so it is out of the denominator; the header keeps its
+  // own aggregate, superseded included.
+  assert.deepEqual(byDate['2026-10-25'].ci, { failed: 1, counted: 2, total: 3 })
+  assert.deepEqual(snapshot.metrics.today.ci, { failed: 1, superseded: 1, counted: 3, total: 3, unknownDays: [] })
+  // The series costs no request: it is built from the two windows the round already reads.
+  assert.ok(github.calls.every(call => call.headers.Authorization === 'Bearer SECRET-TOKEN'))
+  // The assembled series is the only thing the payload carries — no per-day buckets anywhere else.
+  assert.equal('daily' in snapshot.metrics.today, false)
+  assert.equal('daily' in snapshot.metrics.week, false)
+})
+
+test('the day boundary is Shanghai, not UTC: an evening in UTC is already tomorrow (#1222)', async () => {
+  // 2026-10-24T17:00Z is 2026-10-25 01:00 in Shanghai, so the newest day is the 25th.
+  const { board } = build({}, { now: () => AT('2026-10-24T17:00:00Z') })
+  const snapshot = await settle(board)
+  assert.equal(snapshot.metrics.dayStart, '2026-10-24T16:00:00.000Z')
+  const daily = snapshot.metrics.daily
+  assert.equal(daily[6].date, '2026-10-25')
+  assert.equal(daily[6].partial, true)
+  assert.equal(daily[0].date, '2026-10-19')
+  assert.equal(daily.length, 7)
+})
+
+test('the seven-day CI share is read over the week its counts cover (#1222)', async () => {
+  // The week window is [2026-10-17T16:00Z, 2026-10-24T16:00Z). Walking backwards from its start
+  // read the seven days *before* it, so the CI row described a week the other numbers never saw.
+  const { board, github } = build()
+  await settle(board)
+  const ranges = github.calls
+    .filter(call => call.path.startsWith('/actions/runs'))
+    .map(call => new URLSearchParams(call.query).get('created'))
+  const starts = ranges.map(range => Date.parse(range.split('..')[0]))
+  assert.equal(starts.length, 8, 'seven days for the week, one for today')
+  assert.ok(starts.every(at => at >= AT('2026-10-17T16:00:00Z')), 'no window reaches back before the week it describes')
+  assert.equal(starts.filter(at => at === AT('2026-10-17T16:00:00Z')).length, 1, 'the first day of the week is read')
+  assert.equal(starts.filter(at => at === AT('2026-10-23T16:00:00Z')).length, 1, 'the week runs up to the day before today')
+  assert.equal(starts.filter(at => at === AT('2026-10-24T16:00:00Z')).length, 1, 'today is its own window')
+})
+
+test('a day whose runs were truncated is unknown, and unknown is not zero (#1222)', async () => {  const { board } = build({ runsTruncated: true })
+  const snapshot = await settle(board)
+  const daily = snapshot.metrics.daily
+  assert.equal(daily.length, 7)
+  // The tail of every day was unread, so no day may claim a CI share — including a quiet-looking 0%.
+  assert.equal(daily.every(day => day.ci === null), true)
+  // The counts are still numbers: a CI read that failed does not erase them.
+  assert.equal(daily[0].newIssues, 1)
+  assert.ok(snapshot.missing.some(item => item.part === 'ci'))
+})
+
+test('CI that cannot be read leaves every day at null, never at a zero share (#1222)', async () => {
+  const { board } = build({ failures: { '/actions/runs': { status: 403, headers: { 'retry-after': '30' } } } })
+  const snapshot = await settle(board)
+  const daily = snapshot.metrics.daily
+  assert.equal(daily.every(day => day.ci === null), true)
+  assert.equal(daily[6].closedIssues, 1)
+})
+
+test('no week, no series: a window nobody read is null, not seven zero days (#1222)', () => {
+  // The series is assembled from the two windows the round read; without the week there is nothing
+  // to draw, and the view says so instead of drawing a flat line at zero.
+  assert.equal(dailySeries(null, null, AT('2026-10-24T16:00:00Z')), null)
+  const today = AT('2026-10-24T16:00:00Z')
+  const only = { daily: [{ start: today, newIssues: 1, closedIssues: 0, newPullRequests: 0, mergedPullRequests: 0, ci: null }] }
+  assert.equal(dailySeries(null, only, today), null, 'six days without a bucket are six unknown days')
+  assert.equal(dailySeries({ daily: [] }, only, today), null)
 })
 
 test('a snapshot is cached, a stale one is served while it refreshes, and 304 reuses it (#1173)', async () => {

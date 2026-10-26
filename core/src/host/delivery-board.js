@@ -36,6 +36,48 @@ export const BACKOFF_MS = [10_000, 30_000, 120_000]
 
 export const startOfDay = (now = Date.now()) => Math.floor((now + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS - SHANGHAI_OFFSET_MS
 
+// `YYYY-MM-DD` for a day boundary, read in the zone the day is cut in — the date the owner sees,
+// not the UTC one, which is a day behind for eight hours of every Shanghai day (#1222).
+export const shanghaiDate = (start) => new Date(start + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10)
+
+// The seven-day series the chart draws (#1222): one entry per Asia/Shanghai day, oldest first, the
+// last one today and marked `partial`. It is assembled from the two windows the round already read
+// — the week's seven days and today's own — so it costs no request. A window that could not be
+// read, or a day nobody counted, makes the whole series `null`: the view says it has no data
+// instead of drawing seven quiet zero days.
+export function dailySeries(week, todayMetrics, today) {
+  const buckets = new Map()
+  for (const day of [...(week?.daily ?? []), ...(todayMetrics?.daily ?? [])]) buckets.set(day.start, day)
+  const series = []
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const start = today - offset * DAY_MS
+    const bucket = buckets.get(start)
+    if (bucket === undefined) return null
+    series.push({
+      date: shanghaiDate(start),
+      ...(offset === 0 ? { partial: true } : {}),
+      newIssues: bucket.newIssues,
+      closedIssues: bucket.closedIssues,
+      newPullRequests: bucket.newPullRequests,
+      mergedPullRequests: bucket.mergedPullRequests,
+      ci: bucket.ci,
+    })
+  }
+  return series
+}
+
+// The per-day buckets are the series' raw material; the payload carries the assembled series only.
+const withoutBuckets = (metrics) => {
+  if (!metrics) return metrics ?? null
+  const { daily: _buckets, ...rest } = metrics
+  return rest
+}
+const withoutCiDays = (ci) => {
+  if (!ci) return ci ?? null
+  const { days: _days, ...rest } = ci
+  return rest
+}
+
 export function median(values) {
   const list = (values ?? []).filter(value => Number.isFinite(value)).sort((a, b) => a - b)
   if (list.length === 0) return null
@@ -328,26 +370,37 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
   // The CI half of a window, kept apart from the issue and pull counts: `/actions/runs` missing a
   // permission is one unknown number in the header, not an empty board (#1211).
   async function ciFor(from, ciDays) {
-    const ci = { failed: 0, superseded: 0, counted: 0, total: 0, unknownDays: [] }
+    const ci = { failed: 0, superseded: 0, counted: 0, total: 0, unknownDays: [], days: [] }
     for (let day = 0; day < ciDays; day += 1) {
-      const window = windowOf(from - day * DAY_MS)
+      // Forward from the window's start, the way every other count in this module reads its
+      // window: walking back from `from` described the week before the one the other numbers
+      // cover, so a seven-day CI share was a week out of step with its own row (#1222).
+      const window = windowOf(from + day * DAY_MS)
       const runs = await runsOfDay(window.from, window.to)
       if (runs.truncated) {
         // The tail was not read, so this day's number is unknown: it is named and left out rather
         // than added as a partial truth (#1211).
         note('ci', failureOf(`the workflow runs for ${new Date(window.from).toISOString()} were truncated at ${MAX_PAGES * PAGE}`, { kind: 'truncated', scope: 'actions', endpoint: '/actions/runs', status: null }))
         ci.unknownDays.push(new Date(window.from).toISOString())
+        ci.days.push({ start: window.from, unknown: true })
         continue
       }
       ci.failed += runs.failed
       ci.superseded += runs.superseded
       ci.counted += runs.counted
       ci.total += runs.total
+      // The per-day block the chart reads (#1222). A cancelled run never judged the code, so it is
+      // left out of the denominator; the header keeps its own aggregate untouched.
+      ci.days.push({ start: window.from, failed: runs.failed, counted: Math.max(0, runs.counted - runs.superseded), total: runs.total })
     }
     return ci
   }
 
-  async function metricsFor(from, { days = 1, ciDays = 1 } = {}) {
+  // A list that stopped at the page cap has a tail nobody read, so the counts built from it are
+  // unknown rather than smaller numbers (#1222).
+  const capped = (rows, max) => rows.length >= max * PAGE
+
+  async function metricsFor(from, { days = 1, ciDays = 1, buckets = false } = {}) {
     const to = from + days * DAY_MS
     const [issues, pulls] = await Promise.all([
       pages(`/issues?state=all&since=${new Date(from - DAY_MS).toISOString()}`, { max: 4, stop: row => row.created_at !== undefined && Date.parse(row.created_at) < from - DAY_MS }),
@@ -359,6 +412,8 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
     const closedIssues = plainIssues.filter(row => inWindow(row.closed_at))
     const newPrs = pulls.filter(row => inWindow(row.created_at)).length
     const merged = pulls.filter(row => inWindow(row.merged_at))
+    const cappedIssues = capped(issues, 4)
+    const cappedPulls = capped(pulls, 4)
     // A CI window that cannot be read leaves `ci: null` — the header says unknown, never zero.
     let ci = null
     if (ciDays > 0) {
@@ -367,6 +422,27 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
         note('ci', error)
       }
     }
+    // One bucket per day of the window, for the seven-day series (#1222). A bucket is built from
+    // the rows this round already read, so it costs no request; a day whose list or run query was
+    // truncated, or whose CI could not be read at all, says `null` instead of a smaller number.
+    const dayBuckets = buckets
+      ? Array.from({ length: days }, (_, index) => {
+        const start = from + index * DAY_MS
+        const end = start + DAY_MS
+        const inDay = (value) => { const at = Date.parse(value ?? ''); return Number.isFinite(at) && at >= start && at < end }
+        const ciDay = ci?.days?.find(day => day.start === start) ?? null
+        return {
+          start,
+          newIssues: cappedIssues ? null : plainIssues.filter(row => inDay(row.created_at)).length,
+          closedIssues: cappedIssues ? null : plainIssues.filter(row => inDay(row.closed_at)).length,
+          newPullRequests: cappedPulls ? null : pulls.filter(row => inDay(row.created_at)).length,
+          mergedPullRequests: cappedPulls ? null : pulls.filter(row => inDay(row.merged_at)).length,
+          ci: ciDay === null || ciDay.unknown === true
+            ? null
+            : { failed: ciDay.failed, counted: ciDay.counted, total: ciDay.total },
+        }
+      })
+      : undefined
     return {
       newIssues,
       closedIssues: closedIssues.length,
@@ -379,7 +455,8 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
       mergedPullRequests: merged.length,
       medianIssueCloseMs: median(closedIssues.map(row => Date.parse(row.closed_at) - Date.parse(row.created_at))),
       medianPullMergeMs: median(merged.map(row => Date.parse(row.merged_at) - Date.parse(row.created_at))),
-      ci,
+      ci: withoutCiDays(ci),
+      ...(dayBuckets ? { daily: dayBuckets } : {}),
     }
   }
 
@@ -451,8 +528,8 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
       ])
       // Two windows, settled separately: a week that cannot be read must not take today with it.
       const metricsResults = await Promise.allSettled([
-        metricsFor(today),
-        metricsFor(weekStart, { days: 7, ciDays: 7 }),
+        metricsFor(today, { buckets: true }),
+        metricsFor(weekStart, { days: 7, ciDays: 7, buckets: true }),
       ])
       const settle = (result, name) => {
         if (result.status === 'fulfilled') return result.value
@@ -546,8 +623,9 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
       metrics: {
         dayStart: new Date(today).toISOString(),
         timeZone: 'Asia/Shanghai',
-        today: todayMetrics,
-        week: weekMetrics,
+        today: withoutBuckets(todayMetrics),
+        week: withoutBuckets(weekMetrics),
+        daily: dailySeries(weekMetrics, todayMetrics, today),
         open: {
           issues: issues.length,
           pullRequests: openPrs,
