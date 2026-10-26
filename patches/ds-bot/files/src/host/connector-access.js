@@ -151,9 +151,25 @@ export function install(rt) {
       // After the old mask is lifted, schemas() lists what is really served now.
       const fresh = served(agent)
       const deny = fresh === undefined ? [] : denied(who, fresh)
-      masks.set(agent, { key: deny.join(','), deny, dispose: deny.length > 0 ? agent.ctx.tools.restrict({ deny }) : undefined })
+      // #1271: restrict() refuses a name the profile does not serve as a global tool, and a tool the Agent
+      // itself serves is listed by schemas() all the same. One such name made the whole call throw after
+      // the old mask was already lifted, so the Agent quietly got every tool back. Ask the global view
+      // what a restriction can enforce and name only those: the guard still refuses a call on the rest.
+      const global = fresh === undefined ? undefined : new Set((ctx.tools.schemas?.() ?? []).map(schema => schema.name))
+      const enforceable = global === undefined ? deny : deny.filter(name => global.has(name))
+      masks.set(agent, { key: deny.join(','), deny: enforceable, dispose: enforceable.length > 0 ? agent.ctx.tools.restrict({ deny: enforceable }) : undefined })
     } catch (error) {
-      rt.warn('ds-bot: connector tools stay listed for %s: %s', bot?.name ?? agent?.id, error)
+      // #1271: a restriction can still fail for a reason of its own. By then the old mask is lifted, so
+      // put the previous narrowing back rather than leave the list wide: the guard refuses the call either
+      // way, but a Bot reads its own list to decide what it can do.
+      if (current !== undefined && current.deny.length > 0) {
+        try {
+          masks.set(agent, { ...current, dispose: agent.ctx.tools.restrict({ deny: current.deny }) })
+        } catch {
+          masks.delete(agent)
+        }
+      }
+      rt.warn('ds-bot: connector tools stay as they were for %s: %s', bot?.name ?? agent?.id, error)
     }
   }
 

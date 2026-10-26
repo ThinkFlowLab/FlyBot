@@ -42,7 +42,9 @@ async function setup({ state = team() } = {}) {
   const agents = new Map()
   const sent = []
   const masks = new Map()
-  const live = { served: [...OWN, ...COMPOSIO, ...GITHUB, ...SCHEDULE] }
+  // `own` is what the Agent itself serves (its own layer): schemas(agent) lists it, schemas() and
+  // restrict() do not know it (#1271).
+  const live = { served: [...OWN, ...COMPOSIO, ...GITHUB, ...SCHEDULE], own: [] }
   const created = agent => Promise.all((ctx.listeners.get('agent/created') ?? []).map(listener => listener({ agent })))
   const hiddenFrom = id => new Set([...(masks.get(id) ?? [])].flatMap(mask => [...mask]).filter(name => connectorOfTool(name) !== undefined))
   const agentFor = async (id, { parent } = {}) => {
@@ -73,7 +75,8 @@ async function setup({ state = team() } = {}) {
     return agent
   }
   const allHidden = id => new Set([...(masks.get(id) ?? [])].flatMap(mask => [...mask]))
-  ctx.tools.schemas = agent => live.served.filter(name => !allHidden(agent?.id).has(name)).map(name => ({ name }))
+  ctx.tools.schemas = agent => (agent === undefined ? [...live.served] : [...live.served, ...live.own]
+    .filter(name => !allHidden(agent?.id).has(name))).map(name => ({ name }))
   let sessions = 0
   Object.assign(ctx, {
     sessions: { get: id => agents.get(id)?.session, flush: async () => {} },
@@ -200,6 +203,9 @@ test('#1237: a room turn drops the composio and schedule tools and keeps github 
   assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'every composio tool goes')
   assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'and the four schedule tools, nothing else')
   for (const name of [...GITHUB, ...OWN]) assert.equal(allHidden('room-writer').has(name), false, `${name} stays`)
+  // #1271: pinned literally. The comparison above uses the same constant the mask reads, so it cannot
+  // notice a renamed or emptied SCHEDULE_TOOLS; these are the DSH names (0.2.0-rc.2).
+  for (const name of ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']) assert.ok(allHidden('room-writer').has(name), `${name} is hidden in a room`)
   for (const name of [...GITHUB, ...OWN]) assert.equal(guard(name, 'room-writer'), undefined, `${name}`)
   for (const name of [...COMPOSIO, ...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, name)
   assert.equal(guard('schedule_list', 'room-writer'), 'Schedules are managed in your own chat, not in a group room (#1237).')
@@ -229,6 +235,21 @@ test('#1237: a schedule tool that appears after the mask landed is denied on the
   ctx.emit('tools/change')
   await tick()
   assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the late tools are denied too')
+})
+
+// #1271: hideConnectorTools lifts the old mask before it installs the new one, so a restrict() that
+// throws left the Agent with no mask at all — the list widened back to every tool. A name the profile
+// does not serve globally (one the Agent itself serves) is what makes restrict() throw.
+test('#1271: a mask that cannot be installed keeps the previous narrowing, it does not widen the list', async (t) => {
+  const { ctx, live, agentFor, allHidden, stop } = await setup()
+  t.after(stop)
+  await agentFor('room-writer')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the room mask lands first')
+  // A connector tool the Agent itself serves: schemas(agent) lists it, restrict() refuses it.
+  live.own = ['mcp__composio__SOMETHING_LOCAL']
+  ctx.emit('tools/change')
+  await tick()
+  for (const name of [...COMPOSIO, ...SCHEDULE]) assert.ok(allHidden('room-writer').has(name), `${name} stays hidden`)
 })
 
 test('#601: a group round of any origin keeps the github tools, also with a friend in the room; #1237 keeps composio and schedule out', async (t) => {
