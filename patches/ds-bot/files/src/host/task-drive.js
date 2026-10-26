@@ -4,7 +4,7 @@
 // subtask, is a follow-up in that Bot's own chat (#1205). The driver does not
 // open a group Session and does not post the reply into the room. Assigning,
 // progress, and the next assignee are board writes; chat is not the scheduler.
-import { compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
+import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
 import { formatRoomBoard } from './room-context.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
@@ -133,6 +133,17 @@ export function install(rt) {
   // `live` is cleared before the turn-end hook runs. The Agent's status can still
   // say running for that moment; a follow-up queues behind it, so status is not a gate.
   const busy = (sessionId) => rt.liveOf?.(sessionId)?.turn !== undefined
+
+  // WIP = 1, the rule `claimQueued` enforces (#1247): a member already holding a card in progress
+  // cannot take a queued item, and a blocked card waits on a person so it does not count. Waking
+  // that member only spends a turn on the refusal that names its own card, and leaves the item
+  // behind that card, so the offer goes to another member of the role. Same test, one board.
+  const holdsCard = (botId) => Object.values(rt.state.tasks ?? {})
+    .some(task => task.ownerBotId === botId && columnOf(task) === 'in-progress' && task.status !== 'blocked')
+
+  // A wake this Session already has: one the pass counted (`inflight`), or one still waiting in
+  // the inbox — after a restart the count is gone and the message is not (#1247).
+  const wakeWaiting = (sessionId, agent) => inflight.has(sessionId) || taskMessages(agent).length > 0
 
   const dropQueued = (agent) => {
     let kept = false
@@ -302,6 +313,8 @@ export function install(rt) {
       for (const botId of carriers) {
         const sessionId = rt.chatOf(botId)
         if (!sessionId || rt.roomOf(sessionId)) continue
+        // A member that cannot claim is not the carrier: the offer moves down the role.
+        if (holdsCard(botId)) continue
         if (busy(sessionId)) continue
         const fp = queueFingerprint(item)
         const hold = heldFor(sessionId, 'queue')
@@ -315,14 +328,18 @@ export function install(rt) {
           continue
         }
         if (busy(sessionId)) continue
-        // A queued wake for this member already waits for a turn: keep that one.
-        if (taskMessages(agent).some(message => messageText(message).includes(item.id))) continue
+        // One Session, one task wake per pass (#1247): the work pass above may already have woken
+        // this Session, and a wake may still wait in its inbox. A second `[Continue task]` in the
+        // same turn contradicts the first, and the item is offered next pass instead.
+        if (wakeWaiting(sessionId, agent)) continue
         inflight.set(sessionId, { fingerprint: fp, started: false, queue: item.id })
         try {
           await rt.deliver({ toId: botId, sessionId, role: 'task', text: queueCueFor(item) })
         } catch (error) {
           inflight.delete(sessionId)
           rt.warn('ds-bot: task drive could not offer %s to %s: %s', item.id, botId, error)
+          // The cue did not leave, so this member is not the carrier: try the next one.
+          continue
         }
         break
       }

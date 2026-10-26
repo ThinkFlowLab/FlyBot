@@ -102,8 +102,19 @@ async function start(t) {
     const body = await track('a', { tasks: [{ group: 'War', queue: true, ...spec }] })
     return { body, id: idOf(body, spec.title) }
   }
+  // DSH claims the queued follow-up when the turn starts, so the fake inbox drops it too. The turn
+  // that ends here is a member's own work: the next pass sees a member with a card and no wake.
+  const finishWake = async (sessionId) => {
+    const message = calls(sessionId).at(-1)
+    assert.ok(message, `${sessionId} has a wake to consume`)
+    agents.get(sessionId).inbox.remove(message.id)
+    emit(sessionId, 'user/message', { content: message.content, source: message.source })
+    emit(sessionId, 'turn/start', { turn: 1 })
+    emit(sessionId, 'turn/end', { reason: { kind: 'completed' } })
+    await ctx.taskDrive.settled()
+  }
   const board = () => formatRoomBoard(rt.state.tasks, { roomId: 'war', nameOf: task => rt.botOf(task.ownerBotId)?.name })
-  return { ctx, rt, track, text, calls, emit, idOf, enqueue, board, home }
+  return { ctx, rt, track, text, calls, emit, idOf, enqueue, finishWake, board, home }
 }
 
 test('two claims for one queued item leave exactly one owner (#1247)', async (t) => {
@@ -165,6 +176,47 @@ test('enqueuing wakes the idle member of the role and nobody else (#1247)', asyn
   await app.enqueue({ title: 'Review the diff', role: 'Reviewer' })
   assert.equal(app.calls('r1').length, 1, 'the second role gets its own wake')
   assert.equal(app.calls('d1').length, 1, 'one wake per item: the Dev is not woken for a Reviewer item')
+})
+
+// The member that already holds a card in progress is refused by `claimQueued` (WIP = 1), so a queue
+// cue for it is a turn spent on that refusal while the item waits behind its card. The offer goes to
+// the idle member of the role instead (#1247).
+test('an idle member behind one holding a card is the one woken (#1247)', async (t) => {
+  const app = await start(t)
+  const held = await app.track('d1', { tasks: [{ group: 'War', title: 'Held card', column: 'in-progress', progress: 30 }] })
+  const heldId = app.idOf(held, 'Held card')
+  // That wake was the member's own turn: it ended, and the card is the only thing left on it.
+  await app.finishWake('d1')
+  assert.equal(app.calls('d1').length, 1)
+
+  const { id } = await app.enqueue({ title: 'Fix the flaky test', role: 'Dev' })
+  assert.equal(app.calls('d1').length, 1, 'the member holding a card is not offered the queue item')
+  assert.doesNotMatch(app.text('d1'), /Take /, 'a queue cue for a member that cannot claim it')
+  assert.equal(app.calls('d2').length, 1, 'the idle member of the role is woken')
+  assert.match(app.text('d2'), new RegExp(`Take ${id} `))
+  assert.equal(app.rt.state.tasks[id].claimedBy, undefined, 'a wake is not a claim')
+  // WIP = 1 still refuses the claim itself, naming the card the member holds.
+  assert.match(await app.track('d1', { claim: true, group: 'War' }), new RegExp(`in-progress card \\(${heldId}\\)`))
+})
+
+// One pass, one Session, one task wake (#1247): the work pass wakes the member its card names, and the
+// queue pass must not stack a second cue on the same Session — one turn would read two contradictions,
+// and the queue item would stay behind the first cue's card.
+test('one pass gives a Session at most one task wake (#1247)', async (t) => {
+  const app = await start(t)
+  const body = await app.track('a', { tasks: [
+    { title: 'Ship the note', overall: true, group: 'War' },
+    { title: 'Write the draft', parent: 'Ship the note', assignee: 'Dev1', group: 'War', priority: 'high' },
+    { title: 'Fix the flaky test', group: 'War', queue: true, role: 'Dev' },
+  ] })
+  const written = app.idOf(body, 'Write the draft')
+  const queued = app.idOf(body, 'Fix the flaky test')
+  assert.equal(app.calls('d1').length, 1, 'the assigned card wakes its member once')
+  assert.match(app.text('d1'), new RegExp(`Continue ${written} `))
+  assert.doesNotMatch(app.text('d1'), /Take /, 'no second task wake on a Session that already has one')
+  assert.equal(app.calls('d2').length, 1, 'the idle member of the role takes the queue item instead')
+  assert.match(app.text('d2'), new RegExp(`Take ${queued} `))
+  assert.equal(app.rt.state.tasks[queued].claimedBy, undefined, 'a wake is not a claim')
 })
 
 test('a queue wake names the title and id, not the item body (#1247)', async (t) => {
