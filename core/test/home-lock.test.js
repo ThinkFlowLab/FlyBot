@@ -296,3 +296,28 @@ test('read-only host (#14): FlyBot queries answer, plugin reads answer, writes a
   fb.remote.publish([{ handle: '@a.b.home', name: 'A' }])
   assert.deepEqual(fb.remote.list(), [])
 })
+
+test('#1225: a reading host answers the delivery board and its probe, and still refuses a write', async (t) => {
+  const home = tempHome(t)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const call = start(t, home)
+  // The probe asks GitHub five times; answer them here so the test reads the gate, not the network.
+  call.rt.fetch = async (url) => new Response(
+    String(url).includes('/pulls') ? JSON.stringify([{ number: 7, head: { sha: 'abc1234' } }]) : '{}',
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  )
+  assert.match((await call('state', {})).value.readOnly, /open in another dsh/)
+
+  // Both read: the window that only reads the team still answers them instead of `bot/read-only`.
+  const board = await call('delivery-board', {})
+  assert.equal(board.error, undefined, `delivery-board was refused: ${JSON.stringify(board.error)}`)
+  assert.notEqual(board.value, undefined)
+  const probe = await call('delivery-probe', {})
+  assert.equal(probe.error, undefined, `delivery-probe was refused: ${JSON.stringify(probe.error)}`)
+  assert.equal(probe.value.ok, true)
+
+  // The list stays a list of reads: the same window still refuses a change.
+  assert.equal((await call('set-prefs', { theme: 'dark' })).error.code, 'bot/read-only')
+  assert.equal((await call('secret-set', { name: 'MINE', value: 'mine-value-1' })).error.code, 'bot/read-only')
+})

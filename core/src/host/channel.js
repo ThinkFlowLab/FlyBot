@@ -215,7 +215,9 @@ export function install(rt) {
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
   // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
+  // delivery-board serves the cached snapshot and delivery-probe only GETs GitHub (#1225); both were
+  // missing, so a window that only reads the team could not open the board at all.
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe'])
 
   // A chat reference chip names a Session whose snapshot rides to every recipient of
   // the message, so the author must be able to read what they share (#53, #106).

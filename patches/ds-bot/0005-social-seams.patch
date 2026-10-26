@@ -288,7 +288,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,146 @@ export function install(rt) {
+@@ -21,32 +21,146 @@
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -444,7 +444,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
      agents: Object.values(state.agents),
      // Key names and who may use them; values never leave the host.
-@@ -54,7 +54,8 @@ export function install(rt) {
+@@ -54,7 +54,8 @@
      capabilities: rt.capabilityLibraryView(),
      secretRequests: state.secretRequests ?? {},
      colors: [...COLORS, ...EXTRA_COLORS],
@@ -454,7 +454,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@ export function install(rt) {
+@@ -65,22 +65,51 @@
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -494,7 +494,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
    // Updates change the dsh profile, not the team, so a reading host may run them too.
 -  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
 +  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami'])
++  // delivery-board serves the cached snapshot and delivery-probe only GETs GitHub (#1225); both were
++  // missing, so a window that only reads the team could not open the board at all.
++  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe'])
 +
 +  // A chat reference chip names a Session whose snapshot rides to every recipient of
 +  // the message, so the author must be able to read what they share (#53, #106).
@@ -515,7 +517,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,64 @@ export function install(rt) {
+@@ -97,28 +97,64 @@
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -584,7 +586,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@ export function install(rt) {
+@@ -141,7 +141,7 @@
            return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
          case 'create-bot': {
            await rt.bootstrap()
@@ -593,7 +595,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(bot)
          }
          case 'update-bot':
-@@ -150,18 +150,23 @@ export function install(rt) {
+@@ -150,18 +150,23 @@
          case 'delete-bot':
            await rt.load()
            await rt.deleteBot(body.id)
@@ -621,7 +623,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            return ok(room)
          }
          case 'update-room': {
-@@ -171,12 +171,70 @@ export function install(rt) {
+@@ -171,12 +171,70 @@
              notice: body.notice,
              mode: body.mode,
              admin: body.admin,
@@ -694,7 +696,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          }
          case 'folders':
          case 'folder-pick':
-@@ -203,17 +203,19 @@ export function install(rt) {
+@@ -203,17 +203,19 @@
          case 'remove-agent':
            await rt.load()
            await rt.removeAgent(body.agentId)
@@ -717,7 +719,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'stop-member-work':
            return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
          case 'dismiss-question':
-@@ -231,6 +231,9 @@ export function install(rt) {
+@@ -231,6 +231,9 @@
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -727,7 +729,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-disconnect':
          case 'connector-retry':
            await rt.load()
-@@ -241,11 +241,22 @@ export function install(rt) {
+@@ -241,11 +241,22 @@
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -751,7 +753,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'memory-view':
          case 'memory-ask':
          case 'memory-forget':
-@@ -258,8 +258,17 @@ export function install(rt) {
+@@ -258,8 +258,17 @@
            const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
            const question = state.questions[sessionId]
            if (question === undefined || question.id !== body.questionId) return fail('This question is no longer open', 'bot/stale')
@@ -769,7 +771,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            // Claim the question before queueing so a second answer is refused.
            delete state.questions[sessionId]
            try {
-@@ -278,9 +278,49 @@ export function install(rt) {
+@@ -278,9 +278,49 @@
            const text = String(body.text ?? '').trim()
            if (text === '' || typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
            await rt.load()
@@ -819,7 +821,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,120 @@ export function install(rt) {
+@@ -319,32 +319,120 @@
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -945,6 +947,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +    dispose?.()
 +  }
 +}
+
 diff --git a/src/host/delivery.js b/src/host/delivery.js
 --- a/src/host/delivery.js
 +++ b/src/host/delivery.js

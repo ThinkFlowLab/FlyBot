@@ -1,0 +1,1 @@
+A window that only reads the Bot team — because another dsh holds it — can open the delivery board and its probe again instead of being told `bot/read-only`; both are reads, and every write in that window is still refused. ([#1225](https://github.com/ThinkFlowLab/FlyBot/issues/1225))
