@@ -583,6 +583,22 @@ test('a new key makes its own session and deletes the old key\'s session with th
 
 // --- The session address is not kept in state.json (#335) ---
 
+// #1081: the install-time scrub (src/host/connectors.js scrubAddresses) writes state.json on a
+// path of its own, and a mount reached through another sync (secrets -> rt.secretsChanged ->
+// syncAll) can appear while that write is still in flight. Under load the file was measured to
+// still carry the old line 2-91 ms after the mount, so wait for the file to hold the new state
+// instead of reading once. A write that never lands still fails: the deadline returns the old
+// text and the assertions below read it.
+const untilState = async (file, done) => {
+  const end = Date.now() + 3000
+  for (;;) {
+    const text = readFileSync(file, 'utf8')
+    if (done(text)) return text
+    if (Date.now() > end) return text
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
 const untilMounted = async (mounts, count) => {
   const end = Date.now() + 3000
   while (mounts.length < count) {
@@ -635,7 +651,7 @@ test('an address saved by an older version is dropped from state.json at start, 
   assert.equal(second.mounts[0].config.url, 'https://composio.test/tool_router/trs_1/mcp')
   assert.deepEqual(second.mounts[0].config.headers, { 'x-api-key': key })
   assert.equal(sent.posts.length, 1, 'the session is reused, not made again')
-  const text = readFileSync(file, 'utf8')
+  const text = await untilState(file, value => !value.includes('LEGACYCREDENTIAL') && !value.includes('composio.test/tool_router'))
   assert.ok(!text.includes('LEGACYCREDENTIAL'))
   assert.ok(!text.includes('composio.test/tool_router'))
   assert.deepEqual(JSON.parse(text).connectors.composio.session, { id: 'trs_1', apps: ['gmail'] })
