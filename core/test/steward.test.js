@@ -16,7 +16,7 @@ test('a model without a window counts as the default, and odd settings fall back
   // A reply that would take the whole window still leaves half of it.
   assert.equal(linesFor({ window: 100_000, reserve: 200_000 }).usable, 50_000)
   for (const checkRatio of [0, 1, 1.5, -1, 'x', undefined]) {
-    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 80_000, String(checkRatio))
+    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 45_000, String(checkRatio))
   }
   // The check line never passes the hard line.
   assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)

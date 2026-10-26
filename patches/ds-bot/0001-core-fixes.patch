@@ -11,7 +11,10 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -71,9 +71,12 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+@@ -69,11 +69,14 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
+-    checkRatio: 0.8                 # share of the model's usable window where the steward decides
++    checkRatio: 0.45                # share of the model's usable window where the steward decides; default 0.45
+     browser: true                   # force the Bot browser on or off; default on in Desktop only
      memory: true                    # false turns memory off: no memory tools, section or panel
      memoryReview: true              # false leaves memory to the Bots' own remember calls
      diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
@@ -9271,3 +9274,27 @@ diff --git a/test/work-dir.test.js b/test/work-dir.test.js
    assert.deepEqual(third.created, [{ cwd: third.project }])
    assert.match(await third.tool('list_bots', {}, 'a'), new RegExp(`- Builder \\(Build, works in ${escapeRegExp(third.project)}\\)`))
  })
+diff --git a/src/host/steward.js b/src/host/steward.js
+--- a/src/host/steward.js
++++ b/src/host/steward.js
+@@ -11,6 +11,8 @@
+ // For a model that declares no window.
+ export const DEFAULT_WINDOW = 500_000
+-export const DEFAULT_CHECK_RATIO = 0.8
++// Earlier than upstream's 0.8: the fixed block is re-sent on every call and the
++// history is most of each prompt, so condensing sooner costs the prompt less (#1233).
++export const DEFAULT_CHECK_RATIO = 0.45
+ // Context sizes between requests are estimates, so the hard line stays a little
+ // below what the model can actually take.
+ const HARD_SHARE = 0.95
+diff --git a/test/steward.test.js b/test/steward.test.js
+--- a/test/steward.test.js
++++ b/test/steward.test.js
+@@ -17,6 +17,6 @@ test('a model without a window counts as the default, and odd settings fall back', () => {
+   assert.equal(linesFor({ window: 100_000, reserve: 200_000 }).usable, 50_000)
+   for (const checkRatio of [0, 1, 1.5, -1, 'x', undefined]) {
+-    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 80_000, String(checkRatio))
++    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio }).check, 45_000, String(checkRatio))
+   }
+   // The check line never passes the hard line.
+   assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)

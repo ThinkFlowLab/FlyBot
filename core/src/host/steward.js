@@ -10,7 +10,9 @@ import { estimateTokens } from './text.js'
 
 // For a model that declares no window.
 export const DEFAULT_WINDOW = 500_000
-export const DEFAULT_CHECK_RATIO = 0.8
+// Earlier than upstream's 0.8: the fixed block is re-sent on every call and the
+// history is most of each prompt, so condensing sooner costs the prompt less (#1233).
+export const DEFAULT_CHECK_RATIO = 0.45
 // Context sizes between requests are estimates, so the hard line stays a little
 // below what the model can actually take.
 const HARD_SHARE = 0.95

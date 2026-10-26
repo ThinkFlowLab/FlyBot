@@ -67,7 +67,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
   config:
     workspace: /path/to/workspace   # where the Bots work; default <home>/workspace
     home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/bot
-    checkRatio: 0.8                 # share of the model's usable window where the steward decides
+    checkRatio: 0.45                # share of the model's usable window where the steward decides; default 0.45
     browser: true                   # force the Bot browser on or off; default on in Desktop only
     memory: true                    # false turns memory off: no memory tools, section or panel
     memoryReview: true              # false leaves memory to the Bots' own remember calls

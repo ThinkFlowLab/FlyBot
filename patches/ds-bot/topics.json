@@ -51,7 +51,9 @@
     "test/follow-through.test.js",
     "src/host/images.js",
     "test/images.test.js",
-    "test/session-identity.test.js"
+    "test/session-identity.test.js",
+    "src/host/steward.js",
+    "test/steward.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",
