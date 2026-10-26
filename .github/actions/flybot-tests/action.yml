@@ -38,6 +38,15 @@ runs:
       env:
         DSH: ${{ inputs.dsh }}
       run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
+    # A part handoff moves a task by rewriting a private DSH row (`service.serialize` +
+    # `(await service.getDomain()).table('tasks')`), and no unit test can see the real package there: a
+    # rename would turn into one rt.warn and the task would silently stay on the archived part (#1257).
+    # So the shape is pinned right after the harness installs it — the same step a DSH upgrade changes.
+    - name: dsh-schedule private task row shape (#1257)
+      shell: bash
+      env:
+        DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
+      run: node .github/scripts/check-dsh-task-shape.mjs
     - name: Fetch origin/main for arch-docs check
       shell: bash
       run: |
