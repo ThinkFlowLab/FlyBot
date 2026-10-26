@@ -84,6 +84,10 @@ export function createInbound({
 } = {}) {
   const seen = new Set()
   const order = []
+  // Events being handed over right now. Two copies of one event can arrive while the first is still
+  // in `deliver`; the ring is written only after that resolves (#1266 INC), so this is what keeps the
+  // second copy from starting a second turn in the gap.
+  const inFlight = new Set()
   const view = { state: enabled ? 'connecting' : 'off', connected: 0, duplicates: 0, refused: 0, ignored: 0 }
   let closer
   let starting
@@ -129,13 +133,21 @@ export function createInbound({
       log('a Feishu message from %s is not the owner; no turn started', read.openId)
       return 'refused'
     }
-    if (!remember(read.id)) {
+    if (seen.has(read.id) || inFlight.has(read.id)) {
       view.duplicates += 1
       log('a Feishu event %s was already handled; duplicate ignored', read.id)
       return 'duplicate'
     }
-    const name = (await nameOf(read.openId)) ?? handleOf(read.chatId)
-    await deliver({ handle: handleOf(read.chatId), text: read.text, name })
+    inFlight.add(read.id)
+    try {
+      const name = (await nameOf(read.openId)) ?? handleOf(read.chatId)
+      await deliver({ handle: handleOf(read.chatId), text: read.text, name })
+    } finally {
+      inFlight.delete(read.id)
+    }
+    // Only now is the id handled: a `deliver` that threw leaves it out of the ring, so a replayed
+    // event is handed over again instead of being called a duplicate for ever (Reviewer, #1266).
+    remember(read.id)
     view.lastEventAt = new Date(now()).toISOString()
     return 'delivered'
   }

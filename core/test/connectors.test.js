@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply, createRuntime } from '../index.js'
-import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, signIn } from '../src/host/connectors.js'
+import { cleanApps, composioAppStatus, composioDeleteSession, composioSearchApps, composioSession, composioSessionAlive, composioSessionFind, feishuReply, signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 
 // A test's temp home can still be written by a background save that outlives dispose(), so a
@@ -449,6 +449,71 @@ test('an adapter installed after the connectors module is the one the next Try a
   assert.equal(after.inbound.state, 'ready')
   assert.equal(after.inbound.connected, 1)
   assert.equal(dials.length, 1, 'the adapter installed late is the one that dialled')
+})
+
+// #1266 INC (Reviewer): an answer to a Feishu message had no way out. `remote-chat.forward` keys its
+// sender by `bot.remote.plugin`, and this module opened the chat without one, so every answer read
+// "Not sent: the plugin that reaches this Bot is not running." The chat now carries the feishu plugin.
+const FEISHU_INBOUND_EVENT = {
+  header: { event_id: 'e1', event_type: 'im.message.receive_v1' },
+  event: {
+    sender: { sender_id: { open_id: 'ou_owner_1' } },
+    message: { chat_id: 'oc_chat_1', message_type: 'text', content: JSON.stringify({ text: 'hello there' }) },
+  },
+}
+
+// The inbound socket of a running runtime, dialled through Try again so the adapter is a stub: what
+// comes back is the `onEvent` the policy layer handed the socket.
+async function feishuInboundRig(t) {
+  const home = teamHome()
+  const ctx = fakeContext()
+  capture(ctx)
+  const rt = createRuntime(ctx, { home, feishu: { enabled: true, ownerOpenId: 'ou_owner_1' } })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
+  const dials = []
+  rt.feishuTransport = { connect: async (onEvent) => { dials.push(onEvent); return { close: async () => {} } } }
+  await call(ctx, 'connector-retry', { id: 'feishu' })
+  assert.ok(dials.length > 0, 'the stub socket dialled')
+  return { rt, ctx, home, onEvent: dials.at(-1) }
+}
+
+test('a Feishu message opens its chat on the feishu plugin (#1266)', async (t) => {
+  const { rt, onEvent } = await feishuInboundRig(t)
+  const delivered = []
+  rt.remoteChats.open = async () => 'chat'
+  rt.remoteChats.deliver = async message => { delivered.push(message); return 'chat' }
+  await onEvent(FEISHU_INBOUND_EVENT)
+  assert.equal(delivered.length, 1, 'the message reached the chat seam')
+  assert.equal(delivered[0].handle, 'feishu:oc_chat_1')
+  assert.equal(delivered[0].text, 'hello there')
+  assert.equal(delivered[0].plugin, 'feishu', 'without the plugin the chat forwards its answers to no sender')
+})
+
+test('the answer sender is registered on the chat seam when a Feishu message arrives (#1266)', async (t) => {
+  const { rt, onEvent } = await feishuInboundRig(t)
+  const senders = new Map()
+  rt.remoteChats.open = async () => 'chat'
+  rt.remoteChats.deliver = async () => 'chat'
+  rt.remoteChats.onSend = (plugin, fn) => { senders.set(plugin, fn); return () => { senders.delete(plugin) } }
+  await onEvent(FEISHU_INBOUND_EVENT)
+  assert.equal(typeof senders.get('feishu'), 'function', 'remote-chat installs after this module, so the sender is registered when the first message lands')
+})
+
+test('the answer to a Feishu message leaves on the webhook phase 1 already posts to (#1266)', async () => {
+  const posts = []
+  const reply = feishuReply({
+    secretValue: name => (name === 'FEISHU_WEBHOOK' ? 'https://open.feishu.cn/open-apis/bot/v2/hook/abc' : undefined),
+    post: async (webhook, text) => { posts.push([webhook, text]); return { ok: true } },
+  })
+  await reply({ handle: 'feishu:oc_chat_1', text: 'the answer' })
+  assert.deepEqual(posts, [['https://open.feishu.cn/open-apis/bot/v2/hook/abc', 'the answer']])
+  // A missing webhook is a sentence the chat shows, not a silent drop: `remote-chat` prints it as
+  // the "Not sent:" line it already knows.
+  await assert.rejects(feishuReply({ secretValue: () => undefined })({ text: 'x' }), /^Error: Not sent: connect Feishu first/)
+  await assert.rejects(
+    feishuReply({ secretValue: () => 'https://open.feishu.cn/open-apis/bot/v2/hook/abc', post: async () => ({ ok: false, error: 'feishu/http-400' }) })({ text: 'x' }),
+    /Not sent: Feishu refused the answer \(feishu\/http-400\)/,
+  )
 })
 
 test('a Composio address without https refuses to send the key', async (t) => {

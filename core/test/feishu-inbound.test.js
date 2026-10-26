@@ -218,3 +218,48 @@ test('a stop while the socket dials hangs up the one that arrives and never repo
   assert.equal(inbound.view().state, 'connecting', 'the row does not flip back to ready behind the owner')
   assert.equal(inbound.view().connected, 0)
 })
+
+// #1266 INC (Reviewer): the ring used to be written *before* `deliver`, so a delivery that threw
+// left the id in it and every replay read `duplicate` — a lost message the owner could never get
+// back. The id now enters the ring only once the message has been handed to its chat.
+test('a message whose delivery throws is handed over again, not remembered as handled (#1266)', async () => {
+  const turns = []
+  let refuse = true
+  const inbound = createInbound({
+    enabled: true,
+    ownerOpenId: OWNER,
+    transport: { connect: async () => ({ close: async () => {} }) },
+    deliver: async message => {
+      if (refuse) {
+        refuse = false
+        throw new Error('no chat seam is installed for a Feishu message')
+      }
+      turns.push(message)
+    },
+  })
+  await inbound.start()
+  await assert.rejects(inbound.handleEvent(event()), /no chat seam is installed/)
+  assert.equal(await inbound.handleEvent(event()), 'delivered', 'the same event_id is handled again')
+  assert.equal(turns.length, 1)
+  assert.equal(inbound.view().duplicates, 0, 'a failed delivery is not a duplicate')
+  assert.equal(inbound.seen(), 1, 'the ring holds the id once, after the delivery succeeded')
+})
+
+test('two copies of one event arriving together still start one turn (#1266)', async () => {
+  const turns = []
+  let release
+  const handed = new Promise(resolve => { release = resolve })
+  const inbound = createInbound({
+    enabled: true,
+    ownerOpenId: OWNER,
+    transport: { connect: async () => ({ close: async () => {} }) },
+    deliver: async message => { await handed; turns.push(message) },
+  })
+  await inbound.start()
+  const first = inbound.handleEvent(event())
+  const second = inbound.handleEvent(event())
+  release()
+  const results = await Promise.all([first, second])
+  assert.deepEqual(results.sort(), ['delivered', 'duplicate'])
+  assert.equal(turns.length, 1)
+})

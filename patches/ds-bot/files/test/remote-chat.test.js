@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { remoteTurn, isRemoteChat, REMOTE_PROVIDER, install, notSentLine } from '../src/host/remote-chat.js';
 import { isHomeLevelRemote, isListedRemoteChat, isShownRemoteChat } from '../src/shared/remote-label.js';
+import { feishuReply } from '../src/host/connectors.js';
 
 const user = (content, source, id = 'm1') => ({ role: 'user', id, content, ...(source ? { source } : {}) });
 
@@ -281,4 +282,25 @@ test('a line Bot Social attests the friend typed themselves carries the person\'
   assert.deepEqual(followups.map(message => message.source.typedBy), ['Bob', undefined, undefined])
   assert.equal(followups[0].source.form, 'remote-chat')
   assert.equal(followups[1].source.text, 'bot line')
+})
+
+// #1266 INC (Reviewer): the whole exit of a Feishu answer, composed. A `feishu:` chat carries the
+// feishu plugin, the plugin's sender is the one `connectors.js` registers, and a message typed into
+// that chat leaves on the webhook — not as "Not sent: the plugin that reaches this Bot is not running."
+test('a reply typed into a feishu chat leaves on the Feishu webhook (#1266)', async () => {
+  const state = { bots: { f1: { id: 'f1', name: '飞书 Owner', remote: { handle: 'feishu:oc_chat_1', plugin: 'feishu' } } } }
+  let adapter
+  const posts = []
+  const rt = { state, load: async () => {}, save: async () => {}, warn() {}, ctx: { llm: { registerAdapter: (_, a) => { adapter = a } } } }
+  install(rt)
+  rt.remoteChats.onSend('feishu', feishuReply({
+    secretValue: name => (name === 'FEISHU_WEBHOOK' ? 'https://open.feishu.cn/open-apis/bot/v2/hook/abc' : undefined),
+    post: async (webhook, text) => { posts.push([webhook, text]); return { ok: true } },
+  }))
+  let said = ''
+  for await (const event of adapter.stream({ model: 'feishu:oc_chat_1', messages: [{ role: 'user', id: 'm1', content: [{ type: 'text', text: 'the answer' }] }] })) {
+    if (event.type === 'text-delta') said += event.text
+  }
+  assert.equal(said, '', 'nothing is drawn for a send that left')
+  assert.deepEqual(posts, [['https://open.feishu.cn/open-apis/bot/v2/hook/abc', 'the answer']])
 })
