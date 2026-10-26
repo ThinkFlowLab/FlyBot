@@ -11,7 +11,7 @@
 // `{ message, endpoint, status, kind, scope, at }` so the view can say what failed, where, and what
 // to do about it. "No GitHub connection yet" is reserved for a host that has never tried.
 import { repoSlug } from './update.js'
-import { NO_REPO_MESSAGE, resolveRepo } from './delivery-repo.js'
+import { NO_REPO_MESSAGE, instanceRepoSetting, resolveRepo } from './delivery-repo.js'
 
 export const DELIVERY_COLUMNS = ['raw', 'ready', 'working', 'review', 'done-today']
 
@@ -761,7 +761,7 @@ export function install(rt) {
     try { return rt.ctx?.workspaceRegistry?.get?.(rt.state?.workspaceId)?.path ?? null } catch { return null }
   }
   const setting = () => {
-    try { return rt.config?.deliveryRepo ?? null } catch { return null }
+    try { return instanceRepoSetting(rt.config) } catch { return null }
   }
   // Level 3 is the package's own repository, not the instance's choice. The shipped package carries
   // it; a host whose package.json has none (or a test) hands in '' and the board refuses rather than

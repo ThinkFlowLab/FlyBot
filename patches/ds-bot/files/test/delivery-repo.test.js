@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { gitConfigPath, gitOriginRepo, NO_REPO_MESSAGE, originUrlIn, parseRepoName, resolveRepo } from '../src/host/delivery-repo.js'
+import { gitConfigPath, gitOriginRepo, instanceRepoSetting, NO_REPO_MESSAGE, originUrlIn, parseRepoName, resolveRepo } from '../src/host/delivery-repo.js'
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'delivery-repo-'))
 const cleanup = dir => rmSync(dir, { recursive: true, force: true })
@@ -56,18 +56,43 @@ test('an origin written as a URL, an scp path or a name with no .git reads the s
   }
 })
 
-test('a .git file is followed through its gitdir, and git is never spawned (#1250)', () => {
-  // A worktree (or a submodule) keeps its config elsewhere and `.git` is a pointer file.
+test('a submodule keeps its config in the gitdir the `.git` file names (#1250)', () => {
+  // A submodule's `.git` is a pointer file and its own gitdir really does hold `config`.
   const root = scratch()
   try {
-    const store = join(root, 'main.git', 'worktrees', 'wt')
+    const store = join(root, 'super', '.git', 'modules', 'sub')
     mkdirSync(store, { recursive: true })
-    writeFileSync(join(store, 'config'), '[remote "origin"]\n\turl = git@github.com:acme/worktree.git\n')
+    writeFileSync(join(store, 'config'), '[remote "origin"]\n\turl = git@github.com:acme/submodule.git\n')
+    const dir = join(root, 'super', 'sub')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '.git'), `gitdir: ${join('..', '.git', 'modules', 'sub')}\n`)
+    assert.equal(gitConfigPath(dir), join(store, 'config'))
+    assert.deepEqual(resolveRepo({ workspace: dir }), { repo: 'acme/submodule', source: 'remote' })
+  } finally { cleanup(root) }
+})
+
+test('a linked worktree follows its `commondir` to the config the shared directory holds (#1258)', () => {
+  // `git worktree add` writes `.git` -> `<main>/.git/worktrees/<name>`, and that directory holds no
+  // config of its own: only `commondir`, naming the shared directory where git keeps it. Reading
+  // `config` beside the pointer finds nothing, so a worktree workspace fell to the package default.
+  const root = scratch()
+  try {
+    const shared = join(root, 'main', '.git')
+    mkdirSync(join(shared, 'worktrees', 'wt'), { recursive: true })
+    writeFileSync(join(shared, 'config'), '[remote "origin"]\n\turl = git@github.com:acme/worktree.git\n')
+    writeFileSync(join(shared, 'worktrees', 'wt', 'commondir'), '../..\n')
     const dir = join(root, 'checkout')
     mkdirSync(dir)
-    writeFileSync(join(dir, '.git'), `gitdir: ${join('..', 'main.git', 'worktrees', 'wt')}\n`)
-    assert.equal(gitConfigPath(dir), join(store, 'config'))
+    writeFileSync(join(dir, '.git'), `gitdir: ${join('..', 'main', '.git', 'worktrees', 'wt')}\n`)
+    assert.equal(gitConfigPath(dir), join(shared, 'config'))
     assert.deepEqual(resolveRepo({ workspace: dir }), { repo: 'acme/worktree', source: 'remote' })
+    // A pointer with neither a config nor a commondir answers nothing rather than a wrong path.
+    const bare = join(root, 'bare')
+    mkdirSync(join(bare, 'gitdir'), { recursive: true })
+    mkdirSync(join(root, 'elsewhere'))
+    writeFileSync(join(root, 'elsewhere', '.git'), 'gitdir: ../bare/gitdir\n')
+    assert.equal(gitConfigPath(join(root, 'elsewhere')), null)
+    assert.deepEqual(resolveRepo({ workspace: join(root, 'elsewhere') }), { repo: null, source: null })
   } finally { cleanup(root) }
 })
 
@@ -106,6 +131,39 @@ test('a value that is not a GitHub repository is refused, not mined for its last
     assert.equal(parseRepoName(value), null, String(value))
   }
   assert.equal(originUrlIn('[remote "origin"]\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'), null)
+})
+
+test('a path step is not a repository name, so `.` and `..` segments are refused (#1258)', () => {
+  // `OWNER_NAME` allowed a dot anywhere, so `../..` answered a "repository": the board then built
+  // `/repos/../../issues`, which normalises to the API root. Same host, so no token left, but every
+  // request it made was meaningless and the "this is a repository name" invariant was gone.
+  for (const value of ['../..', './widget', '.a/b', 'acme/.b', 'acme/..']) {
+    assert.equal(parseRepoName(value), null, value)
+  }
+  // A dot inside a segment is a real repository name and stays allowed.
+  for (const value of ['acme/widget.js', 'a.b/c-d', 'a1-2_3/b.4']) {
+    assert.equal(parseRepoName(value), value, value)
+  }
+})
+
+test('the instance setting is read in all three spellings a profile can write it (#1258)', () => {
+  // The host passes the plugin entry through verbatim and expands no dotted key, so the hint's
+  // `delivery.repo` reaches the board as one of three shapes. Reading only the flat one ignored
+  // what a user had just written and fell through to the labelled package default.
+  assert.equal(instanceRepoSetting({ delivery: { repo: 'acme/widget' } }), 'acme/widget')
+  assert.equal(instanceRepoSetting({ 'delivery.repo': 'acme/widget' }), 'acme/widget')
+  assert.equal(instanceRepoSetting({ deliveryRepo: 'acme/widget' }), 'acme/widget')
+  // The documented spelling wins over the runtime shape when a profile happens to carry both.
+  assert.equal(instanceRepoSetting({ delivery: { repo: 'acme/nested' }, deliveryRepo: 'acme/flat' }), 'acme/nested')
+  // Nothing written, or an empty value, is "no setting", not the empty string as a repository.
+  assert.equal(instanceRepoSetting({}), null)
+  assert.equal(instanceRepoSetting({ delivery: {} }), null)
+  assert.equal(instanceRepoSetting({ deliveryRepo: '' }), null)
+  assert.equal(instanceRepoSetting(null), null)
+  assert.equal(instanceRepoSetting(undefined), null)
+  // A nested setting is a real setting end to end, not only in the helper.
+  assert.deepEqual(resolveRepo({ setting: instanceRepoSetting({ delivery: { repo: 'acme/widget' } }), packageSlug: 'x/y' }),
+    { repo: 'acme/widget', source: 'config' })
 })
 
 test('the probe is a shell over this resolver, and refuses before it asks (#1250)', () => {

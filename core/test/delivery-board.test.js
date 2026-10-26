@@ -852,6 +852,20 @@ test('the instance setting names the repository for the board and the probe, and
   assert.ok(probe.rows.every(row => row.ok))
 })
 
+test('a dotted or nested delivery.repo names the repository too, as a user writes it (#1258)', async () => {
+  // The hint says `delivery.repo`, so that is what a profile carries — as a literal dotted key or
+  // nested; a literal key wins nowhere, it is simply read. The flat `deliveryRepo` is the third.
+  for (const config of [{ 'delivery.repo': 'acme/widget' }, { delivery: { repo: 'acme/widget' } }]) {
+    const github = fakeGitHub({ slug: 'acme/widget' })
+    const installed = hostWith(github, { config })
+    const settled = await installed.deliveryBoard({ wait: true })
+    assert.equal(settled.repo, 'acme/widget', JSON.stringify(config))
+    assert.equal(settled.repoSource, 'config', JSON.stringify(config))
+    assert.equal(settled.state, 'fresh')
+    for (const call of github.calls) assert.match(call.url, /^https:\/\/api\.github\.com\/repos\/acme\/widget(\/|$|\?)/, call.url)
+  }
+})
+
 test('the workspace git remote names the repository when there is no setting (#1250)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'delivery-install-'))
   try {
