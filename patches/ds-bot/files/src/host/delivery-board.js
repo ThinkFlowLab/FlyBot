@@ -318,16 +318,26 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
     return body
   }
 
-  async function pages(path, { max = MAX_PAGES, stop = null } = {}) {
+  // A walk that ends on its last allowed page with that page full, and with no row the `stop`
+  // predicate wanted, left a tail nobody read: the caller must say "unknown", not "fewer"
+  // (#1211, #1222). A full page alone is not that answer — the stop may have matched on it, which
+  // means the window was read whole and only the list ended (#1240).
+  async function walk(path, { max = MAX_PAGES, stop = null } = {}) {
     const rows = []
+    let truncated = false
     for (let page = 1; page <= max; page += 1) {
       const separator = path.includes('?') ? '&' : '?'
       const chunk = await get(`${base}${path}${separator}per_page=${PAGE}&page=${page}`)
       if (!Array.isArray(chunk)) break
       rows.push(...chunk)
       if (chunk.length < PAGE || (stop !== null && chunk.some(stop))) break
+      if (page === max) truncated = true
     }
-    return rows
+    return { rows, truncated }
+  }
+
+  async function pages(path, options) {
+    return (await walk(path, options)).rows
   }
 
   // Every page, not only the first (#1189). Past 100 comments — ordinary on this repository
@@ -397,23 +407,26 @@ export function createDeliveryBoard({ repo, token, request = fetch, now = Date.n
   }
 
   // A list that stopped at the page cap has a tail nobody read, so the counts built from it are
-  // unknown rather than smaller numbers (#1222).
-  const capped = (rows, max) => rows.length >= max * PAGE
+  // unknown rather than smaller numbers (#1222). The flag is the walk's own answer, not the row
+  // count: a page four that is full because `stop` matched an old row there was read whole (#1240).
+  const capped = (listing) => listing.truncated === true
 
   async function metricsFor(from, { days = 1, ciDays = 1, buckets = false } = {}) {
     const to = from + days * DAY_MS
-    const [issues, pulls] = await Promise.all([
-      pages(`/issues?state=all&since=${new Date(from - DAY_MS).toISOString()}`, { max: 4, stop: row => row.created_at !== undefined && Date.parse(row.created_at) < from - DAY_MS }),
-      pages('/pulls?state=all&sort=created&direction=desc', { max: 4, stop: row => Date.parse(row.created_at ?? 0) < from }),
+    const [issueList, pullList] = await Promise.all([
+      walk(`/issues?state=all&since=${new Date(from - DAY_MS).toISOString()}`, { max: 4, stop: row => row.created_at !== undefined && Date.parse(row.created_at) < from - DAY_MS }),
+      walk('/pulls?state=all&sort=created&direction=desc', { max: 4, stop: row => Date.parse(row.created_at ?? 0) < from }),
     ])
+    const issues = issueList.rows
+    const pulls = pullList.rows
     const plainIssues = issues.filter(row => !isPull(row))
     const inWindow = (value) => { const at = Date.parse(value ?? ''); return Number.isFinite(at) && at >= from && at < to }
     const newIssues = plainIssues.filter(row => inWindow(row.created_at)).length
     const closedIssues = plainIssues.filter(row => inWindow(row.closed_at))
     const newPrs = pulls.filter(row => inWindow(row.created_at)).length
     const merged = pulls.filter(row => inWindow(row.merged_at))
-    const cappedIssues = capped(issues, 4)
-    const cappedPulls = capped(pulls, 4)
+    const cappedIssues = capped(issueList)
+    const cappedPulls = capped(pullList)
     // A CI window that cannot be read leaves `ci: null` — the header says unknown, never zero.
     let ci = null
     if (ciDays > 0) {
