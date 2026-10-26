@@ -780,7 +780,7 @@ diff --git a/client.js b/client.js
 +  "{label} over the last 7 days": "{label}近 7 天",
 +  "Last 7 days": "近 7 天",
 +  "so far": "截至现在",
-+  "today is partial · as of {time}": "今天为部分日 · 截至 {time}",
++  "today is partial": "今天为部分日",
 +  "* {count} of 7 days had data": "* 7 天中 {count} 天有数",
 +  "* {count} of {days} days had data": "* {days} 天中 {count} 天有数",
 +  "CI red share": "CI 红占比",
@@ -3205,7 +3205,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2574,2206 +2574,4872 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2206 +2574,4877 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -7481,8 +7481,6 @@ diff --git a/client.js b/client.js
 -var scrollParent = (node) => {
 -  for (let at = node.parentElement; at; at = at.parentElement) {
 -    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
--  }
--  return null;
 +var MEMBER_CSS = `
 +.bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
 +.bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
@@ -7525,26 +7523,7 @@ diff --git a/client.js b/client.js
 +var line = (d) => (0, import_react13.createElement)("path", { d });
 +var icon = (...paths) => function StatusIcon() {
 +  return (0, import_react13.createElement)("svg", { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, paths.map(line));
- };
--function EarlierParts({ sessionId, roster, actions }) {
--  const [view, setView] = (0, import_react6.useState)({ items: [], cursor: void 0, loading: true, failed: false, startedAt: null });
--  const top = (0, import_react6.useRef)(null);
--  const busy = (0, import_react6.useRef)(false);
--  const alive = (0, import_react6.useRef)(true);
--  const restore = (0, import_react6.useRef)(null);
--  const load = (cursor) => {
--    if (busy.current) return;
--    busy.current = true;
--    setView((current) => ({ ...current, loading: true, failed: false }));
--    actions.earlier(sessionId, cursor).then((page) => {
--      busy.current = false;
--      if (!alive.current) return;
--      const scroller = top.current && scrollParent(top.current);
--      if (scroller) restore.current = { scroller, fromEnd: scroller.scrollHeight - scroller.scrollTop };
--      setView((current) => ({ items: [...page.items, ...current.items], cursor: page.cursor, loading: false, failed: false, startedAt: page.startedAt ?? current.startedAt }));
--    }, () => {
--      busy.current = false;
--      if (alive.current) setView((current) => ({ ...current, loading: false, failed: true }));
++};
 +var RING = "M10 3.25a6.75 6.75 0 1 1 0 13.5 6.75 6.75 0 0 1 0-13.5z";
 +var InboxIcon = icon("M3.5 11.5l1.9-6.1A1.5 1.5 0 0 1 6.83 4.35h6.34a1.5 1.5 0 0 1 1.43 1.05l1.9 6.1", "M3.5 11.5v3.25a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5V11.5", "M3.5 11.5h3.75l1 1.75h3.5l1-1.75h3.75");
 +var AskIcon = icon(RING, "M10 6.75v3.75", "M10 13.25h.01");
@@ -7588,14 +7567,9 @@ diff --git a/client.js b/client.js
 +    }).catch(() => {
 +    }).finally(() => {
 +      if (!stopped) timer = setTimeout(load, POLL_MS2);
-     });
--  };
--  (0, import_react6.useEffect)(() => {
--    alive.current = true;
--    load(void 0);
++    });
 +    load();
-     return () => {
--      alive.current = false;
++    return () => {
 +      stopped = true;
 +      clearTimeout(timer);
 +      taskListeners.delete(setTasks);
@@ -7620,9 +7594,29 @@ diff --git a/client.js b/client.js
 +    if (question == null || typeof question !== "object" || roster.roomsById?.[key]) continue;
 +    if (question.question !== text) continue;
 +    if (key === bot.id || key === currentPart(bot)) return bot.id;
-+  }
+   }
+-  return null;
 +  return void 0;
-+};
+ };
+-function EarlierParts({ sessionId, roster, actions }) {
+-  const [view, setView] = (0, import_react6.useState)({ items: [], cursor: void 0, loading: true, failed: false, startedAt: null });
+-  const top = (0, import_react6.useRef)(null);
+-  const busy = (0, import_react6.useRef)(false);
+-  const alive = (0, import_react6.useRef)(true);
+-  const restore = (0, import_react6.useRef)(null);
+-  const load = (cursor) => {
+-    if (busy.current) return;
+-    busy.current = true;
+-    setView((current) => ({ ...current, loading: true, failed: false }));
+-    actions.earlier(sessionId, cursor).then((page) => {
+-      busy.current = false;
+-      if (!alive.current) return;
+-      const scroller = top.current && scrollParent(top.current);
+-      if (scroller) restore.current = { scroller, fromEnd: scroller.scrollHeight - scroller.scrollTop };
+-      setView((current) => ({ items: [...page.items, ...current.items], cursor: page.cursor, loading: false, failed: false, startedAt: page.startedAt ?? current.startedAt }));
+-    }, () => {
+-      busy.current = false;
+-      if (alive.current) setView((current) => ({ ...current, loading: false, failed: true }));
 +var placeKey = (botId, roomId) => `${botId}|${roomId ?? ""}`;
 +var partOf = (roster, chat) => roster.roomsById?.[chat] || !roster.byId?.[chat] ? chat : currentPart(roster.byId[chat]);
 +var runningIn = (work, botId, roomId) => roomId === void 0 ? work.bots?.[botId]?.roomId === void 0 ? work.bots?.[botId] : void 0 : (work.rooms?.[roomId] ?? []).find((entry) => entry.botId === botId) ?? (work.bots?.[botId]?.roomId === roomId ? work.bots[botId] : void 0);
@@ -7732,8 +7726,13 @@ diff --git a/client.js b/client.js
 +      place: placeOf(roster, roomId),
 +      chat: roomId ?? bot.id,
 +      ...people(roster, bot.id)
-+    });
-+  };
+     });
+   };
+-  (0, import_react6.useEffect)(() => {
+-    alive.current = true;
+-    load(void 0);
+-    return () => {
+-      alive.current = false;
 +  for (const [botId, entry] of Object.entries(work.bots ?? {})) running(botId, entry, entry.roomId);
 +  for (const [roomId, entries2] of Object.entries(work.rooms ?? {})) for (const entry of entries2) running(entry.botId, entry, roomId);
 +  const lastEnded = /* @__PURE__ */ new Map();
@@ -8736,7 +8735,11 @@ diff --git a/client.js b/client.js
 +  const today = snapshot?.today ?? {};
 +  const week = snapshot?.week ?? {};
 +  const ci = today.ci ?? null;
-+  const share = (entry) => entry && Number.isFinite(entry.counted) && entry.counted > 0 ? `${Math.round(entry.failed / entry.counted * 100)}%` : "—";
++  const share = (entry) => {
++    if (!entry || !Number.isFinite(entry.failed)) return "—";
++    const denominator = Number.isFinite(entry.counted) && entry.counted > 0 ? entry.counted : Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
++    return denominator === null ? "—" : `${Math.round(entry.failed / denominator * 100)}%`;
++  };
 +  const count = (value) => value === null || value === void 0 ? "—" : String(value);
 +  const rows = [
 +    { label: t("New issues"), key: "newIssues" },
@@ -8933,6 +8936,7 @@ diff --git a/client.js b/client.js
 +  const repoName = payload.repo ?? repo ?? null;
 +  const repoSource = payload.repoSource ?? null;
 +  const sourceText = repoSourceText(repoSource);
++  const partial = state !== "loading" && todayPartial(metricsPayload.daily);
 +  return (0, import_react15.createElement)(
 +    "header",
 +    { className: "bt-del-head" },
@@ -8966,8 +8970,8 @@ diff --git a/client.js b/client.js
 +    (0, import_react15.createElement)(
 +      "p",
 +      { className: "bt-del-asof" },
-+      state === "loading" ? loadingText(payload.elapsedMs) : t("as of {time}", { time: timeOf(payload.asOf) }),
-+      state !== "loading" && todayPartial(metricsPayload.daily) ? ` · ${t("today is partial · as of {time}", { time: clockOf(payload.asOf) })}` : "",
++      state === "loading" ? loadingText(payload.elapsedMs) : t("as of {time}", { time: partial ? clockOf(payload.asOf) : timeOf(payload.asOf) }),
++      partial ? ` · ${t("today is partial")}` : "",
 +      payload.refreshing ? ` · ${t("refreshing…")}` : "",
 +      error ? ` · ${hintFor(error, { repo })}` : "",
 +      onRetry ? (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null,

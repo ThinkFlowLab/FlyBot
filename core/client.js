@@ -1384,7 +1384,7 @@ var HOST_ZH = {
   "{label} over the last 7 days": "{label}近 7 天",
   "Last 7 days": "近 7 天",
   "so far": "截至现在",
-  "today is partial · as of {time}": "今天为部分日 · 截至 {time}",
+  "today is partial": "今天为部分日",
   "* {count} of 7 days had data": "* 7 天中 {count} 天有数",
   "* {count} of {days} days had data": "* {days} 天中 {count} 天有数",
   "CI red share": "CI 红占比",
@@ -8346,7 +8346,11 @@ function metricRows(snapshot) {
   const today = snapshot?.today ?? {};
   const week = snapshot?.week ?? {};
   const ci = today.ci ?? null;
-  const share = (entry) => entry && Number.isFinite(entry.counted) && entry.counted > 0 ? `${Math.round(entry.failed / entry.counted * 100)}%` : "—";
+  const share = (entry) => {
+    if (!entry || !Number.isFinite(entry.failed)) return "—";
+    const denominator = Number.isFinite(entry.counted) && entry.counted > 0 ? entry.counted : Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
+    return denominator === null ? "—" : `${Math.round(entry.failed / denominator * 100)}%`;
+  };
   const count = (value) => value === null || value === void 0 ? "—" : String(value);
   const rows = [
     { label: t("New issues"), key: "newIssues" },
@@ -8512,6 +8516,7 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
   const repoName = payload.repo ?? repo ?? null;
   const repoSource = payload.repoSource ?? null;
   const sourceText = repoSourceText(repoSource);
+  const partial = state !== "loading" && todayPartial(metricsPayload.daily);
   return (0, import_react15.createElement)(
     "header",
     { className: "bt-del-head" },
@@ -8545,8 +8550,8 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
     (0, import_react15.createElement)(
       "p",
       { className: "bt-del-asof" },
-      state === "loading" ? loadingText(payload.elapsedMs) : t("as of {time}", { time: timeOf(payload.asOf) }),
-      state !== "loading" && todayPartial(metricsPayload.daily) ? ` · ${t("today is partial · as of {time}", { time: clockOf(payload.asOf) })}` : "",
+      state === "loading" ? loadingText(payload.elapsedMs) : t("as of {time}", { time: partial ? clockOf(payload.asOf) : timeOf(payload.asOf) }),
+      partial ? ` · ${t("today is partial")}` : "",
       payload.refreshing ? ` · ${t("refreshing…")}` : "",
       error ? ` · ${hintFor(error, { repo })}` : "",
       onRetry ? (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null,

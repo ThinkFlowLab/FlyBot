@@ -1337,7 +1337,7 @@ const HOST_ZH = {
   '{label} over the last 7 days': '{label}近 7 天',
   'Last 7 days': '近 7 天',
   'so far': '截至现在',
-  'today is partial · as of {time}': '今天为部分日 · 截至 {time}',
+  'today is partial': '今天为部分日',
   '* {count} of 7 days had data': '* 7 天中 {count} 天有数',
   '* {count} of {days} days had data': '* {days} 天中 {count} 天有数',
   'CI red share': 'CI 红占比',

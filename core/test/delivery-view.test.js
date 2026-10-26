@@ -102,7 +102,7 @@ const mount = (Component, props) => {
   return { draw, rerender: draw }
 }
 const {
-  createPoller, DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows, pollDelay, retryCountdown,
+  createPoller, DELIVERY_COLUMNS, DeliveryBoard, DeliveryHeader, badgeLabel, duration, metricRows, pollDelay, retryCountdown,
   loadingText, staleText, hintFor, missingText, probeText,
 } = module.exports
 
@@ -205,6 +205,91 @@ test('the CI red share reaches the page as a line, and the medians draw none (#1
     const row = rows.find(node => node.props['data-metric'] === key)
     assert.equal(walk(row).some(node => node.props?.className === 'bt-del-chart'), false)
   }
+})
+
+test('a day the host could only count by total reads the same share in the row as on the line (#1244)', () => {
+  // The header row required `counted`, so a day with `counted: 0, total: 5` printed '—' while the
+  // 7-day line beside it drew a dot from `total`: one day, two answers. The row now uses the same
+  // denominator the chart draws.
+  const countedByTotal = { date: '2026-10-25', partial: true, newIssues: 3, closedIssues: 1, newPullRequests: 0, mergedPullRequests: 0, ci: { failed: 1, counted: 0, total: 5 } }
+  const metrics = {
+    ...snapshot.metrics,
+    today: { ...snapshot.metrics.today, ci: countedByTotal.ci },
+    daily: [countedByTotal],
+  }
+  const rows = metricRows(metrics)
+  assert.equal(rows.rows[4].today, '20%', 'one red run of five is 20%, not unknown')
+  // The denominator the chart uses for that same day (delivery-chart.test.js pins the number).
+  assert.equal(countedByTotal.ci.failed / countedByTotal.ci.total, 0.2)
+  // A window with no runs at all still has no share: unknown is not 0%, and it is not a dot either.
+  assert.equal(metricRows({ ...metrics, today: { ...snapshot.metrics.today, ci: { failed: 0, counted: 0, total: 0 } } }).rows[4].today, '—')
+})
+
+test('a partial day prints its time once, in the task zone, instead of twice (#1244)', async () => {
+  // #1244: the paragraph printed `as of {timeOf}` and then appended a hint carrying its own
+  // `clockOf` of the same instant — the time twice, and from two different renderings. The hint now
+  // follows the single time, and that time is the hint's own zone rendering.
+  const daily = [
+    { date: '2026-10-19', newIssues: 1, closedIssues: 1, newPullRequests: 1, mergedPullRequests: 0, ci: { failed: 0, counted: 10 } },
+    { date: '2026-10-20', newIssues: 2, closedIssues: 1, newPullRequests: 1, mergedPullRequests: 1, ci: { failed: 2, counted: 10 } },
+    { date: '2026-10-21', newIssues: 0, closedIssues: 3, newPullRequests: 2, mergedPullRequests: 1, ci: { failed: 1, counted: 4 } },
+    { date: '2026-10-22', newIssues: 4, closedIssues: 2, newPullRequests: 0, mergedPullRequests: 2, ci: { failed: null, counted: null } },
+    { date: '2026-10-23', newIssues: 3, closedIssues: 3, newPullRequests: 1, mergedPullRequests: 1, ci: { failed: 0, counted: 8 } },
+    { date: '2026-10-24', newIssues: 5, closedIssues: 4, newPullRequests: 3, mergedPullRequests: 2, ci: { failed: 3, counted: 12 } },
+    { date: '2026-10-25', partial: true, newIssues: 4, closedIssues: 2, newPullRequests: 5, mergedPullRequests: 3, ci: { failed: 2, counted: 10 } },
+  ]
+  const snapshotWith = dailySeries => ({ ...snapshot, metrics: { ...snapshot.metrics, daily: dailySeries } })
+  const asOfText = (Component, input) => {
+    const paragraph = walk(Component({ snapshot: input })).find(node => node.props?.className === 'bt-del-asof')
+    assert.ok(paragraph, 'the header carries an as-of line')
+    return text(paragraph).replace(/\s+/g, ' ').trim()
+  }
+  const times = words => [...words.matchAll(/\d{1,2}:\d{2}/g)].length
+
+  const english = asOfText(DeliveryHeader, snapshotWith(daily))
+  assert.equal(times(english), 1, `one time string, got: ${english}`)
+  assert.match(english, /today is partial/)
+  // The same paragraph in Chinese, through the same bundled module: the duplicate 截至 is gone too.
+  const { DeliveryHeader: DeliveryHeaderZh, installLocale } = await build({
+    stdin: {
+      contents: `export { DeliveryHeader } from ${JSON.stringify(fileURLToPath(new URL('../src/client/delivery-view.js', import.meta.url)))}\nexport { installLocale } from ${JSON.stringify(fileURLToPath(new URL('../src/client/i18n.js', import.meta.url)))}`,
+      resolveDir: fileURLToPath(new URL('../src/client/', import.meta.url)),
+      loader: 'js',
+    },
+    bundle: true, format: 'cjs', platform: 'node', write: false, external: ['react'],
+  }).then(async out => {
+    const module = { exports: {} }
+    runInNewContext(out.outputFiles[0].text, {
+      module, exports: module.exports, setTimeout, clearTimeout, Date: FakeDate, Promise, Number, Math, String, Array, Object,
+      setInterval: timers.setInterval, clearInterval: timers.clearInterval,
+      require: (name) => {
+        if (name !== 'react') throw new Error(`no platform module ${name}`)
+        return reactStub
+      },
+    })
+    return module.exports
+  })
+  const dictionaries = new Map()
+  const off = installLocale({
+    register: (namespace, locale, dict) => { dictionaries.set(`${namespace}:${locale}`, dict); return () => dictionaries.delete(`${namespace}:${locale}`) },
+    bind: namespace => (key, params) => {
+      const words = dictionaries.get(`${namespace}:zh`)?.[key] ?? key
+      return params ? words.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : words
+    },
+    getLocale: () => ({ active: 'zh' }),
+  })
+  try {
+    const chinese = asOfText(DeliveryHeaderZh, snapshotWith(daily))
+    assert.equal(times(chinese), 1, `one time string, got: ${chinese}`)
+    assert.match(chinese, /今天为部分日/)
+    assert.equal((chinese.match(/截至/g) ?? []).length, 1, 'the hint no longer repeats 截至')
+  } finally {
+    off()
+  }
+  // A finished day keeps the local-clock rendering and gains no hint at all.
+  const finished = asOfText(DeliveryHeader, snapshotWith(daily.map(day => ({ ...day, partial: false }))))
+  assert.equal(times(finished), 1)
+  assert.equal(finished.includes('today is partial'), false)
 })
 
 test('the board renders all five columns and a card with labels, owner and link (#1173)', () => {

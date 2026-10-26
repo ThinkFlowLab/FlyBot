@@ -132,9 +132,16 @@ export function metricRows(snapshot) {
   const week = snapshot?.week ?? {}
   const ci = today.ci ?? null
   // The CI share is a ratio of the runs that counted, so it is written as a percentage and is
-  // never summed; a window with nothing counted reads '—', not 0%.
-  const share = (entry) => (entry && Number.isFinite(entry.counted) && entry.counted > 0
-    ? `${Math.round((entry.failed / entry.counted) * 100)}%` : '—')
+  // never summed. A day the host could only count by `total` still has a denominator — the one the
+  // 7-day line beside this row draws — so the two halves read the same day the same way (#1244);
+  // only a window with no runs at all reads '—', never 0%.
+  const share = (entry) => {
+    if (!entry || !Number.isFinite(entry.failed)) return '—'
+    const denominator = Number.isFinite(entry.counted) && entry.counted > 0
+      ? entry.counted
+      : (Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null)
+    return denominator === null ? '—' : `${Math.round((entry.failed / denominator) * 100)}%`
+  }
   const count = (value) => (value === null || value === undefined ? '—' : String(value))
   const rows = [
     { label: t('New issues'), key: 'newIssues' },
@@ -293,6 +300,10 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
   const repoName = payload.repo ?? repo ?? null
   const repoSource = payload.repoSource ?? null
   const sourceText = repoSourceText(repoSource)
+  // One time, one source (#1244): while today is still running the hint follows the time, so the
+  // paragraph prints the zone-clocked time once instead of repeating a local-clock rendering of the
+  // same instant — the two can disagree, not merely repeat.
+  const partial = state !== 'loading' && todayPartial(metricsPayload.daily)
   return h('header', { className: 'bt-del-head' },
     // Whose numbers these are, and where the name came from (#1250): a package default that looks
     // like a fact is what showed one instance another repository's board.
@@ -312,8 +323,8 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
       }), open.medianIssueAgeMs !== null && open.medianIssueAgeMs !== undefined
         ? ` · ${t('median open age {age}', { age: duration(open.medianIssueAgeMs) })}` : '')),
     h('p', { className: 'bt-del-asof' },
-      state === 'loading' ? loadingText(payload.elapsedMs) : t('as of {time}', { time: timeOf(payload.asOf) }),
-      state !== 'loading' && todayPartial(metricsPayload.daily) ? ` · ${t('today is partial · as of {time}', { time: clockOf(payload.asOf) })}` : '',
+      state === 'loading' ? loadingText(payload.elapsedMs) : t('as of {time}', { time: partial ? clockOf(payload.asOf) : timeOf(payload.asOf) }),
+      partial ? ` · ${t('today is partial')}` : '',
       payload.refreshing ? ` · ${t('refreshing…')}` : '',
       error ? ` · ${hintFor(error, { repo })}` : '',
       onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null,

@@ -126,6 +126,19 @@ test('#1212: the CI metric is the red share of the runs that counted', () => {
   assert.equal(knownDays(daily, 'ci'), 6)
 })
 
+test('#1244: a day counted only by total still draws the share the header row reads', () => {
+  // `counted: 0` means the host could not say which runs were superseded, not that the day had
+  // nothing to count: the line draws `failed / total`, and the header row now reads the same
+  // denominator instead of printing '—' beside a dot.
+  const countedByTotal = { date: '2026-10-26', partial: true, ci: { failed: 1, counted: 0, total: 5 } }
+  assert.equal(dayValue(countedByTotal, 'ci'), 0.2)
+  const geo = chartGeometry([countedByTotal], 'ci')
+  assert.equal(geo.dots[0].state, 'partial', 'today is still running, and it is still drawn')
+  assert.equal(geo.dots[0].title, '2026-10-26 · 20%')
+  // Both columns empty is still unknown: neither a dot nor a share.
+  assert.equal(dayValue({ date: '2026-10-26', ci: { failed: 0, counted: 0, total: 0 } }, 'ci'), null)
+})
+
 test('#1212: the component draws a 168×28 svg with a state and a title on every point', () => {
   const node = DeliveryChart({ daily, metricKey: 'newIssues', label: 'New issues' })
   assert.equal(node.type, 'svg')
