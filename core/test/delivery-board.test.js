@@ -9,6 +9,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createDeliveryBoard, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
+import { install as installAuthz } from '../src/host/authz.js'
+import { install as installChannel } from '../src/host/channel.js'
 
 const NOW = Date.parse('2026-10-25T04:00:00Z') // 12:00 in Asia/Shanghai
 const AT = (iso) => Date.parse(iso)
@@ -552,5 +554,63 @@ test('CI counts ask GitHub for the day in ISO time, not epoch numbers (#1173)', 
   for (const call of runs) {
     const created = new URLSearchParams(call.query).get('created')
     assert.match(created, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z\.\.\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, `created=${created}`)
+  }
+})
+
+test('the Diagnose entry is on the API route, and refused without a session (#1211)', async () => {
+  // #1211: the probe has to be reachable the way the button reaches it — through the channel's
+  // route, past authz — because calling `rt.deliveryProbe()` directly skips both and left
+  // `delivery-probe` out of the allow list while every test stayed green (Reviewer, 03:30Z).
+  let route
+  const ctx = {
+    effect: fn => { const dispose = fn(); return () => { if (typeof dispose === 'function') dispose() } },
+    connection: { fetch: { register: registered => { route = registered; return () => { route = undefined } } } },
+    logger: { warn: () => {} },
+    sessionController: { prompt: async () => {} },
+  }
+  const state = {
+    authSessions: { tok1: { memberId: 'owner-1' } },
+    members: { 'owner-1': { id: 'owner-1', displayName: 'Owner' } },
+    bots: {},
+    rooms: {},
+  }
+  const probeRows = [{ name: '/repos/o/r', ok: true, status: 200, hint: '' }]
+  const rt = {
+    ctx,
+    state,
+    refresh: async () => {},
+    readOnly: () => undefined,
+    authenticate: async token => (token === 'tok1' ? { memberId: 'owner-1' } : null),
+    load: async () => {},
+    deliveryBoard: async () => ({ ok: true, state: 'fresh', columns: [] }),
+    deliveryProbe: async () => ({ rows: probeRows }),
+    ensureCapabilities: async () => {},
+    warn: () => {},
+  }
+  installAuthz(rt)
+  installChannel(rt)
+  assert.ok(route !== undefined, 'the channel registered its /api/bot route')
+
+  const post = async (payload, token) => {
+    const headers = { 'content-type': 'application/json' }
+    if (token) headers['x-flybot-member-session'] = token
+    const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', headers, body: JSON.stringify(payload) }))
+    return response.json()
+  }
+
+  // Signed in: both reads answer, so the 诊断 button's endpoint is not "Unknown endpoint".
+  for (const endpoint of ['delivery-board', 'delivery-probe']) {
+    const answer = await post({ endpoint }, 'tok1')
+    assert.equal(answer.ok, true, endpoint + ' should answer for a signed-in member: ' + JSON.stringify(answer))
+  }
+  // The channel wraps a successful answer as `{ ok: true, value }`.
+  const probed = await post({ endpoint: 'delivery-probe' }, 'tok1')
+  assert.deepEqual(probed.value.rows, probeRows)
+
+  // No session: both are refused, not silently served.
+  for (const endpoint of ['delivery-board', 'delivery-probe']) {
+    const answer = await post({ endpoint })
+    assert.equal(answer.ok, false, endpoint + ' must not answer without a session')
+    assert.equal(answer.error.code, 'bot/unauthorized', JSON.stringify(answer))
   }
 })

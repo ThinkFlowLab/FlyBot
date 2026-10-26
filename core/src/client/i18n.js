@@ -1332,6 +1332,8 @@ const HOST_ZH = {
   'Showing the snapshot from {time} · refresh failed: {message}': '显示 {time} 的快照 · 刷新失败：{message}',
   'The first round reads the repository once; the columns appear as soon as it lands.': '首轮要把这个仓读一遍，列会在拿到的同时出现。',
   'It retries on its own (10 s → 30 s → 2 min).': '会自动重试（10 秒 → 30 秒 → 2 分钟）。',
+  'While this page is open it retries on its own; press Retry to try again now.': '页面开着时自动重试，也可点重试立即再试。',
+  'Retrying in {seconds} s · press Retry to try again now': '{seconds} 秒后自动重试，也可点重试立即再试。',
   'Checks unknown': '检查结果未取到',
   'CI not available this time': '本次未取到 CI 数据',
   '{count} day(s) not read': '{count} 天没取到',

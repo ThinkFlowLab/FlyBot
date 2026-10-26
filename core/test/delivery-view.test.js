@@ -30,7 +30,7 @@ runInNewContext(bundle.outputFiles[0].text, {
   },
 })
 const {
-  DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows, pollDelay,
+  createPoller, DELIVERY_COLUMNS, DeliveryBoard, badgeLabel, duration, metricRows, pollDelay, retryCountdown,
   loadingText, staleText, hintFor, missingText, probeText,
 } = module.exports
 
@@ -145,7 +145,14 @@ test('loading counts the seconds and promises the columns (#1211)', () => {
   assert.equal(walk(board).some(node => node.type === 'section'), false, 'no half-built columns')
   assert.equal(pollDelay('loading'), 2_000)
   assert.equal(pollDelay('idle'), 2_000)
-  for (const state of ['fresh', 'stale', 'partial', 'failed']) assert.equal(pollDelay(state), 60_000, `${state} polls slowly`)
+  // A failed read is scheduled by the host's `retryAt`, not by a fixed minute (#1211): the old
+  // assertion here pinned 60_000 for `failed`, which is what made the 10 s / 30 s levels dead code.
+  const now = Date.parse('2026-10-25T04:00:00Z')
+  assert.equal(pollDelay('failed', { retryAt: now + 10_000 }, now), 10_000)
+  assert.equal(pollDelay('failed', { retryAt: now + 120_000 }, now), 120_000, 'the 2 min level is not flattened to a minute')
+  assert.equal(pollDelay('stale', { retryAt: now + 30_000 }, now), 30_000, 'a stale board waits for the same retry')
+  assert.equal(pollDelay('failed', { retryAt: now - 5_000 }, now), 1_000, 'a past retryAt does not spin')
+  for (const state of ['fresh', 'stale', 'partial', 'failed']) assert.equal(pollDelay(state, { retryAt: null }, now), 60_000, `${state} polls slowly`)
 })
 
 test('a failed round names the endpoint, the advice and a retry button (#1211)', () => {
@@ -216,4 +223,104 @@ test('the diagnostic report prints the five lines the CLI prints (#1211)', () =>
   const output = probeText(report)
   assert.match(output, /ok 200 {2}\/repos\/o\/r/)
   assert.match(output, /FAIL 404 {2}\/repos\/o\/r\/actions\/runs {2}not-found/)
+})
+
+// A fake clock and a fake timer queue: the cadence is read off the timers the poller asks for, not
+// off the wall clock, so the test is about the schedule and nothing else (#1211).
+function clock(start = Date.parse('2026-10-25T04:00:00Z')) {
+  let at = start
+  let seq = 0
+  const timers = new Map()
+  return {
+    now: () => at,
+    setTimer: (fn, ms) => { const id = ++seq; timers.set(id, { at: at + ms, fn }); return id },
+    clearTimer: id => { timers.delete(id) },
+    pending: () => [...timers.values()].map(timer => timer.at - at),
+    // Advance to the earliest due timer, run it, and report how far time moved.
+    advance: async () => {
+      const next = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+      if (!next) return null
+      const [id, timer] = next
+      timers.delete(id)
+      at = Math.max(at, timer.at)
+      timer.fn()
+      await new Promise(resolve => setImmediate(resolve))
+      return at - start
+    },
+  }
+}
+
+test('a failed round retries on the host backoff, not on a fixed minute (#1211)', async () => {
+  const c = clock()
+  // A host that refuses for three rounds — 10 s, then 30 s, then two minutes — and counts the
+  // rounds it actually started. The client may read more often; only the rounds matter.
+  const backoff = [10_000, 30_000, 120_000]
+  let rounds = 0
+  let nextAt = 0
+  const started = []
+  const load = async () => {
+    const now = c.now()
+    if (now < nextAt) return { state: 'failed', error: { message: 'still cooling down', kind: 'network', endpoint: null, status: null, at: null }, retryAt: nextAt }
+    started.push(now - Date.parse('2026-10-25T04:00:00Z'))
+    nextAt = now + (backoff[Math.min(rounds, backoff.length - 1)])
+    rounds += 1
+    return { state: 'failed', error: { message: 'GitHub answered 503', kind: 'server', endpoint: '/repos/o/r', status: 503, at: null }, retryAt: nextAt }
+  }
+  const views = []
+  const poller = createPoller({ load, onView: view => views.push(view.state), now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer })
+  poller.start()
+  await new Promise(resolve => setImmediate(resolve))
+  // Three advances is exactly the three backoff levels: 10 s, 30 s, then the two-minute one.
+  for (let i = 0; i < 3; i += 1) await c.advance()
+
+  // The rounds the host really started: now, 10 s, 40 s (30 s later), 160 s (2 min later).
+  assert.deepEqual(started, [0, 10_000, 40_000, 160_000], 'each backoff level produces its own request')
+  assert.equal(rounds, 4)
+  // The screen was told about every read, and a failed read always renders as failed, never as fresh.
+  assert.ok(views.length >= 4)
+  assert.ok(views.every(state => state === 'failed'))
+  poller.stop()
+})
+
+test('Retry paints loading at once and forces the read (#1211)', async () => {
+  const c = clock()
+  const calls = []
+  let release = null
+  const load = async (force) => {
+    calls.push(force)
+    if (!force) return { state: 'failed', error: { message: 'GitHub answered 503', kind: 'server', endpoint: '/repos/o/r', status: 503, at: null }, retryAt: c.now() + 120_000 }
+    await new Promise(resolve => { release = resolve })
+    return { state: 'fresh', columns: {}, metrics: null }
+  }
+  const views = []
+  const poller = createPoller({ load, onView: view => views.push(view.state), now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer })
+  poller.start()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(views, ['failed'])
+  assert.deepEqual(calls, [false])
+
+  poller.retry({ state: 'failed', error: { message: 'GitHub answered 503' } })
+  // The screen changes before the request comes back: that is what the button looked dead without.
+  assert.equal(views.at(-1), 'loading')
+  assert.deepEqual(calls, [false, true])
+  release()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(views.at(-1), 'fresh')
+  poller.stop()
+})
+
+test('the countdown is the host retryAt, and it says so when there is none (#1211)', () => {
+  const now = Date.parse('2026-10-25T04:00:00Z')
+  assert.equal(retryCountdown(now + 12_400, now), 12)
+  assert.equal(retryCountdown(now - 1_000, now), 0)
+  assert.equal(retryCountdown(null, now), null)
+  // The component counts from the real clock, so the fixture's retryAt is relative to it too.
+  const board = DeliveryBoard({
+    view: { state: 'failed', error: { message: 'GitHub answered 503', kind: 'server', endpoint: '/repos/o/r', status: 503, at: null }, retryAt: Date.now() + 30_000 },
+    onRetry: () => {},
+  })
+  assert.match(text(board), /Retrying in 30 s/)
+  const withoutAt = DeliveryBoard({ view: { state: 'failed', error: { message: 'offline', kind: 'network' } }, onRetry: () => {} })
+  assert.match(text(withoutAt), /retries on its own/)
+  assert.doesNotMatch(text(withoutAt), /Retrying in/)
 })

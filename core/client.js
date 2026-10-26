@@ -1379,6 +1379,8 @@ var HOST_ZH = {
   "Showing the snapshot from {time} · refresh failed: {message}": "显示 {time} 的快照 · 刷新失败：{message}",
   "The first round reads the repository once; the columns appear as soon as it lands.": "首轮要把这个仓读一遍，列会在拿到的同时出现。",
   "It retries on its own (10 s → 30 s → 2 min).": "会自动重试（10 秒 → 30 秒 → 2 分钟）。",
+  "While this page is open it retries on its own; press Retry to try again now.": "页面开着时自动重试，也可点重试立即再试。",
+  "Retrying in {seconds} s · press Retry to try again now": "{seconds} 秒后自动重试，也可点重试立即再试。",
   "Checks unknown": "检查结果未取到",
   "CI not available this time": "本次未取到 CI 数据",
   "{count} day(s) not read": "{count} 天没取到",
@@ -8032,7 +8034,16 @@ function progressOf(task) {
 var import_react14 = require("react");
 var POLL_MS3 = 6e4;
 var LOADING_POLL_MS = 2e3;
-var pollDelay = (state) => state === "loading" || state === "idle" ? LOADING_POLL_MS : POLL_MS3;
+var RETRY_FLOOR_MS = 1e3;
+var TIMER_MAX_MS = 2 ** 31 - 1;
+function pollDelay(state, payload = null, now = Date.now()) {
+  if (state === "loading" || state === "idle") return LOADING_POLL_MS;
+  const at = Number(payload?.retryAt);
+  if ((state === "failed" || state === "stale") && Number.isFinite(at) && at > 0) {
+    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), TIMER_MAX_MS);
+  }
+  return POLL_MS3;
+}
 var DELIVERY_COLUMNS = [
   { id: "raw", label: "Original issue" },
   { id: "ready", label: "Ready to start" },
@@ -8060,6 +8071,11 @@ function duration(ms) {
   return `${Math.round(hours / 24)}d`;
 }
 var secondsOf = (ms) => String(Math.max(0, Math.round((Number(ms) || 0) / 1e3)));
+function retryCountdown(retryAt, now = Date.now()) {
+  const at = Number(retryAt);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  return Math.max(0, Math.round((at - now) / 1e3));
+}
 var loadingText = (elapsedMs) => t("First load in progress, {seconds} s elapsed", { seconds: secondsOf(elapsedMs) });
 var staleText = (asOf, error) => t("Showing the snapshot from {time} · refresh failed: {message}", {
   time: clockOf(asOf),
@@ -8131,41 +8147,83 @@ function metricRows(snapshot) {
     open: snapshot?.open ?? {}
   };
 }
+function createPoller({ load, onView, now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (id) => clearTimeout(id) }) {
+  let stopped = false;
+  let timer = null;
+  let state = "idle";
+  let last = null;
+  const schedule = () => {
+    if (stopped) return;
+    if (timer !== null) clearTimer(timer);
+    timer = setTimer(() => {
+      timer = null;
+      void run();
+    }, pollDelay(state, last, now()));
+  };
+  const run = async (force = false) => {
+    try {
+      const next = await load(force);
+      if (stopped) return;
+      if (next && typeof next === "object") {
+        last = next;
+        state = typeof next.state === "string" ? next.state : "fresh";
+        onView(next);
+      } else {
+        state = "failed";
+        last = null;
+        onView({ state: "failed", error: { message: "The host did not answer", kind: "network", endpoint: null, status: null, at: null } });
+      }
+      schedule();
+    } catch (error) {
+      if (stopped) return;
+      state = "failed";
+      last = null;
+      onView({ state: "failed", error: { message: String(error?.message ?? error), kind: "network", endpoint: null, status: null, at: null } });
+      schedule();
+    }
+  };
+  return {
+    start: () => {
+      void run();
+    },
+    // Retry: the screen changes now, then the force read runs; the old view is kept so its columns
+    // do not flash away while the round starts.
+    retry: (from = null) => {
+      if (stopped) return;
+      state = "loading";
+      last = null;
+      onView({ ...from && typeof from === "object" ? from : {}, state: "loading", since: new Date(now()).toISOString(), elapsedMs: 0, refreshing: false });
+      if (timer !== null) {
+        clearTimer(timer);
+        timer = null;
+      }
+      void run(true);
+    },
+    stop: () => {
+      stopped = true;
+      if (timer !== null) clearTimer(timer);
+      timer = null;
+    }
+  };
+}
 function useDeliveryBoard(actions) {
   const [view, setView] = (0, import_react14.useState)({ state: "idle" });
+  const [retry, setRetry] = (0, import_react14.useState)(() => () => {
+  });
   (0, import_react14.useEffect)(() => {
-    let stopped = false;
-    let timer = null;
-    let state = "idle";
-    const schedule = () => {
-      if (stopped) return;
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        load();
-      }, pollDelay(state));
-    };
-    const load = (force = false) => {
-      const job = Promise.resolve(actions?.deliveryBoard?.(force ? { force: true } : {}));
-      void job.then((next) => {
-        if (stopped || !next || typeof next !== "object") return;
-        state = typeof next.state === "string" ? next.state : "fresh";
+    let current = { state: "idle" };
+    const poller = createPoller({
+      load: (force) => typeof actions?.deliveryBoard === "function" ? actions.deliveryBoard(force ? { force: true } : {}) : Promise.resolve(null),
+      onView: (next) => {
+        current = next;
         setView(next);
-        schedule();
-      }).catch((error) => {
-        if (stopped) return;
-        state = "failed";
-        setView({ state: "failed", error: { message: String(error?.message ?? error), kind: "network", endpoint: null, status: null, at: null } });
-        schedule();
-      });
-    };
-    load();
-    return () => {
-      stopped = true;
-      if (timer !== null) clearTimeout(timer);
-    };
+      }
+    });
+    setRetry(() => () => poller.retry(current));
+    poller.start();
+    return () => poller.stop();
   }, [actions]);
-  return view;
+  return [view, retry];
 }
 function probeText(report) {
   if (!report) return "";
@@ -8262,6 +8320,7 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
 function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: "fresh" } : { state: "idle" });
   const state = payload.state ?? "fresh";
+  const countdown = retryCountdown(payload.retryAt);
   if (state === "idle") {
     return (0, import_react14.createElement)(
       "div",
@@ -8287,7 +8346,11 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
         { className: "bt-board-error", role: "alert" },
         (0, import_react14.createElement)("p", null, String(error?.message ?? message ?? t("The delivery board is not ready yet."))),
         error ? (0, import_react14.createElement)("p", { className: "bt-del-hint" }, hintFor(error, { repo })) : null,
-        (0, import_react14.createElement)("p", { className: "bt-del-hint" }, t("It retries on its own (10 s → 30 s → 2 min).")),
+        (0, import_react14.createElement)(
+          "p",
+          { className: "bt-del-hint", "data-retry-at": payload.retryAt ?? void 0 },
+          countdown === null ? t("While this page is open it retries on its own; press Retry to try again now.") : t("Retrying in {seconds} s · press Retry to try again now", { seconds: countdown })
+        ),
         onRetry ? (0, import_react14.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-del-retry", onClick: onRetry }, t("Retry")) : null
       )
     );
@@ -8302,7 +8365,8 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
       "p",
       { className: "bt-del-stale", role: "status" },
       staleText(payload.asOf, payload.error),
-      ` · ${hintFor(payload.error, { repo })}`
+      ` · ${hintFor(payload.error, { repo })}`,
+      countdown === null ? "" : ` · ${t("Retrying in {seconds} s · press Retry to try again now", { seconds: countdown })}`
     ) : null,
     state !== "stale" && missing.length > 0 ? (0, import_react14.createElement)("p", { className: "bt-del-partial", role: "status" }, missing.map((entry) => missingText(entry)).join(" · ")) : null,
     (0, import_react14.createElement)(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
@@ -8324,10 +8388,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = nu
   );
 }
 function DeliveryView({ actions }) {
-  const view = useDeliveryBoard(actions);
-  const retry = () => {
-    void actions?.deliveryBoard?.({ force: true });
-  };
+  const [view, retry] = useDeliveryBoard(actions);
   return (0, import_react14.createElement)(DeliveryBoard, {
     view,
     repo: view?.repo ?? null,

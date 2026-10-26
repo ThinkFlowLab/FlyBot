@@ -14,7 +14,20 @@ const POLL_MS = 60_000
 // asking often only burns GitHub reads (#1211).
 const LOADING_POLL_MS = 2_000
 
-export const pollDelay = (state) => (state === 'loading' || state === 'idle' ? LOADING_POLL_MS : POLL_MS)
+// A failed or stale read carries the host's `retryAt` (#1211): the next read is scheduled for it
+// instead of a fixed minute, so the host's 10 s → 30 s → 2 min backoff actually happens. The floor
+// keeps a clock skew from spinning, and the ceiling keeps `setTimeout`'s 32-bit limit from turning a
+// long wait into an immediate 0 ms re-fire.
+const RETRY_FLOOR_MS = 1_000
+const TIMER_MAX_MS = 2 ** 31 - 1
+export function pollDelay(state, payload = null, now = Date.now()) {
+  if (state === 'loading' || state === 'idle') return LOADING_POLL_MS
+  const at = Number(payload?.retryAt)
+  if ((state === 'failed' || state === 'stale') && Number.isFinite(at) && at > 0) {
+    return Math.min(Math.max(at - now, RETRY_FLOOR_MS), TIMER_MAX_MS)
+  }
+  return POLL_MS
+}
 
 export const DELIVERY_COLUMNS = [
   { id: 'raw', label: 'Original issue' },
@@ -49,6 +62,14 @@ export function duration(ms) {
 const secondsOf = (ms) => String(Math.max(0, Math.round((Number(ms) || 0) / 1000)))
 
 // The three states have three sentences, and none of them is "no snapshot yet" (#1211).
+// Seconds until the host retries on its own (#1211). The number is the host's `retryAt`, so the line
+// states a fact instead of promising a cadence the page would not keep.
+export function retryCountdown(retryAt, now = Date.now()) {
+  const at = Number(retryAt)
+  if (!Number.isFinite(at) || at <= 0) return null
+  return Math.max(0, Math.round((at - now) / 1000))
+}
+
 export const loadingText = (elapsedMs) => t('First load in progress, {seconds} s elapsed', { seconds: secondsOf(elapsedMs) })
 
 export const staleText = (asOf, error) => t('Showing the snapshot from {time} · refresh failed: {message}', {
@@ -135,35 +156,73 @@ export function metricRows(snapshot) {
   }
 }
 
+// The poll loop, kept out of React so a fake clock can prove the cadence (#1211). A retry paints
+// `loading` before the request leaves, so the button is not silent, and the schedule after a failure
+// is the host's own `retryAt` rather than a minute of nothing.
+export function createPoller({ load, onView, now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
+  let stopped = false
+  let timer = null
+  let state = 'idle'
+  let last = null
+  const schedule = () => {
+    if (stopped) return
+    if (timer !== null) clearTimer(timer)
+    timer = setTimer(() => { timer = null; void run() }, pollDelay(state, last, now()))
+  }
+  const run = async (force = false) => {
+    try {
+      const next = await load(force)
+      if (stopped) return
+      if (next && typeof next === 'object') {
+        last = next
+        state = typeof next.state === 'string' ? next.state : 'fresh'
+        onView(next)
+      } else {
+        state = 'failed'
+        last = null
+        onView({ state: 'failed', error: { message: 'The host did not answer', kind: 'network', endpoint: null, status: null, at: null } })
+      }
+      schedule()
+    } catch (error) {
+      if (stopped) return
+      state = 'failed'
+      last = null
+      onView({ state: 'failed', error: { message: String(error?.message ?? error), kind: 'network', endpoint: null, status: null, at: null } })
+      schedule()
+    }
+  }
+  return {
+    start: () => { void run() },
+    // Retry: the screen changes now, then the force read runs; the old view is kept so its columns
+    // do not flash away while the round starts.
+    retry: (from = null) => {
+      if (stopped) return
+      state = 'loading'
+      last = null
+      onView({ ...(from && typeof from === 'object' ? from : {}), state: 'loading', since: new Date(now()).toISOString(), elapsedMs: 0, refreshing: false })
+      if (timer !== null) { clearTimer(timer); timer = null }
+      void run(true)
+    },
+    stop: () => { stopped = true; if (timer !== null) clearTimer(timer); timer = null },
+  }
+}
+
 export function useDeliveryBoard(actions) {
   const [view, setView] = useState({ state: 'idle' })
+  const [retry, setRetry] = useState(() => () => {})
   useEffect(() => {
-    let stopped = false
-    let timer = null
-    let state = 'idle'
-    const schedule = () => {
-      if (stopped) return
-      if (timer !== null) clearTimeout(timer)
-      timer = setTimeout(() => { timer = null; load() }, pollDelay(state))
-    }
-    const load = (force = false) => {
-      const job = Promise.resolve(actions?.deliveryBoard?.(force ? { force: true } : {}))
-      void job.then((next) => {
-        if (stopped || !next || typeof next !== 'object') return
-        state = typeof next.state === 'string' ? next.state : 'fresh'
-        setView(next)
-        schedule()
-      }).catch((error) => {
-        if (stopped) return
-        state = 'failed'
-        setView({ state: 'failed', error: { message: String(error?.message ?? error), kind: 'network', endpoint: null, status: null, at: null } })
-        schedule()
-      })
-    }
-    load()
-    return () => { stopped = true; if (timer !== null) clearTimeout(timer) }
+    let current = { state: 'idle' }
+    const poller = createPoller({
+      load: force => (typeof actions?.deliveryBoard === 'function'
+        ? actions.deliveryBoard(force ? { force: true } : {})
+        : Promise.resolve(null)),
+      onView: next => { current = next; setView(next) },
+    })
+    setRetry(() => () => poller.retry(current))
+    poller.start()
+    return () => poller.stop()
   }, [actions])
-  return view
+  return [view, retry]
 }
 
 // The diagnostic report as text, so the 诊断 button can show and copy the same five lines the
@@ -238,6 +297,7 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
 export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: 'fresh' } : { state: 'idle' })
   const state = payload.state ?? 'fresh'
+  const countdown = retryCountdown(payload.retryAt)
   // "No snapshot yet." belongs to a host that has never tried; every attempt has a better word.
   if (state === 'idle') {
     return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
@@ -256,7 +316,10 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
       h('div', { className: 'bt-board-error', role: 'alert' },
         h('p', null, String(error?.message ?? message ?? t('The delivery board is not ready yet.'))),
         error ? h('p', { className: 'bt-del-hint' }, hintFor(error, { repo })) : null,
-        h('p', { className: 'bt-del-hint' }, t('It retries on its own (10 s → 30 s → 2 min).')),
+        h('p', { className: 'bt-del-hint', 'data-retry-at': payload.retryAt ?? undefined },
+          countdown === null
+            ? t('While this page is open it retries on its own; press Retry to try again now.')
+            : t('Retrying in {seconds} s · press Retry to try again now', { seconds: countdown })),
         onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null))
   }
   const columns = payload.columns ?? {}
@@ -265,7 +328,8 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
     message ? h('p', { className: 'bt-board-error', role: 'alert' }, message) : null,
     state === 'stale' && payload.error
       ? h('p', { className: 'bt-del-stale', role: 'status' }, staleText(payload.asOf, payload.error),
-        ` · ${hintFor(payload.error, { repo })}`)
+        ` · ${hintFor(payload.error, { repo })}`,
+        countdown === null ? '' : ` · ${t('Retrying in {seconds} s · press Retry to try again now', { seconds: countdown })}`)
       : null,
     state !== 'stale' && missing.length > 0
       ? h('p', { className: 'bt-del-partial', role: 'status' }, missing.map(entry => missingText(entry)).join(' · '))
@@ -282,8 +346,7 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
 }
 
 export function DeliveryView({ actions }) {
-  const view = useDeliveryBoard(actions)
-  const retry = () => { void actions?.deliveryBoard?.({ force: true }) }
+  const [view, retry] = useDeliveryBoard(actions)
   return h(DeliveryBoard, {
     view,
     repo: view?.repo ?? null,
