@@ -160,6 +160,11 @@ export function install(rt) {
   const STEWARD_TIMEOUT_MS = 120_000
   const STEWARD_LINES = 40
   const FOLDER_RETRY_MS = 300_000
+  // Making room before a step takes the turn's own signal and nothing else, so a
+  // summary request stuck in retries parks the turn before its first step: no step,
+  // no turn end, `load: 1` until a human stops it (#1285). Its own deadline ends
+  // that park; the next turn tries again.
+  const COMPACT_DEADLINE_MS = config.compactDeadlineMs ?? 300_000
 
   // A broken provider adapter must not crash every turn; estimate from the
   // derived messages instead, with one warning.
@@ -556,25 +561,50 @@ export function install(rt) {
     return 'switch'
   }
 
+  // Puts a step's claimed input back in the queue. A turn that ends in an error keeps
+  // nothing: DSH claimed these messages durably before the pre-step hook ran and does
+  // not return them, so the batch goes back as ordinary queued input. The loop starts
+  // the next turn while input is pending, so that message is taken up again.
+  function keepClaimed(agent, messages) {
+    for (const message of messages ?? []) {
+      try {
+        agent.inbox.append('next-turn', message)
+      } catch (error) {
+        rt.warn('ds-bot: input for %s could not go back in the queue: %s', agent.id, error)
+      }
+    }
+  }
+
   // Condenses the part through its own backend. `inTurn`: before a step of a running
   // turn, through the backend's overflow path, which condenses all but the latest
   // node; otherwise as an idle maintenance pass. True when the part ended up below
   // the check line, false when it did not (it then moves on), undefined when a turn
   // got in first (the part is checked again when that turn ends).
-  async function condense(agent, lines, { inTurn, signal }) {
+  async function condense(agent, lines, { inTurn, signal, keep }) {
     const engine = engineOf(agent)
     const before = tokensOf(agent.session)
     const sessionId = agent.session.id
+    // Before a step, the compaction carries the turn's signal and now its own deadline.
+    const deadline = inTurn ? AbortSignal.timeout(COMPACT_DEADLINE_MS) : undefined
     condensing.add(sessionId)
     try {
       // Through the service itself, past DS Bot's own wrapper: only a call on the
       // service gives the engine its own context, with the services it injects.
       const result = inTurn
-        ? await engine.compactIfNeeded(agent, 'context-overflow', signal)
+        ? await engine.compactIfNeeded(agent, 'context-overflow', AbortSignal.any([signal, deadline].filter(Boolean)))
         : await engine.compactNow(agent, AbortSignal.timeout(NOTE_TIMEOUT_MS))
       if (result === null) return false
     } catch (error) {
       if (!inTurn && (error?.code === 'busy' || error?.code === 'cancelled')) return undefined
+      // Out of time before a step: end this turn here, where `turn/end` still runs,
+      // rather than wait for a summary that may never come. DSH claimed this step's
+      // input before the hook ran and a turn that ends in an error does not get it
+      // back, so the batch is queued again before the throw (keepClaimed).
+      if (deadline?.aborted && !signal?.aborted) {
+        rt.warn('ds-bot: making room for %s ran out of %d ms before a step; the turn ends here and the next one tries again: %s', agent.id, COMPACT_DEADLINE_MS, error)
+        keepClaimed(agent, keep)
+        throw error
+      }
       rt.warn('ds-bot: condensing %s failed: %s', agent.id, error)
       return false
     } finally {
@@ -955,7 +985,7 @@ export function install(rt) {
     const lines = await contextLines(agent.session).catch(() => undefined)
     const tokens = tokensOf(agent.session)
     if (lines === undefined || tokens === undefined || tokens < lines.hard || !grown(agent.id, tokens, lines) || readOnly()) return next()
-    if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal })) return next()
+    if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal, keep: payload.messages })) return next()
     return switchBeforeStep(agent, payload, { hard: true }, next)
   }, { prepend: true })
 

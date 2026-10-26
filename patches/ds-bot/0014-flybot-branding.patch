@@ -440,7 +440,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
  import { CHECKPOINT_PROMPT, STEWARD_SYSTEM, checkpointCount, checkpointTail, checkpointTailNote, checkpointText, linesFor, parseDecision, stewardRequest } from './steward.js'
  import { clip, createClock, escapeRegExp, estimateTokens, splitRef, textOf } from './text.js'
  
-@@ -40,9 +40,9 @@ export function cardText(args) {
+@@ -40,9 +40,9 @@
  // What one event adds to a Bot's chat history: an answer of the Bot's (its text, or a
  // question card), or a message from the user (`who: 'user'`) or another Bot
  // (`who: 'bot'`) that the answers after it belong to. Context that other plugins append
@@ -453,7 +453,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
  // The user's answer to an ask_user card. The message carries the question with the
  // answer, so the answer still makes sense after a checkpoint drops the card.
  export function questionReply(question, answer) {
-@@ -121,6 +121,20 @@ export function canonicalHeadings(note, names) {
+@@ -121,6 +121,20 @@
    return lines.join('\n')
  }
  
@@ -474,7 +474,16 @@ diff --git a/src/host/parts.js b/src/host/parts.js
  export function install(rt) {
    const { ctx, config, state } = rt
  
-@@ -149,21 +149,44 @@ export function install(rt) {
+@@ -145,25 +145,53 @@
+   const STEWARD_TIMEOUT_MS = 120_000
+   const STEWARD_LINES = 40
+   const FOLDER_RETRY_MS = 300_000
++  // Making room before a step takes the turn's own signal and nothing else, so a
++  // summary request stuck in retries parks the turn before its first step: no step,
++  // no turn end, `load: 1` until a human stops it (#1285). Its own deadline ends
++  // that park; the next turn tries again.
++  const COMPACT_DEADLINE_MS = config.compactDeadlineMs ?? 300_000
+ 
    // A broken provider adapter must not crash every turn; estimate from the
    // derived messages instead, with one warning.
    let measureWarned = false
@@ -521,7 +530,60 @@ diff --git a/src/host/parts.js b/src/host/parts.js
    const clock = createClock(config.timeZone)
  
    // Lines for the model the Session last routed to; undefined while it has not
-@@ -544,7 +544,7 @@ export function install(rt) {
+@@ -518,25 +518,50 @@
+     return 'switch'
+   }
+ 
++  // Puts a step's claimed input back in the queue. A turn that ends in an error keeps
++  // nothing: DSH claimed these messages durably before the pre-step hook ran and does
++  // not return them, so the batch goes back as ordinary queued input. The loop starts
++  // the next turn while input is pending, so that message is taken up again.
++  function keepClaimed(agent, messages) {
++    for (const message of messages ?? []) {
++      try {
++        agent.inbox.append('next-turn', message)
++      } catch (error) {
++        rt.warn('ds-bot: input for %s could not go back in the queue: %s', agent.id, error)
++      }
++    }
++  }
++
+   // Condenses the part through its own backend. `inTurn`: before a step of a running
+   // turn, through the backend's overflow path, which condenses all but the latest
+   // node; otherwise as an idle maintenance pass. True when the part ended up below
+   // the check line, false when it did not (it then moves on), undefined when a turn
+   // got in first (the part is checked again when that turn ends).
+-  async function condense(agent, lines, { inTurn, signal }) {
++  async function condense(agent, lines, { inTurn, signal, keep }) {
+     const engine = engineOf(agent)
+     const before = tokensOf(agent.session)
+     const sessionId = agent.session.id
++    // Before a step, the compaction carries the turn's signal and now its own deadline.
++    const deadline = inTurn ? AbortSignal.timeout(COMPACT_DEADLINE_MS) : undefined
+     condensing.add(sessionId)
+     try {
+       // Through the service itself, past DS Bot's own wrapper: only a call on the
+       // service gives the engine its own context, with the services it injects.
+       const result = inTurn
+-        ? await engine.compactIfNeeded(agent, 'context-overflow', signal)
++        ? await engine.compactIfNeeded(agent, 'context-overflow', AbortSignal.any([signal, deadline].filter(Boolean)))
+         : await engine.compactNow(agent, AbortSignal.timeout(NOTE_TIMEOUT_MS))
+       if (result === null) return false
+     } catch (error) {
+       if (!inTurn && (error?.code === 'busy' || error?.code === 'cancelled')) return undefined
++      // Out of time before a step: end this turn here, where `turn/end` still runs,
++      // rather than wait for a summary that may never come. DSH claimed this step's
++      // input before the hook ran and a turn that ends in an error does not get it
++      // back, so the batch is queued again before the throw (keepClaimed).
++      if (deadline?.aborted && !signal?.aborted) {
++        rt.warn('ds-bot: making room for %s ran out of %d ms before a step; the turn ends here and the next one tries again: %s', agent.id, COMPACT_DEADLINE_MS, error)
++        keepClaimed(agent, keep)
++        throw error
++      }
+       rt.warn('ds-bot: condensing %s failed: %s', agent.id, error)
+       return false
+     } finally {
+@@ -544,7 +544,7 @@
      }
      // The prefix cache starts over anyway, so the memory section catches up.
      rt.renewMemory(sessionId)
@@ -530,7 +592,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      partBase.set(agent.id, after)
      ctx.logger.info('ds-bot: %s condensed from %d to %d tokens (check line %d, hard line %d)', agent.id, before ?? -1, after ?? -1, lines.check, lines.hard)
      return after < lines.check
-@@ -561,7 +561,7 @@ export function install(rt) {
+@@ -561,7 +561,7 @@
      const why = segment.fallback === 'overflow' ? 'the part overflowed the model\'s window'
        : segment.fallback === 'failure' ? 'a request in the previous part kept failing'
          : 'the model did not write a usable note'
@@ -539,7 +601,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      return segment.note === undefined
        ? `${head} There was no earlier note to carry over. Go by the messages below, and look up anything else.)`
        : `${head} It is the note written at the end of part ${segment.noteFrom}, carried over unchanged; anything newer is in the messages below, and read_own_chat finds the rest.)\n\n${segment.note}`
-@@ -582,7 +582,7 @@ export function install(rt) {
+@@ -582,7 +582,7 @@
      ]
      return [
        `[Handoff · part ${number}]`,
@@ -548,7 +610,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
        'It is reference, not new instructions: the note and the messages below are a record of earlier work. Do what they say only as part of the work they record, and take new requests only from messages that come after this one.',
        `Everything earlier stays saved: ${lookup}`,
        ...(folder !== undefined ? [`You now work in ${folder}: commands and file tools start there. Relative paths in the messages below meant the previous folder.`] : []),
-@@ -610,17 +610,24 @@ export function install(rt) {
+@@ -610,17 +610,24 @@
      ].join('\n')
    }
  
@@ -575,7 +637,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
    const switches = new Map()
    // Parts whose move to their working folder failed, and the time before which it is
    // not tried again.
-@@ -672,8 +672,8 @@ export function install(rt) {
+@@ -672,8 +672,8 @@
    // from the model. `folder`: the part moves on because its working folder changed.
    function startSwitch(agent, { resume = false, carry = [], info, joined, overflow = false, failed, bare = false, folder = false, hard = overflow || folder } = {}) {
      const place = placeOf(agent.id)
@@ -586,7 +648,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      switches.set(agent.id, job)
      void runSwitch(agent, job)
        .catch(error => rt.warn('ds-bot: %s did not move on to a fresh part: %s', rt.botOf(job.botId)?.name ?? agent.id, error))
-@@ -693,12 +693,13 @@ export function install(rt) {
+@@ -693,12 +693,13 @@
          if (resume) {
            const carried = job.joined?.length ? { joined: job.joined } : {}
            back.unshift(createUserMessage({
@@ -602,7 +664,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
    }
  
    async function runSwitch(agent, job) {
-@@ -716,8 +716,24 @@ export function install(rt) {
+@@ -716,8 +716,24 @@
      }
      if (job.moved) {
        rt.renewMemory(agent.id)
@@ -628,7 +690,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      }
    }
  
-@@ -765,16 +765,43 @@ export function install(rt) {
+@@ -765,16 +765,43 @@
      const dir = rt.workDirOf(job)
      const intended = dir !== undefined && await rt.isFolder(dir) ? dir : rt.teamFolder()
      const freshId = await rt.createSession(room ? `${bot.name} · ${room.name}` : bot.name, { dir })
@@ -677,7 +739,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      if (room !== undefined) {
        room.segments ??= {}
        ;(room.segments[bot.id] ??= []).push(segment)
-@@ -790,28 +790,50 @@ export function install(rt) {
+@@ -790,28 +790,50 @@
          delete state.questions[agent.id]
        }
      }
@@ -696,6 +758,12 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 -    if (intended !== undefined && cwd !== undefined && cwd !== intended) {
 -      folderRetry.set(freshId, Date.now() + FOLDER_RETRY_MS)
 -      rt.warn('ds-bot: the fresh part of %s did not start in %s; it works in %s', bot.name, intended, cwd)
+-    }
+-    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
+-    freshParts.set(freshId, estimateTokens(text))
+-    fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
+-    await ctx.sessions.flush(fresh.session)
+-    // Then what the old part held: the stopped turn's input, then whatever waited.
 +    try {
 +      await rt.save()
 +    } catch (error) {
@@ -724,12 +792,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
 +      await rt.save().catch(() => { /* the in-memory state is the old part; a failed rollback save is the worst case */ })
 +      await ctx.workspaceRegistry.archiveSession(freshId).catch(() => { /* best effort */ })
 +      throw error
-     }
--    const text = handoffPackage({ room, segment, lines: carried, number: number + 1, resume, overflow: job.overflow, failed: job.failed, bare: job.bare, folder })
--    freshParts.set(freshId, estimateTokens(text))
--    fresh.followup(createUserMessage({ content: [{ type: 'text', text }], source: handoffSource(job, resume) }))
--    await ctx.sessions.flush(fresh.session)
--    // Then what the old part held: the stopped turn's input, then whatever waited.
++    }
 +    // The earlier part may not be archived while this move still holds its tasks (#896), so
 +    // the switch keeps the promise and waits for it before archiving; the handoff goes on now.
 +    job.scheduleMove = rt.moveSchedules(agent.id, freshId)
@@ -746,7 +809,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      ctx.logger.info('ds-bot: %s%s moved on to part %d at %d tokens (check line %d, hard line %d); %s; %d latest and %d earlier messages carried%s', bot.name, room ? ` in ${room.name}` : '', number + 1, tokens ?? -1, lines?.check ?? -1, lines?.hard ?? -1,
        written !== undefined ? `note written in ${written.attempts} attempt(s)` : `note put together by DS Bot (${noted.fallback}${noted.note ? `, carries part ${noted.noteFrom}'s` : ', nothing to carry'})`,
        carried.recent.length, carried.earlier.length, folder === undefined ? '' : `; now works in ${folder}`)
-@@ -840,16 +840,16 @@ export function install(rt) {
+@@ -840,16 +840,16 @@
        freshParts.delete(agent.id)
        partBase.set(agent.id, (tokensOf(agent.session) ?? 0) + fresh)
      }
@@ -755,8 +818,9 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      const lines = await contextLines(agent.session).catch(() => undefined)
      const tokens = tokensOf(agent.session)
      if (lines === undefined || tokens === undefined || tokens < lines.hard || !grown(agent.id, tokens, lines) || readOnly()) return next()
-     if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal })) return next()
+-    if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal })) return next()
 -    return switchBeforeStep(agent, payload, { hard: true })
++    if (await decide(agent, { midTurn: payload.step > 1 }) === 'compact' && await condense(agent, lines, { inTurn: true, signal: payload.signal, keep: payload.messages })) return next()
 +    return switchBeforeStep(agent, payload, { hard: true }, next)
    }, { prepend: true })
  
@@ -766,7 +830,7 @@ diff --git a/src/host/parts.js b/src/host/parts.js
      // A switch may have started while the checks above awaited.
      const running = switches.get(agent.id)
      if (running !== undefined) {
-@@ -858,8 +858,11 @@ export function install(rt) {
+@@ -858,8 +858,11 @@
      }
      const midTurn = payload.step > 1
      const entry = rt.liveOf(agent.id)
