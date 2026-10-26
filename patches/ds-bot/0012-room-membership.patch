@@ -794,7 +794,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +import { faceMentions } from './face-mentions.js'
 +import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 +import { createRoomParticipants } from './room-participant.js'
-+import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, prepareRoomLine } from './room-context.js'
++import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
  
  const ROOM_LOG_MAX = 60
  const ROOM_FIRST_LOOK = 12
@@ -885,8 +885,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    return `${line.who}: ${line.text}`
  }
  const transcript = lines => lines.map(lineText).join('\n')
-@@ -85,7 +85,17 @@
-   ? `Conversations the user referenced in this round:\n\n${references.map(reference => reference.text).join('\n\n')}`
+@@ -86,7 +86,17 @@
    : '')
  
  const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
@@ -903,7 +902,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +const ROOM_CALLS_BOARD = 'Writing "@Name" wakes that member to answer, or to do the card the board already assigned to it. It does not assign work or record progress. When it finishes that card, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,165 +100,237 @@
+   if (slot.status === 'speaking') return `${slot.name} (you, now)`
+@@ -100,162 +100,242 @@
    return slot.name
  }
  
@@ -945,12 +945,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // A member's group Session, created on its first turn there. A new one starts with
    // a fresh look at the log and a brief of the member's own chat; the brief is the
    // first message, so it stays fixed and the prefix stays cacheable.
--  async function groupSessionFor(room, member) {
--    room.sessions ??= {}
--    const known = room.sessions[member.id]
--    if (known !== undefined) {
--      await rt.ensureCapabilities(known)
--      return { id: known, brief: undefined }
 +  // The brief is the member's owner's private chat with the Bot. In a room where
 +  // another owner sits it stays out unless that owner shared it with this room (#53).
 +  const briefAllowed = (room, member) => {
@@ -962,7 +956,19 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      // A granted remote Bot speaks for another home; its handle stands for that owner.
 +      else if (p.remote) owners.add(p.handle)
 +      else owners.add(rt.botOf(p.id)?.ownerId)
-     }
++    }
++    owners.delete(undefined)
++    if (owners.size <= 1) return true
++    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
++  }
++
+   async function groupSessionFor(room, member) {
+-    room.sessions ??= {}
+-    const known = room.sessions[member.id]
+-    if (known !== undefined) {
+-      await rt.ensureCapabilities(known)
+-      return { id: known, brief: undefined }
+-    }
 -    const id = await rt.createSession(`${member.name} · ${room.name}`, { dir: rt.workDirOf({ botId: member.id, roomId: room.id }) })
 -    room.sessions[member.id] = id
 -    rt.groupOwners.set(id, { botId: member.id, roomId: room.id })
@@ -971,12 +977,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    if (ref !== undefined) {
 -      await rt.selectSessionModel(id, splitRef(ref))
 -        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
-+    owners.delete(undefined)
-+    if (owners.size <= 1) return true
-+    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
-+  }
-+
-+  async function groupSessionFor(room, member) {
 +    const session = await participant.open({ room, member })
 +    return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
 +  }
@@ -1124,6 +1124,13 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
 -    if (round.kickoff) return [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n')
      const working = workingIn(room).filter(item => item.bot.id !== member.id)
++    // Who is on what, before the board itself (#1213): the board says what is open, this
++    // says which member holds it, so a working and an idle member read differently without
++    // anyone posting. Read from the same state, at the moment this turn is built.
++    const presence = isFaceRoom(room) ? '' : formatRoomPresence(rt.state.tasks, {
++      roomId: room.id,
++      members: room.members.map(id => ({ id, name: rt.botOf(id)?.name })),
++    })
 +    const board = isFaceRoom(room) ? '' : formatRoomBoard(rt.state.tasks, {
 +      roomId: room.id,
 +      nameOf: task => rt.botOf(task.ownerBotId)?.name,
@@ -1134,6 +1141,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -      leads ? adminNote(room) : '',
 -      earlier.length ? `Earlier in the group, before this round (context only):\n${transcript(earlier)}` : '',
 +      noticeChange(room, member),
++      presence,
 +      board,
 +      fitted.omitted > 0 ? `${fitted.omitted} older lines are not in this turn. Progress is on the task board; call read_group_chat when you need an exact earlier line.` : '',
 +      earlier.length ? `Earlier in the group, before this round (context only):\n${show(earlier)}` : '',
@@ -1244,9 +1252,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (by === undefined) delete called.by
        else called.by = by
        round.slots.splice(next, 0, called)
-       next += 1
-     }
-   }
 @@ -285,34 +285,138 @@
    // Session's inbox, so it does not open another round when this one ends. Returns
    // the number of turns added, which the round's limit allows for.
@@ -1911,6 +1916,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        const latest = [...options.messages].reverse()
          .find(message => message.role === 'assistant' || message.role === 'tool' || opens(message))
        if (latest?.role !== 'user') {
+
 diff --git a/test/at-menu.test.js b/test/at-menu.test.js
 --- a/test/at-menu.test.js
 +++ b/test/at-menu.test.js

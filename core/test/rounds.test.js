@@ -2035,3 +2035,54 @@ test('a Bot @ whose open card already shows the line passes without a turn (#120
   await personRound
   assert.equal(person.sessionId, live.sessions[writer.id], 'a person @ still gets an answer')
 })
+
+
+// #1213: the turn reads the board twice — who is working (one line per member, idle ones
+// included) and then the board itself. The owner asked "they are both working, why does the
+// group show nothing"; a claimed card has to be readable before any PR exists.
+test('a group turn shows who is working before the board it renders (#1213)', async (t) => {
+  const { call, emit, userMessage, relay, answer, stop, sent, rt } = start()
+  t.after(stop)
+  const chief = (await call('state', {})).value.mainBotId
+  const writer = (await call('create-bot', { name: 'Writer' })).value
+  const idle = (await call('create-bot', { name: 'Idle' })).value
+  const room = (await call('create-room', { name: 'R1213', members: [chief, writer.id, idle.id] })).value
+  await call('update-room', { id: room.id, mode: 'everyone' })
+  const now = Date.now()
+  rt.state.tasks = {
+    card: {
+      id: 'card', status: 'working', progress: 15, title: 'Connectors test race', kind: 'task',
+      ownerBotId: writer.id, origin: { roomId: room.id }, target: { number: 1081 },
+      createdAt: now - 27 * 60000, updatedAt: now - 27 * 60000,
+    },
+  }
+  const playRound = async (label, check, { board = true } = {}) => {
+    sent.length = 0
+    await emit(room.id, userMessage(label))
+    const running = relay(room.id, `r1213-${label}`)
+    const seen = []
+    for (let at = 0; at < 3; at += 1) {
+      const turn = await turnFor(sent, ...seen)
+      assert.ok(turn, `${label}: member ${at + 1} gets a turn`)
+      seen.push(turn)
+      const text = turn.message.content[0].text
+      assert.ok(text.includes('Who is working'), `${label}: the prompt carries the presence block`)
+      if (board) assert.ok(text.indexOf('Who is working') < text.indexOf('Task board (assign, claim'), `${label}: presence reads before the board`)
+      else assert.ok(!text.includes('Task board (assign, claim'), `${label}: no open card, so no board block`)
+      assert.doesNotMatch(text, /tests-ok|merge queue|Verdict/, `${label}: the anti-narration rule still holds`)
+      check(text)
+      await answer(turn.sessionId, turn.message.source.exchangeId, `${label} ${at + 1}.`, at + 1)
+    }
+    await running
+  }
+  await playRound('who', (text) => {
+    assert.match(text, /Who is working \(from the task board; nobody has to post here\):/)
+    assert.match(text, /- Writer — #1081 Connectors test race \(in progress 15%, open 2[67] min\)/)
+    assert.match(text, /- Idle — idle \(no open card\)/)
+  })
+  // The board is the record: removing the card turns "Writer is working" into "nobody".
+  delete rt.state.tasks.card
+  await playRound('now', (text) => {
+    assert.match(text, /Who is working: nobody \(no open card\)\./)
+  }, { board: false })
+})

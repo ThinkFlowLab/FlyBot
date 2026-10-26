@@ -30,7 +30,7 @@ import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, face
 import { faceMentions } from './face-mentions.js'
 import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
-import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, prepareRoomLine } from './room-context.js'
+import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
 
 const ROOM_LOG_MAX = 60
 const ROOM_FIRST_LOOK = 12
@@ -367,12 +367,20 @@ export function install(rt) {
     const before = index
     const after = round.slots.length - index - 1
     const working = workingIn(room).filter(item => item.bot.id !== member.id)
+    // Who is on what, before the board itself (#1213): the board says what is open, this
+    // says which member holds it, so a working and an idle member read differently without
+    // anyone posting. Read from the same state, at the moment this turn is built.
+    const presence = isFaceRoom(room) ? '' : formatRoomPresence(rt.state.tasks, {
+      roomId: room.id,
+      members: room.members.map(id => ({ id, name: rt.botOf(id)?.name })),
+    })
     const board = isFaceRoom(room) ? '' : formatRoomBoard(rt.state.tasks, {
       roomId: room.id,
       nameOf: task => rt.botOf(task.ownerBotId)?.name,
     })
     return [
       noticeChange(room, member),
+      presence,
       board,
       fitted.omitted > 0 ? `${fitted.omitted} older lines are not in this turn. Progress is on the task board; call read_group_chat when you need an exact earlier line.` : '',
       earlier.length ? `Earlier in the group, before this round (context only):\n${show(earlier)}` : '',

@@ -2,7 +2,7 @@
 // whole. The turn gets a newer-first slice under a character budget, and a long
 // status essay is collapsed so it cannot fill that slice. Progress for the open
 // job is a compact board snapshot in the same turn, not those essays.
-import { compareForWork, progressOf } from '../shared/task-board.js'
+import { columnOf, compareForWork, progressOf } from '../shared/task-board.js'
 
 // Characters, not a tokenizer. The essays this was measured on are mostly CJK,
 // about one token per character, so a character ceiling is the conservative one:
@@ -163,5 +163,70 @@ export function formatRoomBoard(tasks, { roomId, nameOf, limit = 8 } = {}) {
   for (const { task, indent } of cards) lines.push(`${indent}- ${cardLine(task, nameOf)}`)
   const hidden = open.length - cards.length
   if (hidden > 0) lines.push(`- ${hidden} more open card(s) not shown`)
+  return lines.join('\n')
+}
+
+// Who is on what, read from the board at the moment the turn is built (#1213). Members
+// followed the rule — claim the card, update it, say nothing — and the room became
+// unreadable: silence meant "idle" only because nothing rendered the board's holders.
+// One line per member who holds an open card in THIS room, one line per member who does
+// not, so "nobody is working" is readable too. Read-only: no write, no message, no
+// heartbeat. Columns, progress and age only — never CI, the queue or a verdict, which
+// #1203 keeps off the chat.
+export const ROOM_PRESENCE_BUDGET = 400
+const PRESENCE_MEMBERS = 8
+const OPEN_STATES = new Set(['open', 'claimed', 'working', 'blocked', 'result-ready'])
+
+const columnWord = column => (column === 'in-progress' ? 'in progress' : column === 'not-started' ? 'not started' : column)
+const minutesBetween = (from, now) => Math.max(0, Math.round((now - from) / 60000))
+
+// `- Dev2 — #1081 title (in progress 15%, open 27 min)`: the card's own fields, flattened
+// to one line. A 0% card says `just claimed` instead of a percentage, and a tag is
+// counted from `createdAt` — the fields the record already has, no new one.
+function presenceLine(task, name, now, extra = 0) {
+  const ref = typeof task.target?.number === 'number' ? `#${task.target.number} ` : ''
+  const title = oneLine(task.title || '(untitled)', 60)
+  const waiting = task.waitingFor === 'input'
+  const head = waiting ? 'waiting on an answer' : columnWord(columnOf(task))
+  const pct = progressOf(task)
+  const detail = waiting ? '' : pct > 0 ? ` ${pct}%` : ', just claimed'
+  const created = Number.isFinite(task.createdAt) ? task.createdAt : now
+  const open = `open ${minutesBetween(created, now)} min`
+  const moved = Number.isFinite(task.updatedAt) && task.updatedAt - created >= 60000
+    ? `, moved ${minutesBetween(task.updatedAt, now)} min ago`
+    : ''
+  const more = extra > 0 ? ` +${extra} more` : ''
+  return `- ${name} — ${ref}${title} (${head}${detail}, ${open}${moved})${more}`
+}
+
+export function formatRoomPresence(tasks, { roomId, members, now = Date.now(), nameOf } = {}) {
+  if (!roomId) return ''
+  const list = (members ?? []).filter(member => member && member.id !== undefined)
+  if (list.length === 0) return ''
+  const nameOfMember = member => oneLine(typeof nameOf === 'function' ? nameOf(member) : (member.name ?? member.id), 40) || String(member.id)
+  const cardsOf = new Map()
+  for (const task of Object.values(tasks ?? {})) {
+    if (!task || task.origin?.roomId !== roomId || !OPEN_STATES.has(task.status)) continue
+    if (task.ownerBotId === undefined) continue
+    const cards = cardsOf.get(task.ownerBotId) ?? []
+    cards.push(task)
+    cardsOf.set(task.ownerBotId, cards)
+  }
+  const holders = list.filter(member => cardsOf.has(member.id))
+  if (holders.length === 0) return 'Who is working: nobody (no open card).'
+  const built = []
+  for (const member of holders) {
+    const cards = cardsOf.get(member.id).sort(compareForWork)
+    built.push(presenceLine(cards[0], nameOfMember(member), now, cards.length - 1))
+  }
+  for (const member of list.filter(item => !cardsOf.has(item.id))) built.push(`- ${nameOfMember(member)} — idle (no open card)`)
+  const header = 'Who is working (from the task board; nobody has to post here):'
+  const render = count => [header, ...built.slice(0, count), built.length > count ? `- +${built.length - count} more member(s)` : ''].filter(Boolean)
+  let count = Math.min(PRESENCE_MEMBERS, built.length)
+  let lines = render(count)
+  while (count > 1 && lines.join('\n').length > ROOM_PRESENCE_BUDGET) {
+    count -= 1
+    lines = render(count)
+  }
   return lines.join('\n')
 }
