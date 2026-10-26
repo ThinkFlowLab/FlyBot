@@ -6,6 +6,23 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-10-26
+
+### Added
+
+- The delivery board draws the last seven days instead of two numbers per metric. New issues, Closed issues, New pull requests, Merged pull requests and the CI red share all get a 168×28 line beside the existing **Today** / **7 days** columns, where a count's week number is a Σ total and the CI share, a ratio, never takes one. Every point carries a title, a day that could not be read breaks the line instead of reading as zero, and a total over an incomplete window wears a star the footnote explains. Below 900px the line moves under its row, and a snapshot without the series says so in one line instead of drawing empty charts. ([#1212](https://github.com/ThinkFlowLab/FlyBot/issues/1212))
+- The delivery board's numbers now come with the seven days behind them: `metrics.daily` carries one entry per Asia/Shanghai day, oldest first and today last, each with the issues opened and closed, the pull requests opened and merged, and the CI share of the runs that actually counted that day. A day the host could not read is `null` rather than `0`, so a gap stays a gap instead of reading as a quiet day, and a week that could not be read at all leaves the whole series `null` instead of drawing seven zeros. The seven-day CI share is read over the same week its own row covers — it used to be a week out of step, because the CI windows were walked backwards from the start of the week. ([#1222](https://github.com/ThinkFlowLab/FlyBot/issues/1222))
+
+### Changed
+
+- A claimed card now gets one line in the room — `Claimed #1234 — first step: …` — so a member who is working is not read as idle; progress still lives on the task board and nothing else is narrated ([#1213](https://github.com/ThinkFlowLab/FlyBot/issues/1213)).
+
+### Fixed
+
+- A delivery board that cannot read part of GitHub now says which part, why, and what to do about it, instead of looking like an instance that was never connected: the first load counts its seconds, a failed refresh keeps the old board with the reason beside it, a round that runs past 90 seconds lands with what it has, and a CI number that could not be read is unknown rather than 0. A 诊断 button and `core/scripts/delivery-probe.mjs` print the same five endpoint statuses, and after a failure the next attempt backs off 10 s, 30 s, then two minutes without dropping the reason. ([#1211](https://github.com/ThinkFlowLab/FlyBot/issues/1211))
+- A window that only reads the Bot team — because another dsh holds it — can open the delivery board and its probe again instead of being told `bot/read-only`; both are reads, and every write in that window is still refused. ([#1225](https://github.com/ThinkFlowLab/FlyBot/issues/1225))
+- The failure screen now counts down instead of freezing: `Retrying in 120 s` drops a second at a time while a retry is really scheduled, and a fresh or loading board starts no timer at all. The rate-limit and timeout hints also say who retries — `while this page is open it retries on its own` — because the host keeps no timer and a closed page retries nothing. ([#1227](https://github.com/ThinkFlowLab/FlyBot/issues/1227))
+
 ## [0.2.8] - 2026-10-26
 
 ### Added
