@@ -1,0 +1,1 @@
+A claimed card now gets one line in the room — `Claimed #1234 — first step: …` — so a member who is working is not read as idle; progress still lives on the task board and nothing else is narrated ([#1213](https://github.com/ThinkFlowLab/FlyBot/issues/1213)).

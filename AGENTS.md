@@ -141,6 +141,12 @@ While checking labels and state, a write that carries no `Written-by:` line gets
 - Stopping without a PR: unassign, remove `agent-working`, and comment why.
 - The PR says `Fixes #N`, is assigned to `Birfy` and labeled `agent-pr`.
 
+#### Claim one line (#1213)
+
+**Claim one line.** When you claim a card, post one line in the room naming the card and the first step — `Claimed #1212 — first step: the pure path builder`. That is the only status line required. Progress stays on the board (`track_tasks`); per-step updates, "running the tests", CI state, queue state and verdicts never come back as chat text, and a verdict is posted once as a verdict.
+
+The rule is here because the norm we wrote made silence the default: the group notice said progress lives on the board, members did exactly that, and on 2026-10-26 two of them worked most of an hour with live cards while the room showed nothing — the owner read the silence as idle. The claim line is the one moment a reader needs, and a presence line cannot supply it: presence shows a turn in flight, not a card claimed with the pull request still to come.
+
 ### Every state-changing write says who wrote it (#627)
 
 The owner kept one shared GitHub identity for every Bot (2026-10-21), so attribution is text and only text. Every state-changing write — an issue comment, a PR body, an issue body, a merge-queue note — carries **`Written-by: <Bot name>`** as its first line, e.g. `Written-by: Reviewer`. A **conclusion** is the one exception, because [`parseReport`](.github/scripts/review-gate.mjs) reads the first non-empty line as the verdict (#637): its first line is `Verdict: … at <sha>`, `Written-by: <Bot>` is the second line, and a relay adds `Posted-by: <Bot>` third without changing anything else. A scheduled routine quotes this rule and does not restate it.
