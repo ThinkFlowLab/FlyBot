@@ -36,11 +36,12 @@ const cueFor = (task) => {
   const post = task.writeBack?.state === 'pending'
     ? ` Then post the decision comment on ${task.writeBack.target} with your GitHub connector and record it with track_tasks postResult {task: '${task.id}', ok: true}, or ok: false with the error.`
     : ''
-  const lead = `Continue ${task.id} [${priority}] ${title}. Do this task now. Update it with track_tasks as it moves. Stop when it is done or waiting on an answer. Do not invent other work`
+  const head = `Continue ${task.id} [${priority}] ${title}. Do this task now.`
+  const stop = 'Stop when it is done or waiting on an answer. Do not invent other work'
   if (task.origin?.roomId) {
-    return `${lead} or record a new plan. This card is already yours: start the work and do not wait for a confirmation. If you need an answer, ask that one question in your reply here, never in your own chat.${post}`
+    return `${head} Taking it and moving it are board writes: set this card's column and progress with track_tasks, and do not post a status in the group. ${stop} or record a new plan. This card is already yours: set its column to in-progress and start the work, and do not wait for a confirmation. If you need an answer, ask that one question in your reply here, never in your own chat.${post}`
   }
-  return `${lead} or start a group round.${post}`
+  return `${head} Set this card's column and progress with track_tasks as it moves. ${stop} or start a group round.${post}`
 }
 
 const messageText = (message) => (Array.isArray(message?.content) ? message.content : []).map(block => block?.text ?? '').join('\n')

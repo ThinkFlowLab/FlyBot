@@ -131,6 +131,8 @@ test('the board draws the three columns, nests the child, and moves only the own
   })
   assert.match(textOf(group), /Theirs/)
   assert.match(textOf(group), /Other/)
+  assert.match(textOf(group), /Assign, claim, and progress live on this board/)
+  assert.doesNotMatch(textOf(tree), /Assign, claim, and progress live on this board/)
   assert.equal(all(group).some(node => node.type === 'button' && (textOf(node) === 'Start' || textOf(node) === 'Complete')), false)
   assert.equal(byClass(group, 'bt-board-card')[0].props.draggable, undefined)
 })

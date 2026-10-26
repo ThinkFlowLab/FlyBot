@@ -289,6 +289,7 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
       rail.groups.map(row => h(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))),
     h('div', { className: 'bt-board-main' },
       error ? h('p', { className: 'bt-board-error', role: 'alert' }, error) : null,
+      lanes ? h('p', { className: 'bt-board-hint' }, t('Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.')) : null,
       scope?.kind === 'bot' && onCreate ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
         h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
@@ -401,6 +402,7 @@ export const KANBAN_CSS = `
 .bt-board-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-board-drop{margin:0;padding:18px 8px;border:1px dashed var(--bt-line-2);border-radius:12px;text-align:center;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-board-empty{margin:0;padding:8px 4px;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+.bt-board-hint{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2)}
 .bt-board-error{margin:0;font-size:13px;line-height:18px;color:#c21d2e}
 .bt-board-lane{display:flex;flex-direction:column;gap:6px}
 .bt-board-lane-name{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-3);padding:0 2px}

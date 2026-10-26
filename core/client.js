@@ -713,6 +713,7 @@ var ZH = {
   "Complete task": "完成任务",
   "Add task": "添加任务",
   "Group task": "群任务",
+  "Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.": "派活、领活和进度都在这块看板上：一个总任务、每个部分一条子任务、负责人、列和进度。@ 只是叫醒对方。",
   "Part of {title}": "属于 {title}",
   "Task title": "任务标题",
   Progress: "进度",
@@ -8538,6 +8539,7 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
       "div",
       { className: "bt-board-main" },
       error ? (0, import_react15.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
+      lanes ? (0, import_react15.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
       scope?.kind === "bot" && onCreate ? (0, import_react15.createElement)(
         "form",
         { className: "bt-board-add", onSubmit: (event) => {
@@ -8691,6 +8693,7 @@ var KANBAN_CSS = `
 .bt-board-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-board-drop{margin:0;padding:18px 8px;border:1px dashed var(--bt-line-2);border-radius:12px;text-align:center;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-board-empty{margin:0;padding:8px 4px;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+.bt-board-hint{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2)}
 .bt-board-error{margin:0;font-size:13px;line-height:18px;color:#c21d2e}
 .bt-board-lane{display:flex;flex-direction:column;gap:6px}
 .bt-board-lane-name{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-3);padding:0 2px}

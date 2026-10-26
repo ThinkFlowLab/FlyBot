@@ -125,7 +125,7 @@ export function formatRoomBoard(tasks, { roomId, nameOf, limit = 8 } = {}) {
     cards.push({ task, indent: overall && task.parentId === overall.id ? '  ' : '' })
   }
   if (cards.length === 0) return ''
-  const lines = ['Task board (progress lives here; update it with track_tasks, do not restate it in chat):']
+  const lines = ['Task board (assign, claim, and progress live here; update it with track_tasks, do not restate it in chat):']
   for (const { task, indent } of cards) lines.push(`${indent}- ${cardLine(task, nameOf)}`)
   const hidden = open.length - cards.length
   if (hidden > 0) lines.push(`- ${hidden} more open card(s) not shown`)

@@ -76,7 +76,7 @@ test('the board snapshot is the open overall task and its subtasks', () => {
   }
   const names = { chief: 'Chief', writer: 'Writer' }
   const board = formatRoomBoard(tasks, { roomId: 'room', nameOf: task => names[task.ownerBotId] })
-  assert.match(board, /Task board \(progress lives here/)
+  assert.match(board, /Task board \(assign, claim, and progress live here/)
   assert.match(board, /Chief \[open 40%\] Ship the note — line one line two/)
   assert.match(board, /Writer \[claimed waiting\] Writer implements/)
   assert.doesNotMatch(board, /FINISHED_MARKER|OTHER_ROOM|Older plan|<|>/)

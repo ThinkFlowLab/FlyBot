@@ -654,6 +654,7 @@ const ZH = {
   'Complete task': '完成任务',
   'Add task': '添加任务',
   'Group task': '群任务',
+  'Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.': '派活、领活和进度都在这块看板上：一个总任务、每个部分一条子任务、负责人、列和进度。@ 只是叫醒对方。',
   'Part of {title}': '属于 {title}',
   'Task title': '任务标题',
   Progress: '进度',

@@ -885,21 +885,25 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    return `${line.who}: ${line.text}`
  }
  const transcript = lines => lines.map(lineText).join('\n')
-@@ -85,7 +85,12 @@
+@@ -85,7 +85,17 @@
    ? `Conversations the user referenced in this round:\n\n${references.map(reference => reference.text).join('\n\n')}`
    : '')
  
--const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
-+const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Progress lives on the task board: update your card with track_tasks, and do not narrate CI, merge-queue, or review status in the group. When the board already shows it, reply [PASS], or one short handoff line if someone must act next. A status meant for someone else is [PASS]. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
+ const ROOM_REPLY = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
++// A group that has a board. Assigning, claiming, and progress are board writes.
++// @Name only wakes. A face-to-face room has no board, so it keeps ROOM_REPLY.
++const ROOM_REPLY_BOARD = 'Reply with your message for the group, no name prefix: in a discussion, one or two short messages. When you are asked to do something, do it now with your tools. The group does not wait for you, and your final reply is posted here when you finish, so give the result, never a promise to do it later. Assigning work, claiming it, and progress are the task board: the overall task, the subtask, the assignee, the column, and the progress, written with track_tasks. @Name only wakes a member whose card already names them; it does not assign or record progress. Do not narrate CI, merge-queue, or review status in the group. When the board already shows it, reply [PASS]. A status meant for someone else is [PASS]. Reply [PASS] to stay silent when you have nothing new to add or the message is for someone else.'
 +// The turn's own closing line: the full reply rule above stands in the group's section of the system prompt.
 +const ROOM_REPLY_NOW = 'Reply now with your message for the group, no name prefix, or [PASS] to stay silent.'
 +// Words that address the whole room: a plain line with one of them may get an answer from each Bot (#299).
 +const ROOM_EVERYONE = /大家|你们|各位|所有人|所有 ?[Bb]ot|每个人|每位|各自|分别|everyone|everybody|y'?all|you all|all of you|each of you|introduce yourselves/i
 +const ROOM_REPLY_FORCED = 'This turn is the exception to the [PASS] rule: reply with your message for the group, no name prefix, short. Do not reply [PASS].'
  const ROOM_CALLS = 'Writing "@Name" calls that member next, to answer or to do what you ask; when it finishes work you gave it, you answer its result. To only mention a member, write its name without "@".'
++// Same wake, on a room that has a board: the call does not assign or record progress.
++const ROOM_CALLS_BOARD = 'Writing "@Name" wakes that member to answer, or to do the card the board already assigned to it. It does not assign work or record progress. When it finishes that card, you answer its result. To only mention a member, write its name without "@".'
  
  const slotLabel = (slot) => {
-@@ -100,159 +100,228 @@
+@@ -100,159 +100,229 @@
    return slot.name
  }
  
@@ -1029,7 +1033,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    const leadId = typeof rt.taskLeadOf === 'function' ? rt.taskLeadOf(room) : undefined
 +    if (!leadId) return 'This room has no task lead on the board. Do not divide the work; the user or a Main Bot picks one task lead.'
 +    if (leadId === member.id) {
-+      return 'You are this room\'s task lead (总负责人) for the board. When the group is given a job, record one overall task with track_tasks and assign each part to the Bot it fits (assignee is that Bot\'s name). Nobody else plans. A card you assign is claimed: that Bot starts the work and does not wait for a confirmation. A question stays in this group.'
++      return 'You are this room\'s task lead (总负责人) for the board. When the group is given a job, assign it on the board with track_tasks: one overall task, and a subtask for each part (assignee is that Bot\'s name). Nobody else plans. A chat line does not assign. A card you assign is claimed: that Bot starts the work and does not wait for a confirmation. Progress is that card\'s column and progress. A question stays in this group.'
      }
 -    await rt.applyPermission(member, id)
 -      .catch(error => rt.warn('ds-bot: permission for %s in %s not applied: %s', member.name, room.name, error))
@@ -1037,7 +1041,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    await rt.ensureCapabilities(id)
 -    return { id, brief: await rt.ownChatBrief(member) }
 +    const name = String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' ').slice(0, 80)
-+    return `${name} is this room's task lead (总负责人) for the board: it writes the one plan and assigns the parts. Do the card it assigns you, or link your own subtask to that overall task. Do not record a new plan or assign work. Start the work; do not wait for a confirmation. A question about your card goes in your reply here, not in your own chat.`
++    return `${name} is this room's task lead (总负责人) for the board: it assigns the parts on the board. Claim the card it assigns you by setting its column to in-progress with track_tasks, and update that card's column and progress as the work moves. Do not record a new plan, assign work, or post a status in the group. @Name only wakes someone; it does not assign. Start the work; do not wait for a confirmation. A question about your card goes in your reply here, not in your own chat.`
    }
  
 -  // Lines from before the round's opening message are kept apart from this round, so
@@ -1053,7 +1057,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      const peers = room.members.filter(id => id !== member.id).map(rt.botOf).filter(Boolean)
        .map(bot => `${bot.name}${rt.isAdminOf(room, bot.id) ? ' (admin)' : ''}`)
      const leads = rt.isAdminOf(room, member.id)
-+    const members = `${isFaceRoom(room) ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${ROOM_CALLS}`
++    const face = isFaceRoom(room)
++    const members = `${face ? `${faceRoster(room, member, rt.botOf)}\n` : `Members: the user${peers.length ? `, ${peers.join(', ')}` : ''} and you${leads ? ' (admin)' : ''}. `}Members speak one at a time; each message is posted before the next speaker starts. ${face ? ROOM_CALLS : ROOM_CALLS_BOARD}`
 +    return [
 +      '# This group chat',
 +      'This conversation is where you speak in one group chat. Each turn arrives as a "[Group chat …]" message with what is new and the speaking order; the rules below hold for every turn here.',
@@ -1062,7 +1067,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      leads ? adminNote(room) : faceMemberNote(room, member, rt.botOf),
 +      taskBoardNote(room, member),
 +      routeRules(room, member),
-+      ROOM_REPLY,
++      face ? ROOM_REPLY : ROOM_REPLY_BOARD,
 +    ].filter(Boolean).join('\n\n')
 +  }
 +  const roomSectionFor = (sessionId) => {
