@@ -1,0 +1,70 @@
+{
+  "why": "The sentences the merge gate refuses with, written once. `.github/scripts/merge-gate.mjs`'s `judge` and the `repo-dev` preset's gate guards are judged against the same entries, and neither file imports the other: the gate test reads `gate` and the preset test reads `preset`, both comparing against `sentence` byte for byte (#1272 acceptance 9). Change a sentence in one place and the other side's test goes red.",
+  "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+  "oldHead": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+  "cases": [
+    {
+      "id": "hold",
+      "where": "merge-gate.mjs `judge`: the `hold` label refuses whatever the review says",
+      "sentence": "the pull request carries the `hold` label",
+      "gate": {
+        "labels": ["hold"],
+        "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+        "expectedHead": null,
+        "reports": [{ "verdict": "PASS", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+      },
+      "preset": {
+        "node": "gate",
+        "guard": "no-hold",
+        "present": [
+          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "hold" },
+          { "spec": "verdict", "revision": "abaf938b0c1d", "value": "PASS", "by": "Reviewer" },
+          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+        ],
+        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+      }
+    },
+    {
+      "id": "head-moved",
+      "where": "merge-gate.mjs `judge`: the head is not the one the caller asked about",
+      "sentence": "the pull request head is abaf938b0c1d, not the expected 175328d0c1b2",
+      "gate": {
+        "labels": [],
+        "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+        "expectedHead": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+        "reports": [{ "verdict": "PASS", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+      },
+      "preset": {
+        "node": "gate",
+        "guard": "verdict-at-tip",
+        "present": [
+          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "none" },
+          { "spec": "verdict", "revision": "175328d0c1b2", "value": "PASS", "by": "Reviewer" },
+          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+        ],
+        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+      }
+    },
+    {
+      "id": "verdict-not-pass",
+      "where": "merge-gate.mjs `judge`: the newest conclusion at the tip is not a PASS",
+      "sentence": "reviewer-agent says INC at this tip",
+      "gate": {
+        "labels": [],
+        "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+        "expectedHead": null,
+        "reports": [{ "verdict": "INC", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+      },
+      "preset": {
+        "node": "gate",
+        "guard": "verdict-says-pass",
+        "present": [
+          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "none" },
+          { "spec": "verdict", "revision": "abaf938b0c1d", "value": "INC", "by": "reviewer-agent" },
+          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+        ],
+        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+      }
+    }
+  ]
+}

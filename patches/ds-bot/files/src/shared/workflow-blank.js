@@ -1,4 +1,4 @@
-// The `blank` preset (#1272): three nodes, one Bot each, no guards, no repository. It is here as
+// The `blank` preset (#1272): three nodes, one role each, no guards, no repository. It is here as
 // proof that a workflow is data — nothing in src/shared/workflow.js names these ids, and the same
 // JSON dropped in the workspace as `workflows/blank.json` is the whole definition.
 
@@ -12,7 +12,7 @@ export const blankWorkflow = Object.freeze({
     {
       id: 'draft',
       name: 'Draft',
-      bot: 'Writer',
+      role: 'Writer',
       inputs: ['text:topic'],
       outputs: ['text:draft'],
       guards: [],
@@ -21,7 +21,7 @@ export const blankWorkflow = Object.freeze({
     {
       id: 'review',
       name: 'Review',
-      bot: 'Editor',
+      role: 'Editor',
       inputs: ['text:draft'],
       outputs: ['text:edited'],
       guards: [],
@@ -30,7 +30,7 @@ export const blankWorkflow = Object.freeze({
     {
       id: 'publish',
       name: 'Publish',
-      bot: 'Publisher',
+      role: 'Publisher',
       inputs: ['text:edited'],
       outputs: ['link:published'],
       guards: [],
@@ -44,5 +44,5 @@ export const blankWorkflow = Object.freeze({
   loops: [],
 })
 
-// The Bots the preset names, so a caller can pass them as the team without inventing a roster.
+// The roles the preset names, so a caller can pass them as the team without inventing a roster.
 export const BLANK_TEAM = Object.freeze(['Writer', 'Editor', 'Publisher'])

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { judge, prFromHeadRef } from './merge-gate.mjs'
+import { guard } from './enqueue-rules.mjs'
 import { fileURLToPath } from 'node:url'
 
 const HEAD = 'abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f'
@@ -593,4 +594,51 @@ test('#960: the pull_request report is unchanged and still never fails on the bo
   })
   assert.equal(result.ok, true)
   assert.equal(result.mode, 'report')
+})
+
+// #1272 step 2, acceptance 9. The fixture is the one place three of these sentences are written down:
+// `core/test/workflow-repo-dev.test.js` asserts the `repo-dev` preset's gate guards refuse with the
+// same words, and neither side imports the other. The readers pinned here are `judge` — the function
+// merge-gate's required check runs — and `guard`, whose joined reasons are exactly what
+// `enqueue-guard` prints after "do not enqueue #N:". Change a sentence on either side and this is red.
+const workflowCases = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/workflow-cases.json', import.meta.url)), 'utf8'))
+
+test('#1272 step 2: the workflow fixture sentences are the gate s own, byte for byte', () => {
+  assert.ok(workflowCases.cases.length >= 3)
+  for (const entry of workflowCases.cases) {
+    const reports = entry.gate.reports.map((r) => say([
+      `Tip SHA: ${r.tip}`,
+      `Written-by: ${r.writtenBy}`,
+      'Ran:',
+      '  - npm run verify → pass',
+      `Verdict: ${r.verdict}`,
+    ].join('\n')))
+    const result = judge({
+      labels: entry.gate.labels,
+      head: entry.gate.head,
+      author: 'opener',
+      reports,
+      policy,
+      expectedHead: entry.gate.expectedHead ?? undefined,
+    })
+    assert.ok(result.reasons.includes(entry.sentence), `${entry.id}: judge said ${JSON.stringify(result.reasons)}`)
+    // enqueue-guard's REFUSE line is `do not enqueue #N: <reasons joined>`, so the same sentence has to
+    // appear there too, for the same input.
+    const refused = guard({
+      pr: 1272,
+      head: entry.gate.head,
+      labels: [...entry.gate.labels, 'agent-pr'],
+      body: 'Fixes #1272\nOwner: Dev3\nReviewer: Reviewer',
+      files: ['core/src/shared/workflow.js'],
+      mechanicalRelease: false,
+      fork: false,
+      draft: false,
+      merged: false,
+      result,
+      reports,
+      policy,
+    })
+    assert.equal(refused.ok, false)
+    assert.ok(refused.message.includes(`${entry.sentence}`), `${entry.id}: enqueue-guard said ${refused.message}`)
+  }
 })

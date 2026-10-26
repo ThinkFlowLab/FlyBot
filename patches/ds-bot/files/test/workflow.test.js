@@ -33,11 +33,11 @@ const content = {
   inputs: ['text:topic'],
   deliverables: ['text:archived'],
   nodes: [
-    { id: 'idea', name: 'Idea', bot: 'Planner', inputs: ['text:topic'], outputs: ['text:brief'] },
-    { id: 'draft', name: 'Draft', bot: 'Writer', inputs: ['text:brief'], outputs: ['text:draft'] },
-    { id: 'edit', name: 'Edit', bot: 'Editor', inputs: ['text:draft'], outputs: ['text:edited'] },
-    { id: 'publish', name: 'Publish', bot: 'Publisher', inputs: ['text:edited'], outputs: ['link:published'] },
-    { id: 'archive', name: 'Archive', bot: 'Archivist', inputs: ['link:published'], outputs: ['text:archived'] },
+    { id: 'idea', name: 'Idea', role: 'Planner', inputs: ['text:topic'], outputs: ['text:brief'] },
+    { id: 'draft', name: 'Draft', role: 'Writer', inputs: ['text:brief'], outputs: ['text:draft'] },
+    { id: 'edit', name: 'Edit', role: 'Editor', inputs: ['text:draft'], outputs: ['text:edited'] },
+    { id: 'publish', name: 'Publish', role: 'Publisher', inputs: ['text:edited'], outputs: ['link:published'] },
+    { id: 'archive', name: 'Archive', role: 'Archivist', inputs: ['link:published'], outputs: ['text:archived'] },
   ],
   edges: [
     { from: 'idea.text:brief', to: 'draft.text:brief' },
@@ -98,16 +98,16 @@ test('the blank preset validates with its own team, and names a Bot on every nod
   const result = validateWorkflow(blankWorkflow, { team: BLANK_TEAM })
   assert.equal(result.ok, true, JSON.stringify(result.problems))
   assert.deepEqual(workflowColumns(blankWorkflow).map((column) => column.id), ['draft', 'review', 'publish'])
-  assert.deepEqual(workflowColumns(blankWorkflow).map((column) => column.bot), ['Writer', 'Editor', 'Publisher'])
+  assert.deepEqual(workflowColumns(blankWorkflow).map((column) => column.role), ['Writer', 'Editor', 'Publisher'])
   assert.equal(holderOf(blankWorkflow, 'review'), 'Editor')
   assert.equal(holderOf(blankWorkflow, 'nowhere'), null)
 
   const other = validateWorkflow(blankWorkflow, { team: ['Someone'] })
   assert.equal(other.ok, false)
   assert.deepEqual(other.problems.map((problem) => problem.code), [
-    'node/unknown-bot',
-    'node/unknown-bot',
-    'node/unknown-bot',
+    'node/unknown-role',
+    'node/unknown-role',
+    'node/unknown-role',
   ])
 })
 
@@ -115,7 +115,7 @@ test('the columns are the definition s, not a built-in list', () => {
   const blank = workflowColumns(blankWorkflow)
   const editorial = workflowColumns(content)
   assert.deepEqual(editorial.map((column) => column.id), ['idea', 'draft', 'edit', 'publish', 'archive'])
-  assert.deepEqual(editorial.map((column) => column.bot), contentTeam)
+  assert.deepEqual(editorial.map((column) => column.role), contentTeam)
   assert.notDeepEqual(blank.map((column) => column.id), editorial.map((column) => column.id))
   // Same calls, two vocabularies: nothing above this line knows either set of ids.
   assert.equal(validateWorkflow(content, { team: contentTeam }).ok, true, JSON.stringify(validateWorkflow(content, { team: contentTeam }).problems))
@@ -129,7 +129,7 @@ test('the flowchart is generated: one box per node, one edge per edges[] row', (
   for (const node of content.nodes) {
     const box = graph.boxes.find((candidate) => candidate.id === node.id)
     assert.ok(box, `no box for ${node.id}`)
-    assert.equal(box.bot, node.bot)
+    assert.equal(box.role, node.role)
     assert.deepEqual(box.inputs, node.inputs)
     assert.deepEqual(box.outputs, node.outputs)
   }
@@ -152,21 +152,21 @@ test('the flowchart is generated: one box per node, one edge per edges[] row', (
   const broken = layoutWorkflow({ nodes: content.nodes, edges: [{ from: 'idea.text:brief', to: 'gone.text:brief' }] })
   assert.equal(broken.edges.length, 1)
   assert.equal(broken.edges[0].toBox, null)
+  // One field for one value: the edge carries `artifact`, and says it once (#1291 debt).
   assert.deepEqual(resolvedEdges(content)[0], {
     from: 'idea.text:brief',
     to: 'draft.text:brief',
     fromNode: 'idea',
     toNode: 'draft',
     artifact: 'text:brief',
-    carries: 'text:brief',
   })
 })
 
 test('an input nothing produces is refused, unless the workflow declares it as a starting point', () => {
   const def = {
     nodes: [
-      { id: 'draft', name: 'Draft', bot: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
-      { id: 'publish', name: 'Publish', bot: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
+      { id: 'draft', name: 'Draft', role: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'publish', name: 'Publish', role: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
     ],
     edges: [],
     deliverables: ['link:published'],
@@ -182,8 +182,8 @@ test('an output nothing consumes is refused, unless it is a declared deliverable
   const def = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'draft', name: 'Draft', bot: 'Writer', inputs: ['text:topic'], outputs: ['text:draft', 'text:extra'] },
-      { id: 'publish', name: 'Publish', bot: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
+      { id: 'draft', name: 'Draft', role: 'Writer', inputs: ['text:topic'], outputs: ['text:draft', 'text:extra'] },
+      { id: 'publish', name: 'Publish', role: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
     ],
     deliverables: ['link:published'],
   }
@@ -197,9 +197,9 @@ test('one fact has one producer, and two producers are refused by name', () => {
   const def = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'draft', name: 'Draft', bot: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
-      { id: 'redraft', name: 'Redraft', bot: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
-      { id: 'publish', name: 'Publish', bot: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
+      { id: 'draft', name: 'Draft', role: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'redraft', name: 'Redraft', role: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'publish', name: 'Publish', role: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
     ],
     deliverables: ['link:published'],
   }
@@ -208,31 +208,31 @@ test('one fact has one producer, and two producers are refused by name', () => {
   assert.match(result.problems[0].message, /"text:draft" is handed out by "draft" and "redraft"/)
 })
 
-test('a node without a Bot is refused, and so is a Bot that names nobody on the team', () => {
+test('a node without a role is refused, and so is a role that names nobody on the team', () => {
   const def = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'draft', name: 'Draft', bot: '', inputs: ['text:topic'], outputs: ['text:draft'] },
-      { id: 'publish', name: 'Publish', bot: 'Ghost', inputs: ['text:draft'], outputs: ['link:published'] },
+      { id: 'draft', name: 'Draft', role: '', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'publish', name: 'Publish', role: 'Ghost', inputs: ['text:draft'], outputs: ['link:published'] },
     ],
     deliverables: ['link:published'],
   }
   const loose = validateWorkflow(def)
-  assert.deepEqual(loose.problems.map((problem) => problem.code), ['node/without-bot'])
+  assert.deepEqual(loose.problems.map((problem) => problem.code), ['node/without-role'])
   const strict = validateWorkflow(def, { team: ['Writer'] })
-  assert.deepEqual(strict.problems.map((problem) => problem.code), ['node/without-bot', 'node/unknown-bot'])
+  assert.deepEqual(strict.problems.map((problem) => problem.code), ['node/without-role', 'node/unknown-role'])
   assert.match(strict.problems[1].message, /node "publish" names "Ghost", who is not on this team/)
-  // `system` and a human role are part of the model, not a missing Bot.
-  assert.equal(validateWorkflow({ inputs: ['text:topic'], nodes: [{ id: 'merge', name: 'Merge', bot: 'system', inputs: ['text:topic'], outputs: ['merge-commit'] }], deliverables: ['merge-commit'] }, { team: [] }).ok, true)
+  // `system` and a human role are part of the model, not a missing role.
+  assert.equal(validateWorkflow({ inputs: ['text:topic'], nodes: [{ id: 'merge', name: 'Merge', role: 'system', inputs: ['text:topic'], outputs: ['merge-commit'] }], deliverables: ['merge-commit'] }, { team: [] }).ok, true)
 })
 
 test('a cycle that is not declared is refused; a declared loop is how work goes back', () => {
   const twoStep = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr'] },
-      { id: 'review', name: 'Review', bot: 'Reviewer', inputs: ['pr'], outputs: ['verdict'] },
-      { id: 'gate', name: 'Gate', bot: 'Reviewer', inputs: ['verdict'], outputs: [] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr'] },
+      { id: 'review', name: 'Review', role: 'Reviewer', inputs: ['pr'], outputs: ['verdict'] },
+      { id: 'gate', name: 'Gate', role: 'Reviewer', inputs: ['verdict'], outputs: [] },
     ],
     edges: [],
     deliverables: ['verdict'],
@@ -243,8 +243,8 @@ test('a cycle that is not declared is refused; a declared loop is how work goes 
   const loop = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic', 'verdict'], outputs: ['pr'] },
-      { id: 'review', name: 'Review', bot: 'Reviewer', inputs: ['pr'], outputs: ['verdict'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic', 'verdict'], outputs: ['pr'] },
+      { id: 'review', name: 'Review', role: 'Reviewer', inputs: ['pr'], outputs: ['verdict'] },
     ],
     edges: [{ from: 'review.verdict', to: 'build.verdict' }],
     deliverables: ['pr'],
@@ -261,8 +261,8 @@ test('a spelling the engine does not know, or an edge that does not line up, is 
   const def = {
     inputs: ['text:topic'],
     nodes: [
-      { id: 'draft', name: 'Draft', bot: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
-      { id: 'publish', name: 'Publish', bot: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
+      { id: 'draft', name: 'Draft', role: 'Writer', inputs: ['text:topic'], outputs: ['text:draft'] },
+      { id: 'publish', name: 'Publish', role: 'Publisher', inputs: ['text:draft'], outputs: ['link:published'] },
     ],
     edges: [{ from: 'draft.text:draft', to: 'publish.link:published' }],
     deliverables: ['link:published'],
@@ -277,8 +277,8 @@ test('a missing input refuses in the node s own words, and moves nothing', () =>
   const gate = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr'] },
-      { id: 'gate', name: 'Gate', bot: 'Reviewer', inputs: ['pr', 'check:tests-ok'], outputs: ['queue-entry'], refusal: '{node} refuses: its input {spec} has not been produced yet.' },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr'] },
+      { id: 'gate', name: 'Gate', role: 'Reviewer', inputs: ['pr', 'check:tests-ok'], outputs: ['queue-entry'], refusal: '{node} refuses: its input {spec} has not been produced yet.' },
     ],
     edges: [],
     deliverables: ['queue-entry'],
@@ -293,11 +293,11 @@ test('a stale input refuses with both revisions, so a card reads without asking 
   const gate = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
       {
         id: 'gate',
         name: 'Gate',
-        bot: 'Reviewer',
+        role: 'Reviewer',
         inputs: ['verdict', 'check:tests-ok'],
         outputs: ['queue-entry'],
         refusal: '{node} refuses: its input {input} is stale, the tip is now {now}.',
@@ -346,11 +346,11 @@ test('a guard is a predicate over a fact, and its refusal says what the fact sai
   const def = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
       {
         id: 'gate',
         name: 'Gate',
-        bot: 'Reviewer',
+        role: 'Reviewer',
         inputs: ['verdict'],
         outputs: ['queue-entry'],
         guards: [{ id: 'pass', spec: 'verdict', is: 'equals', value: 'PASS' }],
@@ -383,15 +383,15 @@ test('the ids are data: renaming them changes nothing but the strings', () => {
   assert.equal(graph.edges.length, 2)
   const blankGraph = layoutWorkflow(blankWorkflow)
   assert.deepEqual(graph.boxes.map((box) => box.rank), blankGraph.boxes.map((box) => box.rank))
-  assert.equal(nodeById(renamed, 'step-1').bot, 'Editor')
+  assert.equal(nodeById(renamed, 'step-1').role, 'Editor')
 })
 
 test('a fact whose source revision is unreadable refuses, whether the key is missing or null (#1291 INC)', () => {
   const gate = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
-      { id: 'gate', name: 'Gate', bot: 'Reviewer', inputs: ['verdict'], outputs: ['queue-entry'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
+      { id: 'gate', name: 'Gate', role: 'Reviewer', inputs: ['verdict'], outputs: ['queue-entry'] },
     ],
     edges: [],
     deliverables: ['queue-entry'],
@@ -413,9 +413,9 @@ test('the unreadable sentence names the fact it read and never fills the source 
   const gate = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
       // The node's own wording speaks of "stale"; the engine must not use it for an unread source.
-      { id: 'gate', name: 'Gate', bot: 'Reviewer', inputs: ['verdict'], outputs: ['queue-entry'], refusal: '{node} refuses: its input {input} is stale, the tip is now {now}.' },
+      { id: 'gate', name: 'Gate', role: 'Reviewer', inputs: ['verdict'], outputs: ['queue-entry'], refusal: '{node} refuses: its input {input} is stale, the tip is now {now}.' },
     ],
     edges: [],
     deliverables: ['queue-entry'],
@@ -432,8 +432,8 @@ test('the card and the gate say the same thing about an unreadable input (#1291 
   const gate = {
     inputs: ['pr'],
     nodes: [
-      { id: 'build', name: 'Build', bot: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
-      { id: 'gate', name: 'Gate', bot: 'Reviewer', inputs: ['verdict', 'check:tests-ok'], outputs: ['queue-entry'] },
+      { id: 'build', name: 'Build', role: 'Dev', inputs: ['text:topic'], outputs: ['pr', 'verdict'] },
+      { id: 'gate', name: 'Gate', role: 'Reviewer', inputs: ['verdict', 'check:tests-ok'], outputs: ['queue-entry'] },
     ],
     edges: [],
     deliverables: ['queue-entry'],

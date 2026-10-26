@@ -10,28 +10,45 @@ export const WORKFLOW_VERSION = 1
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '')
 const textList = (value) => (Array.isArray(value) ? value.map(text).filter(Boolean) : [])
-const GUARD_CHECKS = ['present', 'fresh', 'equals']
+export const GUARD_CHECKS = ['present', 'fresh', 'equals']
+export const NODE_COLUMNS = ['not-started', 'in-progress', 'done']
 
 function normaliseGuard(raw) {
   const spec = text(raw?.spec)
-  const is = text(raw?.is)
   return {
     id: text(raw?.id) || spec,
     spec,
-    is: GUARD_CHECKS.includes(is) ? is : 'present',
+    // The check is kept exactly as written. An unknown one used to be read as `present`, which is a
+    // guard that can never refuse: `is: 'fres'` left the node unguarded and said nothing. Validation
+    // refuses it, and `guardRefusals` refuses it too, so a file that never went through validation
+    // still cannot pass on a check nobody implemented (#1291 debt).
+    is: text(raw?.is),
     value: raw?.value === undefined ? null : raw.value,
+    // One node can refuse several facts for different reasons, so a guard carries its own sentence
+    // when it needs one; `renderRefusal` prefers it over the node's.
+    refusal: text(raw?.refusal),
   }
+}
+
+// `column: false` draws no column; a name is the board column this node's cards sit in; absent is
+// "not stated", and then the node id is the column — what step 1 did (#1265, #1272 step 2).
+function normaliseColumn(value) {
+  if (value === false) return false
+  return text(value) === '' ? null : text(value)
 }
 
 function normaliseNode(raw) {
   return {
     id: text(raw?.id),
     name: text(raw?.name) || text(raw?.id),
-    bot: text(raw?.bot),
+    // One word for one thing: a node names the `role` that does it. The older spelling `bot` meant the
+    // same thing and is not read any more, so a definition cannot state both and disagree (#1291 debt).
+    role: text(raw?.role),
     inputs: textList(raw?.inputs),
     outputs: textList(raw?.outputs),
     guards: Array.isArray(raw?.guards) ? raw.guards.map(normaliseGuard) : [],
     refusal: text(raw?.refusal),
+    column: normaliseColumn(raw?.column),
   }
 }
 
@@ -74,13 +91,21 @@ export function splitEndpoint(endpoint, nodeIds) {
   return null
 }
 
+// The spelling a fact is keyed by: `text: draft` and `text:draft` are one fact, not two (#1291
+// debt). Anything outside the vocabulary is not a spec and has no key.
+export function canonicalSpec(spec) {
+  const parsed = parseArtifactSpec(spec)
+  return parsed ? formatArtifactSpec(parsed) : null
+}
+
 export function producersOf(def) {
   const producers = {}
   for (const node of def.nodes) {
     for (const spec of node.outputs) {
-      if (!parseArtifactSpec(spec)) continue
-      producers[spec] = producers[spec] ?? []
-      if (!producers[spec].includes(node.id)) producers[spec].push(node.id)
+      const key = canonicalSpec(spec)
+      if (!key) continue
+      producers[key] = producers[key] ?? []
+      if (!producers[key].includes(node.id)) producers[key].push(node.id)
     }
   }
   return producers
@@ -90,9 +115,10 @@ export function consumersOf(def) {
   const consumers = {}
   for (const node of def.nodes) {
     for (const spec of node.inputs) {
-      if (!parseArtifactSpec(spec)) continue
-      consumers[spec] = consumers[spec] ?? []
-      if (!consumers[spec].includes(node.id)) consumers[spec].push(node.id)
+      const key = canonicalSpec(spec)
+      if (!key) continue
+      consumers[key] = consumers[key] ?? []
+      if (!consumers[key].includes(node.id)) consumers[key].push(node.id)
     }
   }
   return consumers
@@ -111,8 +137,9 @@ export function resolvedEdges(raw) {
       to: edge.to,
       fromNode: from?.node ?? null,
       toNode: to?.node ?? null,
+      // One field for one value (#1291 debt): the artifact the edge carries. `carries` said the same
+      // thing twice, and a reader could never tell which one a change was supposed to move.
       artifact: from?.artifact ?? null,
-      carries: from?.artifact ?? null,
     }
   })
 }
@@ -137,7 +164,7 @@ export function dependencyEdges(raw) {
   }
   for (const node of def.nodes) {
     for (const spec of node.inputs) {
-      for (const from of producers[spec] ?? []) {
+      for (const from of producers[canonicalSpec(spec)] ?? []) {
         if (!isLoopEdge(def, from, node.id)) add(from, node.id)
       }
     }
@@ -181,24 +208,30 @@ export function topologicalOrder(raw) {
 // state, and there is no built-in list of them anywhere in this file.
 export function workflowColumns(raw) {
   const def = normaliseWorkflow(raw)
-  return topologicalOrder(def).map((id) => {
-    const node = nodeById(def, id)
-    return {
+  return topologicalOrder(def)
+    .map((id) => nodeById(def, id))
+    // `column: false` draws no column (#1265): a review is a pull request's state, not a lane of its
+    // own, so the node stays in the definition and out of the board.
+    .filter((node) => node.column !== false)
+    .map((node) => ({
       id: node.id,
+      // The board column this node's cards sit in. A definition that states none keeps step 1's
+      // answer — the node id itself — so nothing that already read these columns moves.
+      column: node.column ?? node.id,
       name: node.name,
-      bot: node.bot,
+      role: node.role,
       inputs: node.inputs.slice(),
       outputs: node.outputs.slice(),
       guards: node.guards.map((guard) => ({ ...guard })),
       refusal: node.refusal,
-    }
-  })
+    }))
 }
 
 // Who does this node: the definition's Bot, which is also the card's assignee while the card sits
 // there, so the two cannot disagree.
 export function holderOf(raw, nodeId) {
-  return nodeById(normaliseWorkflow(raw), nodeId)?.bot ?? null
+  const role = nodeById(normaliseWorkflow(raw), nodeId)?.role ?? ''
+  return role === '' ? null : role
 }
 
 function ranksOf(def, edges) {
@@ -240,7 +273,7 @@ export function layoutWorkflow(raw, options = {}) {
       boxes.push({
         id: node.id,
         name: node.name,
-        bot: node.bot,
+        role: node.role,
         rank: r,
         row,
         inputs: node.inputs.slice(),
@@ -295,13 +328,25 @@ export function renderRefusal(node, details = {}) {
     // A revision that could not be read is never written as an empty slot, and never as `null`.
     now: unreadable ? 'an unreadable revision' : (details.now ?? 'no revision'),
     want: String(details.want ?? ''),
+    // What the fact said, and who wrote it: the sentences the merge gate emits name both, so a preset
+    // that has to say the same thing can be written in one template (#1272 step 2, acceptance 9).
+    value: details.input?.value ?? '',
+    by: details.input?.by ?? '',
+  }
+  // A check the engine does not implement is a defect in the definition, not a fact: it refuses with
+  // its own sentence instead of being read as `present` (#1291 debt).
+  if (details.unchecked !== undefined) {
+    return `${name} refuses: its check on ${spec ?? 'a fact'} asks "${details.unchecked}", which is not one of ${GUARD_CHECKS.join(', ')}.`
   }
   if (unreadable) {
     // The node's own wording knows "has not been produced" and "is stale"; neither is this answer,
     // so the engine names what it read and that the source could not be read at all.
     return `${name} refuses: its input ${input ?? spec} could not be checked against the source — it reads ${details.have ?? 'no revision'} and the source revision is unreadable, so the card must be read before it starts.`
   }
-  if (node?.refusal) return fill(node.refusal, values)
+  // The guard's own sentence wins over the node's: one node refuses several facts, and the sentence
+  // that fits a held pull request does not fit a verdict that says INC.
+  const template = details.guard?.refusal || node?.refusal
+  if (template) return fill(template, values)
   if (details.want !== undefined && details.want !== null) {
     return `${name} refuses: its input ${input ?? spec} does not say ${details.want}.`
   }
@@ -339,23 +384,31 @@ function guardRefusals(node, facts) {
   const current = facts.current ?? {}
   const refusals = []
   for (const guard of node.guards) {
-    const spec = parseArtifactSpec(guard.spec) ? formatArtifactSpec(parseArtifactSpec(guard.spec)) : null
+    const spec = canonicalSpec(guard.spec)
     if (!spec) {
       refusals.push({ guard, refusal: renderRefusal(node, { spec: guard.spec }) })
+      continue
+    }
+    // Read before the fact: an unknown check is a defect in the file, and a reader has to be told
+    // that rather than shown a refusal about a fact that was never looked at.
+    if (!GUARD_CHECKS.includes(guard.is)) {
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, guard, unchecked: guard.is }) })
       continue
     }
     const have = artifactAt(present, spec)
     const state = freshness(have, current[spec])
     if (!have) {
+      // A guard's own sentence says what the fact said, and a fact that is not there said nothing:
+      // the node's wording answers this one, or the sentence would name two revisions that do not exist.
       refusals.push({ guard, refusal: renderRefusal(node, { spec }) })
       continue
     }
     if (guard.is === 'fresh' && !state.fresh) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, stale: true, have: state.have, now: state.now }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, stale: true, have: state.have, now: state.now }) })
       continue
     }
     if (guard.is === 'equals' && String(have.value ?? '') !== String(guard.value ?? '')) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, want: guard.value }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, have: have.revision, want: guard.value }) })
     }
   }
   return refusals
@@ -434,12 +487,34 @@ export function validateWorkflow(raw, options = {}) {
       problems.push(message('node/duplicate-id', `two nodes share the id "${node.id}"`, { node: node.id }))
     }
     ids.add(node.id)
-    if (node.bot === '') {
-      problems.push(message('node/without-bot', `node "${node.id}" names no Bot; every node is done by one`, { node: node.id }))
-    } else if (team && !team.includes(node.bot) && node.bot !== 'system' && !node.bot.startsWith('human:')) {
+    if (node.role === '') {
+      problems.push(message('node/without-role', `node "${node.id}" names no role; every node is done by one`, { node: node.id }))
+    } else if (team && !team.includes(node.role) && node.role !== 'system' && !node.role.startsWith('human:')) {
       problems.push(
-        message('node/unknown-bot', `node "${node.id}" names "${node.bot}", who is not on this team`, { node: node.id }),
+        message('node/unknown-role', `node "${node.id}" names "${node.role}", who is not on this team`, { node: node.id }),
       )
+    }
+    if (node.column !== null && node.column !== false && !NODE_COLUMNS.includes(node.column)) {
+      problems.push(
+        message(
+          'node/unknown-column',
+          `node "${node.id}" names the column "${node.column}", which is not one of ${NODE_COLUMNS.join(', ')}`,
+          { node: node.id },
+        ),
+      )
+    }
+    for (const guard of node.guards) {
+      // #1291 debt: an unknown check is refused, not read as `present`. The two spellings are named
+      // so the fix reads as "pick one of these" rather than "something about the guard".
+      if (!GUARD_CHECKS.includes(guard.is)) {
+        problems.push(
+          message(
+            'guard/unknown-check',
+            `node "${node.id}" guard "${guard.id}" asks is: "${guard.is}", which is not one of ${GUARD_CHECKS.join(', ')}`,
+            { node: node.id, guard: guard.id },
+          ),
+        )
+      }
     }
     for (const spec of [...node.inputs, ...node.outputs]) {
       if (!parseArtifactSpec(spec)) {
@@ -454,14 +529,18 @@ export function validateWorkflow(raw, options = {}) {
 
   const producers = producersOf(def)
   const consumers = consumersOf(def)
-  const declaredInputs = new Set(def.inputs)
-  const deliverables = new Set(def.deliverables)
+  // `text: draft` and `text:draft` are one fact: the declared lists are read the same way the
+  // producers are keyed, or a workflow that spells one spelling would call its own input a defect.
+  const canonicalList = (list) => list.map(canonicalSpec).filter(Boolean)
+  const declaredInputs = new Set(canonicalList(def.inputs))
+  const deliverables = new Set(canonicalList(def.deliverables))
 
   for (const node of def.nodes) {
     if (!ids.has(node.id)) continue
     for (const spec of node.inputs) {
-      if (!parseArtifactSpec(spec)) continue
-      if ((producers[spec] ?? []).length === 0 && !declaredInputs.has(spec)) {
+      const key = canonicalSpec(spec)
+      if (!key) continue
+      if ((producers[key] ?? []).length === 0 && !declaredInputs.has(key)) {
         problems.push(
           message('input/without-producer', `node "${node.id}" takes in "${spec}", but no node hands it out`, {
             node: node.id,
@@ -471,8 +550,9 @@ export function validateWorkflow(raw, options = {}) {
       }
     }
     for (const spec of node.outputs) {
-      if (!parseArtifactSpec(spec)) continue
-      if ((consumers[spec] ?? []).length === 0 && !deliverables.has(spec)) {
+      const key = canonicalSpec(spec)
+      if (!key) continue
+      if ((consumers[key] ?? []).length === 0 && !deliverables.has(key)) {
         problems.push(
           message(
             'output/without-consumer',
