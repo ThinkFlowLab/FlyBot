@@ -145,7 +145,7 @@ test('default: a connected connector is on for every Bot, old or new, in its cha
   // #1237: it is the one Session that carries neither the composio tools nor the schedule ones.
   assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'the mask lands with the Agent, not with the turn')
   const done = await turn('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: 'rr', senderName: 'You', hop: 0, origin: 'owner' })
-  assert.match(guard(COMPOSIO[0], 'room-writer'), /own chat, not in a group room/)
+  assert.match(guard(COMPOSIO[0], 'room-writer'), /not available in a group room/)
   assert.equal(guard(GITHUB[0], 'room-writer'), undefined, 'github stays: a room judges pull requests')
   done()
   assert.equal(guard(COMPOSIO[0], 'plain'), undefined)
@@ -210,9 +210,11 @@ test('#1237: a room turn drops the composio and schedule tools and keeps github 
   // notice a renamed or emptied SCHEDULE_TOOLS; these are the DSH names (0.2.0-rc.2).
   for (const name of ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']) assert.ok(allHidden('room-writer').has(name), `${name} is hidden in a room`)
   for (const name of [...GITHUB, ...OWN]) assert.equal(guard(name, 'room-writer'), undefined, `${name}`)
-  for (const name of [...COMPOSIO, ...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, name)
+  for (const name of [...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, name)
   assert.equal(guard('schedule_list', 'room-writer'), 'Schedules are managed in your own chat, not in a group room (#1237).')
-  assert.equal(guard(COMPOSIO[0], 'room-writer'), 'The composio connector is available in your own chat, not in a group room (#1237).')
+  // #1271: a friend's Bot that holds a room Session is refused here too, and it has no composio tools in
+  // its own chat either, so the refusal no longer points there.
+  for (const name of [...COMPOSIO]) assert.equal(guard(name, 'room-writer'), 'The composio connector is not available in a group room (#1237).', name)
 })
 
 test('#1237: a Bot\'s own chat keeps composio and the schedule tools', async (t) => {
@@ -277,7 +279,8 @@ test('#601: a group round of any origin keeps the github tools, also with a frie
     begin('room-writer')
     await tick()
     for (const name of GITHUB) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
-    for (const name of [...COMPOSIO, ...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, `${origin}: ${name}`)
+    for (const name of [...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, `${origin}: ${name}`)
+    for (const name of [...COMPOSIO]) assert.match(guard(name, 'room-writer'), /not available in a group room/, `${origin}: ${name}`)
     assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), `${origin}: the mask is the same in every origin`)
     end('room-writer')
   }

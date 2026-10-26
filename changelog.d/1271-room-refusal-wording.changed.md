@@ -1,0 +1,1 @@
+A connector call refused in a group room now says the tool is not available there, instead of pointing the caller at its own chat — a friend's Bot has no composio tools in its chat either ([#1271](https://github.com/ThinkFlowLab/FlyBot/issues/1271)).
