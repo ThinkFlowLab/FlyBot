@@ -144,9 +144,27 @@ import { join } from 'node:path'
 // #960 (B): the required merge-gate check now also reads the body and the labels, so the fixtures carry
 // a body the guard accepts and the label a routine pull request has; a test overrides either on purpose.
 const HEADERS = 'Owner: Reviewer\nReviewer: reviewer-agent\n'
-const fakeGh = ({ comments, reviews = [], labels = ['agent-pr'], files = [], head = HEAD, body = HEADERS + 'Fixes #637\n', headRepo = 'ThinkFlowLab/FlyBot', draft = false, merged = false }) => (...args) => {
+// #1202: the queue entry also reads the checkpoint block, so a fixture body carries one that agrees with
+// the body it sits in: same issue, same files, the Bot the Owner: line names.
+const checkpointFor = (text, files = [], pr = 637) => {
+  const issue = Number((text.match(/^[\s>#-]*(?:fixes|closes)\s*(?:[\w.-]+\/[\w.-]+)?#(\d+)/im) ?? [])[1] ?? 0)
+  const owner = (text.match(/^\s*Owner:\s*(\S+)/im) ?? [])[1]
+  const fields = {
+    pr,
+    claim: owner ? owner.replace(/^@/, '').replace(/,$/, '') : 'Reviewer',
+    issue,
+    summary: 'The queue entry reads the checkpoint and the header lines together. A missing field is refused by name. This fixture keeps the other rules the test of the moment.',
+    files: files.length ? files.slice(0, 12) : ['core/src/host/turns.js'],
+    checks: { ran: 'node --test .github/scripts/merge-gate.test.mjs', result: 'green', at: HEAD },
+    next: 'none — ready for review',
+  }
+  return ['<!-- flybot:checkpoint -->', '\u0060\u0060\u0060json', JSON.stringify(fields, null, 2), '\u0060\u0060\u0060', '<!-- /flybot:checkpoint -->'].join('\n')
+}
+const bodyWithCheckpoint = (text, files = [], pr = 637) => (/<!-- flybot:checkpoint -->/.test(text) ? text : `${text}\n${checkpointFor(text, files, pr)}`)
+const fakeGh = ({ comments, reviews = [], labels = ['agent-pr'], files = [], head = HEAD, body = null, pr = 637, headRepo = 'ThinkFlowLab/FlyBot', draft = false, merged = false }) => (...args) => {
   const path = args[args.length - 1]
-  const pull = { head: { sha: head, repo: { full_name: headRepo } }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })), body, draft, merged }
+  const text = bodyWithCheckpoint(body ?? `${HEADERS}Fixes #${pr}\n`, files, pr)
+  const pull = { head: { sha: head, repo: { full_name: headRepo } }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })), body: text, draft, merged }
   if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
   if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
   if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
@@ -191,7 +209,7 @@ test('#637: a verdict Chief posts for the Reviewer parses like the Reviewer wrot
 
 test('#925: a CONTRIBUTOR review by a repo admin passes the queue entry, and a failed lookup does not', () => {
   const body = firstLine('PASS')
-  const pull = JSON.stringify({ head: { sha: HEAD, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: 'opener' }, labels: [{ name: 'agent-pr' }], body: 'Owner: Reviewer\nReviewer: reviewer-agent\nFixes #925\n' })
+  const pull = JSON.stringify({ head: { sha: HEAD, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: 'opener' }, labels: [{ name: 'agent-pr' }], body: bodyWithCheckpoint('Owner: Reviewer\nReviewer: reviewer-agent\nFixes #925\n', ['core/src/host/turns.js'], 925) })
   const review = JSON.stringify({ user: { login: 'reviewer-agent' }, body, submitted_at: '2026-10-24T03:42:31Z', author_association: 'CONTRIBUTOR' })
   const gh = (permission) => (...args) => {
     const path = args[args.length - 1]
@@ -317,7 +335,8 @@ const runQueue = (fixture) => {
   writeFileSync(policyFile, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
   // Exactly what merge-gate.yml hands the script on a merge_group run, and no PR number.
   return main({
-    gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, ...fixture }),
+    // The pull request number comes from HEAD_REF on a queue entry, so the fixture is told which one it is.
+    gh: fakeGh({ head: RUN_HEAD, files: RUN_FILES, pr: 654, ...fixture }),
     env: {
       GITHUB_STEP_SUMMARY: '',
       REVIEW_POLICY: policyFile,
@@ -390,7 +409,7 @@ const queueReal = (fx, body = fx.comment.body, pullBody) => main({
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
     if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
-    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? ['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n') })
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? bodyWithCheckpoint(['Owner: Reviewer', 'Reviewer: Birfy', 'Fixes #' + fx.pr, ''].join('\n'), fx.files, fx.pr) })
     throw new Error('fake gh: unexpected ' + path)
   },
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: REAL_POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', HEAD_REF: `refs/heads/gh-readonly-queue/main/pr-${fx.pr}-c74e1207${'0'.repeat(32)}`, MODE: 'queue' },
@@ -435,7 +454,7 @@ test('#660-#663: a PASS from another GitHub login still passes; the author\'s ow
 test('#644: #663 passes once the author comment attests a role that is not the Owner', () => {
   const fx = REAL.find((f) => f.pr === 663)
   const body = fx.comment.body.replace('Written-by: Reviewer\n', `Written-by: Reviewer\nAttestation: ${fx.head} role=Reviewer\n`)
-  const result = queueReal(fx, body, `Owner: Dev\nReviewer: Birfy\nFixes #${fx.pr}\n`)
+  const result = queueReal(fx, body, bodyWithCheckpoint(`Owner: Dev\nReviewer: Birfy\nFixes #${fx.pr}\n`, fx.files, fx.pr))
   assert.equal(result.ok, true, result.reasons.join('; '))
   assert.equal(result.verdict.by, 'Birfy')
 })

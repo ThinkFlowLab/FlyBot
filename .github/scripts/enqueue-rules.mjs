@@ -128,8 +128,135 @@ export function recordOnlyAt(reports, head) {
   return last && RECORD_ONLY.test(String(last.r.body ?? '')) ? last.r : null
 }
 
+// #1202: the short checkpoint. A pull request hands itself over by name — who claims it, which issue it
+// answers, what changed in three to five sentences, which files, whether the checks ran, and what is next
+// — in one block in the body, so the next Bot reads the handoff where it already reads `Owner:` and
+// `Fixes #`. The body is the only store: it is the squash commit message, so a checkpoint cannot fall out
+// of step with the pull request the way a comment or a label can (#1201, #1199, #951 were all that shape:
+// two copies of one fact, one of them stale).
+//
+// It is read at one point, the queue entry. There is no "ready" event to hang a check on, so the guard
+// enforces it where it enforces the other body rules, and nothing here claims a rule it does not run.
+const CHECKPOINT_OPEN = '<!-- flybot:checkpoint -->'
+const CHECKPOINT_CLOSE = '<!-- /flybot:checkpoint -->'
+// A marker counts only on a line of its own. A body that *describes* the block — the pull request that
+// introduced it does — mentions the markers in prose, and a substring search starts reading the JSON at
+// the first backtick after that sentence (#1210).
+const markerAt = (lines, marker) => lines.findIndex((line) => line.trim() === marker)
+// The block is the whole budget: 1500 characters is what makes "short" checkable rather than aspirational.
+const CHECKPOINT_MAX = 1500
+const CHECKPOINT_SUMMARY_MAX = 600
+const CHECKPOINT_NEXT_MAX = 300
+const CHECKPOINT_FILES_MAX = 12
+const CHECK_RESULTS = ['green', 'red', 'none']
+const SHA40 = /^[0-9a-f]{40}$/i
+// A path, not a sentence: no whitespace, not absolute, and not so long that it is prose. `Makefile` and
+// `Dockerfile` have no extension, so a dot is not required.
+const FILE_PATH = /^[^\s/][^\s]{0,199}$/
+// One sentence ends at `.`, `!`, `?` or their full-width forms, and only where whitespace (or the text's
+// end) follows: without that `v0.2.3` would be three sentences and every summary that names a version
+// would be refused.
+const SENTENCE_END = /[.!?。！？]+(?:\s+|$)/
+const FENCE_LINE = /^\s*```[a-z]*\s*$/i
+
+// The block as written, or why it cannot be read. `present: false` is "no `## Checkpoint` section at
+// all"; a block that opens and never closes is its own defect, because a reader cannot tell where the
+// handoff ends.
+export function parseCheckpoint(body) {
+  const lines = String(body ?? '').split(/\r?\n/)
+  const open = markerAt(lines, CHECKPOINT_OPEN)
+  if (open < 0) return { present: false, fields: null, chars: 0, error: null, block: null }
+  const close = markerAt(lines.slice(open + 1), CHECKPOINT_CLOSE)
+  if (close < 0) {
+    return { present: true, fields: null, chars: 0, error: `the block has no closing ${CHECKPOINT_CLOSE} on a line of its own`, block: null }
+  }
+  const blockLines = lines.slice(open, open + close + 2)
+  const block = blockLines.join('\n')
+  // The JSON is fenced in the template so it reads as code in the body; the fence is not part of it.
+  const json = blockLines.slice(1, -1).filter((line) => !FENCE_LINE.test(line)).join('\n').trim()
+  try {
+    const fields = JSON.parse(json)
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+      return { present: true, fields: null, chars: block.length, error: 'the block is not one JSON object', block }
+    }
+    return { present: true, fields, chars: block.length, error: null, block }
+  } catch (e) {
+    return { present: true, fields: null, chars: block.length, error: `the block is not valid JSON (${e.message})`, block }
+  }
+}
+
+const issueNumbersIn = (body) => [...String(body ?? '').matchAll(/^[\s>#-]*(?:fixes|closes)\s*(?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#(\d+)/gim)].map((m) => Number(m[1]))
+const sentencesIn = (text) => String(text ?? '').split(SENTENCE_END).map((s) => s.trim()).filter(Boolean)
+
+// Every refusal names the field and what to write, in the voice of `missing line: Owner:` — a Bot that has
+// to guess why it was refused starts writing the block to please the regex, which is the one failure this
+// convention cannot afford. The friction is real (seven fields on every pull request) and it only pays
+// back if the first refusal is precise.
+export function checkpointReasons(body, { pr, files } = {}) {
+  const { present, fields, chars, error } = parseCheckpoint(body)
+  if (!present) {
+    return ['no checkpoint: add the "## Checkpoint" section of .github/pull_request_template.md (claim, issue, a 3-5 sentence summary, files, checks, next)']
+  }
+  if (error) return [`checkpoint: ${error}`]
+  const reasons = []
+  if (chars > CHECKPOINT_MAX) reasons.push(`checkpoint is ${chars} characters: it must stay under ${CHECKPOINT_MAX}, so move detail into the body above it`)
+
+  const text = String(body ?? '')
+  const ownerLine = text.split(/\r?\n/).slice(0, HEADER_LINES).find((line) => OWNER_LINE.test(line))
+  const owners = new Set(ownerLine ? headerNames(ownerLine, OWNER_LINE) : [])
+
+  if (!Number.isInteger(fields.pr)) reasons.push('checkpoint field "pr": write the pull request number as an integer')
+  else if (pr != null && fields.pr !== Number(pr)) reasons.push(`checkpoint field "pr": says ${fields.pr}, but this is pull request #${pr} — a copied body is not a checkpoint`)
+
+  const claim = typeof fields.claim === 'string' ? fields.claim.trim().replace(/^@/, '').toLowerCase() : ''
+  if (!claim) reasons.push('checkpoint field "claim": name the Bot that wrote this checkpoint')
+  else if (!owners.has(claim)) {
+    reasons.push(owners.size
+      ? `checkpoint field "claim": says "${fields.claim}", but the Owner: line says ${[...owners].map((n) => `"${n}"`).join(', ')} — one claimant per pull request`
+      : `checkpoint field "claim": says "${fields.claim}", but the body has no Owner: line to agree with`)
+  }
+
+  const closed = issueNumbersIn(text)
+  if (!Number.isInteger(fields.issue)) reasons.push('checkpoint field "issue": write the issue number as an integer')
+  else if (!closed.includes(fields.issue)) {
+    reasons.push(`checkpoint field "issue": says #${fields.issue}, but the body closes ${closed.length ? closed.map((n) => `#${n}`).join(', ') : 'no issue'} — add "Fixes #${fields.issue}" or name the issue this fixes`)
+  }
+
+  const summary = typeof fields.summary === 'string' ? fields.summary.trim() : ''
+  if (!summary) reasons.push('checkpoint field "summary": write what changed, in 3-5 sentences')
+  else if (summary.length > CHECKPOINT_SUMMARY_MAX) reasons.push(`checkpoint field "summary": ${summary.length} characters, over the ${CHECKPOINT_SUMMARY_MAX} a handoff may carry`)
+  else {
+    const count = sentencesIn(summary).length
+    if (count < 3 || count > 5) reasons.push(`checkpoint field "summary": ${count} sentence${count === 1 ? '' : 's'} — write 3 to 5, what changed rather than how`)
+  }
+
+  const listed = Array.isArray(fields.files) ? fields.files : null
+  if (!listed || !listed.length) reasons.push('checkpoint field "files": list the 1-12 files a reviewer should open first')
+  else if (listed.length > CHECKPOINT_FILES_MAX) reasons.push(`checkpoint field "files": ${listed.length} paths, at most ${CHECKPOINT_FILES_MAX}`)
+  else if (listed.some((f) => typeof f !== 'string' || !FILE_PATH.test(f.trim()))) reasons.push('checkpoint field "files": every entry must be a path (no spaces, not absolute)')
+  else if (Array.isArray(files) && files.length) {
+    const changed = new Set(files)
+    if (!listed.some((f) => changed.has(f.trim()))) reasons.push(`checkpoint field "files": none of ${listed.map((f) => `"${f}"`).join(', ')} is in this pull request's diff — list a file it changes`)
+  }
+
+  const checks = fields.checks
+  if (!checks || typeof checks !== 'object' || Array.isArray(checks)) reasons.push('checkpoint field "checks": write { "ran": …, "result": green|red|none, "at": <40-character tip sha> }')
+  else {
+    if (typeof checks.ran !== 'string' || !checks.ran.trim()) reasons.push('checkpoint field "checks.ran": name the command(s) you ran, or "none"')
+    if (!CHECK_RESULTS.includes(checks.result)) reasons.push(`checkpoint field "checks.result": write one of ${CHECK_RESULTS.join('/')}`)
+    else if (checks.result === 'none' && !(typeof checks.why === 'string' && checks.why.trim())) reasons.push('checkpoint field "checks.why": result "none" needs the reason nothing ran')
+    if (typeof checks.at !== 'string' || !SHA40.test(checks.at.trim())) reasons.push('checkpoint field "checks.at": write the full 40-character tip sha the checks ran at')
+  }
+
+  const next = typeof fields.next === 'string' ? fields.next.trim() : ''
+  if (!next) reasons.push('checkpoint field "next": say what the next hand is (or "none — ready for review")')
+  else if (next.length > CHECKPOINT_NEXT_MAX) reasons.push(`checkpoint field "next": ${next.length} characters, over ${CHECKPOINT_NEXT_MAX}`)
+
+  return reasons
+}
+
 // The decision, without the network: `result` is merge-gate's `judge` output for this head.
-export function guard({ pr, head, labels, body, mechanicalRelease, fork, draft, merged, result, reports, policy }) {
+export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, draft, merged, result, reports, policy }) {
   const quiet = recordOnlyAt(reports, result.head ?? head)
   const reasons = [...result.reasons]
   if (quiet) reasons.push('the newest conclusion at this head says "record only — do not merge"')
@@ -145,7 +272,13 @@ export function guard({ pr, head, labels, body, mechanicalRelease, fork, draft, 
     // never re-judged: this check runs again on every comment (enqueue-guard.yml), so without the second
     // half a sentence on an old merged pull request would turn its check red over a body nobody can edit
     // any more (#926, #925, #908 and others merged without these lines).
-    if (!draft && !merged) reasons.push(...headerReasons(body, policy))
+    if (!draft && !merged) {
+      reasons.push(...headerReasons(body, policy))
+      // #1202: the same exemption list, for the same reason. A release PR is generated and has no Bot to
+      // claim it; a fork's author keeps their own workflow. The block is read on the queue entry only —
+      // there is no ready event — so this is where "a checkpoint is required" is a fact rather than a hope.
+      reasons.push(...checkpointReasons(body, { pr, files }))
+    }
   }
   const ok = result.ok && !quiet && reasons.length === 0
   return {

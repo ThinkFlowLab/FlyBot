@@ -28,10 +28,28 @@ const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
 const comment = (body = report(), at = '2026-10-23T07:00:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
+// #1202: the queue entry also reads the checkpoint block, so the fixture body carries one that agrees
+// with it: this pull request's number, the issue the body fixes, the Owner: name and the changed files.
+const checkpointFor = (text, files, pr = 812) => {
+  if (/<!-- flybot:checkpoint -->/.test(text)) return text
+  const issue = Number((text.match(/^[\s>#-]*(?:fixes|closes)\s*(?:[\w.-]+\/[\w.-]+)?#(\d+)/im) ?? [])[1] ?? 812)
+  const owner = (text.match(/^\s*Owner:\s*(\S+)/im) ?? [])[1]
+  const fields = {
+    pr,
+    claim: owner ? owner.replace(/^@/, '').replace(/,$/, '') : 'Dev',
+    issue,
+    summary: 'The check run reads the checkpoint and the header lines together. A missing field is refused by name. This fixture keeps the rule the test is about.',
+    files: files.length ? files.slice(0, 12) : [HOST_FILE],
+    checks: { ran: 'node --test .github/scripts/gate-check.test.mjs', result: 'green', at: HEAD },
+    next: 'none — ready for review',
+  }
+  return `${text}\n<!-- flybot:checkpoint -->\n\u0060\u0060\u0060json\n${JSON.stringify(fields, null, 2)}\n\u0060\u0060\u0060\n<!-- /flybot:checkpoint -->`
+}
+
 // A repository with one pull request and the check runs written on it so far. `gh` answers both call
 // shapes the scripts use: variadic reads (`gh('api', …, path)`) and writes (`gh([args], json)`).
 const world = ({ head = HEAD, labels = ['agent-pr'], body = HEADERS + 'Fixes #812\n', comments = [], files = [HOST_FILE], author = 'opener', headRepo = REPO } = {}) => {
-  const state = { head, labels, body, comments, files, author, headRepo, runs: [], writes: [], nextId: 100 }
+  const state = { head, labels, body: checkpointFor(body, files), comments, files, author, headRepo, runs: [], writes: [], nextId: 100 }
   const pull = () => ({ head: { sha: state.head, repo: { full_name: state.headRepo } }, user: { login: state.author }, body: state.body, labels: state.labels.map((name) => ({ name })) })
   const handle = (args, input) => {
     // A write ends with `--input -`, so the API path is the `repos/…` argument, not the last one.

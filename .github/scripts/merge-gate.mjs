@@ -239,6 +239,7 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
         head,
         labels,
         body: pull.body,
+        files: files.map((f) => f.filename),
         mechanicalRelease: isMechanicalRelease(files.map((f) => f.filename)),
         // #711/#713: the fork flag must come from the head's repository. Any other source would refuse
         // every external pull request for a body rule we do not ask of it.

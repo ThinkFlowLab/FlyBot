@@ -191,6 +191,32 @@ A review's `state` is not read at all: approvals are not a gate any more (user d
 
 **A merged pull request's body is not a control.** GitHub evaluates `Fixes #N` once, when the merge lands. Editing the body of a merged pull request afterwards closes nothing and triggers no guard; it only makes the record disagree with what merged. If the issue is still open, close it with a comment naming the pull request — and if the merge itself was wrong, say so on the issue.
 
+#### The checkpoint block: a hand-off the next Bot can read (#1202)
+
+A pull request hands itself over in one block in the body, under `## Checkpoint`. The body is the only store: it becomes the squash commit message, so the block cannot fall out of step with the pull request the way a comment or a label can.
+
+```json
+{
+  "pr": 1206, "claim": "Dev", "issue": 1201,
+  "summary": "Three to five sentences of what changed, not how.",
+  "files": ["core/src/shared/quiet-hours.js"],
+  "checks": { "ran": "node scripts/ds-bot-patches check", "result": "green", "at": "<40-character tip sha>" },
+  "next": "none — ready for review"
+}
+```
+
+| field | rule |
+| --- | --- |
+| `pr` | this pull request's number — catches a body copied from another |
+| `claim` | the Bot on the `Owner:` line; one claimant per pull request |
+| `issue` | a number the body closes with `Fixes`/`Closes` |
+| `summary` | 3–5 sentences, ≤ 600 characters |
+| `files` | 1–12 paths, at least one in this diff |
+| `checks` | `ran`, `result` ∈ `green\|red\|none` (`none` needs `why`), `at` the full tip sha |
+| `next` | ≤ 300 characters; `none — ready for review` is allowed |
+
+The whole block stays under 1500 characters, between `<!-- flybot:checkpoint -->` and `<!-- /flybot:checkpoint -->`; the template in [`.github/pull_request_template.md`](.github/pull_request_template.md) carries the skeleton. `enqueue-guard` reads it at **queue entry** — there is no "ready" event to hang a check on — and refuses a missing or wrong field by name, the way it refuses `missing line: Owner:`. Writing it at claim time and refreshing it on every push is a convention, not a check: only the queue entry is enforced. The same two exemptions apply (a mechanical release PR, a fork).
+
 #### Docs-not-needed: why both places
 
 This is not a new rule, and it does not fail because it is unclear — it fails when nobody reads it at the tip. What the two places are for:

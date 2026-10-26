@@ -295,7 +295,10 @@ Bot name, or a Bot name whose shared `Birfy` identity is not in `reviewers`, #94
 the `Owner:`, compared per name after commas, `@` and case, #951; both lines need a value the policy knows — an `Owner:`
 outside `writers` is refused and a line with no value is the missing line, so an empty `Owner:` cannot clear the
 comparison, #951), naming the missing line or the word
-that missed both lists (#943) — a merged pull request is not re-judged, because this check also runs on every comment; on success it prints the command and never runs it. Enqueue with
+that missed both lists (#943) — a merged pull request is not re-judged, because this check also runs on every comment; the
+same call refuses a body whose `## Checkpoint` block is missing or wrong, one field at a time ([AGENTS.md → The checkpoint
+block](../AGENTS.md#the-checkpoint-block-a-hand-off-the-next-bot-can-read-1202), skeleton in
+[`.github/pull_request_template.md`](../.github/pull_request_template.md), #1202); on success it prints the command and never runs it. Enqueue with
 `gh pr merge <n> --auto --squash --match-head-commit <sha>` (gh has no `--merge-queue` flag). gh may still print the
 strategy line, or `! Pull request #<n> is already queued to merge`; the PR is
 then in the queue (`gh api graphql` → `pullRequest.isInMergeQueue`). The queue, not the agent, performs the squash merge

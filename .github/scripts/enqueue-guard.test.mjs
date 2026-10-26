@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { main, recordOnlyAt } from './enqueue-guard.mjs'
+import { checkpointReasons, parseCheckpoint } from './enqueue-rules.mjs'
 
 const HEAD = 'abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
@@ -15,6 +16,24 @@ const TEST_FILE = 'core/test/enqueue-guard.test.js' // T1: needs none
 
 // #943: a pull request that may enter the queue says who owns it and who reviews it, in its body.
 const HEADERS = 'Owner: Dev\nReviewer: reviewer-agent\n'
+
+// #1202: and it hands over with a checkpoint block. One helper builds the block, so a test can vary one
+// field and leave the rest correct — which is the only way "the refusal names the field" is a real
+// assertion rather than a match on a message that happened to be there.
+const checkpoint = (overrides = {}) => {
+  const fields = {
+    pr: 566,
+    claim: 'Dev',
+    issue: 602,
+    summary: 'The guard now reads a checkpoint block in the body. It refuses one field at a time and names the field it missed. The block is one JSON object between two HTML comments. Nothing else changed.',
+    files: [HOST_FILE],
+    checks: { ran: 'node --test .github/scripts/enqueue-guard.test.mjs', result: 'green', at: HEAD },
+    next: 'none — ready for review',
+    ...overrides,
+  }
+  return ['<!-- flybot:checkpoint -->', '```json', JSON.stringify(fields, null, 2), '```', '<!-- /flybot:checkpoint -->'].join('\n')
+}
+const BODY = `${HEADERS}Fixes #602\n\n${checkpoint()}\n`
 
 const policyFile = (overrides = {}) => {
   const path = join(mkdtempSync(join(tmpdir(), 'enqueue-guard-policy-')), 'review-policy.json')
@@ -44,7 +63,23 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [], attest = null } = {}
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
   ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
 
-const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
+// A body written for one rule still needs a checkpoint, or every test below would fail on the rule it is
+// not about. So the fixture appends one that agrees with the body it was given: same issue, same files.
+const withCheckpoint = (text, files) => {
+  if (/<!-- flybot:checkpoint -->/.test(text)) return text
+  const issue = Number((text.match(/^[\s>#-]*(?:fixes|closes)\s*(?:[\w.-]+\/[\w.-]+)?#(\d+)/im) ?? [])[1] ?? 602)
+  // Same for the claim: a test that rewrites the Owner: line must not be refused for a claim that no
+  // longer matches it — that defect has its own case below.
+  const owner = (text.match(/^\s*Owner:\s*(\S+)/im) ?? [])[1]
+  const claim = owner ? owner.replace(/^@/, '').replace(/,$/, '') : 'Dev'
+  const names = files.map((f) => (typeof f === 'string' ? f : f.filename)).filter(Boolean)
+  return `${text}\n${checkpoint({ issue, claim, files: names.length ? names : [HOST_FILE] })}`
+}
+
+const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
+  // `raw` is for the tests about the checkpoint itself: they must be able to hand over a body without one.
+  const given = body ?? `${HEADERS}Fixes #602\n`
+  const text = raw ? given : withCheckpoint(given, files)
   const calls = []
   let pullReads = 0
   const gh = (...args) => {
@@ -60,7 +95,7 @@ const fakeGh = ({ body = HEADERS + 'Fixes #602\n', comments = [], reviews = [], 
     if (/\/pulls\/\d+$/.test(path)) {
       // #1112 (c): a run reads the head twice, so the fixture can answer differently the second time.
       const sha = heads ? heads[Math.min(pullReads++, heads.length - 1)] : head
-      return JSON.stringify({ head: { sha, repo: { full_name: headRepo } }, user: { login: author }, body, labels: labels.map((name) => ({ name })), draft, merged })
+      return JSON.stringify({ head: { sha, repo: { full_name: headRepo } }, user: { login: author }, body: text, labels: labels.map((name) => ({ name })), draft, merged })
     }
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
@@ -668,4 +703,130 @@ test('#1112: a head that moves while the comments are read is refused, not judge
   try { run({ comments: [comment()], heads: [HEAD, later] }) } catch (e) { thrown = e }
   assert.ok(thrown, 'the run refuses instead of judging a head nobody will merge')
   assert.match(thrown.message, /head moved during this run/)
+})
+
+// #1202: the short checkpoint. One block in the body, seven fields, read at the queue entry. Each refusal
+// names the field, because a Bot that has to guess why it was refused starts writing the block to please
+// the regex instead of handing its work over.
+test('#1202: a complete checkpoint is read as seven fields', () => {
+  const parsed = parseCheckpoint(BODY)
+  assert.equal(parsed.present, true)
+  assert.equal(parsed.error, null)
+  assert.deepEqual(Object.keys(parsed.fields).sort(), ['checks', 'claim', 'files', 'issue', 'next', 'pr', 'summary'])
+  assert.equal(parsed.fields.pr, 566)
+  assert.equal(parsed.fields.claim, 'Dev')
+  assert.equal(parsed.fields.issue, 602)
+  assert.deepEqual(parsed.fields.files, [HOST_FILE])
+  assert.equal(parsed.fields.checks.at, HEAD)
+})
+
+test('#1202: a pull request with no checkpoint is refused, and the refusal says where to get one', () => {
+  const r = run({ raw: true, comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /no checkpoint: add the "## Checkpoint" section of \.github\/pull_request_template\.md/)
+})
+
+test('#1202: a block that opens and never closes is its own refusal', () => {
+  const r = run({ raw: true, body: `${HEADERS}Fixes #602\n\n<!-- flybot:checkpoint -->\n{"pr": 566}`, comments: [comment()] })
+  assert.match(r.reasons.join('; '), /checkpoint: the block has no closing <!-- \/flybot:checkpoint -->/)
+})
+
+test('#1202: a body that mentions the markers in prose still finds the real block', () => {
+  // The pull request that introduced this rule describes it, so its own body says the marker names before
+  // it carries them. A substring search read the JSON from that sentence and reported "not valid JSON".
+  const prose = `${HEADERS}Fixes #602\n\nWrap the JSON in \u0060<!-- flybot:checkpoint -->\u0060 and \u0060<!-- /flybot:checkpoint -->\u0060, under 1500 characters.\n\n${checkpoint()}`
+  const r = run({ raw: true, body: prose, files: [HOST_FILE], comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#1202: a marker inside a sentence is not a marker', () => {
+  const inline = `${HEADERS}Fixes #602\n\nsay <!-- flybot:checkpoint --> here\n`
+  assert.equal(parseCheckpoint(inline).present, false)
+})
+
+test('#1202: a block that is not JSON is refused rather than read as prose', () => {
+  const body = `${HEADERS}Fixes #602\n\n<!-- flybot:checkpoint -->\nnot json\n<!-- /flybot:checkpoint -->`
+  const r = run({ raw: true, body, comments: [comment()] })
+  assert.match(r.reasons.join('; '), /checkpoint: the block is not valid JSON/)
+})
+
+test('#1202: each missing or wrong field is refused by name', () => {
+  const cases = [
+    ['pr', checkpoint({ pr: 999 }), /checkpoint field "pr": says 999, but this is pull request #566/],
+    ['claim missing', checkpoint({ claim: '' }), /checkpoint field "claim": name the Bot that wrote this checkpoint/],
+    ['claim not the Owner', checkpoint({ claim: 'Dev2' }), /checkpoint field "claim": says "Dev2", but the Owner: line says "dev"/],
+    ['issue not closed', checkpoint({ issue: 999 }), /checkpoint field "issue": says #999, but the body closes #602/],
+    ['summary empty', checkpoint({ summary: '' }), /checkpoint field "summary": write what changed/],
+    ['summary too short', checkpoint({ summary: 'One sentence only. Two here.' }), /checkpoint field "summary": 2 sentences — write 3 to 5/],
+    ['summary too long', checkpoint({ summary: 'A. B. C. D. E. F.' }), /checkpoint field "summary": 6 sentences — write 3 to 5/],
+    ['summary over the character budget', checkpoint({ summary: ['A sentence.', 'Another sentence.', 'A third sentence.'].join(' ') + ' ' + 'x'.repeat(620) }), /checkpoint field "summary": 6\d\d characters, over the 600/],
+    ['files empty', checkpoint({ files: [] }), /checkpoint field "files": list the 1-12 files/],
+    ['files not paths', checkpoint({ files: ['core/src/shared/quiet-hours.js and its mirror'] }), /checkpoint field "files": every entry must be a path/],
+    ['files not in the diff', checkpoint({ files: ['core/src/nowhere.js'] }), /checkpoint field "files": none of "core\/src\/nowhere.js" is in this pull request's diff/],
+    ['checks.result', checkpoint({ checks: { ran: 'npm run verify', result: 'maybe', at: HEAD } }), /checkpoint field "checks.result": write one of green\/red\/none/],
+    ['checks.at', checkpoint({ checks: { ran: 'npm run verify', result: 'green', at: HEAD.slice(0, 12) } }), /checkpoint field "checks.at": write the full 40-character tip sha/],
+    ['checks.why', checkpoint({ checks: { ran: 'none', result: 'none', at: HEAD } }), /checkpoint field "checks.why": result "none" needs the reason nothing ran/],
+    ['next empty', checkpoint({ next: '' }), /checkpoint field "next": say what the next hand is/],
+  ]
+  for (const [name, block, pattern] of cases) {
+    const r = run({ raw: true, body: `${HEADERS}Fixes #602\n\n${block}`, comments: [comment()] })
+    assert.equal(r.ok, false, `${name} must refuse`)
+    assert.match(r.reasons.join('; '), pattern, name)
+  }
+})
+
+test('#1202: a block over the 1500-character budget is refused, and the refusal names the size', () => {
+  // Every field is individually legal here — a long summary, a long "next", twelve long paths, one of them
+  // real — so the only thing wrong is the block as a whole being too big to be a handoff.
+  const pads = Array.from({ length: 11 }, (_, i) => `core/test/fixtures/checkpoint-padding-${i}-${'x'.repeat(70)}.test.js`)
+  const block = checkpoint({
+    summary: [`One change that names ${'detail '.repeat(30)}.`, `A second sentence with ${'more '.repeat(30)}.`, 'A third sentence closes the summary.'].join(' '),
+    files: [HOST_FILE, ...pads],
+    next: `none — ${'ready for review. '.repeat(14)}`,
+  })
+  assert.ok(block.length > 1500, `the fixture is over the budget (${block.length})`)
+  const r = run({ raw: true, body: `${HEADERS}Fixes #602\n\n${block}`, files: [HOST_FILE], comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /checkpoint is \d+ characters: it must stay under 1500/)
+})
+
+test('#1202: the summary counts sentences as written, so a version number is not three', () => {
+  const r = run({ raw: true, comments: [comment()], body: `${HEADERS}Fixes #602\n\n${checkpoint({ summary: 'Bump the pin to v0.2.3 in ds-bot.pin.json. Regenerate patches from the new pin. Keep the tree byte-identical otherwise.' })}` })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#1202: the format reads a real merged pull request of this repository', () => {
+  // The body of #1206, verbatim as GitHub returned it, with the checkpoint it would have carried. A format
+  // that cannot read the bodies we actually write is a format nobody will fill in.
+  const path = fileURLToPath(new URL('./fixtures/pr-1206-body.md', import.meta.url))
+  const body = readFileSync(path, 'utf8')
+  const parsed = parseCheckpoint(body)
+  assert.equal(parsed.error, null)
+  assert.equal(parsed.present, true)
+  assert.deepEqual(Object.keys(parsed.fields).sort(), ['checks', 'claim', 'files', 'issue', 'next', 'pr', 'summary'])
+  assert.equal(parsed.fields.pr, 1206)
+  assert.equal(parsed.fields.claim, 'Dev')
+  assert.equal(parsed.fields.issue, 1201)
+  assert.equal(parsed.fields.checks.at, 'e719e9fbf7444d0159b8e27ce803d1c1a8ef7617')
+  assert.ok(parsed.chars <= 1500)
+  // And the guard accepts the whole body: the header lines, the issue reference and the block together.
+  const r = main({
+    gh: fakeGh({ raw: true, body, files: parsed.fields.files, comments: [comment()] }),
+    env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '1206' },
+    repo: 'ThinkFlowLab/FlyBot',
+    pr: 1206,
+  })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#1202: a mechanical release pull request needs no checkpoint', () => {
+  const r = run({ raw: true, body: 'Version 0.2.1', labels: [], files: ['changelog.d/999-x.changed.md'], comments: [] })
+  assert.equal(r.mechanicalRelease, true)
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#1202: a fork needs no checkpoint — nobody there could claim it', () => {
+  const r = run({ raw: true, body: '## Summary\n\nTidy up the dock.', labels: [], files: [TEST_FILE], headRepo: 'HugoXK/FlyBot', comments: [] })
+  assert.equal(r.fork, true)
+  assert.equal(r.ok, true, r.reasons.join('; '))
 })
