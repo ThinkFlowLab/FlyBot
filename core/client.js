@@ -1365,6 +1365,7 @@ var HOST_ZH = {
   "The delivery board is not ready yet.": "交付看板还没准备好。",
   "Showing the last snapshot from {time}: {error}": "显示 {time} 的快照：{error}",
   "linked to #{number}": "关联 #{number}",
+  "open on GitHub": "在 GitHub 上打开",
   "CI failed {failed} of {total}": "CI 红 {failed} / 共 {total}",
   "counted {counted} of {total}": "已统计 {counted} / 共 {total}",
   "{count} superseded": "{count} 条被取代",

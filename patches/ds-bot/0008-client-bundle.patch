@@ -720,7 +720,7 @@ diff --git a/client.js b/client.js
    "The admin must be a member of the group": "管理员必须是群成员",
    "Unknown group chat": "找不到这个群聊",
    "Hand the admin role to another member instead of leaving the group without one": "请把管理员交给其他成员，不要让群聊没有管理员",
-@@ -951,7 +951,69 @@ var HOST_ZH = {
+@@ -951,7 +951,70 @@ var HOST_ZH = {
    "The model wrote nothing": "模型没有输出内容",
    "Write the entry to save.": "请写下要保存的内容。",
    "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
@@ -752,6 +752,7 @@ diff --git a/client.js b/client.js
 +  "The delivery board is not ready yet.": "交付看板还没准备好。",
 +  "Showing the last snapshot from {time}: {error}": "显示 {time} 的快照：{error}",
 +  "linked to #{number}": "关联 #{number}",
++  "open on GitHub": "在 GitHub 上打开",
 +  "CI failed {failed} of {total}": "CI 红 {failed} / 共 {total}",
 +  "counted {counted} of {total}": "已统计 {counted} / 共 {total}",
 +  "{count} superseded": "{count} 条被取代",
