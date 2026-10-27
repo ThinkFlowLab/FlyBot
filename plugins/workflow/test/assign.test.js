@@ -300,3 +300,77 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   const off = apply({ flybot: { scope: () => fb } }, { enabled: false })
   assert.equal(off.enabled, false)
 })
+
+test('rename changes workflow name and refuses factory presets', () => {
+  const svc = service()
+  const lane = svc.create({
+    name: 'Release lane',
+    nodes: [{ id: 'plan', name: 'Planner', botId: 'bot-planner' }],
+    edges: [],
+  })
+  const laneId = lane.workflows.find(item => item.name === 'Release lane').id
+  
+  const renamed = svc.rename({ workflowId: laneId, name: 'Hotfix lane', description: 'Fast releases' })
+  assert.equal(renamed.ok, true)
+  const updated = renamed.workflows.find(item => item.id === laneId)
+  assert.equal(updated.name, 'Hotfix lane')
+  assert.equal(updated.description, 'Fast releases')
+  
+  assert.equal(svc.rename({ workflowId: 'missing' }).ok, false)
+  assert.equal(svc.rename({ workflowId: laneId, name: '' }).ok, false)
+  assert.equal(svc.rename({ workflowId: DELIVERY_ID, name: 'Changed' }).ok, false)
+})
+
+test('delete removes workflow and releases its ephemeral Bots', () => {
+  const released = []
+  const svc = service({ release: (id) => { released.push(id); return Promise.resolve() } })
+  
+  const lane = svc.create({
+    name: 'Release lane',
+    nodes: [{ id: 'plan', name: 'Planner', botId: 'bot-planner' }],
+    edges: [],
+  })
+  const laneId = lane.workflows.find(item => item.name === 'Release lane').id
+  
+  const deleted = svc.delete({ workflowId: laneId })
+  if (typeof deleted?.then === 'function') {
+    return deleted.then(result => {
+      assert.equal(result.ok, true)
+      assert.ok(!result.workflows.some(item => item.id === laneId))
+      assert.equal(svc.delete({ workflowId: 'missing' }).ok, false)
+      assert.equal(svc.delete({ workflowId: DELIVERY_ID }).ok, false)
+    })
+  }
+  
+  assert.equal(deleted.ok, true)
+  assert.ok(!deleted.workflows.some(item => item.id === laneId))
+  assert.equal(svc.delete({ workflowId: 'missing' }).ok, false)
+  assert.equal(svc.delete({ workflowId: DELIVERY_ID }).ok, false)
+})
+
+test('delete cleans up runs, logs, and routes', () => {
+  const svc = service()
+  const lane = svc.create({
+    name: 'Release lane',
+    nodes: [{ id: 'plan', name: 'Planner', botId: 'bot-planner' }],
+    edges: [],
+  })
+  const laneId = lane.workflows.find(item => item.name === 'Release lane').id
+  
+  svc.assign({ workflowId: laneId, taskId: '#100', title: 'Test task' })
+  const beforeState = svc.state()
+  const beforeWorkflow = beforeState.workflows.find(item => item.id === laneId)
+  assert.ok(beforeWorkflow.run)
+  assert.ok(beforeWorkflow.messages.length > 0)
+  
+  const deleted = svc.delete({ workflowId: laneId })
+  if (typeof deleted?.then === 'function') {
+    return deleted.then(result => {
+      assert.equal(result.ok, true)
+      assert.ok(!result.workflows.some(item => item.id === laneId))
+    })
+  }
+  
+  assert.equal(deleted.ok, true)
+  assert.ok(!deleted.workflows.some(item => item.id === laneId))
+})

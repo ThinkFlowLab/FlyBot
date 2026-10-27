@@ -1,0 +1,1 @@
+Settings → Workflows lists user-owned Workflows with rename and delete controls; `workflow/rename` and `workflow/delete` RPC persist changes and clean up runs ([#1434](https://github.com/ThinkFlowLab/FlyBot/issues/1434)). Factory presets remain read-only.

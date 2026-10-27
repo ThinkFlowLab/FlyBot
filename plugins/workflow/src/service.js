@@ -621,6 +621,47 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
 
   return {
     state() { return present() },
+    rename(body = {}) {
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const workflowId = String(body.workflowId ?? '')
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      const template = templateById(item.id)
+      if (template) return { ok: false, error: 'Cannot rename a factory preset' }
+      const name = cleanLine(body.name, 80)
+      if (!name) return { ok: false, error: 'A workflow needs a name' }
+      item.name = name
+      if (body.description !== undefined) {
+        item.description = cleanLine(body.description, 400)
+      }
+      write()
+      return present()
+    },
+    delete(body = {}) {
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const workflowId = String(body.workflowId ?? '')
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      const template = templateById(item.id)
+      if (template) return { ok: false, error: 'Cannot delete a factory preset' }
+      const run = state.runs[workflowId]
+      const releasing = run ? Object.values(run.ephemeral ?? {}) : []
+      const finish = () => {
+        state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
+        delete state.runs[workflowId]
+        delete state.logs[workflowId]
+        Object.keys(state.routes).forEach(taskId => {
+          if (state.routes[taskId]?.id === workflowId) delete state.routes[taskId]
+        })
+        write()
+        return present()
+      }
+      if (typeof release !== 'function' || releasing.length === 0) return finish()
+      return (async () => {
+        await releaseAll(releasing, release, warn)
+        return finish()
+      })()
+    },
     create(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       try {

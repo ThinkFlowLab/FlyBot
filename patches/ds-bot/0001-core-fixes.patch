@@ -578,7 +578,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -5,6 +5,50 @@
+@@ -5,6 +5,57 @@
  export const NAMESPACE = 'ds-bot'
  
  const ZH = {
@@ -598,7 +598,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +    '工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。',
 +  'Could not copy this workflow': '这个工作流复制不了。',
 +  'Could not save this workflow': '这个工作流保存不了。',
++  'Could not rename this workflow': '这个工作流改不了名。',
++  'Could not delete this workflow': '这个工作流删不掉。',
 +  'Use this': '用这个',
++  Rename: '重命名',
++  'Rename workflow': '重命名工作流',
++  Delete: '删除',
++  'Delete workflow': '删除工作流',
++  'Are you sure you want to delete "{name}"? This cannot be undone.': '确定删除「{name}」吗？删除后无法恢复。',
 +  'Finish editing': '完成',
 +  'Drag a Bot here': '把 Bot 拖到图上',
 +  'System prompt': '系统提示词',

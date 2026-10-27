@@ -234,7 +234,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
       })))
 }
 
-function Row({ item, source, onOpen }) {
+function Row({ item, source, onOpen, onRename, onDelete }) {
   return h('button', {
     type: 'button', className: 'bt-set-row', 'data-workflow': item.id, 'data-source': source,
     onClick: () => onOpen?.(item),
@@ -242,6 +242,15 @@ function Row({ item, source, onOpen }) {
   h('span', { className: 'bt-set-copy' },
     h('span', null, item.name),
     h('span', { className: 'bt-set-hint' }, item.preview || chainOf(item) || item.description || '')),
+  source === 'own' ? h('span', { className: 'bt-set-actions' },
+    h('button', {
+      type: 'button', className: 'bt-set-action', 'aria-label': t('Rename'), title: t('Rename'),
+      onClick: (event) => { event.stopPropagation(); onRename?.(item) },
+    }, '✎'),
+    h('button', {
+      type: 'button', className: 'bt-set-action', 'aria-label': t('Delete'), title: t('Delete'),
+      onClick: (event) => { event.stopPropagation(); onDelete?.(item) },
+    }, '×')) : null,
   h('span', { className: 'bt-chevron', 'aria-hidden': true }, '›'))
 }
 
@@ -250,7 +259,7 @@ function alertCopy(error) {
   return error || t('Could not read workflows')
 }
 
-export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
+export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
   const graph = phase === 'ready' ? openedGraph(pack, opened) : null
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
@@ -280,7 +289,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
         h('div', { className: 'bt-set-card' },
           yours.length === 0
             ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No workflows of your own yet.')))
-            : yours.map((item) => h(Row, { key: item.id, item, source: 'own', onOpen: () => onOpen?.(item, 'own') }))))) : null,
+            : yours.map((item) => h(Row, { key: item.id, item, source: 'own', onOpen: () => onOpen?.(item, 'own'), onRename, onDelete }))))) : null,
     graph ? h('div', { className: 'bt-wf-editor' },
       h('div', { className: 'bt-wf-actions' },
         h('button', { type: 'button', onClick: () => onBack?.() }, t('Back')),
@@ -296,12 +305,37 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
         })) : null)
 }
 
+function RenameModal({ workflow, onClose, onConfirm }) {
+  const [name, setName] = useState(workflow?.name ?? '')
+  return h('div', { className: 'bt-modal-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose?.() } },
+    h('div', { className: 'bt-modal', role: 'dialog', 'aria-modal': true, 'aria-label': t('Rename workflow') },
+      h('h3', null, t('Rename workflow')),
+      h('label', { className: 'bt-field' },
+        t('Name'),
+        h('input', { type: 'text', value: name, onChange: (event) => setName(event.target.value), autoFocus: true })),
+      h('div', { className: 'bt-modal-actions' },
+        h('button', { type: 'button', onClick: onClose }, t('Cancel')),
+        h('button', { type: 'button', onClick: () => onConfirm?.(name) }, t('Rename')))))
+}
+
+function DeleteModal({ workflow, onClose, onConfirm }) {
+  return h('div', { className: 'bt-modal-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose?.() } },
+    h('div', { className: 'bt-modal', role: 'dialog', 'aria-modal': true, 'aria-label': t('Delete workflow') },
+      h('h3', null, t('Delete workflow')),
+      h('p', null, t('Are you sure you want to delete "{name}"? This cannot be undone.', { name: workflow?.name ?? '' })),
+      h('div', { className: 'bt-modal-actions' },
+        h('button', { type: 'button', onClick: onClose }, t('Cancel')),
+        h('button', { type: 'button', className: 'bt-danger', onClick: onConfirm }, t('Delete')))))
+}
+
 export function WorkflowsPage({ call, roster }) {
   const [phase, setPhase] = useState('loading')
   const [pack, setPack] = useState(null)
   const [error, setError] = useState('')
   const [opened, setOpened] = useState(null)
   const [editing, setEditing] = useState(false)
+  const [renaming, setRenaming] = useState(null)
+  const [deleting, setDeleting] = useState(null)
   const invoke = typeof call === 'function' ? call : () => Promise.reject(new Error('Could not read workflows'))
 
   const apply = (settled) => {
@@ -351,6 +385,42 @@ export function WorkflowsPage({ call, roster }) {
       .catch((failure) => { setError(workflowCallError(failure, t('Could not copy this workflow'))) })
   }
 
+  const rename = (item) => {
+    setRenaming(item)
+  }
+
+  const confirmRename = (workflowId, name) => {
+    if (!name.trim()) return
+    Promise.resolve(invoke('workflow/rename', { workflowId, name: name.trim() }))
+      .then((value) => {
+        const settled = settleWorkflowRead(value)
+        if (settled.phase === 'error') { setError(settled.error); return }
+        setPack(settled.pack)
+        setPhase('ready')
+        setError('')
+        setRenaming(null)
+      })
+      .catch((failure) => { setError(workflowCallError(failure, t('Could not rename this workflow'))) })
+  }
+
+  const deleteWorkflow = (item) => {
+    setDeleting(item)
+  }
+
+  const confirmDelete = (workflowId) => {
+    Promise.resolve(invoke('workflow/delete', { workflowId }))
+      .then((value) => {
+        const settled = settleWorkflowRead(value)
+        if (settled.phase === 'error') { setError(settled.error); return }
+        setPack(settled.pack)
+        setPhase(settled.phase)
+        setError('')
+        setDeleting(null)
+        if (opened?.id === workflowId) setOpened(null)
+      })
+      .catch((failure) => { setError(workflowCallError(failure, t('Could not delete this workflow'))) })
+  }
+
   const commit = (graph) => {
     if (!opened || opened.source !== 'own') return
     Promise.resolve(invoke('workflow/graph', { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges }))
@@ -364,8 +434,20 @@ export function WorkflowsPage({ call, roster }) {
       .catch((failure) => { setError(workflowCallError(failure, t('Could not save this workflow'))) })
   }
 
-  return h(WorkflowsView, {
-    phase, pack, error, opened, editing, roster,
-    onOpen: open, onBack: () => { setOpened(null); setEditing(false) }, onEditing: setEditing, onRetry: retry, onUse: useTemplate, onCommit: commit,
-  })
+  return h('div', null,
+    h(WorkflowsView, {
+      phase, pack, error, opened, editing, roster,
+      onOpen: open, onBack: () => { setOpened(null); setEditing(false) }, onEditing: setEditing, onRetry: retry, onUse: useTemplate, onCommit: commit,
+      onRename: rename, onDelete: deleteWorkflow,
+    }),
+    renaming ? h(RenameModal, {
+      workflow: renaming,
+      onClose: () => setRenaming(null),
+      onConfirm: (name) => confirmRename(renaming.id, name),
+    }) : null,
+    deleting ? h(DeleteModal, {
+      workflow: deleting,
+      onClose: () => setDeleting(null),
+      onConfirm: () => confirmDelete(deleting.id),
+    }) : null)
 }
