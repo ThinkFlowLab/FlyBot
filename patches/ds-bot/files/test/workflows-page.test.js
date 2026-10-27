@@ -1,5 +1,6 @@
-// The Workflows page (#1272 step 3, acceptance 3, 4, 5 and 6): the node table, the flowchart drawn
-// from it, a guard's live refusal, and a preset that is read-only until it is customized.
+// Settings → Workflows (#1364). The page lists factory pipelines and the owner's own
+// workflows and opens the drag-drop flowchart. It does not teach workflows/<id>.json,
+// and a read that never returns settles as an error instead of "Reading workflows…".
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +9,7 @@ import { build } from 'esbuild'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { WorkflowsPage, applyNodeField, formatList, guardLines, parseGuards, parseList } from './src/client/workflows.js'",
+    contents: "export { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } from './src/client/workflows.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -31,7 +32,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { WorkflowsPage, applyNodeField, guardLines, parseGuards, parseList } = module.exports
+const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } = module.exports
 
 const expand = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
@@ -48,140 +49,145 @@ const all = (node, out = []) => {
   return out
 }
 const text = (node) => (node === null || node === undefined ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.props.children) : String(node))
+const renderPage = (props, given = []) => { states = [...given]; const tree = expand(h(WorkflowsPage, props)); states = []; return tree }
+const renderView = (props) => expand(h(WorkflowsView, props))
 
-const node = (id, name, role, over = {}) => ({ id, name, role, column: null, inputs: [], outputs: [], guards: [], refusal: `${name} cannot start.`, ...over })
-const definition = {
-  id: 'content',
-  name: 'Content',
-  version: 1,
-  inputs: ['text:topic'],
-  deliverables: ['link:published'],
+const HOSTILE = '<img src=x onerror=alert(1)>'
+const factory = {
+  id: 'delivery',
+  name: '发布交付流水线',
+  description: 'Planner then a parallel review.',
+  chain: 'Planner → Coder → Reviewer ‖ Tester',
   nodes: [
-    node('选题', '选题', 'Writer', { inputs: ['text:topic'], outputs: ['text:draft'] }),
-    node('草稿', '草稿', 'Writer', { inputs: ['text:draft'], outputs: ['text:edited'] }),
-    node('审稿', '审稿', 'Editor', { inputs: ['text:edited'], outputs: ['verdict'], guards: [{ id: 'verdict-at-tip', spec: 'verdict', is: 'fresh', value: null, refusal: '' }] }),
-    node('发布', '发布', 'Publisher', { inputs: ['verdict'], outputs: ['link:published'] }),
-    node('归档', '归档', 'Publisher', { inputs: ['link:published'] }),
+    { id: 'planner', name: 'Planner', role: '计划', x: 0, y: 0 },
+    { id: 'coder', name: 'Coder', role: HOSTILE, x: 0, y: 108 },
+    { id: 'reviewer', name: 'Reviewer', role: '审阅', x: -94, y: 216 },
+    { id: 'tester', name: 'Tester', role: '测试', x: 94, y: 216 },
   ],
   edges: [
-    { from: '选题.text:draft', to: '草稿.text:draft' },
-    { from: '草稿.text:edited', to: '审稿.text:edited' },
-    { from: '审稿.verdict', to: '发布.verdict' },
-    { from: '发布.link:published', to: '归档.link:published' },
+    { from: 'planner', to: 'coder' },
+    { from: 'coder', to: 'reviewer' },
+    { from: 'coder', to: 'tester' },
   ],
-  loops: [],
+  layers: [['planner'], ['coder'], ['reviewer', 'tester']],
 }
-const layout = {
-  id: 'content',
-  name: 'Content',
-  boxes: definition.nodes.map((entry, at) => ({ id: entry.id, name: entry.name, role: entry.role, rank: at, row: 0, inputs: entry.inputs, outputs: entry.outputs, x: at * 250, y: 0, width: 220, height: 120 })),
-  edges: definition.edges.map((edge) => ({ from: edge.from, to: edge.to, artifact: edge.from, fromBox: '选题', toBox: '草稿', points: [{ x: 220, y: 60 }, { x: 250, y: 60 }] })),
-  width: 1250,
-  height: 120,
-}
-const list = {
-  ok: true,
-  presets: [{ id: 'repo-dev', name: 'Repository change', source: 'preset', nodes: 7 }, { id: 'blank', name: 'Blank', source: 'preset', nodes: 3 }],
-  own: [{ id: 'content', name: 'Content', source: 'workspace', nodes: 5 }],
-  default: 'repo-dev',
-}
-const preview = {
-  node: '审稿',
-  facts: 'read',
-  rows: [
-    { id: 'verdict-at-tip', spec: 'verdict', is: 'fresh', value: null, state: 'refuse', sentence: '审稿 refuses: its input verdict@abc1234 is stale', unreadable: false },
-    { id: 'no-hold', spec: 'pr', is: 'equals', value: 'none', state: 'holds', sentence: null, unreadable: false },
+const own = {
+  id: 'wf-mine',
+  name: 'Hotfix lane',
+  description: 'A short lane.',
+  chain: 'Planner → Coder',
+  nodes: [
+    { id: 'planner', name: 'Planner', role: '计划', x: 0, y: 0 },
+    { id: 'coder', name: 'Coder', role: '实现', x: 0, y: 108 },
   ],
-  refusal: '审稿 refuses: its input verdict@abc1234 is stale',
+  edges: [{ from: 'planner', to: 'coder' }],
+  layers: [['planner'], ['coder']],
+  run: { status: 'running', nodeStatus: { planner: 'done', coder: 'running' } },
 }
-const opened = {
-  ok: true,
-  ...list,
-  workflow: { id: 'content', name: 'Content', source: 'workspace', editable: true, definition, bytes: '{}\n' },
-  layout,
-  preview,
-}
-const render = (props, given) => { states = [...given]; const tree = expand(h(WorkflowsPage, props)); states = []; return tree }
+const pack = { ok: true, templates: [factory], workflows: [factory, own] }
 
-test('the table is one row per node with its seven fields, and the edges are listed', () => {
-  const tree = render({ actions: {} }, [list, opened, definition, '审稿', preview, '', ''])
-  const rows = all(tree).filter((entry) => entry.props?.className === 'bt-wf-row' && entry.props['data-node'] !== undefined)
-  assert.equal(rows.length, 5)
-  assert.deepEqual(rows.map((row) => row.props['data-node']), ['选题', '草稿', '审稿', '发布', '归档'])
-  const head = all(tree).find((entry) => entry.props?.className === 'bt-wf-row bt-wf-row-head')
-  assert.deepEqual(all(head).filter((entry) => entry.type === 'span').map(text), ['id', 'name', 'role', 'inputs', 'outputs', 'guards', 'refusal'])
-  const edges = all(tree).filter((entry) => entry.props?.className === 'bt-wf-edge-row').map(text)
-  assert.equal(edges.length, 4)
-  assert.equal(edges[0], '选题.text:draft → 草稿.text:draft')
+test('the page is not a file-path tutorial, even while it is still reading', () => {
+  const tree = renderPage({ call: () => new Promise(() => {}) })
+  const body = text(tree)
+  assert.doesNotMatch(body, /workflows\/<id>\.json/)
+  assert.doesNotMatch(body, /workflows\/\{id\}\.json/)
+  assert.equal(all(tree).some((entry) => entry.props?.className === 'bt-wf-path'), false)
+  assert.match(body, /Reading workflows/)
 })
 
-test('the flowchart is drawn from the table: one box per node, one edge per edge row', () => {
-  const tree = render({ actions: {} }, [list, opened, definition, '审稿', preview, '', ''])
-  const svg = all(tree).find((entry) => entry.type === 'svg' && entry.props?.['data-boxes'] !== undefined)
-  assert.equal(svg.props['data-boxes'], '5')
-  assert.equal(svg.props['data-edges'], '4')
-  assert.equal(all(tree).filter((entry) => entry.type === 'rect').length, 5)
-  assert.equal(all(tree).filter((entry) => entry.type === 'line').length, 4)
-  // The same definition draws the same picture twice: layout is the host's, computed, never stored.
-  const again = render({ actions: {} }, [list, opened, definition, '审稿', preview, '', ''])
-  assert.equal(all(again).find((entry) => entry.type === 'svg' && entry.props?.['data-boxes'] !== undefined).props.viewBox, svg.props.viewBox)
+test('a settled read lists factory pipelines and your own, and opens the flowchart', () => {
+  const tree = renderView({ phase: 'ready', pack, opened: null, error: '' })
+  const body = text(tree)
+  assert.doesNotMatch(body, /workflows\/<id>\.json/)
+  assert.match(body, /Factory presets/)
+  assert.match(body, /Yours/)
+  assert.match(body, /发布交付流水线/)
+  assert.match(body, /Hotfix lane/)
+  assert.doesNotMatch(body, /Reading workflows/)
+
+  const opened = renderView({
+    phase: 'ready', pack, opened: { source: 'factory', id: 'delivery' }, error: '', editing: false,
+    roster: { bots: [{ id: 'bot-docs', name: 'Docs', role: 'notes', remote: false }, { id: 'bot-friend', name: 'Remote', remote: true }] },
+  })
+  const nodes = all(opened).filter((entry) => entry.props?.['data-node']).map((entry) => entry.props['data-node']).sort()
+  assert.deepEqual(nodes, ['coder', 'planner', 'reviewer', 'tester'])
+  assert.match(text(opened), /Parallel branch/)
+  const wires = all(opened).filter((entry) => entry.type === 'path' && typeof entry.props?.d === 'string' && entry.props.d.startsWith('M '))
+  assert.equal(wires.length, factory.edges.length)
+  assert.match(wires[0].props.d, /C /)
+  // A factory graph has no run, so every seat is idle — not a fake queue.
+  assert.match(text(opened), /Idle/)
+  assert.doesNotMatch(text(opened), /Queued/)
+  assert.equal(all(opened).some((entry) => entry.type === 'img' || entry.type === 'script'), false)
+  assert.match(text(opened), new RegExp(HOSTILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  const editing = renderView({
+    phase: 'ready', pack, opened: { source: 'own', id: 'wf-mine' }, error: '', editing: true,
+    roster: { bots: [{ id: 'bot-docs', name: 'Docs', role: 'notes', remote: false }, { id: 'bot-friend', name: 'Remote', remote: true }] },
+  })
+  assert.match(text(editing), /Docs/)
+  assert.doesNotMatch(text(editing), /Remote/)
+  assert.match(text(editing), /Done/)
+  assert.match(text(editing), /Running/)
+  const coder = all(editing).find((entry) => entry.props?.['data-node'] === 'coder')
+  assert.match(coder.props.className, /editing/)
+  assert.equal(all(coder).some((entry) => entry.props?.['data-remove'] === 'coder'), true)
 })
 
-test('a guard row prints its refusal and never turns an unreadable fact into a pass', () => {
-  const tree = render({ actions: {} }, [list, opened, definition, '审稿', preview, '', ''])
-  const guards = all(tree).filter((entry) => entry.props?.className === 'bt-wf-guard')
-  assert.equal(guards.length, 2)
-  assert.equal(guards[0].props['data-state'], 'refuse')
-  assert.match(text(guards[0]), /verdict@abc1234 is stale/)
-  assert.equal(guards[1].props['data-state'], 'holds')
-  const blind = render({ actions: {} }, [list, opened, definition, '审稿', { node: '审稿', facts: 'unavailable', rows: [{ id: 'g', spec: 'verdict', is: 'fresh', value: null, state: 'unreadable', sentence: 'could not be read', unreadable: true }], refusal: null }, '', ''])
-  const row = all(blind).find((entry) => entry.props?.className === 'bt-wf-guard')
-  assert.equal(row.props['data-state'], 'unreadable')
-  assert.match(text(blind), /could not read the facts/)
-  // The hint says none of them is a pass; no row claims the guard holds.
-  assert.doesNotMatch(text(row), /holds/)
+test('an empty list and a failed read are settled states, not a permanent reading line', () => {
+  const empty = renderView({ phase: 'empty', pack: { templates: [], workflows: [] }, error: '' })
+  assert.match(text(empty), /No workflows yet/)
+  assert.doesNotMatch(text(empty), /Reading workflows/)
+  const failed = renderView({ phase: 'error', error: 'Could not read workflows', pack: null })
+  assert.match(text(failed), /Could not read workflows/)
+  assert.match(text(failed), /Retry/)
+  assert.doesNotMatch(text(failed), /Reading workflows/)
+  assert.doesNotMatch(text(failed), /workflows\/<id>\.json/)
 })
 
-test('a preset is read-only until Customize, which copies it into a new file', () => {
-  const calls = []
-  const actions = {
-    workflows: (payload) => { calls.push(['workflows', payload]); return Promise.resolve(payload.op === 'list' ? list : opened) },
-    workflowSave: (payload) => { calls.push(['save', payload]); return Promise.resolve({ ok: true, id: 'repo-dev-copy', ...list }) },
-  }
-  const presetOpened = { ...opened, workflow: { id: 'repo-dev', name: 'Repository change', source: 'preset', editable: false, definition, bytes: '' } }
-  const tree = render({ actions }, [list, presetOpened, definition, '审稿', preview, '', ''])
-  const labels = all(tree).filter((entry) => entry.type === 'button').map(text)
-  assert.ok(labels.includes('Customize'))
-  assert.ok(!labels.includes('Save'))
-  // Every editable field is disabled, so a preset has no save path at all.
-  assert.equal(all(tree).filter((entry) => entry.type === 'input').length, 0)
-
-  all(tree).filter((entry) => entry.type === 'button').find((button) => text(button) === 'Customize').props.onClick()
-  const save = calls.find(([kind]) => kind === 'save')
-  assert.equal(JSON.stringify(save[1]), JSON.stringify({ op: 'customize', from: 'repo-dev', id: 'repo-dev-copy', name: 'Repository change (mine)' }))
+test('a read that never returns becomes an error, and a good payload opens as ready', async () => {
+  const hung = await readWorkflows(() => new Promise(() => {}), { timeoutMs: 15 })
+  assert.equal(hung.phase, 'error')
+  assert.equal(hung.pack, null)
+  const rejected = await readWorkflows(() => { throw new Error('workflow host down') }, { timeoutMs: 1000 })
+  assert.equal(rejected.phase, 'error')
+  assert.match(rejected.error, /workflow host down/)
+  const ready = settleWorkflowRead(pack)
+  assert.equal(ready.phase, 'ready')
+  assert.equal(settleWorkflowRead({ ok: false, error: 'no' }).phase, 'error')
+  assert.equal(settleWorkflowRead({ ok: true, templates: [], workflows: [] }).phase, 'empty')
 })
 
-test('editing one field keeps the edges and the other nodes, and guards round-trip', () => {
-  const edited = applyNodeField(definition, '审稿', 'name', 'Re-read')
-  assert.equal(edited.nodes.find((entry) => entry.id === '审稿').name, 'Re-read')
-  assert.equal(JSON.stringify(edited.nodes.map((entry) => entry.id)), JSON.stringify(definition.nodes.map((entry) => entry.id)))
-  assert.equal(JSON.stringify(edited.edges), JSON.stringify(definition.edges))
-  const listed = applyNodeField(definition, '审稿', 'inputs', 'text:edited, text:notes')
-  assert.equal(JSON.stringify(listed.nodes.find((entry) => entry.id === '审稿').inputs), JSON.stringify(['text:edited', 'text:notes']))
-  assert.equal(JSON.stringify(parseList('a, b ,,c')), JSON.stringify(['a', 'b', 'c']))
-  // A guard keeps its id and its own refusal, so saving a table does not drop the sentence it refuses with.
-  const guards = [{ id: 'verdict-at-tip', spec: 'verdict', is: 'fresh', value: null, refusal: 'the head is {now}' }]
-  assert.equal(guardLines(guards), 'verdict is fresh')
-  assert.equal(JSON.stringify(parseGuards('verdict is fresh\npr is equals none', guards)), JSON.stringify([
-    { id: 'verdict-at-tip', spec: 'verdict', is: 'fresh', value: null, refusal: 'the head is {now}' },
-    { id: 'pr-equals', spec: 'pr', is: 'equals', value: 'none', refusal: '' },
-  ]))
+test('editing the graph moves a node, draws an edge, drops a local Bot and removes one', () => {
+  const moved = moveNode(own.nodes, 'coder', 40, 80)
+  assert.equal(moved.find((node) => node.id === 'coder').x, 40)
+  assert.equal(moved.find((node) => node.id === 'planner').x, 0)
+  const wired = connectNodes(own.edges, 'planner', 'coder')
+  assert.equal(wired.length, 1)
+  const extra = connectNodes(own.edges, 'coder', 'planner')
+  assert.ok(extra.some((edge) => edge.from === 'coder' && edge.to === 'planner'))
+  const dropped = dropBot(own.nodes, { id: 'bot-docs', name: 'Docs', role: 'notes' }, 12, 24)
+  const seat = dropped.find((node) => node.botId === 'bot-docs')
+  assert.equal(seat.name, 'Docs')
+  assert.equal(seat.x, 12)
+  assert.equal(seat.y, 24)
+  assert.match(seat.id, /^n\d+$/)
+  const gone = removeNode(dropped, extra, seat.id)
+  assert.equal(gone.nodes.some((node) => node.id === seat.id), false)
+  assert.equal(gone.edges.some((edge) => edge.from === seat.id || edge.to === seat.id), false)
 })
 
-test('the page names the file a definition is, and the project default', () => {
-  const tree = render({ actions: {} }, [list, opened, definition, '审稿', preview, '', ''])
-  assert.match(text(tree), /workflows\/content\.json/)
-  assert.match(text(tree), /project default/)
-  const picks = all(tree).filter((entry) => entry.props?.['data-id'] !== undefined).map((entry) => entry.props['data-id'])
-  assert.deepEqual(picks, ['repo-dev', 'blank', 'content'])
+test('a drag on the open flowchart commits the moved graph', () => {
+  const commits = []
+  const tree = renderView({
+    phase: 'ready', pack, opened: { source: 'own', id: 'wf-mine' }, editing: true, error: '',
+    roster: { bots: [] },
+    onCommit: (graph) => commits.push(graph),
+  })
+  const coder = all(tree).find((entry) => entry.props?.['data-node'] === 'coder')
+  coder.props.onPointerDown({ clientX: 10, clientY: 20, target: { dataset: {} } })
+  const canvas = all(tree).find((entry) => entry.props?.className === 'bt-wf-canvas')
+  canvas.props.onPointerUp({ clientX: 30, clientY: 50, target: { dataset: {} } })
+  assert.equal(commits.length, 1)
+  assert.equal(commits[0].nodes.find((node) => node.id === 'coder').x, 20)
+  assert.equal(commits[0].nodes.find((node) => node.id === 'coder').y, 138)
 })

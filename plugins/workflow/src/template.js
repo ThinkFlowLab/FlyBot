@@ -1,5 +1,6 @@
 // The two workflows the owner-approved demo opens on. Node copy is the demo's
 // own fixture (a delivery pipeline with one parallel join, and a Friday digest).
+import { chainLabel, normalizeGraph } from './graph.js'
 
 const planner = {
   id: 'planner', name: 'Planner', role: '需求拆解 / 排期',
@@ -69,13 +70,23 @@ export function templateById(id) {
   return null
 }
 
+// Enough of each factory pipeline to draw it before anyone copies it. The
+// settings page opens this graph; creating a workflow still copies the full
+// template, including instructions.
 export function templateCatalog() {
-  return [deliveryWorkflow(), weeklyWorkflow()].map(item => ({
-    id: item.id,
-    name: item.name,
-    description: item.description,
-    triggers: [...item.triggers],
-  }))
+  return [deliveryWorkflow(), weeklyWorkflow()].map(item => {
+    const graph = normalizeGraph(item)
+    return {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      triggers: [...item.triggers],
+      chain: chainLabel(graph),
+      nodes: graph.nodes.map(node => ({ id: node.id, name: node.name, role: node.role ?? '', x: node.x, y: node.y })),
+      edges: graph.edges.map(edge => ({ from: edge.from, to: edge.to })),
+      layers: graph.layers.map(layer => [...layer]),
+    }
+  })
 }
 
 export function fixtureTask() {

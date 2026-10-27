@@ -42,13 +42,28 @@ module.exports = __toCommonJS(index_exports);
 // src/client/i18n.js
 var NAMESPACE = "ds-bot";
 var ZH = {
-  // Workflows (#1272 step 3)
+  // Workflows settings (#1364). The page lists factory pipelines and your own graphs.
   Workflows: "工作流",
-  "A workflow is a file: workflows/<id>.json. Columns, the flowchart and the refusals are all drawn from it.": "工作流就是一个文件：workflows/<id>.json。列、流程图和拒绝语都从它画出来。",
+  "A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.": "工作流是一组你的 Bot。拖动流程图，改谁把工作交给谁。",
   "Factory presets": "出厂预设",
+  "Ready-made pipelines. Use one to start your own.": "出厂就有的流程。用一个，做成你自己的。",
   Yours: "你自己的",
-  "project default": "项目默认",
+  "Workflows saved on this machine.": "这台机器上保存的工作流。",
+  "No workflows of your own yet.": "还没有你自己的工作流。",
+  "No workflows yet.": "还没有工作流。",
   "Reading workflows…": "正在读取工作流…",
+  "Could not read workflows": "读不到工作流。",
+  "Could not copy this workflow": "这个工作流复制不了。",
+  "Could not save this workflow": "这个工作流保存不了。",
+  "Use this": "用这个",
+  "Finish editing": "完成",
+  "Drag a Bot here": "把 Bot 拖到图上",
+  "Parallel branch, then join": "并行分支 · 全部通过后汇合",
+  "This workflow has no flowchart yet.": "这个工作流还没有流程图。",
+  Queued: "排队中",
+  Running: "运行中",
+  Idle: "空闲",
+  "project default": "项目默认",
   Customize: "定制一份",
   Save: "保存",
   "Use for this project": "本项目使用",
@@ -4199,6 +4214,42 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-set-bot{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
 .bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
 .bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
+/* Settings → Workflows (#1364): factory and your own pipelines, then the flowchart. */
+.bt-wf-page{display:flex;flex-direction:column;gap:16px}
+.bt-wf-hint{margin:0;font-size:12px;line-height:1.5;color:var(--bt-ink-2)}
+.bt-wf-status{margin:0;font-size:13px;color:var(--bt-ink-2)}
+.bt-wf-lists{display:flex;flex-direction:column;gap:16px}
+.bt-wf-editor{display:flex;flex-direction:column;gap:8px}
+.bt-wf-title{margin:0;font-size:15px;font-weight:600}
+.bt-wf-actions{display:flex;gap:8px;flex-wrap:wrap}
+.bt-wf-actions button,.bt-wf-page>.bt-error button{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
+.bt-wf-page>.bt-error{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
+.bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
+.bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.bt-wf-plane{position:relative;width:0;margin:16px auto 0}
+.bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}
+.bt-wf-wires marker path{fill:var(--bt-ink-3);stroke:none}
+.bt-wf-node{position:absolute;width:168px;box-sizing:border-box;border:1px solid var(--bt-line);background:var(--bt-card);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px}
+.bt-wf-node.running{border-color:var(--bt-accent);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+.bt-wf-node.done{border-color:rgba(22,163,74,.35)}
+.bt-wf-node.failed{border-color:#e5484d}
+.bt-wf-node.queued{opacity:.78}
+.bt-wf-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:650;flex:none;font-size:12px}
+.bt-wf-copy{min-width:0;flex:1;display:flex;flex-direction:column}
+.bt-wf-name{font-weight:600;font-size:12.5px}
+.bt-wf-role{font-size:11px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-wf-chip{position:absolute;top:-9px;right:8px;font-size:10.5px;padding:1px 7px;border-radius:10px;background:var(--bt-active);color:var(--bt-ink-2);white-space:nowrap;pointer-events:none}
+.bt-wf-node.editing .bt-wf-chip{right:18px}
+.bt-wf-chip.running{background:rgba(77,107,254,.12);color:var(--bt-accent)}
+.bt-wf-chip.done{background:rgba(22,163,74,.12);color:#16a34a}
+.bt-wf-chip.failed{background:rgba(229,72,77,.12);color:#e5484d}
+.bt-wf-chip.idle{color:var(--bt-ink-3)}
+.bt-wf-port{position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;border:2px solid var(--bt-accent);background:var(--bt-card);padding:0;cursor:crosshair}
+.bt-wf-remove{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-card);cursor:pointer;line-height:16px;padding:0}
+.bt-wf-par{position:absolute;border:1px dashed var(--bt-ink-3);border-radius:14px;pointer-events:none}
+.bt-wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2);background:var(--bt-card);padding:0 6px;white-space:nowrap}
 
 /* Settings → Connectors. */
 .bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
@@ -5129,7 +5180,7 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
   };
   useOptionKeys(options.length, (index) => choose(options[index].label), ownRef);
   const ownLetter = options.length > 0 ? keyLetter(options.length) : void 0;
-  const field2 = ownAnswer ? (0, import_react6.createElement)("textarea", {
+  const field = ownAnswer ? (0, import_react6.createElement)("textarea", {
     ref: ownRef,
     rows: 1,
     value: own,
@@ -5168,12 +5219,12 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
       selected && !raised ? (0, import_react6.createElement)("span", { className: "bt-q-check", title: t("Selected") }, (0, import_react6.createElement)(CheckIcon)) : null
     );
   });
-  if (raised && field2) {
+  if (raised && field) {
     rows.push((0, import_react6.createElement)(
       "label",
       { key: "own", className: "bt-q-opt bt-q-ownrow", "data-filled": custom !== "" ? "" : void 0 },
       ownLetter ? (0, import_react6.createElement)("span", { className: "bt-key", "aria-hidden": true }, ownLetter) : null,
-      (0, import_react6.createElement)("span", { className: "bt-q-body" }, field2)
+      (0, import_react6.createElement)("span", { className: "bt-q-body" }, field)
     ));
   }
   let foot = null;
@@ -5210,10 +5261,10 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
       (0, import_react6.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Dismiss question"), title: t("Dismiss"), onClick: onDismiss }, (0, import_react6.createElement)(CloseIcon))
     ),
     rows.length > 0 ? (0, import_react6.createElement)("div", { className: "bt-q-list", role: "group" }, rows) : null,
-    field2 && !raised ? (0, import_react6.createElement)(
+    field && !raised ? (0, import_react6.createElement)(
       "div",
       { className: "bt-q-custom" },
-      (0, import_react6.createElement)("label", { className: "bt-q-field" }, field2),
+      (0, import_react6.createElement)("label", { className: "bt-q-field" }, field),
       !multi && canSubmit ? (0, import_react6.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")) : null
     ) : null,
     foot
@@ -13273,7 +13324,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     }
     return JSON.stringify(hits);
   });
-  const matchesName = (...fields) => wanted === "" || fields.some((field2) => (field2 ?? "").toLowerCase().includes(wanted));
+  const matchesName = (...fields) => wanted === "" || fields.some((field) => (field ?? "").toLowerCase().includes(wanted));
   const sections = [];
   const people2 = [
     ...roster.bots.filter((bot) => isListedRemoteChat(bot) && matchesName(bot.name, bot.role, pickerBotLabel(bot))).map((bot) => ({
@@ -14302,259 +14353,398 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
 
 // src/client/workflows.js
 var import_react34 = require("react");
-function parseList(text) {
-  return String(text ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+var READ_MS = 8e3;
+var COLORS = { Planner: "#8b5cf6", Writer: "#f0509a", Coder: "#1fbf6a", Reviewer: "#f5a524", Tester: "#14b8a6", Deployer: "#2f7cf6" };
+function settleWorkflowRead(value, fallback = "Could not read workflows") {
+  if (!value || value.ok === false || !Array.isArray(value.workflows)) {
+    const error = typeof value?.error === "string" && value.error.trim() ? value.error : fallback;
+    return { phase: "error", error, pack: null };
+  }
+  const templates = Array.isArray(value.templates) ? value.templates : [];
+  const workflows = value.workflows;
+  const pack = { ...value, templates, workflows };
+  if (templates.length === 0 && workflows.length === 0) return { phase: "empty", error: "", pack };
+  return { phase: "ready", error: "", pack };
 }
-var formatList = (list) => Array.isArray(list) ? list.join(", ") : "";
-function guardLines(guards) {
-  return (Array.isArray(guards) ? guards : []).map((guard) => `${guard.spec} is ${guard.is}${guard.value === null || guard.value === void 0 ? "" : ` ${guard.value}`}`).join("\n");
-}
-function parseGuards(text, previous = []) {
-  return String(text ?? "").split("\n").map((line2) => line2.trim()).filter(Boolean).map((line2) => {
-    const found = /^(\S+)\s+is\s+(\S+)(?:\s+(.+))?$/.exec(line2);
-    if (found === null) return null;
-    const [, spec, is, value] = found;
-    const before = previous.find((guard) => guard.spec === spec && guard.is === is);
-    return {
-      id: before?.id ?? `${spec}-${is}`,
-      spec,
-      is,
-      value: value === void 0 ? null : value.trim(),
-      refusal: before?.refusal ?? ""
+function readWorkflows(call4, { timeoutMs = READ_MS } = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
     };
-  }).filter(Boolean);
+    const timer = setTimeout(() => finish(settleWorkflowRead(null)), timeoutMs);
+    Promise.resolve().then(() => call4("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: failure?.message || "Could not read workflows", pack: null }));
+  });
 }
-function applyNodeField(definition, nodeId, field2, value) {
-  if (definition === null || definition === void 0) return definition;
+function moveNode(nodes, id, x, y) {
+  return nodes.map((node) => node.id === id ? { ...node, x, y } : node);
+}
+function connectNodes(edges, from, to) {
+  if (!from || !to || from === to) return edges;
+  if (edges.some((edge) => edge.from === from && edge.to === to)) return edges;
+  return edges.concat([{ from, to }]);
+}
+function dropBot(nodes, bot, x, y) {
+  const ids = new Set(nodes.map((node) => node.id));
+  let n = nodes.length + 1;
+  while (ids.has(`n${n}`)) n += 1;
+  return nodes.concat([{ id: `n${n}`, name: bot.name, botId: bot.id, role: bot.role ?? "", x, y }]);
+}
+function removeNode(nodes, edges, id) {
   return {
-    ...definition,
-    nodes: definition.nodes.map((node) => {
-      if (node.id !== nodeId) return node;
-      if (field2 === "inputs" || field2 === "outputs") return { ...node, [field2]: parseList(value) };
-      if (field2 === "guards") return { ...node, guards: parseGuards(value, node.guards) };
-      return { ...node, [field2]: value };
-    })
+    nodes: nodes.filter((node) => node.id !== id),
+    edges: edges.filter((edge) => edge.from !== id && edge.to !== id)
   };
 }
-var field = (label, value, onChange, options = {}) => (0, import_react34.createElement)(
-  "label",
-  { className: "bt-wf-field", key: label },
-  (0, import_react34.createElement)("span", { className: "bt-wf-label" }, label),
-  (0, import_react34.createElement)("input", {
-    className: "bt-wf-input",
-    value: value ?? "",
-    disabled: options.disabled === true,
-    placeholder: options.placeholder ?? "",
-    onChange: (event) => onChange(event.target.value)
-  })
-);
-var guardState = (row) => row.state === "holds" ? t("holds") : row.state === "unreadable" ? t("cannot read") : t("refuses");
-function Flow({ layout }) {
-  if (!layout || !Array.isArray(layout.boxes) || layout.boxes.length === 0) return null;
-  return (0, import_react34.createElement)(
-    "svg",
-    {
-      className: "bt-wf-flow",
-      viewBox: `0 0 ${Math.max(layout.width, 1)} ${Math.max(layout.height, 1)}`,
-      role: "img",
-      "aria-label": t("The flowchart, drawn from the node table"),
-      "data-boxes": String(layout.boxes.length),
-      "data-edges": String(layout.edges.length)
-    },
-    layout.edges.map((edge, index) => (0, import_react34.createElement)("line", {
-      key: `e${index}`,
-      className: "bt-wf-edge",
-      x1: edge.points?.[0]?.x ?? 0,
-      y1: edge.points?.[0]?.y ?? 0,
-      x2: edge.points?.[1]?.x ?? 0,
-      y2: edge.points?.[1]?.y ?? 0
-    })),
-    layout.boxes.map((box) => (0, import_react34.createElement)(
-      "g",
-      { key: box.id, className: "bt-wf-box", "data-node": box.id, transform: `translate(${box.x} ${box.y})` },
-      (0, import_react34.createElement)("rect", { width: box.width, height: box.height, rx: 12 }),
-      (0, import_react34.createElement)("text", { x: 14, y: 26, className: "bt-wf-box-name" }, box.name),
-      (0, import_react34.createElement)("text", { x: 14, y: 48, className: "bt-wf-box-role" }, box.role),
-      (0, import_react34.createElement)("text", { x: 14, y: 72, className: "bt-wf-box-rails" }, `${box.inputs.join(", ") || "—"} → ${box.outputs.join(", ") || "—"}`)
-    ))
-  );
+function chainOf(item) {
+  if (typeof item?.chain === "string" && item.chain) return item.chain;
+  if (!Array.isArray(item?.layers) || !Array.isArray(item?.nodes)) return "";
+  const name = (id) => item.nodes.find((node) => node.id === id)?.name ?? id;
+  return item.layers.map((layer) => layer.map(name).join(" ‖ ")).join(" → ");
 }
-function Preview({ preview }) {
-  if (!preview) return null;
+function openedGraph(pack, opened) {
+  if (!pack || !opened) return null;
+  if (opened.source === "own") return (pack.workflows ?? []).find((item) => item.id === opened.id) ?? null;
+  return (pack.templates ?? []).find((item) => item.id === opened.id) ?? (pack.workflows ?? []).find((item) => item.id === opened.id) ?? null;
+}
+function statusLabel2(status) {
+  if (status === "running") return t("Running");
+  if (status === "done") return t("Done");
+  if (status === "failed") return t("Failed");
+  if (status === "idle") return t("Idle");
+  return t("Queued");
+}
+function hitNode(event) {
+  const direct = event.target?.dataset?.node ? event.target : null;
+  const nested = event.target?.closest?.("[data-node]");
+  return (nested ?? direct)?.dataset?.node || "";
+}
+var WIRE_SPAN = 480;
+function wirePath(from, to) {
+  const x1 = from.x + WIRE_SPAN;
+  const y1 = from.y + 48;
+  const x2 = to.x + WIRE_SPAN;
+  const y2 = to.y;
+  const mid = (y1 + y2) / 2;
+  return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
+}
+function GraphCanvas({ graph, editing, roster, onCommit }) {
+  const gesture = (0, import_react34.useRef)(null);
+  const nodes = graph.nodes ?? [];
+  const edges = graph.edges ?? [];
+  const status = graph.run?.nodeStatus ?? null;
+  const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id));
+  const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0);
+  const end = (event) => {
+    const current = gesture.current;
+    gesture.current = null;
+    if (!current || !editing) return;
+    if (current.kind === "move") {
+      const x = Math.round(current.x + event.clientX - current.ox);
+      const y = Math.round(current.y + event.clientY - current.oy);
+      onCommit?.({ nodes: moveNode(nodes, current.id, x, y), edges });
+    } else if (current.kind === "wire") {
+      const next = connectNodes(edges, current.from, hitNode(event));
+      if (next !== edges) onCommit?.({ nodes, edges: next });
+    } else if (current.kind === "add" && event.target?.dataset?.plane) {
+      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX) : 24;
+      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY) : 24;
+      onCommit?.({ nodes: dropBot(nodes, current.bot, x, y), edges });
+    }
+  };
   return (0, import_react34.createElement)(
     "div",
-    { className: "bt-wf-preview", "data-facts": preview.facts },
-    preview.facts === "unavailable" ? (0, import_react34.createElement)("div", { className: "bt-wf-hint" }, t("This host could not read the facts, so these guards say what they could not read — none of them is a pass.")) : null,
-    (preview.rows ?? []).map((row) => (0, import_react34.createElement)(
+    { className: "bt-wf-canvas", onPointerUp: end },
+    editing ? (0, import_react34.createElement)(
       "div",
-      { key: row.id, className: "bt-wf-guard", "data-state": row.state },
-      (0, import_react34.createElement)("span", { className: "bt-wf-badge", "data-state": row.state }, guardState(row)),
-      (0, import_react34.createElement)("span", { className: "bt-wf-guard-spec" }, `${row.spec} is ${row.is}${row.value === null || row.value === void 0 ? "" : ` ${row.value}`}`),
-      row.sentence ? (0, import_react34.createElement)("span", { className: "bt-wf-guard-line" }, row.sentence) : null
-    ))
+      { className: "bt-wf-palette" },
+      (0, import_react34.createElement)("span", { className: "bt-wf-hint" }, t("Drag a Bot here")),
+      locals.map((bot) => (0, import_react34.createElement)("button", {
+        key: bot.id,
+        type: "button",
+        "data-bot": bot.id,
+        onPointerDown: (event) => {
+          event.preventDefault?.();
+          gesture.current = { kind: "add", bot };
+        }
+      }, bot.name))
+    ) : null,
+    (0, import_react34.createElement)(
+      "div",
+      { className: "bt-wf-plane", "data-plane": "1", style: { height } },
+      (0, import_react34.createElement)(
+        "svg",
+        {
+          className: "bt-wf-wires",
+          "aria-hidden": true,
+          width: WIRE_SPAN * 2,
+          height,
+          viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
+          style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height }
+        },
+        (0, import_react34.createElement)(
+          "defs",
+          null,
+          (0, import_react34.createElement)("marker", {
+            id: "bt-wf-arrow",
+            viewBox: "0 0 10 10",
+            refX: "8",
+            refY: "5",
+            markerWidth: "6",
+            markerHeight: "6",
+            orient: "auto"
+          }, (0, import_react34.createElement)("path", { d: "M0 0 10 5 0 10z" }))
+        ),
+        edges.map((edge) => {
+          const from = nodes.find((node) => node.id === edge.from);
+          const to = nodes.find((node) => node.id === edge.to);
+          if (!from || !to) return null;
+          return (0, import_react34.createElement)("path", { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: "url(#bt-wf-arrow)" });
+        })
+      ),
+      (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
+        const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean);
+        if (members.length < 2) return null;
+        const minX = Math.min(...members.map((node) => node.x ?? 0));
+        const maxX = Math.max(...members.map((node) => node.x ?? 0));
+        const y = Math.min(...members.map((node) => node.y ?? 0));
+        return (0, import_react34.createElement)("div", {
+          key: layer.join("+"),
+          className: "bt-wf-par",
+          style: { left: minX - 108, top: y - 18, width: maxX - minX + 216, height: 92 }
+        }, (0, import_react34.createElement)("div", { className: "bt-wf-plabel" }, t("Parallel branch, then join")));
+      }),
+      nodes.map((node) => {
+        const state = status ? status[node.id] ?? "queued" : "idle";
+        return (0, import_react34.createElement)(
+          "div",
+          {
+            key: node.id,
+            "data-node": node.id,
+            className: `bt-wf-node ${state}${editing ? " editing" : ""}`,
+            style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
+            onPointerDown: (event) => {
+              if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return;
+              gesture.current = { kind: "move", id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 };
+            }
+          },
+          editing ? (0, import_react34.createElement)("button", {
+            type: "button",
+            className: "bt-wf-port",
+            "data-port": "out",
+            "aria-label": node.name,
+            onPointerDown: (event) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              gesture.current = { kind: "wire", from: node.id };
+            }
+          }) : null,
+          editing ? (0, import_react34.createElement)("button", {
+            type: "button",
+            className: "bt-wf-remove",
+            "data-remove": node.id,
+            "aria-label": t("Remove"),
+            onClick: (event) => {
+              event.stopPropagation?.();
+              const next = removeNode(nodes, edges, node.id);
+              onCommit?.(next);
+            }
+          }, "×") : null,
+          (0, import_react34.createElement)("span", { className: `bt-wf-chip ${state}` }, statusLabel2(state)),
+          (0, import_react34.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, (node.name ?? "?").slice(0, 1)),
+          (0, import_react34.createElement)(
+            "span",
+            { className: "bt-wf-copy" },
+            (0, import_react34.createElement)("span", { className: "bt-wf-name" }, node.name),
+            (0, import_react34.createElement)("span", { className: "bt-wf-role" }, node.role ?? "")
+          )
+        );
+      })
+    )
   );
 }
-function WorkflowsPage({ actions }) {
-  const [list, setList] = (0, import_react34.useState)(null);
-  const [opened, setOpened] = (0, import_react34.useState)(null);
-  const [draft, setDraft] = (0, import_react34.useState)(null);
-  const [node, setNode] = (0, import_react34.useState)(null);
-  const [preview, setPreview] = (0, import_react34.useState)(null);
-  const [error, setError] = (0, import_react34.useState)("");
-  const [saved, setSaved] = (0, import_react34.useState)("");
-  const load = () => Promise.resolve(actions.workflows({ op: "list" })).then((value) => {
-    setList(value);
-    return value;
-  }).catch((failure) => {
-    setError(failure?.message ?? String(failure));
-    return null;
-  });
-  (0, import_react34.useEffect)(() => {
-    load();
-  }, []);
-  const open = (id, target) => Promise.resolve(actions.workflows({ op: "open", id, node: target ?? null })).then((value) => {
-    if (value?.ok === false) {
-      setError(value.message ?? t("Could not open this workflow"));
-      return value;
-    }
-    setOpened(value);
-    setDraft(value.workflow.definition);
-    setNode(value.preview?.node ?? value.workflow.definition.nodes[0]?.id ?? null);
-    setPreview(value.preview);
-    setError("");
-    setSaved("");
-    return value;
-  }).catch((failure) => {
-    setError(failure?.message ?? String(failure));
-    return null;
-  });
-  const showNode = (id) => {
-    setNode(id);
-    if (!opened) return;
-    Promise.resolve(actions.workflows({ op: "preview", id: opened.workflow.id, node: id })).then((value) => setPreview(value?.preview ?? null)).catch((failure) => setError(failure?.message ?? String(failure)));
-  };
-  const save = () => Promise.resolve(actions.workflowSave({ op: "save", definition: draft })).then((value) => {
-    if (value?.ok === false) {
-      setError(value.message ?? t("This definition cannot be saved"));
-      return value;
-    }
-    setSaved(t("Saved workflows/{id}.json", { id: value.id }));
-    setError("");
-    return load().then(() => open(value.id, node));
-  }).catch((failure) => {
-    setError(failure?.message ?? String(failure));
-    return null;
-  });
-  const customize = () => {
-    if (!opened) return null;
-    const base = opened.workflow.id;
-    const id = `${base}-copy`;
-    return Promise.resolve(actions.workflowSave({ op: "customize", from: base, id, name: `${opened.workflow.name} (mine)` })).then((value) => {
-      if (value?.ok === false) {
-        setError(value.message ?? t("This definition cannot be copied"));
-        return value;
-      }
-      return load().then(() => open(id));
-    }).catch((failure) => {
-      setError(failure?.message ?? String(failure));
-      return null;
-    });
-  };
-  const useDefault = () => {
-    if (!opened) return null;
-    return Promise.resolve(actions.workflowSave({ op: "default", id: opened.workflow.id })).then((value) => {
-      if (value?.ok !== false) setList(value);
-      return value;
-    }).catch((failure) => {
-      setError(failure?.message ?? String(failure));
-      return null;
-    });
-  };
-  const editable = opened?.workflow.editable === true;
-  const current = draft?.nodes?.find((entry) => entry.id === node) ?? null;
+function Row2({ item, source, onOpen }) {
+  return (0, import_react34.createElement)(
+    "button",
+    {
+      type: "button",
+      className: "bt-set-row",
+      "data-workflow": item.id,
+      "data-source": source,
+      onClick: () => onOpen?.(item)
+    },
+    (0, import_react34.createElement)(
+      "span",
+      { className: "bt-set-copy" },
+      (0, import_react34.createElement)("span", null, item.name),
+      (0, import_react34.createElement)("span", { className: "bt-set-hint" }, item.preview || chainOf(item) || item.description || "")
+    ),
+    (0, import_react34.createElement)("span", { className: "bt-chevron", "aria-hidden": true }, "›")
+  );
+}
+function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
+  const graph = phase === "ready" ? openedGraph(pack, opened) : null;
+  const templates = pack?.templates ?? [];
+  const templateIds = new Set(templates.map((item) => item.id));
+  const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id));
+  const showUse = opened?.source === "factory" || opened?.fromFactory === true;
   return (0, import_react34.createElement)(
     "div",
     { className: "bt-wf-page" },
-    (0, import_react34.createElement)(
+    (0, import_react34.createElement)("p", { className: "bt-wf-hint" }, t("A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.")),
+    error ? (0, import_react34.createElement)(
       "div",
-      { className: "bt-wf-head" },
-      (0, import_react34.createElement)("h3", null, (0, import_react34.createElement)(WorkflowIcon), t("Workflows")),
-      (0, import_react34.createElement)("span", { className: "bt-wf-hint" }, t("A workflow is a file: workflows/<id>.json. Columns, the flowchart and the refusals are all drawn from it."))
-    ),
-    error ? (0, import_react34.createElement)("div", { className: "bt-error", role: "alert" }, error) : null,
-    saved ? (0, import_react34.createElement)("div", { className: "bt-wf-saved", role: "status" }, saved) : null,
-    (0, import_react34.createElement)(
+      { className: "bt-error", role: "alert" },
+      error || t("Could not read workflows"),
+      phase === "error" ? (0, import_react34.createElement)("button", { type: "button", onClick: () => onRetry?.() }, t("Retry")) : null
+    ) : null,
+    phase === "loading" ? (0, import_react34.createElement)("p", { className: "bt-wf-status", role: "status" }, t("Reading workflows…")) : null,
+    phase === "empty" ? (0, import_react34.createElement)("p", { className: "bt-wf-status" }, t("No workflows yet.")) : null,
+    phase === "ready" && !graph ? (0, import_react34.createElement)(
       "div",
-      { className: "bt-wf-list" },
-      ["presets", "own"].map((group) => (0, import_react34.createElement)(
-        "div",
-        { key: group, className: "bt-wf-group" },
-        (0, import_react34.createElement)("span", { className: "bt-wf-group-name" }, group === "presets" ? t("Factory presets") : t("Yours")),
-        (list?.[group] ?? []).map((entry) => (0, import_react34.createElement)("button", {
-          key: `${group}:${entry.id}`,
-          type: "button",
-          className: "bt-wf-pick",
-          "aria-current": opened?.workflow.id === entry.id ? "true" : void 0,
-          "data-id": entry.id,
-          "data-source": entry.source,
-          onClick: () => open(entry.id)
-        }, entry.name, list?.default === entry.id ? (0, import_react34.createElement)("span", { className: "bt-wf-default" }, t("project default")) : null))
-      )),
-      list === null ? (0, import_react34.createElement)("span", { className: "bt-wf-hint" }, t("Reading workflows…")) : null
-    ),
-    opened === null ? null : (0, import_react34.createElement)(
-      "div",
-      { className: "bt-wf-doc" },
+      { className: "bt-wf-lists" },
       (0, import_react34.createElement)(
-        "div",
-        { className: "bt-wf-doc-head" },
-        (0, import_react34.createElement)("strong", null, opened.workflow.name),
-        (0, import_react34.createElement)("span", { className: "bt-wf-path" }, `workflows/${opened.workflow.id}.json`),
-        (0, import_react34.createElement)("button", { type: "button", className: "bt-wf-action", onClick: customize }, t("Customize")),
-        editable ? (0, import_react34.createElement)("button", { type: "button", className: "bt-wf-action", onClick: save }, t("Save")) : null,
-        (0, import_react34.createElement)("button", { type: "button", className: "bt-wf-action", onClick: useDefault }, t("Use for this project"))
-      ),
-      (0, import_react34.createElement)(Flow, { layout: opened.layout }),
-      (0, import_react34.createElement)(
-        "div",
-        { className: "bt-wf-table" },
+        "section",
+        { className: "bt-set-section" },
+        (0, import_react34.createElement)("h3", null, t("Factory presets")),
+        (0, import_react34.createElement)("p", { className: "bt-wf-hint" }, t("Ready-made pipelines. Use one to start your own.")),
         (0, import_react34.createElement)(
           "div",
-          { className: "bt-wf-row bt-wf-row-head" },
-          ["id", "name", "role", "inputs", "outputs", "guards", "refusal"].map((key) => (0, import_react34.createElement)("span", { key }, key))
-        ),
-        (draft?.nodes ?? []).map((entry) => (0, import_react34.createElement)(
+          { className: "bt-set-card" },
+          templates.length === 0 ? (0, import_react34.createElement)("div", { className: "bt-set-row" }, (0, import_react34.createElement)("span", { className: "bt-set-hint" }, t("No workflows yet."))) : templates.map((item) => {
+            const live = (pack.workflows ?? []).find((workflow) => workflow.id === item.id);
+            const row = live ? { ...item, name: live.name, preview: live.preview || chainOf(live) || chainOf(item) } : item;
+            return (0, import_react34.createElement)(Row2, { key: item.id, item: row, source: "factory", onOpen: () => onOpen?.(item, "factory") });
+          })
+        )
+      ),
+      (0, import_react34.createElement)(
+        "section",
+        { className: "bt-set-section" },
+        (0, import_react34.createElement)("h3", null, t("Yours")),
+        (0, import_react34.createElement)("p", { className: "bt-wf-hint" }, t("Workflows saved on this machine.")),
+        (0, import_react34.createElement)(
           "div",
-          {
-            key: entry.id,
-            className: "bt-wf-row",
-            "data-node": entry.id,
-            "aria-current": entry.id === node ? "true" : void 0,
-            onClick: () => showNode(entry.id)
-          },
-          (0, import_react34.createElement)("span", { className: "bt-wf-cell bt-wf-id" }, entry.id),
-          editable ? field("name", entry.name, (value) => setDraft(applyNodeField(draft, entry.id, "name", value))) : (0, import_react34.createElement)("span", null, entry.name),
-          editable ? field("role", entry.role, (value) => setDraft(applyNodeField(draft, entry.id, "role", value))) : (0, import_react34.createElement)("span", null, entry.role),
-          editable ? field("inputs", formatList(entry.inputs), (value) => setDraft(applyNodeField(draft, entry.id, "inputs", value))) : (0, import_react34.createElement)("span", null, formatList(entry.inputs)),
-          editable ? field("outputs", formatList(entry.outputs), (value) => setDraft(applyNodeField(draft, entry.id, "outputs", value))) : (0, import_react34.createElement)("span", null, formatList(entry.outputs)),
-          editable ? (0, import_react34.createElement)("textarea", { className: "bt-wf-guards-input", value: guardLines(entry.guards), onChange: (event) => setDraft(applyNodeField(draft, entry.id, "guards", event.target.value)) }) : (0, import_react34.createElement)("span", null, guardLines(entry.guards)),
-          editable ? field("refusal", entry.refusal, (value) => setDraft(applyNodeField(draft, entry.id, "refusal", value))) : (0, import_react34.createElement)("span", null, entry.refusal)
-        ))
-      ),
-      (0, import_react34.createElement)(
-        "div",
-        { className: "bt-wf-edges" },
-        (0, import_react34.createElement)("span", { className: "bt-wf-group-name" }, t("Edges")),
-        (draft?.edges ?? []).map((edge) => (0, import_react34.createElement)("span", { key: `${edge.from}->${edge.to}`, className: "bt-wf-edge-row" }, `${edge.from} → ${edge.to}`))
-      ),
-      (0, import_react34.createElement)(
-        "div",
-        { className: "bt-wf-node" },
-        (0, import_react34.createElement)("span", { className: "bt-wf-group-name" }, node === null ? t("Guards") : t("Guards of {node}", { node: current?.name ?? node })),
-        current === null || current.guards.length === 0 ? (0, import_react34.createElement)("span", { className: "bt-wf-hint" }, t("This node has no guards, so nothing refuses it but its inputs.")) : (0, import_react34.createElement)(Preview, { preview })
+          { className: "bt-set-card" },
+          yours.length === 0 ? (0, import_react34.createElement)("div", { className: "bt-set-row" }, (0, import_react34.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react34.createElement)(Row2, { key: item.id, item, source: "own", onOpen: () => onOpen?.(item, "own") }))
+        )
       )
-    )
+    ) : null,
+    graph ? (0, import_react34.createElement)(
+      "div",
+      { className: "bt-wf-editor" },
+      (0, import_react34.createElement)(
+        "div",
+        { className: "bt-wf-actions" },
+        (0, import_react34.createElement)("button", { type: "button", onClick: () => onBack?.() }, t("Back")),
+        showUse ? (0, import_react34.createElement)("button", { type: "button", onClick: () => onUse?.(opened.source === "factory" ? opened.id : opened.fromFactory) }, t("Use this")) : null,
+        opened?.source === "own" ? (0, import_react34.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
+      ),
+      (0, import_react34.createElement)("h3", { className: "bt-wf-title" }, graph.name),
+      graph.description ? (0, import_react34.createElement)("p", { className: "bt-wf-hint" }, graph.description) : null,
+      (graph.nodes ?? []).length === 0 ? (0, import_react34.createElement)("p", { className: "bt-wf-status" }, t("This workflow has no flowchart yet.")) : (0, import_react34.createElement)(GraphCanvas, {
+        graph,
+        roster,
+        onCommit,
+        editing: opened?.source === "own" && editing === true
+      })
+    ) : null
   );
+}
+function WorkflowsPage({ call: call4, roster }) {
+  const [phase, setPhase] = (0, import_react34.useState)("loading");
+  const [pack, setPack] = (0, import_react34.useState)(null);
+  const [error, setError] = (0, import_react34.useState)("");
+  const [opened, setOpened] = (0, import_react34.useState)(null);
+  const [editing, setEditing] = (0, import_react34.useState)(false);
+  const invoke = typeof call4 === "function" ? call4 : () => Promise.reject(new Error("Could not read workflows"));
+  const apply2 = (settled) => {
+    setPhase(settled.phase);
+    setPack(settled.pack);
+    setError(settled.error);
+  };
+  (0, import_react34.useEffect)(() => {
+    let gone = false;
+    readWorkflows(invoke).then((settled) => {
+      if (!gone) apply2(settled);
+    });
+    return () => {
+      gone = true;
+    };
+  }, []);
+  const retry = () => {
+    setPhase("loading");
+    setError("");
+    setOpened(null);
+    readWorkflows(invoke).then(apply2);
+  };
+  const open = (item, source) => {
+    if (source === "factory") {
+      const live = (pack?.workflows ?? []).find((workflow) => workflow.id === item.id);
+      setOpened(live ? { source: "own", id: live.id, fromFactory: item.id } : { source: "factory", id: item.id });
+      setEditing(false);
+      return;
+    }
+    setOpened({ source: "own", id: item.id });
+    setEditing(false);
+  };
+  const useTemplate = (id) => {
+    const template = typeof id === "string" ? id : "";
+    if (!template) return;
+    Promise.resolve(invoke("workflow/create", { template })).then((value) => {
+      const settled = settleWorkflowRead(value);
+      if (settled.phase === "error") {
+        setError(settled.error);
+        return;
+      }
+      const before = new Set((pack?.workflows ?? []).map((item) => item.id));
+      const made = settled.pack.workflows.find((item) => !before.has(item.id));
+      setPack(settled.pack);
+      setPhase(settled.phase);
+      setError("");
+      if (made) {
+        setOpened({ source: "own", id: made.id });
+        setEditing(true);
+      }
+    }).catch((failure) => {
+      setError(failure?.message || t("Could not copy this workflow"));
+    });
+  };
+  const commit = (graph) => {
+    if (!opened || opened.source !== "own") return;
+    Promise.resolve(invoke("workflow/graph", { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges })).then((value) => {
+      const settled = settleWorkflowRead(value);
+      if (settled.phase === "error") {
+        setError(settled.error);
+        return;
+      }
+      setPack(settled.pack);
+      setPhase("ready");
+      setError("");
+    }).catch((failure) => {
+      setError(failure?.message || t("Could not save this workflow"));
+    });
+  };
+  return (0, import_react34.createElement)(WorkflowsView, {
+    phase,
+    pack,
+    error,
+    opened,
+    editing,
+    roster,
+    onOpen: open,
+    onBack: () => {
+      setOpened(null);
+      setEditing(false);
+    },
+    onEditing: setEditing,
+    onRetry: retry,
+    onUse: useTemplate,
+    onCommit: commit
+  });
 }
 
 // src/client/usage-data.js
@@ -14925,7 +15115,7 @@ function Chart({ range, columns, series, tipSeries, by, onBy, onPick }) {
     ) : null
   );
 }
-function Row2({ kind, glyph, name, sub, sum, whole, fill: fill3, index, onClick }) {
+function Row3({ kind, glyph, name, sub, sum, whole, fill: fill3, index, onClick }) {
   const width = whole > 0 ? Math.max(sum.total > 0 ? 2 : 0, sum.total / whole * 100) : 0;
   return (0, import_react35.createElement)(
     onClick ? "button" : "div",
@@ -15308,7 +15498,7 @@ function UsagePage({ roster, actions, focusId }) {
     ["custom", rangeId === "custom" && span ? spanText(span.from, span.to) : t("Custom"), CalendarIcon]
   ];
   const whole = part.total.total;
-  const ownerRow = ([at, sum], index, total = whole) => (0, import_react35.createElement)(Row2, {
+  const ownerRow = ([at, sum], index, total = whole) => (0, import_react35.createElement)(Row3, {
     key: `o${at}`,
     kind: faces[at].kind,
     glyph: faces[at].glyph(32),
@@ -15320,7 +15510,7 @@ function UsagePage({ roster, actions, focusId }) {
     fill: face ? soften(face.paint, 0.8) : fillOf.get(`o${at}`) ?? soften(faces[at].paint),
     onClick: () => pick2({ kind: "owner", key: view.owners[at].key })
   });
-  const modelRow = ([at, sum], index) => (0, import_react35.createElement)(Row2, {
+  const modelRow = ([at, sum], index) => (0, import_react35.createElement)(Row3, {
     key: `m${at}`,
     kind: "model",
     glyph: models[at].glyph(32),
@@ -15352,7 +15542,7 @@ function UsagePage({ roster, actions, focusId }) {
           (0, import_react35.createElement)(
             ListCard,
             { title: t("What for"), index: 3 },
-            kinds.length > 0 ? kinds.map(([at, sum], index) => (0, import_react35.createElement)(Row2, { key: at, name: kindLabel(view.kinds[at], ownerAt >= 0 && isBot(ownerAt)), sum, whole, index, fill: soften(face.paint, 0.8) })) : nothing
+            kinds.length > 0 ? kinds.map(([at, sum], index) => (0, import_react35.createElement)(Row3, { key: at, name: kindLabel(view.kinds[at], ownerAt >= 0 && isBot(ownerAt)), sum, whole, index, fill: soften(face.paint, 0.8) })) : nothing
           )
         ),
         (0, import_react35.createElement)(Heat, { key: "heat", view, keep, paint: face.paint, index: 4 })
@@ -15770,9 +15960,9 @@ function ConnectorRow({ connector, roster, actions }) {
   const [mode, setMode] = (0, import_react36.useState)(() => connector.mode ?? modes[0]?.id);
   const [values, setValues] = (0, import_react36.useState)({});
   const chosen = modes.find((entry) => entry.id === mode) ?? modes[0];
-  const field2 = (name) => values[name] ?? "";
+  const field = (name) => values[name] ?? "";
   const setField = (name, value) => setValues((current) => ({ ...current, [name]: value }));
-  const filled = chosen !== void 0 && chosen.credentials.every((credential) => field2(credential.name).trim() !== "");
+  const filled = chosen !== void 0 && chosen.credentials.every((credential) => field(credential.name).trim() !== "");
   const [statuses, setStatuses] = (0, import_react36.useState)({});
   const appsKey = (connector.apps ?? []).join(",");
   (0, import_react36.useEffect)(() => {
@@ -15795,7 +15985,7 @@ function ConnectorRow({ connector, roster, actions }) {
     if (busy) return;
     if (channel) {
       if (chosen === void 0 || !filled) return;
-      const credentials = Object.fromEntries(chosen.credentials.map((credential) => [credential.name, field2(credential.name)]));
+      const credentials = Object.fromEntries(chosen.credentials.map((credential) => [credential.name, field(credential.name)]));
       void run(actions.connectorConnect(connector.id, { mode: chosen.id, credentials }), () => {
         setValues({});
         setForm(false);
@@ -15883,7 +16073,7 @@ function ConnectorRow({ connector, roster, actions }) {
       channel ? (chosen?.credentials ?? []).map((credential, index) => (0, import_react36.createElement)(CredentialField, {
         key: credential.name,
         credential,
-        value: field2(credential.name),
+        value: field(credential.name),
         onChange: (value) => setField(credential.name, value),
         onEnter: connect,
         autoFocus: index === 0
@@ -15962,7 +16152,7 @@ function entrySummary(entry) {
   return entry.text;
 }
 var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "This window" };
-function FeedbackPage({ actions, run, Section, Row: Row3 }) {
+function FeedbackPage({ actions, run, Section, Row: Row4 }) {
   const [what, setWhat] = (0, import_react37.useState)("");
   const [report, setReport] = (0, import_react37.useState)(null);
   const [preview, setPreview] = (0, import_react37.useState)(false);
@@ -16023,14 +16213,14 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
         (0, import_react37.createElement)("textarea", { id: "bt-fb-what", className: "bt-input bt-input-area", value: what, maxLength: WHAT_MAX, placeholder: t("For example: I asked Writer in the group chat and it showed an error."), onChange: (event) => setWhat(event.target.value) })
       ),
       (0, import_react37.createElement)(
-        Row3,
+        Row4,
         { label: t("Diagnostics"), hint: t("Versions, system, models, and the latest errors. Saved keys, tokens, and your home folder are hidden.") },
         (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setPreview(!preview), "aria-expanded": preview }, preview ? t("Hide") : t("Show")),
         (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: copyReport }, t("Copy"))
       ),
       preview ? (0, import_react37.createElement)("div", { className: "bt-set-row bt-fb-preview" }, (0, import_react37.createElement)("pre", { tabIndex: 0, "aria-label": t("Diagnostics") }, report?.markdown || t("Loading…"))) : null,
       (0, import_react37.createElement)(
-        Row3,
+        Row4,
         { label: t("GitHub issue"), hint: t("Opens a new issue in the FlyBot repository with all of this filled in. Nothing is sent until you submit it there.") },
         (0, import_react37.createElement)("button", { type: "button", className: "bt-fb-primary", onClick: openIssue }, t("Report on GitHub"))
       )
@@ -16044,7 +16234,7 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
     (0, import_react37.createElement)(
       Section,
       { key: "errors", title: report ? t("Recent errors · {count}", { count: total }) : t("Recent errors") },
-      shown.length === 0 ? (0, import_react37.createElement)(Row3, { label: t("No errors recorded."), hint: t("Failed model calls and FlyBot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react37.createElement)(
+      shown.length === 0 ? (0, import_react37.createElement)(Row4, { label: t("No errors recorded."), hint: t("Failed model calls and FlyBot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react37.createElement)(
         "div",
         { key: `${entry.time}-${index}`, className: "bt-set-row bt-fb-entry", title: entry.text },
         (0, import_react37.createElement)("span", { className: "bt-fb-dot", "data-level": entry.level, "aria-hidden": true }),
@@ -16057,7 +16247,7 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
         entry.code ? (0, import_react37.createElement)("span", { className: "bt-tag bt-fb-code" }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null
       )),
       (0, import_react37.createElement)(
-        Row3,
+        Row4,
         { label: t("Error log"), hint: t("Kept on this computer across restarts, up to about 1 MB.") },
         (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: downloadLog }, t("Download")),
         (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
@@ -16153,7 +16343,7 @@ function dshHint(dsh, shown) {
   return t("Version {version}", { version: dsh.current });
 }
 var linkProps = (href) => ({ className: "bt-soft bt-soft-sm bt-about-link", href, target: "_blank", rel: "noopener noreferrer" });
-function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
+function AboutPage({ useUpdate, actions, run, Section, Row: Row4 }) {
   const update = useUpdate((value) => value) ?? {};
   const [checking, setChecking] = (0, import_react38.useState)(false);
   const [stars, setStars] = (0, import_react38.useState)(null);
@@ -16218,15 +16408,15 @@ function AboutPage({ useUpdate, actions, run, Section, Row: Row3 }) {
     (0, import_react38.createElement)(
       Section,
       { key: "updates", title: t("Updates") },
-      (0, import_react38.createElement)(Row3, { label: t("FlyBot core"), hint: botHint(update) }, botControl, update.available && update.notesUrl ? (0, import_react38.createElement)("a", linkProps(update.notesUrl), t("What's new")) : null),
-      dsh?.current ? (0, import_react38.createElement)(Row3, { label: t("DeepSeek Harness (underlying)"), hint: dshHint(dsh, dshShown) }, dshControl) : null
+      (0, import_react38.createElement)(Row4, { label: t("FlyBot core"), hint: botHint(update) }, botControl, update.available && update.notesUrl ? (0, import_react38.createElement)("a", linkProps(update.notesUrl), t("What's new")) : null),
+      dsh?.current ? (0, import_react38.createElement)(Row4, { label: t("DeepSeek Harness (underlying)"), hint: dshHint(dsh, dshShown) }, dshControl) : null
     ),
     (0, import_react38.createElement)(
       Section,
       { key: "links", title: t("Links") },
-      repo ? (0, import_react38.createElement)(Row3, { label: t("Source code"), hint: repo.replace(/^https:\/\//, "") }, (0, import_react38.createElement)("a", linkProps(repo), (0, import_react38.createElement)(GitHubMark), t("Open"))) : null,
-      update.notesUrl ? (0, import_react38.createElement)(Row3, { label: t("Release notes") }, (0, import_react38.createElement)("a", linkProps(update.notesUrl), t("Open"))) : null,
-      (0, import_react38.createElement)(Row3, { label: t("Report a problem") }, (0, import_react38.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.openSettings("feedback") }, t("Open")))
+      repo ? (0, import_react38.createElement)(Row4, { label: t("Source code"), hint: repo.replace(/^https:\/\//, "") }, (0, import_react38.createElement)("a", linkProps(repo), (0, import_react38.createElement)(GitHubMark), t("Open"))) : null,
+      update.notesUrl ? (0, import_react38.createElement)(Row4, { label: t("Release notes") }, (0, import_react38.createElement)("a", linkProps(update.notesUrl), t("Open"))) : null,
+      (0, import_react38.createElement)(Row4, { label: t("Report a problem") }, (0, import_react38.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.openSettings("feedback") }, t("Open")))
     )
   ];
 }
@@ -16549,7 +16739,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           room2 ? (0, import_react39.createElement)("div", { className: "bt-settings-form" }, (0, import_react39.createElement)(GroupSettingsForm, { key: room2.id, room: room2, roster, actions, run })) : null,
           shown === "groups" && !room2 ? (0, import_react39.createElement)(GroupsPage, { roster, actions, run }) : null,
           shown === "connectors" ? (0, import_react39.createElement)(ConnectorsPage, { roster, actions }) : null,
-          shown === "workflows" ? (0, import_react39.createElement)(WorkflowsPage, { actions }) : null,
+          shown === "workflows" ? (0, import_react39.createElement)(WorkflowsPage, { call: call2, roster }) : null,
           pluginPage ? (0, import_react39.createElement)(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call: call2, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === "capabilities" ? (0, import_react39.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
           shown === "schedules" ? (0, import_react39.createElement)(SchedulesPage, { roster, actions, start: id ?? void 0 }) : null,

@@ -1,228 +1,329 @@
-// The Workflows page (#1272 step 3): the factory presets, the owner's own workflows, which one the
-// project uses, and the node table that edits one. The page is a reader of the engine: the columns a
-// definition draws, the flowchart's layout and the sentence a guard would print all come from
-// `shared/workflow*.js` through the host, so nothing here re-decides what a workflow is.
-//
-// Three things the page is careful about:
-//   - a preset is copied, never edited: its fields are read-only and `Customize` is the only button
-//     that changes one into something editable;
-//   - a guard row shows the sentence this definition would print right now, or says the fact could
-//     not be read — a row with no sentence means the guard was read and holds, never a guess;
-//   - the flowchart is drawn from the table, so a box per node and an edge per edge row are what the
-//     page shows, not a second copy of the definition.
-import { createElement as h, useEffect, useState } from 'react'
+// Settings → Workflows (#1364). The page lists the factory pipelines and the
+// workflows saved on this machine, and opens the same drag-drop flowchart the
+// sidebar run uses. A read always settles: a host that never answers becomes
+// an error, an empty store says so, and the file path is not the page.
+import { createElement as h, useEffect, useRef, useState } from 'react'
 import { t } from './i18n.js'
-import { WorkflowIcon } from './icons.js'
 
-// What `inputs` / `outputs` are: one comma-separated line, the spelling the definition itself uses.
-export function parseList(text) {
-  return String(text ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+export const READ_MS = 8000
+
+const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6' }
+
+export function settleWorkflowRead(value, fallback = 'Could not read workflows') {
+  if (!value || value.ok === false || !Array.isArray(value.workflows)) {
+    const error = typeof value?.error === 'string' && value.error.trim() ? value.error : fallback
+    return { phase: 'error', error, pack: null }
+  }
+  const templates = Array.isArray(value.templates) ? value.templates : []
+  const workflows = value.workflows
+  const pack = { ...value, templates, workflows }
+  if (templates.length === 0 && workflows.length === 0) return { phase: 'empty', error: '', pack }
+  return { phase: 'ready', error: '', pack }
 }
 
-export const formatList = (list) => (Array.isArray(list) ? list.join(', ') : '')
-
-// A guard as the page writes it: `spec is value` — `check:tests-ok is fresh`, `verdict is equals PASS`.
-// The id and the per-guard refusal are kept from the guard that was already there, so editing a
-// value does not silently drop the sentence the definition refuses with.
-export function guardLines(guards) {
-  return (Array.isArray(guards) ? guards : [])
-    .map((guard) => `${guard.spec} is ${guard.is}${guard.value === null || guard.value === undefined ? '' : ` ${guard.value}`}`)
-    .join('\n')
+// One read of workflow/state. A call that throws, rejects, or never returns
+// settles as an error, so the page cannot stay on "Reading workflows…".
+export function readWorkflows(call, { timeoutMs = READ_MS } = {}) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(settleWorkflowRead(null)), timeoutMs)
+    Promise.resolve()
+      .then(() => call('workflow/state'))
+      .then((value) => finish(settleWorkflowRead(value)))
+      .catch((failure) => finish({ phase: 'error', error: failure?.message || 'Could not read workflows', pack: null }))
+  })
 }
 
-export function parseGuards(text, previous = []) {
-  return String(text ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const found = /^(\S+)\s+is\s+(\S+)(?:\s+(.+))?$/.exec(line)
-      if (found === null) return null
-      const [, spec, is, value] = found
-      const before = previous.find((guard) => guard.spec === spec && guard.is === is)
-      return {
-        id: before?.id ?? `${spec}-${is}`,
-        spec,
-        is,
-        value: value === undefined ? null : value.trim(),
-        refusal: before?.refusal ?? '',
-      }
-    })
-    .filter(Boolean)
+export function moveNode(nodes, id, x, y) {
+  return nodes.map((node) => (node.id === id ? { ...node, x, y } : node))
 }
 
-// One field of one node, from a text input. The node id is not one of them: changing it would leave
-// every edge naming a node that no longer exists, and a definition that cannot be drawn is exactly
-// what the save refuses.
-export function applyNodeField(definition, nodeId, field, value) {
-  if (definition === null || definition === undefined) return definition
+export function connectNodes(edges, from, to) {
+  if (!from || !to || from === to) return edges
+  if (edges.some((edge) => edge.from === from && edge.to === to)) return edges
+  return edges.concat([{ from, to }])
+}
+
+export function dropBot(nodes, bot, x, y) {
+  const ids = new Set(nodes.map((node) => node.id))
+  let n = nodes.length + 1
+  while (ids.has(`n${n}`)) n += 1
+  return nodes.concat([{ id: `n${n}`, name: bot.name, botId: bot.id, role: bot.role ?? '', x, y }])
+}
+
+export function removeNode(nodes, edges, id) {
   return {
-    ...definition,
-    nodes: definition.nodes.map((node) => {
-      if (node.id !== nodeId) return node
-      if (field === 'inputs' || field === 'outputs') return { ...node, [field]: parseList(value) }
-      if (field === 'guards') return { ...node, guards: parseGuards(value, node.guards) }
-      return { ...node, [field]: value }
-    }),
+    nodes: nodes.filter((node) => node.id !== id),
+    edges: edges.filter((edge) => edge.from !== id && edge.to !== id),
   }
 }
 
-const field = (label, value, onChange, options = {}) => h('label', { className: 'bt-wf-field', key: label },
-  h('span', { className: 'bt-wf-label' }, label),
-  h('input', {
-    className: 'bt-wf-input', value: value ?? '', disabled: options.disabled === true,
-    placeholder: options.placeholder ?? '', onChange: (event) => onChange(event.target.value),
-  }))
-
-const guardState = (row) => (row.state === 'holds' ? t('holds') : row.state === 'unreadable' ? t('cannot read') : t('refuses'))
-
-function Flow({ layout }) {
-  if (!layout || !Array.isArray(layout.boxes) || layout.boxes.length === 0) return null
-  return h('svg', {
-    className: 'bt-wf-flow', viewBox: `0 0 ${Math.max(layout.width, 1)} ${Math.max(layout.height, 1)}`,
-    role: 'img', 'aria-label': t('The flowchart, drawn from the node table'),
-    'data-boxes': String(layout.boxes.length), 'data-edges': String(layout.edges.length),
-  },
-  layout.edges.map((edge, index) => h('line', {
-    key: `e${index}`, className: 'bt-wf-edge', x1: edge.points?.[0]?.x ?? 0, y1: edge.points?.[0]?.y ?? 0,
-    x2: edge.points?.[1]?.x ?? 0, y2: edge.points?.[1]?.y ?? 0,
-  })),
-  layout.boxes.map((box) => h('g', { key: box.id, className: 'bt-wf-box', 'data-node': box.id, transform: `translate(${box.x} ${box.y})` },
-    h('rect', { width: box.width, height: box.height, rx: 12 }),
-    h('text', { x: 14, y: 26, className: 'bt-wf-box-name' }, box.name),
-    h('text', { x: 14, y: 48, className: 'bt-wf-box-role' }, box.role),
-    h('text', { x: 14, y: 72, className: 'bt-wf-box-rails' }, `${box.inputs.join(', ') || '—'} → ${box.outputs.join(', ') || '—'}`))))
+function chainOf(item) {
+  if (typeof item?.chain === 'string' && item.chain) return item.chain
+  if (!Array.isArray(item?.layers) || !Array.isArray(item?.nodes)) return ''
+  const name = (id) => item.nodes.find((node) => node.id === id)?.name ?? id
+  return item.layers.map((layer) => layer.map(name).join(' ‖ ')).join(' → ')
 }
 
-function Preview({ preview }) {
-  if (!preview) return null
-  return h('div', { className: 'bt-wf-preview', 'data-facts': preview.facts },
-    preview.facts === 'unavailable'
-      ? h('div', { className: 'bt-wf-hint' }, t('This host could not read the facts, so these guards say what they could not read — none of them is a pass.'))
-      : null,
-    (preview.rows ?? []).map((row) => h('div', { key: row.id, className: 'bt-wf-guard', 'data-state': row.state },
-      h('span', { className: 'bt-wf-badge', 'data-state': row.state }, guardState(row)),
-      h('span', { className: 'bt-wf-guard-spec' }, `${row.spec} is ${row.is}${row.value === null || row.value === undefined ? '' : ` ${row.value}`}`),
-      row.sentence ? h('span', { className: 'bt-wf-guard-line' }, row.sentence) : null)))
+export function openedGraph(pack, opened) {
+  if (!pack || !opened) return null
+  if (opened.source === 'own') return (pack.workflows ?? []).find((item) => item.id === opened.id) ?? null
+  return (pack.templates ?? []).find((item) => item.id === opened.id)
+    ?? (pack.workflows ?? []).find((item) => item.id === opened.id)
+    ?? null
 }
 
-export function WorkflowsPage({ actions }) {
-  const [list, setList] = useState(null)
-  const [opened, setOpened] = useState(null)
-  const [draft, setDraft] = useState(null)
-  const [node, setNode] = useState(null)
-  const [preview, setPreview] = useState(null)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState('')
+function statusLabel(status) {
+  if (status === 'running') return t('Running')
+  if (status === 'done') return t('Done')
+  if (status === 'failed') return t('Failed')
+  if (status === 'idle') return t('Idle')
+  return t('Queued')
+}
 
-  const load = () => Promise.resolve(actions.workflows({ op: 'list' }))
-    .then((value) => { setList(value); return value })
-    .catch((failure) => { setError(failure?.message ?? String(failure)); return null })
+function hitNode(event) {
+  const direct = event.target?.dataset?.node ? event.target : null
+  const nested = event.target?.closest?.('[data-node]')
+  return (nested ?? direct)?.dataset?.node || ''
+}
 
-  useEffect(() => { load() }, [])
+// The plane is a zero-width center line, so node x is a center offset and can
+// be negative. The wire box is shifted by SPAN so those points stay inside the
+// SVG viewport; overflow:visible is not reliable for a stroke on the edge.
+const WIRE_SPAN = 480
 
-  const open = (id, target) => Promise.resolve(actions.workflows({ op: 'open', id, node: target ?? null }))
-    .then((value) => {
-      if (value?.ok === false) { setError(value.message ?? t('Could not open this workflow')); return value }
-      setOpened(value)
-      setDraft(value.workflow.definition)
-      setNode(value.preview?.node ?? value.workflow.definition.nodes[0]?.id ?? null)
-      setPreview(value.preview)
-      setError('')
-      setSaved('')
-      return value
-    })
-    .catch((failure) => { setError(failure?.message ?? String(failure)); return null })
+function wirePath(from, to) {
+  const x1 = from.x + WIRE_SPAN
+  const y1 = from.y + 48
+  const x2 = to.x + WIRE_SPAN
+  const y2 = to.y
+  const mid = (y1 + y2) / 2
+  return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
+}
 
-  const showNode = (id) => {
-    setNode(id)
-    if (!opened) return
-    Promise.resolve(actions.workflows({ op: 'preview', id: opened.workflow.id, node: id }))
-      .then((value) => setPreview(value?.preview ?? null))
-      .catch((failure) => setError(failure?.message ?? String(failure)))
+function GraphCanvas({ graph, editing, roster, onCommit }) {
+  const gesture = useRef(null)
+  const nodes = graph.nodes ?? []
+  const edges = graph.edges ?? []
+  // A live run names every seat. A definition with no run is idle, the way the
+  // flowchart looks before anyone presses play — not a queue of work.
+  const status = graph.run?.nodeStatus ?? null
+  const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id))
+  const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0)
+  const end = (event) => {
+    const current = gesture.current
+    gesture.current = null
+    if (!current || !editing) return
+    if (current.kind === 'move') {
+      const x = Math.round(current.x + event.clientX - current.ox)
+      const y = Math.round(current.y + event.clientY - current.oy)
+      onCommit?.({ nodes: moveNode(nodes, current.id, x, y), edges })
+    } else if (current.kind === 'wire') {
+      const next = connectNodes(edges, current.from, hitNode(event))
+      if (next !== edges) onCommit?.({ nodes, edges: next })
+    } else if (current.kind === 'add' && event.target?.dataset?.plane) {
+      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX) : 24
+      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY) : 24
+      onCommit?.({ nodes: dropBot(nodes, current.bot, x, y), edges })
+    }
   }
-
-  const save = () => Promise.resolve(actions.workflowSave({ op: 'save', definition: draft }))
-    .then((value) => {
-      if (value?.ok === false) { setError(value.message ?? t('This definition cannot be saved')); return value }
-      setSaved(t('Saved workflows/{id}.json', { id: value.id }))
-      setError('')
-      return load().then(() => open(value.id, node))
-    })
-    .catch((failure) => { setError(failure?.message ?? String(failure)); return null })
-
-  const customize = () => {
-    if (!opened) return null
-    const base = opened.workflow.id
-    const id = `${base}-copy`
-    return Promise.resolve(actions.workflowSave({ op: 'customize', from: base, id, name: `${opened.workflow.name} (mine)` }))
-      .then((value) => {
-        if (value?.ok === false) { setError(value.message ?? t('This definition cannot be copied')); return value }
-        return load().then(() => open(id))
-      })
-      .catch((failure) => { setError(failure?.message ?? String(failure)); return null })
-  }
-
-  const useDefault = () => {
-    if (!opened) return null
-    return Promise.resolve(actions.workflowSave({ op: 'default', id: opened.workflow.id }))
-      .then((value) => { if (value?.ok !== false) setList(value); return value })
-      .catch((failure) => { setError(failure?.message ?? String(failure)); return null })
-  }
-
-  const editable = opened?.workflow.editable === true
-  const current = draft?.nodes?.find((entry) => entry.id === node) ?? null
-
-  return h('div', { className: 'bt-wf-page' },
-    h('div', { className: 'bt-wf-head' },
-      h('h3', null, h(WorkflowIcon), t('Workflows')),
-      h('span', { className: 'bt-wf-hint' }, t('A workflow is a file: workflows/<id>.json. Columns, the flowchart and the refusals are all drawn from it.'))),
-    error ? h('div', { className: 'bt-error', role: 'alert' }, error) : null,
-    saved ? h('div', { className: 'bt-wf-saved', role: 'status' }, saved) : null,
-    h('div', { className: 'bt-wf-list' },
-      ['presets', 'own'].map((group) => h('div', { key: group, className: 'bt-wf-group' },
-        h('span', { className: 'bt-wf-group-name' }, group === 'presets' ? t('Factory presets') : t('Yours')),
-        (list?.[group] ?? []).map((entry) => h('button', {
-          key: `${group}:${entry.id}`, type: 'button', className: 'bt-wf-pick',
-          'aria-current': opened?.workflow.id === entry.id ? 'true' : undefined,
-          'data-id': entry.id, 'data-source': entry.source,
-          onClick: () => open(entry.id),
-        }, entry.name, list?.default === entry.id ? h('span', { className: 'bt-wf-default' }, t('project default')) : null)))),
-      list === null ? h('span', { className: 'bt-wf-hint' }, t('Reading workflows…')) : null),
-    opened === null ? null : h('div', { className: 'bt-wf-doc' },
-      h('div', { className: 'bt-wf-doc-head' },
-        h('strong', null, opened.workflow.name),
-        h('span', { className: 'bt-wf-path' }, `workflows/${opened.workflow.id}.json`),
-        h('button', { type: 'button', className: 'bt-wf-action', onClick: customize }, t('Customize')),
-        editable ? h('button', { type: 'button', className: 'bt-wf-action', onClick: save }, t('Save')) : null,
-        h('button', { type: 'button', className: 'bt-wf-action', onClick: useDefault }, t('Use for this project'))),
-      h(Flow, { layout: opened.layout }),
-      h('div', { className: 'bt-wf-table' },
-        h('div', { className: 'bt-wf-row bt-wf-row-head' },
-          ['id', 'name', 'role', 'inputs', 'outputs', 'guards', 'refusal'].map((key) => h('span', { key }, key))),
-        (draft?.nodes ?? []).map((entry) => h('div', {
-          key: entry.id, className: 'bt-wf-row', 'data-node': entry.id,
-          'aria-current': entry.id === node ? 'true' : undefined,
-          onClick: () => showNode(entry.id),
+  return h('div', { className: 'bt-wf-canvas', onPointerUp: end },
+    editing ? h('div', { className: 'bt-wf-palette' },
+      h('span', { className: 'bt-wf-hint' }, t('Drag a Bot here')),
+      locals.map((bot) => h('button', {
+        key: bot.id, type: 'button', 'data-bot': bot.id,
+        onPointerDown: (event) => { event.preventDefault?.(); gesture.current = { kind: 'add', bot } },
+      }, bot.name))) : null,
+    h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height } },
+      h('svg', {
+        className: 'bt-wf-wires', 'aria-hidden': true,
+        width: WIRE_SPAN * 2, height, viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
+        style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height },
+      },
+      h('defs', null,
+        h('marker', {
+          id: 'bt-wf-arrow', viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto',
+        }, h('path', { d: 'M0 0 10 5 0 10z' }))),
+      edges.map((edge) => {
+        const from = nodes.find((node) => node.id === edge.from)
+        const to = nodes.find((node) => node.id === edge.to)
+        if (!from || !to) return null
+        return h('path', { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: 'url(#bt-wf-arrow)' })
+      })),
+      (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
+        const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean)
+        if (members.length < 2) return null
+        const minX = Math.min(...members.map((node) => node.x ?? 0))
+        const maxX = Math.max(...members.map((node) => node.x ?? 0))
+        const y = Math.min(...members.map((node) => node.y ?? 0))
+        return h('div', {
+          key: layer.join('+'), className: 'bt-wf-par',
+          style: { left: minX - 108, top: y - 18, width: maxX - minX + 216, height: 92 },
+        }, h('div', { className: 'bt-wf-plabel' }, t('Parallel branch, then join')))
+      }),
+      nodes.map((node) => {
+        const state = status ? (status[node.id] ?? 'queued') : 'idle'
+        return h('div', {
+          key: node.id, 'data-node': node.id, className: `bt-wf-node ${state}${editing ? ' editing' : ''}`,
+          style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
+          onPointerDown: (event) => {
+            if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
+            gesture.current = { kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 }
+          },
         },
-        h('span', { className: 'bt-wf-cell bt-wf-id' }, entry.id),
-        editable ? field('name', entry.name, (value) => setDraft(applyNodeField(draft, entry.id, 'name', value))) : h('span', null, entry.name),
-        editable ? field('role', entry.role, (value) => setDraft(applyNodeField(draft, entry.id, 'role', value))) : h('span', null, entry.role),
-        editable ? field('inputs', formatList(entry.inputs), (value) => setDraft(applyNodeField(draft, entry.id, 'inputs', value))) : h('span', null, formatList(entry.inputs)),
-        editable ? field('outputs', formatList(entry.outputs), (value) => setDraft(applyNodeField(draft, entry.id, 'outputs', value))) : h('span', null, formatList(entry.outputs)),
-        editable
-          ? h('textarea', { className: 'bt-wf-guards-input', value: guardLines(entry.guards), onChange: (event) => setDraft(applyNodeField(draft, entry.id, 'guards', event.target.value)) })
-          : h('span', null, guardLines(entry.guards)),
-        editable ? field('refusal', entry.refusal, (value) => setDraft(applyNodeField(draft, entry.id, 'refusal', value))) : h('span', null, entry.refusal)))),
-      h('div', { className: 'bt-wf-edges' },
-        h('span', { className: 'bt-wf-group-name' }, t('Edges')),
-        (draft?.edges ?? []).map((edge) => h('span', { key: `${edge.from}->${edge.to}`, className: 'bt-wf-edge-row' }, `${edge.from} → ${edge.to}`))),
-      h('div', { className: 'bt-wf-node' },
-        h('span', { className: 'bt-wf-group-name' }, node === null ? t('Guards') : t('Guards of {node}', { node: current?.name ?? node })),
-        current === null || current.guards.length === 0
-          ? h('span', { className: 'bt-wf-hint' }, t('This node has no guards, so nothing refuses it but its inputs.'))
-          : h(Preview, { preview }))))
+        editing ? h('button', {
+          type: 'button', className: 'bt-wf-port', 'data-port': 'out', 'aria-label': node.name,
+          onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); gesture.current = { kind: 'wire', from: node.id } },
+        }) : null,
+        editing ? h('button', {
+          type: 'button', className: 'bt-wf-remove', 'data-remove': node.id, 'aria-label': t('Remove'),
+          onClick: (event) => {
+            event.stopPropagation?.()
+            const next = removeNode(nodes, edges, node.id)
+            onCommit?.(next)
+          },
+        }, '×') : null,
+        h('span', { className: `bt-wf-chip ${state}` }, statusLabel(state)),
+        h('span', { className: 'bt-wf-av', style: { background: COLORS[node.name] ?? '#4d6bfe' } }, (node.name ?? '?').slice(0, 1)),
+        h('span', { className: 'bt-wf-copy' },
+          h('span', { className: 'bt-wf-name' }, node.name),
+          h('span', { className: 'bt-wf-role' }, node.role ?? '')))
+      })))
+}
+
+function Row({ item, source, onOpen }) {
+  return h('button', {
+    type: 'button', className: 'bt-set-row', 'data-workflow': item.id, 'data-source': source,
+    onClick: () => onOpen?.(item),
+  },
+  h('span', { className: 'bt-set-copy' },
+    h('span', null, item.name),
+    h('span', { className: 'bt-set-hint' }, item.preview || chainOf(item) || item.description || '')),
+  h('span', { className: 'bt-chevron', 'aria-hidden': true }, '›'))
+}
+
+export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
+  const graph = phase === 'ready' ? openedGraph(pack, opened) : null
+  const templates = pack?.templates ?? []
+  const templateIds = new Set(templates.map((item) => item.id))
+  const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id))
+  const showUse = opened?.source === 'factory' || opened?.fromFactory === true
+  return h('div', { className: 'bt-wf-page' },
+    h('p', { className: 'bt-wf-hint' }, t('A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.')),
+    error ? h('div', { className: 'bt-error', role: 'alert' }, error || t('Could not read workflows'),
+      phase === 'error' ? h('button', { type: 'button', onClick: () => onRetry?.() }, t('Retry')) : null) : null,
+    phase === 'loading' ? h('p', { className: 'bt-wf-status', role: 'status' }, t('Reading workflows…')) : null,
+    phase === 'empty' ? h('p', { className: 'bt-wf-status' }, t('No workflows yet.')) : null,
+    phase === 'ready' && !graph ? h('div', { className: 'bt-wf-lists' },
+      h('section', { className: 'bt-set-section' },
+        h('h3', null, t('Factory presets')),
+        h('p', { className: 'bt-wf-hint' }, t('Ready-made pipelines. Use one to start your own.')),
+        h('div', { className: 'bt-set-card' },
+          templates.length === 0
+            ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No workflows yet.')))
+            : templates.map((item) => {
+              const live = (pack.workflows ?? []).find((workflow) => workflow.id === item.id)
+              const row = live ? { ...item, name: live.name, preview: live.preview || chainOf(live) || chainOf(item) } : item
+              return h(Row, { key: item.id, item: row, source: 'factory', onOpen: () => onOpen?.(item, 'factory') })
+            }))),
+      h('section', { className: 'bt-set-section' },
+        h('h3', null, t('Yours')),
+        h('p', { className: 'bt-wf-hint' }, t('Workflows saved on this machine.')),
+        h('div', { className: 'bt-set-card' },
+          yours.length === 0
+            ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No workflows of your own yet.')))
+            : yours.map((item) => h(Row, { key: item.id, item, source: 'own', onOpen: () => onOpen?.(item, 'own') }))))) : null,
+    graph ? h('div', { className: 'bt-wf-editor' },
+      h('div', { className: 'bt-wf-actions' },
+        h('button', { type: 'button', onClick: () => onBack?.() }, t('Back')),
+        showUse ? h('button', { type: 'button', onClick: () => onUse?.(opened.source === 'factory' ? opened.id : opened.fromFactory) }, t('Use this')) : null,
+        opened?.source === 'own' ? h('button', { type: 'button', onClick: () => onEditing?.(!editing) }, editing ? t('Finish editing') : t('Edit')) : null),
+      h('h3', { className: 'bt-wf-title' }, graph.name),
+      graph.description ? h('p', { className: 'bt-wf-hint' }, graph.description) : null,
+      (graph.nodes ?? []).length === 0
+        ? h('p', { className: 'bt-wf-status' }, t('This workflow has no flowchart yet.'))
+        : h(GraphCanvas, {
+          graph, roster, onCommit,
+          editing: opened?.source === 'own' && editing === true,
+        })) : null)
+}
+
+export function WorkflowsPage({ call, roster }) {
+  const [phase, setPhase] = useState('loading')
+  const [pack, setPack] = useState(null)
+  const [error, setError] = useState('')
+  const [opened, setOpened] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const invoke = typeof call === 'function' ? call : () => Promise.reject(new Error('Could not read workflows'))
+
+  const apply = (settled) => {
+    setPhase(settled.phase)
+    setPack(settled.pack)
+    setError(settled.error)
+  }
+
+  useEffect(() => {
+    let gone = false
+    readWorkflows(invoke).then((settled) => { if (!gone) apply(settled) })
+    return () => { gone = true }
+  }, [])
+
+  const retry = () => {
+    setPhase('loading')
+    setError('')
+    setOpened(null)
+    readWorkflows(invoke).then(apply)
+  }
+
+  const open = (item, source) => {
+    if (source === 'factory') {
+      const live = (pack?.workflows ?? []).find((workflow) => workflow.id === item.id)
+      setOpened(live ? { source: 'own', id: live.id, fromFactory: item.id } : { source: 'factory', id: item.id })
+      setEditing(false)
+      return
+    }
+    setOpened({ source: 'own', id: item.id })
+    setEditing(false)
+  }
+
+  const useTemplate = (id) => {
+    const template = typeof id === 'string' ? id : ''
+    if (!template) return
+    Promise.resolve(invoke('workflow/create', { template }))
+      .then((value) => {
+        const settled = settleWorkflowRead(value)
+        if (settled.phase === 'error') { setError(settled.error); return }
+        const before = new Set((pack?.workflows ?? []).map((item) => item.id))
+        const made = settled.pack.workflows.find((item) => !before.has(item.id))
+        setPack(settled.pack)
+        setPhase(settled.phase)
+        setError('')
+        if (made) { setOpened({ source: 'own', id: made.id }); setEditing(true) }
+      })
+      .catch((failure) => { setError(failure?.message || t('Could not copy this workflow')) })
+  }
+
+  const commit = (graph) => {
+    if (!opened || opened.source !== 'own') return
+    Promise.resolve(invoke('workflow/graph', { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges }))
+      .then((value) => {
+        const settled = settleWorkflowRead(value)
+        if (settled.phase === 'error') { setError(settled.error); return }
+        setPack(settled.pack)
+        setPhase('ready')
+        setError('')
+      })
+      .catch((failure) => { setError(failure?.message || t('Could not save this workflow')) })
+  }
+
+  return h(WorkflowsView, {
+    phase, pack, error, opened, editing, roster,
+    onOpen: open, onBack: () => { setOpened(null); setEditing(false) }, onEditing: setEditing, onRetry: retry, onUse: useTemplate, onCommit: commit,
+  })
 }

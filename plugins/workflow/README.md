@@ -2,7 +2,7 @@
 
 A Workflow is a group-shaped chat of local Bots. The sidebar row opens the run: a pill header, progress, bubbles, a composer, and a flowchart. The same graph is what a drag-drop edit saves and what a run highlights.
 
-This is not the Settings workflow-definition engine (`workflows/<id>.json`, #1272). This plugin does not read or write those files.
+This is not the workflow-definition engine (`workflows/<id>.json`, #1272). This plugin does not read or write those files. Settings → Workflows lists these pipelines and opens the same graph.
 
 ## What you can do
 

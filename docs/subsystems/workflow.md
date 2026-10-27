@@ -8,7 +8,9 @@ owned_paths:
 
 A group-shaped chat of local Bots, with a flowchart the owner can drag (#1318). The plugin stores the graphs under `$DSH_HOME/bot/flybot-workflow` and answers `flybot/workflow/*`. It lives entirely under `plugins/workflow/`.
 
-This is not the Settings workflow-definition engine. That engine (#1272) stores `workflows/<id>.json` and guards artifacts. This plugin does not read or write those files and does not call that engine.
+This is not the workflow-definition engine. That engine (#1272) stores `workflows/<id>.json` and guards artifacts. This plugin does not read or write those files and does not call that engine.
+
+Settings → Workflows (#1364) is this plugin's list. The page lives in the core client and calls `workflow/state`, `workflow/create` and `workflow/graph`. Factory rows are `templateCatalog()` — id, name, description, triggers, plus the drawable `nodes`, `edges`, `layers` and `chain` — and the owner's rows are the saved workflows. The sidebar chat is unchanged.
 
 ## Owns
 

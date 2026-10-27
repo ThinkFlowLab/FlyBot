@@ -5,14 +5,29 @@
 export const NAMESPACE = 'ds-bot'
 
 const ZH = {
-  // Workflows (#1272 step 3)
+  // Workflows settings (#1364). The page lists factory pipelines and your own graphs.
   Workflows: '工作流',
-  'A workflow is a file: workflows/<id>.json. Columns, the flowchart and the refusals are all drawn from it.':
-    '工作流就是一个文件：workflows/<id>.json。列、流程图和拒绝语都从它画出来。',
+  'A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.':
+    '工作流是一组你的 Bot。拖动流程图，改谁把工作交给谁。',
   'Factory presets': '出厂预设',
+  'Ready-made pipelines. Use one to start your own.': '出厂就有的流程。用一个，做成你自己的。',
   Yours: '你自己的',
-  'project default': '项目默认',
+  'Workflows saved on this machine.': '这台机器上保存的工作流。',
+  'No workflows of your own yet.': '还没有你自己的工作流。',
+  'No workflows yet.': '还没有工作流。',
   'Reading workflows…': '正在读取工作流…',
+  'Could not read workflows': '读不到工作流。',
+  'Could not copy this workflow': '这个工作流复制不了。',
+  'Could not save this workflow': '这个工作流保存不了。',
+  'Use this': '用这个',
+  'Finish editing': '完成',
+  'Drag a Bot here': '把 Bot 拖到图上',
+  'Parallel branch, then join': '并行分支 · 全部通过后汇合',
+  'This workflow has no flowchart yet.': '这个工作流还没有流程图。',
+  Queued: '排队中',
+  Running: '运行中',
+  Idle: '空闲',
+  'project default': '项目默认',
   Customize: '定制一份',
   Save: '保存',
   'Use for this project': '本项目使用',

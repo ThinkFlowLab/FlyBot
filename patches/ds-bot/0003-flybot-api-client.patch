@@ -2754,7 +2754,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -470,7 +470,13 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -470,13 +470,55 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
  .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
  .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
@@ -2768,6 +2768,48 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
  .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
  .bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
+ .bt-set-bot{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+ .bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
+ .bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
++/* Settings → Workflows (#1364): factory and your own pipelines, then the flowchart. */
++.bt-wf-page{display:flex;flex-direction:column;gap:16px}
++.bt-wf-hint{margin:0;font-size:12px;line-height:1.5;color:var(--bt-ink-2)}
++.bt-wf-status{margin:0;font-size:13px;color:var(--bt-ink-2)}
++.bt-wf-lists{display:flex;flex-direction:column;gap:16px}
++.bt-wf-editor{display:flex;flex-direction:column;gap:8px}
++.bt-wf-title{margin:0;font-size:15px;font-weight:600}
++.bt-wf-actions{display:flex;gap:8px;flex-wrap:wrap}
++.bt-wf-actions button,.bt-wf-page>.bt-error button{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
++.bt-wf-page>.bt-error{display:flex;align-items:center;justify-content:space-between;gap:12px}
++.bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
++.bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
++.bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
++.bt-wf-plane{position:relative;width:0;margin:16px auto 0}
++.bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
++.bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}
++.bt-wf-wires marker path{fill:var(--bt-ink-3);stroke:none}
++.bt-wf-node{position:absolute;width:168px;box-sizing:border-box;border:1px solid var(--bt-line);background:var(--bt-card);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px}
++.bt-wf-node.running{border-color:var(--bt-accent);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
++.bt-wf-node.done{border-color:rgba(22,163,74,.35)}
++.bt-wf-node.failed{border-color:#e5484d}
++.bt-wf-node.queued{opacity:.78}
++.bt-wf-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:650;flex:none;font-size:12px}
++.bt-wf-copy{min-width:0;flex:1;display:flex;flex-direction:column}
++.bt-wf-name{font-weight:600;font-size:12.5px}
++.bt-wf-role{font-size:11px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-wf-chip{position:absolute;top:-9px;right:8px;font-size:10.5px;padding:1px 7px;border-radius:10px;background:var(--bt-active);color:var(--bt-ink-2);white-space:nowrap;pointer-events:none}
++.bt-wf-node.editing .bt-wf-chip{right:18px}
++.bt-wf-chip.running{background:rgba(77,107,254,.12);color:var(--bt-accent)}
++.bt-wf-chip.done{background:rgba(22,163,74,.12);color:#16a34a}
++.bt-wf-chip.failed{background:rgba(229,72,77,.12);color:#e5484d}
++.bt-wf-chip.idle{color:var(--bt-ink-3)}
++.bt-wf-port{position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;border:2px solid var(--bt-accent);background:var(--bt-card);padding:0;cursor:crosshair}
++.bt-wf-remove{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-card);cursor:pointer;line-height:16px;padding:0}
++.bt-wf-par{position:absolute;border:1px dashed var(--bt-ink-3);border-radius:14px;pointer-events:none}
++.bt-wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2);background:var(--bt-card);padding:0 6px;white-space:nowrap}
+ 
+ /* Settings → Connectors. */
+ .bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
 @@ -490,8 +490,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
