@@ -321,6 +321,20 @@ var ZH = {
   "Posts into one Feishu group through a custom bot webhook": "通过自定义机器人 webhook 发到你的一个飞书群",
   "Feishu webhook URL": "飞书 webhook 地址",
   "Get a webhook URL in Feishu": "去飞书获取 webhook 地址",
+  "Custom bot webhook": "自定义机器人 webhook",
+  "App (long connection)": "自建应用（长连接）",
+  "Webhook URL": "Webhook 地址",
+  "App ID": "App ID",
+  "App Secret": "App Secret",
+  "Create a Feishu app": "去飞书创建自建应用",
+  "How to connect": "连接方式",
+  "Connected: app, over the long connection": "已连接：自建应用，走长连接",
+  "Connected: custom bot webhook": "已连接：自定义机器人 webhook",
+  "Who may talk to the Bots": "允许的飞书用户",
+  "Nobody yet. A message from anyone else starts no turn.": "还没有人。其他人发来的消息不会起 turn。",
+  "Paste an open_id to allow": "粘贴 open_id 来允许某个人",
+  "Feishu open_id": "飞书 open_id",
+  Block: "移除",
   "Message to send to Feishu": "要发到飞书的消息",
   "Type a message for the Feishu group": "输入要发到飞书群的消息",
   Send: "发送",
@@ -12514,7 +12528,7 @@ function ownBots(roster) {
   const me = roster?.self?.memberId;
   return (roster?.bots ?? []).filter((bot) => !bot.remote && (me === void 0 || me === null || bot.ownerId === void 0 || bot.ownerId === me));
 }
-var connectedConnectors = (roster) => (roster?.connectors ?? []).filter((connector) => connector.state !== "off" && connector.kind !== "sender");
+var connectedConnectors = (roster) => (roster?.connectors ?? []).filter((connector) => connector.state !== "off" && connector.kind !== "sender" && !(connector.kind === "channel" && connector.mode !== "app"));
 var isOn = (bot, id) => bot.connectors?.[id] !== false;
 function ownHint(bot, id) {
   return isOn(bot, id) ? t("On. This Bot can use it on every turn.") : t("Off. This Bot will not use it.");
@@ -15935,9 +15949,80 @@ var ABOUT = {
 function statusText2(connector) {
   if (connector.state === "connecting") return t("Connecting…");
   if (connector.state === "error") return t("Could not connect: {error}", { error: connector.error ?? "" });
+  if (connector.state === "ready" && connector.kind === "channel") {
+    return connector.mode === "app" ? t("Connected: app, over the long connection") : t("Connected: custom bot webhook");
+  }
   if (connector.state === "ready" && connector.apps?.length > 0) return t("Connected: {apps}", { apps: connector.apps.map(appName).join(", ") });
   if (connector.state === "ready") return connector.account ? t("Connected as {account}", { account: connector.account }) : t("Connected");
   return ABOUT[connector.id]?.() ?? "";
+}
+function CredentialField({ credential, value, onChange, onEnter, autoFocus }) {
+  const label = t(credential.label);
+  if (credential.masked) return (0, import_react37.createElement)(MaskedInput, { value, onChange, onEnter, label, autoFocus });
+  return (0, import_react37.createElement)(
+    "label",
+    { className: "bt-q-field" },
+    (0, import_react37.createElement)("input", {
+      className: "bt-input",
+      type: "text",
+      value,
+      "aria-label": label,
+      placeholder: label,
+      spellCheck: false,
+      autoFocus,
+      onChange: (event) => onChange(event.target.value),
+      onKeyDown: (event) => {
+        if (event.key === "Enter") onEnter?.();
+      }
+    })
+  );
+}
+function AllowedSenders({ connector, actions, run, busy }) {
+  const [openId, setOpenId] = (0, import_react37.useState)("");
+  const allowed = connector.allowed ?? [];
+  const refused = connector.inbound?.refusedSenders ?? [];
+  const allow = (id) => void run(actions.connectorAllow(connector.id, id));
+  return (0, import_react37.createElement)(
+    "div",
+    { className: "bt-connector-allowed" },
+    (0, import_react37.createElement)("span", { className: "bt-connector-person-title" }, t("Who may talk to the Bots")),
+    allowed.length === 0 && refused.length === 0 ? (0, import_react37.createElement)("span", { className: "bt-set-hint" }, t("Nobody yet. A message from anyone else starts no turn.")) : null,
+    allowed.map((entry) => (0, import_react37.createElement)(
+      "div",
+      { key: entry.openId, className: "bt-connector-person" },
+      (0, import_react37.createElement)("span", { className: "bt-connector-person-name" }, entry.name ?? entry.openId),
+      (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorBlock(connector.id, entry.openId)) }, t("Block"))
+    )),
+    refused.map((entry) => (0, import_react37.createElement)(
+      "div",
+      { key: entry.openId, className: "bt-connector-person" },
+      (0, import_react37.createElement)("span", { className: "bt-connector-person-name" }, entry.name ?? entry.openId),
+      (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => allow(entry.openId) }, t("Allow"))
+    )),
+    (0, import_react37.createElement)(
+      "div",
+      { className: "bt-connector-form-row" },
+      (0, import_react37.createElement)("input", {
+        className: "bt-input",
+        type: "text",
+        value: openId,
+        spellCheck: false,
+        "aria-label": t("Feishu open_id"),
+        placeholder: t("Paste an open_id to allow"),
+        onChange: (event) => setOpenId(event.target.value),
+        onKeyDown: (event) => {
+          if (event.key === "Enter" && openId.trim() !== "") {
+            allow(openId.trim());
+            setOpenId("");
+          }
+        }
+      }),
+      (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || openId.trim() === "", onClick: () => {
+        allow(openId.trim());
+        setOpenId("");
+      } }, t("Allow"))
+    )
+  );
 }
 var APP_STATUS = { ready: () => t("Ready"), "sign-in": () => t("Needs sign-in") };
 function AppChip({ name, status, onRemove }) {
@@ -16021,6 +16106,14 @@ function ConnectorRow({ connector, roster, actions }) {
   };
   const gateway = connector.id === "composio";
   const sender = connector.kind === "sender";
+  const channel = connector.kind === "channel";
+  const modes = connector.modes ?? [];
+  const [mode, setMode] = (0, import_react37.useState)(() => connector.mode ?? modes[0]?.id);
+  const [values, setValues] = (0, import_react37.useState)({});
+  const chosen = modes.find((entry) => entry.id === mode) ?? modes[0];
+  const field = (name) => values[name] ?? "";
+  const setField = (name, value) => setValues((current) => ({ ...current, [name]: value }));
+  const filled = chosen !== void 0 && chosen.credentials.every((credential) => field(credential.name).trim() !== "");
   const [statuses, setStatuses] = (0, import_react37.useState)({});
   const appsKey = (connector.apps ?? []).join(",");
   (0, import_react37.useEffect)(() => {
@@ -16040,7 +16133,17 @@ function ConnectorRow({ connector, roster, actions }) {
   }, [gateway, connector.state, appsKey, picking]);
   const search = (0, import_react37.useCallback)((query) => actions.connectorAppSearch(connector.id, query, connector.state === "off" ? token : void 0), [connector.id, connector.state, token]);
   const connect = () => {
-    if (busy || token.trim() === "") return;
+    if (busy) return;
+    if (channel) {
+      if (chosen === void 0 || !filled) return;
+      const credentials = Object.fromEntries(chosen.credentials.map((credential) => [credential.name, field(credential.name)]));
+      void run(actions.connectorConnect(connector.id, { mode: chosen.id, credentials }), () => {
+        setValues({});
+        setForm(false);
+      });
+      return;
+    }
+    if (token.trim() === "") return;
     if (gateway && apps.length === 0) {
       setError(t("Pick at least one app"));
       return;
@@ -16059,9 +16162,11 @@ function ConnectorRow({ connector, roster, actions }) {
     void run(actions.connectorApps(connector.id, apps), () => setPicking(false));
   };
   const on = connector.state !== "off";
+  const canPost = sender || channel && connector.mode === "webhook";
+  const perBot = !sender && (!channel || connector.mode === "app");
   const Mark = MARKS[connector.id];
   const row = (0, import_react37.useRef)(null);
-  useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}`);
+  useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}:${mode}`);
   return (0, import_react37.createElement)(
     "div",
     { ref: row, className: "bt-connector", "data-state": connector.state },
@@ -16083,14 +16188,15 @@ function ConnectorRow({ connector, roster, actions }) {
           setApps(connector.apps ?? []);
           setPicking(true);
         } }, t("Choose apps")) : null,
-        on && !sender ? (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": bots, onClick: () => setBots((value) => !value) }, bots ? t("Done") : t("Choose Bots")) : null,
+        on && perBot ? (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "aria-expanded": bots, onClick: () => setBots((value) => !value) }, bots ? t("Done") : t("Choose Bots")) : null,
         on ? (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t("Disconnect")) : form ? null : (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setForm(true) }, t("Connect"))
       )
     ),
     on && gateway && !picking ? (0, import_react37.createElement)(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
-    on && !sender ? (0, import_react37.createElement)("span", { className: "bt-connector-uses" }, usageText(roster, connector.id)) : null,
+    on && perBot ? (0, import_react37.createElement)("span", { className: "bt-connector-uses" }, usageText(roster, connector.id)) : null,
     on && bots ? (0, import_react37.createElement)(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
-    on && sender ? (0, import_react37.createElement)(
+    on && channel && connector.mode === "app" ? (0, import_react37.createElement)(AllowedSenders, { connector, actions, run, busy }) : null,
+    on && canPost ? (0, import_react37.createElement)(
       "div",
       { className: "bt-connector-form" },
       (0, import_react37.createElement)("label", { className: "bt-q-field" }, (0, import_react37.createElement)("input", { className: "bt-input", type: "text", value: message, "aria-label": t("Message to send to Feishu"), placeholder: t("Type a message for the Feishu group"), onChange: (event) => setMessage(event.target.value) })),
@@ -16104,18 +16210,41 @@ function ConnectorRow({ connector, roster, actions }) {
     !on && form ? (0, import_react37.createElement)(
       "div",
       { className: "bt-connector-form" },
-      (0, import_react37.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react37.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: sender ? t("Feishu webhook URL") : gateway ? t("Composio API key") : t("GitHub token"), autoFocus: true })),
+      channel ? (0, import_react37.createElement)("div", { className: "bt-states", role: "group", "aria-label": t("How to connect") }, modes.map((entry) => (0, import_react37.createElement)("button", {
+        key: entry.id,
+        type: "button",
+        className: "bt-state",
+        "aria-pressed": entry.id === chosen?.id,
+        onClick: () => {
+          setMode(entry.id);
+          setValues({});
+          setError(null);
+        }
+      }, t(entry.label)))) : null,
+      channel ? (chosen?.credentials ?? []).map((credential, index) => (0, import_react37.createElement)(CredentialField, {
+        key: credential.name,
+        credential,
+        value: field(credential.name),
+        onChange: (value) => setField(credential.name, value),
+        onEnter: connect,
+        autoFocus: index === 0
+      })) : (0, import_react37.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react37.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t("Composio API key") : t("GitHub token"), autoFocus: true })),
       gateway ? (0, import_react37.createElement)(AppPicker, { apps, onChange: setApps, search: token.trim() === "" ? void 0 : search }) : null,
       (0, import_react37.createElement)(
         "div",
         { className: "bt-connector-form-row" },
-        (0, import_react37.createElement)("a", { className: "bt-connector-link", href: sender ? FEISHU_WEBHOOK_URL : gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: "_blank", rel: "noopener noreferrer" }, sender ? t("Get a webhook URL in Feishu") : gateway ? t("Get a Composio API key") : t("Create a token on GitHub")),
+        (0, import_react37.createElement)(
+          "a",
+          { className: "bt-connector-link", href: channel ? chosen?.link ?? FEISHU_WEBHOOK_URL : gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: "_blank", rel: "noopener noreferrer" },
+          channel ? t(chosen?.linkLabel ?? "Get a webhook URL in Feishu") : gateway ? t("Get a Composio API key") : t("Create a token on GitHub")
+        ),
         (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
           setForm(false);
           setToken("");
+          setValues({});
           setError(null);
         } }, t("Cancel")),
-        (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
+        (0, import_react37.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || (channel ? !filled : token.trim() === ""), onClick: connect }, busy ? t("Connecting…") : t("Connect"))
       )
     ) : null,
     on && gateway && picking ? (0, import_react37.createElement)(
@@ -20038,10 +20167,14 @@ function apply(ctx) {
     secretCancel: (requestId) => after(call("secret-cancel", { requestId })),
     secretUpdate: (name, scope) => after(call("secret-update", { name, scope })),
     secretDelete: (name) => after(call("secret-delete", { name })),
-    connectorConnect: (id, token, apps) => after(call("connector-connect", { id, token, ...apps !== void 0 ? { apps } : {} })),
+    // A channel's form sends { mode, credentials }, one field per credential; every other connector
+    // sends its one token. Both go out under the same endpoint.
+    connectorConnect: (id, token, apps) => after(call("connector-connect", typeof token === "object" && token !== null ? { id, ...token, ...apps !== void 0 ? { apps } : {} } : { id, token, ...apps !== void 0 ? { apps } : {} })),
     connectorApps: (id, apps) => after(call("connector-apps", { id, apps })),
     connectorAppSearch: (id, query, token) => call("connector-app-search", { id, query, ...token ? { token } : {} }),
     connectorAppStatus: (id) => call("connector-app-status", { id }),
+    connectorAllow: (id, openId) => after(call("connector-allow", { id, openId })),
+    connectorBlock: (id, openId) => after(call("connector-block", { id, openId })),
     connectorDisconnect: (id) => after(call("connector-disconnect", { id })),
     connectorRetry: (id) => after(call("connector-retry", { id })),
     connectorSend: (id, text) => after(call("connector-send", { id, text })),

@@ -18,7 +18,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { createNotifier } from './notify.js'
-import { appCredentials, createInbound } from './feishu-inbound.js'
+import { APP_SECRET_SECRET, appCredentials, createInbound } from './feishu-inbound.js'
 import { createFeishuTransport } from './feishu-sdk.js'
 
 export const GITHUB = 'github'
@@ -28,7 +28,7 @@ export const COMPOSIO_SECRET = 'COMPOSIO_API_KEY'
 export const FEISHU = 'feishu'
 export const FEISHU_SECRET = 'FEISHU_WEBHOOK'
 // Names a saved capability may not take, because the mount already uses them.
-export const RESERVED_NAMES = [GITHUB, COMPOSIO]
+export const RESERVED_NAMES = [GITHUB, COMPOSIO, FEISHU]
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const GITHUB_DEFAULTS = {
   url: 'https://api.githubcopilot.com/mcp/',
@@ -318,19 +318,117 @@ export function feishuTransport(webhook, { fetch: request = fetch, timeoutMs = S
   return { postMessage: message => feishuPost(webhook, message?.text ?? '', { fetch: request, timeoutMs }) }
 }
 
-// The way out for an answer to a Feishu message (#1266): the webhook phase 1 already posts on, so a
-// message in and an answer out are one credential and one transport. Kept out of `install` so the
-// exit can be asserted without a socket. A missing webhook or a refusal is a sentence the chat
-// shows ("Not sent: …"), never a silent drop: `remote-chat` prints exactly what is thrown here.
-export function feishuReply({ secretValue, post = feishuPost, timeoutMs = SEND_TIMEOUT_MS } = {}) {
-  return async ({ text }) => {
+// The app-mode probe (#1266): a POST that proves the pair and is then thrown away. The long
+// connection dials with its own credentials, so nothing here may leak the token into an error, a log
+// line or the row; the answer is only "accepted" or one sentence.
+const FEISHU_TOKEN_PATH = '/open-apis/auth/v3/tenant_access_token/internal'
+
+const feishuOrigin = (api) => {
+  try {
+    return new URL(String(api)).origin
+  } catch {
+    throw new Error('The Feishu API address is not a URL')
+  }
+}
+
+// One tenant token, asked for at the moment it is needed (the probe, or one answer). It is never
+// kept: the socket keeps its own, and an answer does not outlive its POST.
+export async function feishuAppToken({ appId, appSecret }, { api = FEISHU_DEFAULTS.api, fetch: request = fetch, timeoutMs = CHECK_TIMEOUT_MS } = {}) {
+  let response
+  try {
+    response = await withDeadline(request(`${feishuOrigin(api)}${FEISHU_TOKEN_PATH}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
+    }), timeoutMs)
+  } catch {
+    throw new Error('Could not reach Feishu')
+  }
+  const body = await response.json().catch(() => ({}))
+  const code = Number(body?.code)
+  if (response.status === 401 || response.status === 403 || code === 10003 || code === 10014) throw new Error('Feishu did not accept this App ID and App Secret')
+  if (!response.ok) throw new Error(`Feishu answered ${response.status}`)
+  const token = body?.tenant_access_token
+  if (code !== 0 || typeof token !== 'string' || token === '') throw new Error('Feishu did not accept this App ID and App Secret')
+  return token
+}
+
+// The connect step of app mode: prove the pair, then forget the token on purpose.
+export async function feishuAppCheck(credentials, options = {}) {
+  await feishuAppToken(credentials, options)
+  return {}
+}
+
+// One answer back into the chat the message came from, as the app itself: `im/v1/messages` addressed
+// by chat id (the `oc_…` tail of the `feishu:oc_…` handle). This is what makes "connect the app and
+// it works" true with no webhook saved — the pair the owner just pasted is the whole credential.
+export async function feishuAppSend({ appId, appSecret, chatId, text }, { api = FEISHU_DEFAULTS.api, fetch: request = fetch, timeoutMs = SEND_TIMEOUT_MS } = {}) {
+  const token = await feishuAppToken({ appId, appSecret }, { api, fetch: request, timeoutMs })
+  let response
+  try {
+    response = await withDeadline(request(`${feishuOrigin(api)}/open-apis/im/v1/messages?receive_id_type=chat_id`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text: String(text) }) }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
+    }), timeoutMs)
+  } catch {
+    throw new Error('Not sent: could not reach Feishu')
+  }
+  const body = await response.json().catch(() => ({}))
+  const code = Number(body?.code)
+  if (response.ok && code === 0) return
+  if (response.status === 401 || response.status === 403 || code === 99991663) throw new Error('Not sent: Feishu refused the app token while sending the answer')
+  throw new Error(`Not sent: Feishu refused the answer (feishu/${Number.isFinite(code) ? code : response.status})`)
+}
+
+// The way out for an answer to a Feishu message (#1266). App mode answers as the app, in the very
+// chat the message came from; webhook mode answers on the webhook phase 1 already posts on, so a
+// message in and an answer out stay one credential and one transport. Which one is read on every
+// send, so switching modes needs no re-registration. A missing credential or a refusal is a sentence
+// the chat shows ("Not sent: …"), never a silent drop: `remote-chat` prints exactly what is thrown.
+export function feishuReply({ secretValue, appOf, post = feishuPost, sendApp = feishuAppSend, timeoutMs = SEND_TIMEOUT_MS } = {}) {
+  return async ({ text, handle }) => {
+    const app = appOf?.()
+    if (app !== undefined) {
+      const chatId = typeof handle === 'string' && handle.startsWith(`${FEISHU}:`) ? handle.slice(FEISHU.length + 1) : undefined
+      if (chatId === undefined || chatId === '') throw new Error('Not sent: this answer has no Feishu chat to go to.')
+      await sendApp({ ...app, chatId, text: String(text ?? '') }, { timeoutMs })
+      return
+    }
     const webhook = secretValue?.(FEISHU_SECRET)
-    if (webhook === undefined) throw new Error('Not sent: connect Feishu first, so the answer has a webhook to leave on.')
+    if (webhook === undefined) throw new Error('Not sent: connect Feishu first, so the answer has a way out.')
     const answer = await post(webhook, String(text ?? ''), { timeoutMs })
     if (answer?.ok === true) return
     throw new Error(`Not sent: Feishu refused the answer (${answer?.error ?? 'no answer'})`)
   }
 }
+
+// The two ways the Feishu row connects (#1266), as data the form renders: one field per credential,
+// `masked` on the ones that never come back to the client. There is one Feishu row, not one per mode:
+// two rows with the same name would be a puzzle, and the owner asked to click Connect in one place.
+export const FEISHU_MODES = [
+  {
+    id: 'webhook',
+    label: 'Custom bot webhook',
+    credentials: [{ name: 'webhook', label: 'Webhook URL', masked: true }],
+    link: 'https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot',
+    linkLabel: 'Get a webhook URL in Feishu',
+  },
+  {
+    id: 'app',
+    label: 'App (long connection)',
+    credentials: [
+      { name: 'app_id', label: 'App ID', masked: false },
+      { name: 'app_secret', label: 'App Secret', masked: true },
+    ],
+    link: 'https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes/create-an-app',
+    linkLabel: 'Create a Feishu app',
+  },
+]
 
 const DEFINITIONS = {
   [GITHUB]: {
@@ -388,10 +486,11 @@ const DEFINITIONS = {
     // Keeps the user id: a new key for the same FlyBot finds the apps already signed in.
     afterDisconnect: saved => saved?.userId === undefined ? undefined : { userId: saved.userId },
   },
-  // Feishu (Lark) is not an MCP server: a custom-bot webhook is one HTTPS POST into the instance's
-  // own group. So it is a *sender* — nothing is mounted, no Bot's tool list changes, and the only
-  // things it has are a status and a send (#1263). The app-credential path slots in behind the same
-  // send, without touching a caller.
+  // Feishu (Lark) is not an MCP server: it is a *channel* (#1266). Nothing is mounted and no Bot's
+  // tool list changes; what it has is a status, one way in (the long connection of a self-built app)
+  // and one way out (that app, or the custom-bot webhook of phase 1). `kind: 'channel'` is what makes
+  // the row offer Choose Bots and what makes `reconcile()` open the socket instead of importing a
+  // client: webhook mode is the same row with nothing to dial.
   [FEISHU]: {
     id: FEISHU,
     name: 'Feishu',
@@ -399,8 +498,9 @@ const DEFINITIONS = {
     purpose: 'Feishu webhook',
     defaults: FEISHU_DEFAULTS,
     addresses: options => [options.api],
-    kind: 'sender',
-    paste: 'Paste a webhook URL first',
+    kind: 'channel',
+    modes: FEISHU_MODES,
+    paste: 'Choose how to connect Feishu and fill in its fields first',
     async check({ token, options }) {
       return feishuCheck(token, { api: options.api })
     },
@@ -432,23 +532,31 @@ export function install(rt) {
 
   // Feishu inbound (#1266): a message in Feishu starts a turn here. The socket is injected —
   // `rt.feishuTransport` is the one adapter the SDK-versus-hand-written decision changes, so nothing
-  // below depends on which client dials. Off unless the owner turned it on, and with no socket adapter
-  // it starts nothing rather than pretend. The message lands through `remote-chat.deliver` — the same
-  // seam a friend's Bot uses — and the answer leaves through the sender this module registers in that
-  // same seam, on the webhook phase 1 posts on: one path in, one path out.
+  // below depends on which client dials. Off unless the owner connected the app on the row, and with
+  // no socket adapter it starts nothing rather than pretend. The message lands through
+  // `remote-chat.deliver` — the same seam a friend's Bot uses — and the answer leaves through the
+  // sender this module registers in that same seam: app mode answers as the app, webhook mode on the
+  // webhook phase 1 posts on. One path in, one path out.
   //
+  // What the owner set lives in the connector record, not in `rt.config` (#1266): the row is the
+  // place Feishu is configured, so the switch and the allowed senders are read from the record every
+  // time instead of being copied while this module installs.
+  const saved = c => state.connectors?.[c.def.id]
+  const feishuRecord = () => state.connectors?.[FEISHU]
+  const appOf = () => appCredentials(feishuRecord(), name => rt.secretValue(name))
+
   // The default adapter is the official SDK, and it is put on the runtime *before* the policy reads
   // it. That read happens on every `start()` rather than once here, so an adapter installed later
   // (a test's stub, a plugin's own client) is the one the next start dials instead of a snapshot
   // taken while it was missing.
   if (rt.feishuTransport === undefined) {
     rt.feishuTransport = createFeishuTransport({
-      credentials: () => appCredentials(name => rt.secretValue(name)),
+      credentials: () => appOf(),
       log: (format, ...args) => rt.warn(`ds-bot: ${format}`, ...args),
     })
   }
   // One way out per Feishu chat: `remote-chat` keys a reply's sender by the chat's plugin, so this
-  // registers the webhook post under `feishu`. Registered against the seam object it saw, so a runtime
+  // registers the Feishu exit under `feishu`. Registered against the seam object it saw, so a runtime
   // that replaces the seam is wired again instead of keeping a dead registration.
   let feishuWire = { seam: undefined, off: undefined }
   const wireFeishuReply = () => {
@@ -456,12 +564,15 @@ export function install(rt) {
     if (typeof seam?.onSend !== 'function') return
     if (feishuWire.seam === seam) return
     feishuWire.off?.()
-    feishuWire = { seam, off: seam.onSend(FEISHU, feishuReply({ secretValue: name => rt.secretValue(name) })) }
+    feishuWire = { seam, off: seam.onSend(FEISHU, feishuReply({ secretValue: name => rt.secretValue(name), appOf })) }
   }
 
   const feishuInbound = createInbound({
-    enabled: rt.config?.feishu?.enabled === true,
+    // "On" means app mode with both halves saved. A half-saved pair dials nothing, and an event that
+    // arrives while it is off starts no turn, whatever adapter is still handing events over.
+    enabled: () => feishuRecord()?.mode === 'app' && appOf() !== undefined,
     ownerOpenId: rt.config?.feishu?.ownerOpenId,
+    allowed: () => feishuRecord()?.allowed ?? [],
     transport: () => rt.feishuTransport,
     deliver: async ({ handle, text, name }) => {
       const seam = rt.remoteChats
@@ -479,7 +590,6 @@ export function install(rt) {
     redact: rt.redactSecrets,
   })
 
-  const saved = c => state.connectors?.[c.def.id]
   const unmount = async (c) => {
     const fiber = c.mount?.fiber
     c.mount = null
@@ -487,8 +597,9 @@ export function install(rt) {
   }
 
   // A sender's retry policy is notify.js's, not a second one written here: one transport per
-  // sender, reading the saved webhook when it is called, so a reconnect needs no rebuild.
-  const notifiers = new Map(connectors.filter(c => c.def.kind === 'sender').map(c => [c.def.id, createNotifier({
+  // sender, reading the saved webhook when it is called, so a reconnect needs no rebuild. Feishu is a
+  // channel now, but its webhook mode still sends: the notifier is per definition that has a `post`.
+  const notifiers = new Map(connectors.filter(c => typeof c.def.post === 'function').map(c => [c.def.id, createNotifier({
     channel: c.def.id,
     log: (format, ...args) => rt.warn(`ds-bot: ${format}`, ...args),
     transport: {
@@ -522,10 +633,72 @@ export function install(rt) {
     return rt.redactSecrets(text || 'error').slice(0, 300)
   }
 
+  // A channel is the row's life, not a mount (#1266): webhook mode is ready once its URL is saved,
+  // app mode is ready once its socket is open, and the socket's own lifecycle is the status. Keyed by
+  // what the dial depends on, so a new pair (or a mode switch) closes the old socket and opens one.
+  async function reconcileChannel(c, force, token) {
+    const { def } = c
+    const record = saved(c) ?? {}
+    const mode = record.mode === 'app' ? 'app' : record.mode === 'webhook' ? 'webhook' : undefined
+    const app = mode === 'app' ? appOf() : undefined
+    const key = mode === 'app' ? `app\n${app?.appId ?? ''}\n${app?.appSecret ?? ''}` : mode === 'webhook' ? `webhook\n${token ?? ''}` : undefined
+    if (!force && c.mount !== null && c.mount.key === key) return
+    await unmount(c)
+    // A changed pair (or a mode switch) is a new socket: the old one is hung up before the new one
+    // dials, so one record never holds two long connections.
+    await feishuInbound.stop()
+    if (mode === undefined) {
+      notifierOf(c)?.setEnabled(false)
+      await feishuInbound.stop()
+      c.status = { state: 'off' }
+      c.mount = { key }
+      return
+    }
+    if (c.insecure) {
+      c.mount = { key }
+      c.status = { state: 'error', error: INSECURE(def.name) }
+      return
+    }
+    // App mode answers as the app, webhook mode on the webhook: a saved webhook is worth a manual
+    // Send in either mode, and nothing else turns the notifier on.
+    notifierOf(c)?.setEnabled(token !== undefined)
+    if (mode === 'webhook') {
+      if (token === undefined) {
+        await feishuInbound.stop()
+        c.status = { state: 'off' }
+        c.mount = { key }
+        return
+      }
+      c.status = { state: 'connecting' }
+      // A start-up (or a secret change) only reports that a webhook is saved — a restart must not post
+      // to the group again. `force` is a person pressing Try again, which is that person asking for it.
+      if (force) await probe(c, token)
+      else c.status = { state: 'ready' }
+      c.mount = { key }
+      return
+    }
+    if (app === undefined) {
+      await feishuInbound.stop()
+      c.status = { state: 'error', error: 'A Feishu App ID and App Secret are both needed before the long connection can dial.' }
+      c.mount = { key }
+      return
+    }
+    c.status = { state: 'connecting' }
+    const result = await feishuInbound.start()
+    const inbound = feishuInbound.view()
+    c.status = result === 'ready'
+      ? { state: 'ready' }
+      : result === 'off'
+        ? { state: 'off' }
+        : { state: 'error', error: inbound.error ?? 'the Feishu long connection did not open' }
+    c.mount = { key }
+  }
+
   async function reconcile(c, force) {
     const { def, options } = c
     if (c.saving > 0 && !force) return
     const token = options !== null && !stopped ? rt.secretValue(def.secret) : undefined
+    if (def.kind === 'channel') return reconcileChannel(c, force, token)
     const key = token === undefined ? undefined : `${token}\n${def.mountKey(saved(c))}`
     if (!force && c.mount !== null && c.mount.key === key) return
     await unmount(c)
@@ -540,16 +713,6 @@ export function install(rt) {
       return
     }
     c.status = { state: 'connecting' }
-    // A sender mounts nothing: the test POST belongs to the connect step, so a start-up (or a
-    // secret change) only reports that a webhook is saved — a restart must not post to the group
-    // again. `force` is a person pressing Try again, which is that person asking for the test.
-    if (def.kind === 'sender') {
-      notifierOf(c)?.setEnabled(true)
-      if (force) await probe(c, token)
-      else c.status = { state: 'ready' }
-      c.mount = { key }
-      return
-    }
     const loader = ctx.get?.('loader')
     if (typeof loader?.import !== 'function' || typeof ctx.plugin !== 'function') {
       c.mount = { key }
@@ -602,7 +765,15 @@ export function install(rt) {
     ...(c.def.kind !== undefined ? { kind: c.def.kind } : {}),
     account: rt.secretValue(c.def.secret) !== undefined ? c.def.account(saved(c)) : null,
     ...(c.def.extra !== undefined ? c.def.extra(rt.secretValue(c.def.secret) !== undefined ? saved(c) : undefined) : {}),
-    ...(c.def.id === FEISHU ? { inbound: { ...feishuInbound.view(), app: appCredentials(name => rt.secretValue(name)) === undefined ? 'missing' : 'set' } } : {}),
+    // #1266: one row, two modes. `mode` is which one is live (null before the first connect), `modes`
+    // is what the form renders, and `allowed` is the guest list the app mode's gate reads. Nothing
+    // here carries a secret: the App ID is not one, and the webhook never comes back.
+    ...(c.def.id === FEISHU ? {
+      mode: saved(c)?.mode ?? null,
+      modes: c.def.modes,
+      allowed: (saved(c)?.allowed ?? []).map(entry => ({ openId: entry.openId, name: entry.name ?? entry.openId })),
+      inbound: { ...feishuInbound.view(), app: appOf() === undefined ? 'missing' : 'set' },
+    } : {}),
   })
   const connectorsView = () => connectors.filter(c => c.options !== null).map(view)
 
@@ -623,29 +794,92 @@ export function install(rt) {
     await Promise.resolve(c.def.discard?.({ keys: [...new Set(keys.filter(key => key !== undefined))], options: c.options, session: gone })).catch(() => { /* never blocks the change */ })
   }
 
+  // The Feishu row's own connect (#1266): one row, two modes. `credentials` is one field per
+  // credential the picked mode declares — the App ID is kept in the record because it is not a
+  // secret, the App Secret goes only to secrets.js. App mode proves the pair with one tenant token,
+  // then `sync` opens the socket; webhook mode proves the URL with one test message, as phase 1 did.
+  const connectChannel = async (c, body) => {
+    // A phase-1 client sends one `token` and no mode: that is the webhook, unchanged (#1266).
+    const mode = body.mode === 'app' ? 'app'
+      : body.mode === 'webhook' || (body.mode === undefined && typeof body.token === 'string' && body.token.trim() !== '') ? 'webhook'
+        : undefined
+    if (mode === undefined) throw new Error('Choose how to connect Feishu first')
+    if (c.insecure) throw new Error(INSECURE(c.def.name))
+    await rt.loadSecrets()
+    const given = body.credentials !== null && typeof body.credentials === 'object' && body.credentials !== undefined ? body.credentials : {}
+    const text = name => (typeof given[name] === 'string' ? given[name].trim() : '')
+    if (mode === 'webhook') {
+      const webhook = text('webhook') !== '' ? text('webhook') : (typeof body.token === 'string' ? body.token.trim() : '')
+      if (webhook === '') throw new Error('Paste the webhook URL Feishu gave you')
+      const previous = saved(c) ?? {}
+      c.saving += 1
+      try {
+        await rt.secretEndpoint('secret-set', { name: FEISHU_SECRET, value: webhook, purpose: c.def.purpose })
+        state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'webhook', connectedAt: Date.now() } }
+        await rt.save()
+      } finally {
+        c.saving -= 1
+      }
+      // Phase 1's connect, unchanged: the webhook is saved first and then proved with one test
+      // message, so a refusal leaves the row in `error` with Try again beside it instead of losing
+      // what the owner pasted (acceptance 5, #1266).
+      await feishuInbound.stop()
+      await probe(c, webhook)
+      c.mount = { key: `webhook\n${webhook}` }
+      notifierOf(c)?.setEnabled(true)
+      return connectorsView()
+    }
+    const appId = text('app_id')
+    const appSecret = text('app_secret')
+    if (appId === '' || appSecret === '') throw new Error('Paste the App ID and App Secret Feishu gave the app')
+    await feishuAppCheck({ appId, appSecret }, { api: c.options.api })
+    c.saving += 1
+    try {
+      await rt.secretEndpoint('secret-set', { name: APP_SECRET_SECRET, value: appSecret, purpose: 'Feishu app secret' })
+      // The guest list survives a re-pair: connecting again is not a decision to let strangers in.
+      const previous = saved(c) ?? {}
+      state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'app', appId, connectedAt: Date.now() } }
+      await rt.save()
+    } finally {
+      c.saving -= 1
+    }
+    await sync(c)
+    return connectorsView()
+  }
+  // The guest list, written from the row (#1266): Allow adds one open_id, Block takes it away. Who
+  // may talk is read by the inbound gate on every message, so this needs no restart — the next
+  // message from that sender is treated as the owner's.
+  const allowedOp = async (body, on) => {
+    const c = known(body.id)
+    if (c.def.kind !== 'channel') throw new Error('This connector has no allowed senders')
+    const openId = typeof body.openId === 'string' ? body.openId.trim() : ''
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(openId)) throw new Error('Paste the open_id of the sender to allow')
+    await rt.loadSecrets()
+    const record = saved(c) ?? {}
+    if (record.mode !== 'app') throw new Error('Connect Feishu as an app first')
+    const list = Array.isArray(record.allowed) ? record.allowed : []
+    let next
+    if (on) {
+      const knownSender = (feishuInbound.view().refusedSenders ?? []).find(entry => entry.openId === openId)
+      next = list.some(entry => entry.openId === openId) ? list
+        : [...list, { openId, ...(knownSender?.name === undefined ? {} : { name: knownSender.name }) }]
+    } else {
+      next = list.filter(entry => entry.openId !== openId)
+    }
+    state.connectors = { ...state.connectors, [FEISHU]: { ...record, allowed: next } }
+    await rt.save()
+    return connectorsView()
+  }
+
   const endpoints = {
     async 'connector-connect'(body) {
       const c = known(body.id)
+      // A channel has no single token: its form sends a mode and that mode's credential fields.
+      if (c.def.kind === 'channel') return connectChannel(c, body)
       const token = typeof body.token === 'string' ? body.token.trim() : ''
       if (token === '') throw new Error(c.def.paste ?? (c.def.id === GITHUB ? 'Paste a token first' : 'Paste a key first'))
       if (c.insecure) throw new Error(INSECURE(c.def.name))
       await rt.loadSecrets()
-      // A sender has nothing to mount, so the webhook is saved first and then proved: a webhook
-      // Feishu refuses stays on the row as `error` with Try again beside it, the way a connector
-      // that fails its MCP mount does, instead of losing what the owner pasted.
-      if (c.def.kind === 'sender') {
-        c.saving += 1
-        try {
-          await rt.secretEndpoint('secret-set', { name: c.def.secret, value: token, purpose: c.def.purpose })
-          await keep(c, {})
-        } finally {
-          c.saving -= 1
-        }
-        await probe(c, token)
-        c.mount = { key: `${token}\n${c.def.mountKey(saved(c))}` }
-        notifierOf(c)?.setEnabled(true)
-        return connectorsView()
-      }
       const oldToken = rt.secretValue(c.def.secret)
       const previous = saved(c)
       const record = await c.def.check({ token, options: c.options, saved: previous, body })
@@ -715,9 +949,31 @@ export function install(rt) {
         throw new Error(reason(error))
       }
     },
+    async 'connector-allow'(body) {
+      return allowedOp(body, true)
+    },
+    async 'connector-block'(body) {
+      return allowedOp(body, false)
+    },
     async 'connector-disconnect'(body) {
       const c = known(body.id)
       await rt.loadSecrets()
+      if (c.def.kind === 'channel') {
+        // Disconnect closes both (#1266): the socket goes down, the webhook and the app secret are
+        // deleted (each only if it is there — deleting a key that is not saved is an error), and the
+        // record goes with them, so the row is `off` and no turn can start.
+        for (const name of [FEISHU_SECRET, APP_SECRET_SECRET]) {
+          if (rt.secretValue(name) !== undefined) await rt.secretEndpoint('secret-delete', { name })
+        }
+        if (saved(c) !== undefined) {
+          delete state.connectors[c.def.id]
+          await rt.save()
+        }
+        await feishuInbound.stop()
+        await rt.forgetConnector?.(c.def.id)
+        await sync(c)
+        return connectorsView()
+      }
       const oldToken = rt.secretValue(c.def.secret)
       const previous = saved(c)
       if (oldToken !== undefined) await rt.secretEndpoint('secret-delete', { name: c.def.secret })
@@ -735,18 +991,18 @@ export function install(rt) {
     async 'connector-retry'(body) {
       const c = known(body.id)
       await rt.loadSecrets()
+      // "Try again" is one press for the whole row: a channel re-proves a webhook and dials the
+      // socket again (which is how an adapter installed after the first attempt comes up without a
+      // restart), and `reconcile` is the only place that dials, so one press is one socket.
       await sync(c, true)
-      // "Try again" is one press for the whole row: a Feishu row proves the webhook and, when the
-      // long connection is switched on, dials it again — which is how an adapter installed after the
-      // first attempt comes up without a restart.
-      if (c.def.id === FEISHU) await feishuInbound.start()
       return connectorsView()
     },
     // One message, on demand, once. Nothing posts room traffic on its own: that is a spam
-    // decision the owner has not made (#1263).
+    // decision the owner has not made (#1263). Feishu's channel offers this only while a webhook is
+    // saved (today's behaviour, acceptance 5): app mode answers by itself, it has no room to post to.
     async 'connector-send'(body) {
       const c = known(body.id)
-      if (c.def.kind !== 'sender') throw new Error('This connector sends no messages')
+      if (typeof c.def.post !== 'function') throw new Error('This connector sends no messages')
       const text = typeof body.text === 'string' ? body.text.trim() : ''
       if (text === '') throw new Error('Type a message first')
       if (c.insecure) throw new Error(INSECURE(c.def.name))
@@ -777,11 +1033,11 @@ export function install(rt) {
 
   ctx.effect(() => {
     stopped = false
-    // The long connection dials once the secrets are loaded: the app pair lives there, so starting
-    // before that read would report a missing app that is in fact saved.
+    // The long connection dials once the secrets are loaded: the App Secret lives there, so dialling
+    // before that read would report a missing app that is in fact saved. `reconcile` opens it, so
+    // there is exactly one dial per start — a second call here would be two sockets on one record.
     void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(async () => {
       await syncAll()
-      if (!stopped) await feishuInbound.start()
     })
     return () => {
       stopped = true

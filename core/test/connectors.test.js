@@ -418,32 +418,50 @@ test('deleting COMPOSIO_API_KEY on the Secrets page unmounts Composio, and GitHu
   assert.deepEqual(view.map(entry => [entry.id, entry.state]), [['github', 'ready'], ['composio', 'off'], ['feishu', 'off']])
   // #1266: the Feishu row carries the inbound state as well, and with no app pair saved it says so
   // without ever showing a value. Nothing dialled: the long connection is off by default.
-  assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, app: 'missing' })
+  assert.deepEqual(view.find(entry => entry.id === 'feishu').inbound, { state: 'off', connected: 0, duplicates: 0, refused: 0, refusedSenders: [], app: 'missing' })
 
 })
+
+// #1266 (connector-row half): the app pair lives in the connector record and secrets.json, so a test
+// renders the row a person would have filled in. The App ID is not a secret; only the secret is.
+function appHome() {
+  const home = teamHome()
+  const state = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  state.connectors = { feishu: { mode: 'app', appId: 'cli_app_1', allowed: [{ openId: 'ou_owner_1' }] } }
+  writeFileSync(join(home, 'state.json'), JSON.stringify(state))
+  writeFileSync(join(home, 'secrets.json'), JSON.stringify({
+    version: 1,
+    secrets: [{ name: 'FEISHU_APP_SECRET', value: 'app-secret-value', purpose: 'Feishu app secret', scope: 'all', createdAt: 1, updatedAt: 1 }],
+  }))
+  return home
+}
 
 // #1266: the inbound socket is read from the runtime on every start, not copied while module install
 // runs. This is the shape a plugin (or a test) has when it puts its own adapter on the runtime after
 // the connectors module was installed: the next Try again has to dial that one.
 test('an adapter installed after the connectors module is the one the next Try again dials (#1266)', async (t) => {
-  const home = teamHome()
+  const home = appHome()
   const ctx = fakeContext()
   capture(ctx)
-  const rt = createRuntime(ctx, { home, feishu: { enabled: true, ownerOpenId: 'ou_owner_1' } })
+  const rt = createRuntime(ctx, { home })
   t.after(async () => { await ctx.dispose(); await cleanHome(home) })
 
+  const dials = []
   const inboundOf = async () => (await call(ctx, 'state', {})).value.connectors.find(entry => entry.id === 'feishu').inbound
-  // Boot dialled the default adapter, which refuses because no app pair is saved: the error proves a
-  // socket was attempted, and that it was not the stub installed below.
+  // Boot dialled on its own: the pair is saved, so the row left `off` before this test installed any
+  // adapter. Whether it settles on `connecting` (a dial in flight) or `error` (a box with no SDK)
+  // depends on the host, so the assertion is that it is not `off` and that no stub dialled — the
+  // socket in flight is the host's own adapter, never the one installed below.
   const until = Date.now() + 2000
   let boot = await inboundOf()
-  while (boot.error === undefined && Date.now() < until) {
+  while (boot.state === 'off' && Date.now() < until) {
     await new Promise(resolve => setTimeout(resolve, 10))
     boot = await inboundOf()
   }
-  assert.match(boot.error ?? '', /app id and app secret/, JSON.stringify(boot))
+  assert.equal(boot.app, 'set')
+  assert.notEqual(boot.state, 'off')
+  assert.equal(dials.length, 0, 'no stub was installed when boot dialled')
 
-  const dials = []
   rt.feishuTransport = { connect: async (onEvent) => { dials.push(onEvent); return { close: async () => {} } } }
   const after = (await call(ctx, 'connector-retry', { id: 'feishu' })).value.find(entry => entry.id === 'feishu')
   assert.equal(after.inbound.state, 'ready')
@@ -465,10 +483,10 @@ const FEISHU_INBOUND_EVENT = {
 // The inbound socket of a running runtime, dialled through Try again so the adapter is a stub: what
 // comes back is the `onEvent` the policy layer handed the socket.
 async function feishuInboundRig(t) {
-  const home = teamHome()
+  const home = appHome()
   const ctx = fakeContext()
   capture(ctx)
-  const rt = createRuntime(ctx, { home, feishu: { enabled: true, ownerOpenId: 'ou_owner_1' } })
+  const rt = createRuntime(ctx, { home })
   t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const dials = []
   rt.feishuTransport = { connect: async (onEvent) => { dials.push(onEvent); return { close: async () => {} } } }

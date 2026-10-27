@@ -489,6 +489,8 @@ export function install(rt) {
         case 'connector-apps':
         case 'connector-app-search':
         case 'connector-app-status':
+        case 'connector-allow':
+        case 'connector-block':
         case 'connector-disconnect':
         case 'connector-retry':
         case 'connector-send':

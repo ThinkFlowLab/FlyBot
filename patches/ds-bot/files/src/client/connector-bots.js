@@ -12,9 +12,12 @@ export function ownBots(roster) {
   return (roster?.bots ?? []).filter(bot => !bot.remote && (me === undefined || me === null || bot.ownerId === undefined || bot.ownerId === me))
 }
 
-// Connectors that give a Bot tools. A sender (#1263) has none: a per-Bot switch for it would be a
-// choice that never changes anything, so it is not offered.
-export const connectedConnectors = roster => (roster?.connectors ?? []).filter(connector => connector.state !== 'off' && connector.kind !== 'sender')
+// Connectors that give a Bot tools or a way in. A sender (#1263) has neither: a per-Bot switch for it
+// would be a choice that never changes anything, so it is not offered. A channel (#1266) offers the
+// switch only in app mode: a webhook-only Feishu row is today's sender and has nothing to share.
+export const connectedConnectors = roster => (roster?.connectors ?? []).filter(connector => connector.state !== 'off'
+  && connector.kind !== 'sender'
+  && !(connector.kind === 'channel' && connector.mode !== 'app'))
 
 // Only an explicit false turns it off; no record means on.
 export const isOn = (bot, id) => bot.connectors?.[id] !== false

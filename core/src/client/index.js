@@ -596,10 +596,16 @@ export function apply(ctx) {
     secretCancel: requestId => after(call('secret-cancel', { requestId })),
     secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
     secretDelete: name => after(call('secret-delete', { name })),
-    connectorConnect: (id, token, apps) => after(call('connector-connect', { id, token, ...(apps !== undefined ? { apps } : {}) })),
+    // A channel's form sends { mode, credentials }, one field per credential; every other connector
+    // sends its one token. Both go out under the same endpoint.
+    connectorConnect: (id, token, apps) => after(call('connector-connect', typeof token === 'object' && token !== null
+      ? { id, ...token, ...(apps !== undefined ? { apps } : {}) }
+      : { id, token, ...(apps !== undefined ? { apps } : {}) })),
     connectorApps: (id, apps) => after(call('connector-apps', { id, apps })),
     connectorAppSearch: (id, query, token) => call('connector-app-search', { id, query, ...(token ? { token } : {}) }),
     connectorAppStatus: id => call('connector-app-status', { id }),
+    connectorAllow: (id, openId) => after(call('connector-allow', { id, openId })),
+    connectorBlock: (id, openId) => after(call('connector-block', { id, openId })),
     connectorDisconnect: id => after(call('connector-disconnect', { id })),
     connectorRetry: id => after(call('connector-retry', { id })),
     connectorSend: (id, text) => after(call('connector-send', { id, text })),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { APP_ID_SECRET, APP_SECRET_SECRET, DEDUPE_RING, appCredentials, createInbound, readEvent } from '../src/host/feishu-inbound.js'
+import { APP_SECRET_SECRET, DEDUPE_RING, MAX_REFUSED, appCredentials, createInbound, readEvent } from '../src/host/feishu-inbound.js'
 
 // #1266 phase 2: a message in Feishu starts a turn here, over the long connection. The socket is not
 // part of this module — every test injects one — so what is asserted is the policy a DSH upgrade or a
@@ -142,27 +142,31 @@ test('readEvent reads only the envelope phase 2 means to accept (#1266)', () => 
   assert.equal(readEvent({ header: { event_id: 'e6' }, event: { sender: { sender_id: { open_id: OWNER } }, message: { chat_id: 'oc', message_type: 'text', content: '{"text":"x"}' } } }) !== null, true)
 })
 
-test('the app pair is one credential: either half missing dials nothing (#1266)', () => {
-  const secrets = { [APP_ID_SECRET]: 'cli_app_1', [APP_SECRET_SECRET]: 'app-secret-value' }
-  const read = name => secrets[name]
-  assert.deepEqual(appCredentials(read), { appId: 'cli_app_1', appSecret: 'app-secret-value' })
-  assert.equal(appCredentials(name => (name === APP_ID_SECRET ? undefined : secrets[name])), undefined)
-  assert.equal(appCredentials(name => (name === APP_SECRET_SECRET ? '   ' : secrets[name])), undefined)
-  assert.equal(appCredentials(undefined), undefined)
+test('the app pair is one credential: it is the record\'s id and the saved secret, either half missing dials nothing (#1266)', () => {
+  const read = name => (name === APP_SECRET_SECRET ? 'app-secret-value' : undefined)
+  assert.deepEqual(appCredentials({ appId: 'cli_app_1' }, read), { appId: 'cli_app_1', appSecret: 'app-secret-value' })
+  // The id is not a secret: it lives in the connector record, so a missing record field is the half
+  // that is missing, without anything having to be saved on the Secrets page.
+  assert.equal(appCredentials({}, read), undefined)
+  assert.equal(appCredentials({ appId: '   ' }, read), undefined)
+  assert.equal(appCredentials({ appId: 'cli_app_1' }, () => '   '), undefined)
+  assert.equal(appCredentials({ appId: 'cli_app_1' }, () => undefined), undefined)
+  assert.equal(appCredentials(undefined, read), undefined)
 })
 
 test('the view never carries either half of the app pair (#1266)', async () => {
-  const secrets = { [APP_ID_SECRET]: 'cli_app_1', [APP_SECRET_SECRET]: 'app-secret-value' }
+  const secrets = { [APP_SECRET_SECRET]: 'app-secret-value' }
+  const app = { appId: 'cli_app_1' }
   const seen = []
   const transport = {
-    connect: async () => { throw new Error(`handshake refused for ${secrets[APP_ID_SECRET]} / ${secrets[APP_SECRET_SECRET]}`) },
+    connect: async () => { throw new Error(`handshake refused for ${app.appId} / ${secrets[APP_SECRET_SECRET]}`) },
   }
   const inbound = createInbound({
     enabled: true,
     ownerOpenId: OWNER,
     transport,
     deliver: async message => { seen.push(message) },
-    redact: text => String(text).split(secrets[APP_SECRET_SECRET]).join('[redacted]').split(secrets[APP_ID_SECRET]).join('[redacted]'),
+    redact: text => String(text).split(secrets[APP_SECRET_SECRET]).join('[redacted]').split(app.appId).join('[redacted]'),
   })
   await inbound.start()
   const view = JSON.stringify(inbound.view())
@@ -262,4 +266,43 @@ test('two copies of one event arriving together still start one turn (#1266)', a
   const results = await Promise.all([first, second])
   assert.deepEqual(results.sort(), ['delivered', 'duplicate'])
   assert.equal(turns.length, 1)
+})
+
+// #1266, the connector-row half: who may talk is the row's list (owner plus allowed senders), and a
+// refused sender is kept as one bounded line the row can offer Allow on.
+test('a sender the row allowed starts a turn; one it did not is refused (#1266)', async () => {
+  const turns = []
+  let allowed = ['ou_guest']
+  const inbound = createInbound({
+    enabled: true,
+    allowed: () => allowed.map(openId => ({ openId })),
+    transport: {},
+    deliver: async message => { turns.push(message) },
+  })
+  assert.equal(await inbound.handleEvent(event({ id: 'g1', openId: 'ou_guest' })), 'delivered')
+  allowed = []
+  assert.equal(await inbound.handleEvent(event({ id: 'g2', openId: 'ou_guest' })), 'refused')
+  assert.equal(turns.length, 1)
+})
+
+test('the refused list is one row per sender, bounded, and an allowed sender leaves it (#1266)', async () => {
+  let allowed = []
+  const inbound = createInbound({
+    enabled: true,
+    allowed: () => allowed,
+    transport: { nameOf: async openId => `Name ${openId}` },
+    deliver: async () => { throw new Error('nobody is allowed yet') },
+    now: () => Date.parse('2026-10-26T10:00:00Z'),
+  })
+  for (let n = 0; n < MAX_REFUSED + 5; n += 1) await inbound.handleEvent(event({ id: `r-${n}`, openId: `ou_${n}` }))
+  const refused = inbound.view().refusedSenders
+  assert.equal(refused.length, MAX_REFUSED, 'a stranger who writes many times cannot grow the row')
+  assert.equal(refused.at(-1).openId, `ou_${MAX_REFUSED + 4}`, 'the newest line is the one kept')
+  assert.equal(refused.at(-1).name, `Name ou_${MAX_REFUSED + 4}`)
+  assert.equal(refused.at(-1).at, '2026-10-26T10:00:00.000Z')
+  // One sender writing again is one line with a fresh time, not two lines.
+  await inbound.handleEvent(event({ id: 'again', openId: `ou_${MAX_REFUSED + 4}` }))
+  assert.equal(inbound.view().refusedSenders.length, MAX_REFUSED)
+  allowed = [`ou_${MAX_REFUSED + 4}`]
+  assert.ok(!inbound.view().refusedSenders.some(entry => entry.openId === `ou_${MAX_REFUSED + 4}`), 'allowing someone clears their line at once')
 })
