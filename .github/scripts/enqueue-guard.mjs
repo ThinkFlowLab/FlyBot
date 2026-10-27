@@ -48,23 +48,34 @@ function arg(name) {
 // (#812). One function with two readers, so the check and the printed command cannot disagree — #812's
 // kill condition is a second copy of these rules, and there is none.
 // #1344 (owner decision 2026-10-27): a branch an external agent owns is frozen while its write access is
-// unresolved, and the list of what that means is a file on the base branch, not code: the owner peels the
-// seal off by editing or deleting one JSON document, with no release of this script. The list is read at the
-// pull request's BASE commit, never its head — a branch that carries its own copy could empty the list and
-// un-freeze itself (#1346's shape) — and a pull request that edits the document is refused outright, so
-// "edit the seal from inside" is closed too. This is a queue-entry seal, not a permission boundary: a direct
-// push or an admin merge is unaffected, and the shared `Birfy` token can edit the file on `main`.
+// unresolved, and what that means is named in three places, not code: a number in `FROZEN_PULL_REQUESTS`
+// below, and a prefix and a marker in `.github/agent/frozen-branches.json`, so the owner peels the seal off
+// without a release of this script. The document is read from `main` (#1354), never from the pull request's
+// base and never from its head: a base older than the seal has no list at all and so froze nobody (#1328, a
+// base of `8d0a99c1` against a seal that landed at `6d1eb0be`), and a branch carrying its own copy could
+// empty the list and un-freeze itself (#1346's shape). A pull request that edits the document is refused
+// outright, so "edit the seal from inside" is closed too — which is also why a number cannot be added to it
+// from here, and why the numbers are a constant in this file. This is a queue-entry seal, not a permission
+// boundary: a direct push or an admin merge is unaffected, and the shared `Birfy` token can edit the file.
 const FROZEN_PATH = '.github/agent/frozen-branches.json'
 const FROZEN_REASON = 'frozen: external agent branch; owner decision pending'
 const FROZEN_EDIT_REASON = 'frozen: .github/agent/frozen-branches.json is not editable by a pull request'
+// #1354: the numbers the seal names. They cannot live in the JSON document: a pull request that edits it is
+// refused by the check below, so adding a number to it would be refused by the rule it is meant to feed.
+// `1328` is here because its branch is an ordinary `dev4/…` one and only its number names it; `1346` and
+// `1330` are here as well as under the `cursor/` prefix, because a second way to catch the same pull request
+// costs nothing and a rename costs the seal its only handle on it.
+const FROZEN_PULL_REQUESTS = new Set([1328, 1346, 1330])
 
 // Missing file, unreadable file, empty arrays: nothing is frozen. A broken read must not stop the whole
-// queue, and the seal is meant to be removable — both point the same way here.
-function frozenList({ gh, repo, base }) {
+// queue, and the seal is meant to be removable — both point the same way here. `ref` is the branch the
+// policy is read at, `main` by default; it is a parameter so a test can read another ref without a network.
+// `gh` is the reader, so nothing here is a hard-wired fetch: a caller can pass a function that answers.
+export function frozenList({ gh, repo, ref = 'main' }) {
   const out = { branches: [], markers: [] }
-  if (!base) return out
+  if (!gh || !repo) return out
   try {
-    const body = JSON.parse(gh('api', `repos/${repo}/contents/${FROZEN_PATH}?ref=${base}`))
+    const body = JSON.parse(gh('api', `repos/${repo}/contents/${FROZEN_PATH}?ref=${ref}`))
     const config = JSON.parse(Buffer.from(String(body?.content ?? ''), 'base64').toString('utf8'))
     for (const key of ['branches', 'markers']) {
       if (Array.isArray(config?.[key])) out[key] = config[key].map((v) => String(v).toLowerCase()).filter(Boolean)
@@ -75,9 +86,10 @@ function frozenList({ gh, repo, base }) {
   return out
 }
 
-// The refusal this file exists for, or `null`: the head branch starts with a listed prefix, the body carries
-// a listed marker, or the diff edits the list itself. `merged` is history and is never re-judged (#943).
-function frozenRefusal({ gh, repo, pull, files }) {
+// The refusal this file exists for, or `null`: the number is listed, the head branch starts with a listed
+// prefix, the body carries a listed marker, or the diff edits the list itself. `merged` is history and is
+// never re-judged (#943). `list` is the third injection point: pass one and nothing is read at all.
+export function frozenRefusal({ gh, repo, pull, files, list: givenList }) {
   // #1350: `merged` is answered before the list is read, and before the edit check below — the guard runs
   // again on every event (`labeled` above all), and a merged pull request that edited this file has already
   // made its edit. Judged after it, that run goes red on a merge nobody can undo, which is the opposite of
@@ -87,7 +99,10 @@ function frozenRefusal({ gh, repo, pull, files }) {
   // An ADD is how the seal first arrives (this very pull request). A modify or a delete is the self-unlock
   // this rule closes, whatever the branch is.
   if (touched && touched.status !== 'added') return FROZEN_EDIT_REASON
-  const list = frozenList({ gh, repo, base: pull?.base?.sha })
+  // #1354: the number needs no list, so it is answered before one is read — `#1328`'s base predates the
+  // document, and reading a ref that has no list would have cleared it.
+  if (FROZEN_PULL_REQUESTS.has(Number(pull?.number))) return FROZEN_REASON
+  const list = givenList ?? frozenList({ gh, repo })
   const branch = String(pull?.head?.ref ?? '').toLowerCase()
   const body = String(pull?.body ?? '').toLowerCase()
   if (list.branches.some((prefix) => branch.startsWith(prefix))) return FROZEN_REASON
