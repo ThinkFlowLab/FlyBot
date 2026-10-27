@@ -1,5 +1,5 @@
-// Chat lines for one graph step. Delivery-template nodes use the demo's copy;
-// any other graph gets a short line that names the Bot and the task. Text is
+// Chat lines for one graph step. Delivery-template nodes use canned copy when
+// no Bot reply is quoted; any other graph gets a short line that names the Bot and the task. Text is
 // plain: the client renders it as a text node.
 
 import { nodeById, stepLabel, summarizeTask } from './graph.js'
@@ -34,7 +34,7 @@ function liveText(value, fallback) {
   return text || fallback
 }
 
-// A live run quotes the Bot. The delivery script's canned lines stay on the demo path.
+// A live run quotes the Bot when event.text is set; otherwise doneText fills in.
 function liveLines(workflow, task, event) {
   const label = summarizeTask(task)
   if (event.type === 'start') {

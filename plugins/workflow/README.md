@@ -71,7 +71,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npm test
 ```
 
-Endpoints, all under `flybot/workflow/`: `state`, `templates` (read), `create`, `assign`, `concurrency`, `advance`, `demo-step`, `reset`, `say`, `graph`, `ingest`.
+Endpoints, all under `flybot/workflow/`: `state`, `templates` (read), `create`, `assign`, `concurrency`, `advance`, `reset`, `say`, `graph`, `ingest`.
 
 ## 中文
 

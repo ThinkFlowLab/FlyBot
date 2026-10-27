@@ -1,7 +1,6 @@
 // Workflow records and the runs a board task starts. The graph rules live in
 // graph.js. A workflow keeps a FIFO queue and up to maxConcurrent live runs
-// (default 2). A live node stays running until its Bot replies. The demo
-// player is a separate script and does not move a live run.
+// (default 2). A live node stays running until its Bot replies.
 
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -9,12 +8,12 @@ import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
   chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
-  missingProviders, nextDemoOp, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
+  missingProviders, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
   rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask } from './match.js'
 import { linesFor } from './narrate.js'
-import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, fixtureTask, templateById, templateCatalog, weeklyWorkflow } from './template.js'
+import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, templateById, templateCatalog, weeklyWorkflow } from './template.js'
 
 const MAX_WORKFLOWS = 24
 const MAX_MESSAGES = 200
@@ -103,12 +102,12 @@ function blankRun(workflow, task, now, history = []) {
 
 export function createWorkflowService({ dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, spawn, release, dispatch } = {}) {
   const file = dir ? join(dir, FILE) : null
-  let state = load(file, warn) ?? seed(now())
+  let state = load(file, warn) ?? seed()
   state.routes ??= {}
   state.claims ??= {}
   state.lanes ??= {}
-  state.demos ??= {}
   if (!state.laneFormat) migrateRuns(state)
+  purgeDemos(state)
   let seq = state.seq ?? 1
   // One lock for every start and release. The host cap is read and updated
   // only while this is held, so two workflows cannot both pass it.
@@ -213,7 +212,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     return Math.min(MAX_CONCURRENT, value)
   }
 
-  // Product UI: active live runs, then the last finished live run on stage — never demos.
   function displayRun(id) {
     const live = runningOf(laneOf(id))
     if (live.length > 0) return live[0]
@@ -222,7 +220,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     return null
   }
 
-  // Sidebar preview: only a live run that is active right now (not history, not demo).
   function previewRun(id) {
     const live = runningOf(laneOf(id))
     return live.length > 0 ? live[0] : null
@@ -232,7 +229,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const lane = laneOf(workflowId)
     const index = lane.active.findIndex(item => item.id === run.id)
     if (index >= 0) lane.active[index] = run
-    else if (state.demos[workflowId]?.id === run.id) state.demos[workflowId] = run
   }
 
   function sentOk(result) {
@@ -573,7 +569,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     if (runId) return lane.active.find(run => run.id === runId) ?? null
     const live = lane.active.find(run => run.status === 'running' && (!nodeId || run.nodeStatus?.[nodeId] === 'running'))
     if (live) return live
-    return state.demos[workflowId] ?? null
+    return null
   }
 
   function commitAdvance(workflowId, op) {
@@ -649,7 +645,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const finish = () => {
         state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
         delete state.lanes[workflowId]
-        delete state.demos[workflowId]
         delete state.runs[workflowId]
         delete state.logs[workflowId]
         Object.keys(state.routes).forEach(taskId => {
@@ -793,33 +788,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     ownsBot(botId) {
       return findEphemeral(botId) !== null
     },
-    // Replay the scripted demo. It never moves a live run.
-    demoStep(body = {}) {
-      const workflowId = String(body.workflowId ?? '')
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
-      const item = workflow(workflowId)
-      if (!item) return { ok: false, error: 'No such workflow' }
-      if (runningOf(laneOf(workflowId)).length > 0) return { ok: false, error: 'A live run is in progress' }
-      try {
-        let run = state.demos[item.id]
-        if (!run) throw new Error('This workflow has no task')
-        if (run.status === 'failed') throw new Error('This run is already finished')
-        const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
-        if (op.type === 'restart') {
-          run = blankRun(item, run.task, now(), run.history)
-          push(item.id, [{ kind: 'time', text: '重新演示' }], now())
-        }
-        const stepped = applyOp(item, run, op.type === 'restart' ? { type: 'start' } : op)
-        state.demos[item.id] = stepped.run
-        push(item.id, stepped.lines, now())
-        const out = present()
-        out.demo = publicRun(item, state.demos[item.id])
-        write()
-        return out
-      } catch (error) {
-        return refuse(error)
-      }
-    },
     pause(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
@@ -864,20 +832,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         if (!item) return { ok: false, error: 'No such workflow' }
         const lane = laneOf(workflowId)
         const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
-        const live = lane.active[0] ?? lane.last
+        const live = lane.active[0] ?? (lane.last?.live === true ? lane.last : null)
         lane.active = []
         lane.queue = []
-        if (live) {
-          const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
-          lane.last = kept
-          push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
-        }
-        const demo = state.demos[item.id]
-        if (demo) {
-          state.demos[item.id] = { ...blankRun(item, demo.task, now(), demo.history), id: demo.id, startedAt: demo.startedAt }
-          if (!live) push(item.id, linesFor(item, demo.task, { type: 'reset' }), now())
-        }
-        if (!live && !demo) return { ok: false, error: 'This workflow has no task' }
+        if (!live?.task) return { ok: false, error: 'This workflow has no task' }
+        const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
+        lane.last = kept
+        push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
         write()
         return { ok: true, ids }
       }
@@ -982,12 +943,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         write()
         return { ok: true, matched: true, already: false, decision }
       }
-      const demo = state.demos[decision.id]
-      if (demo && demo.task?.id === taskId && demo.status === 'running') {
-        state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
-        write()
-        return { ok: true, matched: true, already: true, decision }
-      }
       if (queuedOrRunning(decision.id, taskId)) {
         state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
         write()
@@ -1089,81 +1044,65 @@ function seat(nodes, roster) {
   })
 }
 
-function seed(now) {
+function emptyLane() {
+  return { active: [], queue: [], last: null, history: [] }
+}
+
+function seed() {
   const delivery = normalizeGraph(deliveryWorkflow())
   const weekly = normalizeGraph(weeklyWorkflow())
-  const task = fixtureTask()
-  const logs = { [DELIVERY_ID]: [], [WEEKLY_ID]: [] }
-  const runs = {}
-  let seq = 0
-  const push = (workflowId, lines) => {
-    for (const line of lines) {
-      seq += 1
-      logs[workflowId].push({ id: `m${seq}`, at: now, ...line })
-    }
-  }
-  push(DELIVERY_ID, [
-    { kind: 'time', text: 'Today 9:07 PM' },
-    { kind: 'system', text: 'Workflow「发布交付流水线」已创建 · 成员 Planner、Writer、Coder、Reviewer、Tester、Deployer' },
-    { kind: 'user', text: '@发布交付流水线 #1280 今天要上，notice 太长了，帮我缩短并发布。' },
-  ])
-  let run = blankRun(delivery, task, now)
-  for (const op of [{ type: 'start' }, { type: 'complete', nodeId: 'planner' }, { type: 'complete', nodeId: 'writer' }]) {
-    const result = op.type === 'start'
-      ? { ...startFrontier(delivery, run.nodeStatus), joined: false, layerSize: 0 }
-      : completeNode(delivery, run.nodeStatus, op.nodeId)
-    run = { ...run, status: 'running', nodeStatus: result.status, steps: run.steps + 1, updatedAt: now }
-    push(DELIVERY_ID, linesFor(delivery, task, {
-      type: op.type, nodeId: op.nodeId, started: result.started ?? [],
-      joined: result.joined === true, finished: false, layerSize: result.layerSize ?? 0,
-    }))
-  }
-  runs[DELIVERY_ID] = run
-  const weeklyTask = { id: 'W42', title: '周报' }
-  const done = freshStatus(weekly)
-  for (const id of Object.keys(done)) done[id] = 'done'
-  runs[WEEKLY_ID] = {
-    ...blankRun(weekly, weeklyTask, now),
-    status: 'done',
-    nodeStatus: done,
-    steps: 4,
-    stepBudget: 4,
-    history: [{ task: weeklyTask, status: 'done', at: now }],
-  }
-  push(WEEKLY_ID, [
-    { kind: 'time', text: '上周五 17:00' },
-    { kind: 'system', tone: 'accent', text: '定时触发：周报 W42' },
-    { kind: 'bot', botId: 'researcher', step: '1/3', text: '本周行业动态 12 条已整理。' },
-    { kind: 'bot', botId: 'analyst', step: '2/3', text: '核心指标周环比：DAU +4.1%，留存 +0.6pt。' },
-    { kind: 'bot', botId: 'writer', step: '3/3', text: '周报已发布。' },
-    { kind: 'system', tone: 'ok', text: '✓ 运行完成' },
-  ])
   return {
-    version: 1, workflows: [delivery, weekly], runs: {}, demos: runs, lanes: {}, claims: {}, routes: {},
-    logs, seq, laneFormat: true,
+    version: 1,
+    workflows: [delivery, weekly],
+    runs: {},
+    lanes: { [DELIVERY_ID]: emptyLane(), [WEEKLY_ID]: emptyLane() },
+    claims: {},
+    routes: {},
+    logs: { [DELIVERY_ID]: [], [WEEKLY_ID]: [] },
+    seq: 0,
+    laneFormat: true,
   }
+}
+
+function purgeDemos(state) {
+  if (!state.demos || typeof state.demos !== 'object') {
+    delete state.demos
+    return
+  }
+  for (const [id, run] of Object.entries(state.demos)) {
+    if (!run || typeof run !== 'object') continue
+    const lane = state.lanes[id] ?? emptyLane()
+    const finished = run.status === 'done' || run.status === 'failed'
+    if (finished && run.task) {
+      lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt ?? 0 }].slice(-20)
+    }
+    if (lane.last?.live !== true) lane.last = null
+    state.lanes[id] = lane
+  }
+  delete state.demos
 }
 
 function migrateRuns(state) {
   state.lanes ??= {}
-  state.demos ??= {}
   state.claims ??= {}
   if (state.laneFormat === true) return
   for (const [id, run] of Object.entries(state.runs ?? {})) {
     if (!run || typeof run !== 'object' || state.lanes[id]) continue
     const history = Array.isArray(run.history) ? run.history.filter(item => item?.status === 'done' || item?.status === 'failed') : []
     const bots = run.ephemeral && typeof run.ephemeral === 'object' ? Object.keys(run.ephemeral) : []
-    // Only a run that still has its Bots occupies a slot. The seeded script
-    // has none, so it stays a demo and replay can move it.
     if (bots.length > 0 && run.status === 'running') {
       state.lanes[id] = { active: [{ ...run, live: true }], queue: [], last: null, history }
       continue
     }
-    const demo = { ...run }
-    delete demo.live
-    state.demos[id] = demo
     const finished = run.status === 'done' || run.status === 'failed'
-    state.lanes[id] = { active: [], queue: [], last: finished ? { ...demo } : null, history }
+    state.lanes[id] = {
+      active: [],
+      queue: [],
+      last: finished && run.live === true ? { ...run, live: true } : null,
+      history: finished && run.task
+        ? [...history, { task: run.task, status: run.status, at: run.updatedAt ?? 0 }].slice(-20)
+        : history,
+    }
   }
   state.runs = {}
   state.laneFormat = true

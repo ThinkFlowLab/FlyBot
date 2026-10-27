@@ -27,7 +27,6 @@ test('assigning a board task starts the run at the first Bot and posts the claim
   const opened = delivery(svc.state())
   assert.equal(opened.preview, '等待任务')
   assert.equal(opened.run, null)
-  assert.ok(opened.messages.some(message => message.kind === 'user' && message.text.includes('#1280')))
 
   const assigned = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1281', title: '发布说明：Workflow Beta 上线' })
   const run = delivery(assigned).run
@@ -73,21 +72,21 @@ test('advance walks the parallel join: Deployer stays queued until both branches
   assert.equal(step('deployer', 'done').ok, false)
 })
 
-test('the demo step fails Tester once and still joins both branches', () => {
+test('failOnce on Tester fails once and still joins both branches', () => {
   const svc = service()
-  const ops = []
-  let last = null
-  for (let i = 0; i < 12; i += 1) {
-    const before = last?.demo?.nodeStatus?.tester
-    last = svc.demoStep({ workflowId: DELIVERY_ID })
-    const after = last.demo?.nodeStatus?.tester
-    if (before !== after) ops.push(`${before}->${after}`)
-    if (last.demo?.status === 'done') break
-  }
-  assert.ok(ops.includes('running->failed'), ops.join(','))
-  assert.equal(last.demo.status, 'done')
-  assert.equal(last.demo.nodeStatus.deployer, 'done')
-  assert.equal(delivery(last).run, null)
+  svc.assign({ workflowId: DELIVERY_ID, taskId: 'task-abcdef123456', title: 'Ship the note' })
+  const step = (nodeId, outcome) => svc.advance({ workflowId: DELIVERY_ID, nodeId, outcome })
+  step('planner', 'done')
+  step('writer', 'done')
+  step('coder', 'done')
+  step('reviewer', 'done')
+  const failed = step('tester', 'failed')
+  assert.equal(delivery(failed).run.nodeStatus.tester, 'running')
+  step('tester', 'done')
+  const joined = step('deployer', 'done')
+  const done = delivery(joined).run
+  assert.equal(done.status, 'done')
+  assert.equal(done.nodeStatus.deployer, 'done')
 })
 
 test('create seats a local Bot and refuses a remote one', () => {
@@ -261,8 +260,11 @@ test('an open task auto-starts the matching workflow, and a miss stays unassigne
   assert.equal(matchTask({ id: '#1', title: 'x', status: 'open', assignee: 'Remote' }, { workflows, bots }), null)
 
   const held = svc.ingest({ id: '#1280', title: '缩短交付组群 notice', status: 'open' })
-  assert.equal(held.already, true)
-  assert.equal(delivery(svc.state()).preview, '等待任务')
+  assert.equal(held.matched, true)
+  assert.equal(held.already, false)
+  assert.equal(delivery(svc.state()).run.live, true)
+  assert.equal(delivery(svc.state()).run.task.id, '#1280')
+  assert.match(delivery(svc.state()).preview, /正在处理/)
 
   const weekly = svc.ingest({ id: '#50', title: '周五周报', status: 'open' })
   assert.equal(weekly.matched, true)

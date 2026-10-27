@@ -99,7 +99,6 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/assign', body => service.assign(body)),
     fb.api.handle('workflow/concurrency', body => service.setConcurrency(body)),
     fb.api.handle('workflow/advance', body => service.advance(body)),
-    fb.api.handle('workflow/demo-step', body => service.demoStep(body)),
     fb.api.handle('workflow/reset', body => service.reset(body)),
     fb.api.handle('workflow/pause', body => service.pause(body)),
     fb.api.handle('workflow/resume', body => service.resume(body)),

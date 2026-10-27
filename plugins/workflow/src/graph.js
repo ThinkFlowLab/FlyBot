@@ -651,9 +651,7 @@ export function orderedIds(graph, status, want) {
   return ids
 }
 
-// The demo player (and the "next" button) ask the graph what one step is.
-// A node marked failOnce fails the first time it is the running choice, then
-// a later step retries it. The join still waits until that node is done.
+// Scripted step chooser for graph unit tests (failOnce retry ordering).
 export function nextDemoOp(graph, status, memory = {}) {
   ensure(graph)
   const failed = orderedIds(graph, status, 'failed')

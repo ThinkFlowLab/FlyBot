@@ -108,7 +108,7 @@ test('the queued task starts only after the live run finishes, in FIFO order', a
   assert.equal(delivery(svc.state()).queueDepth, 0)
 })
 
-test('a node stays running until the Bot replies, and demo-step does not move a live run', async () => {
+test('a node stays running until the Bot replies', async () => {
   const { svc, dispatched } = harness()
   const started = await svc.assign({ workflowId: DELIVERY_ID, taskId: '#7', title: 'Wait for the Bot' })
   const run = delivery(started).run
@@ -117,11 +117,6 @@ test('a node stays running until the Bot replies, and demo-step does not move a 
   assert.equal(dispatched.length, 1)
   assert.equal(dispatched[0].step.nodeId, 'planner')
   assert.match(dispatched[0].step.inputs.task, /#7/)
-
-  const demo = await svc.demoStep({ workflowId: DELIVERY_ID })
-  assert.equal(demo.ok, false)
-  assert.equal(delivery(svc.state()).run.nodeStatus.planner, 'running')
-  assert.equal(delivery(svc.state()).run.nodeStatus.writer, 'queued')
 
   const writer = await svc.stepResult({
     botId: run.ephemeral.planner,
@@ -244,7 +239,7 @@ test('outputs travel along edges and a node does not start without them', async 
   assert.match(done.workflows.find(item => item.id === made.id).messages.map(message => message.text).join('\n'), /model call failed/)
 })
 
-test('an old store keeps the seeded script as a demo, so replay still advances', () => {
+test('an old store drops scripted runs and keeps only live abandoned runs', () => {
   const dir = mkdtempSync(join(tmpdir(), 'flybot-wf-old-'))
   try {
     const deliveryGraph = normalizeGraph(deliveryWorkflow())
@@ -289,31 +284,13 @@ test('an old store keeps the seeded script as a demo, so replay still advances',
     assert.equal(opened.activeCount, 0)
     assert.equal(opened.run, null)
     assert.equal(opened.preview, '等待任务')
-    const stepped = svc.demoStep({ workflowId: DELIVERY_ID })
-    assert.equal(stepped.ok, true)
-    const after = delivery(stepped)
-    assert.equal(after.activeCount, 0)
-    assert.equal(stepped.demo.nodeStatus.coder, 'done')
-    assert.equal(after.run, null)
-    const week = stepped.workflows.find(item => item.id === WEEKLY_ID)
+    const week = svc.state().workflows.find(item => item.id === WEEKLY_ID)
     assert.equal(week.activeCount, 0)
     assert.equal(week.run, null)
     assert.match(week.preview, /周五 17:00/)
-    const replay = svc.demoStep({ workflowId: WEEKLY_ID })
-    assert.equal(replay.ok, true)
-    const replayed = replay.workflows.find(item => item.id === WEEKLY_ID)
-    assert.equal(replayed.activeCount, 0)
-    assert.equal(replay.demo.status, 'running')
-    assert.equal(replay.demo.nodeStatus.researcher, 'running')
-    assert.equal(replay.demo.nodeStatus.writer, 'queued')
-    assert.equal(replayed.run, null)
-    const replayNext = svc.demoStep({ workflowId: WEEKLY_ID })
-    assert.equal(replayNext.demo.nodeStatus.analyst, 'running')
-    const solo = replay.workflows.find(item => item.id === 'solo')
+    const solo = svc.state().workflows.find(item => item.id === 'solo')
     assert.equal(solo.activeCount, 1)
-    const refused = svc.demoStep({ workflowId: 'solo' })
-    assert.equal(refused.ok, false)
-    assert.match(refused.error, /A live run is in progress/)
+    assert.equal(solo.run?.live, true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
