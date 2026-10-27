@@ -72,6 +72,42 @@ test('define_workflow stores a node prompt, and the graph save edits it', () => 
   assert.equal(edited.workflows.find(item => item.id === made.id).nodes.find(node => node.id === 'code').prompt, 'Keep the diff small.')
 })
 
+test('workflow-level model is passed to all ephemeral Bots when set', async () => {
+  const { svc, spawned } = harness()
+  const made = svc.define({
+    name: 'Workflow with model',
+    nodes: [
+      { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Plan it.' },
+      { id: 'code', name: 'Coder', role: 'code', prompt: 'Code it.', model: 'mock/coder-override' },
+    ],
+    edges: [{ from: 'plan', to: 'code' }],
+  }).workflows.find(item => item.name === 'Workflow with model')
+  
+  const withModel = await svc.setModel({ workflowId: made.id, model: 'mock/workflow-model' })
+  assert.equal(withModel.ok, true)
+  const updated = withModel.workflows.find(item => item.id === made.id)
+  assert.equal(updated.model, 'mock/workflow-model')
+  
+  await svc.runNamed({ workflow: 'Workflow with model', brief: 'Test workflow model' })
+  assert.equal(spawned.length, 2)
+  const planSpec = spawned.find(item => item.spec.nodeId === 'plan').spec
+  const codeSpec = spawned.find(item => item.spec.nodeId === 'code').spec
+  assert.equal(planSpec.model, 'mock/workflow-model')
+  assert.equal(codeSpec.model, 'mock/workflow-model')
+})
+
+test('workflow model is empty by default and uses seated Bot model', async () => {
+  const { svc, spawned } = harness()
+  const made = lane(svc).workflows.find(item => item.name === 'Lane')
+  assert.equal(made.model, '')
+  
+  await svc.runNamed({ workflow: 'Lane', brief: 'Test default' })
+  const planSpec = spawned.find(item => item.spec.nodeId === 'plan').spec
+  assert.equal(planSpec.model, '')
+  const codeSpec = spawned.find(item => item.spec.nodeId === 'code').spec
+  assert.equal(codeSpec.model, 'mock/coder')
+})
+
 test('a run spawns a hidden Bot per node, hands it the step, and removes every one when the run finishes', async () => {
   const { svc, spawned, released, dispatched } = harness()
   const made = lane(svc).workflows.find(item => item.name === 'Lane')

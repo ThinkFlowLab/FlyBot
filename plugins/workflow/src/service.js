@@ -169,6 +169,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         description: item.description ?? '',
         trigger: item.trigger ?? 'manual',
         scheduleLabel: item.scheduleLabel ?? '',
+        model: item.model ?? '',
         nodes: item.nodes.map(node => publicNode(node, roster)),
         edges: (item.edges ?? []).map(publicEdge),
         layers: item.layers.map(layer => [...layer]),
@@ -523,7 +524,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const holes = missingProviders(item)
       if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
       try {
-        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
+        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '')
       } catch (error) {
         await releaseAll(error.spawned ?? [], release, warn)
         return refuse(error)
@@ -763,6 +764,16 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         await drainAll()
         return present()
       })
+    },
+    setModel(body = {}) {
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const workflowId = String(body.workflowId ?? '')
+      const model = body.model ? cleanLine(body.model, 80) : null
+      const saved = mutate(workflowId, (item) => {
+        item.model = model
+      })
+      if (saved.ok === false) return saved
+      return present()
     },
     advance(body = {}) {
       const workflowId = String(body.workflowId ?? '')

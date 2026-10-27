@@ -61,6 +61,7 @@ window.__ModuleLoader__.load({
       Schedule: '定时',
       Model: '模型',
       'Each Bot\'s own model': '跟随各个 Bot 的模型',
+      '{count} models': '{count} 个模型',
       Permissions: '权限',
       'Each Bot\'s own permission': '跟随各个 Bot 的权限',
       'On failure': '失败策略',
@@ -447,7 +448,7 @@ window.__ModuleLoader__.load({
             key, type: 'button', className: tab === key ? 'on' : '', onClick: () => onTab(key),
           }, tr(key === 'flow' ? 'Flow' : key === 'details' ? 'Details' : 'Runs')))),
         tab === 'flow' ? h(Flow, { workflow, run, roster, onTip, editing, onCommit }) : null,
-        tab === 'details' ? h(Details, { workflow }) : null,
+        tab === 'details' ? h(Details, { workflow, roster }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
           h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
@@ -672,14 +673,17 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-rl' }, node.role)))
     }
 
-    function Details({ workflow }) {
+    function Details({ workflow, roster }) {
       const trigger = workflow.trigger === 'schedule'
         ? `${tr('Schedule')} · ${workflow.scheduleLabel}`
         : tr('Manual')
       const retries = workflow.nodes.some(node => node.failOnce)
+      const modelLabel = workflow.model
+        ? (roster?.models ?? []).find(m => m.ref === workflow.model)?.name ?? workflow.model
+        : tr('Each Bot\'s own model')
       return h('div', { className: 'wf-box' },
         h('div', { className: 'wf-kv' }, h('span', null, tr('Trigger')), h('span', null, trigger)),
-        h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, tr('Each Bot\'s own model'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, modelLabel)),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot\'s own permission'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('On failure')), h('span', null, tr(retries ? 'Tester retries once. Any other failed step stops the run.' : 'A failed step stops the run.'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Concurrent runs')), h('span', null, String(workflow.maxConcurrent ?? 2))),
@@ -886,6 +890,21 @@ window.__ModuleLoader__.load({
                 value: current.id,
                 onChange: (event) => { setWorkflowId(event.target.value); setSelectedNode(null) },
               }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
+            h('label', { className: 'wf-field' },
+              h('span', null, tr('Model')),
+              h('select', {
+                'aria-label': tr('Model'),
+                value: current.model || '',
+                onChange: (event) => {
+                  const model = event.target.value || null
+                  void Promise.resolve(call('workflow/set-model', { workflowId: current.id, model })).then(value => {
+                    if (value?.ok === false) { setError(value.error ?? ''); return }
+                    if (value?.workflows) setPack(value)
+                  })
+                },
+              },
+                h('option', { value: '' }, tr('Each Bot\'s own model')),
+                (pack?.roster?.models ?? []).map(model => h('option', { key: model.ref, value: model.ref }, `${model.name} (${model.provider})`)))),
             h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
               editing ? tr('Finish editing') : tr('Edit')),
             editing ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
