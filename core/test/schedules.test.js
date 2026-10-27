@@ -442,6 +442,33 @@ test('#1319: a copy of a paused task goes through create and re-anchors its next
   assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).pausedSchedules[sourceId].record.title, 'Watch', 'the paused source stays paused')
 })
 
+// #1320: `copyRow` writes a row FlyBot builds itself, so the row is decoded against the
+// pinned package's own task type: a required key that moves upstream fails here instead of
+// leaving a copy DSH cannot read. Pinned at @deepseek-ai/dsh-schedule@0.2.0-rc.2.
+test('#1320: the row a copy writes matches the pinned dsh-schedule task type', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const { scheduleDomain, createEveryScheduleRecord } = await import('@deepseek-ai/dsh-schedule')
+  const clock = Date.parse('2030-01-01T12:00:00.000Z')
+  t.mock.method(Date, 'now', () => clock)
+
+  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check the board', when: { kind: 'every', minutes: 120 } })
+  const [sourceId] = schedule.tasks.keys()
+  // The fake's own create keeps a `timing` field no stored record has; a record from the
+  // pinned package is what a copy actually reads.
+  schedule.tasks.get(sourceId).record = createEveryScheduleRecord(sourceId, 'Check the board', 7200, clock, 'Watch')
+
+  const copied = await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: sourceId } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  const copyId = [...schedule.tasks.keys()].find(id => id !== sourceId)
+  const row = schedule.tasks.get(copyId)
+  const parsed = scheduleDomain.tables.tasks.valueSchema.safeParse(row)
+  assert.equal(parsed.success, true, `the copy row must decode as a stored task: ${JSON.stringify(parsed.error?.issues)}`)
+  assert.deepEqual(Object.keys(row).sort(), ['deliveryHistory', 'record', 'sessionId', 'status'], 'a copy supplies the session, the record, the status and an empty history')
+  assert.deepEqual({ ...row.record }, { ...schedule.tasks.get(sourceId).record, id: copyId }, 'the record keeps every key of the source’s, with only the id replaced')
+})
+
 test('pause keeps the task in FlyBot and removes it from DSH; resume brings it back', async (t) => {
   const schedule = scheduleService()
   const { ctx, home, call } = setup({ schedule })
