@@ -6,7 +6,7 @@ import { FlyBotDetails } from './flybot-slots.js'
 import { t } from './i18n.js'
 
 export const REMOTE_BOT_SETTINGS_CSS = `
-.bt-remote-sheet-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:16px;pointer-events:none}
+.bt-remote-sheet-layer{position:fixed;inset:0;z-index:120;isolation:isolate;display:flex;align-items:flex-end;justify-content:center;padding:16px;pointer-events:none}
 .bt-remote-sheet-layer[data-leaving]{pointer-events:none}
 .bt-remote-sheet-layer .bt-scrim{position:absolute;inset:0;z-index:0;pointer-events:auto}
 .bt-remote-sheet-layer[data-leaving] .bt-scrim{opacity:0;transition:opacity .16s ease-in}

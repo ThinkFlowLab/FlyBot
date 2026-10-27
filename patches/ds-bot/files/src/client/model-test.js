@@ -62,4 +62,12 @@ export const MODEL_TEST_CSS = `
 .bt-model-test-result[data-ok=true]{color:#1a7f37}
 .bt-model-test-result[data-ok=false]{color:#c21d2e}
 .bt-model-test-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
+/* #1347: the hint beside "Test connection" is prose and wraps; the button next to it keeps its own
+   words ("Test connection" on one line) and takes the room it needs. */
+.bt-model-test>.bt-set-copy{flex:1 1 12ch;min-width:12ch}
+.bt-model-test>.bt-soft{flex:none;white-space:nowrap}
+@container bt-panel (max-width:300px){
+  .bt-model-test{flex-wrap:wrap;row-gap:6px}
+  .bt-model-test>.bt-set-copy{flex:1 1 100%}
+}
 `

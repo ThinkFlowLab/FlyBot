@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { MIN_DETAILS, panelWidthRange } from '../src/client/pane-width.js'
+import { MIN_DETAILS, DETAILS_WIDTH, panelWidthRange } from '../src/client/pane-width.js'
 import { PANE_MIN_WIDTH_CSS } from '../src/client/panes.js'
 
 // Narrow multi-pane windows (#705): the Details panel's width is reserved as a margin on the
@@ -14,9 +14,13 @@ const rule = (selector) => {
 
 test('#705: a narrow window shrinks the Details panel before it starves the conversation', () => {
   assert.equal(MIN_DETAILS, 240)
-  // Room to spare: the panel keeps its own 320..520 range.
-  assert.deepEqual(panelWidthRange('details', 1440), [320, 520])
-  assert.deepEqual(panelWidthRange('details', 800), [320, 380])
+  // #1347: the Details panel opens at 380, not 320. A settings row holds a label and its control on
+  // one line ("Name" beside its field, "Test connection" beside its hint); at 320 the label took 36px
+  // and broke into "Nam" + "e", and the button into "Test connecti" + "on".
+  assert.equal(DETAILS_WIDTH, 380)
+  // Room to spare: the panel keeps its own 380..520 range.
+  assert.deepEqual(panelWidthRange('details', 1440), [380, 520])
+  assert.deepEqual(panelWidthRange('details', 800), [380, 380])
   // 620px: only 200px would be left for the conversation, so the panel goes down to 240.
   assert.deepEqual(panelWidthRange('details', 620), [240, 240])
   assert.deepEqual(panelWidthRange('details', 500), [240, 240])

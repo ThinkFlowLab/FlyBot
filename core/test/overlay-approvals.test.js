@@ -190,6 +190,42 @@ test('#998: the session dock tells a slot whether the chat is still blank', asyn
   } finally { off() }
 })
 
+// #1347: a Bot chat's first paint has no header either (`headerBlank`), so the column under it is a
+// blank box with a composer. The dock draws its own strip on exactly the same fact a group's does —
+// and never for a friend's Bot chat, which is not this home's and has its own hint, nor beside a header
+// the shell has already drawn. The strip's own text is asserted through its component (`BotChatStrip`),
+// because this renderer does not resolve function components.
+test('#1347: a blank Bot chat draws its own strip, and only while it is blank', async () => {
+  const { FlyBotSessionDock, BotChatStrip, registry } = await import('../src/client/flybot-slots.js')
+  const off = registry().register('flybot.session.dock', { id: 'probe-strip', component: () => null })
+  const strips = node => {
+    if (!node || typeof node !== 'object') return []
+    if (typeof node.type === 'function') return node.type.name === 'BotChatStrip' ? [node] : []
+    return (node.children ?? []).flatMap(strips)
+  }
+  try {
+    const owner = { id: 'bot-1', name: 'Helper', role: 'Researcher', ownerId: 'me' }
+    const renderWith = (session, bot = owner) => {
+      const inst = { hooks: {}, effects: [], rendered: false, props: { sessionId: 'bot-1', useRoster: pick => pick({ byId: { 'bot-1': bot }, roomsById: {} }), session, actions: {} } }
+      return strips(render(FlyBotSessionDock, inst))
+    }
+    // Nothing said, nothing sent: the shell drew no header, so the strip stands in.
+    const shown = renderWith({ blank: true })
+    assert.equal(shown.length, 1, 'one strip while the chat is blank')
+    assert.equal(shown[0].props.bot.name, 'Helper', 'it is drawn for this chat\'s Bot')
+    // From the first send on the shell draws its own header; a second one would be two headers.
+    assert.equal(renderWith({ blank: true, promptAttempted: true }).length, 0)
+    assert.equal(renderWith({ blank: false }).length, 0)
+    assert.equal(renderWith(undefined).length, 0)
+    // A friend's Bot is its owner's chat, not this home's: it has its own empty hint (#173), not this strip.
+    assert.equal(renderWith({ blank: true }, { ...owner, remote: { handle: '@helper.bob.home' } }).length, 0)
+    // What the strip says: the name, and why the column is empty.
+    const text = JSON.stringify(render(BotChatStrip, { hooks: {}, effects: [], rendered: false, props: { bot: owner, roster: { byId: {}, roomsById: {} }, actions: {}, sessionId: 'bot-1' } }))
+    assert.match(text, /bt-chat-strip-name/, 'it names the chat')
+    assert.match(text, /No messages yet/, 'and says why the column is empty')
+  } finally { off() }
+})
+
 // #968: the approval card in the dock is the second surface that used to ignore the flag. A terminal failure
 // draws no Retry; the retryable one keeps it.
 test('#968: a terminal failed approval draws no Retry in the dock card', async () => {
