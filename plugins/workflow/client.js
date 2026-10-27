@@ -106,6 +106,8 @@ window.__ModuleLoader__.load({
       'No open tasks on the Tasks board.': 'Tasks 看板上没有可分配的任务。',
       'Could not rename this workflow': '无法重命名该 Workflow',
       'Could not delete this workflow': '无法删除该 Workflow',
+      'Reading workflows…': '正在读取 Workflow…',
+      'Changes are saved automatically': '更改会自动保存',
     }
 
     function zhUi() {
@@ -814,11 +816,14 @@ window.__ModuleLoader__.load({
       const [selectedNode, setSelectedNode] = useState(null)
       const [editing, setEditing] = useState(false)
       const [error, setError] = useState('')
+      const [loading, setLoading] = useState(true)
       
       useEffect(() => {
         let gone = false
+        setLoading(true)
         void Promise.resolve(call('workflow/state')).then(value => {
           if (gone) return
+          setLoading(false)
           if (value && Array.isArray(value.workflows)) {
             setPack(value)
             const first = value.workflows[0]
@@ -864,7 +869,8 @@ window.__ModuleLoader__.load({
       
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
-        workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
+        loading ? h('div', { className: 'wf-muted' }, tr('Reading workflows…')) : null,
+        !loading && workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
         current ? h('div', { className: 'wf-settings-layout' },
           h('div', { className: 'wf-settings-header' },
             h('label', { className: 'wf-field' },
@@ -874,16 +880,18 @@ window.__ModuleLoader__.load({
                 onChange: (event) => { setWorkflowId(event.target.value); setSelectedNode(null) },
               }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
             h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
-              editing ? tr('Finish editing') : tr('Edit'))),
+              editing ? tr('Finish editing') : tr('Edit')),
+            editing ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
           h('div', { className: 'wf-canvas-main' },
             h(GraphCanvas, {
               workflow: current,
               editing,
               selectedNode,
               onSelectNode: setSelectedNode,
-              onCommit: ({ nodes, edges }) => save(nodes, edges)
+              onCommit: ({ nodes, edges }) => save(nodes, edges),
+              roster: pack?.roster
             })),
-          selected ? h('div', { className: 'wf-inspector' },
+          editing && selected ? h('div', { className: 'wf-inspector' },
             h('h3', null, tr('Node settings')),
             h('div', { className: 'wf-inspector-content' },
               h('label', { className: 'wf-field' },
@@ -905,9 +913,8 @@ window.__ModuleLoader__.load({
                   value: (selected.tools ?? []).join(', '),
                   placeholder: 'github, bash, read, edit...',
                   onChange: (event) => updateNode(selected.id, { tools: event.target.value.split(',').map(s => s.trim()).filter(Boolean) }),
-                })))) : h('div', { className: 'wf-inspector wf-inspector-empty' },
-            h('p', null, tr('Select a node to edit'))),
-          nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
+                })))) : null,
+          editing && nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
             h('h3', null, tr('Add link')),
             h('div', { className: 'wf-edge-fields' },
               h('label', { className: 'wf-field' },
@@ -956,11 +963,13 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', onClick: addEdge }, tr('Add link')))) : null) : null)
     }
 
-    function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit }) {
+    function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit, roster }) {
       const [gesture, setGesture] = useState(null)
       const nodes = workflow?.nodes ?? []
       const edges = workflow?.edges ?? []
       const height = Math.max(420, ...nodes.map(node => (node.y ?? 0) + 150), 0)
+      const run = workflow?.run?.live === true ? workflow.run : null
+      const status = run?.nodeStatus ?? {}
       
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
       
@@ -1017,7 +1026,7 @@ window.__ModuleLoader__.load({
                 setGesture({ kind: 'wire', from: node.id })
               },
             }) : null,
-            h(FlowNode, { node, status: 'idle', roster: {} })))))
+            h(FlowNode, { node, status: status[node.id] ?? 'idle', roster: roster ?? {} })))))
     }
 
     function conversationLeft() {
@@ -1406,7 +1415,7 @@ window.__ModuleLoader__.load({
 .wf-close-inspector{background:none;border:0;cursor:pointer;color:var(--bt-ink-3,#9a9a9a);font-size:18px;line-height:1;padding:0;width:20px;height:20px}
 .wf-node-inspector textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:8px;resize:vertical;font-size:12px}
 .wf-wires{position:absolute;left:calc(-1 * var(--wf-wire-span, ${WIRE_SPAN}px));top:0;width:calc(2 * var(--wf-wire-span, ${WIRE_SPAN}px));overflow:visible;pointer-events:none}
-.wf-wires path{fill:none;stroke:var(--bt-line,rgba(20,20,20,.35));stroke-width:1.6}
+.wf-wires path{fill:none;stroke:var(--bt-line,rgba(20,20,20,.5));stroke-width:2}
 .wf-wires .wf-end{pointer-events:auto;fill:var(--bt-card,#fff);stroke:var(--bt-accent,#4d6bfe);cursor:crosshair}
 .wf-abs{position:absolute}
 .wf-port{position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;border:2px solid var(--bt-accent,#4d6bfe);background:var(--bt-card,#fff);padding:0;cursor:crosshair}
@@ -1458,8 +1467,9 @@ window.__ModuleLoader__.load({
 .wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:nowrap}
 .wf-settings-canvas{padding:16px}
 .wf-settings-layout{display:flex;flex-direction:column;gap:16px}
-.wf-settings-header{display:flex;gap:12px;align-items:center}
-.wf-canvas-main{flex:1;min-height:500px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
+.wf-settings-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.wf-autosave-hint{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
+.wf-canvas-main{flex:1;min-height:500px;display:flex;flex-direction:column;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
 .wf-canvas-view{width:100%;height:100%;min-height:0;position:relative;overflow:auto}
 .wf-cards-empty{padding:8px 4px 12px}
 .wf-context-menu{position:fixed;z-index:95;min-width:140px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:2px}
