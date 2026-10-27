@@ -35,11 +35,11 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 | `core/test/check-arch-docs.test.js` | Tests for the gate. |
 | `core/test/install-doctor.test.js` | Install doctor tests. |
 | `plugins/README.md` | Plugin list. |
-| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and the install commands (core, social, tree; `@flybot/timeline` is opt-in and not in the default commands, #281). |
+| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`) and the install commands (core, social, tree, workflow; `@flybot/timeline` is opt-in and not in the default commands, #281). |
 | `core/scripts/local-ci.sh` | Local run of CI's steps, including each plugin's suite. |
 | `core/scripts/replay.mjs` | Dev-only state-journal replay (#511): rebuilds `state.json` up to an entry from `<home>/journal/state.jsonl`; no network or process calls, output is a new 0600 file or stdout, a bad journal is refused whole. See [core-host](core-host.md). |
 | `core/scripts/delivery-probe.mjs` | Which GitHub endpoint the delivery board's token cannot read (#1211): calls the host's own `probeGitHub()` — the function behind the header's **Diagnose** button — and prints one line per endpoint (`/repos/{repo}`, `/actions/runs`, `/commits/{sha}/check-runs`, `/issues/{n}/comments`, `/pulls`), status plus the setting to fix. `--repo` (repeatable) and `--token-env` (default `GITHUB_TOKEN`); since #1250/#1265 it resolves its repositories through the host's own `resolveRepos()` (`core/src/host/delivery-repo.js`): every `--repo`, else the `[remote "origin"]` of `--workspace <folder>` (default the current folder), else the package's `repository.url` — it probes each one the board would read and prints that repository and its source next to the name, so the CLI and the page cannot disagree. A thin shell, never a second implementation. |
-| `Dockerfile` | Packs `core` and the plugins with `check-pack.mjs` (the release tarballs), then a runtime with DSH (pinned like the README), pnpm and tini, as user `node`, one volume `/data`. |
+| `Dockerfile` | Packs `core` and the plugins (social, tree, workflow, timeline) with `check-pack.mjs` (the release tarballs), then a runtime with DSH (pinned like the README), pnpm and tini, as user `node`, one volume `/data`. |
 | `compose.yaml` | One instance: port on the host's `127.0.0.1`, volume `data`, `DEEPSEEK_API_KEY` passed through only when set. |
 | `docker/entrypoint.mjs`, `docker/profile.mjs` | Each start links the image's packages into `/data/profiles/web` (other plugins and `cordis.patch.yml` kept), `pnpm install`, then `dsh web` in `/data/workspace`. |
 | `docker/web.patch.yml` | Container-only overlay: `webserver.host: 0.0.0.0` (the CLI refuses `--host 0.0.0.0`; inside the container it reaches only the container's network). |
@@ -53,7 +53,7 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 
 1. Owned-file changes require a matching subsystem doc in the same PR (or a `Docs-not-needed:` trailer).
 2. Empty diff vs base passes.
-3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR.
+3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR. `@flybot/workflow` is one of the default commands. `@flybot/timeline` stays opt-in.
 4. The container image holds no key or token, runs as a normal user, and `compose.yaml` publishes the port on the host's `127.0.0.1` only. CI (`.github/workflows/docker.yml`) builds and start-checks it; nothing is pushed to a registry (owner decision on #352).
 
 ## Tests

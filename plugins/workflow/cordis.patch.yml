@@ -1,0 +1,5 @@
+# Mounts flybot-workflow (needs ds-bot, which provides the flybot service).
+# Set enabled: false to keep the plugin installed without endpoints or a sidebar section.
+- insert:
+    - id: flybot-workflow
+      name: '@flybot/workflow'

@@ -1005,6 +1005,22 @@ export function install(rt) {
     }
   }
 
+  // Board writes (#1318). Listeners see the saved view. The first object returned
+  // may name a local Bot; tasks.js applies that owner and does not ask again.
+  const taskWriteListeners = []
+  rt.onTaskWrite = async (task, kind) => {
+    let route = null
+    for (const fn of taskWriteListeners.slice()) {
+      try {
+        const answer = await fn(task, kind)
+        if (route === null && answer && typeof answer === 'object') route = answer
+      } catch (error) {
+        warn('flybot: task write listener failed: %s', error)
+      }
+    }
+    return route
+  }
+
   const build = (plugin) => {
     if (plugin === SHARED && built) throw new Error(`flybot: '${SHARED}' is the unscoped service; scope a plugin by its own name`)
     const fields = fieldsFor(plugin)
@@ -1197,6 +1213,16 @@ export function install(rt) {
       set: (botId, list) => rt.setGrants?.(botId, list),
     },
     approvals,
+    tasks: {
+      onWrite(fn) {
+        if (typeof fn !== 'function') return () => {}
+        taskWriteListeners.push(fn)
+        return () => {
+          const at = taskWriteListeners.indexOf(fn)
+          if (at >= 0) taskWriteListeners.splice(at, 1)
+        }
+      },
+    },
     tools,
     api,
     outcomeOf: exchangeId => outcomes.get(exchangeId),

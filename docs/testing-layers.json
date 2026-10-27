@@ -8,7 +8,7 @@
       "guarantee": "The cheapest layer that can catch a defect: it must be deterministic and hermetic — no network, no model, no wall-clock or calendar dependence, no ordering between files.",
       "mustNot": "Reach the network, call a model, read the clock, or depend on a machine's home directory.",
       "budget": "The whole layer under 10 minutes on a cold runner. A suite that cannot fit is either split or moved up, not added.",
-      "command": "node .github/scripts/testing-layers.mjs --check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && node --test \".github/scripts/*.test.mjs\" && npm run test:interop"
+      "command": "node .github/scripts/testing-layers.mjs --check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && npm --prefix plugins/workflow test && node --test \".github/scripts/*.test.mjs\" && npm run test:interop"
     },
     "L2": {
       "name": "merge",
@@ -62,6 +62,15 @@
         "plugins/timeline/test/**/*.test.js"
       ],
       "command": "npm --prefix plugins/timeline test",
+      "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
+    },
+    {
+      "id": "plugins/workflow",
+      "layer": "L1",
+      "paths": [
+        "plugins/workflow/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plugins/workflow test",
       "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
     },
     {

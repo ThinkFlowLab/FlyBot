@@ -81,6 +81,7 @@ The tables below are generated: edit `docs/testing-layers.json`, then run
 | `plugins/social` | L1 | `plugins/social/test/**/*.test.js` | `npm --prefix plugins/social test` |
 | `plugins/tree` | L1 | `plugins/tree/test/**/*.test.js` | `npm --prefix plugins/tree test` |
 | `plugins/timeline` | L1 | `plugins/timeline/test/**/*.test.js` | `npm --prefix plugins/timeline test` |
+| `plugins/workflow` | L1 | `plugins/workflow/test/**/*.test.js` | `npm --prefix plugins/workflow test` |
 | `scripts` | L1 | `.github/scripts/*.test.mjs` | `node --test ".github/scripts/*.test.mjs"` |
 | `interop` | L1 | `dev/interop/**/*.test.mjs` | `npm run test:interop` |
 | `patch-payload` | none (see reason) | `patches/ds-bot/files/**` | — Generated copies of the files the patches carry. They are compared against `core/` by `node scripts/ds-bot-patches.mjs check` (L2) and never run on their own; the code under test is the copy in `core/`. |

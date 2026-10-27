@@ -121,6 +121,11 @@ jobs:
         env:
           DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
         run: npm test
+      - name: Plugin tests (workflow)
+        working-directory: plugins/workflow
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
+        run: npm test
 
   weekly:
     name: compat · ${{ matrix.os }} · Node ${{ matrix.node }} · DSH ${{ matrix.dsh }}
@@ -175,6 +180,11 @@ jobs:
         run: npm test
       - name: Plugin tests (timeline)
         working-directory: plugins/timeline
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
+        run: npm test
+      - name: Plugin tests (workflow)
+        working-directory: plugins/workflow
         env:
           DSH_HARNESS: ${{ github.workspace }}/core/dev/harness
         run: npm test

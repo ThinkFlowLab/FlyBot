@@ -1,4 +1,4 @@
-// Install doctor: checks the Node floor and the three plugin packages a FlyBot install
+// Install doctor: checks the Node floor and the plugin packages a FlyBot install
 // needs before the maintainer runs the install commands. Reads the filesystem only: no
 // network, no tokens, no ~/.dsh.
 //
@@ -16,6 +16,7 @@ const PACKAGES = [
   ['core', 'ds-bot'],
   ['plugins/social', '@flybot/social'],
   ['plugins/tree', '@flybot/tree'],
+  ['plugins/workflow', '@flybot/workflow'],
   ['plugins/timeline', '@flybot/timeline'],
 ]
 
@@ -75,7 +76,7 @@ export function buildInstallCommands({
   dshPackage = '@deepseek-ai/dsh@0.2.0-rc.2',
   timeline = false, // @flybot/timeline is opt-in (#281): its install command is printed only on request
 } = {}) {
-  return ['/core', '/plugins/social', '/plugins/tree', ...(timeline ? ['/plugins/timeline'] : [])]
+  return ['/core', '/plugins/social', '/plugins/tree', '/plugins/workflow', ...(timeline ? ['/plugins/timeline'] : [])]
     .map(path => `npx -y ${dshPackage} plugin --profile ${profile} add "github:${repo}#${ref}&path:${path}"`)
 }
 

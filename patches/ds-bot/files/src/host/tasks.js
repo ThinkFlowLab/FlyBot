@@ -861,6 +861,26 @@ export function install(rt) {
     return save()
   }
 
+  // A plugin may claim an open card for a local Bot (#1318). The second save
+  // does not ask again, so a listener cannot re-enter this write.
+  async function routeOpenTask(task, kind) {
+    if (typeof rt.onTaskWrite !== 'function') return
+    let route
+    try {
+      route = await rt.onTaskWrite(view(task), kind)
+    } catch (error) {
+      rt.warn?.('ds-bot: task route failed: %s', error)
+      return
+    }
+    const next = typeof route?.ownerBotId === 'string' ? route.ownerBotId : ''
+    if (next === '' || next === task.ownerBotId) return
+    const bot = botRecord(next)
+    if (bot === undefined || bot.remote !== undefined) return
+    task.ownerBotId = next
+    record(task, null, { by: 'routed' })
+    await save()
+  }
+
   // ---------------------------------------------------------------- channel API
   rt.taskEndpoint = async function taskEndpoint(endpoint, body, actor) {
     switch (endpoint) {
@@ -928,6 +948,7 @@ export function install(rt) {
         store()[task.id] = task
         prune()
         await save()
+        await routeOpenTask(task, 'create')
         return view(task)
       }
       case 'task-update': {
@@ -941,6 +962,7 @@ export function install(rt) {
         if (column === 'done' && progress === undefined) task.progress = 100
         if (!moved && task.updatedAt === before) record(task, actor, { by: 'updated' })
         await save()
+        await routeOpenTask(task, 'update')
         return view(task)
       }
       case 'task-accept': {

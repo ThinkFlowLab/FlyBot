@@ -1,5 +1,5 @@
 # FlyBot in a container (#352): one person, one instance. `dsh web` with the FlyBot core,
-# social, tree and timeline packages of this checkout. Build it yourself; nothing is published.
+# social, tree, workflow and timeline packages of this checkout. Build it yourself; nothing is published.
 #   docker compose up -d --build        (see docs/docker.md)
 # No keys or tokens are baked in: DEEPSEEK_API_KEY comes from the environment or from the
 # credentials file on the data volume.

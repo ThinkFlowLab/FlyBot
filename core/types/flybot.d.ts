@@ -490,6 +490,14 @@ export interface FlyBot {
     /** 'retry' re-sends a failed approval; an approve resumes the chain after the holder. */
     onChange(listener: (approval: Approval) => void): () => void
   }
+  /**
+   * Board task writes (#1318). `fn` hears the saved view after create and update.
+   * Return `{ ownerBotId }` to move the card onto a local Bot; the host saves that
+   * move without calling listeners again. Return nothing to leave the owner.
+   */
+  tasks: {
+    onWrite(fn: (task: Record<string, unknown>, kind: 'create' | 'update') => { ownerBotId?: string } | null | undefined | Promise<{ ownerBotId?: string } | null | undefined>): () => void
+  }
   tools: { register(tool: FlyBotTool): () => void }
   api: {
     /** UI endpoint: POST api/bot { endpoint: 'flybot/<name>', payload }. */

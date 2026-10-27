@@ -1,7 +1,7 @@
 # FlyBot plugins
 
 Peer plugin packages at the repository root: `social` (`@flybot/social`), `tree`
-(`@flybot/tree`) and `timeline` (`@flybot/timeline`). They are not part of `core/` and are not carried by any
+(`@flybot/tree`), `workflow` (`@flybot/workflow`) and `timeline` (`@flybot/timeline`). They are not part of `core/` and are not carried by any
 `patches/ds-bot/` patch.
 
 ## Install doctor
@@ -13,8 +13,8 @@ cd core
 npm run install:doctor
 ```
 
-It checks the Node floor and the four packages in the repository
-(`core`, `plugins/social`, `plugins/tree`, `plugins/timeline`) and prints the `dsh plugin add`
-commands for the clean-profile install: `path:/core`, `path:/plugins/social` and `path:/plugins/tree`.
+It checks the Node floor and the packages in the repository
+(`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`) and prints the `dsh plugin add`
+commands for the clean-profile install: `path:/core`, `path:/plugins/social`, `path:/plugins/tree` and `path:/plugins/workflow`.
 `@flybot/timeline` is opt-in (off by default), so its command is not in that list; see the README. It reads the filesystem only: no network, no tokens,
 no `~/.dsh`.

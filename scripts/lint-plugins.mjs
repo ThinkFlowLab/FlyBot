@@ -84,7 +84,8 @@ export function outboundImports(pluginDir, pkg = JSON.parse(readFileSync(join(pl
       }
       const name = packageNameOf(spec)
       if (declared.has(name)) continue
-      if (name === 'react' && relFile === 'client.js') continue
+      // The web shell injects React. A client entry may portal with react-dom; nothing else may.
+      if ((name === 'react' || name === 'react-dom') && relFile === 'client.js') continue
       problems.push({ file: relFile, spec })
     }
   }

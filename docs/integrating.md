@@ -33,5 +33,5 @@ Both seams are metadata-safe: no egress, text only, a short `code` instead of pr
 | --- | --- | --- |
 | ds-bot-core, core-host, core-client | `core/index.js`, `core/src/`, `core/client.js`, `patches/ds-bot/`, … | Change `core/`, regenerate patches. |
 | plugin-runtime | `core/src/host/hooks.js`, slots, registry | FlyBot plugin API surface. |
-| tree / social | `plugins/tree/`, `plugins/social/` | Independent plugins. |
+| tree / social / timeline / workflow | `plugins/tree/`, `plugins/social/`, `plugins/timeline/`, `plugins/workflow/` | Independent plugins. |
 | install | `core/scripts/`, arch-doc checks | Tooling only. |
