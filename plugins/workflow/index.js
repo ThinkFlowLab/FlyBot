@@ -123,7 +123,7 @@ export function apply(ctx, config = {}) {
         const from = typeof msg.from === 'string' ? msg.from : ''
         if (msg.role !== 'reply' || !from || service.ownsBot(from) !== true) return undefined
         const text = String(msg.text ?? '')
-        const failed = /could not answer your message|model call failed|\b429\b|rate limit/i.test(text)
+        const failed = /could not answer your message|model call failed/i.test(text)
         // The reply is the step result. Let it deliver, and move the node from it.
         void Promise.resolve(service.stepResult({ botId: from, text, ok: !failed })).catch(error => {
           fb.warn?.('flybot-workflow: step result failed: %s', error)

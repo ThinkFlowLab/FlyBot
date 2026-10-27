@@ -97,7 +97,14 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   state.demos ??= {}
   if (!state.laneFormat) migrateRuns(state)
   let seq = state.seq ?? 1
-  const tails = new Map()
+  // One lock for every start and release. The host cap is read and updated
+  // only while this is held, so two workflows cannot both pass it.
+  let hostTail = Promise.resolve()
+  function hostSerial(fn) {
+    const run = hostTail.then(() => fn())
+    hostTail = run.then(() => {}, () => {})
+    return run
+  }
 
   function write() {
     if (!persist || !file) return
@@ -205,13 +212,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const index = lane.active.findIndex(item => item.id === run.id)
     if (index >= 0) lane.active[index] = run
     else if (state.demos[workflowId]?.id === run.id) state.demos[workflowId] = run
-  }
-
-  function serial(workflowId, fn) {
-    const prev = tails.get(workflowId) ?? Promise.resolve()
-    const run = prev.then(() => fn())
-    tails.set(workflowId, run.then(() => {}, () => {}))
-    return run
   }
 
   function sentOk(result) {
@@ -375,15 +375,58 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     write()
   }
 
-  async function fillSlots(item) {
-    const lane = laneOf(item.id)
-    while (lane.queue.length > 0 && runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP) {
-      const task = lane.queue.shift()
-      const started = await startLive(item, task)
+  // The oldest queued task whose own workflow still has a slot, or null.
+  function takeNext() {
+    let best = null
+    for (const item of state.workflows) {
+      const lane = laneOf(item.id)
+      if (lane.queue.length === 0) continue
+      if (runningOf(lane).length >= maxOf(item)) continue
+      const task = lane.queue[0]
+      const at = Number(task.enqueuedAt) || 0
+      const order = Number(task.queueSeq) || 0
+      if (!best || at < best.at || (at === best.at && order < best.order)) best = { item, at, order }
+    }
+    if (!best) return null
+    const task = laneOf(best.item.id).queue.shift()
+    return { item: best.item, task: { id: task.id, title: task.title } }
+  }
+
+  function noteUnstarted(item, error) {
+    push(item.id, [{ kind: 'system', tone: 'bad', text: error ?? 'The queued task could not start' }], now())
+    write()
+  }
+
+  // After a slot frees, start the oldest parked task on any workflow that
+  // still has room, and stop at the host cap.
+  function drainSync() {
+    let guard = 0
+    while (globalRunning() < HOST_CAP && guard < 48) {
+      guard += 1
+      const next = takeNext()
+      if (!next) return
+      const begun = beginRun(next.item, next.task)
+      if (begun.ok === false) {
+        noteUnstarted(next.item, begun.error)
+        return
+      }
+    }
+  }
+
+  async function drainAll() {
+    if (typeof spawn !== 'function') {
+      drainSync()
+      return
+    }
+    let guard = 0
+    while (globalRunning() < HOST_CAP && guard < 48) {
+      guard += 1
+      const next = takeNext()
+      if (!next) return
+      const started = await startLive(next.item, next.task)
       if (started?.ok === false) {
-        push(item.id, [{ kind: 'system', tone: 'bad', text: started.error ?? 'The queued task could not start' }], now())
-        write()
-        break
+        noteUnstarted(next.item, started.error)
+        return
       }
     }
   }
@@ -460,22 +503,41 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
 
   function park(item, task) {
     const lane = laneOf(item.id)
-    lane.queue.push({ ...task, enqueuedAt: now() })
+    state.queueSeq = (state.queueSeq ?? 0) + 1
+    lane.queue.push({ id: task.id, title: task.title, enqueuedAt: now(), queueSeq: state.queueSeq })
     push(item.id, [{ kind: 'system', text: `排队：${task.id} ${task.title}（前面 ${lane.queue.length - 1} 个，同时运行上限 ${maxOf(item)}）` }], now())
     write()
-    return present()
   }
 
+  function hasRoom(item) {
+    return runningOf(laneOf(item.id)).length < maxOf(item) && globalRunning() < HOST_CAP
+  }
+
+  // A non-empty queue is joined at the tail, then the oldest task starts.
+  // A newer assign never runs ahead of one already parked.
   function enqueue(item, task) {
     if (queuedOrRunning(item.id, task.id)) return { ...present(), already: true }
     const lane = laneOf(item.id)
-    const room = runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP
-    if (!room) return park(item, task)
+    const behind = lane.queue.length > 0
+    if (behind || !hasRoom(item)) {
+      park(item, task)
+      if (typeof spawn !== 'function') {
+        drainSync()
+        return present()
+      }
+      return drainAll().then(() => present())
+    }
     if (typeof spawn !== 'function') {
       const begun = beginRun(item, task)
-      return begun.ok === false ? begun : present()
+      if (begun.ok === false) return begun
+      drainSync()
+      return present()
     }
-    return startLive(item, task)
+    return startLive(item, task).then(async (started) => {
+      if (started?.ok === false) return started
+      await drainAll()
+      return present()
+    })
   }
 
   function runFor(workflowId, runId, nodeId) {
@@ -515,7 +577,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const latest = lane.active.find(itemRun => itemRun.id === runId)
     if (latest && (latest.status === 'done' || latest.status === 'failed')) {
       await releaseRun(workflowId, latest)
-      if (item) await fillSlots(item)
+      await drainAll()
     }
     return present()
   }
@@ -596,7 +658,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const task = { id: cleanLine(body.taskId ?? body.id, 80), title: cleanLine(body.title, 300) }
       if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
       if (typeof spawn !== 'function') return enqueue(item, task)
-      return serial(workflowId, () => enqueue(item, task))
+      return hostSerial(() => enqueue(item, task))
     },
     setConcurrency(body = {}) {
       const workflowId = String(body.workflowId ?? '')
@@ -605,9 +667,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENT) throw new Error('maxConcurrent is an integer from 1 to 8')
         item.maxConcurrent = value
       })
-      if (saved.ok === false || typeof spawn !== 'function') return saved
-      return serial(workflowId, async () => {
-        await fillSlots(workflow(workflowId))
+      if (saved.ok === false) return saved
+      if (typeof spawn !== 'function') {
+        drainSync()
+        return present()
+      }
+      return hostSerial(async () => {
+        await drainAll()
         return present()
       })
     },
@@ -625,19 +691,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           lane.active = lane.active.filter(item => item.id !== run.id)
           lane.last = run
           lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
-          const item = workflow(workflowId)
-          if (item) {
-            while (lane.queue.length > 0 && runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP) {
-              const task = lane.queue.shift()
-              const begun = beginRun(item, task)
-              if (begun.ok === false) break
-            }
-          }
+          drainSync()
           write()
         }
         return present()
       }
-      return serial(workflowId, async () => {
+      return hostSerial(async () => {
         const saved = step()
         if (saved?.ok === false) return saved
         return afterStep(workflowId, saved.runId)
@@ -717,10 +776,11 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         const saved = take()
         return saved.ok === false ? saved : present()
       }
-      return serial(workflowId, async () => {
+      return hostSerial(async () => {
         const saved = take()
         if (saved.ok === false) return saved
         await releaseAll(saved.ids, release, warn)
+        await drainAll()
         return present()
       })
     },
@@ -954,8 +1014,18 @@ function migrateRuns(state) {
   for (const [id, run] of Object.entries(state.runs ?? {})) {
     if (!run || typeof run !== 'object' || state.lanes[id]) continue
     const history = Array.isArray(run.history) ? run.history.filter(item => item?.status === 'done' || item?.status === 'failed') : []
-    if (run.status === 'running') state.lanes[id] = { active: [{ ...run, live: true }], queue: [], last: null, history }
-    else state.lanes[id] = { active: [], queue: [], last: run, history }
+    const bots = run.ephemeral && typeof run.ephemeral === 'object' ? Object.keys(run.ephemeral) : []
+    // Only a run that still has its Bots occupies a slot. The seeded script
+    // has none, so it stays a demo and replay can move it.
+    if (bots.length > 0 && run.status === 'running') {
+      state.lanes[id] = { active: [{ ...run, live: true }], queue: [], last: null, history }
+      continue
+    }
+    const demo = { ...run }
+    delete demo.live
+    state.demos[id] = demo
+    const finished = run.status === 'done' || run.status === 'failed'
+    state.lanes[id] = { active: [], queue: [], last: finished ? { ...demo } : null, history }
   }
   state.runs = {}
   state.laneFormat = true

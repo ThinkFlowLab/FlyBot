@@ -188,7 +188,7 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.deepEqual(removed, ['bot-1'])
 })
 
-test('a Bot reply is what advances a live node, and a 429 reply fails it', async () => {
+test('a Bot reply advances a live node; a 429 in the reply does not fail it', async () => {
   let handle
   const created = []
   const removed = []
@@ -226,13 +226,13 @@ test('a Bot reply is what advances a live node, and a 429 reply fails it', async
   assert.equal(typeof handle, 'function')
   assert.equal(run.nodeStatus.plan, 'running')
   handle({ from: run.ephemeral.plan, role: 'request', text: 'not a reply' })
-  handle({ from: run.ephemeral.plan, role: 'reply', text: 'OUTPUT plan: two lines' })
+  handle({ from: run.ephemeral.plan, role: 'reply', text: 'Noted a rate limit (429) in the log.\nOUTPUT plan: two lines' })
   const mid = await waitFor(() => {
     const row = started.service.state().workflows.find(item => item.id === made.id)
     return row.run?.nodeStatus?.code === 'running' ? row : null
   })
   assert.equal(mid.run.nodeStatus.plan, 'done')
-  handle({ from: run.ephemeral.code, role: 'reply', text: 'The model call failed (429).' })
+  handle({ from: run.ephemeral.code, role: 'reply', text: 'could not answer your message' })
   const stopped = await waitFor(() => {
     const row = started.service.state().workflows.find(item => item.id === made.id)
     if (row.run?.status !== 'failed' || removed.length !== created.length) return null
@@ -241,6 +241,16 @@ test('a Bot reply is what advances a live node, and a 429 reply fails it', async
   assert.equal(stopped.run.nodeStatus.code, 'failed')
   assert.equal(stopped.run.ephemeral, undefined)
   assert.deepEqual(removed.sort(), created.sort())
+
+  const again = await started.service.runNamed({ workflow: 'Lane', brief: 'Ship another', task: '#1402b' })
+  const second = again.workflows.find(item => item.id === made.id).run
+  assert.equal(second.status, 'running')
+  handle({ from: second.ephemeral.plan, role: 'reply', text: 'The model call failed.' })
+  const failed = await waitFor(() => {
+    const row = started.service.state().workflows.find(item => item.id === made.id)
+    return row.run?.task?.id === '#1402b' && row.run?.status === 'failed' ? row : null
+  })
+  assert.equal(failed.run.nodeStatus.plan, 'failed')
 })
 
 async function waitFor(read) {

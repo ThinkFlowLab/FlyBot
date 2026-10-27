@@ -1,10 +1,14 @@
 // #1402: a live run is not replaced. Tasks queue, a node stays running until
 // the Bot replies, and a dispatch that fails is not marked handed.
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
-import { createWorkflowService } from '../src/service.js'
-import { DELIVERY_ID } from '../src/template.js'
+import { completeNode, freshStatus, normalizeGraph, startFrontier } from '../src/graph.js'
 import { matchTask } from '../src/match.js'
+import { createWorkflowService } from '../src/service.js'
+import { DELIVERY_ID, WEEKLY_ID, deliveryWorkflow, fixtureTask, weeklyWorkflow } from '../src/template.js'
 
 const roster = [
   { id: 'main', name: 'Chief', role: 'lead', isMain: true, remote: false },
@@ -232,9 +236,124 @@ test('outputs travel along edges and a node does not start without them', async 
   assert.equal(after.nodeStatus.ship, 'queued')
   assert.equal(dispatched.at(-1).step.inputs.plan, 'lead with the conclusion')
 
-  const done = await svc.stepResult({ botId: after.ephemeral.write, ok: false, text: 'The model call failed (429).' })
+  const done = await svc.stepResult({ botId: after.ephemeral.write, ok: false, text: 'The model call failed.' })
   const stopped = done.workflows.find(item => item.id === made.id).run
   assert.equal(stopped.nodeStatus.write, 'failed')
   assert.equal(stopped.nodeStatus.ship, 'queued')
-  assert.match(done.workflows.find(item => item.id === made.id).messages.map(message => message.text).join('\n'), /429/)
+  assert.match(done.workflows.find(item => item.id === made.id).messages.map(message => message.text).join('\n'), /model call failed/)
+})
+
+test('an old store keeps the seeded script as a demo, so replay still advances', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-wf-old-'))
+  try {
+    const deliveryGraph = normalizeGraph(deliveryWorkflow())
+    const weeklyGraph = normalizeGraph(weeklyWorkflow())
+    let nodeStatus = freshStatus(deliveryGraph)
+    for (const op of [{ type: 'start' }, { type: 'complete', nodeId: 'planner' }, { type: 'complete', nodeId: 'writer' }]) {
+      const result = op.type === 'start' ? startFrontier(deliveryGraph, nodeStatus) : completeNode(deliveryGraph, nodeStatus, op.nodeId)
+      nodeStatus = result.status
+    }
+    const task = fixtureTask()
+    const done = freshStatus(weeklyGraph)
+    for (const id of Object.keys(done)) done[id] = 'done'
+    writeFileSync(join(dir, 'workflows.json'), JSON.stringify({
+      version: 1,
+      workflows: [
+        deliveryGraph,
+        weeklyGraph,
+        { id: 'solo', name: 'Solo', nodes: [{ id: 'only', name: 'Only', x: 40, y: 40 }], edges: [], layers: [['only']] },
+      ],
+      runs: {
+        [DELIVERY_ID]: {
+          id: 'run-old', workflowId: DELIVERY_ID, task, status: 'running', nodeStatus,
+          steps: 3, stepBudget: 8, failedOnce: {}, history: [], startedAt: 1, updatedAt: 1,
+        },
+        [WEEKLY_ID]: {
+          id: 'run-week', workflowId: WEEKLY_ID, task: { id: 'W42', title: '周报' }, status: 'done',
+          nodeStatus: done, steps: 4, stepBudget: 4,
+          history: [{ task: { id: 'W42', title: '周报' }, status: 'done', at: 1 }],
+          startedAt: 1, updatedAt: 1,
+        },
+        solo: {
+          id: 'run-live', workflowId: 'solo', task: { id: '#9', title: 'Live' }, status: 'running',
+          nodeStatus: { only: 'running' }, ephemeral: { only: 'bot-live' },
+          steps: 1, stepBudget: 2, history: [], startedAt: 1, updatedAt: 1,
+        },
+      },
+      logs: { [DELIVERY_ID]: [], [WEEKLY_ID]: [], solo: [] },
+      seq: 1,
+    }))
+    const svc = createWorkflowService({ dir, persist: true, now: () => 9, bots: () => [] })
+    const opened = delivery(svc.state())
+    assert.equal(opened.activeCount, 0)
+    assert.equal(opened.run.task.id, '#1280')
+    assert.equal(opened.run.live, undefined)
+    assert.equal(opened.run.nodeStatus.coder, 'running')
+    const stepped = svc.demoStep({ workflowId: DELIVERY_ID })
+    assert.equal(stepped.ok, true)
+    const after = delivery(stepped)
+    assert.equal(after.activeCount, 0)
+    assert.equal(after.run.nodeStatus.coder, 'done')
+    const week = stepped.workflows.find(item => item.id === WEEKLY_ID)
+    assert.equal(week.activeCount, 0)
+    const replay = svc.demoStep({ workflowId: WEEKLY_ID })
+    assert.equal(replay.ok, true)
+    assert.equal(replay.workflows.find(item => item.id === WEEKLY_ID).activeCount, 0)
+    const solo = replay.workflows.find(item => item.id === 'solo')
+    assert.equal(solo.activeCount, 1)
+    const refused = svc.demoStep({ workflowId: 'solo' })
+    assert.equal(refused.ok, false)
+    assert.match(refused.error, /A live run is in progress/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a task parked at the host cap starts when any run finishes, ahead of a newer assign', async () => {
+  let calls = 0
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const { svc } = harness({
+    blockSpawn: () => {
+      calls += 1
+      if (calls === 6) return gate
+      return undefined
+    },
+  })
+  const ids = []
+  for (let n = 0; n < 7; n += 1) {
+    const made = svc.define({
+      name: `Cap ${n}`,
+      nodes: [{ id: 'only', name: 'Only', outputs: [{ name: 'out', type: 'text' }] }],
+      edges: [],
+    }).workflows.find(item => item.name === `Cap ${n}`)
+    ids.push(made.id)
+  }
+  for (let n = 0; n < 5; n += 1) {
+    const started = await svc.assign({ workflowId: ids[n], taskId: `#run${n}`, title: `Run ${n}` })
+    assert.equal(started.workflows.find(item => item.id === ids[n]).activeCount, 1)
+  }
+  const sixth = svc.assign({ workflowId: ids[5], taskId: '#six', title: 'Six' })
+  await new Promise(resolve => setImmediate(resolve))
+  const parked = svc.assign({ workflowId: ids[6], taskId: '#parked', title: 'Parked' })
+  release()
+  await sixth
+  const held = await parked
+  assert.equal(held.workflows.find(item => item.id === ids[5]).activeCount, 1)
+  const waiting = held.workflows.find(item => item.id === ids[6])
+  assert.equal(waiting.activeCount, 0)
+  assert.deepEqual(waiting.queue.map(task => task.id), ['#parked'])
+
+  const newer = await svc.assign({ workflowId: ids[6], taskId: '#newer', title: 'Newer' })
+  const both = newer.workflows.find(item => item.id === ids[6])
+  assert.equal(both.activeCount, 0)
+  assert.deepEqual(both.queue.map(task => task.id), ['#parked', '#newer'])
+
+  const victim = newer.workflows.find(item => item.id === ids[0]).run
+  const finished = await svc.stepResult({ botId: victim.ephemeral.only, ok: true, text: 'OUTPUT out: done' })
+  assert.equal(finished.workflows.find(item => item.id === ids[0]).activeCount, 0)
+  const woke = finished.workflows.find(item => item.id === ids[6])
+  assert.equal(woke.activeCount, 1)
+  assert.equal(woke.run.task.id, '#parked')
+  assert.deepEqual(woke.queue.map(task => task.id), ['#newer'])
 })
