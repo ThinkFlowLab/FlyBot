@@ -9227,31 +9227,8 @@ function statusLabel(status) {
       return t("Not started");
   }
 }
-function dropLabel(column) {
-  if (column === "in-progress") return t("Start task");
-  if (column === "done") return t("Complete task");
-  return t("Not started");
-}
-function columnTitle(column) {
-  if (column === "in-progress") return t("In progress");
-  if (column === "done") return t("Done");
-  return t("Not started");
-}
 function botName(roster, task) {
   return roster?.byId?.[task.ownerBotId]?.name || task.ownerBotName || "";
-}
-function lanesOf(tasks, roster) {
-  const order = [];
-  const map = /* @__PURE__ */ new Map();
-  for (const task of tasks) {
-    const id = task.ownerBotId ?? "";
-    if (!map.has(id)) {
-      map.set(id, []);
-      order.push(id);
-    }
-    map.get(id).push(task);
-  }
-  return order.map((id) => ({ id, name: botName(roster, map.get(id)[0]) || id, tasks: map.get(id) }));
 }
 var upsert = (list, task) => list.some((item) => item.id === task.id) ? list.map((item) => item.id === task.id ? task : item) : [...list, task];
 var without = (list, id) => list.filter((item) => item.id !== id);
@@ -9362,113 +9339,6 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
     onDragStart: () => onDrag?.(task.id),
     onDragEnd: () => onDrag?.(null)
   });
-}
-function cardProps(task, roster, onMove, onDrag, partOf2) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
-}
-function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
-  const tree = lanes ? columnTree(tasks) : null;
-  const linked = tree ? tree.loose.filter((task) => task.parentId || task.parentTitle) : [];
-  const plain = tree ? tree.loose.filter((task) => !task.parentId && !task.parentTitle) : tasks;
-  return (0, import_react17.createElement)(
-    "section",
-    {
-      className: "bt-board-column",
-      "data-column": column,
-      "aria-label": columnTitle(column),
-      onDragOver: (event) => {
-        if (!dragging) return;
-        event.preventDefault();
-      },
-      onDrop: (event) => {
-        event.preventDefault();
-        const id = event.dataTransfer?.getData("text/plain");
-        if (id) onMove?.(id, column);
-        onDrag?.(null);
-      }
-    },
-    (0, import_react17.createElement)(
-      "h3",
-      { className: "bt-board-column-head" },
-      (0, import_react17.createElement)("span", null, columnTitle(column)),
-      (0, import_react17.createElement)("span", { className: "bt-board-count" }, String(tasks.length))
-    ),
-    dragging ? (0, import_react17.createElement)("div", { className: "bt-board-drop" }, dropLabel(column)) : null,
-    tasks.length === 0 && !dragging ? (0, import_react17.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : null,
-    tree ? tree.nests.map((nest) => (0, import_react17.createElement)(
-      "div",
-      { key: nest.task.id, className: "bt-board-nest" },
-      (0, import_react17.createElement)(BoardCard2, cardProps(nest.task, roster, onMove, onDrag)),
-      nest.children.map((child) => (0, import_react17.createElement)(
-        "div",
-        { key: child.id, className: "bt-board-subtask", "data-parent": nest.task.id },
-        (0, import_react17.createElement)(BoardCard2, cardProps(child, roster, onMove, onDrag))
-      ))
-    )) : null,
-    linked.map((task) => (0, import_react17.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || "") })),
-    lanes ? lanesOf(plain, roster).map((lane) => (0, import_react17.createElement)(
-      "div",
-      { key: lane.id, className: "bt-board-lane" },
-      (0, import_react17.createElement)("span", { className: "bt-board-lane-name" }, lane.name),
-      lane.tasks.map((task) => (0, import_react17.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
-    )) : plain.map((task) => (0, import_react17.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
-  );
-}
-function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const columns = boardColumns(tasks);
-  const lanes = scope?.kind === "group";
-  const selectedBot = scope?.kind === "bot" ? scope.botId : "";
-  const selectedRoom = scope?.kind === "group" ? scope.roomId : "";
-  return (0, import_react17.createElement)(
-    "div",
-    { className: "bt-board-body" },
-    (0, import_react17.createElement)(
-      "aside",
-      { className: "bt-board-rail", "aria-label": t("Task board") },
-      (0, import_react17.createElement)("h3", { className: "bt-board-rail-head" }, t("Your Bots")),
-      rail.bots.length === 0 ? (0, import_react17.createElement)("p", { className: "bt-board-empty" }, t("No tasks yet.")) : rail.bots.map((row) => {
-        const count = counts2?.[row.id] ?? { done: 0, total: 0 };
-        return (0, import_react17.createElement)(RailButton, {
-          key: row.id,
-          row,
-          selected: row.id === selectedBot,
-          onSelect,
-          meta: count.total > 0 ? t("{done}/{total}", { done: count.done, total: count.total }) : ""
-        });
-      }),
-      rail.groups.length > 0 ? (0, import_react17.createElement)("h3", { className: "bt-board-rail-head" }, t("Groups you admin")) : null,
-      rail.groups.map((row) => (0, import_react17.createElement)(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))
-    ),
-    (0, import_react17.createElement)(
-      "div",
-      { className: "bt-board-main" },
-      error ? (0, import_react17.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
-      lanes ? (0, import_react17.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
-      scope?.kind === "bot" && onCreate ? (0, import_react17.createElement)(
-        "form",
-        { className: "bt-board-add", onSubmit: (event) => {
-          event.preventDefault();
-          onCreate(draft);
-        } },
-        (0, import_react17.createElement)("input", { "aria-label": t("Task title"), placeholder: t("New task"), value: draft ?? "", onChange: (event) => onDraft?.(event.target.value) }),
-        (0, import_react17.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm" }, t("Add task"))
-      ) : null,
-      (0, import_react17.createElement)(
-        "div",
-        { className: "bt-board-columns" },
-        ["not-started", "in-progress", "done"].map((column) => (0, import_react17.createElement)(BoardColumn, {
-          key: column,
-          column,
-          tasks: columns[column],
-          roster,
-          lanes,
-          dragging,
-          onMove,
-          onDrag
-        }))
-      )
-    )
-  );
 }
 function KanbanRow({ wide, useUi, actions }) {
   const open = useUi ? useUi((value) => Boolean(value.board)) : false;
