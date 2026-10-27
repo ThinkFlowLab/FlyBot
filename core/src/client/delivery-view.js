@@ -13,7 +13,8 @@ import { createElement as h, useEffect, useState } from 'react'
 import { t } from './i18n.js'
 import { columnOf } from '../shared/task-board.js'
 import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
-import { githubCard } from '../shared/board-card.js'
+import { githubCard, githubCardKey } from '../shared/board-card.js'
+import { cardNamesIssue } from '../shared/issue-ref.js'
 import { BoardCard, DELIVERY_SKIN } from './board-card.js'
 import { BoardCard as TaskBoardCard, canMoveTask } from './kanban.js'
 
@@ -94,7 +95,8 @@ const dropProps = (column, { dragging, onMove, onDrag }) => ({
   },
 })
 
-// Simplified task column renderer for degraded states (no GitHub snapshot).
+// No issue cards on the board (no token, a failed read, a snapshot that never arrived): every
+// record stays a top-level card, including one that names an issue the snapshot does not have.
 function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onDrag = null }) {
   const columns = { 'not-started': [], 'in-progress': [], 'done': [] }
   for (const task of tasks ?? []) {
@@ -437,6 +439,85 @@ function BoardFilters({ filter, onFilter }) {
 const stageOf = (card, column) => card?.stage ?? column
 const matchesFilter = (card, column, filter) => filter === 'all' || stageOf(card, column) === filter
 
+const TERMINAL_TASK = new Set(['accepted', 'cancelled', 'failed'])
+const newestTask = (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (b.createdAt ?? 0) - (a.createdAt ?? 0)
+
+const cardRepoOf = (card, fallback) => {
+  const own = typeof card?.repo === 'string' ? card.repo.trim() : ''
+  if (own !== '') return own
+  return typeof fallback === 'string' ? fallback.trim() : ''
+}
+
+const recordKey = (repo, number) => githubCardKey(repo, number) ?? `#${Number(number)}`
+
+// The repository a record already names, read off the same text `cardNamesIssue` matches.
+// A bare `#12` names no repository. `target` is the host's normalised pointer and wins over a
+// mention in the title, which is how a dispatch and the board stay on one card.
+function namedRepos(task) {
+  if (task?.target?.owner && task?.target?.repo) return [`${task.target.owner}/${task.target.repo}`]
+  const text = `${task?.title ?? ''}\n${task?.note ?? ''}`
+  const repos = []
+  for (const match of text.matchAll(/(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#\d+/g)) repos.push(`${match[1]}/${match[2]}`)
+  for (const match of text.matchAll(/github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/\d+/gi)) repos.push(`${match[1]}/${match[2]}`)
+  return repos
+}
+
+const repoOk = (task, repo) => {
+  const named = namedRepos(task)
+  if (named.length === 0 || repo === '') return true
+  return named.includes(repo)
+}
+
+// A record hangs under the issue `cardNamesIssue` would hand a dispatch (#1254, #1331). The
+// issue's `linked` pull request is the closing-keyword link the snapshot already computed (#1189),
+// so a record that names that pull request hangs under the issue too. One open record per issue;
+// an older open record that names the same issue is not drawn again.
+export function hangRecords(columns, tasks, repo) {
+  const issues = []
+  for (const cards of Object.values(columns ?? {})) {
+    for (const card of cards ?? []) {
+      if (card?.kind !== 'issue' || card.number == null) continue
+      issues.push({ card, repo: cardRepoOf(card, repo) })
+    }
+  }
+  const nested = new Map()
+  const taken = new Set()
+  const open = (tasks ?? []).filter(task => task && task.kind !== 'group' && !TERMINAL_TASK.has(task.status) && task.id != null)
+  for (const task of open) {
+    let best = null
+    let bestScore = -1
+    const hits = []
+    for (const issue of issues) {
+      if (!repoOk(task, issue.repo)) continue
+      const namesIssue = cardNamesIssue(task, issue.card.number)
+      const namesPull = issue.card.linked != null && cardNamesIssue(task, issue.card.linked)
+      if (!namesIssue && !namesPull) continue
+      hits.push(issue)
+    }
+    // A bare `#12` on a board where two repositories both have that issue names neither.
+    const bare = namedRepos(task).length === 0
+    const pool = bare && hits.length > 1 ? [] : hits
+    for (const issue of pool) {
+      const target = Number(task.target?.number)
+      const score = target === Number(issue.card.number) ? 2 : target === Number(issue.card.linked) ? 1 : 0
+      if (score > bestScore) { best = issue; bestScore = score }
+    }
+    if (!best) continue
+    const key = recordKey(best.repo, best.card.number)
+    const list = nested.get(key) ?? []
+    list.push(task)
+    nested.set(key, list)
+  }
+  const chosen = new Map()
+  for (const [key, list] of nested) {
+    const [first, ...rest] = [...list].sort(newestTask)
+    chosen.set(key, first)
+    taken.add(first.id)
+    for (const extra of rest) taken.add(extra.id)
+  }
+  return { nested: chosen, loose: (tasks ?? []).filter(task => task && !taken.has(task.id)) }
+}
+
 // One repository's columns (#1265 step 4, #1326). Task cards and delivery cards together.
 function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter = 'all', roster = null, dragging = null, onMove = null, onDrag = null }) {
   const columns = view?.columns ?? {}
@@ -446,41 +527,68 @@ function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter 
   const deliveryCards = (id) => (columns[id] ?? [])
     .filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ''}#${card.kind}${card.number}`))
     .filter((card) => matchesFilter(card, id, filter))
-  
-  // #1326: Task cards map into the same columns. Map task column to delivery column.
-  const tasksByColumn = { 'not-started': [], 'in-progress': [], 'done': [] }
-  // A task card names no review or done-today stage, so a stage filter narrows it away rather than
-  // moving it to a lane it never named (#1326).
-  for (const task of filter === 'all' ? tasks ?? [] : []) {
+
+  // A stage filter narrows task cards away: a record names no review or done-today stage (#1326).
+  // Nesting reads every column this view draws, so a record leaves its own column to hang under
+  // the issue wherever that card sits. A card a workflow section owns is not in `shown`.
+  const shown = {}
+  for (const column of stagesOf(view)) shown[column.id] = deliveryCards(column.id)
+  const hung = hangRecords(shown, filter === 'all' ? tasks ?? [] : [], repo)
+  const looseByColumn = {}
+  for (const task of hung.loose) {
     const col = taskColumnOf(task)
-    if (tasksByColumn[col]) tasksByColumn[col].push(task)
+    ;(looseByColumn[col] ??= []).push(task)
   }
-  
-  const allCards = (id) => {
-    const delivery = deliveryCards(id)
-    const taskList = tasksByColumn[id] ?? []
-    return [...taskList, ...delivery]
+  const taskNode = (task) => h(TaskBoardCard, {
+    task, roster, movable: canMoveTask(roster, task), onMove, onDrag,
+  })
+  const rowsOf = (id) => {
+    const cards = shown[id] ?? []
+    // A pull request the issue already links is not a second card in that issue's column.
+    // A filter that hides the issue (review) still draws the pull request.
+    const linked = new Set()
+    for (const card of cards) {
+      if (card?.kind !== 'issue' || card.linked == null) continue
+      linked.add(recordKey(cardRepoOf(card, repo), card.linked))
+    }
+    const rows = []
+    for (const task of looseByColumn[id] ?? []) rows.push(h(TaskBoardCard, {
+      key: task.id, task, roster, movable: canMoveTask(roster, task), onMove, onDrag,
+    }))
+    for (const card of cards) {
+      const where = cardRepoOf(card, repo)
+      if (card?.kind === 'pr' && linked.has(recordKey(where, card.number))) continue
+      const key = `${where}-${card.kind}-${card.number}`
+      if (card?.kind === 'issue') {
+        const issueKey = recordKey(where, card.number)
+        const task = hung.nested.get(issueKey)
+        if (task) {
+          rows.push(h('div', { key: `nest-${issueKey}`, className: 'bt-board-nest', 'data-issue': issueKey },
+            h(DeliveryCard, { card, repo: where || null }),
+            h('div', { className: 'bt-board-subtask', 'data-parent': issueKey }, taskNode(task))))
+          continue
+        }
+      }
+      rows.push(h(DeliveryCard, { key, card, repo: where || null }))
+    }
+    return rows
   }
-  
-  // The two kinds share these columns, so which one a card is has to come from where it was read,
-  // never from guessing at its fields.
-  const taskIds = new Set((tasks ?? []).map(task => task?.id))
-  const isTask = (item) => taskIds.has(item?.id)
-  
+  const drawnCount = (rows) => rows.reduce((count, row) => count + (row?.props?.className === 'bt-board-nest' ? 2 : 1), 0)
+
   return h('div', { className: 'bt-del-columns' },
-    stagesOf(view).map(column => h('section', {
-      key: column.id, className: 'bt-del-column', 'data-column': column.id,
-      ...dropProps(column.id, { dragging, onMove, onDrag }),
-    },
+    stagesOf(view).map(column => {
+      const rows = rowsOf(column.id)
+      return h('section', {
+        key: column.id, className: 'bt-del-column', 'data-column': column.id,
+        ...dropProps(column.id, { dragging, onMove, onDrag }),
+      },
       h('h3', { className: 'bt-board-column-head' },
         h('span', null, t(column.label)),
-        h('span', { className: 'bt-board-count' }, String(allCards(column.id).length))),
-      allCards(column.id).length === 0
+        h('span', { className: 'bt-board-count' }, String(drawnCount(rows)))),
+      rows.length === 0
         ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-        : allCards(column.id).map(item => 
-            isTask(item)
-              ? h(TaskBoardCard, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag })
-              : h(DeliveryCard, { key: `${repo ?? item.repo ?? ''}-${item.kind}-${item.number}`, card: item, repo: repo ?? item.repo ?? null })))))
+        : rows)
+    }))
 }
 
 // The columns a workflow definition draws (#1272 step 3, acceptance 1 and 2): one block per workflow,

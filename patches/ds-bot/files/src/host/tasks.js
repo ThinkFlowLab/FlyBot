@@ -18,7 +18,7 @@
 import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
-import { issueRefs, namesIssue } from './work-dispatch.js'
+import { cardNamesIssue } from '../shared/issue-ref.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
 // result-ready still waits for the requester: prune must not evict it with terminals (#111).
@@ -498,16 +498,6 @@ export function install(rt) {
     } catch (error) {
       rt.warn('ds-bot: the claim line for %s was not posted: %s', task.id, error)
     }
-  }
-
-  // #1331: a card belongs to the issue its own fields name. `title`/`target` name it; a note that
-  // merely mentions the id ("blocked on #1234 first") does not, or a dispatch for #1234 rewrites the
-  // #999 card and leaves #1234 with no card at all. The note is still read for a card that names no
-  // issue anywhere else, so #1254's "one issue is one card" holds for cards written from a note.
-  const cardNamesIssue = (task, wanted) => {
-    const own = `${task.title ?? ''} ${task.target?.href ?? ''}`
-    if (namesIssue(own, wanted)) return true
-    return issueRefs(own).length === 0 && namesIssue(task.note ?? '', wanted)
   }
 
   // #1254: the room's task lead naming one member with an issue id and an imperative is an assign,

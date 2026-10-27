@@ -860,3 +860,155 @@ test('a workflow draws its own columns, named by the workflow, and its card once
   const ready = legacy.find(node => node.props['data-column'] === 'ready')
   assert.equal(walk(ready).some(node => node.props?.['data-number'] === 21), false)
 })
+
+// #1360: a direct child of the column is a top-level card. A nested record sits inside
+// `bt-board-nest` and must not count as a sibling of the issue.
+const topLevel = (column) => (column?.children ?? []).filter(node =>
+  node && (node.type === 'article' || node.props?.className === 'bt-board-nest'))
+const columnOf = (board, id) => walk(board).find(node => node.type === 'section' && node.props?.['data-column'] === id && node.props['data-workflow'] === undefined)
+
+const issueCard = (repo, number, extra = {}) => ({
+  kind: 'issue', number, title: `Issue ${number}`, labels: ['agent-working'], repo,
+  url: `https://github.com/${repo}/issues/${number}`, ...extra,
+})
+const pullCard = (repo, number) => ({
+  kind: 'pr', number, title: `PR ${number}`, labels: [], repo, stage: 'review', badge: 'inc',
+  url: `https://github.com/${repo}/pull/${number}`, sha: 'abcdef1',
+})
+
+test('#1360: a task that names an issue hangs under that card, and the linked PR is not a third sibling', () => {
+  const moved = []
+  const tasks = [
+    { id: 'task-new', title: 'acme/board#12 implement', status: 'working', ownerBotId: 'bot', updatedAt: 5, note: 'in flight' },
+    { id: 'task-old', title: '#12 the earlier card', status: 'working', ownerBotId: 'bot', updatedAt: 1 },
+    { id: 'task-note', title: 'follow up', note: 'see #12', status: 'claimed', ownerBotId: 'bot', updatedAt: 4 },
+    { id: 'task-other', title: '#99 elsewhere', note: 'blocked on #12 first', status: 'open', ownerBotId: 'bot' },
+    { id: 'task-orphan', title: 'Write the weekly note', status: 'open', ownerBotId: 'bot' },
+  ]
+  const board = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: 'acme/board', asOf: '2026-10-27T06:00:00Z',
+      columns: {
+        'not-started': [],
+        'in-progress': [issueCard('acme/board', 12, { linked: 41 }), pullCard('acme/board', 41)],
+        done: [],
+      },
+    },
+    tasks,
+    roster: { byId: { bot: { name: 'Dev4' } } },
+    onMove: (id, column) => moved.push([id, column]),
+  })
+  const progress = columnOf(board, 'in-progress')
+  const rows = topLevel(progress)
+  assert.equal(rows.length, 1, 'one top-level row: the issue, not the task and the PR beside it')
+  assert.equal(rows[0].props.className, 'bt-board-nest')
+  const issue = walk(rows[0]).find(node => node.props?.['data-number'] === 12)
+  assert.equal(issue.props['data-kind'], 'issue')
+  assert.equal(issue.props['data-key'], 'acme/board#12')
+  const sub = walk(rows[0]).find(node => node.props?.className === 'bt-board-subtask')
+  assert.equal(sub.props['data-parent'], 'acme/board#12')
+  const hung = walk(sub).find(node => node.props?.['data-task'])
+  // Newest open record that names the issue. The older open card is not drawn again, and a note
+  // that names #12 does not beat a title that names no issue of its own when another card does —
+  // task-note's own fields name nothing, so it also matches, but it is older than task-new.
+  assert.equal(hung.props['data-task'], 'task-new')
+  assert.equal(walk(board).filter(node => node.props?.['data-task'] === 'task-old').length, 0, 'the older open card is not a second record')
+  assert.equal(walk(board).some(node => node.props?.['data-number'] === 41 && node.type === 'article' && !walk(rows[0]).includes(node)), false)
+  assert.equal(topLevel(progress).some(node => node.props?.['data-number'] === 41), false, 'the linked PR is not a sibling')
+  assert.match(text(hung), /Dev4/)
+  const complete = walk(sub).find(node => node.type === 'button' && text(node).includes('Complete'))
+  assert.ok(complete, 'the nested record still offers Complete')
+  complete.props.onClick()
+  assert.deepEqual(moved, [['task-new', 'done']])
+  // The orphan stays its own card. A title that names a different issue, with #12 only in the note,
+  // is not this issue's record (#1331) and stays top-level because #99 is not on the board.
+  const todo = columnOf(board, 'not-started')
+  const loose = topLevel(todo).map(node => node.props?.['data-task']).filter(Boolean).sort()
+  assert.deepEqual(loose, ['task-orphan', 'task-other'])
+  assert.equal(walk(todo).some(node => node.props?.className === 'bt-board-subtask'), false)
+
+  // Deleting the issue link puts the record back beside the issue. The linked PR stays folded
+  // into the issue, so the column's top-level count is the issue plus the task.
+  const unlinked = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: 'acme/board', asOf: '2026-10-27T06:00:00Z',
+      columns: {
+        'not-started': [],
+        'in-progress': [issueCard('acme/board', 12, { linked: 41 }), pullCard('acme/board', 41)],
+        done: [],
+      },
+    },
+    tasks: [{ id: 'task-free', title: 'implement the step', status: 'working', ownerBotId: 'bot' }],
+    roster: { byId: { bot: { name: 'Dev4' } } },
+  })
+  const again = columnOf(unlinked, 'in-progress')
+  assert.equal(topLevel(again).length, 2)
+  assert.equal(walk(again).some(node => node.props?.className === 'bt-board-subtask'), false)
+  assert.equal(walk(again).some(node => node.props?.['data-task'] === 'task-free'), true)
+  assert.equal(topLevel(again).some(node => node.props?.['data-number'] === 41), false)
+
+  // A record that names the pull request hangs under the issue that pull request closes (#1189).
+  const viaPull = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: 'acme/board', asOf: '2026-10-27T06:00:00Z',
+      columns: {
+        'not-started': [],
+        'in-progress': [issueCard('acme/board', 12, { linked: 41 }), pullCard('acme/board', 41)],
+        done: [],
+      },
+    },
+    tasks: [{ id: 'task-pr', title: 'review #41', status: 'working', ownerBotId: 'bot' }],
+  })
+  const under = walk(columnOf(viaPull, 'in-progress')).find(node => node.props?.className === 'bt-board-subtask')
+  assert.equal(under?.props['data-parent'], 'acme/board#12')
+  assert.equal(walk(under).find(node => node.props?.['data-task'])?.props['data-task'], 'task-pr')
+  assert.equal(topLevel(columnOf(viaPull, 'in-progress')).length, 1)
+})
+
+test('#1360: a bare number nests only when one issue on the board has it; a named repo nests on that repo', () => {
+  const board = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: null, asOf: '2026-10-27T06:00:00Z',
+      repos: [
+        { repo: 'acme/one', state: 'fresh', columns: { 'not-started': [], 'in-progress': [issueCard('acme/one', 12)], done: [] } },
+        { repo: 'acme/two', state: 'fresh', columns: { 'not-started': [], 'in-progress': [issueCard('acme/two', 12)], done: [] } },
+      ],
+    },
+    tasks: [
+      { id: 'task-bare', title: '#12 ambiguous', status: 'working' },
+      { id: 'task-one', title: 'land acme/one#12', status: 'working' },
+    ],
+  })
+  const progress = columnOf(board, 'in-progress')
+  const subs = walk(progress).filter(node => node.props?.className === 'bt-board-subtask')
+  assert.equal(subs.length, 1)
+  assert.equal(subs[0].props['data-parent'], 'acme/one#12')
+  assert.equal(walk(subs[0]).find(node => node.props?.['data-task']).props['data-task'], 'task-one')
+  assert.equal(walk(progress).filter(node => node.props?.['data-task'] === 'task-bare').length, 1, 'a bare #12 with two issues stays top-level')
+  assert.equal(walk(subs).some(node => node.props?.['data-task'] === 'task-bare'), false)
+})
+
+test('#1360: with no issue on the board, an orphan and a linked task both stay top-level', () => {
+  const tasks = [
+    { id: 'task-orphan', title: 'Write the weekly note', status: 'open' },
+    { id: 'task-linked', title: 'acme/board#12 do it', status: 'working', target: { owner: 'acme', repo: 'board', number: 12, href: 'https://github.com/acme/board/issues/12' } },
+  ]
+  const failed = DeliveryBoard({
+    view: { state: 'failed', repo: 'acme/board', error: { message: 'no GITHUB_TOKEN', kind: 'no-token', scope: 'repo', endpoint: null, status: null }, retryAt: Date.now() + 10_000 },
+    tasks,
+    onRetry: () => {},
+  })
+  const ids = walk(failed).filter(node => node.props?.['data-task']).map(node => node.props['data-task']).sort()
+  assert.deepEqual(ids, ['task-linked', 'task-orphan'])
+  assert.equal(walk(failed).some(node => node.props?.className === 'bt-board-subtask'), false)
+  // The issue the task names is not in this snapshot, so the record is a card, not a blank.
+  const missing = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: 'acme/board', asOf: '2026-10-27T06:00:00Z',
+      columns: { 'not-started': [issueCard('acme/board', 8)], 'in-progress': [], done: [] },
+    },
+    tasks: [tasks[1]],
+  })
+  assert.equal(walk(missing).some(node => node.props?.className === 'bt-board-subtask'), false)
+  assert.equal(walk(missing).filter(node => node.props?.['data-task'] === 'task-linked').length, 1)
+})

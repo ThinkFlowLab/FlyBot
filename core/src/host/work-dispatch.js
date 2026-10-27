@@ -3,7 +3,10 @@
 // that member's card and the drive wakes it in its own chat (#1205); no group part opens. A
 // question, a remark, a line naming two members or an `@all` keeps the group turn it had — this
 // module only answers the shape of one line, the room decides who may dispatch.
-const ISSUE = /#(\d{1,7})(?![0-9])|github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\/(\d{1,7})(?![0-9])/gi
+import { issueRefPattern } from '../shared/issue-ref.js'
+
+export { cardNamesIssue, issueRefs, namesIssue } from '../shared/issue-ref.js'
+
 const MENTION = /@[^\s@,，。]{1,40}/g
 const QUESTION = /[?？]/
 // An imperative counts only near the id: "rebase #1234" and "#1234 rebase and push" both dispatch,
@@ -16,22 +19,6 @@ const oneLine = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '
 // knows who was named.
 const withoutMentions = text => String(text ?? '').replace(MENTION, ' ').replace(/\s+/g, ' ').trim()
 
-// The issue/PR numbers a line names, normalised to `#1234`, in the order they appear.
-export function issueRefs(text) {
-  const keys = []
-  for (const match of String(text ?? '').matchAll(new RegExp(ISSUE.source, 'gi'))) {
-    const key = `#${match[1] ?? match[2]}`
-    if (!keys.includes(key)) keys.push(key)
-  }
-  return keys
-}
-
-export function namesIssue(text, issue) {
-  const number = String(issue ?? '').replace(/^#/, '')
-  if (!/^\d+$/.test(number)) return false
-  return issueRefs(text).includes(`#${number}`)
-}
-
 // One member, one issue id, one imperative near it. Anything else is not this module's to convert.
 export function workDispatch(text, { callees = [] } = {}) {
   if (!Array.isArray(callees) || callees.length !== 1) return undefined
@@ -39,7 +26,7 @@ export function workDispatch(text, { callees = [] } = {}) {
   if (!callee?.id) return undefined
   const line = withoutMentions(text)
   if (line === '' || QUESTION.test(line)) return undefined
-  for (const match of line.matchAll(new RegExp(ISSUE.source, 'gi'))) {
+  for (const match of line.matchAll(issueRefPattern())) {
     const near = line.slice(Math.max(0, match.index - NEAR), match.index + match[0].length + NEAR)
     if (!IMPERATIVE.test(near)) continue
     const issue = `#${match[1] ?? match[2]}`
