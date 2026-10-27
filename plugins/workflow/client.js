@@ -157,7 +157,7 @@ window.__ModuleLoader__.load({
       return workflow?.nodes?.find(node => node.id === id)
     }
 
-    function MiniFlowchart({ workflow, roster }) {
+    function MiniFlowchart({ workflow }) {
       const nodes = workflow?.nodes ?? []
       const edges = workflow?.edges ?? []
       if (nodes.length === 0) return null
@@ -258,7 +258,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },
             h('button', { type: 'button', className: 'wf-pill', onClick: onToggleDrawer },
-              h(MiniFlowchart, { workflow, roster }),
+              h(MiniFlowchart, { workflow }),
               h('span', { className: 'wf-pill-name' }, workflow.name),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
