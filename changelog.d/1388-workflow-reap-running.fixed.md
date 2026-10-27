@@ -1,0 +1,1 @@
+A workflow run that a restart interrupted was never cleaned up: the run stayed `running` and its run Bots stayed hidden with no way to remove them. Loading the plugin now releases those Bots and records the run as `failed` ([#1388](https://github.com/ThinkFlowLab/FlyBot/issues/1388)).

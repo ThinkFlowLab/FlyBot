@@ -547,10 +547,18 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const stale = []
       for (const run of Object.values(state.runs)) {
         if (!run?.ephemeral) continue
-        if (run.status === 'running') continue
+        // A run still marked running here was cut off with the host that ran it,
+        // and nothing resumes it: its instances are abandoned, not in progress.
+        // Release them and end the run, or they stay hidden with no way to remove
+        // them. A run that already ended keeps its own status (#1388).
+        const abandoned = run.status === 'running'
         stale.push(...Object.values(run.ephemeral))
         delete run.ephemeral
         delete run.handed
+        if (abandoned) {
+          run.status = 'failed'
+          run.updatedAt = now()
+        }
       }
       if (stale.length === 0) return Promise.resolve()
       return releaseAll(stale, release, warn).then(() => { write() })
