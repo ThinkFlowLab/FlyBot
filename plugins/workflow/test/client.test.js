@@ -343,6 +343,32 @@ test('apply registers the sidebar section and the settings page', () => {
   off()
 })
 
+test('settings can add a loop edge and a condition edge', async () => {
+  const calls = []
+  const graph = delivery()
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  const pick = (label) => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
+  pick('Kind').props.onChange({ target: { value: 'loop' } })
+  pick('From node').props.onChange({ target: { value: 'coder' } })
+  pick('To node').props.onChange({ target: { value: 'coder' } })
+  pick('Max iterations').props.onChange({ target: { value: '3' } })
+  pick('until').props.onChange({ target: { value: 'stop' } })
+  pick('Equals').props.onChange({ target: { value: 'yes' } })
+  button(settings.tree, 'Add link').props.onClick()
+  const looped = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  const loop = looped.body.edges.find(edge => edge.from === 'coder' && edge.to === 'coder')
+  assert.equal(loop.loop, true)
+  assert.equal(loop.max, 3)
+  assert.deepEqual(loop.until, { output: 'stop', eq: 'yes' })
+  settings.unmount()
+})
+
 test('Chinese labels follow the host Tasks translation', () => {
   const prev = globalThis.__flybot__
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }

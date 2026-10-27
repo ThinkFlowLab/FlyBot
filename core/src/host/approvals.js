@@ -10,6 +10,25 @@ const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'all
 // DSH has no standing grant (its outcomes are one-shot, #540), so the owner's "Always
 // allow" lives here: on the Bot or on the group, keyed by the kind of permission asked.
 // A sandbox escalation names its mode in DSH's reason; any other ask is keyed by tool.
+// A run Bot has no chat the owner can see, so an approval card would stall the
+// step. Connector tools are allowed only when the node's stepTools name them
+// (`github` covers `mcp__github__*`). A shell escalation to full access needs
+// `bash`, `shell` or `danger-full-access`. Other calls follow the Bot's preset
+// and are answered here, because nobody can tap the card.
+export function ephemeralToolVerdict(bot, toolName, reason) {
+  if (!bot?.ephemeral) return undefined
+  const tools = new Set((bot.stepTools ?? []).map(name => String(name).toLowerCase()))
+  const grant = (name) => tools.has('*') || tools.has(String(name).toLowerCase())
+  const tool = String(toolName ?? '')
+  if (tool.startsWith('mcp__')) {
+    const id = tool.split('__')[1] ?? ''
+    return grant(tool) || (id !== '' && grant(id)) ? 'allowed-once' : 'rejected'
+  }
+  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
+  if (mode === 'danger-full-access') return grant('bash') || grant('shell') || grant('danger-full-access') ? 'allowed-once' : 'rejected'
+  return 'allowed-once'
+}
+
 export function approvalKind(tool, reason) {
   const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
   return mode ? `${tool}:escalate:${mode}` : String(tool)
@@ -30,6 +49,8 @@ export function install(rt) {
     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
     if (botId === undefined) return next()
+    const step = ephemeralToolVerdict(rt.botOf(botId), String(request.toolName ?? ''), request.reason)
+    if (step !== undefined) return step
     if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
     const id = randomUUID()
     const entry = {

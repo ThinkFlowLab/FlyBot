@@ -154,9 +154,24 @@ export function install(rt) {
   })
   const persist = () => rt.save().catch(error => warn('flybot: save failed: %s', error))
 
-  async function create({ name, systemPrompt, fields, role, instructions, createdBy, plugin = SHARED, hidden, ephemeral, model } = {}) {
+  const TOOL_NAME = /^[a-z][a-z0-9_-]{0,63}$/
+  function cleanStepTools(value) {
+    if (!Array.isArray(value)) return []
+    const tools = []
+    for (const item of value) {
+      const name = String(item ?? '').trim().toLowerCase()
+      if (!TOOL_NAME.test(name) || tools.includes(name)) continue
+      tools.push(name)
+      if (tools.length === 16) break
+    }
+    return tools
+  }
+
+  async function create({ name, systemPrompt, fields, role, instructions, createdBy, plugin = SHARED, hidden, ephemeral, model, tools, permission } = {}) {
     checkName('plugin', plugin)
     await rt.load()
+    const stepTools = ephemeral === true ? cleanStepTools(tools) : []
+    const preset = ephemeral === true ? String(permission ?? '').trim() : ''
     const bot = await rt.createBot({
       name, role, instructions, createdBy,
       ...(systemPrompt ? { systemPrompt } : {}),
@@ -166,6 +181,17 @@ export function install(rt) {
       // The marker names this plugin. A caller cannot stamp another plugin's name.
       ...(ephemeral === true ? { ephemeral: { plugin } } : {}),
     })
+    const record = rt.botOf(bot.id)
+    if (record && stepTools.length > 0) record.stepTools = stepTools
+    if (record && preset) {
+      try {
+        await rt.setPermission(record, preset)
+      } catch (error) {
+        await rt.deleteBot(bot.id).catch(() => {})
+        throw error
+      }
+    }
+    if (record && (stepTools.length > 0 || preset)) await rt.save()
     for (const [key, value] of Object.entries(fields ?? {})) fire('change', { botId: bot.id, plugin, key, value: clone(value), prev: undefined })
     return bot.id
   }

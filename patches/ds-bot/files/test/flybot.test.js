@@ -27,10 +27,11 @@ async function start(config = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-flybot-'))
   const state = config.empty === true ? emptyTeam() : team()
   Object.assign(state.rooms, config.rooms ?? {})
-  const { rooms, empty, llm, defaultModel, ...applyConfig } = config
+  const { rooms, empty, llm, defaultModel, services: extraServices, ...applyConfig } = config
   writeFileSync(join(home, 'state.json'), JSON.stringify(state))
   // A test may serve a model: the profile default rides the DSH service, as in test/memory.test.js.
-  const services = defaultModel === undefined ? {} : { agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: defaultModel }) } }
+  const services = { ...(extraServices ?? {}) }
+  if (defaultModel !== undefined) services.agentDefaultModel = { currentSelection: () => ({ provider: 'deepseek', model: defaultModel }) }
   const ctx = fakeContext({ services })
   const agents = new Map()
   const agentOf = (id) => {
@@ -201,6 +202,57 @@ test('an ephemeral Bot stays off the team and only its plugin can remove it', as
   assert.equal(await wf.bot.remove(id), true)
   assert.equal(wf.bot.get(id), undefined)
   assert.equal(await wf.bot.remove(id), false)
+})
+
+test('a run Bot is granted the step tools and is not left waiting on a hidden approval', async (t) => {
+  const writes = []
+  const PRESETS = { 'workspace-write': {}, 'danger-full-access': {} }
+  const { fb, ctx, home, stop } = await start({
+    services: {
+      permissionPresets: {
+        catalog: () => ({ options: Object.keys(PRESETS).map(value => ({ value, name: value })), defaultOptions: [], defaultPreset: 'workspace-write' }),
+        resolve: (name) => { if (!(name in PRESETS)) throw new Error(`permission: unknown preset "${name}"`); return PRESETS[name] },
+        set: (session, name) => { writes.push(`${session?.id ?? session}=${name}`) },
+      },
+    },
+  })
+  t.after(stop)
+  let sessions = 0
+  ctx.sessionController.create = async () => ({ sessionId: `run${++sessions}` })
+  const wf = fb.scope('flybot-workflow')
+  const id = await wf.bot.create({
+    name: 'Coder ab',
+    role: 'Code',
+    instructions: 'Open the pull request.',
+    ephemeral: true,
+    tools: ['GitHub', 'read'],
+    permission: 'workspace-write',
+  })
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  const bot = saved.bots[id]
+  assert.equal(bot.permission, 'workspace-write')
+  assert.deepEqual(bot.stepTools, ['github', 'read'])
+  assert.deepEqual(writes, [`${id}=workspace-write`])
+  const ask = (toolName, reason = '') => ctx.listeners.get('approval/request')[0](
+    { agent: { session: { id } }, toolName, reason },
+    () => 'from-dsh',
+  )
+  assert.equal(await ask('mcp__github__create_pull_request'), 'allowed-once')
+  assert.equal(await ask('mcp__composio__execute'), 'rejected')
+  assert.equal(await ask('bash', 'escalate sandbox to danger-full-access: gh pr create'), 'rejected')
+  assert.equal(await ask('read'), 'allowed-once')
+  const shell = await wf.bot.create({
+    name: 'Shell ab',
+    ephemeral: true,
+    tools: ['bash'],
+    permission: 'danger-full-access',
+  })
+  const shellAsk = (toolName, reason = '') => ctx.listeners.get('approval/request')[0](
+    { agent: { session: { id: shell } }, toolName, reason },
+    () => 'from-dsh',
+  )
+  assert.equal(await shellAsk('bash', 'escalate sandbox to danger-full-access: gh pr create'), 'allowed-once')
+  assert.equal(await shellAsk('mcp__github__create_pull_request'), 'rejected')
 })
 
 test('with no middleware, message_bot behaves as before', async (t) => {

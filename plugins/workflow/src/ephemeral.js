@@ -3,6 +3,16 @@
 // deletes it when the run finishes, fails for good, or is cancelled.
 import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
+const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
+
+// A step that names a shell gets full access. Anything else can still write
+// the workspace. A node with no tools is not left on a read-only default.
+export function permissionFor(tools) {
+  const names = cleanTools(tools)
+  if (names.some(name => SHELL.has(name))) return 'danger-full-access'
+  return 'workspace-write'
+}
+
 export function nodeConfig(node, roster = []) {
   const seated = node?.botId
     ? roster.find(bot => bot && bot.id === node.botId && bot.remote !== true)

@@ -17,24 +17,28 @@ const writer = {
 const coder = {
   id: 'coder', name: 'Coder', role: '代码实现',
   instructions: '根据 Planner 的子任务和 Writer 的文案修改代码，提交 PR，并在 PR 描述中列出变更。',
+  tools: ['github', 'bash', 'read', 'edit'],
   inputs: [{ name: 'copy', type: 'text', required: true }],
   outputs: [{ name: 'patch', type: 'text' }],
 }
 const reviewer = {
   id: 'reviewer', name: 'Reviewer', role: '代码审查',
   instructions: '审查 Coder 的 PR：可读性、边界条件与回归风险。不通过则打回 Coder。',
+  tools: ['github'],
   inputs: [{ name: 'patch', type: 'text', required: true }],
   outputs: [{ name: 'review', type: 'text' }],
 }
 const tester = {
   id: 'tester', name: 'Tester', role: '自动化测试', failOnce: true,
   instructions: '运行单元、快照和 E2E。失败时自动重试 1 次，仍失败则停在本节点。',
+  tools: ['bash'],
   inputs: [{ name: 'patch', type: 'text', required: true }],
   outputs: [{ name: 'report', type: 'text' }],
 }
 const deployer = {
   id: 'deployer', name: 'Deployer', role: '发布上线',
   instructions: '在 Reviewer 与 Tester 都通过后合并，灰度发布，并回填任务卡片状态。',
+  tools: ['github'],
   inputs: [{ name: 'review', type: 'text', required: true }, { name: 'report', type: 'text', required: true }],
   outputs: [{ name: 'release', type: 'text' }],
 }

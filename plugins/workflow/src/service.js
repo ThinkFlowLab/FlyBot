@@ -49,6 +49,17 @@ function publicNode(node, bots) {
   }
 }
 
+function publicEdge(edge) {
+  const out = { from: edge.from, to: edge.to }
+  if (edge.loop === true) {
+    out.loop = true
+    out.max = edge.max
+    if (edge.until) out.until = { output: edge.until.output, eq: edge.until.eq }
+  } else if (edge.when?.else === true) out.when = { else: true }
+  else if (edge.when) out.when = { output: edge.when.output, eq: edge.when.eq }
+  return out
+}
+
 function publicRun(workflow, run) {
   if (!run) return null
   return {
@@ -158,7 +169,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         trigger: item.trigger ?? 'manual',
         scheduleLabel: item.scheduleLabel ?? '',
         nodes: item.nodes.map(node => publicNode(node, roster)),
-        edges: (item.edges ?? []).map(edge => ({ from: edge.from, to: edge.to })),
+        edges: (item.edges ?? []).map(publicEdge),
         layers: item.layers.map(layer => [...layer]),
         triggers: [...(item.triggers ?? [])],
         chain: chainLabel(item),
@@ -203,6 +214,9 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function primaryRun(id) {
     const live = runningOf(laneOf(id))
     if (live.length > 0) return live[0]
+    // Replay moves the script. A finished live run stays on the stage until
+    // that script is the one being stepped.
+    if (state.demoOnTop?.[id] === true && state.demos[id]) return state.demos[id]
     if (laneOf(id).last) return laneOf(id).last
     return state.demos[id] ?? null
   }
@@ -248,14 +262,14 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     for (const id of result.started ?? []) {
       const missing = unmetRequired(item, id, run.produced, run.task)
       if (missing.length === 0) { started.push(id); continue }
-      const preds = item.edges.filter(edge => edge.to === id).map(edge => edge.from)
-      const stuck = preds.length === 0 || preds.every(pred => status[pred] === 'done' || status[pred] === 'failed')
+      const preds = item.edges.filter(edge => edge.to === id && edge.loop !== true).map(edge => edge.from)
+      const stuck = preds.length === 0 || preds.every(pred => status[pred] === 'done' || status[pred] === 'failed' || status[pred] === 'skipped')
       if (stuck) {
         status[id] = 'failed'
         blocked.push({ id, missing })
       } else status[id] = 'queued'
     }
-    const finished = item.nodes.every(node => status[node.id] === 'done')
+    const finished = item.nodes.every(node => status[node.id] === 'done' || status[node.id] === 'skipped')
     return { result: { ...result, status, started, finished }, blocked }
   }
 
@@ -265,8 +279,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       working = { ...run, produced: { ...(run.produced ?? {}), [op.nodeId]: op.outputs } }
     }
     let result
-    if (op.type === 'start') result = { ...startFrontier(item, working.nodeStatus), joined: false, layerSize: 0 }
-    else if (op.type === 'complete') result = completeNode(item, working.nodeStatus, op.nodeId)
+    if (op.type === 'start') result = { ...startFrontier(item, working.nodeStatus, working.fired), joined: false, layerSize: 0 }
+    else if (op.type === 'complete') result = completeNode(item, working.nodeStatus, op.nodeId, {
+      outputs: working.produced?.[op.nodeId] ?? {},
+      loops: working.loops ?? {},
+      fired: working.fired ?? {},
+    })
     else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId)
     else if (op.type === 'retry') result = retryNode(item, working.nodeStatus, op.nodeId)
     else throw new Error(`Unknown step ${op.type}`)
@@ -284,6 +302,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const steps = finished ? working.stepBudget : working.steps + 1
     const handed = { ...working.handed }
     if (op.type === 'fail' || op.type === 'retry') delete handed[op.nodeId]
+    if (Array.isArray(result.reset)) for (const id of result.reset) delete handed[id]
     const next = {
       ...working,
       status: finished ? 'done' : stopped ? 'failed' : 'running',
@@ -291,6 +310,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       steps,
       failedOnce,
       updatedAt: now(),
+      ...(result.loops ? { loops: result.loops } : {}),
+      ...(result.fired ? { fired: result.fired } : {}),
       ...(Object.keys(handed).length > 0 ? { handed } : {}),
     }
     if (Object.keys(handed).length === 0) delete next.handed
@@ -456,6 +477,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function beginRun(item, task, ephemeral) {
     const holes = missingProviders(item)
     if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
+    delete state.demoOnTop?.[item.id]
     let run = { ...blankRun(item, task, now(), []), live: true }
     if (ephemeral) run.ephemeral = ephemeral
     const at = now()
@@ -733,6 +755,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       try {
         let run = state.demos[item.id]
         if (!run) throw new Error('This workflow has no task')
+        state.demoOnTop ??= {}
+        state.demoOnTop[item.id] = true
         if (run.status === 'failed') throw new Error('This run is already finished')
         const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
         if (op.type === 'restart') {

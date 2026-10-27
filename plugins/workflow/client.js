@@ -88,6 +88,17 @@ window.__ModuleLoader__.load({
       'Add link': '添加连线',
       'From node': '起点',
       'To node': '终点',
+      Link: '连线',
+      Condition: '条件',
+      Loop: '循环',
+      Kind: '连线类型',
+      when: '当',
+      until: '直到',
+      Else: '否则',
+      'Max iterations': '最多次数',
+      'Output name': '输出名',
+      Equals: '等于',
+      Skipped: '跳过',
     }
 
     function zhUi() {
@@ -105,7 +116,7 @@ window.__ModuleLoader__.load({
       return fill(text, params)
     }
 
-    const STATUS_KEY = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', idle: 'Idle' }
+    const STATUS_KEY = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', idle: 'Idle' }
     const COLUMN_KEY = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' }
     const COLUMN_OF = { open: 'not-started', claimed: 'not-started', working: 'in-progress', blocked: 'in-progress', 'result-ready': 'in-progress', accepted: 'done', cancelled: 'done', failed: 'done' }
     const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6', '研究员': '#a78bfa', '数据分析师': '#ec4899' }
@@ -488,11 +499,27 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onCreate({ name, steps }) }, tr('Create')))))
     }
 
+    function edgeNote(edge) {
+      if (edge.loop === true) {
+        const until = edge.until ? ` ${tr('until')} ${edge.until.output}=${edge.until.eq}` : ''
+        return `${tr('Loop')} ×${edge.max ?? 3}${until}`
+      }
+      if (edge.when?.else === true) return tr('Else')
+      if (edge.when) return `${tr('when')} ${edge.when.output}=${edge.when.eq}`
+      return ''
+    }
+
     function WorkflowSettings({ call }) {
       const [pack, setPack] = useState(null)
       const [workflowId, setWorkflowId] = useState('')
       const [from, setFrom] = useState('')
       const [to, setTo] = useState('')
+      const [kind, setKind] = useState('link')
+      const [whenName, setWhenName] = useState('')
+      const [whenEq, setWhenEq] = useState('')
+      const [loopMax, setLoopMax] = useState('3')
+      const [untilName, setUntilName] = useState('')
+      const [untilEq, setUntilEq] = useState('')
       const [error, setError] = useState('')
       useEffect(() => {
         let gone = false
@@ -540,25 +567,55 @@ window.__ModuleLoader__.load({
                 save(current.nodes.map(item => item.id === node.id ? { ...item, prompt } : item), current.edges)
               },
             }))),
-          (current.edges ?? []).map(edge => h('div', { key: `${edge.from}>${edge.to}`, className: 'wf-hist' },
-            h('span', null, `${nameOf(edge.from)} → ${nameOf(edge.to)}`),
-            h('button', {
-              type: 'button',
-              onClick: () => save(current.nodes, current.edges.filter(item => item.from !== edge.from || item.to !== edge.to)),
-            }, tr('Remove')))),
+          (current.edges ?? []).map(edge => {
+            const note = edgeNote(edge)
+            return h('div', { key: `${edge.from}>${edge.to}`, className: 'wf-hist' },
+              h('span', null, note ? `${nameOf(edge.from)} → ${nameOf(edge.to)} · ${note}` : `${nameOf(edge.from)} → ${nameOf(edge.to)}`),
+              h('button', {
+                type: 'button',
+                onClick: () => save(current.nodes, current.edges.filter(item => item.from !== edge.from || item.to !== edge.to)),
+              }, tr('Remove')))
+          }),
           h('div', { className: 'wf-add' },
+            h('label', { className: 'wf-field' }, tr('Kind'),
+              h('select', { 'aria-label': tr('Kind'), value: kind, onChange: (event) => setKind(event.target.value) },
+                h('option', { value: 'link' }, tr('Link')),
+                h('option', { value: 'condition' }, tr('Condition')),
+                h('option', { value: 'loop' }, tr('Loop')))),
             h('label', { className: 'wf-field' }, tr('From node'),
               h('select', { 'aria-label': tr('From node'), value: from, onChange: (event) => setFrom(event.target.value) },
                 current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
             h('label', { className: 'wf-field' }, tr('To node'),
               h('select', { 'aria-label': tr('To node'), value: to, onChange: (event) => setTo(event.target.value) },
                 current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+            kind === 'condition' ? h('label', { className: 'wf-field' }, tr('Output name'),
+              h('input', { 'aria-label': tr('Output name'), value: whenName, onChange: (event) => setWhenName(event.target.value) })) : null,
+            kind === 'condition' ? h('label', { className: 'wf-field' }, tr('Equals'),
+              h('input', { 'aria-label': tr('Equals'), value: whenEq, onChange: (event) => setWhenEq(event.target.value) })) : null,
+            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('Max iterations'),
+              h('input', { 'aria-label': tr('Max iterations'), value: loopMax, onChange: (event) => setLoopMax(event.target.value) })) : null,
+            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('until'),
+              h('input', { 'aria-label': tr('until'), value: untilName, onChange: (event) => setUntilName(event.target.value) })) : null,
+            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('Equals'),
+              h('input', { 'aria-label': tr('Equals'), value: untilEq, onChange: (event) => setUntilEq(event.target.value) })) : null,
             h('button', {
               type: 'button', className: 'wf-btn',
               onClick: () => {
-                if (!from || !to || from === to) return
+                if (!from || !to) return
+                if (kind !== 'loop' && from === to) return
                 if ((current.edges ?? []).some(edge => edge.from === from && edge.to === to)) return
-                save(current.nodes, [...(current.edges ?? []), { from, to }])
+                let edge = { from, to }
+                if (kind === 'condition') {
+                  const output = whenName.trim().toLowerCase()
+                  if (!output) return
+                  edge = { from, to, when: { output, eq: whenEq } }
+                } else if (kind === 'loop') {
+                  const max = Number(loopMax)
+                  edge = { from, to, loop: true, max: Number.isInteger(max) ? max : 3 }
+                  const output = untilName.trim().toLowerCase()
+                  if (output) edge.until = { output, eq: untilEq }
+                }
+                save(current.nodes, [...(current.edges ?? []), edge])
               },
             }, tr('Add link')))) : null)
     }

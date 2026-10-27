@@ -234,6 +234,17 @@ export interface CreateBotSpec {
   ephemeral?: boolean
   /** Model ref (`provider/model` or a model id). Empty leaves the usual default. */
   model?: string
+  /**
+   * Tools this run Bot may use. Only read when `ephemeral` is true.
+   * `github` grants `mcp__github__*`. `bash` or `shell` grants a full-access shell.
+   * A team Bot ignores this.
+   */
+  tools?: string[]
+  /**
+   * DSH permission preset for a run Bot (`workspace-write` or `danger-full-access`).
+   * Only applied when `ephemeral` is true. A team Bot ignores this.
+   */
+  permission?: string
 }
 
 /** What a send middleware sees. Built-in ds-bot sends arrive with via: 'ds-bot'. */

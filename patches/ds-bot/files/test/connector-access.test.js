@@ -544,3 +544,31 @@ test('a Bot post carries whose request it is into the room\'s member turns and i
   assert.deepEqual(await run(TYPED).then(({ post, member, report }) => ({ post, member, report })), { post: 'owner', member: 'owner', report: 'owner' })
   assert.deepEqual(await run(FRIEND).then(({ post, member, report }) => ({ post, member, report })), { post: 'other', member: 'other', report: 'other' }, 'a friend-driven poster makes the whole round someone else\'s')
 })
+
+test('a run Bot gets a connector only when its step tools name it', async (t) => {
+  const state = team()
+  const run = (id, name, stepTools) => {
+    state.bots[id] = {
+      id, sessionId: id, name, role: 'Run', instructions: '', createdAt: 4,
+      hidden: true, ephemeral: { plugin: 'flybot-workflow' },
+      ...(stepTools ? { stepTools } : {}),
+    }
+  }
+  run('coder', 'Coder', ['github'])
+  run('shell', 'Shell', ['bash'])
+  run('star', 'Star', ['*'])
+  run('bare', 'Bare')
+  const { agentFor, hiddenFrom, guard, stop } = await setup({ state })
+  t.after(stop)
+  for (const id of ['coder', 'shell', 'star', 'bare']) await agentFor(id)
+  assert.deepEqual(sorted(hiddenFrom('coder')), sorted(COMPOSIO), 'github stays listed')
+  assert.equal(guard(GITHUB[0], 'coder'), undefined)
+  assert.match(guard(COMPOSIO[0], 'coder'), /not granted to this run/)
+  assert.deepEqual(sorted(hiddenFrom('shell')), sorted([...COMPOSIO, ...GITHUB]))
+  assert.match(guard(GITHUB[0], 'shell'), /not granted to this run/)
+  assert.deepEqual([...hiddenFrom('star')], [])
+  assert.equal(guard(GITHUB[0], 'star'), undefined)
+  assert.equal(guard(COMPOSIO[0], 'star'), undefined)
+  assert.deepEqual(sorted(hiddenFrom('bare')), sorted([...COMPOSIO, ...GITHUB]), 'no stepTools fails closed')
+  assert.match(guard(GITHUB[0], 'bare'), /not granted to this run/)
+})

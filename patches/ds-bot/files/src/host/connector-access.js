@@ -8,9 +8,11 @@
 //     parent's Bot.
 //   - The owner can turn a connector off for one Bot: `bot.connectors = { composio: false }`. Absent
 //     means on, so every Bot, old or new, has the connected connector.
-//   - A friend's Bot (`remote`) never gets them, and neither does a Session whose Bot or parent chain
-//     cannot be resolved (fail closed). Sessions that belong to no Bot (the DSH Agent, plain DSH
-//     sessions) are not touched: they are the owner's own, and no friend can reach them.
+//   - A friend's Bot (`remote`) never gets them. A run Bot (`ephemeral`) gets a connector
+//     only when its `stepTools` name it (`github` covers `mcp__github__*`). A Session whose
+//     Bot or parent chain cannot be resolved fails closed. Sessions that belong to no Bot
+//     (the DSH Agent, plain DSH sessions) are not touched: they are the owner's own, and no
+//     friend can reach them.
 //   - A group room turn carries neither the composio tools nor the four schedule tools (#1237): 8
 //     tools, ~20.4k characters (≈5.2k tokens at the measured 3.92 chars/token) re-sent on every call
 //     of every room turn, and a room round uses neither — an outside app is reached from the Bot's own
@@ -42,7 +44,14 @@ export function install(rt) {
   // Only an explicit false turns it off; a Bot with no record has it (a team saved by #346, where an
   // absent record meant off, therefore starts on).
   const turnedOff = (bot, id) => bot?.connectors?.[id] === false
-  const allowed = (bot, id) => bot.remote === undefined && !turnedOff(bot, id)
+  // A run Bot is not a team member. It gets a connector only when the step
+  // named it (`github` → mcp__github__*), so a node that did not ask cannot
+  // open pull requests.
+  const stepGrants = (bot, id) => {
+    const tools = bot?.stepTools ?? []
+    return tools.includes(id) || tools.includes('*') || tools.some(name => name === id || String(name).startsWith(`mcp__${id}__`))
+  }
+  const allowed = (bot, id) => bot.remote === undefined && !turnedOff(bot, id) && (bot.ephemeral === undefined || stepGrants(bot, id))
 
   // The Bot an Agent works for: its own chat, a group Session and an earlier part resolve through
   // selfOf; a sub-agent Session is followed up to its parent. The answer has three shapes, and only
@@ -109,6 +118,7 @@ export function install(rt) {
     const { bot } = who
     if (allowed(bot, id)) return undefined
     if (bot.remote !== undefined) return `The ${id} connector is not available to a friend's Bot.`
+    if (bot.ephemeral !== undefined) return `The ${id} connector is not granted to this run. The step's tools list is what allows it.`
     return `The ${id} connector is turned off for ${bot.name}. Its owner can turn it on in this Bot's settings.`
   })
 

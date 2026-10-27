@@ -177,6 +177,8 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(created.length, 1)
   assert.equal(created[0].ephemeral, true)
   assert.equal(created[0].hidden, true)
+  assert.equal(created[0].permission, 'workspace-write')
+  assert.deepEqual(created[0].tools, [])
   assert.match(created[0].systemPrompt, /Write the plan\./)
   assert.equal(created[0].name.startsWith('Planner '), true)
   assert.notEqual(created[0].name, 'Planner')
