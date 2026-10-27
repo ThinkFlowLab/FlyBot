@@ -206,21 +206,6 @@ A review's `state` is not read at all: approvals are not a gate any more (user d
 
 **A merged pull request's body is not a control.** GitHub evaluates `Fixes #N` once, when the merge lands. Editing the body of a merged pull request afterwards closes nothing and triggers no guard; it only makes the record disagree with what merged. If the issue is still open, close it with a comment naming the pull request — and if the merge itself was wrong, say so on the issue.
 
-#### Untrusted external agent branches
-
-An external agent can open a pull request here under its own branch, and its write access is not settled (owner decision 2026-10-27). Three things name such a pull request, and any one of them refuses it: its number, if it is in `FROZEN_PULL_REQUESTS` in [`enqueue-guard.mjs`](.github/scripts/enqueue-guard.mjs); a head branch starting with a listed prefix; or a body carrying a listed marker. The prefix and the marker live in [`.github/agent/frozen-branches.json`](.github/agent/frozen-branches.json) — today `cursor/` and any marker starting `CURSOR_AGENT_PR_BODY` (`<!-- CURSOR_AGENT_PR_BODY_BEGIN -->` above all) — and are read **from `main`**, never from the pull request's base or head (#1354): `#1328` was based on `8d0a99c1`, older than the seal itself, so a base read found no list and froze nobody, and it merged at `06:03:21Z`. The numbers cannot live in that document, because a pull request that edits it is refused — so a number is code, and it is the only handle on a pull request whose branch name says nothing (`#1328`'s was an ordinary `dev4/…`). `enqueue-guard` refuses such a pull request at the queue entry with `frozen: external agent branch; owner decision pending`, whatever conclusion its tip carries, and it refuses one whose diff edits that file — so the list cannot be emptied from inside the branch it judges. Deleting the file (or emptying both arrays) on `main` releases everything the document names; a number is released by deleting it from `FROZEN_PULL_REQUESTS`. This is a queue-entry seal, not a permission boundary: a direct push or an admin merge never reads it, a renamed branch, or a body whose marker was never there, walks past it, and the shared `Birfy` token can edit the file — it stops the pull request that names itself, not the agent behind it (#1350).
-
-Until it is lifted, on such a branch:
-
-- **Do not adopt its `patches/ds-bot/*.patch`.** Those are an external agent's output, not this pipeline's generated files.
-- **Do not rebase onto it**, and do not use it as a base for any branch or any review.
-- **Do not write a conclusion, a comment or a label on it.** No `Verdict:`, no `Correction`, no `agent-*`: the record stays as the external agent left it.
-- **Keep it out of the queue with `dequeuePullRequest`.** A draft is a property of the pull request, not of a queue entry: `#1328` entered the queue at `06:01:1xZ`, was turned draft, and merged at `06:03:21Z` anyway. Turning it draft is not a dequeue, and once a pull request is in the queue the only mechanical stop is taking the entry out (#1354).
-
-It is also never the baseline for `generate`. Anyone who has to touch `patches/` starts from `git checkout 41decf09 -- patches/ds-bot` and regenerates from there, never from a branch an external agent produced.
-
-本条自 `cursor` 云端 agent 的写权限被撤销之日起失效：届时由 Chief 随即在 `main` 上删除 `.github/agent/frozen-branches.json`（或删掉其中的两个数组）即告解除 —— 闸读的是那一份文件，读不到权限本身，所以撤销这件事不会自动让闸停下，只有删掉那几行才会（#1350）。
-
 #### The checkpoint block: a hand-off the next Bot can read (#1202)
 
 A pull request hands itself over in one block in the body, under `## Checkpoint`. The body is the only store: it becomes the squash commit message, so the block cannot fall out of step with the pull request the way a comment or a label can.
