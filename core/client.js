@@ -7639,7 +7639,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   }
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
-var needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length;
+var needsCount = (roster, work, tasks, now) => inboxModel({ roster, work, tasks, now }).needs.length;
 function visibleNeeds(model, answered) {
   return { ...model, needs: model.needs.filter((card) => !answered?.[card.id]) };
 }

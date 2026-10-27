@@ -271,7 +271,7 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
 }
 
 // The row's badge: how many cards need me. The Done list needs no Session list for this.
-export const needsCount = (roster, work, tasks) => inboxModel({ roster, work, tasks }).needs.length
+export const needsCount = (roster, work, tasks, now) => inboxModel({ roster, work, tasks, now }).needs.length
 
 // Cards the owner already answered leave the Needs you list. The dialog keeps that
 // set until the next roster poll drops the underlying record.

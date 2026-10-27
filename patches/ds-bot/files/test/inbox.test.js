@@ -119,7 +119,7 @@ test('Needs you: my own Bots\' approvals, held messages, and tasks that wait for
   assert.equal(byId['task:t4'].status, 'result')
   assert.equal(byId['task:t5'].status, 'input')
   assert.equal(byId['task:t5'].reason, 'Which branch?')
-  assert.equal(needsCount(roster, work, tasks), model.needs.length)
+  assert.equal(needsCount(roster, work, tasks, NOW), model.needs.length)
 })
 
 test("a friend's Bot and another member's Bot never show, in any group", () => {
@@ -294,7 +294,7 @@ test('a failed turn of my own Bot needs me while it is the latest turn in its ch
   assert.equal(card.executingBot, 'b2')
   // The chat whose last turn failed is not also Done.
   assert.ok(!ids(endedModel.done).includes('chat:b2'))
-  assert.equal(needsCount(roster, endedWork, tasks), model.needs.length + 1)
+  assert.equal(needsCount(roster, endedWork, tasks, NOW), model.needs.length + 1)
   // Without the Session list (the row's badge), the title says what happened.
   assert.equal(inboxModel({ roster, work: endedWork, tasks, now: NOW }).needs.find(entry => entry.id === 'turn:e2').title, 'The last turn did not finish')
   assert.deepEqual(plain(buttons(draw(card)).map(textOf)), ['Open'])
