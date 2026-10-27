@@ -175,36 +175,22 @@ test('a group column nests subtasks under the overall task', () => {
   assert.match(textOf(notStarted), /Theirs/)
 })
 
-test('one board: no tablist, heading says Board, shows both task and delivery cards (#1326)', () => {
-  const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => ({ ok: false, reason: 'no-github' }) }
+test('the task dialog has no delivery metrics panel (#1363)', () => {
+  const actions = { closeBoard: () => {}, boardClose: () => {} }
   states.length = 0
   const boardView = expand(KanbanDialog({ roster, actions }))
-  // No tablist — the Tasks/Delivery split is gone (#1326).
-  const tabs = all(boardView).filter(node => node.props?.role === 'tab')
-  assert.equal(tabs.length, 0, 'no tabs — one board shows both task and delivery cards')
-  const tablist = all(boardView).find(node => node.props?.role === 'tablist')
-  assert.equal(tablist, undefined, 'no tablist element')
-  // Heading says "Board", not "Tasks" or "Delivery".
+  assert.equal(all(boardView).filter(node => node.props?.role === 'tab').length, 0)
+  assert.equal(all(boardView).find(node => node.props?.role === 'tablist'), undefined)
   const heading = all(boardView).find(node => node.props?.id === 'bt-board-heading')
   assert.match(textOf(heading), /Board/)
-  assert.doesNotMatch(textOf(heading), /Tasks/)
-  assert.doesNotMatch(textOf(heading), /Delivery/)
-  // The rail is per-Bot; task cards need it, delivery cards do not.
   assert.equal(byClass(boardView, 'bt-board-rail').length, 1)
-  // With no GitHub token, task cards still render — the board is never empty (#1211, #1265).
-  assert.equal(all(boardView).some(node => node.props?.className === 'bt-del-body'), true)
+  assert.equal(byClass(boardView, 'bt-board-column').map(node => node.props['data-column']).join('|'), 'not-started|in-progress|done')
+  assert.equal(all(boardView).some(node => String(node.props?.className ?? '').includes('bt-del')), false)
+  assert.doesNotMatch(textOf(boardView), /from the package|Diagnose|New issues|CI red share/)
 })
 
-test('a delivery read with no token still shows task cards on the one board (#1211, #1265, #1326)', () => {
-  // The two halves meet in one dialog: the delivery board can only say "the GitHub side is not
-  // available" (core/test/delivery-view.test.js holds that sentence), and it must not take the task
-  // board with it — the cards are still rendered on the same board.
-  const failed = {
-    ok: false, state: 'failed', repo: null, repos: [],
-    error: { message: 'no GITHUB_TOKEN', kind: 'no-token', scope: 'repo', endpoint: null, status: null, at: null },
-    retryAt: null,
-  }
-  const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => failed }
+test('the task dialog shows task cards without a GitHub read (#1363)', () => {
+  const actions = { closeBoard: () => {}, boardClose: () => {} }
   const mine = task('task-abcdef123456', 'open', { title: 'Draft the note', ownerBotId: 's', priority: 'high' })
   // scope, dragging, error, draft, then the list the board would have read from the host.
   states.length = 0
@@ -212,19 +198,31 @@ test('a delivery read with no token still shows task cards on the one board (#12
   const boardView = expand(KanbanDialog({ roster, actions }))
   assert.match(textOf(boardView), /Draft the note/)
   assert.equal(byClass(boardView, 'bt-board-card').length, 1)
-  // No tabs — one board shows both (#1326).
   assert.equal(all(boardView).filter(node => node.props?.role === 'tab').length, 0)
 })
 
-test('Start and Complete fire from the unified board path (#1326)', () => {
+test('the dialog nests a group subtask under its overall task (#1358)', () => {
+  const overall = task('task-aaaaaa111111', 'open', { title: 'Ship it', kind: 'group', ownerBotId: 'a', priority: 'high', updatedAt: 5 })
+  const child = task('task-bbbbbb222222', 'open', { title: 'Write it', ownerBotId: 's', parentId: overall.id, parentTitle: 'Ship it', priority: 'urgent', updatedAt: 6 })
+  const actions = { closeBoard: () => {}, boardClose: () => {} }
+  // scope, dragging, error, draft, own, groupTasks, archive
+  states.length = 0
+  states.push({ kind: 'group', roomId: 'war' }, null, '', '', [], [overall, child], [])
+  const boardView = expand(KanbanDialog({ roster, actions }))
+  const notStarted = byClass(boardView, 'bt-board-column').find(node => node.props['data-column'] === 'not-started')
+  assert.match(textOf(notStarted), /Ship it/)
+  assert.match(textOf(notStarted), /Write it/)
+  assert.equal(all(notStarted).some(node => node.props?.['data-parent'] === overall.id), true)
+})
+
+test('Start and Complete fire from the task board', () => {
   const moved = []
   const openTask = task('task-open123', 'open', { title: 'Start me', ownerBotId: 's' })
   const workingTask = task('task-working456', 'working', { title: 'Complete me', ownerBotId: 's' })
-  const actions = { 
-    closeBoard: () => {}, 
+  const actions = {
+    closeBoard: () => {},
     boardClose: () => {},
     taskUpdate: async ({ id, column }) => { moved.push([id, column]); return { ok: true } },
-    deliveryBoard: async () => ({ ok: false, reason: 'no-github' }),
   }
   states.length = 0
   // KanbanDialog states: scope, dragging, error, draft

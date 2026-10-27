@@ -456,7 +456,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,51 @@ export function install(rt) {
+@@ -65,22 +65,49 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -496,9 +496,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
    // Updates change the dsh profile, not the team, so a reading host may run them too.
 -  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
 +  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-+  // delivery-board serves the cached snapshot and delivery-probe only GETs GitHub (#1225); both were
-+  // missing, so a window that only reads the team could not open the board at all.
-+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe', 'workflows'])
++  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows'])
 +
 +  // A chat reference chip names a Session whose snapshot rides to every recipient of
 +  // the message, so the author must be able to read what they share (#53, #106).
@@ -830,7 +828,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,126 @@ export function install(rt) {
+@@ -319,32 +319,120 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -847,12 +845,6 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        case 'task-answer-input':
 +          await rt.load()
 +          return ok(await rt.taskEndpoint(endpoint, body, actor))
-+        case 'delivery-board':
-+          await rt.load()
-+          return ok(await rt.deliveryBoard(body))
-+        case 'delivery-probe':
-+          await rt.load()
-+          return ok(await rt.deliveryProbe(body))
 +        // A workflow definition is read by the page and written by `workflow-save`, which is in
 +        // authz's TASK_ENDPOINTS: the client writes a file through the host, never to GitHub
 +        // (#1272 step 3, acceptance 7).

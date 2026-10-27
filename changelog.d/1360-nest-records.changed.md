@@ -1,1 +1,0 @@
-The board hangs a FlyBot task under the GitHub issue it names, instead of drawing that task as its own card beside the issue (#1360). A task with no issue, or whose issue is not on the board, stays its own card.

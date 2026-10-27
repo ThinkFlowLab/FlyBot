@@ -232,7 +232,7 @@ export function install(rt) {
     }
     return { ok: false, code: 'workflow/unknown-op', message: `workflows has no "${op}"; it lists, opens or previews`, problems: [] }
   }
-  // The board reads its columns from these definitions (acceptance 1 and 2).
+  // Presets plus the workspace files. The settings page lists and opens them; nothing here draws a board.
   rt.workflowDefinitions = () => {
     try { return store()?.definitions() ?? PRESETS.map(normaliseWorkflow) } catch { return PRESETS.map(normaliseWorkflow) }
   }

@@ -402,7 +402,7 @@ export function install(rt) {
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW
     if (ep === 'state' || ep === 'models' || ep === 'efforts' || ep === 'repo-stars' || ep === 'update-check'
       || ep === 'diagnostics' || ep === 'diagnostics-log' || ep === 'usage'
-      || ep === 'delivery-board' || ep === 'delivery-probe' || ep === 'workflows') return ALLOW
+      || ep === 'workflows') return ALLOW
 
     return deny('bot/not-found', `Unknown endpoint ${ep}`)
   }

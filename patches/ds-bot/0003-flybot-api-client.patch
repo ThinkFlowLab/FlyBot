@@ -1500,7 +1500,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      stopMemberWork: (roomId, botId) => after(call('stop-member-work', { roomId, botId })),
      // Values go out in these requests and never come back in a response.
      secretSet: payload => after(call('secret-set', payload)),
-@@ -539,15 +539,35 @@ export function apply(ctx) {
+@@ -539,15 +539,33 @@ export function apply(ctx) {
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1524,8 +1524,6 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    setBotConnector: (botId, connector, enabled) => after(call('bot-connectors', { botId, connector, enabled })),
      setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
 +    tasks: (payload) => call('tasks', payload ?? {}),
-+    deliveryBoard: (payload) => call('delivery-board', payload ?? {}),
-+    deliveryProbe: (payload) => call('delivery-probe', payload ?? {}),
 +    taskUpdate: (payload) => call('task-update', payload),
 +    taskCreate: (payload) => call('task-create', payload),
      schedules: () => call('schedules'),
