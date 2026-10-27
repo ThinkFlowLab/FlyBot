@@ -140,6 +140,36 @@ test('#1347: a provider refusal reads as a sentence that says what to change', (
   }
 })
 
+test('#1347: the thread cannot paint above a dialog, a sheet or a scrim', () => {
+  const css = read('styles.js')
+  // The load-bearing half. The chat column had no stacking context, so any descendant the browser
+  // promoted (an entrance animation's transform, a filter, will-change) was ordered against the root
+  // and could sort above a dialog's z-index box. Measured on a live page with a promoted user bubble:
+  // 614 px of chat painted inside the Tasks dialog and 59 px inside Settings before this rule, 0 after
+  // — and 1229 px with the rule removed while the raised tiers stayed, so the tiers alone cannot
+  // rescue it and this rule is what carries the fix.
+  const column = ruleLine(css, '[class*="_centerCol"]')
+  assert.match(column, /isolation:isolate/, 'the chat column is its own stacking context')
+  assert.match(column, /z-index:0/, 'and that whole context sits below the panel (40) and dialogs (120)')
+  assert.match(column, /position:relative/, 'a z-index needs a positioned box to apply to')
+  // Not contain:paint — it would clip the reaction strip and message menu the thread portals out.
+  assert.doesNotMatch(column, /contain:paint/)
+
+  // The second half: an explicit tier, so nothing ties with a dialog and wins on DOM order. Before
+  // #1347 the context menu and the reaction strip shared z-index 60 with the Settings dialog, so a
+  // popover opened after it tied and painted over the dialog.
+  assert.equal(rule(css, '.bt-settings-layer').match(/z-index:(\d+)/)?.[1], '120')
+  assert.equal(rule(css, '.bt-mem-layer').match(/z-index:(\d+)/)?.[1], '121')
+  for (const [file, selector] of [['styles.js', '.bt-menu'], ['styles.js', '.bt-react-strip'], ['sidebar.js', '.bt-update-pop'], ['remote-bot-settings.js', '.bt-remote-sheet-layer']]) {
+    const z = Number(ruleLine(read(file), selector).match(/z-index:(\d+)/)?.[1])
+    assert.ok(z >= 120, `${selector} floats above the chat and the panel (was ${z})`)
+  }
+  // The palette stays the topmost sheet; the toast stays above everything.
+  assert.equal(rule(css, '.bt-palette-layer').match(/z-index:(\d+)/)?.[1], '140')
+  // No dialog or popover may sit in the old ambiguous band any more.
+  assert.doesNotMatch(css, /z-index:6[01][;}]/)
+})
+
 test('#1347: the built bundle carries these rules, so a page reload shows them', () => {
   // The app runs client.js, not src/. A constant that never reached the bundle leaves every fix above
   // in the source only.
