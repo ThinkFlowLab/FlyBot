@@ -543,6 +543,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
 .bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
 .bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.bt-wf-prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:12px 4px 0}
+.bt-wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.bt-wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;padding:6px 8px;resize:vertical}
 .bt-wf-plane{position:relative;width:0;margin:16px auto 0}
 .bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}

@@ -256,3 +256,44 @@ test('a drag on the open flowchart commits the moved graph', () => {
   assert.equal(commits[0].nodes.find((node) => node.id === 'coder').x, 20)
   assert.equal(commits[0].nodes.find((node) => node.id === 'coder').y, 138)
 })
+
+// #1393: a node's system prompt is the prompt of that node's run Bot, and the
+// Settings editor writes it the way the sidebar flowchart does — same graph,
+// with the edges kept.
+test('edit mode sets a node system prompt and the commit keeps the edges', () => {
+  const withPrompt = {
+    ...own,
+    nodes: own.nodes.map((node) => (node.id === 'coder' ? { ...node, prompt: 'Write the fix.' } : node)),
+  }
+  const mine = { ...pack, workflows: [factory, withPrompt] }
+
+  const readOnly = renderView({ phase: 'ready', pack: mine, opened: { source: 'own', id: 'wf-mine' }, error: '' })
+  assert.equal(all(readOnly).some((entry) => entry.type === 'textarea'), false)
+
+  const commits = []
+  const tree = renderView({
+    phase: 'ready', pack: mine, opened: { source: 'own', id: 'wf-mine' }, editing: true, error: '',
+    roster: { bots: [] },
+    onCommit: (graph) => commits.push(graph),
+  })
+  const fields = all(tree).filter((entry) => entry.type === 'textarea')
+  assert.deepEqual(fields.map((entry) => entry.props['data-prompt']).sort(), ['coder', 'planner'])
+  const coder = fields.find((entry) => entry.props['data-prompt'] === 'coder')
+  assert.equal(coder.props.defaultValue, 'Write the fix.')
+  const planner = fields.find((entry) => entry.props['data-prompt'] === 'planner')
+  assert.equal(planner.props.defaultValue, '')
+  assert.match(text(tree), /Coder · System prompt/)
+
+  // An untouched field commits nothing, so a click-through cannot rewrite a graph.
+  planner.props.onBlur({ target: { value: '' } })
+  coder.props.onBlur({ target: { value: 'Write the fix.' } })
+  assert.equal(commits.length, 0)
+
+  planner.props.onBlur({ target: { value: 'Plan the work.' } })
+  assert.equal(commits.length, 1)
+  assert.equal(commits[0].nodes.find((node) => node.id === 'planner').prompt, 'Plan the work.')
+  assert.equal(commits[0].nodes.find((node) => node.id === 'coder').prompt, 'Write the fix.')
+  assert.equal(commits[0].nodes.find((node) => node.id === 'planner').x, 0)
+  assert.deepEqual(commits[0].edges, own.edges)
+  assert.equal(DICTIONARY.zh['System prompt'], '系统提示词')
+})

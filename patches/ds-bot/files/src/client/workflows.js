@@ -161,6 +161,22 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
         key: bot.id, type: 'button', 'data-bot': bot.id,
         onPointerDown: (event) => { event.preventDefault?.(); gesture.current = { kind: 'add', bot } },
       }, bot.name))) : null,
+    // A node's system prompt is the run Bot's prompt (plugins/workflow
+    // nodeConfig). The sidebar panel has this field, so the Settings editor
+    // writes the same graph instead of only drawing it (#1393).
+    editing ? h('div', { className: 'bt-wf-prompts' }, nodes.map((node) => h('label', { key: node.id, className: 'bt-wf-prompt' },
+      h('span', null, `${node.name} · ${t('System prompt')}`),
+      h('textarea', {
+        'data-prompt': node.id,
+        rows: 3,
+        defaultValue: node.prompt || '',
+        onPointerDown: (event) => event.stopPropagation?.(),
+        onBlur: (event) => {
+          const prompt = event.target?.value ?? ''
+          if (prompt === (node.prompt || '')) return
+          onCommit?.({ nodes: nodes.map((item) => (item.id === node.id ? { ...item, prompt } : item)), edges })
+        },
+      })))) : null,
     h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height } },
       h('svg', {
         className: 'bt-wf-wires', 'aria-hidden': true,

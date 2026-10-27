@@ -24,6 +24,7 @@ const ZH = {
   'Use this': '用这个',
   'Finish editing': '完成',
   'Drag a Bot here': '把 Bot 拖到图上',
+  'System prompt': '系统提示词',
   'Parallel branch, then join': '并行分支 · 全部通过后汇合',
   'This workflow has no flowchart yet.': '这个工作流还没有流程图。',
   Queued: '排队中',

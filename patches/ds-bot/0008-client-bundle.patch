@@ -3,7 +3,7 @@ FlyBot patch 0008-client-bundle on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gener
 diff --git a/client.js b/client.js
 --- a/client.js
 +++ b/client.js
-@@ -42,6 +42,46 @@ module.exports = __toCommonJS(index_exports);
+@@ -42,6 +42,47 @@ module.exports = __toCommonJS(index_exports);
  // src/client/i18n.js
  var NAMESPACE = "ds-bot";
  var ZH = {
@@ -24,6 +24,7 @@ diff --git a/client.js b/client.js
 +  "Use this": "用这个",
 +  "Finish editing": "完成",
 +  "Drag a Bot here": "把 Bot 拖到图上",
++  "System prompt": "系统提示词",
 +  "Parallel branch, then join": "并行分支 · 全部通过后汇合",
 +  "This workflow has no flowchart yet.": "这个工作流还没有流程图。",
 +  Queued: "排队中",
@@ -1757,7 +1758,7 @@ diff --git a/client.js b/client.js
    }
    return "";
  }
-@@ -1624,773 +1624,1844 @@ function usageOf(list, ids) {
+@@ -1624,773 +1624,1847 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -4206,6 +4207,9 @@ diff --git a/client.js b/client.js
 +.bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
 +.bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
 +.bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
++.bt-wf-prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:12px 4px 0}
++.bt-wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
++.bt-wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;padding:6px 8px;resize:vertical}
 +.bt-wf-plane{position:relative;width:0;margin:16px auto 0}
 +.bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 +.bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}
@@ -7512,7 +7516,8 @@ diff --git a/client.js b/client.js
 +    if (turns[key].first !== void 0 && turns[key].first > visit.entered) return true;
    }
 -  return null;
--}
++  return false;
+ }
 -function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
 -  const roster = useRoster((value) => value);
 -  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
@@ -7523,8 +7528,7 @@ diff --git a/client.js b/client.js
 -  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
 -  if (waiting.length === 0) return null;
 -  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
-+  return false;
- }
+-}
 -function ScopeEditor({ secret, roster, onSave }) {
 -  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
 -  const [picked, setPicked] = (0, import_react5.useState)(secret.scope === "all" ? [] : secret.scope);
@@ -8746,7 +8750,9 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  ), host);
-+}
+ }
+-function NewDivider() {
+-  return (0, import_react6.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react6.createElement)("span", null, t("New")));
 +
 +// src/client/dsh-offer.js
 +var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
@@ -8757,8 +8763,23 @@ diff --git a/client.js b/client.js
 +  if (dsh.kind === "npm") return true;
 +  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
--function NewDivider() {
--  return (0, import_react6.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react6.createElement)("span", null, t("New")));
+-function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
+-  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
+-  (0, import_react6.useEffect)(() => {
+-    if (!open) turnProcess.setOpen(true);
+-  }, [open, turnProcess]);
+-  const turn = node?.location?.turn?.turn ?? node?.data?.turn;
+-  const start = node?.location?.turn?.start?.time;
+-  const hidden = useRoster((roster) => isHiddenTurn(roster, sessionId, turn));
+-  (0, import_react6.useEffect)(() => {
+-    actions.noteTurnTime(sessionId, turn, "first", start);
+-  }, [sessionId, turn, start]);
+-  const visit = useUi((state) => state.visits?.[sessionId]);
+-  const fresh = useTurnClock((state) => {
+-    const own = state[sessionId]?.[turn];
+-    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
+-  });
+-  return fresh ? (0, import_react6.createElement)(NewDivider) : null;
 +
 +// src/client/overlay-hooks.js
 +var import_react11 = require("react");
@@ -8778,21 +8799,8 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
  }
--function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
--  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
--  (0, import_react6.useEffect)(() => {
--    if (!open) turnProcess.setOpen(true);
--  }, [open, turnProcess]);
--  const turn = node?.location?.turn?.turn ?? node?.data?.turn;
--  const start = node?.location?.turn?.start?.time;
--  const hidden = useRoster((roster) => isHiddenTurn(roster, sessionId, turn));
--  (0, import_react6.useEffect)(() => {
--    actions.noteTurnTime(sessionId, turn, "first", start);
--  }, [sessionId, turn, start]);
--  const visit = useUi((state) => state.visits?.[sessionId]);
--  const fresh = useTurnClock((state) => {
--    const own = state[sessionId]?.[turn];
--    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
+-function Nothing() {
+-  return null;
 +function usePaneLeft() {
 +  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
 +  (0, import_react11.useLayoutEffect)(() => {
@@ -8800,7 +8808,17 @@ diff --git a/client.js b/client.js
 +    if (column) setPaneLeft(Math.round(column.getBoundingClientRect().right));
 +  }, []);
 +  return paneLeft;
-+}
+ }
+-var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
+-function clockLabel(time, now = Date.now()) {
+-  const date = new Date(time);
+-  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+-  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
+-  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
+-  if (days === 0) return t("Today {time}", { time: clock4 });
+-  if (days === 1) return t("Yesterday {time}", { time: clock4 });
+-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+-  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
 +
 +// src/client/member-status.js
 +var import_react12 = require("react");
@@ -8822,29 +8840,7 @@ diff --git a/client.js b/client.js
 +    const doing = workIn(room2, work, id);
 +    const approvals = askedIn(room2, work, id, doing);
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
-   });
--  return fresh ? (0, import_react6.createElement)(NewDivider) : null;
- }
--function Nothing() {
--  return null;
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
- }
--var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
--function clockLabel(time, now = Date.now()) {
--  const date = new Date(time);
--  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
--  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
--  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
--  if (days === 0) return t("Today {time}", { time: clock4 });
--  if (days === 1) return t("Yesterday {time}", { time: clock4 });
--  const sameYear = date.getFullYear() === new Date(now).getFullYear();
--  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
-+function splitBusy(busy) {
-+  const here = busy.filter((entry) => entry.state === "work" && entry.here);
-+  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
-+  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
++  });
  }
 -function nextTurnStart(turns, turn) {
 -  let next;
@@ -8853,12 +8849,9 @@ diff --git a/client.js b/client.js
 -    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
 -  }
 -  return next === void 0 ? void 0 : turns[next].first;
-+function botGroupWork(botId, work, roster) {
-+  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
-+    const entry = entries2.find((item) => item.botId === botId);
-+    const room2 = roster.roomsById[roomId];
-+    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
-+  });
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
  }
 -function openingTurn(turns, firstTurns, hiddenTurns) {
 -  if (!turns || !firstTurns) return null;
@@ -8868,14 +8861,10 @@ diff --git a/client.js b/client.js
 -  const listed = firstTurns.split(",").map(Number);
 -  const earlier = listed.filter((entry) => entry < turn);
 -  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
-+function summaryText(busy) {
-+  const asks = busy.filter((entry) => entry.state === "ask");
-+  const workers = busy.filter((entry) => entry.state === "work");
-+  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
-+  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
-+  const first = workers[0];
-+  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
-+  return { waiting, doing };
++function splitBusy(busy) {
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
  }
 -var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
 -function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
@@ -8893,13 +8882,28 @@ diff --git a/client.js b/client.js
 -    if (typeof visit?.seen !== "number" || time > visit.seen) return false;
 -    const start = nextTurnStart(state[sessionId] ?? {}, turn);
 -    return start !== void 0 && start > visit.seen && start <= visit.entered;
--  });
++function botGroupWork(botId, work, roster) {
++  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
++    const entry = entries2.find((item) => item.botId === botId);
++    const room2 = roster.roomsById[roomId];
++    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
+   });
 -  if (!label && !fresh) return null;
 -  return (0, import_react6.createElement)(
 -    import_react6.Fragment,
 -    null,
 -    label ? (0, import_react6.createElement)("div", { className: "bt-time-sep", role: "separator" }, label) : null,
 -    fresh ? (0, import_react6.createElement)(NewDivider) : null
++}
++function summaryText(busy) {
++  const asks = busy.filter((entry) => entry.state === "ask");
++  const workers = busy.filter((entry) => entry.state === "work");
++  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
++  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
++  const first = workers[0];
++  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
++  return { waiting, doing };
++}
 +function Face({ entry, size }) {
 +  return (0, import_react12.createElement)(
 +    "span",
@@ -10368,6 +10372,17 @@ diff --git a/client.js b/client.js
 -        const reply = [void 0, "assistant-step", "tool-call"].includes(item.dataset.chatFlowKind);
 -        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
 -        item.addEventListener("animationend", settle);
+-      }
+-    };
+-    const observer = new MutationObserver(() => {
+-      if (!frame) frame = requestAnimationFrame(scan);
+-    });
+-    scan();
+-    return () => {
+-      cancelAnimationFrame(frame);
+-      observer.disconnect();
+-    };
+-  }, []);
 +function RailButton({ row, selected, meta, onSelect }) {
 +  return (0, import_react15.createElement)(
 +    "button",
@@ -10384,7 +10399,85 @@ diff --git a/client.js b/client.js
 +    (0, import_react15.createElement)("span", { className: "bt-board-rail-name" }, row.name),
 +    meta ? (0, import_react15.createElement)("span", { className: "bt-board-rail-meta" }, meta) : null
 +  );
-+}
+ }
+-function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, useSession, actions }) {
+-  const roster = useRoster((value) => value);
+-  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
+-  const liveKey = useLive((state) => JSON.stringify(state[sessionId] ?? {}));
+-  const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
+-  const bot = roster.byId[sessionId];
+-  const room2 = roster.roomsById[sessionId];
+-  const entries2 = (0, import_react7.useMemo)(() => Object.values(JSON.parse(liveKey)), [liveKey]);
+-  const streaming = entries2.some((entry) => entry.text);
+-  const tools = entries2.filter((entry) => !entry.text).sort((a, b) => a.at - b.at);
+-  const relaying = tools.some((entry) => entry.relay);
+-  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
+-  const tool = tools.at(-1);
+-  const inputRef = (0, import_react7.useRef)(0);
+-  const inputAt = Math.max(inputRef.current, pendingInput);
+-  inputRef.current = inputAt;
+-  const want = !visible ? null : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
+-  const [shown, setShown] = (0, import_react7.useState)(null);
+-  const wantKey = want?.key ?? null;
+-  const markState = (0, import_react7.useRef)("thinking");
+-  if (want) markState.current = want.state;
+-  (0, import_react7.useEffect)(() => {
+-    if (wantKey === null || shown?.key === wantKey) return void 0;
+-    const make = () => setShown({ key: wantKey, text: want.label ?? drawPhrase(want.pool), at: Date.now() });
+-    const wait = shown ? shown.at + PHRASE_HOLD_MS - Date.now() : 0;
+-    if (wait <= 0) {
+-      make();
+-      return void 0;
+-    }
+-    const timer = setTimeout(make, wait);
+-    return () => clearTimeout(timer);
+-  }, [wantKey, shown]);
+-  const [phase, setPhase] = (0, import_react7.useState)(null);
+-  const endedAt = (0, import_react7.useRef)(0);
+-  const shift = (0, import_react7.useRef)(null);
+-  const leaving = (0, import_react7.useRef)(false);
+-  leaving.current = phase !== null && !visible;
+-  (0, import_react7.useEffect)(() => {
+-    if (visible) {
+-      setPhase("in");
+-      return void 0;
+-    }
+-    setPhase((current) => current === "in" ? "out" : current);
+-    const timer = setTimeout(() => {
+-      shift.current = document.querySelector("[data-conversation-scroll]")?.scrollTop ?? null;
+-      setPhase((current) => current === "out" ? null : current);
+-    }, 140);
+-    return () => clearTimeout(timer);
+-  }, [visible]);
+-  (0, import_react7.useLayoutEffect)(() => {
+-    if (phase !== null) return;
+-    endedAt.current = Date.now();
+-    setShown(null);
+-    const before = shift.current;
+-    shift.current = null;
+-    const scroller = document.querySelector("[data-conversation-scroll]");
+-    if (before === null || !scroller || reducedMotion()) return;
+-    const delta = before - scroller.scrollTop;
+-    if (delta > 0) scroller.querySelector("[data-chat-flow]")?.animate([{ transform: `translateY(${-delta}px)` }, { transform: "none" }], { duration: 140, easing: "cubic-bezier(.23,1,.32,1)" });
+-  }, [phase]);
+-  (0, import_react7.useEffect)(() => {
+-    if (!running) actions.clearLive(sessionId);
+-  }, [running, sessionId]);
+-  useRowEntrances(() => leaving.current || Date.now() - endedAt.current < 300);
+-  const [now, setNow] = (0, import_react7.useState)(Date.now);
+-  (0, import_react7.useEffect)(() => {
+-    if (phase !== "in") return void 0;
+-    const timer = setInterval(() => setNow(Date.now()), 1e4);
+-    return () => clearInterval(timer);
+-  }, [phase]);
+-  const host = useRunningHost(running);
+-  if (!host || phase === null || !shown) return null;
+-  const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
+-  return (0, import_react_dom2.createPortal)((0, import_react7.createElement)(
+-    "div",
+-    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "aria-hidden": true },
+-    bot ? (0, import_react7.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react7.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
+-    (0, import_react7.createElement)(
 +function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) {
 +  const column = columnOf(task);
 +  const priority = priorityOf(task);
@@ -10414,11 +10507,16 @@ diff --git a/client.js b/client.js
 +      question ? (0, import_react15.createElement)("span", { key: "wait", className: "bt-board-wait" }, question) : null
 +    ],
 +    footer: (0, import_react15.createElement)(
-+      "span",
+       "span",
+-      { className: "bt-typing-text" },
+-      (0, import_react7.createElement)(
 +      { className: "bt-board-foot" },
 +      who ? (0, import_react15.createElement)("span", { className: "bt-board-who" }, who) : null,
 +      (0, import_react15.createElement)(
-+        "span",
+         "span",
+-        { key: `${shown.key}:${shown.at}`, className: "bt-typing-label" },
+-        (0, import_react7.createElement)(Shimmer, null, `${shown.text}…`),
+-        elapsed ? (0, import_react7.createElement)("span", { className: "bt-typing-time" }, `· ${elapsed}`) : null
 +        { className: "bt-board-progress" },
 +        (0, import_react15.createElement)(
 +          "span",
@@ -10460,17 +10558,7 @@ diff --git a/client.js b/client.js
 +        const id = event.dataTransfer?.getData("text/plain");
 +        if (id) onMove?.(id, column);
 +        onDrag?.(null);
-       }
--    };
--    const observer = new MutationObserver(() => {
--      if (!frame) frame = requestAnimationFrame(scan);
--    });
--    scan();
--    return () => {
--      cancelAnimationFrame(frame);
--      observer.disconnect();
--    };
--  }, []);
++      }
 +    },
 +    (0, import_react15.createElement)(
 +      "h3",
@@ -10498,35 +10586,7 @@ diff --git a/client.js b/client.js
 +      lane.tasks.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
 +    )) : plain.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
 +  );
- }
--function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, useSession, actions }) {
--  const roster = useRoster((value) => value);
--  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
--  const liveKey = useLive((state) => JSON.stringify(state[sessionId] ?? {}));
--  const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
--  const bot = roster.byId[sessionId];
--  const room2 = roster.roomsById[sessionId];
--  const entries2 = (0, import_react7.useMemo)(() => Object.values(JSON.parse(liveKey)), [liveKey]);
--  const streaming = entries2.some((entry) => entry.text);
--  const tools = entries2.filter((entry) => !entry.text).sort((a, b) => a.at - b.at);
--  const relaying = tools.some((entry) => entry.relay);
--  const visible = running && !streaming && !relaying && (bot !== void 0 || room2 !== void 0);
--  const tool = tools.at(-1);
--  const inputRef = (0, import_react7.useRef)(0);
--  const inputAt = Math.max(inputRef.current, pendingInput);
--  inputRef.current = inputAt;
--  const want = !visible ? null : inputAt > (tool?.at ?? 0) ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: "thinking" } : tool ? { key: tool.label ? `tool:${tool.label}` : "working", label: tool.label, pool: PHRASES.working, state: tool.state ?? "working" } : { key: "thinking", pool: PHRASES.thinking, state: "thinking" };
--  const [shown, setShown] = (0, import_react7.useState)(null);
--  const wantKey = want?.key ?? null;
--  const markState = (0, import_react7.useRef)("thinking");
--  if (want) markState.current = want.state;
--  (0, import_react7.useEffect)(() => {
--    if (wantKey === null || shown?.key === wantKey) return void 0;
--    const make = () => setShown({ key: wantKey, text: want.label ?? drawPhrase(want.pool), at: Date.now() });
--    const wait = shown ? shown.at + PHRASE_HOLD_MS - Date.now() : 0;
--    if (wait <= 0) {
--      make();
--      return void 0;
++}
 +function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
 +  const columns = boardColumns(tasks);
 +  const lanes = scope?.kind === "group";
@@ -10579,10 +10639,20 @@ diff --git a/client.js b/client.js
 +          onMove,
 +          onDrag
 +        }))
-+      )
-+    )
+       )
+     )
+-  ), host);
 +  );
-+}
+ }
+-
+-// src/client/dsh-offer.js
+-var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
+-var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
+-var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
+-function showsDshRow(dsh, app) {
+-  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
+-  if (dsh.kind === "npm") return true;
+-  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
 +function KanbanRow({ wide, useUi, actions }) {
 +  const open = useUi ? useUi((value) => Boolean(value.board)) : false;
 +  const label = t("Tasks");
@@ -10605,7 +10675,7 @@ diff --git a/client.js b/client.js
 +  if (scope?.kind === "group") return roster.roomsById?.[scope.roomId]?.name || t("Group");
 +  if (scope?.kind === "bot") return roster.byId?.[scope.botId]?.name || "";
 +  return "";
-+}
+ }
 +function KanbanDialog({ roster, actions, leaving = false }) {
 +  const rail = boardRail(roster);
 +  const [scope, setScope] = (0, import_react15.useState)(() => rail.bots[0] ? { kind: "bot", botId: rail.bots[0].id } : rail.groups[0] ? { kind: "group", roomId: rail.groups[0].id } : null);
@@ -10632,19 +10702,7 @@ diff --git a/client.js b/client.js
 +      replace(await actions.taskUpdate({ id, column }));
 +    } catch (failure) {
 +      setError(failure?.message ?? String(failure));
-     }
--    const timer = setTimeout(make, wait);
--    return () => clearTimeout(timer);
--  }, [wantKey, shown]);
--  const [phase, setPhase] = (0, import_react7.useState)(null);
--  const endedAt = (0, import_react7.useRef)(0);
--  const shift = (0, import_react7.useRef)(null);
--  const leaving = (0, import_react7.useRef)(false);
--  leaving.current = phase !== null && !visible;
--  (0, import_react7.useEffect)(() => {
--    if (visible) {
--      setPhase("in");
--      return void 0;
++    }
 +  };
 +  const create = async (title) => {
 +    const text = String(title ?? "").trim();
@@ -10655,54 +10713,11 @@ diff --git a/client.js b/client.js
 +      setDraft("");
 +    } catch (failure) {
 +      setError(failure?.message ?? String(failure));
-     }
--    setPhase((current) => current === "in" ? "out" : current);
--    const timer = setTimeout(() => {
--      shift.current = document.querySelector("[data-conversation-scroll]")?.scrollTop ?? null;
--      setPhase((current) => current === "out" ? null : current);
--    }, 140);
--    return () => clearTimeout(timer);
--  }, [visible]);
--  (0, import_react7.useLayoutEffect)(() => {
--    if (phase !== null) return;
--    endedAt.current = Date.now();
--    setShown(null);
--    const before = shift.current;
--    shift.current = null;
--    const scroller = document.querySelector("[data-conversation-scroll]");
--    if (before === null || !scroller || reducedMotion()) return;
--    const delta = before - scroller.scrollTop;
--    if (delta > 0) scroller.querySelector("[data-chat-flow]")?.animate([{ transform: `translateY(${-delta}px)` }, { transform: "none" }], { duration: 140, easing: "cubic-bezier(.23,1,.32,1)" });
--  }, [phase]);
--  (0, import_react7.useEffect)(() => {
--    if (!running) actions.clearLive(sessionId);
--  }, [running, sessionId]);
--  useRowEntrances(() => leaving.current || Date.now() - endedAt.current < 300);
--  const [now, setNow] = (0, import_react7.useState)(Date.now);
--  (0, import_react7.useEffect)(() => {
--    if (phase !== "in") return void 0;
--    const timer = setInterval(() => setNow(Date.now()), 1e4);
--    return () => clearInterval(timer);
--  }, [phase]);
--  const host = useRunningHost(running);
--  if (!host || phase === null || !shown) return null;
--  const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
--  return (0, import_react_dom2.createPortal)((0, import_react7.createElement)(
++    }
 +  };
 +  const name = scopeName(roster, scope);
 +  return (0, import_react15.createElement)(
-     "div",
--    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "aria-hidden": true },
--    bot ? (0, import_react7.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react7.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
--    (0, import_react7.createElement)(
--      "span",
--      { className: "bt-typing-text" },
--      (0, import_react7.createElement)(
--        "span",
--        { key: `${shown.key}:${shown.at}`, className: "bt-typing-label" },
--        (0, import_react7.createElement)(Shimmer, null, `${shown.text}…`),
--        elapsed ? (0, import_react7.createElement)("span", { className: "bt-typing-time" }, `· ${elapsed}`) : null
--      )
++    "div",
 +    { className: "bt-mem-layer bt-board-layer", "data-leaving": leaving || void 0 },
 +    (0, import_react15.createElement)("div", { className: "bt-scrim", onClick: close }),
 +    (0, import_react15.createElement)(
@@ -10731,19 +10746,9 @@ diff --git a/client.js b/client.js
 +        onDrag: setDragging,
 +        onCreate: create
 +      })
-     )
--  ), host);
++    )
 +  );
- }
--
--// src/client/dsh-offer.js
--var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
--var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
--var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
--function showsDshRow(dsh, app) {
--  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
--  if (dsh.kind === "npm") return true;
--  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
++}
 +var KANBAN_CSS = `
 +.bt-board-row{min-height:40px;padding:6px 8px;gap:10px}
 +.bt-board-mark{flex:none;width:36px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
@@ -10805,7 +10810,7 @@ diff --git a/client.js b/client.js
 +  .bt-mem.bt-board{width:100vw;border-radius:0;border:0}
 +  .bt-board-columns{flex-direction:column}
 +  .bt-board-column{min-width:0}
- }
++}
 +`;
  
  // src/client/sidebar.js
@@ -16191,7 +16196,7 @@ diff --git a/client.js b/client.js
      if (phase !== "thinking" || running || waiting.current === null) return;
      const [count, text] = [lastReply.slice(0, lastReply.indexOf("|")), lastReply.slice(lastReply.indexOf("|") + 1)];
      if (count === waiting.current || !text.trim()) return;
-@@ -8858,308 +8858,477 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8858,7 +8858,7 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
      window.speechSynthesis.cancel();
      window.speechSynthesis.speak(utterance);
    }, [phase, running, lastReply]);
@@ -16200,11 +16205,10 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-   const blocked = phase === "unsupported" || phase === "setup" || phase === "starting";
-   const togglePause = () => {
--    if (phase === "paused") {
--      setPhase("listening");
--      return;
+@@ -8867,299 +8867,487 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+     if (phase === "paused") {
+       setPhase("listening");
+       return;
 -    }
 -    turn.current += 1;
 -    window.speechSynthesis?.cancel();
@@ -16394,9 +16398,6 @@ diff --git a/client.js b/client.js
 -      { title: t("Sidebar") },
 -      (0, import_react23.createElement)(SwitchRow, { label: t("Pin"), hint: t("Kept above the other chats."), on: room2.pinned === true, onChange: (pinned) => run(actions.setFlags(room2.id, { pinned })) }),
 -      (0, import_react23.createElement)(SwitchRow, { label: t("Hide from sidebar"), hint: t("Search still finds it."), on: room2.hidden === true, onChange: (hidden) => run(actions.setFlags(room2.id, { hidden })) })
-+    if (phase === "paused") {
-+      setPhase("listening");
-+      return;
 +    }
 +    turn.current += 1;
 +    window.speechSynthesis?.cancel();
@@ -16631,6 +16632,25 @@ diff --git a/client.js b/client.js
 +        }
 +      }, bot.name))
 +    ) : null,
++    // A node's system prompt is the run Bot's prompt (plugins/workflow
++    // nodeConfig). The sidebar panel has this field, so the Settings editor
++    // writes the same graph instead of only drawing it (#1393).
++    editing ? (0, import_react34.createElement)("div", { className: "bt-wf-prompts" }, nodes.map((node) => (0, import_react34.createElement)(
++      "label",
++      { key: node.id, className: "bt-wf-prompt" },
++      (0, import_react34.createElement)("span", null, `${node.name} · ${t("System prompt")}`),
++      (0, import_react34.createElement)("textarea", {
++        "data-prompt": node.id,
++        rows: 3,
++        defaultValue: node.prompt || "",
++        onPointerDown: (event) => event.stopPropagation?.(),
++        onBlur: (event) => {
++          const prompt = event.target?.value ?? "";
++          if (prompt === (node.prompt || "")) return;
++          onCommit?.({ nodes: nodes.map((item) => item.id === node.id ? { ...item, prompt } : item), edges });
++        }
++      })
++    ))) : null,
 +    (0, import_react34.createElement)(
 +      "div",
 +      { className: "bt-wf-plane", "data-plane": "1", style: { height } },

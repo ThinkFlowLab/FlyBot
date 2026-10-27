@@ -59,6 +59,7 @@ var ZH = {
   "Use this": "用这个",
   "Finish editing": "完成",
   "Drag a Bot here": "把 Bot 拖到图上",
+  "System prompt": "系统提示词",
   "Parallel branch, then join": "并行分支 · 全部通过后汇合",
   "This workflow has no flowchart yet.": "这个工作流还没有流程图。",
   Queued: "排队中",
@@ -4228,6 +4229,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
 .bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
 .bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.bt-wf-prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:12px 4px 0}
+.bt-wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.bt-wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;padding:6px 8px;resize:vertical}
 .bt-wf-plane{position:relative;width:0;margin:16px auto 0}
 .bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}
@@ -14486,6 +14490,25 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
         }
       }, bot.name))
     ) : null,
+    // A node's system prompt is the run Bot's prompt (plugins/workflow
+    // nodeConfig). The sidebar panel has this field, so the Settings editor
+    // writes the same graph instead of only drawing it (#1393).
+    editing ? (0, import_react34.createElement)("div", { className: "bt-wf-prompts" }, nodes.map((node) => (0, import_react34.createElement)(
+      "label",
+      { key: node.id, className: "bt-wf-prompt" },
+      (0, import_react34.createElement)("span", null, `${node.name} · ${t("System prompt")}`),
+      (0, import_react34.createElement)("textarea", {
+        "data-prompt": node.id,
+        rows: 3,
+        defaultValue: node.prompt || "",
+        onPointerDown: (event) => event.stopPropagation?.(),
+        onBlur: (event) => {
+          const prompt = event.target?.value ?? "";
+          if (prompt === (node.prompt || "")) return;
+          onCommit?.({ nodes: nodes.map((item) => item.id === node.id ? { ...item, prompt } : item), edges });
+        }
+      })
+    ))) : null,
     (0, import_react34.createElement)(
       "div",
       { className: "bt-wf-plane", "data-plane": "1", style: { height } },
