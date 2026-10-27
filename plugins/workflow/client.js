@@ -344,8 +344,8 @@ window.__ModuleLoader__.load({
 
     function RunStrip({ workflow, run, focused, onFocus, onPause, onResume, onStop, onTab, onOpenDrawer }) {
       const running = (run.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
-      const chipClass = run.status === 'done' ? 'done' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued'))
-      const chipLabel = run.status === 'done' ? tr('Done') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued')))
+      const chipClass = run.status === 'done' ? 'done' : (run.status === 'failed' ? 'failed' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued')))
+      const chipLabel = run.status === 'done' ? tr('Done') : (run.status === 'failed' ? tr('Failed') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued'))))
       const meta = run.paused
         ? `${tr('Pause')} · ${running.map(node => node.name).join(' ‖ ') || '—'} · ${run.doneCount}/${run.nodeCount}`
         : (running[0]
@@ -415,14 +415,14 @@ window.__ModuleLoader__.load({
 
     function Bubble({ message, workflow, roster }) {
       if (message.kind === 'time') return h('div', { className: 'wf-ts' }, message.text)
-      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}` }, chatPreview(message.text))
-      if (message.kind === 'user') return h('div', { className: 'wf-user' }, chatPreview(message.text))
+      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}`, title: message.text }, chatPreview(message.text))
+      if (message.kind === 'user') return h('div', { className: 'wf-user', title: message.text }, chatPreview(message.text))
       const node = nodeOf(workflow, message.botId) ?? { id: message.botId, name: message.botId }
       return h('div', { className: 'wf-msg' },
         h(Mark, { node, roster, size: 28 }),
         h('div', null,
           h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, `步骤 ${message.step}`) : null),
-          h('div', { className: 'wf-bub' }, chatPreview(message.text),
+          h('div', { className: 'wf-bub', title: message.text }, chatPreview(message.text),
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
@@ -716,7 +716,13 @@ window.__ModuleLoader__.load({
     function AssignModal({ workflows, tasks, roster, workflowId, onClose, onConfirm }) {
       const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
-      const bots = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && bot.id && bot.name).slice(0, 12)
+      const seen = new Set()
+      const bots = (roster?.bots ?? []).filter(bot => {
+        if (!bot || bot.remote === true || !bot.id || !bot.name) return false
+        if (seen.has(bot.name)) return false
+        seen.add(bot.name)
+        return true
+      }).slice(0, 12)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Hand a task to a Workflow') },
           h('div', { className: 'wf-modal-header' },
@@ -738,7 +744,7 @@ window.__ModuleLoader__.load({
               workflows.map(item => h('button', {
                 key: item.id, type: 'button', className: `wf-tgt ${target === item.id ? 'sel' : ''}`, onClick: () => setTarget(item.id),
               },
-                h(MiniFlowchart, { workflow: item, roster }),
+                h('span', { className: 'wf-tgt-thumb' }, h(MiniFlowchart, { workflow: item, roster, compact: true })),
                 h('span', null,
                   h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, tr('Workflow'))),
                   h('span', { className: 'wf-chain' }, item.chain)),
@@ -1350,14 +1356,14 @@ window.__ModuleLoader__.load({
 .wf-chat{flex:1;overflow:auto;padding:10px 0 20px}
 .wf-chat-in{width:min(760px,calc(100% - 48px));margin:0 auto;display:flex;flex-direction:column;gap:10px}
 .wf-ts{text-align:center;font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
-.wf-sys{align-self:center;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px dashed var(--bt-line,rgba(20,20,20,.08));padding:4px 10px;border-radius:12px;max-width:90%;text-align:center}
+.wf-sys{align-self:center;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px dashed var(--bt-line,rgba(20,20,20,.08));padding:4px 10px;border-radius:12px;max-width:90%;text-align:center;word-wrap:break-word;overflow-wrap:break-word}
 .wf-sys.accent{color:var(--bt-accent,#4d6bfe);background:rgba(77,107,254,.1);border-style:solid}
 .wf-sys.ok{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
 .wf-sys.bad{color:#e5484d;background:rgba(229,72,77,.1);border-color:transparent}
 .wf-msg{display:flex;gap:8px;align-items:flex-end;max-width:78%}
 .wf-who{font-size:11px;margin:0 0 3px 2px;display:flex;gap:6px}
 .wf-step{color:var(--bt-ink-3,#9a9a9a)}
-.wf-bub{background:var(--bt-bubble,#eee);border-radius:12px;padding:8px 11px;line-height:1.6}
+.wf-bub{background:var(--bt-bubble,#eee);border-radius:12px;padding:8px 11px;line-height:1.6;word-wrap:break-word;overflow-wrap:break-word}
 .wf-att{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
 .wf-att span{font-size:11.5px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:8px;padding:3px 8px}
 .wf-user{align-self:flex-end;background:var(--bt-user,#070707);color:var(--bt-user-ink,#fcfcfc);border-radius:12px;padding:8px 12px;max-width:70%;line-height:1.6}
@@ -1432,7 +1438,9 @@ window.__ModuleLoader__.load({
 .wf-kcard.sel,.wf-tgt.sel{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
 .wf-id,.wf-kcol{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}.wf-tt{font-size:12.5px;margin:3px 0 6px;font-weight:500}
 .wf-targets{display:flex;flex-direction:column;gap:6px}
-.wf-tgt{display:flex;align-items:center;gap:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;color:inherit;font:inherit;width:100%}
+.wf-tgt{display:flex;align-items:center;gap:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:10px;padding:6px 10px;text-align:left;cursor:pointer;color:inherit;font:inherit;width:100%;min-height:44px}
+.wf-tgt-thumb{width:30px;height:30px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:var(--bt-main,#fcfcfc)}
+.wf-tgt>span:not(.wf-rad):not(.wf-tgt-thumb){min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
 .wf-rad{margin-left:auto;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--bt-ink-3,#9a9a9a);flex:none}
 .wf-tgt.sel .wf-rad{border:5px solid var(--bt-accent,#4d6bfe)}
 .wf-field{display:flex;flex-direction:column;gap:6px;font-size:12px;margin-top:12px}
