@@ -288,7 +288,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,148 @@ export function install(rt) {
+@@ -21,32 +21,149 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -394,7 +394,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -    bots: Object.values(state.bots).map(({ segments, kickoff, ...bot }) => ({
 -      ...bot, sessionId: rt.chatOf(bot.id), parts: (segments ?? []).map(segment => segment.sessionId), ...(kickoff ? { waiting: true } : {}),
 -    })),
-+    bots: Object.values(state.bots).map(({ segments, ...bot }) => {
++    // A run Bot never reaches the sidebar, search, or Settings → Bots (#1373).
++    bots: Object.values(state.bots).filter(bot => bot.ephemeral === undefined).map(({ segments, ...bot }) => {
 +      // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
 +      const pending = rt.listChatApprovals?.(bot, actor) ?? []
 +      // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,

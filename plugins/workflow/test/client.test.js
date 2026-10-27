@@ -281,6 +281,68 @@ test('clicking a sidebar workflow, New, or Hand-a-task keeps the section and ope
   }
 })
 
+test('settings and the flowchart save a node prompt and a link on the same graph', async () => {
+  const calls = []
+  const graph = delivery()
+  graph.nodes = graph.nodes.map(node => node.id === 'coder' ? { ...node, prompt: 'Implement it.' } : node)
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  const box = findAll(settings.tree, node => node.props?.['data-prompt'] === 'coder')[0]
+  assert.equal(box.props.defaultValue, 'Implement it.')
+  const hostile = 'Keep the diff small.\n<script>alert(1)</script>'
+  box.props.onBlur({ target: { value: hostile } })
+  const saved = calls.find(item => item.name === 'workflow/graph')
+  assert.equal(saved.body.workflowId, 'delivery')
+  assert.equal(saved.body.nodes.find(node => node.id === 'coder').prompt, hostile)
+  assert.equal(htmlOf(settings.tree).includes('<script'), false)
+  findAll(settings.tree, node => node.props?.['aria-label'] === 'From node')[0].props.onChange({ target: { value: 'coder' } })
+  findAll(settings.tree, node => node.props?.['aria-label'] === 'To node')[0].props.onChange({ target: { value: 'planner' } })
+  button(settings.tree, 'Add link').props.onClick()
+  const linked = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.ok(linked.body.edges.some(edge => edge.from === 'coder' && edge.to === 'planner'))
+  settings.unmount()
+
+  const flowCalls = []
+  const flow = mount(client.Section, {
+    roster: { bots: [] },
+    call: async (name, body) => {
+      flowCalls.push({ name, body })
+      if (name === 'workflow/state') return { workflows: [graph] }
+      return { ok: true, workflows: [graph] }
+    },
+    actions: {},
+  })
+  await settle()
+  findAll(flow.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(flow.tree, 'Flow').props.onClick()
+  button(flow.tree, 'Edit').props.onClick()
+  const area = findAll(flow.tree, node => node.props?.['data-prompt'] === 'coder')[0]
+  assert.equal(area.props.defaultValue, 'Implement it.')
+  area.props.onBlur({ target: { value: 'Keep the diff small.' } })
+  const edited = flowCalls.find(item => item.name === 'workflow/graph')
+  assert.equal(edited.body.nodes.find(node => node.id === 'coder').prompt, 'Keep the diff small.')
+  assert.equal(htmlOf(flow.tree).includes('<script'), false)
+  flow.unmount()
+})
+
+test('apply registers the sidebar section and the settings page', () => {
+  const entries = []
+  const off = client.apply({
+    flybot: {
+      call() {},
+      slots: { register: (slot, entry) => { entries.push(`${slot}#${entry.id}`); return () => {} } },
+    },
+    effect(fn) { fn() },
+  })
+  assert.deepEqual(entries, ['flybot.sidebar.section#workflow', 'flybot.settings.page#workflow'])
+  off()
+})
+
 test('Chinese labels follow the host Tasks translation', () => {
   const prev = globalThis.__flybot__
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }

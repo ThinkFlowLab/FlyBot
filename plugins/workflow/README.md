@@ -7,7 +7,7 @@ This is not the workflow-definition engine (`workflows/<id>.json`, #1272). This 
 ## What you can do
 
 - Open a template. **发布交付流水线** is Planner → Writer → Coder → (Reviewer ‖ Tester) → Deployer. **每周报告** is a short chain with a Friday label.
-- Create or edit a graph in the flowchart. Drag a local Bot onto the canvas, move a node, draw or drop an edge. The host stores nodes, edges and positions.
+- Create or edit a graph in the flowchart, or in Settings → Workflow graphs. Drag a local Bot onto the canvas, move a node, draw or drop an edge, and edit each node's system prompt. Both surfaces write the same graph.
 - Hand a board task to a Workflow, or to one local Bot, from the assign dialog.
 - Let an open card assign itself. The matcher is `src/match.js`, first hit, and only while the card is `open`:
   1. a `workflow:<id or name>` token in the title, note, criteria or tags
@@ -23,9 +23,9 @@ This is not the workflow-definition engine (`workflows/<id>.json`, #1272). This 
 A local Bot uses the same store:
 
 - `run_workflow` — `workflow` (id or exact name) and `brief` (the task). Optional `task` id.
-- `define_workflow` — `name`, `nodes` (`{ id, name, botId?, x?, y? }`), `edges` (`{ from, to }`). Pass `workflow` to replace one. A friend's Bot is refused.
+- `define_workflow` — `name`, `nodes` (`{ id, name, prompt?, role?, model?, tools?, botId?, x?, y? }`), `edges` (`{ from, to }`). `prompt` is that node's Bot system prompt. Pass `workflow` to replace one. A friend's Bot is refused. This writes the same graph Settings and the flowchart edit.
 
-v1 does not call each Bot's model. A step posts a progress line and moves the node.
+Starting a run makes one hidden Bot per node from that config, asks it to do the step, and removes those Bots when the run finishes, fails for good, or is cancelled. They do not appear in the sidebar. The Workflow chat still posts its scripted progress lines.
 
 ## Install
 

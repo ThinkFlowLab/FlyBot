@@ -59,7 +59,7 @@ export function install(rt) {
 
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
   // Bot made when no model is served.
-  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId }) {
+  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
     const cleanName = String(botName ?? '').trim().slice(0, 40)
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
     // team names never clash with it and creating it starts no turn.
@@ -92,6 +92,11 @@ export function install(rt) {
     // Every Bot binds to the team's one owner (#47), resolved before the Session exists
     // so a failure here leaves nothing to clean up.
     const ownerId = explicitOwnerId ?? rt.initialOwnerId()
+    // A run Bot is hidden and marked before the first save. Only create() may set the
+    // marker; a later fields.set cannot turn a team Bot into one (#1373).
+    const runPlugin = ephemeral && typeof ephemeral === 'object' && typeof ephemeral.plugin === 'string'
+      ? ephemeral.plugin.slice(0, 80) : ''
+    const run = runPlugin !== '' ? { plugin: runPlugin } : undefined
     const id = await createSession(cleanName, { dir })
     try {
       state.bots[id] = {
@@ -114,8 +119,10 @@ export function install(rt) {
         ...(fields && typeof fields === 'object' && Object.keys(fields).length > 0 ? { fields: JSON.parse(JSON.stringify(fields)) } : {}),
         ...(isRemote ? { remote: JSON.parse(JSON.stringify(remote)) } : {}),
         ...(externalRecord ? { external: externalRecord } : {}),
+        ...(hidden === true || run ? { hidden: true } : {}),
+        ...(run ? { ephemeral: run } : {}),
       }
-      if (main) {
+      if (main && !run) {
         state.mainBotIds.push(id)
         rt.syncDesignatedChief()
         // A second owner's first Main Bot becomes their designated Chief (#50).

@@ -75,7 +75,7 @@ test('apply provides the flybot service with the agreed surface', async (t) => {
   t.after(stop)
   assert.equal(ctx.get('flybot'), fb)
   assert.equal(fb.version, 1)
-  for (const fn of ['get', 'list', 'find', 'of', 'create', 'setSystemPrompt', 'send']) assert.equal(typeof fb.bot[fn], 'function')
+  for (const fn of ['get', 'list', 'find', 'of', 'create', 'remove', 'setSystemPrompt', 'send']) assert.equal(typeof fb.bot[fn], 'function')
   for (const fn of ['get', 'set', 'query', 'on', 'all']) assert.equal(typeof fb.bot.fields[fn], 'function')
   assert.equal(typeof fb.bot.send.use, 'function')
   assert.equal(typeof fb.tools.register, 'function')
@@ -167,6 +167,40 @@ test('bot.create stores systemPrompt and fields; the prompt carries it; deletion
   assert.equal(removed[0].listed, false)
   assert.deepEqual(removed[0].bot.fields, { tree: { parent: null, treeRole: 'top' } })
   assert.equal(changes.length, before)
+})
+
+test('an ephemeral Bot stays off the team and only its plugin can remove it', async (t) => {
+  const { fb, tool, call, stop } = await start()
+  t.after(stop)
+  const created = []
+  fb.on('bot.created', bot => created.push(bot.id))
+  const wf = fb.scope('flybot-workflow')
+  const id = await wf.bot.create({
+    name: 'Planner ab',
+    role: 'Plan',
+    instructions: 'Write the plan.',
+    systemPrompt: 'Write the plan.',
+    hidden: true,
+    ephemeral: true,
+  })
+  assert.equal(created.length, 0)
+  assert.equal(wf.bot.get(id).hidden, true)
+  assert.equal(wf.bot.get(id).systemPrompt, 'Write the plan.')
+  assert.equal(wf.bot.list().some(bot => bot.id === id), false)
+  assert.equal(wf.bot.find('Planner ab'), undefined)
+  assert.equal(fb.bot.find('Planner ab'), undefined)
+  assert.equal((await call('flybot/bots')).value.some(bot => bot.id === id), false)
+  assert.equal((await call('state', {})).value.bots.some(bot => bot.id === id), false)
+  assert.equal((await tool('list_bots', {}, 'a')).includes('Planner ab'), false)
+  assert.match(await tool('message_bot', { to: 'Planner ab', message: 'hi' }, 'a'), /No Bot named Planner ab/)
+  // A field cannot stamp the marker onto a team Bot.
+  wf.bot.fields.set('b', 'ephemeral', { plugin: 'flybot-workflow' })
+  assert.equal(fb.bot.list().some(bot => bot.id === 'b'), true)
+  await assert.rejects(() => wf.bot.remove('a'), /only the plugin that created this run Bot/)
+  await assert.rejects(() => fb.scope('tree').bot.remove(id), /only the plugin that created this run Bot/)
+  assert.equal(await wf.bot.remove(id), true)
+  assert.equal(wf.bot.get(id), undefined)
+  assert.equal(await wf.bot.remove(id), false)
 })
 
 test('with no middleware, message_bot behaves as before', async (t) => {

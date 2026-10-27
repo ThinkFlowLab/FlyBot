@@ -126,7 +126,8 @@ export function install(rt) {
     mainBotId: state.mainBotIds[0] ?? null,
     mainBotIds: state.mainBotIds,
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.
-    bots: Object.values(state.bots).map(({ segments, ...bot }) => {
+    // A run Bot never reaches the sidebar, search, or Settings → Bots (#1373).
+    bots: Object.values(state.bots).filter(bot => bot.ephemeral === undefined).map(({ segments, ...bot }) => {
       // A friend's chat, and a local Bot's own held sends (#371): the provider says which.
       const pending = rt.listChatApprovals?.(bot, actor) ?? []
       // A local Bot's held replies to friends (#418), for its owner only: drawn on the turns they answer,

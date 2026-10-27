@@ -113,7 +113,7 @@ export function install(rt) {
       // Own Bots (or this child's subtree when it is granted), Bots granted to the
       // same owner, and Bots in the current room. Nobody browses others' Bots (#53).
       const listed = bot => {
-        if (bot.remote !== undefined) return false
+        if (!teamBot(bot)) return false
         if (!rt.authzEnforced?.()) return true
         if (inRoom.has(bot.id)) return true
         if (selfOwner && (rt.hasGrant?.(bot.id, selfOwner, fromRoomId) || rt.hasGrant?.(bot.id, selfOwner))) return true
@@ -173,6 +173,12 @@ export function install(rt) {
 
   // A tool that throws shows as failed in the chat, instead of as sent or stopped.
   const refuse = (message) => { throw new Error(message) }
+  // A run Bot keeps its name (findBot still sees it) but no team tool can address it (#1373).
+  const teamBot = bot => bot !== undefined && bot.remote === undefined && bot.ephemeral === undefined
+  const findTeamBot = (name) => {
+    const bot = rt.findBot(name)
+    return teamBot(bot) ? bot : undefined
+  }
 
   ctx.tools.register(defineTool({
     name: 'message_bot',
@@ -196,7 +202,7 @@ export function install(rt) {
       await rt.load()
       const sender = callerBot(exec)
       if (sender === undefined) return 'Only Bots on the team can use message_bot.'
-      const target = rt.findBot(args.to)
+      const target = findTeamBot(args.to)
       // A friend's Bot (by name or @handle) is reached through FlyBot's send path, so the
       // friend's auto-accept setting decides whether it goes now or waits for the user.
       const wanted = String(args.to ?? '').trim().replace(/^@/, '').toLowerCase()
@@ -207,7 +213,7 @@ export function install(rt) {
         if (result?.action === 'hold') return `Held for the user's approval before it reaches ${friend.name} (${friend.remote.handle}, a friend's Bot): ${result.reason}. Do not resend.`
         return `Sent to ${friend.name} (${friend.remote.handle}, a friend's Bot). Its reply will arrive later in this chat as a new message; do not wait for it.`
       }
-      if (target === undefined) return `No Bot named ${args.to}. Team: ${Object.values(state.bots).filter(bot => bot.remote === undefined).map(bot => bot.name).join(', ')}`
+      if (target === undefined) return `No Bot named ${args.to}. Team: ${teamNames()}`
       if (target.id === sender.id) return 'You cannot message yourself.'
       const turn = rt.live.get(exec.agent?.id)
       const hop = Math.max(turn?.info?.hop ?? 0, ...(turn?.joined ?? []).map(joined => joined.info?.hop ?? 0))
@@ -258,8 +264,8 @@ export function install(rt) {
       await rt.load()
       const sender = callerBot(exec)
       if (sender === undefined || !rt.isMain(sender.id)) refuse('Only a Main Bot can stop other Bots.')
-      const target = rt.findBot(args.bot)
-      if (target === undefined) refuse(`No Bot named ${args.bot}. Team: ${Object.values(state.bots).filter(bot => bot.remote === undefined).map(bot => bot.name).join(', ')}`)
+      const target = findTeamBot(args.bot)
+      if (target === undefined) refuse(`No Bot named ${args.bot}. Team: ${teamNames()}`)
       if (target.id === sender.id) refuse('You cannot stop yourself.')
       const { running } = activeSessions(target.id)
       if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
@@ -329,7 +335,7 @@ export function install(rt) {
       const self = rt.selfOf(exec.agent?.id)
       const caller = rt.botOf(self)
       if (caller === undefined) return 'Only Bots on the team can use update_bot.'
-      const bot = args.bot ? rt.findBot(args.bot) : caller
+      const bot = args.bot ? findTeamBot(args.bot) : caller
       if (bot === undefined) return `No Bot named ${args.bot}.`
       if (bot.id !== caller.id && !rt.isMain(self)) return 'Only a Main Bot can change another Bot. Leave out bot to change yourself, or ask a Main Bot with message_bot.'
       try {
@@ -368,13 +374,13 @@ export function install(rt) {
     const bots = []
     const unknown = []
     for (const ref of nameList(refs)) {
-      const bot = rt.findBot(ref)
+      const bot = findTeamBot(ref)
       if (bot === undefined) unknown.push(ref)
       else if (!bots.includes(bot)) bots.push(bot)
     }
     return { bots, unknown }
   }
-  const teamNames = () => Object.values(state.bots).filter(bot => bot.remote === undefined).map(bot => bot.name).join(', ')
+  const teamNames = () => Object.values(state.bots).filter(teamBot).map(bot => bot.name).join(', ')
   const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
   const pickRoom = (ref, self) => {
     const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))
@@ -400,7 +406,7 @@ export function install(rt) {
       if (!rt.isMain(self)) return 'Only a Main Bot can create group chats. Ask a Main Bot instead.'
       const { bots, unknown } = resolveBots(args.members)
       if (unknown.length > 0) return `No Bot named ${unknown.join(', ')}. Team: ${teamNames()}`
-      const admin = args.admin ? rt.findBot(args.admin) : rt.botOf(self)
+      const admin = args.admin ? findTeamBot(args.admin) : rt.botOf(self)
       if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
       const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
       try {
@@ -443,7 +449,7 @@ export function install(rt) {
       if (args.admin !== undefined && args.admin !== '') {
         if (/^(none|nobody|null|无|没有)$/i.test(String(args.admin).trim())) admin = null
         else {
-          admin = rt.findBot(args.admin)?.id
+          admin = findTeamBot(args.admin)?.id
           if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
         }
       }
@@ -451,7 +457,7 @@ export function install(rt) {
       if (args.task_lead !== undefined && args.task_lead !== '') {
         if (/^(none|nobody|null|admin|无|没有)$/i.test(String(args.task_lead).trim())) taskLead = null
         else {
-          taskLead = rt.findBot(args.task_lead)?.id
+          taskLead = findTeamBot(args.task_lead)?.id
           if (taskLead === undefined) return `No Bot named ${args.task_lead}. Team: ${teamNames()}`
         }
       }

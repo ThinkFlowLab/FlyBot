@@ -22,6 +22,28 @@ export function cleanLine(value, max = 300) {
   return stripControls(value).replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
+// A node prompt keeps line breaks. Other controls become spaces.
+export function cleanPrompt(value, max = 4000) {
+  let out = ''
+  for (const ch of String(value ?? '')) {
+    const code = ch.codePointAt(0)
+    if (code === 0x0a || code === 0x09) { out += ch; continue }
+    out += code <= 0x1f || code === 0x7f ? ' ' : ch
+  }
+  return out.replace(/[ \t]+\n/g, '\n').trim().slice(0, max)
+}
+
+export function cleanTools(value) {
+  if (!Array.isArray(value)) return []
+  const tools = []
+  for (const item of value) {
+    const name = cleanLine(item, 40)
+    if (name && !tools.includes(name)) tools.push(name)
+    if (tools.length === 16) break
+  }
+  return tools
+}
+
 function coord(value, fallback) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
@@ -217,11 +239,17 @@ export function addNode(graph, node) {
   if (!ID_RE.test(id)) throw new Error('A node id is a short lowercase name')
   if (next.nodes.some(item => item.id === id)) throw new Error(`Node ${id} is listed twice`)
   if (node?.botId && next.nodes.some(item => item.botId === node.botId)) throw new Error('That Bot is already in this workflow')
+  const prompt = cleanPrompt(node.prompt)
+  const model = cleanLine(node.model, 80)
+  const tools = cleanTools(node.tools)
   next.nodes.push({
     id,
     name: cleanLine(node.name, 80),
     role: cleanLine(node.role, 80),
     instructions: cleanLine(node.instructions, 500),
+    ...(prompt ? { prompt } : {}),
+    ...(model ? { model } : {}),
+    ...(tools.length ? { tools } : {}),
     ...(node.botId ? { botId: String(node.botId) } : {}),
     ...(node.failOnce === true ? { failOnce: true } : {}),
     ...(Number.isFinite(Number(node.x)) ? { x: coord(node.x, 0) } : {}),

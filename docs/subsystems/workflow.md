@@ -28,11 +28,12 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 | --- | --- |
 | `plugins/workflow/index.js` | Plugin entry (`flybot-workflow`). Endpoints, `run_workflow`, `define_workflow`, and the board listener. |
 | `plugins/workflow/src/graph.js` | Nodes, edges and positions. A node starts when every predecessor is done. Same-rank nodes run together. A cycle is refused. |
-| `plugins/workflow/src/service.js` | The store, template copies, `saveGraph`, `define`, `runNamed`, `ingest`. |
+| `plugins/workflow/src/service.js` | The store, template copies, `saveGraph`, `define`, `runNamed`, `ingest`. A spawn hook makes one run Bot per node. |
+| `plugins/workflow/src/ephemeral.js` | Builds each node's run Bot from its prompt, role, model and tools, and releases the ids the host returns. |
 | `plugins/workflow/src/match.js` | Which open card matches a Workflow or a local Bot. |
 | `plugins/workflow/src/template.js` | 发布交付流水线 (a parallel branch) and the weekly report. |
 | `plugins/workflow/src/narrate.js` | Progress lines for a step. A join line is only for a rank of more than one node. |
-| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, and the flowchart editor. The stage and the dialogs portal onto `document.body`; a missing container stays in the section tree. |
+| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, flowchart editor, and Settings → Workflow graphs. The stage and the dialogs portal onto `document.body`; a missing container stays in the section tree. |
 
 ## Entry points
 
@@ -45,12 +46,13 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 
 1. Friends' Bots are not nodes. A `remote` Bot is refused by create, define and the matcher.
 2. The canvas and the run share one graph: nodes, edges and positions. A drag commits `workflow/graph`. Status highlighting reads that same graph. Replacing edges does not recompute who is already running.
-3. v1 does not call a model and does not create a schedule. Progress lines are scripted. `scheduleLabel` is display text.
+3. Progress lines stay scripted, and a run does not create a schedule. `scheduleLabel` is display text. When the host can create Bots, starting a run (`assign`, `run_workflow`, `ingest`, or a demo that starts or restarts) spawns one ephemeral Bot per node from that node's prompt, role, model and tools, sends it the step from the Main Bot, and removes every instance when the run finishes, fails for good, or is reset. A `failOnce` retry keeps them. They are hidden and left out of the sidebar. Loading the plugin does not spawn Bots for the seeded fixture run.
 4. Auto-assign considers an `open` card only. First hit wins: a `workflow:` token, then `workflowId` / `workflow`, then an assignee that names a workflow, then a `bot:` token, then an assignee that names a local Bot, then the longest trigger contained in the title, note or criteria. A miss returns no route. A second ingest of the same task and target is a no-op, and a live run for that task id is not restarted.
 5. The browser draws text only. Names and messages are React text children. The unit renderer asserts a hostile name is not markup.
 6. `enabled: false` registers no endpoint, tool or listener and writes nothing.
 7. A sidebar click opens the stage or a dialog and leaves the Workflows section in place. The stage and the dialogs portal onto `document.body`. When that container is missing they stay in the section tree; the click does not throw.
+8. A node's prompt and the graph are one record. Settings → Workflow graphs, the flowchart's prompt fields, and `define_workflow` all write `workflow/graph`. A run reads that record; it does not define it.
 
 ## Tests
 
-`plugins/workflow/test/`: graph advance and join, graph edit, assign and persistence, templates, `define` / `runNamed`, the matcher, and the client canvas. Run `npm test` in `plugins/workflow`. The host seam that applies `ownerBotId` is `core/test/task-route.test.js`.
+`plugins/workflow/test/`: graph advance and join, graph edit, assign and persistence, templates, `define` / `runNamed`, the matcher, ephemeral spawn and cleanup, the client canvas, the settings page, and a sidebar click that leaves the Workflows section in place. Run `npm test` in `plugins/workflow`. The host seam that applies `ownerBotId` is `core/test/task-route.test.js`. The host omission of run Bots is `core/test/flybot.test.js`.

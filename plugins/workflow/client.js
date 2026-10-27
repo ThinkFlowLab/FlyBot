@@ -78,6 +78,12 @@ window.__ModuleLoader__.load({
       'Drag a Bot here': '把 Bot 拖到图上',
       'From a template': '从模板新建',
       Remove: '移除',
+      'System prompt': '系统提示词',
+      Save: '保存',
+      'Workflow graphs': 'Workflow 图',
+      'Add link': '添加连线',
+      'From node': '起点',
+      'To node': '终点',
     }
 
     function zhUi() {
@@ -293,6 +299,19 @@ window.__ModuleLoader__.load({
             onPointerDown: (event) => { event.preventDefault?.(); setGesture({ kind: 'add', bot }) },
           }, bot.name))) : null,
         h('div', { className: 'wf-term' }, run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task')),
+        editing ? h('div', { className: 'wf-prompts' }, nodes.map(node => h('label', { key: node.id, className: 'wf-prompt' },
+          h('span', null, `${node.name} · ${tr('System prompt')}`),
+          h('textarea', {
+            'data-prompt': node.id,
+            rows: 3,
+            defaultValue: node.prompt || node.instructions || '',
+            onPointerDown: (event) => event.stopPropagation?.(),
+            onBlur: (event) => {
+              const prompt = event.target?.value ?? ''
+              if (prompt === (node.prompt || '')) return
+              commit(workflow.nodes.map(item => item.id === node.id ? { ...item, prompt } : item), edges)
+            },
+          })))) : null,
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true },
             edges.map(edge => {
@@ -376,7 +395,7 @@ window.__ModuleLoader__.load({
       if (current) rows.push({ task: current, status: workflow.run.status, current: true })
       return h('div', null, rows.map((item, index) => h('div', { key: index, className: 'wf-hist' },
         h('span', null, `${item.task?.id ?? ''} ${item.task?.title ?? ''}`),
-        h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : 'Queued')))))
+        h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Failed' : 'Queued')))))
     }
 
     function AssignModal({ workflows, tasks, roster, workflowId, onClose, onConfirm }) {
@@ -459,6 +478,81 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wf-mfoot' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onCreate({ name, steps }) }, tr('Create')))))
+    }
+
+    function WorkflowSettings({ call }) {
+      const [pack, setPack] = useState(null)
+      const [workflowId, setWorkflowId] = useState('')
+      const [from, setFrom] = useState('')
+      const [to, setTo] = useState('')
+      const [error, setError] = useState('')
+      useEffect(() => {
+        let gone = false
+        void Promise.resolve(call('workflow/state')).then(value => {
+          if (gone) return
+          if (value && Array.isArray(value.workflows)) {
+            setPack(value)
+            const first = value.workflows[0]
+            setWorkflowId(id => id || first?.id || '')
+            setFrom(id => id || first?.nodes?.[0]?.id || '')
+            setTo(id => id || first?.nodes?.[1]?.id || first?.nodes?.[0]?.id || '')
+          } else setError(value?.error ?? 'The workflow host did not answer')
+        })
+        return () => { gone = true }
+      }, [])
+      const workflows = pack?.workflows ?? []
+      const current = workflows.find(item => item.id === workflowId) ?? workflows[0]
+      const save = (nodes, edges) => {
+        if (!current) return
+        void Promise.resolve(call('workflow/graph', { workflowId: current.id, nodes, edges })).then(value => {
+          if (value?.ok === false) { setError(value.error ?? ''); return }
+          if (value?.workflows) setPack(value)
+        })
+      }
+      const nameOf = (id) => current?.nodes.find(node => node.id === id)?.name ?? id
+      return h('div', { className: 'wf-settings', 'data-flybot': 'workflow-settings' },
+        error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
+        workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
+        current ? h('div', null,
+          h('label', { className: 'wf-field' }, tr('Workflow graphs'),
+            h('select', {
+              'aria-label': tr('Workflow graphs'),
+              value: current.id,
+              onChange: (event) => setWorkflowId(event.target.value),
+            }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
+          current.nodes.map(node => h('label', { key: node.id, className: 'wf-field' },
+            `${node.name} · ${tr('System prompt')}`,
+            h('textarea', {
+              'data-prompt': node.id,
+              rows: 4,
+              defaultValue: node.prompt || node.instructions || '',
+              onBlur: (event) => {
+                const prompt = event.target?.value ?? ''
+                if (prompt === (node.prompt || '')) return
+                save(current.nodes.map(item => item.id === node.id ? { ...item, prompt } : item), current.edges)
+              },
+            }))),
+          (current.edges ?? []).map(edge => h('div', { key: `${edge.from}>${edge.to}`, className: 'wf-hist' },
+            h('span', null, `${nameOf(edge.from)} → ${nameOf(edge.to)}`),
+            h('button', {
+              type: 'button',
+              onClick: () => save(current.nodes, current.edges.filter(item => item.from !== edge.from || item.to !== edge.to)),
+            }, tr('Remove')))),
+          h('div', { className: 'wf-add' },
+            h('label', { className: 'wf-field' }, tr('From node'),
+              h('select', { 'aria-label': tr('From node'), value: from, onChange: (event) => setFrom(event.target.value) },
+                current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+            h('label', { className: 'wf-field' }, tr('To node'),
+              h('select', { 'aria-label': tr('To node'), value: to, onChange: (event) => setTo(event.target.value) },
+                current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+            h('button', {
+              type: 'button', className: 'wf-btn',
+              onClick: () => {
+                if (!from || !to || from === to) return
+                if ((current.edges ?? []).some(edge => edge.from === from && edge.to === to)) return
+                save(current.nodes, [...(current.edges ?? []), { from, to }])
+              },
+            }, tr('Add link')))) : null)
     }
 
     function conversationLeft() {
@@ -773,6 +867,9 @@ window.__ModuleLoader__.load({
 .wf-mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .wf-field{display:flex;flex-direction:column;gap:6px;font-size:12px;margin-top:12px}
 .wf-field input,.wf-field select{height:32px;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:0 8px}
+.wf-prompts{width:min(360px,100%);display:flex;flex-direction:column;gap:8px}
+.wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;width:100%}
+.wf-field textarea,.wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:6px 8px;resize:vertical}
 .wf-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wf-plan{margin:10px 0 0;padding-left:18px;font-size:13px}
 .wf-tip{position:fixed;z-index:90;width:250px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55}
@@ -786,12 +883,15 @@ window.__ModuleLoader__.load({
       if (!ctx?.flybot?.call) throw new Error('@flybot/workflow needs the flybot browser service')
       const slots = ctx.flybot.slots
       const offs = []
-      if (slots?.register) offs.push(slots.register('flybot.sidebar.section', { id: 'workflow', order: 20, component: Section }))
+      if (slots?.register) {
+        offs.push(slots.register('flybot.sidebar.section', { id: 'workflow', order: 20, component: Section }))
+        offs.push(slots.register('flybot.settings.page', { id: 'workflow', order: 45, label: 'Workflow graphs', component: WorkflowSettings }))
+      }
       const off = () => { for (const fn of offs.splice(0)) fn() }
       ctx.effect?.(() => off)
       return off
     }
 
-    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, tr, columnOf, shortId, FIXTURE_TASKS }
+    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, FIXTURE_TASKS }
   },
 })

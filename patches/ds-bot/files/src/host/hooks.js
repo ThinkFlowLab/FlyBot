@@ -142,7 +142,8 @@ export function install(rt) {
 
   // ---------------------------------------------------------------- bots
   // The team: every Bot but friends' Bots, which are chats of their own (remote-chat.js).
-  const team = () => Object.values(state.bots).filter(bot => bot.remote === undefined)
+  // A run Bot (ephemeral) is not a team member: list, find and the sidebar omit it (#1373).
+  const team = () => Object.values(state.bots).filter(bot => bot.remote === undefined && bot.ephemeral === undefined)
   const view = bot => (bot === undefined ? undefined : {
     id: bot.id, name: bot.name, role: bot.role, isMain: rt.isMain(bot.id), createdBy: bot.createdBy ?? null,
     granted: rt.hasAnyGrant?.(bot.id) === true,
@@ -153,13 +154,17 @@ export function install(rt) {
   })
   const persist = () => rt.save().catch(error => warn('flybot: save failed: %s', error))
 
-  async function create({ name, systemPrompt, fields, role, instructions, createdBy, plugin = SHARED } = {}) {
+  async function create({ name, systemPrompt, fields, role, instructions, createdBy, plugin = SHARED, hidden, ephemeral, model } = {}) {
     checkName('plugin', plugin)
     await rt.load()
     const bot = await rt.createBot({
       name, role, instructions, createdBy,
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(fields && Object.keys(fields).length > 0 ? { fields: { [plugin]: fields } } : {}),
+      ...(typeof model === 'string' && model.trim() ? { model: model.trim() } : {}),
+      ...(hidden === true || ephemeral === true ? { hidden: true } : {}),
+      // The marker names this plugin. A caller cannot stamp another plugin's name.
+      ...(ephemeral === true ? { ephemeral: { plugin } } : {}),
     })
     for (const [key, value] of Object.entries(fields ?? {})) fire('change', { botId: bot.id, plugin, key, value: clone(value), prev: undefined })
     return bot.id
@@ -178,7 +183,8 @@ export function install(rt) {
   if (typeof createBot === 'function') {
     rt.createBot = async (...args) => {
       const bot = await createBot(...args)
-      if (bot?.id !== undefined && bot.remote === undefined) fire('bot.created', view(rt.botOf(bot.id)) ?? view(bot))
+      // A run Bot is not adopted by plugins that listen for new team members (the tree).
+      if (bot?.id !== undefined && bot.remote === undefined && bot.ephemeral === undefined) fire('bot.created', view(rt.botOf(bot.id)) ?? view(bot))
       return bot
     }
   }
@@ -644,6 +650,16 @@ export function install(rt) {
     })
   }
 
+  // Deletes a run Bot this plugin created. A team Bot, including a Main Bot, throws.
+  async function removeBot(id, plugin) {
+    await rt.load()
+    const bot = rt.botOf(id)
+    if (bot === undefined) return false
+    if (bot.ephemeral?.plugin !== plugin) throw new Error('flybot: only the plugin that created this run Bot can remove it')
+    await rt.deleteBot(id)
+    return true
+  }
+
   /** Rename and/or hide a Bot in the sidebar. Used by plugins (e.g. tree archive, #452). */
   async function updateBotFields(id, patch = {}) {
     const bot = rt.botOf(id)
@@ -1031,13 +1047,17 @@ export function install(rt) {
     bot: {
       get: id => view(rt.botOf(id)),
       list: () => team().map(view),
-      find: name => view(rt.findBot?.(name)),
+      find: name => {
+        const bot = rt.findBot?.(name)
+        return bot === undefined || bot.ephemeral !== undefined ? undefined : view(bot)
+      },
       isRemote,
       // Whether this Bot has at least one person-grant (Sharing → Copy invite link was accepted).
       hasGrant: (id, peer, roomId) => rt.hasGrant?.(id, peer, roomId) === true,
       hasAnyGrant: id => rt.hasAnyGrant?.(id) === true,
       of: sessionId => view(rt.botOf(rt.selfOf(sessionId))),
-      create: spec => create({ plugin, ...spec }),
+      create: spec => create({ ...spec, plugin }),
+      remove: id => removeBot(id, plugin),
       update: (id, patch) => updateBotFields(id, patch),
       setSystemPrompt,
       // Same object as flybot.fields.

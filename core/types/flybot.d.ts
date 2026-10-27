@@ -225,6 +225,15 @@ export interface CreateBotSpec {
   role?: string
   instructions?: string
   createdBy?: BotId
+  /** Hide the Bot from the sidebar. A run Bot is always hidden. */
+  hidden?: boolean
+  /**
+   * A run Bot for this plugin only (#1373). Omitted from list, find and the sidebar.
+   * `remove` deletes it. The marker is not a field and cannot be set later.
+   */
+  ephemeral?: boolean
+  /** Model ref (`provider/model` or a model id). Empty leaves the usual default. */
+  model?: string
 }
 
 /** What a send middleware sees. Built-in ds-bot sends arrive with via: 'ds-bot'. */
@@ -399,6 +408,11 @@ export interface FlyBot {
     of(sessionId: string): BotView | undefined
     /** Returns the new Bot's id. */
     create(spec: CreateBotSpec): Promise<BotId>
+    /**
+     * Deletes a run Bot this plugin created (#1373). Returns false when the id is already
+     * gone. Throws for a team Bot, a Main Bot, or a run Bot another plugin created.
+     */
+    remove(id: BotId): Promise<boolean>
     /** Rename and/or set sidebar flags. Plugins use this to hide archived Bots (#452). */
     update(id: BotId, patch: { name?: string; hidden?: boolean }): Promise<BotView>
     setSystemPrompt(id: BotId, text: string): void
