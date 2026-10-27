@@ -102,20 +102,45 @@ test('node two opens only when node one\'s output is present and current', () =>
   assert.deepEqual(opened.open.map((entry) => entry.node), ['build'])
 })
 
+// 5b. Two nodes ready at once are both opened — the definition said so, and WIP = 1 per Bot is the
+// queue's rule (#1247), not a second limit here. A node card parented to another job is not this job's
+// record, so it cannot close this job's node (#1316 pin 4: the identity is `(jobId, nodeId)`).
+// Knife: drop the `parentId` test in `cardsOfJob` → the foreign card closes `triage` and this goes red.
+test('two ready nodes open together, and another job\'s card is not this job\'s record', () => {
+  const both = planJob({
+    definition: flow,
+    job: { id: 'j', workflow: 'run-flow' },
+    facts: facts({ present: { 'issue.ready': ready() }, current: { 'issue.ready': 'aaaa1111' } }),
+  })
+  assert.deepEqual(both.open.map((entry) => entry.node), ['triage', 'build'])
+
+  const foreign = planJob({ definition: flow, job: { id: 'j', workflow: 'run-flow' }, cards: [{ node: 'triage', column: 'done', parentId: 'another-job' }], facts: facts() })
+  assert.deepEqual(foreign.open.map((entry) => entry.node), ['triage'])
+  const own = planJob({ definition: flow, job: { id: 'j', workflow: 'run-flow' }, cards: [{ node: 'triage', column: 'done', parentId: 'j' }], facts: facts() })
+  assert.deepEqual(own.open, [])
+  // The same identity in `completions`: another job's done card completes nothing here.
+  const current = facts({ present: { 'issue.ready': ready() }, current: { 'issue.ready': 'aaaa1111' } })
+  assert.equal(completions({ definition: flow, job: { id: 'j' }, cards: [{ node: 'triage', column: 'done', parentId: 'another-job' }], facts: current }).length, 0)
+})
+
 // 6. A stale revision opens nothing and names both revisions; the card already open is untouched.
 // Knife: make `planJob` trust `present` alone (skip the freshness answer) → build opens on an old
 // `issue.ready` and this test goes red.
 test('a stale revision refuses and says both revisions, leaving the open card alone', () => {
+  const staleFacts = facts({ present: { 'issue.ready': ready('aaaa1111') }, current: { 'issue.ready': 'bbbb2222' } })
   const plan = planJob({
     definition: flow,
     job: { id: 'j', workflow: 'run-flow' },
     cards: [{ node: 'triage', column: 'in-progress' }],
-    facts: facts({ present: { 'issue.ready': ready('aaaa1111') }, current: { 'issue.ready': 'bbbb2222' } }),
+    facts: staleFacts,
   })
   assert.deepEqual(plan.open, [])
   const build = plan.refused.find((entry) => entry.node === 'build')
   assert.match(build.refusal, /aaaa1111/)
   assert.match(build.refusal, /bbbb2222/)
+  // Byte for byte the engine's answer for this node on these facts, not a sentence this layer wrote
+  // (#1316 acceptance 2): `enterNode` renders it through `renderRefusal` with both revisions.
+  assert.equal(build.refusal, enterNode(flow, 'build', staleFacts).refusal)
   // The card that is already open is in neither list: a refusal moves nothing.
   assert.ok(!plan.refused.some((entry) => entry.node === 'triage'))
 })

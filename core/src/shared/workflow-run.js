@@ -54,6 +54,18 @@ const heldBy = (hold) => {
   return typeof hold.by === 'string' ? hold.by.trim() : ''
 }
 
+// `(job, node)` is the identity of a node card (#1316 pin 4), so a card parented to another job is not
+// this job's card: a caller that hands in a whole board — the only way this is called from `driveOnce`
+// — must not have one job's finished card close another job's node. A card that states no parent is
+// read as this job's, which is what a fixture card, and a card written before `parentId` existed, are.
+export function cardsOfJob(cards, jobId) {
+  return (Array.isArray(cards) ? cards : []).filter((card) => {
+    if (!card || typeof card.node !== 'string' || card.node === '') return false
+    if (card.parentId === undefined || card.parentId === null) return true
+    return jobId !== null && card.parentId === jobId
+  })
+}
+
 // The plan for one job on one read of the facts:
 //
 //   `open`     the node cards to create now, in dependency order — `parentId` is the job card, the
@@ -71,10 +83,7 @@ export function planJob({ definition, job = {}, cards = [], facts = {}, hold = n
   const jobId = job?.id ?? null
   const holder = heldBy(hold)
   const sentence = holder === null ? null : heldSentence(def)
-  const existing = new Set()
-  for (const card of Array.isArray(cards) ? cards : []) {
-    if (card && typeof card.node === 'string' && card.node !== '') existing.add(card.node)
-  }
+  const existing = new Set(cardsOfJob(cards, jobId).map((card) => card.node))
   const open = []
   const refused = []
   for (const nodeId of topologicalOrder(def)) {
@@ -146,7 +155,7 @@ export function completions({ definition, job = {}, cards = [], history = [], fa
     const node = typeof entry === 'string' ? entry : entry?.node
     if (typeof node === 'string' && node !== '') recorded.add(node)
   }
-  const list = Array.isArray(cards) ? cards : []
+  const list = cardsOfJob(cards, job?.id ?? null)
   const out = []
   for (const nodeId of topologicalOrder(def)) {
     if (recorded.has(nodeId)) continue
