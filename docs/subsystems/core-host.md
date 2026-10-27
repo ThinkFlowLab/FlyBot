@@ -128,7 +128,7 @@ fact and not a follow-up action: node *n+1* opens when its inputs are present **
 stale one refuses with both revisions. A held job opens nothing on any node and is refused in the
 definition's own sentence — the `no-hold` guard, rendered with the fact it expects (`pr: hold`), which
 is the merge gate's wording and not a second copy of it; a definition that guards no held pull request
-gets the holder's name and no sentence, because this layer writes none. A job is done when its terminal
+gets the holder's name and no sentence, because this layer writes none. A hold names its holder or it is no hold at all (#1337): a blank string — the shape “the pull-request query answered nothing” arrives in — and a hold no name can be read from plan exactly like no hold, so a job is never refused whole with no sentence to show, while a named holder still refuses every card-less node in the definition's own sentence. A job is done when its terminal
 node's outputs are current, never because a card was moved or a merge was claimed. The host writer
 belongs to #1265 step 3, so that the parent is the real issue card; until it lands the planner is
 driven by fixture cards.
