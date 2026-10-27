@@ -1,1 +1,0 @@
-A Bot whose tool list has to be rebuilt for a group room no longer ends up with every tool listed when one name in the mask cannot be restricted: the host keeps the narrowing it can enforce and warns, instead of dropping the whole mask after lifting it ([#1271](https://github.com/ThinkFlowLab/FlyBot/issues/1271)).

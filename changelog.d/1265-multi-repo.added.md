@@ -1,1 +1,0 @@
-The Delivery board can read more than one repository: `delivery.repos` names a list (the older `delivery.repo` still works as a list of one), every name resolves with its own source, and the page draws one block per repository with its own state. A repository that cannot be read leaves the others on a partial board instead of emptying it (#1265, step 4).

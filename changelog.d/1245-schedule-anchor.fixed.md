@@ -1,1 +1,0 @@
-A part handoff keeps a repeating task exactly where it was: the same id, the same delivery history and the same instant it was already due, instead of re-anchoring the next run to the handoff and hiding the move in a reset history. ([#1245](https://github.com/ThinkFlowLab/FlyBot/issues/1245))
