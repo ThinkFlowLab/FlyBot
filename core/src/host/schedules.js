@@ -15,6 +15,10 @@
 // closed a recurring task runs once, for its latest missed time, never once per missed
 // time (docs/subsystems/core-host.md).
 //
+// Copy (#1287). A task can be copied to another Bot or group chat: the same title, prompt
+// and timing on the target's current part, keeping the source's next run. That is a new row
+// under a new id, never `create`, which re-anchors an `every` task (#1245).
+//
 // Last run and Retry (#473). DSH's `lastDelivery` says a reminder reached the Session's
 // inbox, not how the Bot's turn went, so FlyBot keeps each task's last run in
 // `state.scheduleRuns[<id>]`: running, ran, stopped, or failed with a reason. A run fails
@@ -23,6 +27,7 @@
 // task's prompt once now, framed as DSH frames a reminder; it never backfills missed times.
 // A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 
+import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 import { defineTool } from './tool-schema.js'
@@ -34,6 +39,8 @@ const MAX_TITLE = 120
 const MISSED_MS = 120_000
 const CHECK_MS = 60_000
 const RUNS_KEPT = 200
+// A copy mints its own id; a collision retries this many times rather than overwrite a row.
+const COPY_ID_TRIES = 5
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -303,6 +310,61 @@ export function install(rt) {
   // One stored task as DSH has it, active or finished, or undefined.
   const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
 
+  // Copy (#1287): a second task with the source's title, prompt and timing on the target's
+  // current part, which keeps the source's next run. DSH's `create` would anchor an `every`
+  // task to now + interval (#1245), so an active source is written as a new row through the
+  // same private domain `moveSchedules` uses: an id in DSH's own shape, the source's record
+  // under it, and no delivery history. Nothing needs re-arming: the copy's instant is the
+  // source's, and the source's own row already keeps it in the driver's global minimum. A
+  // paused source has no next run to keep, so its copy goes through `create`, as Resume does.
+  async function copySchedule(body) {
+    const from = body.copyFrom ?? {}
+    const sourceSession = String(from.sessionId ?? '')
+    const sourceId = String(from.id ?? '')
+    const owner = ownerOf(sourceSession)
+    if (owner === undefined) throw invalid('No such task')
+    const held = pausedEntry(sourceSession, sourceId)
+    const source = held !== undefined ? held.record : await findRecord(sourceSession, sourceId)
+    if (source === undefined) throw invalid('No such task')
+    const targetBot = state.bots[body.target]
+    const targetRoom = state.rooms[body.target]
+    if (targetBot === undefined && targetRoom === undefined) throw invalid('No such Bot or group chat')
+    const same = owner.botId !== undefined ? targetBot?.id === owner.botId : targetRoom?.id === owner.roomId
+    if (same) throw invalid('Pick a different Bot or group chat to copy it to')
+    const request = requestOf(source)
+    if (request === null) throw invalid('This task cannot be copied')
+    if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Pick a time in the future')
+    // Quiet hours guard a time the owner picks, as they do on create; a repeat or cron rule is
+    // let through because FlyBot cannot know its next fire (`quietUnchecked`, #1166).
+    refuseDuringQuietHours(timingPart(request), request.daily?.time_zone ?? request.weekly?.time_zone ?? request.cron?.time_zone)
+    const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
+    if (held !== undefined) await service.create(toSession, request)
+    else await copyRow(sourceSession, sourceId, toSession)
+    return schedulesView()
+  }
+
+  // The row write itself. `put`, `get` and the `tasks` row shape are the same private API
+  // `moveSchedules` documents above; a renamed `put` or `get` throws here and copies nothing.
+  async function copyRow(fromSession, sourceId, toSession) {
+    await service.serialize(async () => {
+      const tasks = (await service.getDomain()).table('tasks')
+      const source = tasks.get(sourceId)
+      if (source === undefined || source.sessionId !== fromSession) throw invalid('No such task')
+      const id = copyId(tasks)
+      await tasks.put(id, { sessionId: toSession, record: { ...source.record, id }, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false } })
+    })
+  }
+
+  // DSH mints `schedule-<uuid>` in `create`; a copy keeps that shape here and treats a
+  // collision as a retry, never as an overwrite of the row that already has the id.
+  const copyId = (tasks) => {
+    for (let tries = 0; tries < COPY_ID_TRIES; tries += 1) {
+      const id = `schedule-${randomUUID()}`
+      if (tasks.get(id) === undefined) return id
+    }
+    throw invalid('The task could not be copied. Try again')
+  }
+
   async function schedulesView() {
     const quietHours = quietNow()
     if (service === null) return { available: false, tasks: [], quietHours }
@@ -496,6 +558,7 @@ export function install(rt) {
     schedules: () => schedulesView(),
     async 'schedule-create'(body) {
       ensureService()
+      if (body.copyFrom !== undefined) return copySchedule(body)
       const { sessionId, title, prompt } = contentOf(body)
       const timing = selectorOf(body.when)
       refuseDuringQuietHours(timing, body.when?.timeZone)

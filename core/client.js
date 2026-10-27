@@ -1225,6 +1225,12 @@ var ZH = {
   "Run the task once now": "现在运行一次这个任务",
   "DSH could not deliver it": "DSH 没能送达",
   "Resume the task first": "请先继续这个任务",
+  "Copy to…": "复制到…",
+  "Copy to": "复制到",
+  "Copy to another Bot or group chat": "复制到其他 Bot 或群聊",
+  "Copy “{name}” to": "把「{name}」复制到",
+  "Pick a Bot or group chat": "选择 Bot 或群聊",
+  "Copying…": "正在复制…",
   Finished: "已结束",
   Resume: "继续",
   "in {name}": "在 {name}",
@@ -11951,7 +11957,7 @@ function lastRunText(run) {
       return t("Last run {time}", { time });
   }
 }
-function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
   const [confirming, setConfirming] = (0, import_react24.useState)(false);
   const [busy, setBusy] = (0, import_react24.useState)(false);
   (0, import_react24.useEffect)(() => {
@@ -12007,6 +12013,7 @@ function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
     (0, import_react24.createElement)("span", { className: "bt-task-next" }, nextText(task)),
     failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
     onEdit ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react24.createElement)(PencilIcon)) : null,
+    onCopy ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react24.createElement)(DuplicateIcon)) : null,
     stoppable ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
     (0, import_react24.createElement)("button", {
       type: "button",
@@ -12270,12 +12277,51 @@ function SchedulesPage({ roster, actions, start }) {
 }
 function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
   const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
-  const rows = tasks.filter((task) => task !== open).map((task) => (0, import_react24.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }));
+  const [copying, setCopying] = (0, import_react24.useState)(null);
+  const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
+  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react24.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
   return (0, import_react24.createElement)(
     import_react24.Fragment,
     null,
     open ? (0, import_react24.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
+    source ? (0, import_react24.createElement)(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => {
+      setCopying(null);
+      onDone(next);
+    }, onCancel: () => setCopying(null) }) : null,
     rows.length + extra.length > 0 ? (0, import_react24.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
+  );
+}
+function CopyRow({ task, roster, actions, onView, onCancel }) {
+  const others = [
+    ...roster.bots.filter((bot) => bot.id !== task.botId).map((bot) => [bot.id, bot.name]),
+    ...roster.rooms.filter((room2) => room2.id !== task.roomId).map((room2) => [room2.id, room2.name])
+  ];
+  const [target, setTarget] = (0, import_react24.useState)(others[0]?.[0] ?? "");
+  const [busy, setBusy] = (0, import_react24.useState)(false);
+  const [error, setError] = (0, import_react24.useState)("");
+  const submit = (event) => {
+    event.preventDefault();
+    if (busy || target === "") return;
+    setBusy(true);
+    setError("");
+    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } }).then(onView, (failure) => {
+      setBusy(false);
+      setError(hostText(failure?.message ?? String(failure)));
+    });
+  };
+  return (0, import_react24.createElement)(
+    "form",
+    { className: "bt-set-row bt-task-copy", onSubmit: submit },
+    (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, t("Copy “{name}” to", { name: task.title }))),
+    (0, import_react24.createElement)(
+      "select",
+      { className: "bt-select bt-task-bot", value: target, "aria-label": t("Copy to"), onChange: (event) => setTarget(event.target.value) },
+      (0, import_react24.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
+      others.map(([id, name]) => (0, import_react24.createElement)("option", { key: id, value: id }, name))
+    ),
+    (0, import_react24.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm", disabled: busy || target === "" }, busy ? t("Copying…") : t("Copy")),
+    (0, import_react24.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
+    error ? (0, import_react24.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error) : null
   );
 }
 function BotSchedules({ bot, roster, actions }) {
@@ -12329,6 +12375,8 @@ function ScheduleSummary({ bot, actions }) {
 }
 var SCHEDULE_CSS = `
 .bt-task{gap:10px}
+.bt-task-copy{flex-wrap:wrap;gap:8px}
+.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
 .bt-task[data-done]{opacity:.6}
 .bt-task[data-busy]{opacity:.4}
 .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}

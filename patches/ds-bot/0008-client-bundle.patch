@@ -695,7 +695,7 @@ diff --git a/client.js b/client.js
    "Scheduled tasks": "定时任务",
    "Every day": "每天",
    "Every {count} days": "每 {count} 天",
-@@ -834,7 +834,15 @@ var ZH = {
+@@ -834,7 +834,21 @@ var ZH = {
    "Every weekend at {time}": "每个周末 {time}",
    "On the schedule {expression}": "按计划 {expression}",
    "Next: {time}": "下次 {time}",
@@ -706,6 +706,12 @@ diff --git a/client.js b/client.js
 +  "Run the task once now": "现在运行一次这个任务",
 +  "DSH could not deliver it": "DSH 没能送达",
 +  "Resume the task first": "请先继续这个任务",
++  "Copy to…": "复制到…",
++  "Copy to": "复制到",
++  "Copy to another Bot or group chat": "复制到其他 Bot 或群聊",
++  "Copy “{name}” to": "把「{name}」复制到",
++  "Pick a Bot or group chat": "选择 Bot 或群聊",
++  "Copying…": "正在复制…",
    Finished: "已结束",
 +  Resume: "继续",
    "in {name}": "在 {name}",
@@ -12685,21 +12691,32 @@ diff --git a/client.js b/client.js
    );
    const toLatest = () => {
      const scroller = document.querySelector("[data-conversation-scroll]");
-@@ -5704,8 +5704,8 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+@@ -5702,31 +5702,129 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+     if (back) back.click();
+     else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
    };
-   const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
-   return (0, import_react_dom4.createPortal)(
+-  const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
+-  return (0, import_react_dom4.createPortal)(
 -    (0, import_react9.createElement)(
 -      import_react9.Fragment,
+-      null,
+-      showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
+-      showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
+-    ),
+-    document.body
+-  );
++  const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
++  return (0, import_react_dom4.createPortal)(
 +    (0, import_react19.createElement)(
 +      import_react19.Fragment,
-       null,
-       showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
-       showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
-@@ -5714,19 +5714,117 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
-   );
- }
- 
++      null,
++      showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
++      showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
++    ),
++    document.body
++  );
++}
++
 +// src/client/composer-label.js
 +var ATTRIBUTES = ["aria-label", "data-placeholder"];
 +function holdComposerLabel(doc, label) {
@@ -12796,8 +12813,8 @@ diff --git a/client.js b/client.js
 +    for (const held of slots.values()) held.off();
 +    slots.clear();
 +  };
-+}
-+
+ }
+ 
  // src/client/composer.js
 -var import_react10 = require("react");
 +var import_react20 = require("react");
@@ -13141,26 +13158,10 @@ diff --git a/client.js b/client.js
  // src/client/speech.js
  var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
  var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
-@@ -6094,259 +6094,35 @@ async function openCapture() {
-         source.connect(offline.destination);
-         source.start();
-         return waveBytes((await offline.startRendering()).getChannelData(0));
--      } finally {
--        close();
--      }
--    }
--  };
--}
--async function transcribeWave(speech, catalog, wave, signal) {
--  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
--  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
--  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
--  return String(result.value?.text ?? "").trim();
--}
--function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
--  let spokeAt = 0;
--  let quietSince = 0;
--  return (level, now) => {
+@@ -6110,243 +6110,19 @@ function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
+   let spokeAt = 0;
+   let quietSince = 0;
+   return (level, now) => {
 -    if (level >= loud) {
 -      spokeAt ||= now;
 -      quietSince = 0;
@@ -13394,22 +13395,6 @@ diff --git a/client.js b/client.js
 -      )
 -    )
 -  );
-+      } finally {
-+        close();
-+      }
-+    }
-+  };
-+}
-+async function transcribeWave(speech, catalog, wave, signal) {
-+  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
-+  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
-+  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
-+  return String(result.value?.text ?? "").trim();
-+}
-+function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
-+  let spokeAt = 0;
-+  let quietSince = 0;
-+  return (level, now) => {
 +    if (level >= loud) {
 +      spokeAt ||= now;
 +      quietSince = 0;
@@ -14038,14 +14023,14 @@ diff --git a/client.js b/client.js
 +      return t("Last run {time}", { time });
 +  }
 +}
-+function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
++function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
 +  const [confirming, setConfirming] = (0, import_react24.useState)(false);
 +  const [busy, setBusy] = (0, import_react24.useState)(false);
 +  (0, import_react24.useEffect)(() => {
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 3e3);
      return () => clearTimeout(timer);
-@@ -6913,20 +6913,48 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -6913,20 +6913,49 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
      setBusy(true);
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
    };
@@ -14098,6 +14083,7 @@ diff --git a/client.js b/client.js
 +    (0, import_react24.createElement)("span", { className: "bt-task-next" }, nextText(task)),
 +    failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
 +    onEdit ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react24.createElement)(PencilIcon)) : null,
++    onCopy ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react24.createElement)(DuplicateIcon)) : null,
 +    stoppable ? (0, import_react24.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
 +    (0, import_react24.createElement)("button", {
        type: "button",
@@ -14171,7 +14157,7 @@ diff --git a/client.js b/client.js
    };
    const submit = (event) => {
      event.preventDefault();
-@@ -6975,146 +6975,251 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -6975,151 +6975,297 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        setBusy(false);
        return;
      }
@@ -14411,12 +14397,51 @@ diff --git a/client.js b/client.js
  }
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
 +  const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
-+  const rows = tasks.filter((task) => task !== open).map((task) => (0, import_react24.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }));
++  const [copying, setCopying] = (0, import_react24.useState)(null);
++  const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
++  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react24.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
 +  return (0, import_react24.createElement)(
 +    import_react24.Fragment,
 +    null,
 +    open ? (0, import_react24.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
++    source ? (0, import_react24.createElement)(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => {
++      setCopying(null);
++      onDone(next);
++    }, onCancel: () => setCopying(null) }) : null,
 +    rows.length + extra.length > 0 ? (0, import_react24.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
++  );
++}
++function CopyRow({ task, roster, actions, onView, onCancel }) {
++  const others = [
++    ...roster.bots.filter((bot) => bot.id !== task.botId).map((bot) => [bot.id, bot.name]),
++    ...roster.rooms.filter((room2) => room2.id !== task.roomId).map((room2) => [room2.id, room2.name])
++  ];
++  const [target, setTarget] = (0, import_react24.useState)(others[0]?.[0] ?? "");
++  const [busy, setBusy] = (0, import_react24.useState)(false);
++  const [error, setError] = (0, import_react24.useState)("");
++  const submit = (event) => {
++    event.preventDefault();
++    if (busy || target === "") return;
++    setBusy(true);
++    setError("");
++    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } }).then(onView, (failure) => {
++      setBusy(false);
++      setError(hostText(failure?.message ?? String(failure)));
++    });
++  };
++  return (0, import_react24.createElement)(
++    "form",
++    { className: "bt-set-row bt-task-copy", onSubmit: submit },
++    (0, import_react24.createElement)("span", { className: "bt-set-copy" }, (0, import_react24.createElement)("span", { className: "bt-bs-label" }, t("Copy “{name}” to", { name: task.title }))),
++    (0, import_react24.createElement)(
++      "select",
++      { className: "bt-select bt-task-bot", value: target, "aria-label": t("Copy to"), onChange: (event) => setTarget(event.target.value) },
++      (0, import_react24.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
++      others.map(([id, name]) => (0, import_react24.createElement)("option", { key: id, value: id }, name))
++    ),
++    (0, import_react24.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm", disabled: busy || target === "" }, busy ? t("Copying…") : t("Copy")),
++    (0, import_react24.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
++    error ? (0, import_react24.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error) : null
 +  );
 +}
  function BotSchedules({ bot, roster, actions }) {
@@ -14485,6 +14510,13 @@ diff --git a/client.js b/client.js
      )))
    );
  }
+ var SCHEDULE_CSS = `
+ .bt-task{gap:10px}
++.bt-task-copy{flex-wrap:wrap;gap:8px}
++.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
+ .bt-task[data-done]{opacity:.6}
+ .bt-task[data-busy]{opacity:.4}
+ .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
 @@ -7127,6 +7127,12 @@ var SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}

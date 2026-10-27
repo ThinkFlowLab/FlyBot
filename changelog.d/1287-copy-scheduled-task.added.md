@@ -1,0 +1,1 @@
+A scheduled task can now be copied to another Bot or group chat: **Copy** on the task's row asks for the target and creates the same title, instruction and timing there, keeping the task's next run instead of re-anchoring it ([#1287](https://github.com/ThinkFlowLab/FlyBot/issues/1287)).

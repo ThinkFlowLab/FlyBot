@@ -1264,7 +1264,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
-@@ -784,7 +784,15 @@ const ZH = {
+@@ -784,7 +784,21 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1275,6 +1275,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Run the task once now': '现在运行一次这个任务',
 +  'DSH could not deliver it': 'DSH 没能送达',
 +  'Resume the task first': '请先继续这个任务',
++  'Copy to…': '复制到…',
++  'Copy to': '复制到',
++  'Copy to another Bot or group chat': '复制到其他 Bot 或群聊',
++  'Copy “{name}” to': '把「{name}」复制到',
++  'Pick a Bot or group chat': '选择 Bot 或群聊',
++  'Copying…': '正在复制…',
    Finished: '已结束',
 +  Resume: '继续',
    'in {name}': '在 {name}',
@@ -1884,18 +1890,20 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
-@@ -1,10 +1,11 @@
+@@ -1,10 +1,13 @@
  // Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
  // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 -// sends its prompt to the Bot's chat when it is due.
 +// sends its prompt to the Bot's chat when it is due. A row edits its task in the same
 +// form that creates one, and pauses or resumes it (#354). Each row says how its last run
-+// went, and a failed run has Retry, which runs the task once now (#473).
++// went, and a failed run has Retry, which runs the task once now (#473). A row also copies
++// its task to another Bot or group chat (#1287): the picker is the create form's target
++// picker, and the copy keeps the source's next run because the host writes it as a row.
  import { createElement as h, Fragment, useEffect, useState } from 'react'
  import { BotAvatar, RoomAvatar } from './mark.js'
 -import { ClockIcon, PlusIcon, TrashIcon } from './icons.js'
 -import { openHarnessSettings } from './sidebar.js'
-+import { ClockIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
++import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
@@ -1920,11 +1928,11 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  }
 +}
 +
-+function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
++function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
    useEffect(() => {
-@@ -85,14 +85,33 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -85,14 +85,34 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
      setBusy(true)
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
    }
@@ -1956,6 +1964,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('span', { className: 'bt-task-next' }, nextText(task)),
 +    failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
 +    onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
++    onCopy ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Copy to another Bot or group chat'), title: t('Copy to…'), onClick: () => onCopy(task) }, h(DuplicateIcon)) : null,
 +    stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
@@ -2046,7 +2055,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +166,131 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,56 +166,165 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2152,18 +2161,52 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-   ]
- }
- 
-+// One chat's rows; the task being edited opens the form in its place.
++  ]
++}
++
++// One chat's rows; the task being edited opens the form in its place, and so does the one
++// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
 +  const open = editing ? tasks.find(task => task.id === editing.id && task.sessionId === editing.sessionId) : undefined
-+  const rows = tasks.filter(task => task !== open).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }))
++  const [copying, setCopying] = useState(null)
++  const source = copying ? tasks.find(task => task.id === copying.id && task.sessionId === copying.sessionId) : undefined
++  const rows = tasks.filter(task => task !== open && task !== source).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : undefined }))
 +  return h(Fragment, null,
 +    open ? h(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
++    source ? h(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => { setCopying(null); onDone(next) }, onCancel: () => setCopying(null) }) : null,
 +    rows.length + extra.length > 0 ? h('div', { className: 'bt-set-card' }, ...rows, ...extra) : null)
 +}
 +
++// Copy (#1287): sends the row's task to another Bot or group chat. The picker lists the
++// chats the task does not already run in; the host refuses the same chat as well, because a
++// stale view must not produce a silent duplicate. It posts the create endpoint with
++// `copyFrom`, so there is no second endpoint and no new state.
++export function CopyRow({ task, roster, actions, onView, onCancel }) {
++  const others = [
++    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
++    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
+   ]
++  const [target, setTarget] = useState(others[0]?.[0] ?? '')
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState('')
++  const submit = (event) => {
++    event.preventDefault()
++    if (busy || target === '') return
++    setBusy(true)
++    setError('')
++    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } })
++      .then(onView, (failure) => { setBusy(false); setError(hostText(failure?.message ?? String(failure))) })
++  }
++  return h('form', { className: 'bt-set-row bt-task-copy', onSubmit: submit },
++    h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Copy “{name}” to', { name: task.title }))),
++    h('select', { className: 'bt-select bt-task-bot', value: target, 'aria-label': t('Copy to'), onChange: event => setTarget(event.target.value) },
++      h('option', { value: '' }, t('Pick a Bot or group chat')),
++      others.map(([id, name]) => h('option', { key: id, value: id }, name))),
++    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
++    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
++    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
+ }
+ 
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -2195,7 +2238,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,7 +225,7 @@ export function ScheduleSummary({ bot, actions }) {
+@@ -225,13 +225,15 @@ export function ScheduleSummary({ bot, actions }) {
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -2204,6 +2247,14 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
  }
+ 
+ export const SCHEDULE_CSS = `
+ .bt-task{gap:10px}
++.bt-task-copy{flex-wrap:wrap;gap:8px}
++.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
+ .bt-task[data-done]{opacity:.6}
+ .bt-task[data-busy]{opacity:.4}
+ .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
 @@ -239,6 +239,12 @@ export const SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
@@ -4782,7 +4833,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
-@@ -5,8 +5,35 @@
+@@ -5,8 +5,42 @@
  // them. A group chat's task lives on the group's own Session, so the reminder reaches
  // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
  // the service is optional and every endpoint reports whether it is there.
@@ -4796,6 +4847,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +// closed a recurring task runs once, for its latest missed time, never once per missed
 +// time (docs/subsystems/core-host.md).
 +//
++// Copy (#1287). A task can be copied to another Bot or group chat: the same title, prompt
++// and timing on the target's current part, keeping the source's next run. That is a new row
++// under a new id, never `create`, which re-anchors an `every` task (#1245).
++//
 +// Last run and Retry (#473). DSH's `lastDelivery` says a reminder reached the Session's
 +// inbox, not how the Bot's turn went, so FlyBot keeps each task's last run in
 +// `state.scheduleRuns[<id>]`: running, ran, stopped, or failed with a reason. A run fails
@@ -4804,6 +4859,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +// task's prompt once now, framed as DSH frames a reminder; it never backfills missed times.
 +// A failure also joins the ended turns the notifications and the Agent inbox read (#353).
 +
++import { randomUUID } from 'node:crypto'
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
 +import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 +import { defineTool } from './tool-schema.js'
@@ -4815,6 +4871,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +const MISSED_MS = 120_000
 +const CHECK_MS = 60_000
 +const RUNS_KEPT = 200
++// A copy mints its own id; a collision retries this many times rather than overwrite a row.
++const COPY_ID_TRIES = 5
  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -4876,7 +4934,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -89,63 +89,426 @@ export function install(rt) {
+@@ -89,63 +89,482 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5022,6 +5080,61 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +
 +  // One stored task as DSH has it, active or finished, or undefined.
 +  const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
++
++  // Copy (#1287): a second task with the source's title, prompt and timing on the target's
++  // current part, which keeps the source's next run. DSH's `create` would anchor an `every`
++  // task to now + interval (#1245), so an active source is written as a new row through the
++  // same private domain `moveSchedules` uses: an id in DSH's own shape, the source's record
++  // under it, and no delivery history. Nothing needs re-arming: the copy's instant is the
++  // source's, and the source's own row already keeps it in the driver's global minimum. A
++  // paused source has no next run to keep, so its copy goes through `create`, as Resume does.
++  async function copySchedule(body) {
++    const from = body.copyFrom ?? {}
++    const sourceSession = String(from.sessionId ?? '')
++    const sourceId = String(from.id ?? '')
++    const owner = ownerOf(sourceSession)
++    if (owner === undefined) throw invalid('No such task')
++    const held = pausedEntry(sourceSession, sourceId)
++    const source = held !== undefined ? held.record : await findRecord(sourceSession, sourceId)
++    if (source === undefined) throw invalid('No such task')
++    const targetBot = state.bots[body.target]
++    const targetRoom = state.rooms[body.target]
++    if (targetBot === undefined && targetRoom === undefined) throw invalid('No such Bot or group chat')
++    const same = owner.botId !== undefined ? targetBot?.id === owner.botId : targetRoom?.id === owner.roomId
++    if (same) throw invalid('Pick a different Bot or group chat to copy it to')
++    const request = requestOf(source)
++    if (request === null) throw invalid('This task cannot be copied')
++    if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Pick a time in the future')
++    // Quiet hours guard a time the owner picks, as they do on create; a repeat or cron rule is
++    // let through because FlyBot cannot know its next fire (`quietUnchecked`, #1166).
++    refuseDuringQuietHours(timingPart(request), request.daily?.time_zone ?? request.weekly?.time_zone ?? request.cron?.time_zone)
++    const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
++    if (held !== undefined) await service.create(toSession, request)
++    else await copyRow(sourceSession, sourceId, toSession)
++    return schedulesView()
++  }
++
++  // The row write itself. `put`, `get` and the `tasks` row shape are the same private API
++  // `moveSchedules` documents above; a renamed `put` or `get` throws here and copies nothing.
++  async function copyRow(fromSession, sourceId, toSession) {
++    await service.serialize(async () => {
++      const tasks = (await service.getDomain()).table('tasks')
++      const source = tasks.get(sourceId)
++      if (source === undefined || source.sessionId !== fromSession) throw invalid('No such task')
++      const id = copyId(tasks)
++      await tasks.put(id, { sessionId: toSession, record: { ...source.record, id }, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false } })
++    })
++  }
++
++  // DSH mints `schedule-<uuid>` in `create`; a copy keeps that shape here and treats a
++  // collision as a retry, never as an overwrite of the row that already has the id.
++  const copyId = (tasks) => {
++    for (let tries = 0; tries < COPY_ID_TRIES; tries += 1) {
++      const id = `schedule-${randomUUID()}`
++      if (tasks.get(id) === undefined) return id
++    }
++    throw invalid('The task could not be copied. Try again')
++  }
  
    async function schedulesView() {
 -    if (service === null) return { available: false, tasks: [] }
@@ -5036,14 +5149,14 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -      tasks.push({ ...entry, ...owner })
 +      const lastRun = lastRunOf(entry)
 +      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
-+    }
+     }
+-    return { available: true, tasks }
 +    for (const entry of Object.values(paused())) {
 +      const owner = ownerOf(entry.sessionId)
 +      if (!known(owner)) continue
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
-     }
--    return { available: true, tasks }
++    }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
@@ -5229,6 +5342,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -      if (prompt === '') throw invalid('Say what the Bot should do')
 -      await service.create(bot ? rt.chatOf(bot.id) : room.id, { title, prompt, ...selectorOf(body.when) })
 +      ensureService()
++      if (body.copyFrom !== undefined) return copySchedule(body)
 +      const { sessionId, title, prompt } = contentOf(body)
 +      const timing = selectorOf(body.when)
 +      refuseDuringQuietHours(timing, body.when?.timeZone)
@@ -9525,7 +9639,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
    const refused = await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } })
    assert.equal(refused.ok, false)
    assert.match(refused.error.message, /Automation tasks are off/)
-@@ -121,3 +121,414 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,508 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -9665,6 +9779,100 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  assert.equal(row(exhausted.id).status, 'inactive', 'its status is untouched')
 +  assert.equal(row(active.id).sessionId, 'm1-fresh', 'the active task still moves')
 +  assert.deepEqual([...schedule.tasks.values()].filter(task => task.sessionId === 'm1-fresh').map(task => task.record.id), [active.id], 'the fresh part gets neither inactive row')
++})
++
++// #1287: a task can be copied to another Bot or group chat. A copy is a second row with the
++// source's title, prompt and timing, and it keeps the source's next run: going through DSH's
++// create would anchor an `every` task to now + interval, which is #1245 again.
++test('#1287: a copy lands on the target’s current part with the source’s next run, leaving the source alone', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  let clock = Date.parse('2030-01-01T12:00:00.000Z')
++  t.mock.method(Date, 'now', () => clock)
++
++  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check the board', when: { kind: 'every', minutes: 120 } })
++  const [sourceId] = schedule.tasks.keys()
++  const source = schedule.tasks.get(sourceId)
++  const due = '2030-01-01T12:30:00.000Z'
++  const delivered = { scheduledAt: '2030-01-01T11:00:00.000Z', deliveredAt: '2030-01-01T11:00:02.000Z', messageId: 'msg-old' }
++  source.record = { ...source.record, scheduledAt: due }
++  source.deliveryHistory = { records: [delivered], earlierRecordsUnavailable: false }
++  source.lastDelivery = delivered
++
++  clock += 10 * 60_000
++  const copied = await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: sourceId } })
++  assert.equal(copied.ok, true, JSON.stringify(copied))
++  const copies = [...schedule.tasks.entries()].filter(([id]) => id !== sourceId)
++  assert.equal(copies.length, 1, 'the copy is a second row, not a rewrite of the source')
++  const [copyId, copy] = copies[0]
++  assert.notEqual(copyId, sourceId, 'the copy gets its own id')
++  assert.match(copyId, /^schedule-/, 'the id keeps DSH’s own shape')
++  assert.equal(copy.sessionId, 'w2', 'it lands on the target Bot’s current part')
++  assert.deepEqual([copy.record.title, copy.record.prompt, copy.record.everySeconds], ['Watch', 'Check the board', 7200])
++  assert.equal(copy.record.id, copyId, 'the record carries the new id')
++  assert.equal(copy.record.scheduledAt, due, 'the source’s next run is kept, not now + 7200')
++  assert.equal(copy.status, 'active')
++  assert.equal(copy.lastDelivery, undefined, 'a copy has never been delivered')
++  assert.deepEqual(copy.deliveryHistory, { records: [], earlierRecordsUnavailable: false }, 'a copy carries no delivery history')
++
++  // The source keeps its row, its next run and its delivery record.
++  assert.equal(schedule.tasks.get(sourceId).sessionId, 'm1')
++  assert.equal(source.record.scheduledAt, due)
++  assert.equal(source.lastDelivery.messageId, 'msg-old')
++
++  // FlyBot's run record is keyed on the DSH id, so the copy starts with none (#473).
++  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
++  assert.equal(Object.hasOwn(saved.scheduleRuns ?? {}, copyId), false)
++  assert.deepEqual(copied.value.tasks.map(task => task.botId).sort(), ['m1', 'w1'], 'both rows are listed, each under its own Bot')
++  assert.equal(new Set(copied.value.tasks.map(task => task.id)).size, 2, 'the view lists two distinct tasks')
++})
++
++test('#1287: an unknown source, an unknown target, the same chat and a passed one-time task are refused', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check', when: { kind: 'every', minutes: 30 } })
++  const [id] = schedule.tasks.keys()
++  const from = { sessionId: 'm1', id }
++
++  for (const [body, message] of [
++    [{ target: 'w1', copyFrom: { sessionId: 'm1', id: 'schedule-404' } }, /No such task/],
++    [{ target: 'w1', copyFrom: { sessionId: 'outside', id } }, /No such task/],
++    [{ target: 'nobody', copyFrom: from }, /No such Bot or group chat/],
++    [{ target: 'm1', copyFrom: from }, /different Bot or group chat/],
++  ]) assert.match((await call('schedule-create', body)).error.message, message)
++  assert.equal(schedule.tasks.size, 1, 'a refused copy writes nothing')
++
++  // A passed one-time task cannot run again, so its copy is refused as an edit is.
++  const once = await schedule.create('m1', { title: 'Once', prompt: 'Ping', at: '2030-01-01T00:00:00.000Z' })
++  schedule.tasks.get(once.id).record = { ...schedule.tasks.get(once.id).record, scheduledAt: new Date(Date.now() - 1000).toISOString() }
++  assert.match((await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: once.id } })).error.message, /future/)
++})
++
++test('#1287: a copy keeps a daily rule’s time and zone, and an earlier part’s task goes to the current one', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  const [id] = schedule.tasks.keys()
++  const anchor = schedule.tasks.get(id).record.scheduledAt
++
++  const copied = await call('schedule-create', { target: 'm1', copyFrom: { sessionId: 'w2', id } })
++  assert.equal(copied.ok, true, JSON.stringify(copied))
++  const copy = [...schedule.tasks.values()].find(task => task.record.id !== id)
++  assert.deepEqual([copy.record.kind, copy.record.time, copy.record.timeZone], ['daily', '09:00:00', 'Asia/Shanghai'])
++  assert.equal(copy.record.scheduledAt, anchor, 'a daily copy keeps the instant it was already due')
++  assert.equal(copy.sessionId, 'm1')
++
++  // A task still on the Bot's earlier part: the copy goes to the target's current part.
++  await schedule.create('w1', { title: 'Old part', prompt: 'x', every_seconds: 3600 })
++  const oldId = [...schedule.tasks.keys()].at(-1)
++  const again = await call('schedule-create', { target: 'g1', copyFrom: { sessionId: 'w1', id: oldId } })
++  assert.equal(again.ok, true, JSON.stringify(again))
++  const groupCopy = [...schedule.tasks.values()].find(task => task.record.title === 'Old part' && task.record.id !== oldId)
++  assert.equal(groupCopy.sessionId, 'g1', 'a group copy lands on the group’s own Session')
++  assert.equal(groupCopy.record.scheduledAt, schedule.tasks.get(oldId).record.scheduledAt, 'and keeps the next run')
 +})
 +
 +test('pause keeps the task in FlyBot and removes it from DSH; resume brings it back', async (t) => {

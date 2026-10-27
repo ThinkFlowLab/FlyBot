@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 // where the switch is; the Harness settings dialog has none.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SchedulesPage, BotSchedules, openPlugins, formStart } from './src/client/schedules.js'",
+    contents: "export { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart } from './src/client/schedules.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -31,7 +31,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, openPlugins, formStart } = module.exports
+const { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -245,3 +245,30 @@ test('the quiet-hours copy has Chinese entries, including the refusal with the w
   assert.match(source, /Quiet hours are on until \(\\d\\d:\\d\\d\)/)
   assert.match(source, /安静时段到 \$1 结束/)
 })
+
+// #1287: a row copies its task to another Bot or group chat. The picker offers only the
+// other chats, and the copy is the one `schedule-create` call with `copyFrom` — no new
+// endpoint, no new state.
+const OTHERS = { bots: [{ id: 'b1', name: 'B' }, { id: 'b2', name: 'Writer' }], rooms: [{ id: 'g1', name: 'Launch' }], byId: {}, roomsById: {} }
+
+test('Copy asks for another chat and posts schedule-create with copyFrom (#1287)', async () => {
+  const sent = []
+  const actions = { ...spy(), scheduleCreate: async (task) => { sent.push(task); return OFF } }
+  seeded.push('b2')
+  const form = render(h(CopyRow, { task: ACTIVE, roster: OTHERS, actions, onView() {}, onCancel() {} }))
+  const select = all(form).find(node => node.type === 'select')
+  assert.ok(select, 'the form has the target picker')
+  assert.deepEqual(all(select).filter(node => node.type === 'option').map(node => node.props.value), ['', 'b2', 'g1'], 'the row’s own chat is not offered')
+  form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ target: 'b2', copyFrom: { sessionId: 'chat-b1', id: 's1' } }])
+})
+
+test('a task row offers Copy (#1287)', () => {
+  seeded.push({ available: true, tasks: [ACTIVE] }, null)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: OTHERS, actions: { ...spy(), scheduleCreate: async () => OFF } }))
+  const copy = buttonsOf(card).find(button => button.props['aria-label'] === 'Copy to another Bot or group chat')
+  assert.ok(copy, 'the row offers Copy')
+  assert.deepEqual(text(copy), [], 'an icon button, like Edit')
+})
+

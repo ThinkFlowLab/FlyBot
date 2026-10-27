@@ -2,10 +2,12 @@
 // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 // sends its prompt to the Bot's chat when it is due. A row edits its task in the same
 // form that creates one, and pauses or resumes it (#354). Each row says how its last run
-// went, and a failed run has Retry, which runs the task once now (#473).
+// went, and a failed run has Retry, which runs the task once now (#473). A row also copies
+// its task to another Bot or group chat (#1287): the picker is the create form's target
+// picker, and the copy keeps the source's next run because the host writes it as a row.
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 import { BotAvatar, RoomAvatar } from './mark.js'
-import { ClockIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
+import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
 import { Segmented } from './motion.js'
 import { dateLocale, hostText, t } from './i18n.js'
 
@@ -86,7 +88,7 @@ export function lastRunText(run) {
   }
 }
 
-function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -125,6 +127,7 @@ function TaskRow({ task, actions, onView, onEdit, showBot, roster }) {
     h('span', { className: 'bt-task-next' }, nextText(task)),
     failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
     onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
+    onCopy ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Copy to another Bot or group chat'), title: t('Copy to…'), onClick: () => onCopy(task) }, h(DuplicateIcon)) : null,
     stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
     h('button', {
       type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
@@ -328,13 +331,47 @@ export function SchedulesPage({ roster, actions, start }) {
   ]
 }
 
-// One chat's rows; the task being edited opens the form in its place.
+// One chat's rows; the task being edited opens the form in its place, and so does the one
+// being copied, which opens only the target picker.
 function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
   const open = editing ? tasks.find(task => task.id === editing.id && task.sessionId === editing.sessionId) : undefined
-  const rows = tasks.filter(task => task !== open).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit }))
+  const [copying, setCopying] = useState(null)
+  const source = copying ? tasks.find(task => task.id === copying.id && task.sessionId === copying.sessionId) : undefined
+  const rows = tasks.filter(task => task !== open && task !== source).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : undefined }))
   return h(Fragment, null,
     open ? h(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
+    source ? h(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => { setCopying(null); onDone(next) }, onCancel: () => setCopying(null) }) : null,
     rows.length + extra.length > 0 ? h('div', { className: 'bt-set-card' }, ...rows, ...extra) : null)
+}
+
+// Copy (#1287): sends the row's task to another Bot or group chat. The picker lists the
+// chats the task does not already run in; the host refuses the same chat as well, because a
+// stale view must not produce a silent duplicate. It posts the create endpoint with
+// `copyFrom`, so there is no second endpoint and no new state.
+export function CopyRow({ task, roster, actions, onView, onCancel }) {
+  const others = [
+    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
+    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
+  ]
+  const [target, setTarget] = useState(others[0]?.[0] ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = (event) => {
+    event.preventDefault()
+    if (busy || target === '') return
+    setBusy(true)
+    setError('')
+    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } })
+      .then(onView, (failure) => { setBusy(false); setError(hostText(failure?.message ?? String(failure))) })
+  }
+  return h('form', { className: 'bt-set-row bt-task-copy', onSubmit: submit },
+    h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Copy “{name}” to', { name: task.title }))),
+    h('select', { className: 'bt-select bt-task-bot', value: target, 'aria-label': t('Copy to'), onChange: event => setTarget(event.target.value) },
+      h('option', { value: '' }, t('Pick a Bot or group chat')),
+      others.map(([id, name]) => h('option', { key: id, value: id }, name))),
+    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
+    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
+    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
 }
 
 // A Bot's tasks in its settings form, with the way to add one.
@@ -372,6 +409,8 @@ export function ScheduleSummary({ bot, actions }) {
 
 export const SCHEDULE_CSS = `
 .bt-task{gap:10px}
+.bt-task-copy{flex-wrap:wrap;gap:8px}
+.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
 .bt-task[data-done]{opacity:.6}
 .bt-task[data-busy]{opacity:.4}
 .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}

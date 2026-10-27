@@ -313,6 +313,100 @@ test('#1245: a handoff leaves a disabled and an exhausted row on the earlier par
   assert.deepEqual([...schedule.tasks.values()].filter(task => task.sessionId === 'm1-fresh').map(task => task.record.id), [active.id], 'the fresh part gets neither inactive row')
 })
 
+// #1287: a task can be copied to another Bot or group chat. A copy is a second row with the
+// source's title, prompt and timing, and it keeps the source's next run: going through DSH's
+// create would anchor an `every` task to now + interval, which is #1245 again.
+test('#1287: a copy lands on the target’s current part with the source’s next run, leaving the source alone', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  let clock = Date.parse('2030-01-01T12:00:00.000Z')
+  t.mock.method(Date, 'now', () => clock)
+
+  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check the board', when: { kind: 'every', minutes: 120 } })
+  const [sourceId] = schedule.tasks.keys()
+  const source = schedule.tasks.get(sourceId)
+  const due = '2030-01-01T12:30:00.000Z'
+  const delivered = { scheduledAt: '2030-01-01T11:00:00.000Z', deliveredAt: '2030-01-01T11:00:02.000Z', messageId: 'msg-old' }
+  source.record = { ...source.record, scheduledAt: due }
+  source.deliveryHistory = { records: [delivered], earlierRecordsUnavailable: false }
+  source.lastDelivery = delivered
+
+  clock += 10 * 60_000
+  const copied = await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: sourceId } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  const copies = [...schedule.tasks.entries()].filter(([id]) => id !== sourceId)
+  assert.equal(copies.length, 1, 'the copy is a second row, not a rewrite of the source')
+  const [copyId, copy] = copies[0]
+  assert.notEqual(copyId, sourceId, 'the copy gets its own id')
+  assert.match(copyId, /^schedule-/, 'the id keeps DSH’s own shape')
+  assert.equal(copy.sessionId, 'w2', 'it lands on the target Bot’s current part')
+  assert.deepEqual([copy.record.title, copy.record.prompt, copy.record.everySeconds], ['Watch', 'Check the board', 7200])
+  assert.equal(copy.record.id, copyId, 'the record carries the new id')
+  assert.equal(copy.record.scheduledAt, due, 'the source’s next run is kept, not now + 7200')
+  assert.equal(copy.status, 'active')
+  assert.equal(copy.lastDelivery, undefined, 'a copy has never been delivered')
+  assert.deepEqual(copy.deliveryHistory, { records: [], earlierRecordsUnavailable: false }, 'a copy carries no delivery history')
+
+  // The source keeps its row, its next run and its delivery record.
+  assert.equal(schedule.tasks.get(sourceId).sessionId, 'm1')
+  assert.equal(source.record.scheduledAt, due)
+  assert.equal(source.lastDelivery.messageId, 'msg-old')
+
+  // FlyBot's run record is keyed on the DSH id, so the copy starts with none (#473).
+  const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  assert.equal(Object.hasOwn(saved.scheduleRuns ?? {}, copyId), false)
+  assert.deepEqual(copied.value.tasks.map(task => task.botId).sort(), ['m1', 'w1'], 'both rows are listed, each under its own Bot')
+  assert.equal(new Set(copied.value.tasks.map(task => task.id)).size, 2, 'the view lists two distinct tasks')
+})
+
+test('#1287: an unknown source, an unknown target, the same chat and a passed one-time task are refused', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check', when: { kind: 'every', minutes: 30 } })
+  const [id] = schedule.tasks.keys()
+  const from = { sessionId: 'm1', id }
+
+  for (const [body, message] of [
+    [{ target: 'w1', copyFrom: { sessionId: 'm1', id: 'schedule-404' } }, /No such task/],
+    [{ target: 'w1', copyFrom: { sessionId: 'outside', id } }, /No such task/],
+    [{ target: 'nobody', copyFrom: from }, /No such Bot or group chat/],
+    [{ target: 'm1', copyFrom: from }, /different Bot or group chat/],
+  ]) assert.match((await call('schedule-create', body)).error.message, message)
+  assert.equal(schedule.tasks.size, 1, 'a refused copy writes nothing')
+
+  // A passed one-time task cannot run again, so its copy is refused as an edit is.
+  const once = await schedule.create('m1', { title: 'Once', prompt: 'Ping', at: '2030-01-01T00:00:00.000Z' })
+  schedule.tasks.get(once.id).record = { ...schedule.tasks.get(once.id).record, scheduledAt: new Date(Date.now() - 1000).toISOString() }
+  assert.match((await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: once.id } })).error.message, /future/)
+})
+
+test('#1287: a copy keeps a daily rule’s time and zone, and an earlier part’s task goes to the current one', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  const [id] = schedule.tasks.keys()
+  const anchor = schedule.tasks.get(id).record.scheduledAt
+
+  const copied = await call('schedule-create', { target: 'm1', copyFrom: { sessionId: 'w2', id } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  const copy = [...schedule.tasks.values()].find(task => task.record.id !== id)
+  assert.deepEqual([copy.record.kind, copy.record.time, copy.record.timeZone], ['daily', '09:00:00', 'Asia/Shanghai'])
+  assert.equal(copy.record.scheduledAt, anchor, 'a daily copy keeps the instant it was already due')
+  assert.equal(copy.sessionId, 'm1')
+
+  // A task still on the Bot's earlier part: the copy goes to the target's current part.
+  await schedule.create('w1', { title: 'Old part', prompt: 'x', every_seconds: 3600 })
+  const oldId = [...schedule.tasks.keys()].at(-1)
+  const again = await call('schedule-create', { target: 'g1', copyFrom: { sessionId: 'w1', id: oldId } })
+  assert.equal(again.ok, true, JSON.stringify(again))
+  const groupCopy = [...schedule.tasks.values()].find(task => task.record.title === 'Old part' && task.record.id !== oldId)
+  assert.equal(groupCopy.sessionId, 'g1', 'a group copy lands on the group’s own Session')
+  assert.equal(groupCopy.record.scheduledAt, schedule.tasks.get(oldId).record.scheduledAt, 'and keeps the next run')
+})
+
 test('pause keeps the task in FlyBot and removes it from DSH; resume brings it back', async (t) => {
   const schedule = scheduleService()
   const { ctx, home, call } = setup({ schedule })
