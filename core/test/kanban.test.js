@@ -109,11 +109,9 @@ test('the unified board draws the three columns and moves only the owner\'s card
   assert.match(textOf(tree), /High/)
   assert.match(textOf(tree), /40%/)
   assert.match(textOf(tree), /Halfway/)
-  // #1345: the removed board view printed "Start task"/"Complete task" over a column while a card
-  // was dragged.
-  // The one board draws no such hint (#1326) and the two strings now render nowhere, so the coverage
-  // kept here is the part that carried the behaviour: every column is still a drop target, and a
-  // drop stays a request the board\'s own onMove decides.
+  // #1345: the removed board view printed a drag hint over a column while a card was dragged. The
+  // hint's wording is not this test's business, so what is kept is the behaviour it carried: every
+  // column is still a drop target, and a drop stays a request the board's own onMove decides.
   for (const column of byClass(tree, 'bt-board-column')) {
     assert.equal(typeof column.props.onDrop, 'function', `column ${column.props['data-column']} takes a drop`)
     assert.equal(typeof column.props.onDragOver, 'function')
@@ -176,11 +174,17 @@ test('a group board shows an overall task and its subtasks in their own columns'
   assert.match(textOf(notStarted), /Group task/)
   assert.match(textOf(notStarted), /Ship it/)
   assert.match(textOf(notStarted), /Write it/)
-  // #1345: the removed board view nested a subtask under its overall card (`data-parent`, "Part of X"). The one
-  // board draws every task card flat in the column its own state names (#1326), so the DOM no longer
-  // nests; the model still does (asserted above). Recorded, not silently dropped: #1358 tracks it.
-  assert.equal(all(tree).some(node => node.props?.['data-parent'] !== undefined), false)
-  assert.equal(textOf(notStarted).includes('Part of Ship it'), false)
+  // #1345: the board view that nested a subtask under its overall card is gone, and the one board
+  // draws every card flat in the column its own state names (#1326); #1358 tracks that loss. Whether
+  // nesting returns is not this test's business (#1361 works on it), so only the shape that holds
+  // either way is asserted: every subtask card is drawn, and a `data-parent` never names a card that
+  // is not on the board.
+  const drawn = new Set(all(tree).map(node => node.props?.['data-task']).filter(Boolean))
+  assert.equal(drawn.has(child.id), true, 'the subtask in its parent\'s column is drawn')
+  assert.equal(drawn.has(later.id), true, 'the subtask in another column is drawn')
+  for (const node of all(tree).filter(node => node.props?.['data-parent'] !== undefined)) {
+    assert.equal(drawn.has(node.props['data-parent']), true, `data-parent ${node.props['data-parent']} names a drawn card`)
+  }
   assert.match(textOf(progress), /Check it/)
   assert.match(textOf(notStarted), /Theirs/)
 })
