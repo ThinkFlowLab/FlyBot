@@ -1,0 +1,1 @@
+Two `assign()` calls for one Workflow started together each spawned a full set of run Bots, and one set was left referenced by no run and removed by nobody. The writers for a Workflow are now chained, so the second call releases the set it replaced; the same chain covers a demo restart racing an assign ([#1390](https://github.com/ThinkFlowLab/FlyBot/issues/1390)).

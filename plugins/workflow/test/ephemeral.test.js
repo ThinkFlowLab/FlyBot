@@ -388,3 +388,131 @@ test('the plugin load itself reaps a run the restart left running (#1388)', asyn
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// #1390: with a spawn hook the assign body awaits before it writes, so two calls
+// for one workflow used to read the same previous set, both spawn a full set, and
+// the second write replaced the run — the first set, referenced by no run, was
+// released by nobody. `spawn` here yields a macrotask, so bodies started together
+// interleave the way they do on a host whose spawn is not instant.
+function racer(control = {}) {
+  const spawned = []
+  const released = []
+  let seq = 0
+  const svc = createWorkflowService({
+    persist: false,
+    now: () => 1_700_000_000_000,
+    bots: () => roster,
+    spawn: async (spec) => {
+      const id = `race-${++seq}`
+      spawned.push({ id, spec })
+      if (control.fail?.(spec)) throw new Error('spawn failed')
+      if (control.gate?.[spec.nodeId]) await control.gate[spec.nodeId]
+      else await new Promise((resolve) => setImmediate(resolve))
+      return id
+    },
+    release: async (id) => { released.push(id) },
+    dispatch: async () => ({ ok: true }),
+    warn: () => {},
+  })
+  return { svc, spawned, released }
+}
+
+function racePair(svc, name) {
+  return svc.define({
+    name,
+    nodes: [
+      { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+      { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+    ],
+    edges: [{ from: 'plan', to: 'code' }],
+  }).workflows.find(item => item.name === name)
+}
+
+test('two assigns started together leave one set of run Bots and release the other (#1390)', async () => {
+  const { svc, spawned, released } = racer()
+  const made = racePair(svc, 'Race')
+  const first = svc.assign({ workflowId: made.id, taskId: 'T1', title: 'First task' })
+  const second = svc.assign({ workflowId: made.id, taskId: 'T2', title: 'Second task' })
+  const [one, two] = await Promise.all([first, second])
+  assert.equal(one.ok, true)
+  assert.equal(two.ok, true)
+
+  const run = svc.state().workflows.find(item => item.id === made.id).run
+  assert.equal(run.task.id, 'T2')
+  const survivors = new Set(Object.values(run.ephemeral))
+  assert.equal(survivors.size, 2)
+  assert.deepEqual(Object.keys(run.ephemeral).sort(), ['code', 'plan'])
+  // Every Bot either serves the surviving run or was released, and none twice.
+  const expected = spawned.map(entry => entry.id).filter(id => !survivors.has(id))
+  assert.deepEqual([...released].sort(), [...expected].sort())
+  assert.equal(new Set(released).size, released.length)
+  // The replaced task is recorded once, in the shape the history already uses.
+  const replaced = run.history.filter(entry => entry.task?.id === 'T1')
+  assert.equal(replaced.length, 1)
+  assert.equal(replaced[0].status, 'running')
+})
+
+test('a demo restart racing an assign leaves no orphaned set either (#1390)', async () => {
+  const { svc, spawned, released } = racer()
+  const made = racePair(svc, 'Demo')
+  await svc.assign({ workflowId: made.id, taskId: 'T1', title: 'First task' })
+  await svc.demoStep({ workflowId: made.id })
+  const finished = await svc.demoStep({ workflowId: made.id })
+  const done = finished.workflows.find(item => item.id === made.id).run
+  assert.equal(done.status, 'done')
+  assert.equal(done.ephemeral, undefined)
+
+  const restart = svc.demoStep({ workflowId: made.id })
+  const assigned = svc.assign({ workflowId: made.id, taskId: 'T2', title: 'Second task' })
+  const [re, as] = await Promise.all([restart, assigned])
+  assert.equal(re.ok, true)
+  assert.equal(as.ok, true)
+
+  const run = svc.state().workflows.find(item => item.id === made.id).run
+  assert.equal(run.task.id, 'T2')
+  const survivors = new Set(Object.values(run.ephemeral))
+  const expected = spawned.map(entry => entry.id).filter(id => !survivors.has(id))
+  assert.deepEqual([...released].sort(), [...expected].sort())
+  assert.equal(new Set(released).size, released.length)
+})
+
+test('a slow spawn on one workflow does not hold up an assign on another (#1390)', async () => {
+  let openSlow
+  const slowGate = new Promise((resolve) => { openSlow = resolve })
+  const { svc } = racer({ gate: { slow: slowGate } })
+  const slow = svc.define({ name: 'Slow', nodes: [{ id: 'slow', name: 'Coder', role: 'code', prompt: 'Take your time.' }], edges: [] })
+    .workflows.find(item => item.name === 'Slow')
+  const quick = svc.define({ name: 'Quick', nodes: [{ id: 'quick', name: 'Planner', role: 'plan', prompt: 'Just start.' }], edges: [] })
+    .workflows.find(item => item.name === 'Quick')
+
+  const waiting = svc.assign({ workflowId: slow.id, taskId: 'S1', title: 'Slow task' })
+  const started = svc.assign({ workflowId: quick.id, taskId: 'Q1', title: 'Quick task' })
+  let timer
+  const stuck = new Promise((resolve) => { timer = setTimeout(() => resolve('stuck'), 2000) })
+  const outcome = await Promise.race([started.then(() => 'started'), stuck])
+  clearTimeout(timer)
+  openSlow()
+  assert.equal(outcome, 'started')
+  const [slowDone, quickDone] = await Promise.all([waiting, started])
+  assert.equal(slowDone.ok, true)
+  assert.equal(quickDone.ok, true)
+  assert.equal(svc.state().workflows.find(item => item.id === quick.id).run.task.id, 'Q1')
+})
+
+test('a spawn that throws halfway releases what it made and leaves the workflow usable (#1390)', async () => {
+  let failOn = 'code'
+  const { svc, spawned, released } = racer({ fail: (spec) => spec.nodeId === failOn })
+  const made = racePair(svc, 'Broken')
+  const failed = await svc.assign({ workflowId: made.id, taskId: 'T1', title: 'Broken task' })
+  assert.equal(failed.ok, false)
+  assert.match(failed.error, /spawn failed/)
+  assert.deepEqual(released, [spawned[0].id])
+  assert.equal(svc.state().workflows.find(item => item.id === made.id).run, null)
+
+  failOn = ''
+  const again = await svc.assign({ workflowId: made.id, taskId: 'T2', title: 'Second try' })
+  assert.equal(again.ok, true)
+  const run = again.workflows.find(item => item.id === made.id).run
+  assert.equal(run.task.id, 'T2')
+  assert.equal(Object.keys(run.ephemeral).length, 2)
+})

@@ -153,6 +153,25 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     return { ok: false, error: error?.message ?? String(error) }
   }
 
+  // One writer at a time per workflow. A spawn hook makes assign() and the demo
+  // restart await before they write, and two bodies for one workflow would both
+  // read the previous ephemeral set, both spawn a full set, and the second write
+  // would replace the run — leaving the first set referenced by no run and
+  // released by nobody. Chaining the bodies keeps the replaced set readable.
+  const chains = new Map()
+  function queue(workflowId, task) {
+    const previous = chains.get(workflowId) ?? Promise.resolve()
+    const result = previous.then(task, task)
+    // The chained entry never rejects, so a failed call cannot wedge the
+    // workflow for the ones behind it.
+    const tail = result.then(() => {}, () => {})
+    chains.set(workflowId, tail)
+    void tail.then(() => {
+      if (chains.get(workflowId) === tail) chains.delete(workflowId)
+    })
+    return result
+  }
+
   function applyOp(item, run, op) {
     let result
     if (op.type === 'start') result = { ...startFrontier(item, run.nodeStatus), joined: false, layerSize: 0 }
@@ -337,11 +356,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         state.runs[row.id] = run
       })
       if (typeof spawn !== 'function') return go(undefined)
-      return (async () => {
+      return queue(workflowId, async () => {
+        const live = workflow(workflowId)
+        if (!live) return { ok: false, error: 'No such workflow' }
         const previousIds = Object.values(state.runs[workflowId]?.ephemeral ?? {})
         let ephemeral
         try {
-          ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
+          ephemeral = await spawnAll(live.nodes, bots() ?? [], spawn)
         } catch (error) {
           await releaseAll(error.spawned ?? [], release, warn)
           return refuse(error)
@@ -353,7 +374,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         }
         await releaseAll(previousIds, release, warn)
         return settle(workflowId)
-      })()
+      })
     },
     advance(body = {}) {
       const workflowId = String(body.workflowId ?? '')
@@ -393,20 +414,22 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         push(item.id, stepped.lines, now())
       })
       if (typeof spawn !== 'function') return step(undefined)
-      return (async () => {
-        if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
-        const item = workflow(workflowId)
-        if (!item) return { ok: false, error: 'No such workflow' }
-        const run = state.runs[item.id]
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      return queue(workflowId, async () => {
+        const live = workflow(workflowId)
+        if (!live) return { ok: false, error: 'No such workflow' }
+        const run = state.runs[live.id]
         if (!run) return { ok: false, error: 'This workflow has no task' }
         if (run.status === 'failed') return { ok: false, error: 'This run is already finished' }
-        const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
+        const op = nextDemoOp(live, run.nodeStatus, { failedOnce: run.failedOnce })
         let ephemeral
         let previousIds = []
         if (op.type === 'restart' || op.type === 'start') {
           previousIds = Object.values(run.ephemeral ?? {})
           try {
-            ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
+            ephemeral = await spawnAll(live.nodes, bots() ?? [], spawn)
           } catch (error) {
             await releaseAll(error.spawned ?? [], release, warn)
             return refuse(error)
@@ -419,7 +442,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         }
         await releaseAll(previousIds, release, warn)
         return settle(workflowId)
-      })()
+      })
     },
     reset(body = {}) {
       const workflowId = String(body.workflowId ?? '')
