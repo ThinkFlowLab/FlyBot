@@ -14,7 +14,7 @@ import { ScheduleSummary } from './schedules.js'
 import { Segmented, useGlide, useMorph } from './motion.js'
 import { MemberWork, useMemberWork } from './member-status.js'
 import { t } from './i18n.js'
-import { remoteBotTitle, roomTitle } from '../shared/remote-label.js'
+import { remoteBotTitle, roomTitle, copiedToClipboard } from '../shared/remote-label.js'
 import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
 
@@ -257,9 +257,17 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     .then(() => { setError(''); return true })
     .catch(failure => { setError(failure?.message ?? String(failure)); return false })
   const share = () => {
-    void navigator.clipboard?.writeText(transcript).then(() => {
+    // #1347: a copy that says nothing is a click that did nothing to anyone watching. `copiedToClipboard`
+    // answers whether the text really landed — a page with no clipboard at all is a `false` there, not the
+    // quiet success `navigator.clipboard?.writeText(...)` gives when the API is missing — so the toast
+    // reports what happened instead of the tick alone claiming it.
+    const text = transcript
+    if (!text) { actions.notify?.(t('Nothing to copy yet')); return }
+    void copiedToClipboard(text).then(written => {
+      if (!written) { actions.reportError?.(new Error(t('Could not copy the conversation')), 'share'); return }
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
+      actions.notify?.(t('Conversation copied as Markdown'))
     })
   }
   const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null
@@ -282,7 +290,15 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     bot && !bot.remote && roster.browser === true && actions.openBrowser
       ? h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Open browser'), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, h(GlobeIcon))
       : null,
-    bot || room ? h('button', { type: 'button', className: 'bt-round', 'aria-label': copied ? t('Copied conversation') : t('Share conversation'), title: copied ? t('Copied') : t('Copy conversation as Markdown'), onClick: share }, copied ? h('span', { key: 'copied', className: 'bt-pop-in' }, '✓') : h(ShareIcon)) : null,
+    bot || room ? h('button', {
+      type: 'button', className: 'bt-round',
+      // #1347: the accessible name says what the click does, which is copy — "Share conversation"
+      // promised a sharing step that never came. It still says "Copied" after a copy, so a screen
+      // reader hears the same confirmation the toast gives.
+      'aria-label': copied ? t('Copied conversation') : t('Copy conversation'),
+      title: copied ? t('Copied') : t('Copy conversation as Markdown'),
+      onClick: share,
+    }, copied ? h('span', { key: 'copied', className: 'bt-pop-in' }, '✓') : h(ShareIcon)) : null,
     hasStrip ? null : h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon)))
   if (!bot && !room) {
     return [h(Fragment, { key: 'top' }, top),

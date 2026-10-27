@@ -467,6 +467,16 @@ var ZH = {
   "Close details": "关闭详情",
   "Copied conversation": "已复制对话",
   "Share conversation": "分享对话",
+  "Copy conversation": "复制对话",
+  "Nothing to copy yet": "还没有可复制的内容",
+  "Conversation copied as Markdown": "对话已复制为 Markdown",
+  "Could not copy the conversation": "无法复制对话",
+  "No messages yet. Say something to {name}.": "还没有消息。给 {name} 发点什么吧。",
+  "This model does not support that request. Pick another model in the Bot's settings.": "该模型不支持这项请求。请在 Bot 设置里换一个模型。",
+  "This model does not support {feature}. Pick another model in the Bot's settings.": "该模型不支持 {feature}。请在 Bot 设置里换一个模型。",
+  "The provider does not know this model. Check the model name in the Bot's settings.": "服务方不认识这个模型。请在 Bot 设置里检查模型名称。",
+  "The conversation is longer than this model can read. Condense it, or pick a model with a larger window.": "这段对话超出了该模型能读的长度。请压缩对话，或换一个上下文更大的模型。",
+  "The model service refused the request. Check the model and the endpoint in the Bot's settings.": "模型服务拒绝了这次请求。请在 Bot 设置里检查模型和接口地址。",
   "Copy conversation as Markdown": "把对话复制为 Markdown",
   "This conversation is not part of your Bot team.": "这个对话不属于你的 Bot 团队。",
   "Admin {name}": "管理员 {name}",
@@ -2188,7 +2198,7 @@ function lookAvoidingLocals(bot, locals = localBots) {
 var SHAPES = {};
 for (const [id, character] of Object.entries(CHARACTERS)) {
   const layers = [
-    ...(character.paints ?? []).map(([d, fill2, opacity]) => `<path d="${d}" fill="${fill2}" fill-opacity="${opacity}"/>`),
+    ...(character.paints ?? []).map(([d, fill3, opacity]) => `<path d="${d}" fill="${fill3}" fill-opacity="${opacity}"/>`),
     `<path d="${character.shade}" fill="#000" fill-opacity=".14"/>`,
     `<path d="${character.light}" fill="#fff" fill-opacity=".16"/>`
   ].join("");
@@ -2318,6 +2328,32 @@ function unmatchedMentions(text, bots, { references = [] } = {}) {
     if (word) missing.push(`@${word}`);
   }
   return missing;
+}
+
+// src/shared/preview.js
+var FENCE_TAG = /<\s*\/?\s*untrusted-(?:message|file)\b[^<>]*>/gi;
+var FENCE_ATTR = /\bfrom\s*=\s*(?:"[^"]*"|'[^']*')\s*>/gi;
+var FENCE_TAIL = /<[^<>]*\buntrusted-(?:message|file)\b[^<>]*$/i;
+var FENCE_BARE = /(?:\/\s*)?untrusted-(?:message|file)\b\s*>?/gi;
+function stripFence(text) {
+  let out = String(text ?? "");
+  for (let previous; previous !== out; ) {
+    previous = out;
+    out = out.replace(FENCE_TAG, "").replace(FENCE_ATTR, "");
+  }
+  return out.replace(FENCE_TAIL, "").replace(FENCE_BARE, "");
+}
+function visibleText(text) {
+  let out = String(text ?? "");
+  for (let previous; previous !== out; ) {
+    previous = out;
+    const open = out.indexOf("<untrusted-message");
+    if (open < 0) break;
+    const close = out.lastIndexOf("</untrusted-message>");
+    const inner = close > open ? out.slice(out.indexOf(">", open) + 1, close) : out;
+    out = stripFence(inner);
+  }
+  return stripFence(out).replace(/\s+/g, " ").trim();
 }
 
 // src/client/text.js
@@ -2526,7 +2562,7 @@ function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
     const entry = outline[index];
     if (hiddenTurns.includes(entry.turn)) continue;
     const text = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
-    if (text !== "") return stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, "");
+    if (text !== "") return visibleText(stripTrace(stripHeader(text)).replace(/\s+/g, " ").trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, ""));
   }
   return "";
 }
@@ -3082,11 +3118,38 @@ function FlyBotSessionDock({ sessionId, useRoster, actions, session }) {
   const room2 = roster?.roomsById?.[sessionId];
   const bot = room2 ? void 0 : roster?.byId?.[sessionId];
   const blank3 = session?.blank === true && session?.promptAttempted !== true;
-  return (0, import_react2.createElement)(import_react2.Fragment, null, entries2.map((entry) => (0, import_react2.createElement)(
+  const botRoom = blank3 && bot !== void 0 && !bot.remote ? bot : null;
+  return (0, import_react2.createElement)(
+    import_react2.Fragment,
+    null,
+    botRoom ? (0, import_react2.createElement)(BotChatStrip, { bot: botRoom, roster, actions, sessionId }) : null,
+    entries2.map((entry) => (0, import_react2.createElement)(
+      "div",
+      { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
+      (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, t, blank: blank3 === true, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
+    ))
+  );
+}
+function BotChatStrip({ bot, roster, actions, sessionId }) {
+  const main = isMainOf(roster, bot.id);
+  const subtitle = [bot.role, main ? t("Main Bot") : ""].filter(Boolean).join(" · ") || t("Bot");
+  return (0, import_react2.createElement)(
     "div",
-    { key: entry.id, className: "bt-flybot-session-dock", "data-flybot": entry.id },
-    (0, import_react2.createElement)(Safe, { entry, props: { sessionId, roster, room: room2, bot, actions, call: call2, t, blank: blank3 === true, claim: (ids) => claimApprovals(`${entry.id}:${sessionId}`, ids) } })
-  )));
+    { className: "bt-chat-strip", "data-flybot": "bot-chat-strip" },
+    (0, import_react2.createElement)(BotAvatar, { bot, size: 44, main, live: false }),
+    (0, import_react2.createElement)(
+      "div",
+      { className: "bt-chat-strip-who" },
+      (0, import_react2.createElement)("span", { className: "bt-chat-strip-name", title: bot.name }, bot.name),
+      (0, import_react2.createElement)("span", { className: "bt-chat-strip-sub" }, subtitle),
+      (0, import_react2.createElement)("span", { className: "bt-chat-strip-empty" }, t("No messages yet. Say something to {name}.", { name: bot.name }))
+    ),
+    (0, import_react2.createElement)("button", {
+      type: "button",
+      className: "bt-soft bt-soft-sm bt-chat-strip-go",
+      onClick: () => actions?.toggleDetails ? actions.toggleDetails(sessionId) : void 0
+    }, t("Details"))
+  );
 }
 function FlyBotRoomOverview({ room: room2, roster, actions }) {
   const entries2 = useSlot("flybot.room.overview");
@@ -3247,6 +3310,15 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
 var fileSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 var FLYBOT_CSS = `
 .bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
+/* #1347: a Bot chat's own strip before its first turn, the same shape a group's uses (#998): one row
+   above the composer naming the chat, so a blank column is never nameless. */
+.bt-chat-strip{display:flex;align-items:center;gap:12px;width:100%;max-width:min(992px,100%);margin:0 auto 10px;padding:10px 12px;box-sizing:border-box;border:.5px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card,var(--bt-main));animation:bt-rise .18s ease-out}
+.bt-chat-strip-who{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bt-chat-strip-name{font-size:15px;line-height:20px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-chat-strip-sub{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-chat-strip-empty{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-chat-strip-go{flex:none}
+@media (prefers-reduced-motion:reduce){.bt-chat-strip{animation:none}}
 .bt-flybot-session-dock [data-flybot=chat-approvals]{align-items:flex-end;padding-bottom:4px}
 .bt-flybot-session-dock .fs-hold{margin-left:auto}
 .bt-flybot-approval-files { margin: 0 0 8px; padding-left: 18px; font-size: 12px; }
@@ -3282,13 +3354,42 @@ var FLYBOT_CSS = `
 .bt-flybot-pointer button { border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; background: var(--bt-accent, #2563eb); color: #fff; }
 `;
 
+// src/shared/failure-copy.js
+var providerCode = (text) => {
+  const json = /"code"\s*:\s*"([A-Za-z0-9_.-]+)"/.exec(text);
+  if (json) return json[1];
+  const plain = /^([A-Za-z][A-Za-z0-9_.-]{2,40}):\s/.exec(text);
+  return plain ? plain[1] : "";
+};
+var KNOWN = {
+  UnsupportedModel: "This model does not support that request. Pick another model in the Bot's settings.",
+  ModelNotFound: "The provider does not know this model. Check the model name in the Bot's settings.",
+  ContextLengthExceeded: "The conversation is longer than this model can read. Condense it, or pick a model with a larger window.",
+  InvalidRequest: "The model service refused the request. Check the model and the endpoint in the Bot's settings.",
+  InsufficientQuota: "The account is out of quota.",
+  RateLimitExceeded: "Too many requests right now. Try again in a moment."
+};
+var fill2 = (text, params) => params === void 0 ? text : String(text).replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match);
+function failureSentence(raw, translate = (key) => key) {
+  const text = String(raw ?? "").trim();
+  if (text === "") return text;
+  const key = KNOWN[providerCode(text)];
+  if (key === void 0) return text;
+  const feature = /does not support\s+([a-z][a-z0-9 _-]{2,40})/i.exec(text)?.[1]?.trim();
+  if (key !== KNOWN.UnsupportedModel || feature === void 0) return fill2(translate(key), void 0);
+  const withFeature = "This model does not support {feature}. Pick another model in the Bot's settings.";
+  return fill2(translate(withFeature, { feature }), { feature });
+}
+
 // src/shared/turn-failures.js
 var FAILURE_LINES_SHOWN = 3;
 var failureLines = (snapshot, place, t2, limit = FAILURE_LINES_SHOWN) => {
   const ended = Array.isArray(snapshot?.ended) ? snapshot.ended : [];
   return ended.filter((entry) => entry?.silent === true && (entry.roomId ?? entry.sessionId) === place).slice(-limit).map((entry) => ({
     id: `turn-failure-${entry.id}`,
-    text: t2("Could not run: {error}", { error: entry.failed ?? t2("the model call failed") }),
+    // The stored text can be a provider's JSON body cut mid-sentence; `failureSentence` says the
+    // same fact in words that name what to change (#1347).
+    text: t2("Could not run: {error}", { error: entry.failed === void 0 ? t2("the model call failed") : failureSentence(entry.failed, t2) }),
     ...Number(entry.streak) > 1 ? { streak: Number(entry.streak) } : {}
   }));
 };
@@ -4010,11 +4111,11 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-soft:hover{background:var(--bt-active)}
 .bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
 
-.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
+.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing};container:bt-panel/inline-size}
 .bt-panel[data-leaving]{transform:translateX(100%);transition:transform .3s cubic-bezier(.2,0,0,1);pointer-events:none}
 .bt-panel[data-instant]{transition:none}
 @keyframes bt-pane-in{from{transform:translateX(100%)}}
-[class*="_centerCol"]{transition:margin-right ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
+[class*="_centerCol"]{transition:margin-right ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing};position:relative;z-index:0;isolation:isolate}
 .bt-panel-grip{position:absolute;left:-5px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:3;touch-action:none}
 .bt-panel-grip:hover,.bt-panel[data-dragging] .bt-panel-grip{background:linear-gradient(to right,transparent 4px,var(--bt-line-2) 4px,var(--bt-line-2) 6px,transparent 6px)}
 .bt-drag-shield{position:fixed;inset:0;z-index:45;cursor:col-resize}
@@ -4059,7 +4160,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-avatar-anchor{position:relative}
 .bt-avatar-trigger{position:relative;width:64px;height:64px;border:0;border-radius:50%;background:none;cursor:pointer;padding:0}
 .bt-avatar-pencil{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;background:var(--bt-main);border:1px solid var(--bt-line-2);color:var(--bt-ink-2);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.bt-avedit{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);width:300px;background:var(--bt-main);border:1px solid var(--bt-line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:10px;z-index:70;display:flex;flex-direction:column;gap:10px;color:var(--bt-ink);transform-origin:top center;animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
+.bt-avedit{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);width:300px;background:var(--bt-main);border:1px solid var(--bt-line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:10px;z-index:130;display:flex;flex-direction:column;gap:10px;color:var(--bt-ink);transform-origin:top center;animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
 .bt-bs .bt-avedit{transform-origin:32px 0}
 .bt-avedit-top{display:flex;align-items:center;justify-content:space-between}
 .bt-avedit-tabs{position:relative;display:flex;gap:2px;background:var(--bt-hover);border-radius:999px;padding:2px}
@@ -4099,9 +4200,23 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-seg button.bt-perm-danger,.bt-seg button.bt-perm-danger[aria-pressed=true]{color:#e02135}
 
 /* Settings dialog: a 198px page list beside the page. */
-.bt-settings-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:60;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+/* #1347: dialogs, sheets and scrims sit in a tier of their own, well clear of everything the
+   chat surface may do. They used to share 60/61 with the context menu, the reaction strip and the
+   remote-Bot sheet, so any body-level popover opened after them tied on z-index and won on DOM
+   order — and a chat element with a stray z-index could reach the same number. The tier is now
+   explicit: chat surface at most 50, dialogs 120/121, popovers 130, palette 140, toast 1000. The
+   chat column is additionally capped at z-index 0 inside its own stacking context (see the
+   center-column rule below), so nothing in the thread can outrank these whatever it does. */
+.bt-settings-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:120;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-scrim{position:absolute;inset:0;background:rgba(0,0,0,.32);animation:bt-fade .22s ease-out}
 body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
+/* #1347: a modal is a modal. A 0.32 scrim leaves the thread legible behind it, and the owner read that
+   as the chat painting through the dialog ("assistant text readable across columns", a pill visible at
+   full opacity behind the Inbox). The scrim now separates the two surfaces outright: the thread is
+   dimmed to a backdrop, not left readable beside the thing being decided. It is still one layer and
+   still dismisses on a click, so nothing else about it changes. */
+body:not([data-ds-dark-theme]) .bt-scrim{background:rgba(12,12,14,.62)}
+body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.7)}
 .bt-settings{--bt-set-w:min(800px,calc(100vw - 48px));--bt-set-h:min(620px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));position:relative;width:var(--bt-set-w);height:var(--bt-set-h);background:var(--bt-main);border-radius:16px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;overflow:hidden;color:var(--bt-ink);transition:${spring(SPRING_SHAPE, "width", "height")};animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-settings[data-wide]{--bt-set-w:min(1100px,calc(100vw - 48px));--bt-set-h:min(780px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))))}
 :is(.bt-settings-layer,.bt-mem-layer)[data-leaving]{pointer-events:none}
@@ -4154,6 +4269,10 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 /* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
 .bt-flybot-room-members{padding:10px 12px}
 .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+/* #1347: a row's copy never breaks its own label. The label used to be a bare inline span inside a
+   column that flexed down to 36px, so "Name" came out as "Nam" + "e"; a single-word label is now one
+   line, and the hint below it is what wraps when the column is short. */
+.bt-set-copy>.bt-bs-label,.bt-set-copy>.bt-set-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
 .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
 .bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
@@ -4235,7 +4354,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-tool:hover,.bt-tool[aria-expanded=true]{background:var(--bt-hover);color:var(--bt-ink)}
 .bt-tool:active{background:var(--bt-active)}
 .bt-tool:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
-.bt-react-strip{position:fixed;z-index:60;pointer-events:auto;display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.06);transform:translate(-50%,-100%);transform-origin:bottom center;animation:bt-pop-lift ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out}
+.bt-react-strip{position:fixed;z-index:130;pointer-events:auto;display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.06);transform:translate(-50%,-100%);transform-origin:bottom center;animation:bt-pop-lift ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out}
 .bt-react-strip button{width:32px;height:32px;border:0;border-radius:50%;background:none;font-size:18px;line-height:1;cursor:pointer;transition:background-color .12s ease,${spring(SPRING_POP, "transform")};animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
 .bt-react-strip button:nth-child(2){animation-delay:20ms}
 .bt-react-strip button:nth-child(3){animation-delay:40ms}
@@ -4254,7 +4373,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 .bt-you-wrap{display:inline-flex;padding:0}
 .bt-connect-foot{width:100%;height:36px}
 
-.bt-menu{position:fixed;pointer-events:auto;z-index:60;min-width:200px;padding:6px;border-radius:12px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1),0 0 0 1px rgba(228,228,228,.04);display:flex;flex-direction:column;gap:2px;transform-origin:var(--bt-origin,top left);animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box}
+.bt-menu{position:fixed;pointer-events:auto;z-index:130;min-width:200px;padding:6px;border-radius:12px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1),0 0 0 1px rgba(228,228,228,.04);display:flex;flex-direction:column;gap:2px;transform-origin:var(--bt-origin,top left);animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box}
 .bt-menu button{display:flex;align-items:center;gap:4px;width:100%;min-height:30px;text-align:left;border:0;background:none;border-radius:6px;padding:6px 8px;font:inherit;font-size:13px;line-height:18px;color:var(--bt-ink);cursor:pointer;box-sizing:border-box}
 .bt-menu button:hover{background:var(--bt-hover)}
 .bt-menu button svg{flex:none;width:16px;height:16px;margin:0 1px}
@@ -4264,7 +4383,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 .bt-menu[data-leaving]{pointer-events:none;animation:bt-pop-out .12s cubic-bezier(.4,0,1,1) forwards}
 .bt-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-menu-hint{flex:none;color:var(--bt-ink-3);font-size:12px;font-variant-numeric:tabular-nums}
-.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:70;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:140;isolation:isolate;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46);animation:bt-fade .22s ease-out}
 .bt-palette{position:absolute;top:50%;left:50%;width:min(560px,92vw);transform:translate(-50%,-50%);display:flex;flex-direction:column;border-radius:12px;background:var(--bt-main);border:1px solid var(--bt-line-2);box-shadow:0 24px 48px -12px rgba(0,0,0,.25);overflow:hidden;color:var(--bt-ink);animation:bt-palette-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-palette-layer[data-leaving]{pointer-events:none}
@@ -4369,7 +4488,7 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
 .bt-mem-row>svg{flex:none;color:var(--bt-ink-2)}
 .bt-mem-row-copy{flex:1;text-align:left}
 .bt-mem-row-go{display:inline-flex;align-items:center;gap:2px;color:var(--bt-ink-3);font-size:12px}
-.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:61;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:121;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .bt-mem-scrim{animation:bt-fade .2s ease-out}
 .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
@@ -4516,11 +4635,31 @@ var CONVERSATION_CSS = `
 [class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
 [class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 [class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
+/* #1347: "Standard mode" beside the title reads as a control — a filled chip with an icon — but the
+   shell draws it as a span with no click handler (dsh-client-ui-agent-preset, AgentPresetLabel):
+   clicking it does nothing, and the only thing behind it is a hover title. In a Bot chat the mode is
+   fixed for the whole Session anyway, so the chip becomes what it is: a status word on the title's
+   line. No fill, no radius, muted ink, and the description stays on hover. */
+[data-slot="conversation.session.header.actions"] [class*="_label"]{background:none;border-radius:0;color:var(--bt-ink-3);cursor:help;pointer-events:auto}
+[data-slot="conversation.session.header.actions"] [class*="_label"] svg{opacity:.7}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
    without its copy and branch row; a tail with nothing in it takes no room. */
 [data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]):not(.bt-typing){display:none!important}
 [class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))):not(:has([data-turn-tail]>.bt-typing)){display:none!important}
+/* #1347: the thread must never paint above a dialog, a sheet or a scrim.
+   The chat column had no stacking context of its own (position:static, z-index:auto), so nothing
+   inside it was boxed in: anything the browser promoted to its own composited layer — an entrance
+   animation (bt-row-in animates a transform), a filter, a will-change, a scroll container's sticky
+   descendant — was ordered against the ROOT stacking context instead of against the column. A
+   dialog's layer is a z-index box at the root, so a promoted bubble could sort above it, which is
+   exactly what the owner's screenshots show: a right-aligned pill at full opacity across the Tasks
+   dialog and over the Inbox scrim, while the same pill sat under it in a plain DOM walk. Giving the
+   column its own stacking context (isolation:isolate) paints every descendant inside it, and its
+   z-index:0 keeps all of that below .bt-pane (45), .bt-panel (40) and the dialog layers at 120/121
+   whatever any single bubble does. contain:paint is deliberately NOT used: it would clip the
+   popovers the thread legitimately renders (reaction strip, message menu), which portal to body
+   for exactly that reason. */
 /* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
    the shell's new-session hero: no headline, no workspace or mode picker, and the
    composer stays docked at the bottom. */
@@ -7888,7 +8027,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
       ),
       (0, import_react13.createElement)("span", { className: "bt-inbox-title", title: card.title }, card.title),
       card.calls > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-calls" }, t("{count} tool calls", { count: card.calls })) : null,
-      card.reason ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, card.reason) : null,
+      card.reason ? (0, import_react13.createElement)("span", { className: "bt-inbox-reason", title: card.reason }, failureSentence(card.reason, t)) : null,
       card.activity ? (0, import_react13.createElement)("span", { className: "bt-inbox-activity", title: card.activity }, t("Latest: {text}", { text: card.activity })) : null,
       card.hint ? (0, import_react13.createElement)("span", { className: "bt-inbox-hint" }, card.hint) : null,
       evidence.length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-evidence" }, ...evidence.map((href, index) => (0, import_react13.createElement)("a", {
@@ -9976,7 +10115,7 @@ function FaceMark() {
 function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
   const id = room2.id;
   const fallback = useSessions((list) => nameMentions(previewOf(list, id), roster));
-  const preview = nameMentions(room2.preview?.replace(/\s+/g, " ").trim(), roster) || fallback;
+  const preview = nameMentions(visibleText(room2.preview), roster) || fallback;
   const active = useSessionRetainInfo(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
   const unread = useSessionStatus((map) => map.get(id)?.completionUnread === true) || marked && !active;
   useMarkedUnread(id, active, marked, actions);
@@ -10651,7 +10790,7 @@ var SIDEBAR_CSS = `
 .bt-update[data-phase=installing] .bt-cloud-arrow{animation:bt-cloud-drop 1.1s cubic-bezier(.45,0,.55,1) infinite}
 @keyframes bt-cloud-drop{0%{transform:translateY(-3px);opacity:0}35%{opacity:1}70%{transform:translateY(1px);opacity:1}100%{transform:translateY(2px);opacity:0}}
 .bt-update-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 1.5px var(--bt-sidebar)}
-.bt-update-pop{position:fixed;z-index:60;width:280px;padding:14px 14px 12px;border-radius:14px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);color:var(--bt-ink);box-sizing:border-box;transform-origin:top left;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-update-pop ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
+.bt-update-pop{position:fixed;z-index:130;width:280px;padding:14px 14px 12px;border-radius:14px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 10px 20px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);color:var(--bt-ink);box-sizing:border-box;transform-origin:top left;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-update-pop ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
 @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
 .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
 .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
@@ -12039,6 +12178,14 @@ var MODEL_TEST_CSS = `
 .bt-model-test-result[data-ok=true]{color:#1a7f37}
 .bt-model-test-result[data-ok=false]{color:#c21d2e}
 .bt-model-test-code{margin-left:6px;font-size:11px;color:var(--bt-ink-3)}
+/* #1347: the hint beside "Test connection" is prose and wraps; the button next to it keeps its own
+   words ("Test connection" on one line) and takes the room it needs. */
+.bt-model-test>.bt-set-copy{flex:1 1 12ch;min-width:12ch}
+.bt-model-test>.bt-soft{flex:none;white-space:nowrap}
+@container bt-panel (max-width:300px){
+  .bt-model-test{flex-wrap:wrap;row-gap:6px}
+  .bt-model-test>.bt-set-copy{flex:1 1 100%}
+}
 `;
 
 // src/client/folder-menu.js
@@ -13796,9 +13943,16 @@ var BOT_SETTINGS_CSS = `
 .bt-bs .bt-avedit{left:0;transform:none}
 .bt-bs-row{min-height:48px}
 label.bt-bs-row{cursor:text}
-.bt-bs-row>.bt-set-copy{flex:1 1 auto}
 .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
+/* #1347: a row keeps its label and its control side by side. The *label* is one line — "Name" used to
+   break into "Nam" + "e" inside a 36px column — and a control never breaks its own words: "Test
+   connection" came out as "Test connecti" / "on" and Main Bot's "Change" as "Ch/an/ge". The hint under
+   a label is prose, so it wraps and is never cut: the row grows instead. */
+.bt-bs-row>.bt-set-copy{flex:1 1 8ch;min-width:8ch}
+.bt-bs-row>.bt-set-copy>.bt-bs-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-bs-row .bt-soft,.bt-bs-row .bt-mini{flex:none;white-space:nowrap}
 .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
+.bt-bs-row .bt-model-trigger :is(.bt-model-name,.bt-model-provider){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 ${MODEL_TEST_CSS}
 .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
 .bt-bs-input:hover{background:var(--bt-hover)}
@@ -13820,6 +13974,14 @@ ${MODEL_TEST_CSS}
 .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
 .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
 @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
+/* #1347: the panel's floor is 240px, where a label and a 96px field cannot share a line honestly. Below
+   300px the row stacks instead: the copy keeps its whole width on top, the control sits under it and
+   keeps its own words. Nothing is clipped to fit a width that is not there. */
+@container bt-panel (max-width:300px){
+  .bt-bs-row{flex-wrap:wrap;row-gap:6px}
+  .bt-bs-row>.bt-set-copy{flex:1 1 100%;min-width:0}
+  .bt-bs-input{flex:1 1 100%;width:auto;min-width:0;margin:0;text-align:left}
+}
 `;
 
 // src/client/group-settings.js
@@ -15956,7 +16118,7 @@ function Chart({ range, columns, series, tipSeries, by, onBy, onPick }) {
     ) : null
   );
 }
-function Row2({ kind, glyph, name, sub, sum, whole, fill: fill2, index, onClick }) {
+function Row2({ kind, glyph, name, sub, sum, whole, fill: fill3, index, onClick }) {
   const width = whole > 0 ? Math.max(sum.total > 0 ? 2 : 0, sum.total / whole * 100) : 0;
   return (0, import_react37.createElement)(
     onClick ? "button" : "div",
@@ -15977,7 +16139,7 @@ function Row2({ kind, glyph, name, sub, sum, whole, fill: fill2, index, onClick 
         (0, import_react37.createElement)("span", { className: "bt-us-row-name" }, name),
         sub ? (0, import_react37.createElement)("span", { className: "bt-us-row-sub" }, sub) : null
       ),
-      (0, import_react37.createElement)("span", { className: "bt-us-track" }, (0, import_react37.createElement)("span", { style: { width: `${width}%`, background: fill2 } }))
+      (0, import_react37.createElement)("span", { className: "bt-us-track" }, (0, import_react37.createElement)("span", { style: { width: `${width}%`, background: fill3 } }))
     ),
     (0, import_react37.createElement)("span", { className: "bt-us-row-num" }, (0, import_react37.createElement)("b", null, compact(sum.total)), (0, import_react37.createElement)("small", null, `${percent(sum.total, whole)}%`))
   );
@@ -17729,7 +17891,7 @@ function AgentMenu({ menu, roster, actions, leaving }) {
 
 // src/client/pane-width.js
 var DEFAULT_WIDTH = 520;
-var DETAILS_WIDTH = 320;
+var DETAILS_WIDTH = 380;
 var DETAILS_MAX = 520;
 var MIN_WIDTH = 360;
 var MIN_CHAT = 420;
@@ -18119,9 +18281,19 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
     return false;
   });
   const share = () => {
-    void navigator.clipboard?.writeText(transcript).then(() => {
+    const text = transcript;
+    if (!text) {
+      actions.notify?.(t("Nothing to copy yet"));
+      return;
+    }
+    void copiedToClipboard(text).then((written) => {
+      if (!written) {
+        actions.reportError?.(new Error(t("Could not copy the conversation")), "share");
+        return;
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+      actions.notify?.(t("Conversation copied as Markdown"));
     });
   };
   const errorLine = error ? (0, import_react43.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, error) : null;
@@ -18154,7 +18326,16 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       onClick: () => bot?.remote ? actions.openSettings("bots", bot.id) : setView("settings")
     }, (0, import_react43.createElement)(GearIcon)) : null,
     bot && !bot.remote && roster.browser === true && actions.openBrowser ? (0, import_react43.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Open browser"), title: t("Open this Bot's browser"), onClick: () => actions.openBrowser(sessionId) }, (0, import_react43.createElement)(GlobeIcon)) : null,
-    bot || room2 ? (0, import_react43.createElement)("button", { type: "button", className: "bt-round", "aria-label": copied ? t("Copied conversation") : t("Share conversation"), title: copied ? t("Copied") : t("Copy conversation as Markdown"), onClick: share }, copied ? (0, import_react43.createElement)("span", { key: "copied", className: "bt-pop-in" }, "✓") : (0, import_react43.createElement)(ShareIcon)) : null,
+    bot || room2 ? (0, import_react43.createElement)("button", {
+      type: "button",
+      className: "bt-round",
+      // #1347: the accessible name says what the click does, which is copy — "Share conversation"
+      // promised a sharing step that never came. It still says "Copied" after a copy, so a screen
+      // reader hears the same confirmation the toast gives.
+      "aria-label": copied ? t("Copied conversation") : t("Copy conversation"),
+      title: copied ? t("Copied") : t("Copy conversation as Markdown"),
+      onClick: share
+    }, copied ? (0, import_react43.createElement)("span", { key: "copied", className: "bt-pop-in" }, "✓") : (0, import_react43.createElement)(ShareIcon)) : null,
     hasStrip ? null : (0, import_react43.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Close details"), onClick: close }, (0, import_react43.createElement)(CloseIcon))
   );
   if (!bot && !room2) {
@@ -18278,7 +18459,7 @@ function Favicon({ src, className }) {
 var savedWidth = () => {
   try {
     const value = Number(localStorage.getItem(WIDTH_KEY));
-    return Number.isFinite(value) && value >= DETAILS_WIDTH ? value : null;
+    return Number.isFinite(value) && value >= MIN_DETAILS ? value : null;
   } catch {
     return null;
   }
@@ -18878,7 +19059,7 @@ var BROWSER_CSS = `
 // src/client/remote-bot-settings.js
 var import_react45 = require("react");
 var REMOTE_BOT_SETTINGS_CSS = `
-.bt-remote-sheet-layer{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:16px;pointer-events:none}
+.bt-remote-sheet-layer{position:fixed;inset:0;z-index:120;isolation:isolate;display:flex;align-items:flex-end;justify-content:center;padding:16px;pointer-events:none}
 .bt-remote-sheet-layer[data-leaving]{pointer-events:none}
 .bt-remote-sheet-layer .bt-scrim{position:absolute;inset:0;z-index:0;pointer-events:auto}
 .bt-remote-sheet-layer[data-leaving] .bt-scrim{opacity:0;transition:opacity .16s ease-in}

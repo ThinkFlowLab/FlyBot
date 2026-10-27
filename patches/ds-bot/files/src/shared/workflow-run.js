@@ -81,12 +81,13 @@ export function cardsOfJob(cards, jobId) {
 //              queue role is `node.role`, and the card carries no assignee, because who does it is the
 //              claim's answer and not the planner's (#1316 pins 1 and 3).
 //   `refused`  one entry per node that may not open, with `enterNode`'s sentence and whether it was
-//              refused because a fact could not be read at all (#1316 pins 2 and 8). For a held job
-//              every node is here with `heldBy` set and the definition's own hold sentence, or
-//              `refusal: null` when the definition guards no held pull request.
+//              refused because a fact could not be read at all (#1316 pins 2 and 8). A held job puts
+//              every node that has no card yet here, with `heldBy` set to the holder's name and the
+//              definition's own hold sentence, or `refusal: null` when the definition guards no held
+//              pull request.
 //
-// A node that already has a card is in neither list: it is open work, and the planner never touches a
-// card it did not create.
+// A node that already has a card is in neither list, held job or not: it is open work, and the planner
+// never touches a card it did not create.
 export function planJob({ definition, job = {}, cards = [], facts = {}, hold = null } = {}) {
   const def = normaliseWorkflow(definition)
   const jobId = job?.id ?? null

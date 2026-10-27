@@ -276,9 +276,16 @@ export const BOT_SETTINGS_CSS = `
 .bt-bs .bt-avedit{left:0;transform:none}
 .bt-bs-row{min-height:48px}
 label.bt-bs-row{cursor:text}
-.bt-bs-row>.bt-set-copy{flex:1 1 auto}
 .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
+/* #1347: a row keeps its label and its control side by side. The *label* is one line — "Name" used to
+   break into "Nam" + "e" inside a 36px column — and a control never breaks its own words: "Test
+   connection" came out as "Test connecti" / "on" and Main Bot's "Change" as "Ch/an/ge". The hint under
+   a label is prose, so it wraps and is never cut: the row grows instead. */
+.bt-bs-row>.bt-set-copy{flex:1 1 8ch;min-width:8ch}
+.bt-bs-row>.bt-set-copy>.bt-bs-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-bs-row .bt-soft,.bt-bs-row .bt-mini{flex:none;white-space:nowrap}
 .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
+.bt-bs-row .bt-model-trigger :is(.bt-model-name,.bt-model-provider){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 ${MODEL_TEST_CSS}
 .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
 .bt-bs-input:hover{background:var(--bt-hover)}
@@ -300,4 +307,12 @@ ${MODEL_TEST_CSS}
 .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
 .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
 @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
+/* #1347: the panel's floor is 240px, where a label and a 96px field cannot share a line honestly. Below
+   300px the row stacks instead: the copy keeps its whole width on top, the control sits under it and
+   keeps its own words. Nothing is clipped to fit a width that is not there. */
+@container bt-panel (max-width:300px){
+  .bt-bs-row{flex-wrap:wrap;row-gap:6px}
+  .bt-bs-row>.bt-set-copy{flex:1 1 100%;min-width:0}
+  .bt-bs-input{flex:1 1 100%;width:auto;min-width:0;margin:0;text-align:left}
+}
 `
