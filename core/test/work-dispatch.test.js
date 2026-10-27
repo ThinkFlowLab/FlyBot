@@ -268,6 +268,46 @@ test('a dispatch reuses a card blocked on an input and restarts it (#1254)', asy
   assert.ok(app.wakeOf('b'))
 })
 
+// #1331: a card is that issue's card only when its own fields name the issue. The card below is
+// titled `#999` and mentions `#1234` in its note as a blocker; reusing it for the dispatch rewrote
+// the #999 note, restarted it (waking Dev1 for #1234 on the wrong card) and left #1234 cardless.
+// `title`/`target` decide first; the note is read only for a card that names no issue of its own,
+// which is what keeps the `:161` case — its card names the issue in the title — resetting one card.
+test('a dispatch does not reclaim a card that only mentions the issue in its note (#1331)', async (t) => {
+  const app = await start(t)
+  app.rt.state.tasks['task-999'] = parked('blocked', {
+    id: 'task-999', title: '#999 fix the other thing', note: 'blocked on #1234 first',
+    waitingFor: 'input', inputRequest: { id: 'q9', question: 'which file?' },
+  })
+  const before = { ...app.rt.state.tasks['task-999'] }
+  await app.relay([app.post('@Dev1 #1234 rebase and push')]).done
+  const other = app.rt.state.tasks['task-999']
+  assert.equal(other.note, 'blocked on #1234 first', "a mention in the note is not the card's issue")
+  assert.equal(other.status, 'blocked', 'the #999 card is not restarted for #1234')
+  assert.equal(other.updatedAt, before.updatedAt, 'and nothing about it moved')
+  assert.equal(other.actors.length, before.actors.length, 'no status entry was appended for #1234')
+  const fresh = app.cards().find(task => task.id !== 'task-999')
+  assert.ok(fresh, 'the dispatch wrote a card that names #1234')
+  assert.equal(fresh.title, '#1234 rebase and push')
+  assert.equal(app.cards().length, 2, 'two issues, two cards')
+})
+
+// The other half of #1331's narrowing: a card whose own fields name no issue is still that
+// issue's card when the note names it. Without this fallback the title check would strand the cards
+// written before a dispatch put the id in the title, and one issue would grow a second card.
+test('a card that names the issue only in its note is still that issue\'s card (#1331)', async (t) => {
+  const app = await start(t)
+  app.rt.state.tasks['task-note-only'] = parked('working', {
+    id: 'task-note-only', title: 'rebase and push', note: 'from #1234 please',
+  })
+  await app.relay([app.post('@Dev1 #1234 then push the branch')]).done
+  assert.equal(app.cards().length, 1, 'the note-only card is reused, so no second card appears')
+  const card = app.rt.state.tasks['task-note-only']
+  assert.equal(card.note, '#1234 then push the branch', 'the dispatch still rewrites the note it read')
+  assert.equal(card.status, 'working')
+  assert.ok(app.wakeOf('b'), 'the update moves the card, so the drive wakes the member')
+})
+
 test('a stored card with no actors is updated, never half-written (#1254)', async (t) => {
   const app = await start(t)
   const { actors, ...bare } = parked('working')
