@@ -517,6 +517,18 @@ export function install(rt) {
     const current = rt.chatOf(id)
     // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
     const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
+    // #1453: keep who owned every Session this deletion empties — the own chat and its parts, the
+    // group Session and its parts — before the Bot and its seats leave the state, so an in-flight
+    // call fails closed instead of keeping the owner's connectors. The record only grows: nothing
+    // here prunes an older entry.
+    state.retiredSessions ??= {}
+    for (const part of parts) state.retiredSessions[part] = id
+    for (const room of Object.values(state.rooms)) {
+      if (!room.members.includes(id)) continue
+      const sessionId = room.sessions?.[id]
+      if (sessionId !== undefined) state.retiredSessions[sessionId] = id
+      for (const segment of room.segments?.[id] ?? []) state.retiredSessions[segment.sessionId] = id
+    }
     delete state.bots[id]
     delete state.remoteContacts?.[id]
     for (const part of parts) {

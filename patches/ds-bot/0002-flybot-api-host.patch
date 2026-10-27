@@ -522,9 +522,21 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      await rt.save()
    }
  
-@@ -435,21 +435,29 @@ export function install(rt) {
+@@ -435,21 +435,41 @@ export function install(rt) {
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
      const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
++    // #1453: keep who owned every Session this deletion empties — the own chat and its parts, the
++    // group Session and its parts — before the Bot and its seats leave the state, so an in-flight
++    // call fails closed instead of keeping the owner's connectors. The record only grows: nothing
++    // here prunes an older entry.
++    state.retiredSessions ??= {}
++    for (const part of parts) state.retiredSessions[part] = id
++    for (const room of Object.values(state.rooms)) {
++      if (!room.members.includes(id)) continue
++      const sessionId = room.sessions?.[id]
++      if (sessionId !== undefined) state.retiredSessions[sessionId] = id
++      for (const segment of room.segments?.[id] ?? []) state.retiredSessions[segment.sessionId] = id
++    }
      delete state.bots[id]
 +    delete state.remoteContacts?.[id]
      for (const part of parts) {
@@ -602,8 +614,8 @@ diff --git a/src/host/store.js b/src/host/store.js
  
 -  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
 -  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
-+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>}} */
-+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, revision: 0 }
++  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>}} */
++  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, revision: 0 }
    let loaded = null
    let writing = Promise.resolve()
 +  // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -763,7 +775,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,84 @@ export function install(rt) {
+@@ -161,12 +161,89 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -797,6 +809,11 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    }
 +    if (!isRecord(state.tasks)) {
 +      state.tasks = {}
++      migrated = true
++    }
++    // #1453: who owned the Sessions a deleted Bot left behind; a corrupt value resets.
++    if (!isRecord(state.retiredSessions)) {
++      state.retiredSessions = {}
 +      migrated = true
 +    }
 +    if (ensureOwner()) migrated = true
@@ -956,6 +973,20 @@ diff --git a/src/host/store.js b/src/host/store.js
    ctx.effect(() => () => {
      stopped = true
      return writing.finally(() => lock.release())
+@@ -313,6 +313,13 @@ export function install(rt) {
+       }
+       for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
+     }
++    // #1453: a deleted Bot's Sessions keep the Bot that owned them, so a call still in flight is
++    // refused instead of being read as a plain Session. The record only fills what the live
++    // indexes do not claim: a live Bot or room holding the same id wins.
++    for (const [sessionId, botId] of Object.entries(state.retiredSessions ?? {})) {
++      if (typeof botId !== 'string' || chatOwners.has(sessionId) || groupOwners.has(sessionId) || pastOwners.has(sessionId)) continue
++      pastOwners.set(sessionId, { botId })
++    }
+     // The agents module owns the DSH Agent session index; it installs after this.
+     rt.indexAgents?.()
+   }
 @@ -328,6 +328,8 @@ export function install(rt) {
      delete room.sessions[botId]
      if (room.segments !== undefined) delete room.segments[botId]

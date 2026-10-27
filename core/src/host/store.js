@@ -21,8 +21,8 @@ const isRecord = value => value !== null && typeof value === 'object' && !Array.
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt
 
-  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>}} */
-  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, revision: 0 }
+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>}} */
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -315,6 +315,11 @@ export function install(rt) {
       state.tasks = {}
       migrated = true
     }
+    // #1453: who owned the Sessions a deleted Bot left behind; a corrupt value resets.
+    if (!isRecord(state.retiredSessions)) {
+      state.retiredSessions = {}
+      migrated = true
+    }
     if (ensureOwner()) migrated = true
     if (legacy) {
       const ownerId = Object.keys(state.members)[0]
@@ -568,6 +573,13 @@ export function install(rt) {
         for (const segment of segments) pastOwners.set(segment.sessionId, { botId, roomId: room.id })
       }
       for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
+    }
+    // #1453: a deleted Bot's Sessions keep the Bot that owned them, so a call still in flight is
+    // refused instead of being read as a plain Session. The record only fills what the live
+    // indexes do not claim: a live Bot or room holding the same id wins.
+    for (const [sessionId, botId] of Object.entries(state.retiredSessions ?? {})) {
+      if (typeof botId !== 'string' || chatOwners.has(sessionId) || groupOwners.has(sessionId) || pastOwners.has(sessionId)) continue
+      pastOwners.set(sessionId, { botId })
     }
     // The agents module owns the DSH Agent session index; it installs after this.
     rt.indexAgents?.()
