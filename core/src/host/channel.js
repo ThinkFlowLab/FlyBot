@@ -215,9 +215,7 @@ export function install(rt) {
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
   // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-  // delivery-board serves the cached snapshot and delivery-probe only GETs GitHub (#1225); both were
-  // missing, so a window that only reads the team could not open the board at all.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe', 'workflows'])
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows'])
 
   // A chat reference chip names a Session whose snapshot rides to every recipient of
   // the message, so the author must be able to read what they share (#53, #106).
@@ -655,12 +653,6 @@ export function install(rt) {
         case 'task-answer-input':
           await rt.load()
           return ok(await rt.taskEndpoint(endpoint, body, actor))
-        case 'delivery-board':
-          await rt.load()
-          return ok(await rt.deliveryBoard(body))
-        case 'delivery-probe':
-          await rt.load()
-          return ok(await rt.deliveryProbe(body))
         // A workflow definition is read by the page and written by `workflow-save`, which is in
         // authz's TASK_ENDPOINTS: the client writes a file through the host, never to GitHub
         // (#1272 step 3, acceptance 7).

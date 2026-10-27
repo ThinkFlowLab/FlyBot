@@ -7,7 +7,6 @@ import { taskCard } from '../shared/board-card.js'
 import { BoardCard as BoardCardFrame, TASK_SKIN } from './board-card.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
-import { DeliveryView, DELIVERY_CSS } from './delivery-view.js'
 import { t } from './i18n.js'
 
 const POLL_MS = 15_000
@@ -224,8 +223,8 @@ function RailButton({ row, selected, meta, onSelect }) {
   meta ? h('span', { className: 'bt-board-rail-meta' }, meta) : null)
 }
 
-// A task record as a card on the one board (#1265 step 1): the same component the delivery cards
-// use, with the task's own attributes and actions hanging off it.
+// A task record as a card. The shared frame draws the identity line; this board hangs its own
+// attributes and actions off it.
 export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   const column = columnOf(task)
   const priority = priorityOf(task)
@@ -358,36 +357,8 @@ function scopeName(roster, scope) {
   return ''
 }
 
-// #1326: one board that shows both task cards and delivery cards together, no tab split.
-// Columns come from workflow definitions; task cards map into the same columns as delivery cards.
-function UnifiedBoard({ roster, tasks, rail, scope, counts, dragging, error, draft, actions, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
-  const selectedRoom = scope?.kind === 'group' ? scope.roomId : ''
-  const lanes = scope?.kind === 'group'
-  return h('div', { className: 'bt-board-body' },
-    h('aside', { className: 'bt-board-rail', 'aria-label': t('Task board') },
-      h('h3', { className: 'bt-board-rail-head' }, t('Your Bots')),
-      rail.bots.length === 0 ? h('p', { className: 'bt-board-empty' }, t('No tasks yet.')) : rail.bots.map(row => {
-        const count = counts?.[row.id] ?? { done: 0, total: 0 }
-        return h(RailButton, {
-          key: row.id, row, selected: row.id === selectedBot, onSelect,
-          meta: count.total > 0 ? t('{done}/{total}', { done: count.done, total: count.total }) : '',
-        })
-      }),
-      rail.groups.length > 0 ? h('h3', { className: 'bt-board-rail-head' }, t('Groups you admin')) : null,
-      rail.groups.map(row => h(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))),
-    h('div', { className: 'bt-board-main' },
-      scope?.kind === 'bot' && onCreate ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
-        h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
-        h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
-      error ? h('p', { className: 'bt-board-error', role: 'alert' }, error) : null,
-      lanes ? h('p', { className: 'bt-board-hint' }, t('Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.')) : null,
-      h(DeliveryView, { actions, tasks, roster, dragging, onMove, onDrag })))
-}
-
 export function KanbanDialog({ roster, actions, leaving = false }) {
-  // One board (#1326): task cards and delivery cards together, no tab split. The rail is per-Bot
-  // for task scope; delivery is repo-wide and reads from actions.deliveryBoard.
+  // Per-Bot task board. The GitHub metrics panel is not part of this dialog (#1363).
   const rail = boardRail(roster)
   const [scope, setScope] = useState(() => (rail.bots[0] ? { kind: 'bot', botId: rail.bots[0].id } : rail.groups[0] ? { kind: 'group', roomId: rail.groups[0].id } : null))
   const [dragging, setDragging] = useState(null)
@@ -435,16 +406,14 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
         h('span', { className: 'bt-mem-status' }, name),
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
-      h(UnifiedBoard, {
-        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, actions,
+      h(BoardView, {
+        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft,
         onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
       })))
 }
 
 export const KANBAN_CSS = `
 .bt-board-row{min-height:40px;padding:6px 8px;gap:10px}
-.bt-board-views{display:flex;gap:6px;align-items:center}
-.bt-board-views .bt-soft[aria-selected=true]{background:var(--bt-active,var(--bt-hover));color:var(--bt-ink)}
 .bt-board-mark{flex:none;width:36px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
 .bt-board-mark svg{width:18px;height:18px}
 .bt-board-label{flex:1 1 auto;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -505,4 +474,4 @@ export const KANBAN_CSS = `
   .bt-board-columns{flex-direction:column}
   .bt-board-column{min-width:0}
 }
-` + DELIVERY_CSS
+`
