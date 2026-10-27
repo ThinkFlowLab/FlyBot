@@ -223,7 +223,6 @@ window.__ModuleLoader__.load({
     function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
       const chatRef = useRef(null)
       const run = workflow.run
-      const names = workflow.nodes.map(node => node.name).join(', ')
       useEffect(() => {
         const el = chatRef.current
         if (el) el.scrollTop = el.scrollHeight
@@ -231,7 +230,6 @@ window.__ModuleLoader__.load({
       const running = (run?.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
       const Conversation = globalThis.__flybot__?.Conversation
       const ConversationHeader = globalThis.__flybot__?.ConversationHeader
-      const MessageComposer = globalThis.__flybot__?.MessageComposer
       
       // Use normal conversation components if available
       if (typeof Conversation === 'function' && typeof ConversationHeader === 'function') {
@@ -576,16 +574,6 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onCreate({ name, steps }) }, tr('Create')))))
-    }
-
-    function edgeNote(edge) {
-      if (edge.loop === true) {
-        const until = edge.until ? ` ${tr('until')} ${edge.until.output}=${edge.until.eq}` : ''
-        return `${tr('Loop')} ×${edge.max ?? 3}${until}`
-      }
-      if (edge.when?.else === true) return tr('Else')
-      if (edge.when) return `${tr('when')} ${edge.when.output}=${edge.when.eq}`
-      return ''
     }
 
     // Settings → Workflow graphs: canvas-first with per-node inspector
