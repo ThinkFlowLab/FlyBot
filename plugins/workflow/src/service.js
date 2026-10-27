@@ -181,7 +181,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
         history: [...(laneOf(item.id).history ?? [])],
         runs: runningOf(laneOf(item.id)).map(run => publicRun(item, run)),
-        preview: rowPreview(item, displayRun(item.id)),
+        preview: rowPreview(item, previewRun(item.id)),
         run: publicRun(item, displayRun(item.id)),
         messages: state.logs[item.id] ?? [],
       }) }),
@@ -198,7 +198,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   }
 
   function runningOf(lane) {
-    return (lane?.active ?? []).filter(run => run && run.status === 'running')
+    return (lane?.active ?? []).filter(run => run && run.live === true && run.status === 'running')
   }
 
   function globalRunning() {
@@ -213,24 +213,19 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     return Math.min(MAX_CONCURRENT, value)
   }
 
-  function primaryRun(id) {
-    const live = runningOf(laneOf(id))
-    if (live.length > 0) return live[0]
-    const demo = state.demos[id]
-    if (state.demoOnTop?.[id] === true && demo) return demo
-    if (laneOf(id).last) return laneOf(id).last
-    return demo ?? null
-  }
-
-  // Product UI reads this: live runs (and the last finished live run), or a
-  // demo only while demo-step has explicitly raised it — never the seed script.
+  // Product UI: active live runs, then the last finished live run on stage — never demos.
   function displayRun(id) {
     const live = runningOf(laneOf(id))
     if (live.length > 0) return live[0]
-    if (state.demoOnTop?.[id] === true && state.demos[id]) return state.demos[id]
     const last = laneOf(id).last
     if (last?.live === true) return last
     return null
+  }
+
+  // Sidebar preview: only a live run that is active right now (not history, not demo).
+  function previewRun(id) {
+    const live = runningOf(laneOf(id))
+    return live.length > 0 ? live[0] : null
   }
 
   function storeRun(workflowId, run) {
@@ -489,7 +484,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function beginRun(item, task, ephemeral) {
     const holes = missingProviders(item)
     if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
-    delete state.demoOnTop?.[item.id]
     let run = { ...blankRun(item, task, now(), []), live: true }
     if (ephemeral) run.ephemeral = ephemeral
     const at = now()
@@ -808,8 +802,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       try {
         let run = state.demos[item.id]
         if (!run) throw new Error('This workflow has no task')
-        state.demoOnTop ??= {}
-        state.demoOnTop[item.id] = true
         if (run.status === 'failed') throw new Error('This run is already finished')
         const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
         if (op.type === 'restart') {
@@ -819,8 +811,10 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         const stepped = applyOp(item, run, op.type === 'restart' ? { type: 'start' } : op)
         state.demos[item.id] = stepped.run
         push(item.id, stepped.lines, now())
+        const out = present()
+        out.demo = publicRun(item, state.demos[item.id])
         write()
-        return present()
+        return out
       } catch (error) {
         return refuse(error)
       }
@@ -904,8 +898,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         if (!text) throw new Error('A message needs text')
         const at = now()
         const lines = [{ kind: 'user', text }]
-        const run = primaryRun(item.id)
-        const running = run ? orderedIds(item, run.nodeStatus, 'running')[0] : undefined
+        const run = displayRun(item.id)
+        const running = run?.live === true ? orderedIds(item, run.nodeStatus, 'running')[0] : undefined
         if (running) {
           const node = nodeById(item, running)
           lines.push({ kind: 'bot', botId: running, step: '进行中', text: `${node?.name ?? running}：收到。我继续处理「${run.task?.title ?? ''}」。` })
@@ -933,13 +927,15 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         item.nodes = next.nodes
         item.edges = next.edges
         item.layers = next.layers
-        const run = primaryRun(item.id)
-        if (run) {
+        const lane = laneOf(item.id)
+        const run = displayRun(item.id)
+        if (run?.live === true) {
           const ids = new Set(item.nodes.map(node => node.id))
           const nodeStatus = {}
           for (const id of ids) nodeStatus[id] = run.nodeStatus?.[id] ?? 'queued'
-          run.nodeStatus = nodeStatus
-          run.updatedAt = now()
+          const nextRun = { ...run, nodeStatus, updatedAt: now() }
+          if (lane.active.some(itemRun => itemRun.id === run.id)) storeRun(item.id, nextRun)
+          else if (lane.last?.id === run.id) lane.last = nextRun
         }
       })
     },

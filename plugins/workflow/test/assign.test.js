@@ -75,19 +75,19 @@ test('advance walks the parallel join: Deployer stays queued until both branches
 
 test('the demo step fails Tester once and still joins both branches', () => {
   const svc = service()
-  svc.reset({ workflowId: DELIVERY_ID })
   const ops = []
+  let last = null
   for (let i = 0; i < 12; i += 1) {
-    const run = delivery(svc.state()).run
-    if (run?.status === 'done') break
-    const before = run?.nodeStatus?.tester
-    svc.demoStep({ workflowId: DELIVERY_ID })
-    const after = delivery(svc.state()).run?.nodeStatus?.tester
+    const before = last?.demo?.nodeStatus?.tester
+    last = svc.demoStep({ workflowId: DELIVERY_ID })
+    const after = last.demo?.nodeStatus?.tester
     if (before !== after) ops.push(`${before}->${after}`)
+    if (last.demo?.status === 'done') break
   }
   assert.ok(ops.includes('running->failed'), ops.join(','))
-  assert.equal(delivery(svc.state()).run.status, 'done')
-  assert.equal(delivery(svc.state()).run.nodeStatus.deployer, 'done')
+  assert.equal(last.demo.status, 'done')
+  assert.equal(last.demo.nodeStatus.deployer, 'done')
+  assert.equal(delivery(last).run, null)
 })
 
 test('create seats a local Bot and refuses a remote one', () => {
@@ -132,9 +132,12 @@ test('a read-only host refuses assign, and a say lands in the workflow chat', ()
   const live = service()
   const said = live.say({ workflowId: DELIVERY_ID, text: '请把 notice 再短一点' })
   const messages = delivery(said).messages
-  assert.equal(messages.at(-2).kind, 'user')
-  assert.match(messages.at(-1).text, /Coder/)
-  assert.match(messages.at(-1).text, /请把 notice 再短一点|收到/)
+  assert.ok(messages.some(message => message.kind === 'user' && message.text.includes('请把 notice 再短一点')))
+  live.assign({ workflowId: DELIVERY_ID, taskId: '#say', title: 'Notice tweak' })
+  const withRun = live.say({ workflowId: DELIVERY_ID, text: '继续' })
+  const tail = delivery(withRun).messages
+  assert.equal(tail.at(-2).kind, 'user')
+  assert.match(tail.at(-1).text, /Planner|收到/)
 })
 
 test('the store reloads a workflow file and drops a file that does not parse', () => {

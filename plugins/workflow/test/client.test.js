@@ -183,7 +183,7 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   await settle()
   assert.ok(calls.some(item => item.name === 'workflow/state'))
   assert.ok(textOf(view.tree).includes('发布交付流水线'))
-  assert.ok(textOf(view.tree).includes('等待任务'))
+  assert.ok(textOf(view.tree).includes('Waiting for a task'))
 
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
@@ -388,6 +388,22 @@ test('settings can add a loop edge and a condition edge', async () => {
   assert.equal(loop.max, 3)
   assert.deepEqual(loop.until, { output: 'stop', eq: 'yes' })
   settings.unmount()
+})
+
+test('sidebar preview ignores a stale busy preview when nothing is live', async () => {
+  const graph = delivery()
+  graph.preview = 'Coder 正在处理 #1280…'
+  graph.activeCount = 0
+  graph.run = null
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  assert.ok(textOf(view.tree).includes('Waiting for a task'))
+  assert.equal(textOf(view.tree).includes('Coder 正在处理'), false)
+  view.unmount()
 })
 
 test('a live run shows pause, resume, and progress controls', async () => {

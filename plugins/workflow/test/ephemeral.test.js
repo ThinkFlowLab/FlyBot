@@ -430,8 +430,7 @@ test('a finished run stays done, and a run with no ephemeral Bots is not touched
     assert.equal(kept.status, 'done')
     assert.equal(kept.updatedAt, finishedAt)
     const bare = after.state().workflows.find(item => item.id === idle.id).run
-    assert.equal(bare.status, 'running')
-    assert.equal(bare.updatedAt, 6)
+    assert.equal(bare, null)
     // Nothing to release means nothing is written: the file it loaded is intact.
     assert.equal(readFileSync(join(dir, 'workflows.json'), 'utf8'), written)
   } finally {

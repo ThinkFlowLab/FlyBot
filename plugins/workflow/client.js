@@ -197,6 +197,12 @@ window.__ModuleLoader__.load({
       if (line.length <= CHAT_PREVIEW) return line
       return `${line.slice(0, CHAT_PREVIEW - 1)}…`
     }
+    function sidebarPreview(item) {
+      const busy = (item.activeCount ?? 0) > 0 && item.run?.live === true
+      if (busy) return item.preview || tr('Waiting for a task')
+      if (item.trigger === 'schedule' && item.scheduleLabel) return `下次运行：${item.scheduleLabel}`
+      return tr('Waiting for a task')
+    }
     function glyph() {
       return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', 'aria-hidden': true },
         h('rect', { x: 9, y: 2, width: 6, height: 5, rx: 1.5 }),
@@ -1106,7 +1112,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, roster })),
           h('span', { className: 'wf-txt' },
             h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow')),
-            h('span', { className: 'wf-t2' }, item.preview || tr('Waiting for a task'))),
+            h('span', { className: 'wf-t2' }, sidebarPreview(item))),
           (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
         h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
