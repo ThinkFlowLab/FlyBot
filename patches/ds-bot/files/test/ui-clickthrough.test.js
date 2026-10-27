@@ -168,6 +168,24 @@ test('#1347: the thread cannot paint above a dialog, a sheet or a scrim', () => 
   assert.equal(rule(css, '.bt-palette-layer').match(/z-index:(\d+)/)?.[1], '140')
   // No dialog or popover may sit in the old ambiguous band any more.
   assert.doesNotMatch(css, /z-index:6[01][;}]/)
+
+  // Each overlay layer is its own stacking context too, so the layer as a whole — scrim and dialog
+  // together — is what sits in the tier, whatever a dialog's own contents do.
+  for (const [file, selector] of [['styles.js', '.bt-settings-layer'], ['styles.js', '.bt-mem-layer'], ['styles.js', '.bt-palette-layer'], ['remote-bot-settings.js', '.bt-remote-sheet-layer']]) {
+    assert.match(ruleLine(read(file), selector), /isolation:isolate/, `${selector} is its own stacking context`)
+  }
+
+  // And the scrim actually separates the two surfaces. A 0.32 scrim left the thread legible behind a
+  // modal, which read as the chat painting through it; the light theme is now clearly more opaque.
+  const alpha = sel => {
+    // The selector can appear more than once (the base rule and #1347's override), so take the
+    // strongest — that is the one the browser applies last.
+    const all = [...css.matchAll(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\{background:rgba\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*([\\d.]+)\\s*\\)`, 'g'))]
+      .map(m => Number(m[1]))
+    return all.length ? Math.max(...all) : null
+  }
+  assert.ok(alpha('body:not([data-ds-dark-theme]) .bt-scrim') >= 0.5, 'the light scrim dims the thread to a backdrop')
+  assert.ok(alpha('body[data-ds-dark-theme] .bt-scrim') >= 0.6, 'and so does the dark one')
 })
 
 test('#1347: the built bundle carries these rules, so a page reload shows them', () => {

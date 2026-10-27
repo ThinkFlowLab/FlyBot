@@ -2723,7 +2723,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-bs .bt-avedit{transform-origin:32px 0}
  .bt-avedit-top{display:flex;align-items:center;justify-content:space-between}
  .bt-avedit-tabs{position:relative;display:flex;gap:2px;background:var(--bt-hover);border-radius:999px;padding:2px}
-@@ -419,7 +419,14 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -419,9 +419,23 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-seg button.bt-perm-danger,.bt-seg button.bt-perm-danger[aria-pressed=true]{color:#e02135}
  
  /* Settings dialog: a 198px page list beside the page. */
@@ -2735,10 +2735,19 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +   explicit: chat surface at most 50, dialogs 120/121, popovers 130, palette 140, toast 1000. The
 +   chat column is additionally capped at z-index 0 inside its own stacking context (see the
 +   center-column rule below), so nothing in the thread can outrank these whatever it does. */
-+.bt-settings-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:120;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
++.bt-settings-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:120;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-scrim{position:absolute;inset:0;background:rgba(0,0,0,.32);animation:bt-fade .22s ease-out}
  body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
++/* #1347: a modal is a modal. A 0.32 scrim leaves the thread legible behind it, and the owner read that
++   as the chat painting through the dialog ("assistant text readable across columns", a pill visible at
++   full opacity behind the Inbox). The scrim now separates the two surfaces outright: the thread is
++   dimmed to a backdrop, not left readable beside the thing being decided. It is still one layer and
++   still dismisses on a click, so nothing else about it changes. */
++body:not([data-ds-dark-theme]) .bt-scrim{background:rgba(12,12,14,.62)}
++body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.7)}
  .bt-settings{--bt-set-w:min(800px,calc(100vw - 48px));--bt-set-h:min(620px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));position:relative;width:var(--bt-set-w);height:var(--bt-set-h);background:var(--bt-main);border-radius:16px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;overflow:hidden;color:var(--bt-ink);transition:${spring(SPRING_SHAPE, 'width', 'height')};animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+ .bt-settings[data-wide]{--bt-set-w:min(1100px,calc(100vw - 48px));--bt-set-h:min(780px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))))}
+ :is(.bt-settings-layer,.bt-mem-layer)[data-leaving]{pointer-events:none}
 @@ -437,6 +437,7 @@ body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
  .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
  .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
@@ -2802,7 +2811,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-menu-hint{flex:none;color:var(--bt-ink-3);font-size:12px;font-variant-numeric:tabular-nums}
 -.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:70;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-+.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:140;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
++.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:140;isolation:isolate;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46);animation:bt-fade .22s ease-out}
  .bt-palette{position:absolute;top:50%;left:50%;width:min(560px,92vw);transform:translate(-50%,-50%);display:flex;flex-direction:column;border-radius:12px;background:var(--bt-main);border:1px solid var(--bt-line-2);box-shadow:0 24px 48px -12px rgba(0,0,0,.25);overflow:hidden;color:var(--bt-ink);animation:bt-palette-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-palette-layer[data-leaving]{pointer-events:none}
@@ -2821,7 +2830,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-mem-row-copy{flex:1;text-align:left}
  .bt-mem-row-go{display:inline-flex;align-items:center;gap:2px;color:var(--bt-ink-3);font-size:12px}
 -.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:61;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-+.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:121;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
++.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:121;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
  .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
