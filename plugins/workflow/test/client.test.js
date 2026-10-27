@@ -403,6 +403,80 @@ test('the stage has no canned demo controls', async () => {
   view.unmount()
 })
 
+test('stage chat hides workflow node Bot lines but keeps owner Bots and system lines', () => {
+  const workflow = {
+    nodes: [{ id: 'coder', name: 'Coder' }, { id: 'writer', name: 'Writer' }],
+    messages: [
+      { id: '1', kind: 'system', text: '任务已进入 Workflow' },
+      { id: '2', kind: 'bot', botId: 'coder', text: 'node step output' },
+      { id: '3', kind: 'user', text: 'owner note' },
+      { id: '4', kind: 'bot', botId: 'bot-chief', text: 'Chief reply' },
+    ],
+  }
+  const roster = { byId: { 'bot-chief': { id: 'bot-chief', name: 'Chief' } } }
+  const visible = client.stageMessages(workflow, workflow.messages, roster)
+  assert.deepEqual(visible.map(message => message.id), ['1', '3', '4'])
+})
+
+test('the hand-a-task modal lists live Tasks board rows only', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prevHost = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => {
+      if (channel === 'tasks') {
+        return [{ id: 'task-live-99', title: 'Real board card', status: 'open', priority: 'P2' }]
+      }
+      return []
+    },
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+  await settle()
+  const text = textOf(view.tree)
+  assert.ok(text.includes('Real board card'))
+  assert.equal(text.includes('发布说明：Workflow Beta 上线'), false)
+  assert.equal(text.includes('修复群聊 @ 提及跳转错位'), false)
+  globalThis.__flybot__ = prevHost
+  view.unmount()
+})
+
+test('the flowchart canvas CSS clips overflow inside its panel', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /\.wf-canvas\{[^}]*overflow:auto/)
+  assert.match(source, /\.wf-canvas-view\{[^}]*overflow:auto/)
+  assert.match(source, /\.wf-stage\{[^}]*overflow:hidden/)
+})
+
+test('a sidebar workflow row can be deleted from the context menu', async () => {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: 'Factory' }] }
+    if (name === 'workflow/delete') return { ok: true, workflows: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+  row.props.onContextMenu({ preventDefault() {}, clientX: 40, clientY: 40 })
+  await settle()
+  const deleteBtn = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Delete')[0]
+  assert.ok(deleteBtn)
+  deleteBtn.props.onClick()
+  await settle()
+  const confirm = findAll(view.tree, node => node.type === 'button' && node.props.className === 'wf-btn wf-danger')[0]
+  confirm.props.onClick()
+  await settle()
+  assert.ok(calls.some(item => item.name === 'workflow/delete' && item.body.workflowId === 'lane-a'))
+  view.unmount()
+})
+
 test('Chinese labels follow the host Tasks translation', () => {
   const prev = globalThis.__flybot__
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }

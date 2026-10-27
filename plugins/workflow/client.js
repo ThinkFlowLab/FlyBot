@@ -94,6 +94,14 @@ window.__ModuleLoader__.load({
       Role: '角色',
       Tools: '工具',
       'Inputs and outputs': '输入和输出',
+      Delete: '删除',
+      Rename: '重命名',
+      'Delete workflow': '删除 Workflow',
+      'Rename workflow': '重命名 Workflow',
+      'Are you sure you want to delete "{name}"? This cannot be undone.': '确定删除「{name}」？此操作无法撤销。',
+      'No open tasks on the Tasks board.': 'Tasks 看板上没有可分配的任务。',
+      'Could not rename this workflow': '无法重命名该 Workflow',
+      'Could not delete this workflow': '无法删除该 Workflow',
     }
 
     function zhUi() {
@@ -115,6 +123,43 @@ window.__ModuleLoader__.load({
     const COLUMN_KEY = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' }
     const COLUMN_OF = { open: 'not-started', claimed: 'not-started', working: 'in-progress', blocked: 'in-progress', 'result-ready': 'in-progress', accepted: 'done', cancelled: 'done', failed: 'done' }
     const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6', '研究员': '#a78bfa', '数据分析师': '#ec4899' }
+    // Zero-width plane center line: shift wire coordinates so strokes stay inside the SVG box.
+    const WIRE_SPAN = 480
+
+    function workflowNodeIds(workflow) {
+      return new Set((workflow?.nodes ?? []).map(node => node.id))
+    }
+
+    function stageMessages(workflow, messages, roster) {
+      const nodeIds = workflowNodeIds(workflow)
+      const rosterIds = roster?.byId ? new Set(Object.keys(roster.byId)) : new Set()
+      return (messages ?? []).filter(message => {
+        if (message.kind !== 'bot') return true
+        if (rosterIds.has(message.botId)) return true
+        return !nodeIds.has(message.botId)
+      })
+    }
+
+    function useConversationInset() {
+      const [left, setLeft] = useState(() => conversationLeft())
+      useEffect(() => {
+        if (typeof document === 'undefined') return undefined
+        const sync = () => setLeft(conversationLeft())
+        sync()
+        globalThis.addEventListener?.('resize', sync)
+        let obs
+        if (typeof ResizeObserver !== 'undefined') {
+          obs = new ResizeObserver(sync)
+          const side = document.querySelector?.('.bt-side')
+          if (side) obs.observe(side)
+        }
+        return () => {
+          globalThis.removeEventListener?.('resize', sync)
+          obs?.disconnect?.()
+        }
+      }, [])
+      return left
+    }
 
     function columnOf(task) {
       if (task.column && COLUMN_KEY[task.column]) return task.column
@@ -132,12 +177,6 @@ window.__ModuleLoader__.load({
       if (text.startsWith('task-')) return `#${text.slice(-6)}`
       return text
     }
-    const FIXTURE_TASKS = [
-      { id: '#1280', title: '缩短交付组群 notice', column: 'in-progress', priority: 'P1' },
-      { id: '#1281', title: '发布说明：Workflow Beta 上线', column: 'not-started', priority: 'P1' },
-      { id: '#1276', title: '修复群聊 @ 提及跳转错位', column: 'not-started', priority: 'P2' },
-    ]
-
     function glyph() {
       return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', 'aria-hidden': true },
         h('rect', { x: 9, y: 2, width: 6, height: 5, rx: 1.5 }),
@@ -221,7 +260,7 @@ window.__ModuleLoader__.load({
     }
 
     // Stage: reuse normal FlyBot conversation UI instead of custom card style
-    function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit }) {
+    function Stage({ workflow, roster, stageLeft, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit }) {
       const chatRef = useRef(null)
       const run = workflow.run
       useEffect(() => {
@@ -234,15 +273,15 @@ window.__ModuleLoader__.load({
       
       // Use normal conversation components if available
       if (typeof Conversation === 'function' && typeof ConversationHeader === 'function') {
-        const messages = workflow.messages.map(msg => ({
+        const messages = stageMessages(workflow, workflow.messages, roster).map(msg => ({
           id: msg.id,
           role: msg.kind === 'user' ? 'user' : msg.kind === 'system' ? 'system' : 'assistant',
-          sender: msg.botId ? { id: msg.botId, name: nodeOf(workflow, msg.botId)?.name } : { id: workflow.id, name: workflow.name },
+          sender: msg.botId ? { id: msg.botId, name: nodeOf(workflow, msg.botId)?.name ?? roster?.byId?.[msg.botId]?.name } : { id: workflow.id, name: workflow.name },
           text: msg.text,
           timestamp: msg.timestamp
         }))
         
-        return h('div', { className: 'wf-stage', style: { left: conversationLeft() } },
+        return h('div', { className: 'wf-stage', style: { left: stageLeft } },
           h(ConversationHeader, {
             title: workflow.name,
             subtitle: run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task'),
@@ -255,7 +294,8 @@ window.__ModuleLoader__.load({
       }
       
       // Fallback to simplified conversation-style UI
-      return h('div', { className: 'wf-stage', style: { left: conversationLeft() } },
+      const visible = stageMessages(workflow, workflow.messages, roster)
+      return h('div', { className: 'wf-stage', style: { left: stageLeft } },
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },
             h('button', { type: 'button', className: 'wf-pill', onClick: onToggleDrawer },
@@ -276,7 +316,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
           h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
-              workflow.messages.map(message => h(Bubble, { key: message.id, message, workflow, roster })))),
+              visible.map(message => h(Bubble, { key: message.id, message, workflow, roster })))),
           h('div', { className: 'wf-composer-wrap' },
             h('form', { className: 'wf-composer', onSubmit: (event) => { event.preventDefault(); onSend() } },
               h('input', {
@@ -337,12 +377,21 @@ window.__ModuleLoader__.load({
     }
 
     function wirePath(from, to) {
-      const x1 = from.x
-      const y1 = from.y + 58
-      const x2 = to.x
-      const y2 = to.y
+      const x1 = (from.x ?? 0) + WIRE_SPAN
+      const y1 = (from.y ?? 0) + 48
+      const x2 = (to.x ?? 0) + WIRE_SPAN
+      const y2 = to.y ?? 0
       const mid = (y1 + y2) / 2
       return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
+    }
+
+    function wireSvgProps(height) {
+      return {
+        width: WIRE_SPAN * 2,
+        height,
+        viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
+        style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height },
+      }
     }
 
     function Flow({ workflow, run, roster, onTip, editing, onCommit }) {
@@ -392,7 +441,7 @@ window.__ModuleLoader__.load({
           }, bot.name))) : null,
         h('div', { className: 'wf-term' }, run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task')),
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
-          h('svg', { className: 'wf-wires', 'aria-hidden': true },
+          h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
             edges.map(edge => {
               const from = nodes.find(node => node.id === edge.from)
               const to = nodes.find(node => node.id === edge.to)
@@ -492,8 +541,36 @@ window.__ModuleLoader__.load({
         h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Failed' : 'Queued')))))
     }
 
+    function RenameModal({ workflow, onClose, onConfirm }) {
+      const [name, setName] = useState(workflow?.name ?? '')
+      return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
+        h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Rename workflow') },
+          h('div', { className: 'wf-modal-header' },
+            h('h3', null, tr('Rename workflow'),
+              h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×'))),
+          h('div', { className: 'wf-modal-body' },
+            h('label', { className: 'wf-field' }, tr('Name'),
+              h('input', { value: name, onChange: (event) => setName(event.target.value) }))),
+          h('div', { className: 'wf-modal-footer' },
+            h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
+            h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onConfirm?.(name) }, tr('Rename')))))
+    }
+
+    function DeleteModal({ workflow, onClose, onConfirm }) {
+      return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
+        h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Delete workflow') },
+          h('div', { className: 'wf-modal-header' },
+            h('h3', null, tr('Delete workflow'),
+              h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×'))),
+          h('div', { className: 'wf-modal-body' },
+            h('p', { className: 'wf-hint' }, tr('Are you sure you want to delete "{name}"? This cannot be undone.', { name: workflow?.name ?? '' }))),
+          h('div', { className: 'wf-modal-footer' },
+            h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
+            h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
+    }
+
     function AssignModal({ workflows, tasks, roster, workflowId, onClose, onConfirm }) {
-      const [taskId, setTaskId] = useState(tasks[1]?.id ?? tasks[0]?.id ?? '')
+      const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
       const bots = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && bot.id && bot.name).slice(0, 12)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
@@ -504,12 +581,14 @@ window.__ModuleLoader__.load({
             h('p', { className: 'wf-hint' }, tr('A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.'))),
           h('div', { className: 'wf-modal-body' },
             h('div', { className: 'wf-step-h' }, h('b', null, '1'), tr('Pick a task card')),
-            h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
-              key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
-            },
-              h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
-              h('div', { className: 'wf-tt' }, task.title),
-              h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
+            tasks.length === 0
+              ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('No open tasks on the Tasks board.'))
+              : h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
+                key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
+              },
+                h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
+                h('div', { className: 'wf-tt' }, task.title),
+                h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
             h('div', { className: 'wf-step-h' }, h('b', null, '2'), tr('Pick who runs it')),
             h('div', { className: 'wf-targets' },
               workflows.map(item => h('button', {
@@ -758,7 +837,7 @@ window.__ModuleLoader__.load({
       
       return h('div', { className: 'wf-canvas-view', onPointerMove: movePointer, onPointerUp: endPointer },
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
-          h('svg', { className: 'wf-wires', 'aria-hidden': true },
+          h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
             edges.map(edge => {
               const from = nodes.find(node => node.id === edge.from)
               const to = nodes.find(node => node.id === edge.to)
@@ -806,10 +885,14 @@ window.__ModuleLoader__.load({
       const [assignOpen, setAssignOpen] = useState(false)
       const [creating, setCreating] = useState(false)
       const [draft, setDraft] = useState('')
-      const [tasks, setTasks] = useState(FIXTURE_TASKS)
+      const [tasks, setTasks] = useState([])
       const [tip, setTip] = useState(null)
       const [error, setError] = useState('')
       const [editing, setEditing] = useState(false)
+      const [rowMenu, setRowMenu] = useState(null)
+      const [renaming, setRenaming] = useState(null)
+      const [deleting, setDeleting] = useState(null)
+      const stageLeft = useConversationInset()
 
       const refresh = async () => {
         const value = await call('workflow/state')
@@ -893,17 +976,39 @@ window.__ModuleLoader__.load({
 
       const loadTasks = async () => {
         const host = globalThis.__flybot__?.host
-        if (typeof host !== 'function') { setTasks(FIXTURE_TASKS); return }
+        if (typeof host !== 'function') { setTasks([]); return }
         try {
           const rows = await host('tasks', {})
-          const real = Array.isArray(rows) ? rows.filter(task => task && task.title && task.status !== 'cancelled').slice(0, 12).map(task => ({
-            id: task.id, title: task.title, status: task.status, priority: task.priority, column: columnOf(task),
-          })) : []
-          setTasks(real.length > 0 ? real : FIXTURE_TASKS)
+          const real = Array.isArray(rows)
+            ? rows.filter(task => task && task.title && task.status !== 'cancelled').slice(0, 12).map(task => ({
+              id: task.id, title: task.title, status: task.status, priority: task.priority, column: columnOf(task),
+            }))
+            : []
+          setTasks(real)
         } catch (loadError) {
           void loadError
-          setTasks(FIXTURE_TASKS)
+          setTasks([])
         }
+      }
+
+      const factoryIds = new Set((pack?.templates ?? []).map(item => item.id))
+
+      const confirmRename = async (workflowId, name) => {
+        const trimmed = String(name ?? '').trim()
+        if (!trimmed) return
+        const value = await call('workflow/rename', { workflowId, name: trimmed })
+        if (value?.ok === false) { setError(value.error ?? tr('Could not rename this workflow')); return }
+        if (value?.workflows) setPack(value)
+        setRenaming(null)
+      }
+
+      const confirmDelete = async (workflowId) => {
+        const value = await call('workflow/delete', { workflowId })
+        if (value?.ok === false) { setError(value.error ?? tr('Could not delete this workflow')); return }
+        if (value?.workflows) setPack(value)
+        if (openId === workflowId) { setOpenId(null); setDrawer(false) }
+        setDeleting(null)
+        setRowMenu(null)
       }
 
       const confirmAssign = async ({ taskId, target }) => {
@@ -947,6 +1052,16 @@ window.__ModuleLoader__.load({
         if (made) setOpenId(made.id)
       }
 
+      useEffect(() => {
+        if (!rowMenu || typeof document === 'undefined') return undefined
+        const close = () => setRowMenu(null)
+        const onPointer = (event) => {
+          if (!event.target?.closest?.('.wf-context-menu')) close()
+        }
+        document.addEventListener('pointerdown', onPointer, true)
+        return () => document.removeEventListener('pointerdown', onPointer, true)
+      }, [rowMenu])
+
       return h('div', { 'data-flybot': 'workflow' },
         h('div', { className: 'wf-sec' },
           h('span', null, tr('Workflows')),
@@ -955,6 +1070,11 @@ window.__ModuleLoader__.load({
         workflows.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
           onClick: () => { setOpenId(item.id) },
+          onContextMenu: (event) => {
+            if (factoryIds.has(item.id)) return
+            event.preventDefault()
+            setRowMenu({ x: event.clientX, y: event.clientY, workflow: item })
+          },
         },
           h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, roster })),
           h('span', { className: 'wf-txt' },
@@ -966,7 +1086,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         open ? portal(h(Stage, {
-          workflow: open, roster, drawer, tab, draft, onDraft: setDraft,
+          workflow: open, roster, stageLeft, drawer, tab, draft, onDraft: setDraft,
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
           onCommit: (graph) => {
@@ -1008,7 +1128,24 @@ window.__ModuleLoader__.load({
           h('b', null, tip.node.name),
           h('div', null, tip.node.role),
           h('div', { className: 'wf-k' }, 'Instructions'),
-          h('div', null, tip.node.instructions)) : null)
+          h('div', null, tip.node.instructions)) : null,
+        rowMenu ? h('div', {
+          className: 'wf-context-menu',
+          style: { left: rowMenu.x, top: rowMenu.y },
+          onClick: (event) => event.stopPropagation(),
+        },
+          h('button', { type: 'button', onClick: () => { setRenaming(rowMenu.workflow); setRowMenu(null) } }, tr('Rename')),
+          h('button', { type: 'button', className: 'wf-danger-text', onClick: () => { setDeleting(rowMenu.workflow); setRowMenu(null) } }, tr('Delete'))) : null,
+        renaming ? portal(h(RenameModal, {
+          workflow: renaming,
+          onClose: () => setRenaming(null),
+          onConfirm: (name) => { void confirmRename(renaming.id, name) },
+        })) : null,
+        deleting ? portal(h(DeleteModal, {
+          workflow: deleting,
+          onClose: () => setDeleting(null),
+          onConfirm: () => { void confirmDelete(deleting.id) },
+        })) : null)
     }
 
     const CSS = `
@@ -1021,11 +1158,11 @@ window.__ModuleLoader__.load({
 .wf-t2,.wf-chain{display:block;font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wf-badge{font-size:9.5px;padding:0 5px;border-radius:4px;background:rgba(77,107,254,.12);color:var(--bt-accent,#4d6bfe);line-height:15px}
 .wf-live{width:7px;height:7px;border-radius:50%;background:var(--bt-accent,#4d6bfe);flex:none}
-.wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none}
+.wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none;overflow:hidden}
+.wf-mini-flow{display:block;max-width:100%;max-height:100%}
 .wf-ico-lg{width:42px;height:42px;margin:0 auto}
 .wf-av{border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:650;flex:none}
-.wf-mini-flow{display:block}
-.wf-stage{position:fixed;top:0;right:0;bottom:0;z-index:30;display:flex;background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414)}
+.wf-stage{position:fixed;top:0;right:0;bottom:0;z-index:30;display:flex;overflow:hidden;background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414)}
 .wf-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .wf-top{height:56px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
 .wf-pill{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);cursor:pointer;color:inherit;font:inherit}
@@ -1063,7 +1200,7 @@ window.__ModuleLoader__.load({
 .wf-composer input{flex:1;border:0;outline:0;background:transparent;font:inherit;color:inherit}
 .wf-mic{width:28px;height:28px;border-radius:9px;border:0;background:var(--bt-accent,#4d6bfe);color:#fff;cursor:pointer}
 .wf-under{text-align:center;margin-top:6px;font-size:11px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
-.wf-drawer{width:400px;flex:none;border-left:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;background:var(--bt-main,#fcfcfc)}
+.wf-drawer{width:400px;flex:none;min-width:0;overflow:hidden;border-left:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;background:var(--bt-main,#fcfcfc)}
 .wf-dr-head{display:flex;justify-content:flex-end;padding:12px}
 .wf-icon{width:28px;height:28px;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);cursor:pointer;color:inherit}
 .wf-dr-body{flex:1;overflow:auto;padding:4px 18px 20px}
@@ -1075,7 +1212,7 @@ window.__ModuleLoader__.load({
 .wf-tabs button.on{background:var(--bt-active,rgba(119,119,119,.17));color:var(--bt-ink,#141414)}
 .wf-term{font-size:11px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:3px 10px}
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
-.wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative}
+.wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative;overflow:auto}
 .wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%}
 .wf-plane{position:relative;width:0;margin:8px auto 0}
 .wf-node-inspector{position:absolute;bottom:8px;right:8px;width:320px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:10}
@@ -1132,8 +1269,14 @@ window.__ModuleLoader__.load({
 .wf-settings-canvas{padding:16px}
 .wf-settings-layout{display:flex;flex-direction:column;gap:16px}
 .wf-settings-header{display:flex;gap:12px;align-items:center}
-.wf-canvas-main{flex:1;min-height:500px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
-.wf-canvas-view{width:100%;height:100%;position:relative}
+.wf-canvas-main{flex:1;min-height:500px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
+.wf-canvas-view{width:100%;height:100%;min-height:0;position:relative;overflow:auto}
+.wf-cards-empty{padding:8px 4px 12px}
+.wf-context-menu{position:fixed;z-index:95;min-width:140px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:2px}
+.wf-context-menu button{border:0;background:transparent;color:inherit;font:inherit;font-size:12.5px;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
+.wf-context-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.wf-danger-text{color:#e5484d}
+.wf-btn.wf-danger{background:#e5484d;border-color:#e5484d;color:#fff}
 .wf-inspector{width:300px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
 .wf-inspector h3{font-size:14px;margin:0 0 12px}
 .wf-inspector-content{display:flex;flex-direction:column;gap:12px}
@@ -1155,6 +1298,6 @@ window.__ModuleLoader__.load({
       return off
     }
 
-    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, FIXTURE_TASKS }
+    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, stageMessages }
   },
 })
