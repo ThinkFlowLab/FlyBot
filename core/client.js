@@ -4242,11 +4242,13 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
 .bt-wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;padding:6px 8px;resize:vertical}
 .bt-wf-plane{position:relative;width:0;margin:16px auto 0}
-.bt-wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.bt-wf-wires{position:absolute;left:calc(-1 * var(--bt-wf-wire-span,480px));top:0;width:calc(2 * var(--bt-wf-wire-span,480px));overflow:visible;pointer-events:none}
 .bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6}
 .bt-wf-wires marker path{fill:var(--bt-ink-3);stroke:none}
 .bt-wf-node{position:absolute;width:168px;box-sizing:border-box;border:1px solid var(--bt-line);background:var(--bt-card);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px}
-.bt-wf-node.running{border-color:var(--bt-accent);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+@keyframes bt-wf-node-live{0%,100%{border-color:var(--bt-accent);box-shadow:0 0 0 2px rgba(77,107,254,.18),0 0 0 0 rgba(77,107,254,.2)}50%{border-color:rgba(77,107,254,.85);box-shadow:0 0 0 3px rgba(77,107,254,.35),0 0 14px 2px rgba(77,107,254,.22)}}
+.bt-wf-node.running{border-color:var(--bt-accent);animation:bt-wf-node-live 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.bt-wf-node.running{animation:none;box-shadow:0 0 0 3px rgba(77,107,254,.2)}}
 .bt-wf-node.done{border-color:rgba(22,163,74,.35)}
 .bt-wf-node.failed{border-color:#e5484d}
 .bt-wf-node.queued{opacity:.78}
@@ -14450,9 +14452,10 @@ function hitNode(event) {
   return (nested ?? direct)?.dataset?.node || "";
 }
 var WIRE_SPAN = 480;
+var NODE_WIRE_OUT = 56;
 function wirePath(from, to) {
   const x1 = from.x + WIRE_SPAN;
-  const y1 = from.y + 48;
+  const y1 = from.y + NODE_WIRE_OUT;
   const x2 = to.x + WIRE_SPAN;
   const y2 = to.y;
   const mid = (y1 + y2) / 2;
@@ -14520,7 +14523,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
     ))) : null,
     (0, import_react34.createElement)(
       "div",
-      { className: "bt-wf-plane", "data-plane": "1", style: { height } },
+      { className: "bt-wf-plane", "data-plane": "1", style: { height, "--bt-wf-wire-span": `${WIRE_SPAN}px` } },
       (0, import_react34.createElement)(
         "svg",
         {
@@ -14528,8 +14531,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
           "aria-hidden": true,
           width: WIRE_SPAN * 2,
           height,
-          viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
-          style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height }
+          viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`
         },
         (0, import_react34.createElement)(
           "defs",

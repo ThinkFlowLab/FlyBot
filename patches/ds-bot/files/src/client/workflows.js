@@ -118,10 +118,11 @@ function hitNode(event) {
 // be negative. The wire box is shifted by SPAN so those points stay inside the
 // SVG viewport; overflow:visible is not reliable for a stroke on the edge.
 const WIRE_SPAN = 480
+const NODE_WIRE_OUT = 56
 
 function wirePath(from, to) {
   const x1 = from.x + WIRE_SPAN
-  const y1 = from.y + 48
+  const y1 = from.y + NODE_WIRE_OUT
   const x2 = to.x + WIRE_SPAN
   const y2 = to.y
   const mid = (y1 + y2) / 2
@@ -177,11 +178,10 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
           onCommit?.({ nodes: nodes.map((item) => (item.id === node.id ? { ...item, prompt } : item)), edges })
         },
       })))) : null,
-    h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height } },
+    h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height, '--bt-wf-wire-span': `${WIRE_SPAN}px` } },
       h('svg', {
         className: 'bt-wf-wires', 'aria-hidden': true,
         width: WIRE_SPAN * 2, height, viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
-        style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height },
       },
       h('defs', null,
         h('marker', {

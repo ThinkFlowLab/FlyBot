@@ -560,6 +560,53 @@ test('a sidebar workflow row can be deleted from the context menu', async () => 
   view.unmount()
 })
 
+test('wire paths for a linear three-node graph connect each step vertically', () => {
+  const nodes = [
+    { id: 'a', x: 0, y: 0 },
+    { id: 'b', x: 0, y: 108 },
+    { id: 'c', x: 0, y: 216 },
+  ]
+  const span = client.WIRE_SPAN
+  const out = client.NODE_WIRE_OUT
+  const ab = client.wirePath(nodes[0], nodes[1])
+  const bc = client.wirePath(nodes[1], nodes[2])
+  assert.match(ab, new RegExp(`^M ${span} ${out} C ${span} ${(out + 108) / 2}, ${span} ${(out + 108) / 2}, ${span} 108$`))
+  const y1b = 108 + out
+  assert.match(bc, new RegExp(`^M ${span} ${y1b} C ${span} ${(y1b + 216) / 2}, ${span} ${(y1b + 216) / 2}, ${span} 216$`))
+})
+
+test('the workflow stage mounts no message composer', async () => {
+  const graph = delivery()
+  const prevFlybot = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    ...prevFlybot,
+    Conversation: () => null,
+    ConversationHeader: () => null,
+  }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  assert.equal(findAll(view.tree, node => node.props?.className === 'wf-composer').length, 0)
+  assert.equal(findAll(view.tree, node => node.props?.className === 'wf-composer-wrap').length, 0)
+  assert.equal(findAll(view.tree, node => node.type === 'input').length, 0)
+  globalThis.__flybot__ = prevFlybot
+  view.unmount()
+})
+
+test('running flow nodes use a breathing border animation only while running', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /@keyframes wf-node-live/)
+  assert.match(source, /\.wf-node\.running\{[^}]*animation:wf-node-live/)
+  assert.match(source, /\.wf-node\.done\{/)
+  assert.doesNotMatch(source, /\.wf-node\.done\{[^}]*animation/)
+  assert.doesNotMatch(source, /\.wf-node\.queued\{[^}]*animation/)
+})
+
 test('Chinese labels follow the host Tasks translation', () => {
   const prev = globalThis.__flybot__
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }

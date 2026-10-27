@@ -128,6 +128,7 @@ window.__ModuleLoader__.load({
     const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6', '研究员': '#a78bfa', '数据分析师': '#ec4899' }
     // Zero-width plane center line: shift wire coordinates so strokes stay inside the SVG box.
     const WIRE_SPAN = 480
+    const NODE_WIRE_OUT = 56
 
     function workflowNodeIds(workflow) {
       return new Set((workflow?.nodes ?? []).map(node => node.id))
@@ -223,20 +224,31 @@ window.__ModuleLoader__.load({
       return workflow?.nodes?.find(node => node.id === id)
     }
 
-    function MiniFlowchart({ workflow }) {
+    function MiniFlowchart({ workflow, compact = false }) {
       const nodes = workflow?.nodes ?? []
       const edges = workflow?.edges ?? []
       if (nodes.length === 0) return null
       const layers = workflow?.layers ?? [[nodes[0]?.id]]
-      const width = 160
-      const nodeW = 32
-      const nodeH = 32
-      const spacing = 40
-      const layerSpacing = 48
-      const height = layers.length * layerSpacing + nodeH
-      return h('svg', { width, height, viewBox: `0 0 ${width} ${height}`, className: 'wf-mini-flow', 'aria-label': workflow.name },
+      const width = compact ? 28 : 160
+      const nodeW = compact ? 10 : 32
+      const nodeH = compact ? 10 : 32
+      const spacing = compact ? 14 : 40
+      const layerSpacing = compact ? 14 : 48
+      const height = compact ? 28 : layers.length * layerSpacing + nodeH
+      const viewW = compact ? 28 : width
+      const viewH = compact ? 28 : height
+      const markerId = compact ? 'wf-mini-arrow-c' : 'wf-mini-arrow'
+      return h('svg', {
+        width: compact ? '100%' : width,
+        height: compact ? '100%' : height,
+        viewBox: `0 0 ${viewW} ${viewH}`,
+        preserveAspectRatio: 'xMidYMid meet',
+        className: compact ? 'wf-mini-flow wf-mini-flow-compact' : 'wf-mini-flow',
+        'aria-hidden': compact ? true : undefined,
+        'aria-label': compact ? undefined : workflow.name,
+      },
         h('defs', null,
-          h('marker', { id: 'wf-mini-arrow', viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '4', markerHeight: '4', orient: 'auto' },
+          h('marker', { id: markerId, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: compact ? '3' : '4', markerHeight: compact ? '3' : '4', orient: 'auto' },
             h('path', { d: 'M0 0 10 5 0 10z', fill: 'var(--bt-ink-3, #9a9a9a)' }))),
         edges.map(edge => {
           const fromIdx = layers.findIndex(layer => layer.includes(edge.from))
@@ -246,47 +258,48 @@ window.__ModuleLoader__.load({
           const toLayer = layers[toIdx]
           const fromPos = fromLayer.indexOf(edge.from)
           const toPos = toLayer.indexOf(edge.to)
-          const x1 = width / 2 + (fromPos - (fromLayer.length - 1) / 2) * spacing
+          const midX = viewW / 2
+          const x1 = midX + (fromPos - (fromLayer.length - 1) / 2) * spacing
           const y1 = fromIdx * layerSpacing + nodeH
-          const x2 = width / 2 + (toPos - (toLayer.length - 1) / 2) * spacing
+          const x2 = midX + (toPos - (toLayer.length - 1) / 2) * spacing
           const y2 = toIdx * layerSpacing
           return h('path', {
             key: `${edge.from}>${edge.to}`,
             d: `M ${x1} ${y1} L ${x2} ${y2}`,
             stroke: 'var(--bt-ink-3, #9a9a9a)',
-            strokeWidth: 1,
+            strokeWidth: compact ? 1.2 : 1,
             fill: 'none',
-            markerEnd: 'url(#wf-mini-arrow)'
+            markerEnd: `url(#${markerId})`,
           })
         }),
         layers.map((layer, layerIdx) => layer.map((nodeId, pos) => {
           const node = nodeOf(workflow, nodeId)
           if (!node) return null
-          const x = width / 2 + (pos - (layer.length - 1) / 2) * spacing - nodeW / 2
+          const x = viewW / 2 + (pos - (layer.length - 1) / 2) * spacing - nodeW / 2
           const y = layerIdx * layerSpacing
           const color = COLORS[node.name] ?? '#4d6bfe'
           return h('g', { key: nodeId },
             h('rect', {
-              x, y, width: nodeW, height: nodeH, rx: 6,
+              x, y, width: nodeW, height: nodeH, rx: compact ? 2 : 6,
               fill: color,
               opacity: 0.15,
               stroke: color,
-              strokeWidth: 1
+              strokeWidth: 1,
             }),
-            h('text', {
+            compact ? null : h('text', {
               x: x + nodeW / 2,
               y: y + nodeH / 2 + 1,
               textAnchor: 'middle',
               dominantBaseline: 'middle',
               fill: color,
               fontSize: 12,
-              fontWeight: 600
+              fontWeight: 600,
             }, (node.name ?? '?').slice(0, 1)))
         })))
     }
 
-    // Stage: reuse normal FlyBot conversation UI instead of custom card style
-    function Stage({ workflow, roster, stageLeft, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume }) {
+    // Stage: view/control only — progress and flowchart; no message composer (#1459).
+    function Stage({ workflow, roster, stageLeft, drawer, tab, onCloseDrawer, onToggleDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume }) {
       const chatRef = useRef(null)
       const run = workflow.run?.live === true ? workflow.run : null
       useEffect(() => {
@@ -294,38 +307,12 @@ window.__ModuleLoader__.load({
         if (el) el.scrollTop = el.scrollHeight
       }, [workflow.messages.length])
       const running = (run?.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
-      const Conversation = globalThis.__flybot__?.Conversation
-      const ConversationHeader = globalThis.__flybot__?.ConversationHeader
-      
-      // Use normal conversation components if available
-      if (typeof Conversation === 'function' && typeof ConversationHeader === 'function') {
-        const messages = stageMessages(workflow, workflow.messages, roster).map(msg => ({
-          id: msg.id,
-          role: msg.kind === 'user' ? 'user' : msg.kind === 'system' ? 'system' : 'assistant',
-          sender: msg.botId ? { id: msg.botId, name: nodeOf(workflow, msg.botId)?.name ?? roster?.byId?.[msg.botId]?.name } : { id: workflow.id, name: workflow.name },
-          text: msg.text,
-          timestamp: msg.timestamp
-        }))
-        
-        return h('div', { className: 'wf-stage', style: { left: stageLeft } },
-          h(ConversationHeader, {
-            title: workflow.name,
-            subtitle: run ? taskSummary(run.task, run) : tr('Waiting for a task'),
-            onAction: onToggleDrawer
-          }),
-          h(Conversation, {
-            messages: messages.map(msg => ({ ...msg, text: chatPreview(msg.text) })),
-            onSend: (text) => { onDraft(text); onSend() }
-          }))
-      }
-      
-      // Fallback to simplified conversation-style UI
       const visible = stageMessages(workflow, workflow.messages, roster)
       return h('div', { className: 'wf-stage', style: { left: stageLeft } },
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },
             h('button', { type: 'button', className: 'wf-pill', onClick: onToggleDrawer },
-              h(MiniFlowchart, { workflow }),
+              h('span', { className: 'wf-pill-thumb' }, h(MiniFlowchart, { workflow, compact: true })),
               h('span', { className: 'wf-pill-name' }, workflow.name),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
@@ -347,17 +334,9 @@ window.__ModuleLoader__.load({
               : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: onPause }, tr('Pause'))) : null,
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => { onTab('runs'); onToggleDrawer() } }, tr('Progress')),
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
-          h('div', { className: 'wf-chat', ref: chatRef },
+          visible.length > 0 ? h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
-              visible.map(message => h(Bubble, { key: message.id, message, workflow, roster })))),
-          h('div', { className: 'wf-composer-wrap' },
-            h('form', { className: 'wf-composer', onSubmit: (event) => { event.preventDefault(); onSend() } },
-              h('input', {
-                value: draft, placeholder: `${tr('Message the workflow')} ${workflow.name}`,
-                onChange: (event) => onDraft(event.target.value),
-              }),
-              h('button', { type: 'submit', className: 'wf-mic', 'aria-label': tr('Assign') }, '↑')),
-            h('div', { className: 'wf-under' }, run ? `运行 ${run.steps}/${run.stepBudget} 步 · 已完成 ${run.doneCount} 个节点` : null))),
+              visible.map(message => h(Bubble, { key: message.id, message, workflow, roster })))) : null),
         drawer ? h('aside', { className: 'wf-drawer' },
           h('div', { className: 'wf-dr-head' },
             h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onCloseDrawer }, '×')),
@@ -411,7 +390,7 @@ window.__ModuleLoader__.load({
 
     function wirePath(from, to) {
       const x1 = (from.x ?? 0) + WIRE_SPAN
-      const y1 = (from.y ?? 0) + 48
+      const y1 = (from.y ?? 0) + NODE_WIRE_OUT
       const x2 = (to.x ?? 0) + WIRE_SPAN
       const y2 = to.y ?? 0
       const mid = (y1 + y2) / 2
@@ -423,7 +402,6 @@ window.__ModuleLoader__.load({
         width: WIRE_SPAN * 2,
         height,
         viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
-        style: { left: -WIRE_SPAN, width: WIRE_SPAN * 2, height },
       }
     }
 
@@ -917,7 +895,6 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('flow')
       const [assignOpen, setAssignOpen] = useState(false)
       const [creating, setCreating] = useState(false)
-      const [draft, setDraft] = useState('')
       const [tasks, setTasks] = useState([])
       const [tip, setTip] = useState(null)
       const [error, setError] = useState('')
@@ -1107,7 +1084,7 @@ window.__ModuleLoader__.load({
             setRowMenu({ x: event.clientX, y: event.clientY, workflow: item })
           },
         },
-          h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, roster })),
+          h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, compact: true })),
           h('span', { className: 'wf-txt' },
             h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow')),
             h('span', { className: 'wf-t2' }, sidebarPreview(item))),
@@ -1117,7 +1094,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         open ? portal(h(Stage, {
-          workflow: open, roster, stageLeft, drawer, tab, draft, onDraft: setDraft,
+          workflow: open, roster, stageLeft, drawer, tab,
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
           onCommit: (graph) => {
@@ -1131,12 +1108,6 @@ window.__ModuleLoader__.load({
           onTab: (key) => { setTab(key); setDrawer(true) },
           onReset: () => { void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onAssign: () => { setAssignOpen(true); void loadTasks() },
-          onSend: () => {
-            const text = draft.trim()
-            if (!text) return
-            setDraft('')
-            void call('workflow/say', { workflowId: open.id, text }).then(value => { if (value?.workflows) setPack(value) })
-          },
           onTip: setTip,
           onPause: () => {
             void call('workflow/pause', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) })
@@ -1196,15 +1167,17 @@ window.__ModuleLoader__.load({
 .wf-t2,.wf-chain{display:block;font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wf-badge{font-size:9.5px;padding:0 5px;border-radius:4px;background:rgba(77,107,254,.12);color:var(--bt-accent,#4d6bfe);line-height:15px}
 .wf-live{width:7px;height:7px;border-radius:50%;background:var(--bt-accent,#4d6bfe);flex:none}
-.wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none;overflow:hidden}
+.wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none;overflow:hidden;padding:2px;box-sizing:border-box}
 .wf-mini-flow{display:block;max-width:100%;max-height:100%}
+.wf-mini-flow-compact{width:100%;height:100%}
+.wf-pill-thumb{width:28px;height:28px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:var(--bt-main,#fcfcfc)}
 .wf-ico-lg{width:42px;height:42px;margin:0 auto}
 .wf-av{border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:650;flex:none}
 .wf-stage{position:fixed;top:0;right:0;bottom:0;z-index:30;display:flex;overflow:hidden;background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414)}
 .wf-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .wf-top{height:56px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
-.wf-pill{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);cursor:pointer;color:inherit;font:inherit}
-.wf-pill-name{font-weight:600}.wf-sub{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}.wf-chev{color:var(--bt-ink-3,#9a9a9a)}
+.wf-pill{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px 0 6px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);cursor:pointer;color:inherit;font:inherit;max-width:min(420px,calc(100% - 120px))}
+.wf-pill-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wf-sub{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}.wf-chev{color:var(--bt-ink-3,#9a9a9a)}
 .wf-actions{position:absolute;right:14px;top:12px;display:flex;gap:6px}
 .wf-btn{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
 .wf-btn.wf-pri{background:var(--bt-accent,#4d6bfe);border-color:var(--bt-accent,#4d6bfe);color:#fff}
@@ -1254,19 +1227,21 @@ window.__ModuleLoader__.load({
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
 .wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative;overflow:auto}
 .wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%}
-.wf-plane{position:relative;width:0;margin:8px auto 0}
+.wf-plane{position:relative;width:0;margin:8px auto 0;--wf-wire-span:${WIRE_SPAN}px}
 .wf-node-inspector{position:absolute;bottom:8px;right:8px;width:320px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:10}
 .wf-inspector-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600}
 .wf-close-inspector{background:none;border:0;cursor:pointer;color:var(--bt-ink-3,#9a9a9a);font-size:18px;line-height:1;padding:0;width:20px;height:20px}
 .wf-node-inspector textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:8px;resize:vertical;font-size:12px}
-.wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.wf-wires{position:absolute;left:calc(-1 * var(--wf-wire-span, ${WIRE_SPAN}px));top:0;width:calc(2 * var(--wf-wire-span, ${WIRE_SPAN}px));overflow:visible;pointer-events:none}
 .wf-wires path{fill:none;stroke:var(--bt-line,rgba(20,20,20,.35));stroke-width:1.6}
 .wf-wires .wf-end{pointer-events:auto;fill:var(--bt-card,#fff);stroke:var(--bt-accent,#4d6bfe);cursor:crosshair}
 .wf-abs{position:absolute}
 .wf-port{position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;border:2px solid var(--bt-accent,#4d6bfe);background:var(--bt-card,#fff);padding:0;cursor:crosshair}
 .wf-mini{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:50%;border:1px solid var(--bt-line,rgba(20,20,20,.16));background:var(--bt-card,#fff);cursor:pointer;line-height:16px;padding:0}
 .wf-node{width:168px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px;position:relative}
-.wf-node.running{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+@keyframes wf-node-live{0%,100%{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px rgba(77,107,254,.18),0 0 0 0 rgba(77,107,254,.2)}50%{border-color:rgba(77,107,254,.85);box-shadow:0 0 0 3px rgba(77,107,254,.35),0 0 14px 2px rgba(77,107,254,.22)}}
+.wf-node.running{border-color:var(--bt-accent,#4d6bfe);animation:wf-node-live 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.wf-node.running{animation:none;box-shadow:0 0 0 3px rgba(77,107,254,.2)}}
 .wf-node.done{border-color:rgba(22,163,74,.35)}.wf-node.failed{border-color:#e5484d}
 .wf-node.selected{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px rgba(77,107,254,.2)}
 .wf-nt{min-width:0;flex:1;display:flex;flex-direction:column}
@@ -1337,6 +1312,9 @@ window.__ModuleLoader__.load({
       return off
     }
 
-    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, stageMessages, taskSummary, chatPreview }
+    return {
+      name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
+      tr, columnOf, shortId, stageMessages, taskSummary, chatPreview, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
+    }
   },
 })

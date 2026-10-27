@@ -231,14 +231,15 @@ test('a Bot reply advances a live node; a 429 in the reply does not fail it', as
   const run = opened.workflows.find(item => item.id === made.id).run
   assert.equal(typeof handle, 'function')
   assert.equal(run.nodeStatus.plan, 'running')
-  handle({ from: run.ephemeral.plan, role: 'request', text: 'not a reply' })
-  handle({ from: run.ephemeral.plan, role: 'reply', text: 'Noted a rate limit (429) in the log.\nOUTPUT plan: two lines' })
+  assert.equal(await handle({ from: run.ephemeral.plan, role: 'request', text: 'not a reply' }), undefined)
+  const planReply = await handle({ from: run.ephemeral.plan, role: 'reply', text: 'Noted a rate limit (429) in the log.\nOUTPUT plan: two lines' })
+  assert.equal(planReply?.action, 'deny')
   const mid = await waitFor(() => {
     const row = started.service.state().workflows.find(item => item.id === made.id)
     return row.run?.nodeStatus?.code === 'running' ? row : null
   })
   assert.equal(mid.run.nodeStatus.plan, 'done')
-  handle({ from: run.ephemeral.code, role: 'reply', text: 'could not answer your message' })
+  await handle({ from: run.ephemeral.code, role: 'reply', text: 'could not answer your message' })
   const stopped = await waitFor(() => {
     const row = started.service.state().workflows.find(item => item.id === made.id)
     if (row.run?.status !== 'failed' || removed.length !== created.length) return null
@@ -251,7 +252,7 @@ test('a Bot reply advances a live node; a 429 in the reply does not fail it', as
   const again = await started.service.runNamed({ workflow: 'Lane', brief: 'Ship another', task: '#1402b' })
   const second = again.workflows.find(item => item.id === made.id).run
   assert.equal(second.status, 'running')
-  handle({ from: second.ephemeral.plan, role: 'reply', text: 'The model call failed.' })
+  await handle({ from: second.ephemeral.plan, role: 'reply', text: 'The model call failed.' })
   const failed = await waitFor(() => {
     const row = started.service.state().workflows.find(item => item.id === made.id)
     return row.run?.task?.id === '#1402b' && row.run?.status === 'failed' ? row : null

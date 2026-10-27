@@ -132,7 +132,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   }
 
   function readyWorkflow(item) {
-    if (Array.isArray(item.edges) && Array.isArray(item.layers) && item.nodes.every(node => Number.isFinite(node.x))) return item
+    if (Array.isArray(item.edges) && Array.isArray(item.layers) && item.nodes.every(node => Number.isFinite(node.x) && Number.isFinite(node.y))) return item
     const next = normalizeGraph(item)
     item.nodes = next.nodes
     item.edges = next.edges
