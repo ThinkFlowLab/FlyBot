@@ -21,6 +21,10 @@
 //     `renderRefusal` with the fact it expects (`pr: hold`) and every refused node gets that one
 //     sentence. A definition with no such guard gets `refusal: null` and the holder's name rather than
 //     a sentence this layer made up: one sentence too few beats a new one.
+//   - **a hold names its holder, or it is no hold** (#1337). This is `heldBy`'s contract, stated on the
+//     function below, and it is what the host writer relies on: "the pull request query answered
+//     nothing" arrives as `''`, and a blank string must plan exactly like `hold: null` rather than
+//     refuse a whole job with no sentence to show.
 
 import { canonicalSpec, consumersOf, enterNode, normaliseWorkflow, nodeById, renderRefusal, topologicalOrder } from './workflow.js'
 import { freshness } from './artifact.js'
@@ -48,10 +52,15 @@ function heldSentence(def) {
   return null
 }
 
+// `heldBy` is the contract slice (b) reads: a hold **names** its holder or it is no hold at all. A
+// blank string is the shape "the pull request query answered nothing" arrives in, and a hold this
+// module cannot name (a non-string with no `by`, or a blank one) is normalised to "not held" on
+// purpose — refusing every node with `heldBy: null` would read exactly like a fact refusal (#1337).
 const heldBy = (hold) => {
   if (hold === null || hold === undefined || hold === false) return null
-  if (typeof hold === 'string') return hold.trim() === '' ? '' : hold.trim()
-  return typeof hold.by === 'string' ? hold.by.trim() : ''
+  if (typeof hold === 'string') return hold.trim() === '' ? null : hold.trim()
+  if (typeof hold !== 'object') return null
+  return typeof hold.by === 'string' && hold.by.trim() !== '' ? hold.by.trim() : null
 }
 
 // `(job, node)` is the identity of a node card (#1316 pin 4), so a card parented to another job is not

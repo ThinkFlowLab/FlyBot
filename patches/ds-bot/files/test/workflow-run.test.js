@@ -166,8 +166,40 @@ test("a held job opens nothing on any node, in the definition's own sentence", (
   assert.deepEqual(plain.open, [])
   assert.ok(plain.refused.every((entry) => entry.refusal === null && entry.heldBy === 'Birfy'))
   // A maintainer Bot's attempt is not a different caller here: the planner has no "who asks" input, so
-  // nothing about the request can loosen the hold.
-  assert.deepEqual(planJob({ definition: repoDevWorkflow, job, facts: facts(), hold: { by: '' } }).open, [])
+  // nothing about the request can loosen a hold that names a holder.
+  assert.deepEqual(planJob({ definition: repoDevWorkflow, job, facts: facts(), hold: 'Birfy' }).open, [])
+})
+
+// 7b. #1337: "the query answered nothing" reaches this layer as `''` from the host writer (slice (b)
+// reads the hold out of the pull request's labels/state), and `'   '` is the same absence written by a
+// form. Neither names a holder, so a blank string plans exactly like `hold: null` — node by node — and
+// nothing carries `heldBy: ''`; a job refused whole with no sentence would be a silent refusal.
+// Knife: restore the blank branch in `heldBy` (`hold.trim() === '' ? '' : hold.trim()`) → both blank
+// cases refuse every node and the deepEqual against the unheld plan goes red.
+test('a blank hold is not a hold: it plans exactly like no hold at all (#1337)', () => {
+  const unheld = planJob({ definition: repoDevWorkflow, job, facts: facts() })
+  assert.ok(unheld.open.length > 0)
+  for (const blank of ['', '   ', '\t\n']) {
+    const plan = planJob({ definition: repoDevWorkflow, job, facts: facts(), hold: blank })
+    assert.deepEqual(plan, unheld, `hold: ${JSON.stringify(blank)} must plan like no hold`)
+    assert.ok(plan.refused.every((entry) => entry.heldBy !== ''))
+  }
+})
+
+// 7c. #1337: a hold this module cannot name — a non-string with no `by`, or a `by` that is blank or not
+// a string — is normalised to "not held" on purpose, and the module header states that contract. The
+// alternative, refusing every node with `heldBy: null`, reads exactly like a fact refusal: neither the
+// card nor the host writer could tell "held by an unnamed party" from "the query answered nothing".
+// Knife: return `''` for those shapes again → every case here refuses the whole job.
+test('a hold with no name is read as not held, deliberately (#1337)', () => {
+  const unheld = planJob({ definition: repoDevWorkflow, job, facts: facts() })
+  for (const shape of [{}, { by: '' }, { by: '   ' }, { by: 7 }, 42, true]) {
+    assert.deepEqual(planJob({ definition: repoDevWorkflow, job, facts: facts(), hold: shape }), unheld, `hold: ${JSON.stringify(shape)}`)
+  }
+  // A name still holds, padded or not, and the holder is the trimmed name.
+  const padded = planJob({ definition: repoDevWorkflow, job, facts: facts(), hold: '  Birfy  ' })
+  assert.deepEqual(padded.open, [])
+  assert.ok(padded.refused.every((entry) => entry.heldBy === 'Birfy'))
 })
 
 // 8. A fact nobody could read refuses, and says so: it is not a missing fact and not a current one
