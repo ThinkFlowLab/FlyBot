@@ -1,1 +1,0 @@
-A finished task card leaves the task board's active list, and the Done column shows the newest 20 archived cards; a group's overall card now completes when its last child finishes, is cancelled by a rejected approval, or fails because its Bot was deleted, and a Bot's board asks for that Bot's own finished cards (#1252).

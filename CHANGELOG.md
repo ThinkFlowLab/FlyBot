@@ -6,6 +6,21 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-10-27
+
+### Added
+
+- Settings has a **Workflows** page: the factory presets, your own definitions as `workflows/<id>.json` in the workspace, and which one this project uses. A definition is edited as a node table — id, name, role, inputs, outputs, guards, refusal — with the flowchart drawn above it from the same table and each guard showing the sentence it would print right now, or saying the fact could not be read. *Customize* copies a preset into a new file and never edits the shipped one, and saving an unedited definition writes identical bytes (#1272, step 3).
+
+### Changed
+
+- A finished task card leaves the task board's active list, and the Done column shows the newest 20 archived cards; a group's overall card now completes when its last child finishes, is cancelled by a rejected approval, or fails because its Bot was deleted, and a Bot's board asks for that Bot's own finished cards (#1252).
+- Feishu (Lark) is now connected on Settings → Connectors (左下角「连接应用」), not through the Secrets page or a config file. The one Feishu row offers two modes — a custom-bot webhook (outbound only, as before) or a self-built app with its long connection — and renders one field per credential: the App ID is kept in the record because it is not a secret, the App Secret only in `secrets.json`. App mode proves the pair with one tenant token, opens the socket from the row, answers a message back into the same Feishu chat as the app, and offers `Choose Bots`; the row also carries **允许的飞书用户** — nobody by default, the sender who was turned away listed with Allow, and a field to paste an `open_id` — so a stranger's message never spends the owner's tokens. `Disconnect` closes the socket and clears both credentials. A replayed `event_id` still lands once, and a half-saved pair dials nothing and says so. The app pair is no longer read from `FEISHU_APP_ID` on the Secrets page, and `feishu` is now a reserved capability name. ([#1266](https://github.com/ThinkFlowLab/FlyBot/issues/1266), [#1292](https://github.com/ThinkFlowLab/FlyBot/issues/1292))
+
+### Fixed
+
+- Claiming or assigning a card in a group now posts the one public line the room notice asks for — `接了 #1253，第一步是 …` — in the claiming member's voice. The line goes into the room log without opening a round or waking anyone, takes the card's own note as the first step, and is not repeated for the same card within 30 minutes; progress stays on the card. ([#1253](https://github.com/ThinkFlowLab/FlyBot/issues/1253))
+
 ## [0.2.10] - 2026-10-27
 
 ### Added
