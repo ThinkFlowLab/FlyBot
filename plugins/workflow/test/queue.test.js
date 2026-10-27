@@ -50,7 +50,7 @@ function delivery(state) {
 test('stopping one live run leaves the other running and releases only its Bots', async () => {
   const { svc, spawned, released } = harness()
   svc.setConcurrency({ workflowId: DELIVERY_ID, maxConcurrent: 2 })
-  const first = await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1422', title: 'PR 1422' })
+  await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1422', title: 'PR 1422' })
   const second = await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1395', title: 'PR 1395' })
   const lane = delivery(second)
   assert.equal(lane.activeCount, 2)
