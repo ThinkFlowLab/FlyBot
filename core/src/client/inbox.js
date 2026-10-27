@@ -16,6 +16,7 @@ import { useEscape } from './overlay-hooks.js'
 import { alwaysChoices } from './member-status.js'
 import { currentPart, previewOf, relativeShort } from './text.js'
 import { hostText, t } from './i18n.js'
+import { failureSentence } from '../shared/failure-copy.js'
 
 // Done (and a failed task) ages out after 7 days.
 export const KEEP_MS = 7 * 86_400_000
@@ -461,7 +462,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
         h('span', { className: 'bt-inbox-meta', title: meta }, meta)),
       h('span', { className: 'bt-inbox-title', title: card.title }, card.title),
       card.calls > 0 ? h('span', { className: 'bt-inbox-calls' }, t('{count} tool calls', { count: card.calls })) : null,
-      card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, card.reason) : null,
+      card.reason ? h('span', { className: 'bt-inbox-reason', title: card.reason }, failureSentence(card.reason, t)) : null,
       card.activity ? h('span', { className: 'bt-inbox-activity', title: card.activity }, t('Latest: {text}', { text: card.activity })) : null,
       card.hint ? h('span', { className: 'bt-inbox-hint' }, card.hint) : null,
       evidence.length > 0 ? h('span', { className: 'bt-inbox-evidence' }, ...evidence.map((href, index) => h('a', {

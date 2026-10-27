@@ -277,7 +277,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +import { isFaceRoom } from './room-membership.js'
 +import { readQuietHours } from '../shared/quiet-hours.js'
 +import { faceMentions } from './face-mentions.js'
-+import { unwrapUntrusted } from './delivery.js'
++import { visibleText } from '../shared/preview.js'
  
 +const NOTIFY_KINDS = ['approval', 'finished', 'failed']
  const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
@@ -288,7 +288,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,146 @@ export function install(rt) {
+@@ -21,32 +21,148 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -418,7 +418,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
        const parts = [...Object.values(sessions ?? {}), ...Object.values(segments ?? {}).flat().map(segment => segment.sessionId)]
        const last = (log ?? []).filter(line => line.kind === undefined).at(-1)
 -      return { ...room, parts, ...(last ? { preview: last.who === 'User' ? last.text : `${last.who}：${last.text}` } : {}) }
-+      const previewText = last ? unwrapUntrusted(last.text) : ''
++      // The row is read by a person: a fence, or the fragment an older write left behind, is never part
++      // of it (#130, #1335). `visibleText` also folds the line to one line, as a row always was.
++      const previewText = last ? visibleText(last.text) : ''
 +      const previewWho = last && (last.authorKind === 'human' && last.who && last.who !== 'User' ? `${last.who}: ${previewText}` : last.who === 'User' ? previewText : `${last.who}：${previewText}`)
 +      const presented = rt.presentRoom?.({ ...room, log }, actor) ?? room
 +      const pending = rt.listRoomApprovals?.(presented, actor) ?? []

@@ -4,7 +4,7 @@
 // body-level layer by bot-browsers.js; the panel draws the strip and the toolbar
 // and reports the rectangle the shown webview covers.
 import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DEFAULT_WIDTH, DETAILS_WIDTH, panelWidthRange } from './pane-width.js'
+import { DEFAULT_WIDTH, DETAILS_WIDTH, MIN_DETAILS, panelWidthRange } from './pane-width.js'
 import { createPortal } from 'react-dom'
 import { BotMark } from './mark.js'
 import { STORAGE } from './storage.js'
@@ -44,11 +44,13 @@ export function Favicon({ src, className }) {
 }
 
 // null until the user sets a width: the Bot page then opens at DETAILS_WIDTH and the
-// browser at DEFAULT_WIDTH.
+// browser at DEFAULT_WIDTH. A saved width narrower than DETAILS_WIDTH is a *stored* choice from a
+// narrower policy (#1335 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
+// what the panel can be dragged to is enforced here.
 const savedWidth = () => {
   try {
     const value = Number(localStorage.getItem(WIDTH_KEY))
-    return Number.isFinite(value) && value >= DETAILS_WIDTH ? value : null
+    return Number.isFinite(value) && value >= MIN_DETAILS ? value : null
   } catch { return null }
 }
 const fitWidth = (width, [low, high]) => Math.round(Math.max(low, Math.min(width, high)))

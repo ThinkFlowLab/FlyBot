@@ -362,7 +362,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-soft:hover{background:var(--bt-active)}
 .bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
 
-.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
+.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing};container:bt-panel/inline-size}
 .bt-panel[data-leaving]{transform:translateX(100%);transition:transform .3s cubic-bezier(.2,0,0,1);pointer-events:none}
 .bt-panel[data-instant]{transition:none}
 @keyframes bt-pane-in{from{transform:translateX(100%)}}
@@ -506,6 +506,10 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 /* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
 .bt-flybot-room-members{padding:10px 12px}
 .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+/* #1335: a row's copy never breaks its own label. The label used to be a bare inline span inside a
+   column that flexed down to 36px, so "Name" came out as "Nam" + "e"; a single-word label is now one
+   line, and the hint below it is what wraps when the column is short. */
+.bt-set-copy>.bt-bs-label,.bt-set-copy>.bt-set-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
 .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
 .bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
@@ -869,6 +873,13 @@ export const CONVERSATION_CSS = `
 [class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
 [class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 [class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
+/* #1335: "Standard mode" beside the title reads as a control — a filled chip with an icon — but the
+   shell draws it as a span with no click handler (dsh-client-ui-agent-preset, AgentPresetLabel):
+   clicking it does nothing, and the only thing behind it is a hover title. In a Bot chat the mode is
+   fixed for the whole Session anyway, so the chip becomes what it is: a status word on the title's
+   line. No fill, no radius, muted ink, and the description stays on hover. */
+[data-slot="conversation.session.header.actions"] [class*="_label"]{background:none;border-radius:0;color:var(--bt-ink-3);cursor:help;pointer-events:auto}
+[data-slot="conversation.session.header.actions"] [class*="_label"] svg{opacity:.7}
 [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
 /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
    without its copy and branch row; a tail with nothing in it takes no room. */

@@ -7,7 +7,7 @@ import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
 import { readQuietHours } from '../shared/quiet-hours.js'
 import { faceMentions } from './face-mentions.js'
-import { unwrapUntrusted } from './delivery.js'
+import { visibleText } from '../shared/preview.js'
 
 const NOTIFY_KINDS = ['approval', 'finished', 'failed']
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
@@ -148,7 +148,9 @@ export function install(rt) {
     rooms: Object.values(state.rooms).map(({ log, seen, botRounds, lateRounds, sessions, segments, faceLine, ...room }) => {
       const parts = [...Object.values(sessions ?? {}), ...Object.values(segments ?? {}).flat().map(segment => segment.sessionId)]
       const last = (log ?? []).filter(line => line.kind === undefined).at(-1)
-      const previewText = last ? unwrapUntrusted(last.text) : ''
+      // The row is read by a person: a fence, or the fragment an older write left behind, is never part
+      // of it (#130, #1335). `visibleText` also folds the line to one line, as a row always was.
+      const previewText = last ? visibleText(last.text) : ''
       const previewWho = last && (last.authorKind === 'human' && last.who && last.who !== 'User' ? `${last.who}: ${previewText}` : last.who === 'User' ? previewText : `${last.who}：${previewText}`)
       const presented = rt.presentRoom?.({ ...room, log }, actor) ?? room
       const pending = rt.listRoomApprovals?.(presented, actor) ?? []

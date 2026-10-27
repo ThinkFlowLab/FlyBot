@@ -442,14 +442,38 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
        h('button', { type: 'button', className: 'bt-set-row bt-bs-row', onClick: duplicate },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Duplicate')), h('span', { className: 'bt-set-hint' }, t('A copy with the same job and model, and fresh memory.'))),
          h('span', { className: 'bt-chevron' }, h(ChevronRightIcon))),
-@@ -269,6 +269,7 @@ label.bt-bs-row{cursor:text}
- .bt-bs-row>.bt-set-copy{flex:1 1 auto}
+@@ -266,9 +266,17 @@ export const BOT_SETTINGS_CSS = `
+ .bt-bs .bt-avedit{left:0;transform:none}
+ .bt-bs-row{min-height:48px}
+ label.bt-bs-row{cursor:text}
+-.bt-bs-row>.bt-set-copy{flex:1 1 auto}
  .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
++/* #1335: a row keeps its label and its control side by side. The *label* is one line — "Name" used to
++   break into "Nam" + "e" inside a 36px column — and a control never breaks its own words: "Test
++   connection" came out as "Test connecti" / "on" and Main Bot's "Change" as "Ch/an/ge". The hint under
++   a label is prose, so it wraps and is never cut: the row grows instead. */
++.bt-bs-row>.bt-set-copy{flex:1 1 8ch;min-width:8ch}
++.bt-bs-row>.bt-set-copy>.bt-bs-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-bs-row .bt-soft,.bt-bs-row .bt-mini{flex:none;white-space:nowrap}
  .bt-bs-row .bt-model-trigger{flex:none;max-width:58%}
++.bt-bs-row .bt-model-trigger :is(.bt-model-name,.bt-model-provider){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 +${MODEL_TEST_CSS}
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
+@@ -289,4 +289,12 @@ label.bt-bs-row{cursor:text}
+ .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
+ .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
+ @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
++/* #1335: the panel's floor is 240px, where a label and a 96px field cannot share a line honestly. Below
++   300px the row stacks instead: the copy keeps its whole width on top, the control sits under it and
++   keeps its own words. Nothing is clipped to fit a width that is not there. */
++@container bt-panel (max-width:300px){
++  .bt-bs-row{flex-wrap:wrap;row-gap:6px}
++  .bt-bs-row>.bt-set-copy{flex:1 1 100%;min-width:0}
++  .bt-bs-input{flex:1 1 100%;width:auto;min-width:0;margin:0;text-align:left}
++}
+ `
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
@@ -2032,7 +2056,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,16 +1,20 @@
+@@ -1,16 +1,21 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -2050,13 +2074,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { springEasing, SPRING_SHAPE } from './motion.js'
  import { hostText, t } from './i18n.js'
 +import { friendBotTitle, roomTitle, sharedRoomTitle, isShownRemoteChat } from '../shared/remote-label.js'
++import { visibleText } from '../shared/preview.js'
  import { showsDshRow } from './dsh-offer.js'
 +import { InboxRow } from './inbox.js'
 +import { KanbanRow } from './kanban.js'
  
  // -------------------------------------------------------------------------
  // Sidebar
-@@ -37,77 +37,149 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,77 +37,151 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -2183,7 +2208,9 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 -  const fallback = useSessions(list => previewOf(list, id))
 -  const preview = room.preview?.replace(/\s+/g, ' ').trim() || fallback
 +  const fallback = useSessions(list => nameMentions(previewOf(list, id), roster))
-+  const preview = nameMentions(room.preview?.replace(/\s+/g, ' ').trim(), roster) || fallback
++  // The host's line is the same kind of stored text as a Bot chat's, so the row reads it the same way:
++  // a fence or a marker fragment must never reach the row (#1335).
++  const preview = nameMentions(visibleText(room.preview), roster) || fallback
    const active = useSessionRetainInfo(id, info => (info?.retainedBy?.mainView ?? 0) > 0)
    const unread = useSessionStatus(map => map.get(id)?.completionUnread === true) || (marked && !active)
    useMarkedUnread(id, active, marked, actions)
@@ -2655,6 +2682,15 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
+@@ -332,7 +332,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
+ .bt-soft:hover{background:var(--bt-active)}
+ .bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
+ 
+-.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
++.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing};container:bt-panel/inline-size}
+ .bt-panel[data-leaving]{transform:translateX(100%);transition:transform .3s cubic-bezier(.2,0,0,1);pointer-events:none}
+ .bt-panel[data-instant]{transition:none}
+ @keyframes bt-pane-in{from{transform:translateX(100%)}}
 @@ -345,6 +345,8 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
  .bt-drawer-id>.bt-mark,.bt-drawer-id>.bt-cluster{margin-bottom:16px}
@@ -2672,15 +2708,20 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -470,6 +470,8 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -470,7 +470,13 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
  .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
  .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
 +/* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
 +.bt-flybot-room-members{padding:10px 12px}
  .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
++/* #1335: a row's copy never breaks its own label. The label used to be a bare inline span inside a
++   column that flexed down to 36px, so "Name" came out as "Nam" + "e"; a single-word label is now one
++   line, and the hint below it is what wraps when the column is short. */
++.bt-set-copy>.bt-bs-label,.bt-set-copy>.bt-set-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
  .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
+ .bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
 @@ -490,8 +490,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
@@ -2732,7 +2773,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -805,21 +805,28 @@ export const CONVERSATION_CSS = `
+@@ -805,21 +805,35 @@ export const CONVERSATION_CSS = `
  [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
  :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
  [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
@@ -2754,6 +2795,13 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +[class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
 +[class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 +[class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
++/* #1335: "Standard mode" beside the title reads as a control — a filled chip with an icon — but the
++   shell draws it as a span with no click handler (dsh-client-ui-agent-preset, AgentPresetLabel):
++   clicking it does nothing, and the only thing behind it is a hover title. In a Bot chat the mode is
++   fixed for the whole Session anyway, so the chip becomes what it is: a status word on the title's
++   line. No fill, no radius, muted ink, and the description stays on hover. */
++[data-slot="conversation.session.header.actions"] [class*="_label"]{background:none;border-radius:0;color:var(--bt-ink-3);cursor:help;pointer-events:auto}
++[data-slot="conversation.session.header.actions"] [class*="_label"] svg{opacity:.7}
  [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
  /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
     without its copy and branch row; a tail with nothing in it takes no room. */

@@ -183,7 +183,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  // body-level layer by bot-browsers.js; the panel draws the strip and the toolbar
  // and reports the rectangle the shown webview covers.
  import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
-+import { DEFAULT_WIDTH, DETAILS_WIDTH, panelWidthRange } from './pane-width.js'
++import { DEFAULT_WIDTH, DETAILS_WIDTH, MIN_DETAILS, panelWidthRange } from './pane-width.js'
  import { createPortal } from 'react-dom'
  import { BotMark } from './mark.js'
  import { STORAGE } from './storage.js'
@@ -203,8 +203,19 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  // How long the Bot's mark shows that it read the page.
  const READ_FLASH_MS = 2400
  const EMPTY_PAGE = { url: '', title: '', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: '' }
-@@ -59,10 +59,8 @@ const savedWidth = () => {
-     return Number.isFinite(value) && value >= DETAILS_WIDTH ? value : null
+@@ -52,17 +52,17 @@ export function Favicon({ src, className }) {
+ }
+ 
+ // null until the user sets a width: the Bot page then opens at DETAILS_WIDTH and the
+-// browser at DEFAULT_WIDTH.
++// browser at DEFAULT_WIDTH. A saved width narrower than DETAILS_WIDTH is a *stored* choice from a
++// narrower policy (#1335 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
++// what the panel can be dragged to is enforced here.
+ const savedWidth = () => {
+   try {
+     const value = Number(localStorage.getItem(WIDTH_KEY))
+-    return Number.isFinite(value) && value >= DETAILS_WIDTH ? value : null
++    return Number.isFinite(value) && value >= MIN_DETAILS ? value : null
    } catch { return null }
  }
 -const widthRange = (view, viewport) => (view === 'browser'
@@ -926,6 +937,23 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
+@@ -172,6 +172,16 @@ const ZH = {
+   'Close details': '关闭详情',
+   'Copied conversation': '已复制对话',
+   'Share conversation': '分享对话',
++  'Copy conversation': '复制对话',
++  'Nothing to copy yet': '还没有可复制的内容',
++  'Conversation copied as Markdown': '对话已复制为 Markdown',
++  'Could not copy the conversation': '无法复制对话',
++  'No messages yet. Say something to {name}.': '还没有消息。给 {name} 发点什么吧。',
++  'This model does not support that request. Pick another model in the Bot\'s settings.': '该模型不支持这项请求。请在 Bot 设置里换一个模型。',
++  'This model does not support {feature}. Pick another model in the Bot\'s settings.': '该模型不支持 {feature}。请在 Bot 设置里换一个模型。',
++  'The provider does not know this model. Check the model name in the Bot\'s settings.': '服务方不认识这个模型。请在 Bot 设置里检查模型名称。',
++  'The conversation is longer than this model can read. Condense it, or pick a model with a larger window.': '这段对话超出了该模型能读的长度。请压缩对话，或换一个上下文更大的模型。',
++  'The model service refused the request. Check the model and the endpoint in the Bot\'s settings.': '模型服务拒绝了这次请求。请在 Bot 设置里检查模型和接口地址。',
+   'Copy conversation as Markdown': '把对话复制为 Markdown',
+   'This conversation is not part of your Bot team.': '这个对话不属于你的 Bot 团队。',
+   'Admin {name}': '管理员 {name}',
 @@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
@@ -2271,11 +2299,12 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 diff --git a/src/client/text.js b/src/client/text.js
 --- a/src/client/text.js
 +++ b/src/client/text.js
-@@ -2,6 +2,7 @@
+@@ -2,6 +2,8 @@
  // Text helpers
  import { dateLocale, t } from './i18n.js'
  import { mentionSpans } from '../shared/mentions.js'
 +import { remoteMentionLabel } from '../shared/remote-label.js'
++import { visibleText } from '../shared/preview.js'
  
  export const MENTION_ORIGIN = 'https://bots.local/'
  
@@ -2398,7 +2427,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // parts) are not events in the chat, nor is a request handed back after its line was
  // already shown: deferred, resumed after a restart, or retried after a tool call
  // written as text.
-@@ -200,14 +200,26 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
+@@ -200,14 +200,27 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
  }
  
  // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
@@ -2423,8 +2452,9 @@ diff --git a/src/client/text.js b/src/client/text.js
 -    const text = entry.response || entry.prompt || ''
 -    if (text !== '') return stripHeader(text).replace(/\s+/g, ' ').trim()
 +    const text = (unsentTurns.includes(entry.turn) ? '' : entry.response) || entry.prompt || ''
-+    // The outline flattens a reply to one line, so its trace ends at a space there.
-+    if (text !== '') return stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, '')
++    // The outline flattens a reply to one line, so its trace ends at a space there. A stored line can
++    // still carry its untrusted fence, and a row is one line someone reads: no marker reaches it (#1335).
++    if (text !== '') return visibleText(stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, ''))
    }
    return ''
  }
