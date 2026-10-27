@@ -14,7 +14,7 @@ import { t } from './i18n.js'
 import { columnOf } from '../shared/task-board.js'
 import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
 import { githubCard, githubCardKey } from '../shared/board-card.js'
-import { cardNamesIssue } from '../shared/issue-ref.js'
+import { issueCardForTask } from '../shared/issue-ref.js'
 import { BoardCard, DELIVERY_SKIN } from './board-card.js'
 import { BoardCard as TaskBoardCard, canMoveTask } from './kanban.js'
 
@@ -450,28 +450,10 @@ const cardRepoOf = (card, fallback) => {
 
 const recordKey = (repo, number) => githubCardKey(repo, number) ?? `#${Number(number)}`
 
-// The repository a record already names, read off the same text `cardNamesIssue` matches.
-// A bare `#12` names no repository. `target` is the host's normalised pointer and wins over a
-// mention in the title, which is how a dispatch and the board stay on one card.
-function namedRepos(task) {
-  if (task?.target?.owner && task?.target?.repo) return [`${task.target.owner}/${task.target.repo}`]
-  const text = `${task?.title ?? ''}\n${task?.note ?? ''}`
-  const repos = []
-  for (const match of text.matchAll(/(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#\d+/g)) repos.push(`${match[1]}/${match[2]}`)
-  for (const match of text.matchAll(/github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/\d+/gi)) repos.push(`${match[1]}/${match[2]}`)
-  return repos
-}
-
-const repoOk = (task, repo) => {
-  const named = namedRepos(task)
-  if (named.length === 0 || repo === '') return true
-  return named.includes(repo)
-}
-
-// A record hangs under the issue `cardNamesIssue` would hand a dispatch (#1254, #1331). The
-// issue's `linked` pull request is the closing-keyword link the snapshot already computed (#1189),
-// so a record that names that pull request hangs under the issue too. One open record per issue;
-// an older open record that names the same issue is not drawn again.
+// A record hangs under the issue `issueCardForTask` names (#1254, #1331, #1360). That is
+// `cardNamesIssue` on the issue number or on the closing-keyword pull request the snapshot
+// already stored as `linked` (#1189), and a repository only when the same text writes one.
+// One open record per issue; an older open record that names the same issue is not drawn again.
 export function hangRecords(columns, tasks, repo) {
   const issues = []
   for (const cards of Object.values(columns ?? {})) {
@@ -484,24 +466,7 @@ export function hangRecords(columns, tasks, repo) {
   const taken = new Set()
   const open = (tasks ?? []).filter(task => task && task.kind !== 'group' && !TERMINAL_TASK.has(task.status) && task.id != null)
   for (const task of open) {
-    let best = null
-    let bestScore = -1
-    const hits = []
-    for (const issue of issues) {
-      if (!repoOk(task, issue.repo)) continue
-      const namesIssue = cardNamesIssue(task, issue.card.number)
-      const namesPull = issue.card.linked != null && cardNamesIssue(task, issue.card.linked)
-      if (!namesIssue && !namesPull) continue
-      hits.push(issue)
-    }
-    // A bare `#12` on a board where two repositories both have that issue names neither.
-    const bare = namedRepos(task).length === 0
-    const pool = bare && hits.length > 1 ? [] : hits
-    for (const issue of pool) {
-      const target = Number(task.target?.number)
-      const score = target === Number(issue.card.number) ? 2 : target === Number(issue.card.linked) ? 1 : 0
-      if (score > bestScore) { best = issue; bestScore = score }
-    }
+    const best = issueCardForTask(task, issues)
     if (!best) continue
     const key = recordKey(best.repo, best.card.number)
     const list = nested.get(key) ?? []

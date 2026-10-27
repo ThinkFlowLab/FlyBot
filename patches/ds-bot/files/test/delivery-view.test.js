@@ -1012,3 +1012,46 @@ test('#1360: with no issue on the board, an orphan and a linked task both stay t
   assert.equal(walk(missing).some(node => node.props?.className === 'bt-board-subtask'), false)
   assert.equal(walk(missing).filter(node => node.props?.['data-task'] === 'task-linked').length, 1)
 })
+
+// #1360 review: the note is not a second matcher. `cardNamesIssue` reads it only when the title
+// and target name no issue, so a repository written only in the note cannot move the card.
+test('#1360: a title that names #12 nests under that issue even when the note names another repository', () => {
+  const board = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: 'acme/board', asOf: '2026-10-27T06:00:00Z',
+      columns: {
+        'not-started': [],
+        'in-progress': [issueCard('acme/board', 12)],
+        done: [],
+      },
+    },
+    tasks: [{
+      id: 'task-title',
+      title: '#12 implement',
+      note: 'blocked on ThinkFlowLab/FlyBot#9',
+      status: 'working',
+    }],
+  })
+  const progress = columnOf(board, 'in-progress')
+  assert.equal(topLevel(progress).length, 1)
+  const sub = walk(progress).find(node => node.props?.className === 'bt-board-subtask')
+  assert.equal(sub?.props['data-parent'], 'acme/board#12')
+  assert.equal(walk(sub).find(node => node.props?.['data-task'])?.props['data-task'], 'task-title')
+})
+
+test('#1360: a bare #12 stays top-level when two issues share it, even if the note names one repository', () => {
+  const board = DeliveryBoard({
+    view: {
+      state: 'fresh', repo: null, asOf: '2026-10-27T06:00:00Z',
+      repos: [
+        { repo: 'acme/one', state: 'fresh', columns: { 'not-started': [], 'in-progress': [issueCard('acme/one', 12)], done: [] } },
+        { repo: 'acme/two', state: 'fresh', columns: { 'not-started': [], 'in-progress': [issueCard('acme/two', 12)], done: [] } },
+      ],
+    },
+    tasks: [{ id: 'task-bare-note', title: '#12', note: 'blocked on acme/two#99', status: 'working' }],
+  })
+  const progress = walk(board).filter(node => node.type === 'section' && node.props?.['data-column'] === 'in-progress' && node.props['data-workflow'] === undefined)
+  assert.equal(walk(board).some(node => node.props?.className === 'bt-board-subtask'), false)
+  const shown = progress.flatMap(column => walk(column).filter(node => node.props?.['data-task'] === 'task-bare-note'))
+  assert.equal(shown.length, 1, 'the bare number stays one top-level card')
+})

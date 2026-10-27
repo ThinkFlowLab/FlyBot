@@ -8462,6 +8462,49 @@ function cardNamesIssue(task, wanted) {
   return issueRefs(own).length === 0 && namesIssue(task?.note ?? "", wanted);
 }
 var issueRefPattern = () => new RegExp(ISSUE_REF.source, "gi");
+var MENTION = /(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#(\d{1,7})(?![0-9])|github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/(\d{1,7})(?![0-9])|#(\d{1,7})(?![0-9])/gi;
+var mentionOf = (match) => {
+  if (match[3]) return { repo: `${match[1]}/${match[2]}`, number: match[3] };
+  if (match[6]) return { repo: `${match[4]}/${match[5]}`, number: match[6] };
+  if (match[7]) return { repo: null, number: match[7] };
+  return null;
+};
+function cardMentions(task) {
+  const own = `${task?.title ?? ""} ${task?.target?.href ?? ""}`;
+  const text = issueRefs(own).length > 0 ? own : `${own} ${task?.note ?? ""}`;
+  const mentions = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const match of text.matchAll(new RegExp(MENTION.source, "gi"))) {
+    const mention = mentionOf(match);
+    if (!mention) continue;
+    const key = `${mention.repo ?? ""}#${mention.number}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    mentions.push(mention);
+  }
+  return mentions;
+}
+var asNumber = (value) => value == null || value === "" ? null : String(value);
+function issueCardForTask(task, issues) {
+  const mentions = cardMentions(task);
+  if (mentions.length === 0) return null;
+  const list = (issues ?? []).filter((issue) => asNumber(issue?.card?.number ?? issue?.number) != null);
+  const numberOf = (issue) => asNumber(issue?.card?.number ?? issue?.number);
+  const linkedOf = (issue) => asNumber(issue?.card?.linked ?? issue?.linked);
+  const repoOf2 = (issue) => typeof issue?.repo === "string" ? issue.repo : "";
+  const qualified = list.filter((issue) => mentions.some((mention) => mention.repo != null && mention.repo === repoOf2(issue) && (mention.number === numberOf(issue) || mention.number === linkedOf(issue))));
+  if (qualified.length === 1) return qualified[0];
+  if (qualified.length > 1) {
+    const byNumber2 = qualified.filter((issue) => mentions.some((mention) => mention.repo === repoOf2(issue) && mention.number === numberOf(issue)));
+    return byNumber2.length === 1 ? byNumber2[0] : null;
+  }
+  const bare2 = new Set(mentions.filter((mention) => mention.repo == null).map((mention) => mention.number));
+  if (bare2.size === 0) return null;
+  const bareHits = list.filter((issue) => bare2.has(numberOf(issue)) || linkedOf(issue) != null && bare2.has(linkedOf(issue)));
+  if (bareHits.length === 1) return bareHits[0];
+  const byNumber = bareHits.filter((issue) => bare2.has(numberOf(issue)));
+  return byNumber.length === 1 ? byNumber[0] : null;
+}
 
 // src/client/delivery-view.js
 var import_react16 = require("react");
@@ -8864,20 +8907,6 @@ var cardRepoOf = (card, fallback) => {
   return typeof fallback === "string" ? fallback.trim() : "";
 };
 var recordKey = (repo, number) => githubCardKey(repo, number) ?? `#${Number(number)}`;
-function namedRepos(task) {
-  if (task?.target?.owner && task?.target?.repo) return [`${task.target.owner}/${task.target.repo}`];
-  const text = `${task?.title ?? ""}
-${task?.note ?? ""}`;
-  const repos = [];
-  for (const match of text.matchAll(/(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#\d+/g)) repos.push(`${match[1]}/${match[2]}`);
-  for (const match of text.matchAll(/github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/\d+/gi)) repos.push(`${match[1]}/${match[2]}`);
-  return repos;
-}
-var repoOk = (task, repo) => {
-  const named = namedRepos(task);
-  if (named.length === 0 || repo === "") return true;
-  return named.includes(repo);
-};
 function hangRecords(columns, tasks, repo) {
   const issues = [];
   for (const cards of Object.values(columns ?? {})) {
@@ -8890,26 +8919,7 @@ function hangRecords(columns, tasks, repo) {
   const taken = /* @__PURE__ */ new Set();
   const open = (tasks ?? []).filter((task) => task && task.kind !== "group" && !TERMINAL_TASK.has(task.status) && task.id != null);
   for (const task of open) {
-    let best = null;
-    let bestScore = -1;
-    const hits = [];
-    for (const issue of issues) {
-      if (!repoOk(task, issue.repo)) continue;
-      const namesIssue2 = cardNamesIssue(task, issue.card.number);
-      const namesPull = issue.card.linked != null && cardNamesIssue(task, issue.card.linked);
-      if (!namesIssue2 && !namesPull) continue;
-      hits.push(issue);
-    }
-    const bare2 = namedRepos(task).length === 0;
-    const pool = bare2 && hits.length > 1 ? [] : hits;
-    for (const issue of pool) {
-      const target = Number(task.target?.number);
-      const score = target === Number(issue.card.number) ? 2 : target === Number(issue.card.linked) ? 1 : 0;
-      if (score > bestScore) {
-        best = issue;
-        bestScore = score;
-      }
-    }
+    const best = issueCardForTask(task, issues);
     if (!best) continue;
     const key = recordKey(best.repo, best.card.number);
     const list = nested.get(key) ?? [];
