@@ -87,6 +87,10 @@ var ZH = {
   "Could not open this workflow": "打不开这个工作流",
   "This definition cannot be saved": "这个定义不能保存",
   "This definition cannot be copied": "这个定义不能复制",
+  "Select a node to edit": "选择一个节点来编辑",
+  "Node settings": "节点设置",
+  Tools: "工具",
+  "Inputs and outputs": "输入和输出",
   "{count} card(s) name a node this workflow draws no column for.": "有 {count} 张卡指向这个工作流不画列的节点。",
   // Shared
   "Main Bot": "主 Bot",

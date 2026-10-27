@@ -1,20 +1,16 @@
 // Browser half of @flybot/workflow. A workflow is a row in the sidebar and, once
-// opened, the main column: pill header, progress strip, bubbles, composer, and
-// a flowchart drawer. The host owns the graph; this file only draws it.
-// Every string is a React text child. require('react') is the shell's React.
+// opened, the main column: stage chat with normal FlyBot conversation UI, and a
+// flowchart drawer. Settings → Workflow graphs is canvas-first with per-node inspector.
+// The host owns the graph; this file only draws it. Every string is a React text child.
 window.__ModuleLoader__.load({
   id: '@flybot/workflow',
   factory: (require) => {
     const { createElement: h, useEffect, useRef, useState } = require('react')
-    // createPortal with no container throws. The sidebar slot boundary then draws
-    // nothing until reload, so a click on a row, New, or Hand-a-task removes the
-    // whole Workflows section (#1375). A missing body keeps the node in the tree.
     let createPortal = null
     try {
       const dom = require('react-dom')
       if (typeof dom?.createPortal === 'function') createPortal = dom.createPortal
     } catch (error) {
-      // The unit renderer supplies react only. The chat then stays in the section tree.
       void error
     }
     function portal(node) {
@@ -34,19 +30,11 @@ window.__ModuleLoader__.load({
       Assign: '确认分配',
       Workflow: 'Workflow',
       'One Bot (as before)': '单个 Bot（原有方式）',
-      'Run demo': '演示运行',
-      'Replay demo': '重放演示',
-      'A live run is in progress': '有真实运行在进行，演示不会插队',
       'Concurrent runs': '同时运行',
       '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
-      Pause: '暂停',
-      Next: '下一步',
-      Reset: '重置',
       Flow: '流程图',
       Details: 'Details',
       Runs: '运行记录',
-      'Running now': '运行中',
-      Queued: '排队中',
       Running: '运行中',
       Done: '已完成',
       Failed: '失败',
@@ -67,9 +55,9 @@ window.__ModuleLoader__.load({
       Manual: '手动，从任务看板分配',
       Schedule: '定时',
       Model: '模型',
-      'Each Bot’s own model': '跟随各个 Bot 的模型',
+      'Each Bot\'s own model': '跟随各个 Bot 的模型',
       Permissions: '权限',
-      'Each Bot’s own permission': '跟随各个 Bot 的权限',
+      'Each Bot\'s own permission': '跟随各个 Bot 的权限',
       'On failure': '失败策略',
       'Tester retries once. Any other failed step stops the run.': 'Tester 失败后自动重试 1 次。其他节点失败则停住。',
       'A failed step stops the run.': '失败的节点停住，等你处理。',
@@ -99,6 +87,12 @@ window.__ModuleLoader__.load({
       'Output name': '输出名',
       Equals: '等于',
       Skipped: '跳过',
+      Queued: '排队中',
+      'Select a node to edit': '选择一个节点来编辑',
+      'Node settings': '节点设置',
+      Role: '角色',
+      Tools: '工具',
+      'Inputs and outputs': '输入和输出',
     }
 
     function zhUi() {
@@ -163,31 +157,119 @@ window.__ModuleLoader__.load({
       return workflow?.nodes?.find(node => node.id === id)
     }
 
-    function Stage({ workflow, roster, playing, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onPlay, onNext, onReset, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
+    function MiniFlowchart({ workflow, roster }) {
+      const nodes = workflow?.nodes ?? []
+      const edges = workflow?.edges ?? []
+      if (nodes.length === 0) return null
+      const layers = workflow?.layers ?? [[nodes[0]?.id]]
+      const width = 160
+      const nodeW = 32
+      const nodeH = 32
+      const spacing = 40
+      const layerSpacing = 48
+      const height = layers.length * layerSpacing + nodeH
+      return h('svg', { width, height, viewBox: `0 0 ${width} ${height}`, className: 'wf-mini-flow', 'aria-label': workflow.name },
+        h('defs', null,
+          h('marker', { id: 'wf-mini-arrow', viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '4', markerHeight: '4', orient: 'auto' },
+            h('path', { d: 'M0 0 10 5 0 10z', fill: 'var(--bt-ink-3, #9a9a9a)' }))),
+        edges.map(edge => {
+          const fromIdx = layers.findIndex(layer => layer.includes(edge.from))
+          const toIdx = layers.findIndex(layer => layer.includes(edge.to))
+          if (fromIdx < 0 || toIdx < 0 || fromIdx >= toIdx) return null
+          const fromLayer = layers[fromIdx]
+          const toLayer = layers[toIdx]
+          const fromPos = fromLayer.indexOf(edge.from)
+          const toPos = toLayer.indexOf(edge.to)
+          const x1 = width / 2 + (fromPos - (fromLayer.length - 1) / 2) * spacing
+          const y1 = fromIdx * layerSpacing + nodeH
+          const x2 = width / 2 + (toPos - (toLayer.length - 1) / 2) * spacing
+          const y2 = toIdx * layerSpacing
+          return h('path', {
+            key: `${edge.from}>${edge.to}`,
+            d: `M ${x1} ${y1} L ${x2} ${y2}`,
+            stroke: 'var(--bt-ink-3, #9a9a9a)',
+            strokeWidth: 1,
+            fill: 'none',
+            markerEnd: 'url(#wf-mini-arrow)'
+          })
+        }),
+        layers.map((layer, layerIdx) => layer.map((nodeId, pos) => {
+          const node = nodeOf(workflow, nodeId)
+          if (!node) return null
+          const x = width / 2 + (pos - (layer.length - 1) / 2) * spacing - nodeW / 2
+          const y = layerIdx * layerSpacing
+          const color = COLORS[node.name] ?? '#4d6bfe'
+          return h('g', { key: nodeId },
+            h('rect', {
+              x, y, width: nodeW, height: nodeH, rx: 6,
+              fill: color,
+              opacity: 0.15,
+              stroke: color,
+              strokeWidth: 1
+            }),
+            h('text', {
+              x: x + nodeW / 2,
+              y: y + nodeH / 2 + 1,
+              textAnchor: 'middle',
+              dominantBaseline: 'middle',
+              fill: color,
+              fontSize: 12,
+              fontWeight: 600
+            }, (node.name ?? '?').slice(0, 1)))
+        })))
+    }
+
+    // Stage: reuse normal FlyBot conversation UI instead of custom card style
+    function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
       const chatRef = useRef(null)
       const run = workflow.run
       const names = workflow.nodes.map(node => node.name).join(', ')
       useEffect(() => {
         const el = chatRef.current
         if (el) el.scrollTop = el.scrollHeight
-      }, [workflow.messages.length, playing])
+      }, [workflow.messages.length])
       const running = (run?.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
+      const Conversation = globalThis.__flybot__?.Conversation
+      const ConversationHeader = globalThis.__flybot__?.ConversationHeader
+      const MessageComposer = globalThis.__flybot__?.MessageComposer
+      
+      // Use normal conversation components if available
+      if (typeof Conversation === 'function' && typeof ConversationHeader === 'function') {
+        const messages = workflow.messages.map(msg => ({
+          id: msg.id,
+          role: msg.kind === 'user' ? 'user' : msg.kind === 'system' ? 'system' : 'assistant',
+          sender: msg.botId ? { id: msg.botId, name: nodeOf(workflow, msg.botId)?.name } : { id: workflow.id, name: workflow.name },
+          text: msg.text,
+          timestamp: msg.timestamp
+        }))
+        
+        return h('div', { className: 'wf-stage', style: { left: conversationLeft() } },
+          h(ConversationHeader, {
+            title: workflow.name,
+            subtitle: run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task'),
+            onAction: onToggleDrawer
+          }),
+          h(Conversation, {
+            messages,
+            onSend: (text) => { onDraft(text); onSend() }
+          }))
+      }
+      
+      // Fallback to simplified conversation-style UI
       return h('div', { className: 'wf-stage', style: { left: conversationLeft() } },
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },
             h('button', { type: 'button', className: 'wf-pill', onClick: onToggleDrawer },
-              h('span', { className: 'wf-stack' }, workflow.nodes.slice(0, 4).map(node => h(Mark, { key: node.id, node, roster, size: 22 }))),
+              h(MiniFlowchart, { workflow, roster }),
               h('span', { className: 'wf-pill-name' }, workflow.name),
-              h('span', { className: 'wf-sub' }, `${workflow.nodes.length} Bots`),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
-              h('button', { type: 'button', className: 'wf-btn', onClick: onAssign }, tr('Hand a task to a Workflow')),
-              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : `▶ ${tr('Replay demo')}`))),
+              h('button', { type: 'button', className: 'wf-btn', onClick: onAssign }, tr('Hand a task to a Workflow')))),
           run ? h('div', { className: 'wf-strip' },
             h('div', { className: 'wf-strip-id' },
               h('div', { className: 'wf-tk' }, `${run.task?.id ?? ''} ${run.task?.title ?? ''}`),
               h('div', { className: 'wf-meta' }, running[0]
-                ? `${tr('Running now')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
+                ? `${tr('Running')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
                 : (run.status === 'done' ? tr('Done') : tr('Waiting for a task')))),
             h('div', { className: 'wf-segs' }, (run.marks ?? []).map((mark, index) => h('span', { key: index, className: `wf-seg ${mark}` }))),
             h('span', { className: `wf-chip ${run.status === 'done' ? 'done' : (running[0] ? 'running' : 'queued')}` }, run.status === 'done' ? tr('Done') : (running[0] ? tr('Running') : tr('Queued'))),
@@ -195,16 +277,11 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
           h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
-              workflow.messages.map(message => h(Bubble, { key: message.id, message, workflow, roster })),
-              playing ? running.map(node => h('div', { key: `type-${node.id}`, className: 'wf-msg' },
-                h(Mark, { node, roster, size: 28 }),
-                h('div', null,
-                  h('div', { className: 'wf-who' }, node.name, h('span', { className: 'wf-step' }, tr('Running'))),
-                  h('div', { className: 'wf-bub wf-typing' }, h('i'), h('i'), h('i'))))) : null)),
+              workflow.messages.map(message => h(Bubble, { key: message.id, message, workflow, roster })))),
           h('div', { className: 'wf-composer-wrap' },
             h('form', { className: 'wf-composer', onSubmit: (event) => { event.preventDefault(); onSend() } },
               h('input', {
-                value: draft, placeholder: `${tr('Message the workflow')} ${workflow.name} (${names})`,
+                value: draft, placeholder: `${tr('Message the workflow')} ${workflow.name}`,
                 onChange: (event) => onDraft(event.target.value),
               }),
               h('button', { type: 'submit', className: 'wf-mic', 'aria-label': tr('Assign') }, '↑')),
@@ -212,7 +289,7 @@ window.__ModuleLoader__.load({
         drawer ? h('aside', { className: 'wf-drawer' },
           h('div', { className: 'wf-dr-head' },
             h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onCloseDrawer }, '×')),
-          h(DrawerBody, { workflow, roster, tab, onTab, onPlay, onNext, onReset, playing, onTip, editing, onToggleEdit, onCommit })) : null)
+          h(DrawerBody, { workflow, roster, tab, onTab, editing, onToggleEdit, onCommit, onTip })) : null)
     }
 
     function Bubble({ message, workflow, roster }) {
@@ -228,7 +305,7 @@ window.__ModuleLoader__.load({
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
-    function DrawerBody({ workflow, roster, tab, onTab, onPlay, onNext, onReset, playing, onTip, editing, onToggleEdit, onCommit }) {
+    function DrawerBody({ workflow, roster, tab, onTab, editing, onToggleEdit, onCommit, onTip }) {
       const run = workflow.run
       return h('div', { className: 'wf-dr-body' },
         h('div', { className: 'wf-dr-title' },
@@ -243,9 +320,6 @@ window.__ModuleLoader__.load({
         tab === 'details' ? h(Details, { workflow }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
-          h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : tr('Replay demo')),
-          h('button', { type: 'button', className: 'wf-btn', onClick: onNext }, `${tr('Next')} ›`),
-          h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onToggleEdit }, editing ? tr('Finish editing') : tr('Edit'))))
     }
 
@@ -271,17 +345,16 @@ window.__ModuleLoader__.load({
       return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
     }
 
-    // The flowchart is the graph: positions and edges are the saved model, and
-    // the status chip is that node's run state. Edit mode drags nodes, draws
-    // edges from the bottom port, and drops a local Bot onto the canvas.
     function Flow({ workflow, run, roster, onTip, editing, onCommit }) {
       const [gesture, setGesture] = useState(null)
       const [ghost, setGhost] = useState(null)
+      const [selectedNode, setSelectedNode] = useState(null)
       const status = run?.nodeStatus ?? {}
       const nodes = workflow.nodes.map(node => ghost?.[node.id] ? { ...node, ...ghost[node.id] } : node)
       const edges = workflow.edges ?? []
       const height = Math.max(420, ...nodes.map(node => (node.y ?? 0) + 150), 0)
       const locals = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && !nodes.some(node => node.botId === bot.id))
+      const selected = nodes.find(node => node.id === selectedNode)
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
       const movePointer = (event) => {
         if (!gesture || gesture.kind !== 'move') return
@@ -307,6 +380,9 @@ window.__ModuleLoader__.load({
         setGesture(null)
         setGhost(null)
       }
+      const updateNode = (nodeId, updates) => {
+        commit(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
+      }
       return h('div', { className: 'wf-canvas', onPointerMove: movePointer, onPointerUp: endPointer },
         editing ? h('div', { className: 'wf-palette' },
           h('div', { className: 'wf-muted' }, tr('Drag a Bot here')),
@@ -315,19 +391,6 @@ window.__ModuleLoader__.load({
             onPointerDown: (event) => { event.preventDefault?.(); setGesture({ kind: 'add', bot }) },
           }, bot.name))) : null,
         h('div', { className: 'wf-term' }, run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task')),
-        editing ? h('div', { className: 'wf-prompts' }, nodes.map(node => h('label', { key: node.id, className: 'wf-prompt' },
-          h('span', null, `${node.name} · ${tr('System prompt')}`),
-          h('textarea', {
-            'data-prompt': node.id,
-            rows: 3,
-            defaultValue: node.prompt || node.instructions || '',
-            onPointerDown: (event) => event.stopPropagation?.(),
-            onBlur: (event) => {
-              const prompt = event.target?.value ?? ''
-              if (prompt === (node.prompt || '')) return
-              commit(workflow.nodes.map(item => item.id === node.id ? { ...item, prompt } : item), edges)
-            },
-          })))) : null,
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true },
             edges.map(edge => {
@@ -356,8 +419,9 @@ window.__ModuleLoader__.load({
           nodes.map(node => h('div', {
             key: node.id,
             'data-node': node.id,
-            className: `wf-node wf-abs ${status[node.id] ?? 'queued'}`,
+            className: `wf-node wf-abs ${status[node.id] ?? 'queued'} ${selectedNode === node.id ? 'selected' : ''}`,
             style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
+            onClick: () => editing ? setSelectedNode(node.id) : null,
             onPointerDown: (event) => {
               if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
               setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x, y: node.y })
@@ -374,10 +438,21 @@ window.__ModuleLoader__.load({
               onClick: (event) => {
                 event.stopPropagation?.()
                 commit(workflow.nodes.filter(item => item.id !== node.id), edges.filter(edge => edge.from !== node.id && edge.to !== node.id))
+                setSelectedNode(null)
               },
             }, '×') : null,
             h(FlowNode, { node, status: status[node.id] ?? 'queued', roster })))),
-        run?.status === 'done' ? h('div', { className: 'wf-term on' }, tr('Done')) : null)
+        run?.status === 'done' ? h('div', { className: 'wf-term on' }, tr('Done')) : null,
+        editing && selected ? h('div', { className: 'wf-node-inspector' },
+          h('div', { className: 'wf-inspector-header' },
+            h('span', null, `${selected.name} · ${tr('System prompt')}`),
+            h('button', { type: 'button', className: 'wf-close-inspector', onClick: () => setSelectedNode(null) }, '×')),
+          h('textarea', {
+            rows: 4,
+            value: selected.prompt || '',
+            onChange: (event) => updateNode(selected.id, { prompt: event.target.value }),
+            placeholder: tr('System prompt'),
+          })) : null)
     }
 
     function FlowNode({ node, status, roster }) {
@@ -397,8 +472,8 @@ window.__ModuleLoader__.load({
       const retries = workflow.nodes.some(node => node.failOnce)
       return h('div', { className: 'wf-box' },
         h('div', { className: 'wf-kv' }, h('span', null, tr('Trigger')), h('span', null, trigger)),
-        h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, tr('Each Bot’s own model'))),
-        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot’s own permission'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, tr('Each Bot\'s own model'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot\'s own permission'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('On failure')), h('span', null, tr(retries ? 'Tester retries once. Any other failed step stops the run.' : 'A failed step stops the run.'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Concurrent runs')), h('span', null, String(workflow.maxConcurrent ?? 2))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Members')), h('span', null, workflow.chain)))
@@ -423,35 +498,37 @@ window.__ModuleLoader__.load({
       const bots = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && bot.id && bot.name).slice(0, 12)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Hand a task to a Workflow') },
-          h('h3', null, tr('Hand a task to a Workflow'),
-            h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×')),
-          h('p', { className: 'wf-hint' }, tr('A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.')),
-          h('div', { className: 'wf-step-h' }, h('b', null, '1'), tr('Pick a task card')),
-          h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
-            key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
-          },
-            h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
-            h('div', { className: 'wf-tt' }, task.title),
-            h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
-          h('div', { className: 'wf-step-h' }, h('b', null, '2'), tr('Pick who runs it')),
-          h('div', { className: 'wf-targets' },
-            workflows.map(item => h('button', {
-              key: item.id, type: 'button', className: `wf-tgt ${target === item.id ? 'sel' : ''}`, onClick: () => setTarget(item.id),
+          h('div', { className: 'wf-modal-header' },
+            h('h3', null, tr('Hand a task to a Workflow'),
+              h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×')),
+            h('p', { className: 'wf-hint' }, tr('A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.'))),
+          h('div', { className: 'wf-modal-body' },
+            h('div', { className: 'wf-step-h' }, h('b', null, '1'), tr('Pick a task card')),
+            h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
+              key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
             },
-              h('span', { className: 'wf-ico' }, glyph()),
-              h('span', null,
-                h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, tr('Workflow'))),
-                h('span', { className: 'wf-chain' }, item.chain)),
-              h('span', { className: 'wf-rad' }))),
-            bots.map(bot => h('button', {
-              key: bot.id, type: 'button', className: `wf-tgt ${target === `bot:${bot.id}` ? 'sel' : ''}`, onClick: () => setTarget(`bot:${bot.id}`),
-            },
-              h(Mark, { node: { name: bot.name, botId: bot.id }, roster, size: 30 }),
-              h('span', null,
-                h('span', { className: 'wf-t1' }, bot.name),
-                h('span', { className: 'wf-chain' }, tr('One Bot (as before)'))),
-              h('span', { className: 'wf-rad' })))),
-          h('div', { className: 'wf-mfoot' },
+              h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
+              h('div', { className: 'wf-tt' }, task.title),
+              h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
+            h('div', { className: 'wf-step-h' }, h('b', null, '2'), tr('Pick who runs it')),
+            h('div', { className: 'wf-targets' },
+              workflows.map(item => h('button', {
+                key: item.id, type: 'button', className: `wf-tgt ${target === item.id ? 'sel' : ''}`, onClick: () => setTarget(item.id),
+              },
+                h(MiniFlowchart, { workflow: item, roster }),
+                h('span', null,
+                  h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, tr('Workflow'))),
+                  h('span', { className: 'wf-chain' }, item.chain)),
+                h('span', { className: 'wf-rad' }))),
+              bots.map(bot => h('button', {
+                key: bot.id, type: 'button', className: `wf-tgt ${target === `bot:${bot.id}` ? 'sel' : ''}`, onClick: () => setTarget(`bot:${bot.id}`),
+              },
+                h(Mark, { node: { name: bot.name, botId: bot.id }, roster, size: 30 }),
+                h('span', null,
+                  h('span', { className: 'wf-t1' }, bot.name),
+                  h('span', { className: 'wf-chain' }, tr('One Bot (as before)'))),
+                h('span', { className: 'wf-rad' }))))),
+          h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onConfirm({ taskId, target }) }, tr('Assign')))))
     }
@@ -477,24 +554,26 @@ window.__ModuleLoader__.load({
       }
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('New workflow') },
-          h('h3', null, tr('New workflow'),
-            h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×')),
-          (templates ?? []).length > 0 ? h('div', { className: 'wf-field' }, tr('From a template'),
-            h('div', { className: 'wf-add' }, (templates ?? []).map(item => h('button', {
-              key: item.id, type: 'button', className: 'wf-btn', onClick: () => onTemplate?.(item.id),
-            }, item.name)))) : null,
-          h('label', { className: 'wf-field' }, tr('Name'),
-            h('input', { value: name, onChange: (event) => setName(event.target.value) })),
-          h('div', { className: 'wf-field' }, tr('Local Bots'),
-            h('div', { className: 'wf-add' },
-              h('select', { value: botId, onChange: (event) => setBotId(event.target.value) },
-                locals.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
-              h('label', { className: 'wf-par-toggle' },
-                h('input', { type: 'checkbox', checked: parallel, onChange: (event) => setParallel(event.target.checked) }),
-                tr('Parallel')),
-              h('button', { type: 'button', className: 'wf-btn', onClick: add }, tr('Add a Bot')))),
-          h('ol', { className: 'wf-plan' }, steps.map((layer, index) => h('li', { key: index }, layer.map(node => node.name).join(' ‖ ')))),
-          h('div', { className: 'wf-mfoot' },
+          h('div', { className: 'wf-modal-header' },
+            h('h3', null, tr('New workflow'),
+              h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×'))),
+          h('div', { className: 'wf-modal-body' },
+            (templates ?? []).length > 0 ? h('div', { className: 'wf-field' }, tr('From a template'),
+              h('div', { className: 'wf-add' }, (templates ?? []).map(item => h('button', {
+                key: item.id, type: 'button', className: 'wf-btn', onClick: () => onTemplate?.(item.id),
+              }, item.name)))) : null,
+            h('label', { className: 'wf-field' }, tr('Name'),
+              h('input', { value: name, onChange: (event) => setName(event.target.value) })),
+            h('div', { className: 'wf-field' }, tr('Local Bots'),
+              h('div', { className: 'wf-add' },
+                h('select', { value: botId, onChange: (event) => setBotId(event.target.value) },
+                  locals.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
+                h('label', { className: 'wf-par-toggle' },
+                  h('input', { type: 'checkbox', checked: parallel, onChange: (event) => setParallel(event.target.checked) }),
+                  tr('Parallel')),
+                h('button', { type: 'button', className: 'wf-btn', onClick: add }, tr('Add a Bot')))),
+            h('ol', { className: 'wf-plan' }, steps.map((layer, index) => h('li', { key: index }, layer.map(node => node.name).join(' ‖ '))))),
+          h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onCreate({ name, steps }) }, tr('Create')))))
     }
@@ -509,18 +588,14 @@ window.__ModuleLoader__.load({
       return ''
     }
 
+    // Settings → Workflow graphs: canvas-first with per-node inspector
     function WorkflowSettings({ call }) {
       const [pack, setPack] = useState(null)
       const [workflowId, setWorkflowId] = useState('')
-      const [from, setFrom] = useState('')
-      const [to, setTo] = useState('')
-      const [kind, setKind] = useState('link')
-      const [whenName, setWhenName] = useState('')
-      const [whenEq, setWhenEq] = useState('')
-      const [loopMax, setLoopMax] = useState('3')
-      const [untilName, setUntilName] = useState('')
-      const [untilEq, setUntilEq] = useState('')
+      const [selectedNode, setSelectedNode] = useState(null)
+      const [editing, setEditing] = useState(false)
       const [error, setError] = useState('')
+      
       useEffect(() => {
         let gone = false
         void Promise.resolve(call('workflow/state')).then(value => {
@@ -529,14 +604,17 @@ window.__ModuleLoader__.load({
             setPack(value)
             const first = value.workflows[0]
             setWorkflowId(id => id || first?.id || '')
-            setFrom(id => id || first?.nodes?.[0]?.id || '')
-            setTo(id => id || first?.nodes?.[1]?.id || first?.nodes?.[0]?.id || '')
           } else setError(value?.error ?? 'The workflow host did not answer')
         })
         return () => { gone = true }
       }, [])
+      
       const workflows = pack?.workflows ?? []
       const current = workflows.find(item => item.id === workflowId) ?? workflows[0]
+      const nodes = current?.nodes ?? []
+      const edges = current?.edges ?? []
+      const selected = nodes.find(node => node.id === selectedNode)
+      
       const save = (nodes, edges) => {
         if (!current) return
         void Promise.resolve(call('workflow/graph', { workflowId: current.id, nodes, edges })).then(value => {
@@ -544,80 +622,120 @@ window.__ModuleLoader__.load({
           if (value?.workflows) setPack(value)
         })
       }
-      const nameOf = (id) => current?.nodes.find(node => node.id === id)?.name ?? id
-      return h('div', { className: 'wf-settings', 'data-flybot': 'workflow-settings' },
+      
+      const updateNode = (nodeId, updates) => {
+        save(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
+      }
+      
+      return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
-        current ? h('div', null,
-          h('label', { className: 'wf-field' }, tr('Workflow graphs'),
-            h('select', {
-              'aria-label': tr('Workflow graphs'),
-              value: current.id,
-              onChange: (event) => setWorkflowId(event.target.value),
-            }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
-          current.nodes.map(node => h('label', { key: node.id, className: 'wf-field' },
-            `${node.name} · ${tr('System prompt')}`,
-            h('textarea', {
-              'data-prompt': node.id,
-              rows: 4,
-              defaultValue: node.prompt || node.instructions || '',
-              onBlur: (event) => {
-                const prompt = event.target?.value ?? ''
-                if (prompt === (node.prompt || '')) return
-                save(current.nodes.map(item => item.id === node.id ? { ...item, prompt } : item), current.edges)
+        current ? h('div', { className: 'wf-settings-layout' },
+          h('div', { className: 'wf-settings-header' },
+            h('label', { className: 'wf-field' },
+              h('select', {
+                'aria-label': tr('Workflow graphs'),
+                value: current.id,
+                onChange: (event) => { setWorkflowId(event.target.value); setSelectedNode(null) },
+              }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
+            h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
+              editing ? tr('Finish editing') : tr('Edit'))),
+          h('div', { className: 'wf-canvas-main' },
+            h(GraphCanvas, {
+              workflow: current,
+              editing,
+              selectedNode,
+              onSelectNode: setSelectedNode,
+              onCommit: ({ nodes, edges }) => save(nodes, edges)
+            })),
+          selected ? h('div', { className: 'wf-inspector' },
+            h('h3', null, tr('Node settings')),
+            h('div', { className: 'wf-inspector-content' },
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('System prompt')),
+                h('textarea', {
+                  rows: 6,
+                  value: selected.prompt || '',
+                  onChange: (event) => updateNode(selected.id, { prompt: event.target.value }),
+                })),
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('Role')),
+                h('input', {
+                  value: selected.role || '',
+                  onChange: (event) => updateNode(selected.id, { role: event.target.value }),
+                })),
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('Tools')),
+                h('input', {
+                  value: (selected.tools ?? []).join(', '),
+                  placeholder: 'github, bash, read, edit...',
+                  onChange: (event) => updateNode(selected.id, { tools: event.target.value.split(',').map(s => s.trim()).filter(Boolean) }),
+                })))) : h('div', { className: 'wf-inspector wf-inspector-empty' },
+            h('p', null, tr('Select a node to edit')))) : null)
+    }
+
+    function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit }) {
+      const [gesture, setGesture] = useState(null)
+      const nodes = workflow?.nodes ?? []
+      const edges = workflow?.edges ?? []
+      const height = Math.max(420, ...nodes.map(node => (node.y ?? 0) + 150), 0)
+      
+      const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
+      
+      const movePointer = (event) => {
+        if (!gesture || gesture.kind !== 'move') return
+        const node = nodes.find(n => n.id === gesture.id)
+        if (!node) return
+        commit(nodes.map(n => n.id === gesture.id ? {
+          ...n,
+          x: Math.round((node.x ?? 0) + event.clientX - gesture.ox),
+          y: Math.round((node.y ?? 0) + event.clientY - gesture.oy)
+        } : n), edges)
+        setGesture({ ...gesture, ox: event.clientX, oy: event.clientY })
+      }
+      
+      const endPointer = (event) => {
+        if (!gesture) return
+        const hit = hitNode(event)
+        if (gesture.kind === 'wire' && hit && hit !== gesture.from) {
+          commit(nodes, edges.concat([{ from: gesture.from, to: hit }]))
+        }
+        setGesture(null)
+      }
+      
+      return h('div', { className: 'wf-canvas-view', onPointerMove: movePointer, onPointerUp: endPointer },
+        h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
+          h('svg', { className: 'wf-wires', 'aria-hidden': true },
+            edges.map(edge => {
+              const from = nodes.find(node => node.id === edge.from)
+              const to = nodes.find(node => node.id === edge.to)
+              if (!from || !to) return null
+              return h('path', {
+                key: `${edge.from}>${edge.to}`,
+                d: wirePath(from, to)
+              })
+            })),
+          nodes.map(node => h('div', {
+            key: node.id,
+            'data-node': node.id,
+            className: `wf-node wf-abs ${selectedNode === node.id ? 'selected' : ''}`,
+            style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
+            onClick: () => onSelectNode?.(node.id),
+            onPointerDown: (event) => {
+              if (!editing) return
+              event.preventDefault()
+              setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY })
+            },
+          },
+            editing ? h('button', {
+              type: 'button', className: 'wf-port out', 'data-port': 'out',
+              onPointerDown: (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setGesture({ kind: 'wire', from: node.id })
               },
-            }))),
-          (current.edges ?? []).map(edge => {
-            const note = edgeNote(edge)
-            return h('div', { key: `${edge.from}>${edge.to}`, className: 'wf-hist' },
-              h('span', null, note ? `${nameOf(edge.from)} → ${nameOf(edge.to)} · ${note}` : `${nameOf(edge.from)} → ${nameOf(edge.to)}`),
-              h('button', {
-                type: 'button',
-                onClick: () => save(current.nodes, current.edges.filter(item => item.from !== edge.from || item.to !== edge.to)),
-              }, tr('Remove')))
-          }),
-          h('div', { className: 'wf-add' },
-            h('label', { className: 'wf-field' }, tr('Kind'),
-              h('select', { 'aria-label': tr('Kind'), value: kind, onChange: (event) => setKind(event.target.value) },
-                h('option', { value: 'link' }, tr('Link')),
-                h('option', { value: 'condition' }, tr('Condition')),
-                h('option', { value: 'loop' }, tr('Loop')))),
-            h('label', { className: 'wf-field' }, tr('From node'),
-              h('select', { 'aria-label': tr('From node'), value: from, onChange: (event) => setFrom(event.target.value) },
-                current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
-            h('label', { className: 'wf-field' }, tr('To node'),
-              h('select', { 'aria-label': tr('To node'), value: to, onChange: (event) => setTo(event.target.value) },
-                current.nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
-            kind === 'condition' ? h('label', { className: 'wf-field' }, tr('Output name'),
-              h('input', { 'aria-label': tr('Output name'), value: whenName, onChange: (event) => setWhenName(event.target.value) })) : null,
-            kind === 'condition' ? h('label', { className: 'wf-field' }, tr('Equals'),
-              h('input', { 'aria-label': tr('Equals'), value: whenEq, onChange: (event) => setWhenEq(event.target.value) })) : null,
-            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('Max iterations'),
-              h('input', { 'aria-label': tr('Max iterations'), value: loopMax, onChange: (event) => setLoopMax(event.target.value) })) : null,
-            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('until'),
-              h('input', { 'aria-label': tr('until'), value: untilName, onChange: (event) => setUntilName(event.target.value) })) : null,
-            kind === 'loop' ? h('label', { className: 'wf-field' }, tr('Equals'),
-              h('input', { 'aria-label': tr('Equals'), value: untilEq, onChange: (event) => setUntilEq(event.target.value) })) : null,
-            h('button', {
-              type: 'button', className: 'wf-btn',
-              onClick: () => {
-                if (!from || !to) return
-                if (kind !== 'loop' && from === to) return
-                if ((current.edges ?? []).some(edge => edge.from === from && edge.to === to)) return
-                let edge = { from, to }
-                if (kind === 'condition') {
-                  const output = whenName.trim().toLowerCase()
-                  if (!output) return
-                  edge = { from, to, when: { output, eq: whenEq } }
-                } else if (kind === 'loop') {
-                  const max = Number(loopMax)
-                  edge = { from, to, loop: true, max: Number.isInteger(max) ? max : 3 }
-                  const output = untilName.trim().toLowerCase()
-                  if (output) edge.until = { output, eq: untilEq }
-                }
-                save(current.nodes, [...(current.edges ?? []), edge])
-              },
-            }, tr('Add link')))) : null)
+            }) : null,
+            h(FlowNode, { node, status: 'idle', roster: {} })))))
     }
 
     function conversationLeft() {
@@ -634,14 +752,11 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('flow')
       const [assignOpen, setAssignOpen] = useState(false)
       const [creating, setCreating] = useState(false)
-      const [playing, setPlaying] = useState(false)
       const [draft, setDraft] = useState('')
       const [tasks, setTasks] = useState(FIXTURE_TASKS)
       const [tip, setTip] = useState(null)
       const [error, setError] = useState('')
       const [editing, setEditing] = useState(false)
-      const playingRef = useRef(false)
-      playingRef.current = playing
 
       const refresh = async () => {
         const value = await call('workflow/state')
@@ -649,6 +764,7 @@ window.__ModuleLoader__.load({
         else setError(value?.error ?? 'The workflow host did not answer')
         return value
       }
+      
       useEffect(() => {
         if (typeof document === 'undefined') return undefined
         if (document.getElementById('flybot-workflow-css')) return undefined
@@ -658,6 +774,7 @@ window.__ModuleLoader__.load({
         document.head.appendChild(style)
         return undefined
       }, [])
+      
       useEffect(() => {
         let gone = false
         void refresh().then(async () => {
@@ -673,12 +790,12 @@ window.__ModuleLoader__.load({
               if (value?.workflows) setPack(value)
             }
           } catch (loadError) {
-            // The board can be absent. Manual assign still lists the fixture cards.
             void loadError
           }
         })
         return () => { gone = true }
       }, [])
+      
       useEffect(() => {
         const root = globalThis.__flybot__
         if (!root) return undefined
@@ -686,16 +803,7 @@ window.__ModuleLoader__.load({
         root.openWorkflowAssign = () => { setAssignOpen(true); setOpenId(id => id) }
         return () => { root.openWorkflowAssign = prev }
       }, [])
-      useEffect(() => {
-        if (!playing || !openId) return undefined
-        const live = (pack?.workflows ?? []).find(item => item.id === openId)
-        if ((live?.activeCount ?? 0) > 0) { setPlaying(false); return undefined }
-        const timer = setInterval(() => { void call('workflow/demo-step', { workflowId: openId }).then(refresh).then(value => {
-          const row = value?.workflows?.find(item => item.id === openId)
-          if (value?.ok === false || (row?.activeCount ?? 0) > 0 || !row?.run || row.run.status === 'done') setPlaying(false)
-        }) }, 1200)
-        return () => clearInterval(timer)
-      }, [playing, openId, pack])
+      
       useEffect(() => {
         const live = (pack?.workflows ?? []).some(item => (item.activeCount ?? 0) > 0)
         if (!live) return undefined
@@ -703,13 +811,25 @@ window.__ModuleLoader__.load({
         const timer = setInterval(() => { if (!gone) void refresh() }, 2000)
         return () => { gone = true; clearInterval(timer) }
       }, [pack])
+      
+      // Refresh when a workflow has active runs - poll for Bot replies advancing nodes
+      useEffect(() => {
+        const active = (pack?.workflows ?? []).filter(item => (item.activeCount ?? 0) > 0)
+        if (active.length === 0) return undefined
+        let gone = false
+        const poll = setInterval(() => {
+          if (gone) return
+          void refresh()
+        }, 2000)
+        return () => { gone = true; clearInterval(poll) }
+      }, [pack?.workflows?.some(item => (item.activeCount ?? 0) > 0)])
+      
       useEffect(() => {
         if (!openId || typeof document === 'undefined') return undefined
         const onClick = (event) => {
           const row = event.target?.closest?.('.bt-row, .bt-board-row')
           if (!row || row.closest('[data-flybot="workflow"]')) return
           setOpenId(null)
-          setPlaying(false)
         }
         document.addEventListener('click', onClick, true)
         return () => document.removeEventListener('click', onClick, true)
@@ -728,7 +848,6 @@ window.__ModuleLoader__.load({
           })) : []
           setTasks(real.length > 0 ? real : FIXTURE_TASKS)
         } catch (loadError) {
-          // The board can be absent on a read-only host. The fixture cards still let the owner try the path.
           void loadError
           setTasks(FIXTURE_TASKS)
         }
@@ -744,7 +863,6 @@ window.__ModuleLoader__.load({
           const host = globalThis.__flybot__?.host
           if (typeof host === 'function') {
             try { await host('task-update', { id: task.id }) } catch (updateError) {
-              // The board can be absent. The route is stored; the next card write applies the owner.
               void updateError
             }
           }
@@ -760,6 +878,7 @@ window.__ModuleLoader__.load({
         setDrawer(true)
         setTab('flow')
       }
+      
       const create = async ({ name, steps }) => {
         const nodes = steps.flat()
         if (!name.trim() || nodes.length === 0) return
@@ -782,9 +901,9 @@ window.__ModuleLoader__.load({
         workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
         workflows.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
-          onClick: () => { setOpenId(item.id); setPlaying(false) },
+          onClick: () => { setOpenId(item.id) },
         },
-          h('span', { className: 'wf-ico' }, glyph()),
+          h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, roster })),
           h('span', { className: 'wf-txt' },
             h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow')),
             h('span', { className: 'wf-t2' }, item.preview || tr('Waiting for a task'))),
@@ -794,7 +913,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         open ? portal(h(Stage, {
-          workflow: open, roster, playing, drawer, tab, draft, onDraft: setDraft,
+          workflow: open, roster, drawer, tab, draft, onDraft: setDraft,
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
           onCommit: (graph) => {
@@ -806,12 +925,6 @@ window.__ModuleLoader__.load({
           onCloseDrawer: () => setDrawer(false),
           onToggleDrawer: () => { setDrawer(value => !value); setTab('flow') },
           onTab: (key) => { setTab(key); setDrawer(true) },
-          onPlay: () => {
-            if ((open.activeCount ?? 0) > 0) { setError(tr('A live run is in progress')); setPlaying(false); return }
-            setPlaying(value => !value)
-          },
-          onNext: () => { setPlaying(false); void call('workflow/demo-step', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
-          onReset: () => { setPlaying(false); void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onAssign: () => { setAssignOpen(true); void loadTasks() },
           onSend: () => {
             const text = draft.trim()
@@ -857,11 +970,11 @@ window.__ModuleLoader__.load({
 .wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none}
 .wf-ico-lg{width:42px;height:42px;margin:0 auto}
 .wf-av{border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:650;flex:none}
+.wf-mini-flow{display:block}
 .wf-stage{position:fixed;top:0;right:0;bottom:0;z-index:30;display:flex;background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414)}
 .wf-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .wf-top{height:56px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
 .wf-pill{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);cursor:pointer;color:inherit;font:inherit}
-.wf-stack{display:inline-flex}.wf-stack .wf-av,.wf-stack>*{margin-left:-6px}.wf-stack>*:first-child{margin-left:0}
 .wf-pill-name{font-weight:600}.wf-sub{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}.wf-chev{color:var(--bt-ink-3,#9a9a9a)}
 .wf-actions{position:absolute;right:14px;top:12px;display:flex;gap:6px}
 .wf-btn{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
@@ -891,8 +1004,6 @@ window.__ModuleLoader__.load({
 .wf-att{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
 .wf-att span{font-size:11.5px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:8px;padding:3px 8px}
 .wf-user{align-self:flex-end;background:var(--bt-user,#070707);color:var(--bt-user-ink,#fcfcfc);border-radius:12px;padding:8px 12px;max-width:70%;line-height:1.6}
-.wf-typing{display:flex;gap:4px;padding:11px 12px}
-.wf-typing i{width:6px;height:6px;border-radius:50%;background:var(--bt-ink-3,#9a9a9a)}
 .wf-composer-wrap{flex:none;padding:0 0 10px}
 .wf-composer{width:min(760px,calc(100% - 48px));margin:0 auto;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:14px;background:var(--bt-card,#fff);display:flex;align-items:center;gap:8px;padding:8px}
 .wf-composer input{flex:1;border:0;outline:0;background:transparent;font:inherit;color:inherit}
@@ -908,17 +1019,15 @@ window.__ModuleLoader__.load({
 .wf-tabs{display:flex;justify-content:center;gap:4px;margin:6px 0 12px}
 .wf-tabs button{padding:4px 10px;border-radius:7px;border:0;background:transparent;color:var(--bt-ink-2,rgba(20,20,20,.6));cursor:pointer;font:inherit}
 .wf-tabs button.on{background:var(--bt-active,rgba(119,119,119,.17));color:var(--bt-ink,#141414)}
-.wf-flow{display:flex;flex-direction:column;align-items:center;gap:0;padding:8px 0}
 .wf-term{font-size:11px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:3px 10px}
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
-.wf-step{display:flex;flex-direction:column;align-items:center}
-.wf-vline{width:1.6px;height:22px;background:var(--bt-line,rgba(20,20,20,.16))}
-.wf-frow{display:flex;justify-content:center;gap:14px}
-.wf-par{position:relative;border:1px dashed var(--bt-ink-3,#9a9a9a);border-radius:14px;padding:16px 8px 8px}
-.wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:nowrap}
-.wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px}
+.wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative}
 .wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%}
 .wf-plane{position:relative;width:0;margin:8px auto 0}
+.wf-node-inspector{position:absolute;bottom:8px;right:8px;width:320px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:10}
+.wf-inspector-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600}
+.wf-close-inspector{background:none;border:0;cursor:pointer;color:var(--bt-ink-3,#9a9a9a);font-size:18px;line-height:1;padding:0;width:20px;height:20px}
+.wf-node-inspector textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:8px;resize:vertical;font-size:12px}
 .wf-wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .wf-wires path{fill:none;stroke:var(--bt-line,rgba(20,20,20,.35));stroke-width:1.6}
 .wf-wires .wf-end{pointer-events:auto;fill:var(--bt-card,#fff);stroke:var(--bt-accent,#4d6bfe);cursor:crosshair}
@@ -928,6 +1037,7 @@ window.__ModuleLoader__.load({
 .wf-node{width:168px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px;position:relative}
 .wf-node.running{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
 .wf-node.done{border-color:rgba(22,163,74,.35)}.wf-node.failed{border-color:#e5484d}
+.wf-node.selected{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px rgba(77,107,254,.2)}
 .wf-node .wf-chip{position:absolute;top:-9px;right:8px}
 .wf-nt{min-width:0;flex:1;display:flex;flex-direction:column}
 .wf-nm{font-weight:600;font-size:12.5px}.wf-rl{font-size:11px;color:var(--bt-ink-3,#9a9a9a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -936,10 +1046,13 @@ window.__ModuleLoader__.load({
 .wf-kv span:first-child{color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .wf-hist{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--bt-line,rgba(20,20,20,.08));font-size:12px}
 .wf-ctl{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
-.wf-mask{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:80}
-.wf-modal{width:560px;max-width:calc(100% - 32px);background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414);border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));padding:18px 20px}
-.wf-modal h3{font-size:15px;display:flex;justify-content:space-between;align-items:center;margin:0}
-.wf-hint{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));margin:4px 0 0}
+.wf-mask{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
+.wf-modal{width:560px;max-width:100%;max-height:calc(100vh - 32px);background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414);border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;overflow:hidden}
+.wf-modal-header{padding:18px 20px 12px;border-bottom:1px solid var(--bt-line,rgba(20,20,20,.08));flex:none}
+.wf-modal-header h3{font-size:15px;display:flex;justify-content:space-between;align-items:center;margin:0 0 4px}
+.wf-modal-body{flex:1;overflow-y:auto;padding:12px 20px;min-height:0}
+.wf-modal-footer{padding:12px 20px;border-top:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;justify-content:flex-end;gap:8px;flex:none;background:var(--bt-main,#fcfcfc)}
+.wf-hint{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));margin:0}
 .wf-step-h{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));margin:14px 0 8px;display:flex;gap:6px;align-items:center}
 .wf-step-h b{width:18px;height:18px;border-radius:50%;background:var(--bt-user,#070707);color:var(--bt-user-ink,#fcfcfc);display:grid;place-items:center;font-size:11px}
 .wf-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -950,12 +1063,9 @@ window.__ModuleLoader__.load({
 .wf-tgt{display:flex;align-items:center;gap:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;color:inherit;font:inherit;width:100%}
 .wf-rad{margin-left:auto;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--bt-ink-3,#9a9a9a);flex:none}
 .wf-tgt.sel .wf-rad{border:5px solid var(--bt-accent,#4d6bfe)}
-.wf-mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .wf-field{display:flex;flex-direction:column;gap:6px;font-size:12px;margin-top:12px}
 .wf-field input,.wf-field select{height:32px;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:0 8px}
-.wf-prompts{width:min(360px,100%);display:flex;flex-direction:column;gap:8px}
-.wf-prompt{display:flex;flex-direction:column;gap:4px;font-size:12px;width:100%}
-.wf-field textarea,.wf-prompt textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:6px 8px;resize:vertical}
+.wf-field textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);color:inherit;font:inherit;padding:6px 8px;resize:vertical}
 .wf-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wf-plan{margin:10px 0 0;padding-left:18px;font-size:13px}
 .wf-tip{position:fixed;z-index:90;width:250px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55}
@@ -963,6 +1073,19 @@ window.__ModuleLoader__.load({
 .wf-muted{font-size:12px;color:var(--bt-ink-3,#9a9a9a);padding:4px 8px}
 .wf-err{font-size:12px;color:#e5484d;padding:4px 8px}
 .wf-assign-row{opacity:.9}
+.wf-par{position:relative;border:1px dashed var(--bt-ink-3,#9a9a9a);border-radius:14px;padding:16px 8px 8px}
+.wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:nowrap}
+.wf-settings-canvas{padding:16px}
+.wf-settings-layout{display:flex;flex-direction:column;gap:16px}
+.wf-settings-header{display:flex;gap:12px;align-items:center}
+.wf-canvas-main{flex:1;min-height:500px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
+.wf-canvas-view{width:100%;height:100%;position:relative}
+.wf-inspector{width:300px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
+.wf-inspector h3{font-size:14px;margin:0 0 12px}
+.wf-inspector-content{display:flex;flex-direction:column;gap:12px}
+.wf-inspector-empty{display:flex;align-items:center;justify-content:center}
+.wf-inspector-empty p{color:var(--bt-ink-3,#9a9a9a);text-align:center}
+.wf-par-toggle{display:flex;align-items:center;gap:6px;font-size:12px}
 `
 
     function apply(ctx) {
