@@ -406,13 +406,35 @@ test('sidebar preview ignores a stale busy preview when nothing is live', async 
   view.unmount()
 })
 
+test('two concurrent live runs each show independent progress strips', () => {
+  const workflow = {
+    runs: [
+      {
+        id: 'run-a', live: true, status: 'running',
+        task: { id: '#1422', title: 'PR 1422' },
+        running: ['planner'], doneCount: 1, nodeCount: 6,
+        marks: ['done', 'running', 'queued', 'queued', 'queued'],
+      },
+      {
+        id: 'run-b', live: true, status: 'running',
+        task: { id: '#1395', title: 'PR 1395' },
+        running: ['coder'], doneCount: 3, nodeCount: 6,
+        marks: ['done', 'done', 'done', 'running', 'queued'],
+      },
+    ],
+    run: { id: 'run-a', live: true, status: 'running' },
+  }
+  assert.equal(client.resolveFocusedRun(workflow, 'run-b').doneCount, 3)
+  assert.equal(client.resolveFocusedRun(workflow, null).id, 'run-a')
+})
+
 test('two concurrent live runs each get their own pause and stop controls', async () => {
   const graph = delivery()
   graph.activeCount = 2
   graph.queueDepth = 0
   graph.runs = [
-    { ...graph.run, id: 'run-a', task: { id: '#1422', title: 'PR 1422' }, taskSummary: '#1422 · PR 1422' },
-    { ...graph.run, id: 'run-b', task: { id: '#1395', title: 'PR 1395' }, taskSummary: '#1395 · PR 1395' },
+    { ...graph.run, id: 'run-a', task: { id: '#1422', title: 'PR 1422' }, taskSummary: '#1422 · PR 1422', doneCount: 1, marks: ['done', 'running', 'queued', 'queued', 'queued'] },
+    { ...graph.run, id: 'run-b', task: { id: '#1395', title: 'PR 1395' }, taskSummary: '#1395 · PR 1395', doneCount: 4, marks: ['done', 'done', 'done', 'done', 'running'] },
   ]
   graph.run = graph.runs[0]
   const calls = []
@@ -425,8 +447,13 @@ test('two concurrent live runs each get their own pause and stop controls', asyn
   await settle()
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   await settle()
-  const strips = findAll(view.tree, node => node.props?.className === 'wf-strip' && node.props?.['data-run-id'])
+  const strips = findAll(view.tree, node => node.props?.className?.includes('wf-strip') && node.props?.['data-run-id'])
   assert.equal(strips.length, 2)
+  const progressRows = findAll(view.tree, node => node.props?.className === 'wf-strip-progress')
+  assert.equal(progressRows.length, 2)
+  const text = textOf(view.tree)
+  assert.ok(text.includes('1/6'))
+  assert.ok(text.includes('4/6'))
   const pauseButtons = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Pause')
   assert.equal(pauseButtons.length, 2)
   const stopButtons = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Stop')
