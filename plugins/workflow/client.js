@@ -34,13 +34,8 @@ window.__ModuleLoader__.load({
       Assign: '确认分配',
       Workflow: 'Workflow',
       'One Bot (as before)': '单个 Bot（原有方式）',
-      'Run demo': '演示运行',
-      'Replay demo': '重放演示',
-      'A live run is in progress': '有真实运行在进行，演示不会插队',
       'Concurrent runs': '同时运行',
       '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
-      Pause: '暂停',
-      Next: '下一步',
       Reset: '重置',
       Flow: '流程图',
       Details: 'Details',
@@ -163,14 +158,14 @@ window.__ModuleLoader__.load({
       return workflow?.nodes?.find(node => node.id === id)
     }
 
-    function Stage({ workflow, roster, playing, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onPlay, onNext, onReset, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
+    function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onReset, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
       const chatRef = useRef(null)
       const run = workflow.run
       const names = workflow.nodes.map(node => node.name).join(', ')
       useEffect(() => {
         const el = chatRef.current
         if (el) el.scrollTop = el.scrollHeight
-      }, [workflow.messages.length, playing])
+      }, [workflow.messages.length])
       const running = (run?.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
       return h('div', { className: 'wf-stage', style: { left: conversationLeft() } },
         h('div', { className: 'wf-main' },
@@ -181,8 +176,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'wf-sub' }, `${workflow.nodes.length} Bots`),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
-              h('button', { type: 'button', className: 'wf-btn', onClick: onAssign }, tr('Hand a task to a Workflow')),
-              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : `▶ ${tr('Replay demo')}`))),
+              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
           run ? h('div', { className: 'wf-strip' },
             h('div', { className: 'wf-strip-id' },
               h('div', { className: 'wf-tk' }, `${run.task?.id ?? ''} ${run.task?.title ?? ''}`),
@@ -195,12 +189,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
           h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
-              workflow.messages.map(message => h(Bubble, { key: message.id, message, workflow, roster })),
-              playing ? running.map(node => h('div', { key: `type-${node.id}`, className: 'wf-msg' },
-                h(Mark, { node, roster, size: 28 }),
-                h('div', null,
-                  h('div', { className: 'wf-who' }, node.name, h('span', { className: 'wf-step' }, tr('Running'))),
-                  h('div', { className: 'wf-bub wf-typing' }, h('i'), h('i'), h('i'))))) : null)),
+              workflow.messages.map(message => h(Bubble, { key: message.id, message, workflow, roster })))),
           h('div', { className: 'wf-composer-wrap' },
             h('form', { className: 'wf-composer', onSubmit: (event) => { event.preventDefault(); onSend() } },
               h('input', {
@@ -212,7 +201,7 @@ window.__ModuleLoader__.load({
         drawer ? h('aside', { className: 'wf-drawer' },
           h('div', { className: 'wf-dr-head' },
             h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onCloseDrawer }, '×')),
-          h(DrawerBody, { workflow, roster, tab, onTab, onPlay, onNext, onReset, playing, onTip, editing, onToggleEdit, onCommit })) : null)
+          h(DrawerBody, { workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit })) : null)
     }
 
     function Bubble({ message, workflow, roster }) {
@@ -228,7 +217,7 @@ window.__ModuleLoader__.load({
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
-    function DrawerBody({ workflow, roster, tab, onTab, onPlay, onNext, onReset, playing, onTip, editing, onToggleEdit, onCommit }) {
+    function DrawerBody({ workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit }) {
       const run = workflow.run
       return h('div', { className: 'wf-dr-body' },
         h('div', { className: 'wf-dr-title' },
@@ -243,8 +232,6 @@ window.__ModuleLoader__.load({
         tab === 'details' ? h(Details, { workflow }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
-          h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : tr('Replay demo')),
-          h('button', { type: 'button', className: 'wf-btn', onClick: onNext }, `${tr('Next')} ›`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onToggleEdit }, editing ? tr('Finish editing') : tr('Edit'))))
     }
@@ -634,15 +621,11 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('flow')
       const [assignOpen, setAssignOpen] = useState(false)
       const [creating, setCreating] = useState(false)
-      const [playing, setPlaying] = useState(false)
       const [draft, setDraft] = useState('')
       const [tasks, setTasks] = useState(FIXTURE_TASKS)
       const [tip, setTip] = useState(null)
       const [error, setError] = useState('')
       const [editing, setEditing] = useState(false)
-      const playingRef = useRef(false)
-      playingRef.current = playing
-
       const refresh = async () => {
         const value = await call('workflow/state')
         if (value && Array.isArray(value.workflows)) setPack(value)
@@ -687,16 +670,6 @@ window.__ModuleLoader__.load({
         return () => { root.openWorkflowAssign = prev }
       }, [])
       useEffect(() => {
-        if (!playing || !openId) return undefined
-        const live = (pack?.workflows ?? []).find(item => item.id === openId)
-        if ((live?.activeCount ?? 0) > 0) { setPlaying(false); return undefined }
-        const timer = setInterval(() => { void call('workflow/demo-step', { workflowId: openId }).then(refresh).then(value => {
-          const row = value?.workflows?.find(item => item.id === openId)
-          if (value?.ok === false || (row?.activeCount ?? 0) > 0 || !row?.run || row.run.status === 'done') setPlaying(false)
-        }) }, 1200)
-        return () => clearInterval(timer)
-      }, [playing, openId, pack])
-      useEffect(() => {
         const live = (pack?.workflows ?? []).some(item => (item.activeCount ?? 0) > 0)
         if (!live) return undefined
         let gone = false
@@ -709,7 +682,6 @@ window.__ModuleLoader__.load({
           const row = event.target?.closest?.('.bt-row, .bt-board-row')
           if (!row || row.closest('[data-flybot="workflow"]')) return
           setOpenId(null)
-          setPlaying(false)
         }
         document.addEventListener('click', onClick, true)
         return () => document.removeEventListener('click', onClick, true)
@@ -782,7 +754,7 @@ window.__ModuleLoader__.load({
         workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
         workflows.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
-          onClick: () => { setOpenId(item.id); setPlaying(false) },
+          onClick: () => { setOpenId(item.id) },
         },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' },
@@ -794,7 +766,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         open ? portal(h(Stage, {
-          workflow: open, roster, playing, drawer, tab, draft, onDraft: setDraft,
+          workflow: open, roster, drawer, tab, draft, onDraft: setDraft,
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
           onCommit: (graph) => {
@@ -806,12 +778,7 @@ window.__ModuleLoader__.load({
           onCloseDrawer: () => setDrawer(false),
           onToggleDrawer: () => { setDrawer(value => !value); setTab('flow') },
           onTab: (key) => { setTab(key); setDrawer(true) },
-          onPlay: () => {
-            if ((open.activeCount ?? 0) > 0) { setError(tr('A live run is in progress')); setPlaying(false); return }
-            setPlaying(value => !value)
-          },
-          onNext: () => { setPlaying(false); void call('workflow/demo-step', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
-          onReset: () => { setPlaying(false); void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
+          onReset: () => { void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onAssign: () => { setAssignOpen(true); void loadTasks() },
           onSend: () => {
             const text = draft.trim()
