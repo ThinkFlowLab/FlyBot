@@ -399,6 +399,28 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     write()
   }
 
+  // A live run the host cut off: fail in-flight nodes and mark the run failed (#1414,
+  // #1424). Ephemeral ids are left on the record until release strips them.
+  function failCutoffRun(item, run) {
+    if (run.status === 'done' || run.status === 'failed') return
+    for (const nodeId of item ? orderedIds(item, run.nodeStatus, 'running') : []) {
+      try {
+        run.nodeStatus = failNode(item, run.nodeStatus, nodeId).status
+      } catch (error) {
+        warn(`flybot-workflow: node ${nodeId} kept its status: ${error?.message ?? error}`)
+      }
+    }
+    run.status = 'failed'
+    run.updatedAt = now()
+  }
+
+  function archiveCutoffRun(workflowId, run) {
+    const lane = laneOf(workflowId)
+    lane.active = lane.active.filter(item => item.id !== run.id)
+    lane.last = run
+    lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+  }
+
   // The oldest queued task whose own workflow still has a slot, or null.
   function takeNext() {
     let best = null
@@ -964,52 +986,80 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       if (typeof release !== 'function') return Promise.resolve()
       const stale = []
       const abandoned = []
+      let wrote = false
       for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
         const seen = new Set()
         for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
-          if (!run?.ephemeral || seen.has(run)) continue
+          if (seen.has(run)) continue
           seen.add(run)
+          const hasEphemeral = run?.ephemeral && Object.keys(run.ephemeral).length > 0
+          const zombie = run?.live === true && run.status === 'running' && !hasEphemeral
+          if (!hasEphemeral && !zombie) continue
           // A run still marked running here was cut off with the host that ran it,
           // and nothing resumes it: its instances are abandoned, not in progress.
           // Release them and end the run, or they stay hidden with no way to remove
-          // them. A run that already ended keeps its own status (#1388).
+          // them. A run that already ended keeps its own status (#1388). A zombie
+          // is a run dispose() already stripped: heal it on load (#1414).
           if (run.status === 'running') {
             abandoned.push({ workflowId, run })
             continue
           }
-          stale.push(...Object.values(run.ephemeral))
-          delete run.ephemeral
-          delete run.handed
+          if (hasEphemeral) {
+            stale.push(...Object.values(run.ephemeral))
+            delete run.ephemeral
+            delete run.handed
+            wrote = true
+          }
         }
       }
       for (const { workflowId, run } of abandoned) {
-        stale.push(...Object.values(run.ephemeral))
-        const ended = { ...run, status: 'failed', updatedAt: now() }
-        delete ended.ephemeral
-        delete ended.handed
-        const lane = laneOf(workflowId)
-        lane.active = lane.active.filter(item => item.id !== run.id)
-        lane.last = ended
-        lane.history = [...lane.history, { task: ended.task, status: ended.status, at: ended.updatedAt }].slice(-20)
+        try {
+          if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
+          failCutoffRun(workflow(workflowId), run)
+          delete run.ephemeral
+          delete run.handed
+          archiveCutoffRun(workflowId, run)
+          wrote = true
+        } catch (error) {
+          warn(`flybot-workflow: could not end ${run.id}: ${error?.message ?? error}`)
+        }
       }
-      if (stale.length === 0 && abandoned.length === 0) return Promise.resolve()
+      if (stale.length === 0 && !wrote) return Promise.resolve()
+      if (stale.length === 0) {
+        write()
+        return Promise.resolve()
+      }
       return releaseAll(stale, release, warn).then(() => { write() })
     },
     dispose() {
-      const runs = Object.values(state.lanes).flatMap(lane => [...(lane.active ?? []), lane.last].filter(Boolean))
-      const ids = runs.flatMap(run => Object.values(run?.ephemeral ?? {}))
-      // Release first, then forget the ids (#1387). A record that drops an id
-      // before its Bot is gone leaves a hidden Bot that no state names, so
-      // nothing can ever find it again. releaseAll reports a failed id through
-      // `warn` instead of rejecting, so one bad release cannot skip the write.
-      // The caller awaits this: a disposer that returns before the Bots are
-      // gone is not a cleanup.
+      const ids = []
+      const runs = []
+      let endedLive = false
+      for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
+        for (const run of [...(lane.active ?? [])]) {
+          if (run?.live === true && run.status === 'running') {
+            failCutoffRun(workflow(workflowId), run)
+            archiveCutoffRun(workflowId, run)
+            endedLive = true
+          }
+        }
+        runs.push(...[...(lane.active ?? []), lane.last].filter(Boolean))
+      }
+      for (const run of runs) ids.push(...Object.values(run?.ephemeral ?? {}))
+      // Release first, then forget the ids (#1387). End live runs before the
+      // record drops ephemeral so nothing is persisted as running without a map
+      // (#1414). A record that drops an id before its Bot is gone leaves a hidden
+      // Bot that no state names, so nothing can ever find it again. releaseAll
+      // reports a failed id through `warn` instead of rejecting, so one bad
+      // release cannot skip the write. The caller awaits this: a disposer that
+      // returns before the Bots are gone is not a cleanup.
+      const shouldWrite = ids.length > 0 || endedLive
       return releaseAll(ids, release, warn).then(() => {
         for (const run of runs) {
           delete run.ephemeral
           delete run.handed
         }
-        if (ids.length > 0) write()
+        if (shouldWrite) write()
       })
     },
   }

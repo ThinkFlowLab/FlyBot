@@ -25,8 +25,10 @@ function storeText(dir) {
   return readFileSync(join(dir, 'workflows.json'), 'utf8')
 }
 
-function activeRun(store, workflowId, runId) {
-  return (store.lanes?.[workflowId]?.active ?? []).find(run => run.id === runId)
+function storedRun(store, workflowId, runId) {
+  const lane = store.lanes?.[workflowId]
+  if (!lane) return undefined
+  return (lane.active ?? []).find(run => run.id === runId) ?? (lane.last?.id === runId ? lane.last : undefined)
 }
 
 function deferred() {
@@ -83,8 +85,8 @@ test('#1387: dispose() releases the Bots before the record drops their ids', asy
 
     const before = storeText(dir)
     const stored = readStore(dir)
-    const rowA = activeRun(stored, first.id, runA.id)
-    const rowB = activeRun(stored, second.id, runB.id)
+    const rowA = storedRun(stored, first.id, runA.id)
+    const rowB = storedRun(stored, second.id, runB.id)
     assert.deepEqual(Object.values(rowA.ephemeral).sort(), Object.values(runA.ephemeral).sort())
     assert.deepEqual(Object.values(rowB.ephemeral).sort(), Object.values(runB.ephemeral).sort())
     assert.equal(rowA.handed.plan, true)
@@ -96,7 +98,7 @@ test('#1387: dispose() releases the Bots before the record drops their ids', asy
     // or an interrupted release strands Bots that no state can ever find again.
     const during = readStore(dir)
     for (const [workflowId, run] of [[first.id, runA], [second.id, runB]]) {
-      const row = activeRun(during, workflowId, run.id)
+      const row = storedRun(during, workflowId, run.id)
       assert.deepEqual(row.ephemeral, run.ephemeral)
       assert.equal(row.handed.plan, true)
     }
@@ -111,9 +113,11 @@ test('#1387: dispose() releases the Bots before the record drops their ids', asy
 
     const after = readStore(dir)
     for (const [workflowId, run] of [[first.id, runA], [second.id, runB]]) {
-      const row = activeRun(after, workflowId, run.id)
+      const row = storedRun(after, workflowId, run.id)
+      assert.equal(row.status, 'failed')
       assert.equal(row.ephemeral, undefined)
       assert.equal('handed' in row, false)
+      assert.equal((after.lanes?.[workflowId]?.active ?? []).length, 0)
     }
     assert.deepEqual([...released].sort(), [...ids].sort())
     assert.equal(released.length, 4)
@@ -144,7 +148,11 @@ test('#1387: dispose() still returns a promise and still writes when nothing can
     const disposed = svc.dispose()
     assert.equal(typeof disposed?.then, 'function')
     await disposed
-    const row = readStore(dir).lanes[made.id].active[0]
+    const lane = readStore(dir).lanes[made.id]
+    assert.equal(lane.active.length, 0)
+    const row = lane.last
+    assert.equal(row.status, 'failed')
+    assert.equal(row.nodeStatus.plan, 'failed')
     assert.equal(row.ephemeral, undefined)
     assert.equal('handed' in row, false)
 
@@ -160,6 +168,47 @@ test('#1387: dispose() still returns a promise and still writes when nothing can
     await quiet
     assert.equal(storeText(offDir), text)
     assert.equal(off.state().workflows.find(item => item.id === idle.id).run, null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1414: dispose() ends live runs before the record drops ephemeral', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-dispose-1414-'))
+  const released = []
+  try {
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      spawn: async (spec) => `eph-${spec.nodeId}`,
+      release: async (id) => { released.push(id) },
+      dispatch: async () => ({ ok: true }),
+    })
+    const made = pair('Lane', svc)
+    await svc.runNamed({ workflow: 'Lane', brief: 'Ship it', task: '#1414' })
+    await svc.dispose()
+    const lane = readStore(dir).lanes[made.id]
+    assert.equal(lane.active.length, 0)
+    assert.equal(lane.last.status, 'failed')
+    assert.equal(lane.last.nodeStatus.plan, 'failed')
+    assert.equal(lane.last.ephemeral, undefined)
+    assert.deepEqual(released.sort(), ['eph-code', 'eph-plan'])
+
+    const after = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK + 1,
+      bots: () => roster,
+      spawn: async (spec) => `eph2-${spec.nodeId}`,
+      release: async () => {},
+      dispatch: async () => ({ ok: true }),
+    })
+    assert.equal(after.state().workflows.find(item => item.id === made.id).activeCount, 0)
+    released.length = 0
+    await after.reap()
+    assert.deepEqual(released, [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
