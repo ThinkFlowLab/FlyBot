@@ -187,3 +187,39 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(done.workflows.find(item => item.id === made.id).run.status, 'done')
   assert.deepEqual(removed, ['bot-1'])
 })
+
+test('#1389: a step the host refuses is not marked as handed, and a later settle sends it again', async () => {
+  let answer = { ok: false, code: 'no-sender' }
+  const calls = []
+  const warnings = []
+  const { svc } = harness({
+    service: {
+      dispatch: async (step) => { calls.push(step); return answer },
+      warn: (...args) => warnings.push(args.join(' ')),
+    },
+  })
+  const made = svc.define({
+    name: 'Pair',
+    nodes: [
+      { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+      { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+    ],
+    edges: [],
+  }).workflows.find(item => item.name === 'Pair')
+  const started = await svc.runNamed({ workflow: 'Pair', brief: 'Ship the note' })
+  assert.equal(started.ok, true)
+  const run = started.workflows.find(item => item.id === made.id).run
+  assert.equal(run.status, 'running')
+  assert.deepEqual(calls.map(step => step.nodeId).sort(), ['code', 'plan'])
+
+  // A refused step is not welded shut: the next settle sends it again, to the same Bot.
+  answer = { ok: true }
+  const moved = await svc.advance({ workflowId: made.id, nodeId: 'plan', outcome: 'done' })
+  assert.equal(moved.ok, true)
+  const after = moved.workflows.find(item => item.id === made.id).run
+  assert.equal(after.nodeStatus.code, 'running')
+  const codeCalls = calls.filter(step => step.nodeId === 'code')
+  assert.equal(codeCalls.length, 2)
+  assert.equal(codeCalls[0].botId, codeCalls[1].botId)
+  assert.match(warnings.join('\n'), /no-sender/)
+})

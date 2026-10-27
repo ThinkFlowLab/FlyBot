@@ -203,7 +203,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const node = nodeById(item, nodeId)
       const botId = run.ephemeral[nodeId]
       if (!botId || !node) continue
-      await dispatch({
+      const answer = await dispatch({
         botId,
         nodeId,
         name: node.name,
@@ -214,6 +214,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         brief: run.task?.title ?? '',
         taskId: run.task?.id ?? '',
       })
+      // A refused step is not handed over: leave it unmarked so the next settle
+      // tries again, and say why in one line — otherwise the run stalls silently.
+      if (answer?.ok === false) {
+        warn(`flybot-workflow: step ${nodeId} was not handed over: ${answer.code ?? 'dispatch refused'}`)
+        continue
+      }
       run.handed = { ...run.handed, [nodeId]: true }
       wrote = true
     }
