@@ -223,9 +223,8 @@ test('an unreadable /actions/runs leaves the board, and the CI number unknown no
   assert.equal(result.partial, true)
   assert.equal(result.ok, true)
   // The board is still there: one failed request empties nothing.
-  // The column keeps its cards and the two open pull requests; only CI is missing.
-  assert.deepEqual(result.columns['in-progress'].map(card => card.number), [12, 40, 41])
-  assert.deepEqual(result.counts['in-progress'], 3)
+  assert.deepEqual(result.columns.working.map(card => card.number), [12])
+  assert.deepEqual(result.counts.review, 2)
   // Unknown is null, never 0 — and the reason is named.
   assert.equal(result.metrics.today.ci, null)
   assert.equal(result.metrics.week.ci, null)
@@ -237,7 +236,7 @@ test('an unreadable /actions/runs leaves the board, and the CI number unknown no
 test('unreadable check-runs read as unknown, not as "no verdict" (#1211)', async () => {
   const { board } = build({ failures: { '/commits/bbbbbbb2/check-runs': { status: 404 } } })
   const result = await settle(board)
-  const card = result.columns['in-progress'].find(item => item.number === 41)
+  const card = result.columns.review.find(item => item.number === 41)
   assert.equal(card.badge, 'checks-unknown')
   assert.equal(result.state, 'partial')
   const entry = result.missing.find(item => item.part === 'checks:41')
@@ -247,7 +246,7 @@ test('unreadable check-runs read as unknown, not as "no verdict" (#1211)', async
 test('unreadable comments cost that card its owner, not the board (#1211)', async () => {
   const { board } = build({ failures: { '/issues/12/comments': { status: 404 } } })
   const result = await settle(board)
-  const card = result.columns['in-progress'].find(item => item.number === 12)
+  const card = result.columns.working.find(item => item.number === 12)
   assert.equal(card.owner, null)
   assert.equal(result.state, 'partial')
   assert.ok(result.missing.some(item => item.part === 'comments:12'))
@@ -268,7 +267,7 @@ test('a failed refresh keeps the old snapshot and its reason (#1211)', async () 
   assert.equal(stale.state, 'stale')
   assert.equal(stale.error.status, 404)
   assert.equal(stale.asOf, first.asOf, 'the old snapshot is still served')
-  assert.equal(stale.columns['in-progress'].length, 3)
+  assert.equal(stale.columns.working.length, 1)
 })
 
 test('after a failure the next round waits 10 s, then 30 s, then two minutes (#1211)', async () => {
@@ -308,7 +307,7 @@ test('a round past its budget lands as partial, not as a failure (#1211)', async
   assert.equal(result.state, 'partial')
   assert.equal(result.ok, true)
   assert.equal(result.partial, true)
-  assert.ok(Array.isArray(result.columns['not-started']))
+  assert.ok(Array.isArray(result.columns.raw))
   assert.equal(BUILD_BUDGET_MS, 90_000)
 })
 
@@ -348,20 +347,21 @@ test('the --probe CLI is a shell over probeGitHub, not a second implementation (
   assert.doesNotMatch(source, /api\.github\.com/, 'the CLI makes no request of its own')
 })
 
-test('three workflow columns from one snapshot, an issue and its PR linked (#1173, #1326)', async () => {
+test('five columns come from one snapshot, an issue and its PR linked (#1173)', async () => {
   const { board } = build()
   const snapshot = await settle(board)
   assert.deepEqual(Object.keys(snapshot.columns), DELIVERY_COLUMNS)
-  // #1326: Three workflow columns. Issues map to not-started, PRs to in-progress, done-today in done.
-  assert.deepEqual(snapshot.columns['not-started'].map(card => card.number).sort((a, b) => a - b), [10, 11, 13])
-  assert.deepEqual(snapshot.columns['in-progress'].map(card => card.number).sort((a, b) => a - b), [12, 40, 41])
-  assert.deepEqual(snapshot.columns.done.filter(c => c.stage === 'done-today').map(card => card.number).sort((a, b) => a - b), [14, 41])
-  const progress = snapshot.columns['in-progress'].find(c => c.number === 12)
-  assert.equal(progress.linked, 41)
-  assert.equal(progress.owner, null)
-  const notStarted = snapshot.columns['not-started'].find(c => c.number === 11)
-  assert.deepEqual(notStarted.labels, ['agent-ready', 'enhancement'])
-  assert.deepEqual(snapshot.counts, { 'not-started': 3, 'in-progress': 3, done: 2 })
+  assert.deepEqual(snapshot.columns.raw.map(card => card.number), [10, 13])
+  assert.deepEqual(snapshot.columns.ready.map(card => card.number), [11])
+  assert.deepEqual(snapshot.columns.working.map(card => card.number), [12])
+  assert.deepEqual(snapshot.columns.review.map(card => card.number), [40, 41])
+  assert.deepEqual(snapshot.columns['done-today'].map(card => card.number), [41, 14])
+  const working = snapshot.columns.working[0]
+  assert.equal(working.linked, 41)
+  assert.equal(working.owner, null)
+  const ready = snapshot.columns.ready[0]
+  assert.deepEqual(ready.labels, ['agent-ready', 'enhancement'])
+  assert.deepEqual(snapshot.counts, { raw: 2, ready: 1, working: 1, review: 2, 'done-today': 2 })
 })
 
 test('only a closing keyword links a pull request to an issue (#1189)', async () => {
@@ -375,10 +375,10 @@ test('only a closing keyword links a pull request to an issue (#1189)', async ()
   const card = (column, number) => snapshot.columns[column].find(item => item.number === number)
   // "also see #10, same as #12" is prose: #10 links to nothing, and #12 keeps the pull request
   // that closes it (41), not the one that only mentions it.
-  assert.equal(card('not-started', 10).linked, null)
-  assert.equal(card('in-progress', 12).linked, 41)
+  assert.equal(card('raw', 10).linked, null)
+  assert.equal(card('working', 12).linked, 41)
   // A closing keyword with a colon counts; nothing else does.
-  assert.equal(card('not-started', 13).linked, 44)
+  assert.equal(card('raw', 13).linked, 44)
 })
 
 test('a pull request closed today without a merge is done today, not nowhere (#1173)', async () => {
@@ -390,7 +390,7 @@ test('a pull request closed today without a merge is done today, not nowhere (#1
     ],
   })
   const snapshot = await settle(board)
-  const done = snapshot.columns.done
+  const done = snapshot.columns['done-today']
   // Acceptance 2.5: today's merges plus today's closures, and a closed pull request counts even
   // though it never merged. Yesterday's closure stays off the board.
   assert.equal(done.filter(card => card.number === 41).length, 1)
@@ -401,7 +401,7 @@ test('a pull request closed today without a merge is done today, not nowhere (#1
   // /issues?state=closed returns no head for a pull, so this card carries no merge commit.
   assert.equal(closed.sha, null)
   assert.equal(done.some(card => card.number === 53), false)
-  assert.equal(snapshot.counts.done, done.length)
+  assert.equal(snapshot.counts['done-today'], done.length)
 })
 
 test('a pull merged today is done once although the closed page lists it too (#1173)', async () => {
@@ -418,10 +418,10 @@ test('a pull merged today is done once although the closed page lists it too (#1
     ],
   })
   const snapshot = await settle(board)
-  const done = snapshot.columns.done
+  const done = snapshot.columns['done-today']
   for (const number of [41, 44, 14, 52]) assert.equal(done.filter(card => card.number === number).length, 1, `#${number} is done today once`)
   assert.equal(done.some(card => card.number === 15), false)
-  assert.equal(snapshot.counts.done, done.length)
+  assert.equal(snapshot.counts['done-today'], done.length)
 })
 
 test('a verdict with no Attestation still counts at the sha it names (#1173)', async () => {
@@ -430,7 +430,7 @@ test('a verdict with no Attestation still counts at the sha it names (#1173)', a
     checks: { bbbbbbb2: [{ status: 'completed', conclusion: 'success' }] },
   })
   const snapshot = await settle(board)
-  const card = snapshot.columns['in-progress'].find(item => item.number === 41)
+  const card = snapshot.columns.review.find(item => item.number === 41)
   assert.equal(card.badge, 'pass-enqueue')
 })
 
@@ -442,7 +442,7 @@ test('a verdict line wins over an Attestation that names an older sha (#1173)', 
     checks: { aaaaaaa1: [{ status: 'in_progress', conclusion: null }], bbbbbbb2: [{ status: 'completed', conclusion: 'success' }] },
   })
   const snapshot = await settle(board)
-  const card = snapshot.columns['in-progress'].find(item => item.number === 41)
+  const card = snapshot.columns.review.find(item => item.number === 41)
   assert.equal(card.badge, 'pass-enqueue')
 })
 
@@ -460,7 +460,7 @@ test('a verdict on a later page of comments still decides the badge (#1189)', as
     checks: { bbbbbbb2: [{ status: 'completed', conclusion: 'success' }] },
   })
   const snapshot = await settle(board)
-  const card = snapshot.columns['in-progress'].find(item => item.number === 41)
+  const card = snapshot.columns.review.find(item => item.number === 41)
   assert.equal(card.badge, 'inc')
   assert.ok(github.calls.some(call => call.path === '/issues/41/comments' && /[?&]page=2(&|$)/.test(call.query)))
 })
@@ -519,7 +519,7 @@ test('a PR badge reads the verdict at its own tip, and CI when there is none (#1
     checks: { aaaaaaa1: [{ status: 'in_progress', conclusion: null }], bbbbbbb2: [{ status: 'completed', conclusion: 'success' }] },
   })
   const snapshot = await settle(board)
-  const badges = Object.fromEntries(snapshot.columns['in-progress'].map(card => [card.number, card.badge]))
+  const badges = Object.fromEntries(snapshot.columns.review.map(card => [card.number, card.badge]))
   // Verdict names an older sha: it does not count at this tip, so CI speaks.
   assert.equal(badges[40], 'ci-running')
   assert.equal(badges[41], 'pass-enqueue')
@@ -983,9 +983,9 @@ test('two repositories are two blocks of one board, each with its own source (#1
   assert.ok(two.calls.every(call => call.url.startsWith('https://api.github.com/repos/acme/two')))
   // The union carries both repositories' cards: the same issue number in two repositories is two
   // cards, and the second one does not disappear behind the first.
-  assert.deepEqual(settled.repos[0].columns['not-started'].map(card => card.number).sort(), [10, 11, 13])
-  assert.deepEqual(settled.repos[1].columns['not-started'].map(card => card.number).sort(), [10, 11, 13])
-  assert.equal(settled.columns['not-started'].length, 6, 'the same number from each repository is its own card')
+  assert.deepEqual(settled.repos[0].columns.raw.map(card => card.number).sort(), [10, 13])
+  assert.deepEqual(settled.repos[1].columns.raw.map(card => card.number).sort(), [10, 13])
+  assert.equal(settled.columns.raw.length, 4, 'the same number from each repository is its own card')
   // The header's numbers are the repositories' sums; a median across repositories is not a median,
   // so it is unknown instead of invented.
   assert.equal(settled.metrics.today.newIssues,
@@ -1039,8 +1039,8 @@ test('the aggregation rules: oldest snapshot, partial body, and no invented medi
   const stamp = '2026-10-25T04:00:00Z'
   const view = (repo, extra = {}) => ({
     ok: true, state: 'fresh', repo, repoSource: 'config', asOf: stamp, since: stamp, attempt: 1, elapsedMs: 10,
-    computedMs: 10, columns: { 'not-started': [], 'in-progress': [], done: [] },
-    counts: { 'not-started': 0, 'in-progress': 0, done: 0 },
+    computedMs: 10, columns: { raw: [], ready: [], working: [], review: [], 'done-today': [] },
+    counts: { raw: 0, ready: 0, working: 0, review: 0, 'done-today': 0 },
     metrics: {
       dayStart: stamp, timeZone: 'Asia/Shanghai',
       today: { newIssues: 1, closedIssues: 0, newPullRequests: 0, mergedPullRequests: 0, medianIssueCloseMs: 1, medianPullMergeMs: 2, ci: { failed: 0, total: 1, counted: 1, superseded: 0 } },

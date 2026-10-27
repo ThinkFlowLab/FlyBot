@@ -175,30 +175,31 @@ test('a group column nests subtasks under the overall task', () => {
   assert.match(textOf(notStarted), /Theirs/)
 })
 
-test('one board: no tablist, heading says Board, shows both task and delivery cards (#1326)', () => {
+test('the Delivery view drops the Bot rail, while Tasks keeps it (#1173)', () => {
   const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => ({ ok: false, reason: 'no-github' }) }
   states.length = 0
-  const boardView = expand(KanbanDialog({ roster, actions }))
-  // No tablist — the Tasks/Delivery split is gone (#1326).
-  const tabs = all(boardView).filter(node => node.props?.role === 'tab')
-  assert.equal(tabs.length, 0, 'no tabs — one board shows both task and delivery cards')
-  const tablist = all(boardView).find(node => node.props?.role === 'tablist')
-  assert.equal(tablist, undefined, 'no tablist element')
-  // Heading says "Board", not "Tasks" or "Delivery".
-  const heading = all(boardView).find(node => node.props?.id === 'bt-board-heading')
-  assert.match(textOf(heading), /Board/)
-  assert.doesNotMatch(textOf(heading), /Tasks/)
-  assert.doesNotMatch(textOf(heading), /Delivery/)
-  // The rail is per-Bot; task cards need it, delivery cards do not.
-  assert.equal(byClass(boardView, 'bt-board-rail').length, 1)
-  // With no GitHub token, task cards still render — the board is never empty (#1211, #1265).
-  assert.equal(all(boardView).some(node => node.props?.className === 'bt-del-body'), true)
+  const tasksView = expand(KanbanDialog({ roster, actions }))
+  const tabs = all(tasksView).filter(node => node.props?.role === 'tab')
+  assert.equal(tabs.map(node => node.props['data-view']).join('|'), 'tasks|delivery')
+  assert.equal(tabs.find(node => node.props['data-view'] === 'tasks').props['aria-selected'], 'true')
+  assert.equal(byClass(tasksView, 'bt-board-rail').length, 1)
+  assert.equal(all(tasksView).some(node => node.props?.['data-view'] === 'delivery' && node.props?.className === 'bt-del-body'), false)
+
+  states.push('delivery')
+  const deliveryView = expand(KanbanDialog({ roster, actions }))
+  // The rail is per-Bot; the delivery board is one per repository, so it must not carry one.
+  assert.equal(byClass(deliveryView, 'bt-board-rail').length, 0)
+  assert.equal(byClass(deliveryView, 'bt-board-body').length, 0)
+  assert.equal(all(deliveryView).some(node => node.props?.['data-view'] === 'delivery'), true)
+  assert.equal(all(deliveryView).find(node => node.props?.role === 'tab' && node.props['data-view'] === 'delivery').props['aria-selected'], 'true')
+  // No snapshot yet is the honest one-line empty state until the first read lands.
+  assert.match(textOf(deliveryView), /No snapshot yet/)
 })
 
-test('a delivery read with no token still shows task cards on the one board (#1211, #1265, #1326)', () => {
+test('a delivery read with no token leaves the task cards and their tab in place (#1211, #1265)', () => {
   // The two halves meet in one dialog: the delivery board can only say "the GitHub side is not
   // available" (core/test/delivery-view.test.js holds that sentence), and it must not take the task
-  // board with it — the cards are still rendered on the same board.
+  // board with it — the cards are the other view, and its tab still opens them.
   const failed = {
     ok: false, state: 'failed', repo: null, repos: [],
     error: { message: 'no GITHUB_TOKEN', kind: 'no-token', scope: 'repo', endpoint: null, status: null, at: null },
@@ -206,48 +207,13 @@ test('a delivery read with no token still shows task cards on the one board (#12
   }
   const actions = { closeBoard: () => {}, boardClose: () => {}, deliveryBoard: async () => failed }
   const mine = task('task-abcdef123456', 'open', { title: 'Draft the note', ownerBotId: 's', priority: 'high' })
-  // scope, dragging, error, draft, then the list the board would have read from the host.
+  // view, scope, dragging, error, draft, then the list the board would have read from the host.
   states.length = 0
-  states.push({ kind: 'bot', botId: 's' }, null, '', '', [mine])
-  const boardView = expand(KanbanDialog({ roster, actions }))
-  assert.match(textOf(boardView), /Draft the note/)
-  assert.equal(byClass(boardView, 'bt-board-card').length, 1)
-  // No tabs — one board shows both (#1326).
-  assert.equal(all(boardView).filter(node => node.props?.role === 'tab').length, 0)
-})
-
-test('Start and Complete fire from the unified board path (#1326)', () => {
-  const moved = []
-  const openTask = task('task-open123', 'open', { title: 'Start me', ownerBotId: 's' })
-  const workingTask = task('task-working456', 'working', { title: 'Complete me', ownerBotId: 's' })
-  const actions = { 
-    closeBoard: () => {}, 
-    boardClose: () => {},
-    taskUpdate: async ({ id, column }) => { moved.push([id, column]); return { ok: true } },
-    deliveryBoard: async () => ({ ok: false, reason: 'no-github' }),
-  }
-  states.length = 0
-  // KanbanDialog states: scope, dragging, error, draft
-  // useBoardTasks states: own, groupTasks, archive
-  states.push({ kind: 'bot', botId: 's' }, null, '', '', [openTask, workingTask], [], [])
-  const boardView = expand(KanbanDialog({ roster, actions }))
-  
-  // Find Start button on open task and click it
-  const cards = all(boardView).filter(node => node.props?.['data-task'])
-  const openCard = cards.find(card => card.props['data-task'] === 'task-open123')
-  assert.ok(openCard, 'open task card found')
-  const startButton = all(openCard).find(node => node.type === 'button' && textOf(node) === 'Start')
-  assert.ok(startButton, 'Start button found on open task')
-  startButton.props.onClick()
-  assert.deepEqual(moved[0], ['task-open123', 'in-progress'], 'Start moved task to in-progress')
-  
-  // Find Complete button on working task and click it
-  const workingCard = cards.find(card => card.props['data-task'] === 'task-working456')
-  assert.ok(workingCard, 'working task card found')
-  const completeButton = all(workingCard).find(node => node.type === 'button' && textOf(node) === 'Complete')
-  assert.ok(completeButton, 'Complete button found on working task')
-  completeButton.props.onClick()
-  assert.deepEqual(moved[1], ['task-working456', 'done'], 'Complete moved task to done')
+  states.push('tasks', { kind: 'bot', botId: 's' }, null, '', '', [mine])
+  const tasksView = expand(KanbanDialog({ roster, actions }))
+  assert.match(textOf(tasksView), /Draft the note/)
+  assert.equal(byClass(tasksView, 'bt-board-card').length, 1)
+  assert.deepEqual(all(tasksView).filter(node => node.props?.role === 'tab').map(node => node.props['data-view']), ['tasks', 'delivery'])
 })
 
 // #1252: the Done column is archive, not the board, and the slice has to be the *newest* finished

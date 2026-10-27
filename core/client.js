@@ -228,8 +228,6 @@ var ZH = {
   "{from} → {to}": "{from} → {to}",
   "+{count} more": "另有 {count} 条",
   delegated: "委托转达",
-  All: "全部",
-  Filter: "筛选",
   Review: "查看",
   "Attached files": "附件",
   Retry: "重试",
@@ -741,9 +739,7 @@ var ZH = {
   "Could not comment on {target}: {error}": "无法在 {target} 上留言：{error}",
   "Could not confirm the comment on {target} went out": "无法确认 {target} 上的留言是否发出",
   // Bot task board (#1058)
-  Board: "看板",
   Tasks: "任务",
-  "Close board": "关闭看板",
   "Close tasks": "关闭任务",
   "Task board": "任务板",
   "Not started": "未开始",
@@ -8456,9 +8452,11 @@ function pollDelay(state, payload = null, now = Date.now()) {
   return POLL_MS3;
 }
 var DELIVERY_COLUMNS = [
-  { id: "not-started", label: "Not started" },
-  { id: "in-progress", label: "In progress" },
-  { id: "done", label: "Done" }
+  { id: "raw", label: "Original issue" },
+  { id: "ready", label: "Ready to start" },
+  { id: "working", label: "In progress" },
+  { id: "review", label: "In review" },
+  { id: "done-today", label: "Done today" }
 ];
 function stagesOf(view) {
   const columns = view?.columns;
@@ -8481,64 +8479,6 @@ var BADGES = {
   "checks-unknown": "Checks unknown"
 };
 var badgeLabel = (badge) => badge ? t(BADGES[badge] ?? badge) : "";
-function taskColumnOf(task) {
-  const col = columnOf(task);
-  if (col === "not-started") return "not-started";
-  if (col === "in-progress") return "in-progress";
-  return "done";
-}
-var dropProps = (column, { dragging, onMove, onDrag }) => ({
-  onDragOver: (event) => {
-    if (!dragging) return;
-    event.preventDefault();
-  },
-  onDrop: (event) => {
-    event.preventDefault();
-    const id = event.dataTransfer?.getData("text/plain") ?? "";
-    if (id) onMove?.(id, column);
-    onDrag?.(null);
-  }
-});
-function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onDrag = null }) {
-  const columns = { "not-started": [], "in-progress": [], "done": [] };
-  for (const task of tasks ?? []) {
-    const col = taskColumnOf(task);
-    if (columns[col]) columns[col].push(task);
-  }
-  const columnTitles = {
-    "not-started": t("Not started"),
-    "in-progress": t("In progress"),
-    "done": t("Done")
-  };
-  return (0, import_react16.createElement)(
-    "div",
-    { className: "bt-board-columns" },
-    ["not-started", "in-progress", "done"].map((column) => (0, import_react16.createElement)(
-      "section",
-      {
-        key: column,
-        className: "bt-board-column",
-        "data-column": column,
-        "aria-label": columnTitles[column],
-        ...dropProps(column, { dragging, onMove, onDrag })
-      },
-      (0, import_react16.createElement)(
-        "h3",
-        { className: "bt-board-column-head" },
-        (0, import_react16.createElement)("span", null, columnTitles[column]),
-        (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(columns[column].length))
-      ),
-      columns[column].length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : columns[column].map((task) => (0, import_react16.createElement)(BoardCard2, {
-        key: task.id,
-        task,
-        roster,
-        movable: canMoveTask(roster, task),
-        onMove,
-        onDrag
-      }))
-    ))
-  );
-}
 function duration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "—";
   const hours = ms / 36e5;
@@ -8817,61 +8757,27 @@ function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, onProbe =
     )
   );
 }
-var BOARD_FILTERS = ["all", "review", "done-today"];
-function BoardFilters({ filter, onFilter }) {
-  return (0, import_react16.createElement)(
-    "div",
-    { className: "bt-del-filters", role: "group", "aria-label": t("Filter") },
-    BOARD_FILTERS.map((id) => (0, import_react16.createElement)("button", {
-      key: id,
-      type: "button",
-      className: "bt-soft bt-soft-sm",
-      "data-filter": id,
-      "aria-pressed": filter === id ? "true" : "false",
-      onClick: () => onFilter(id)
-    }, id === "all" ? t("All") : id === "review" ? t("Review") : t("Done today")))
-  );
-}
-var stageOf = (card, column) => card?.stage ?? column;
-var matchesFilter = (card, column, filter) => filter === "all" || stageOf(card, column) === filter;
-function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter = "all", roster = null, dragging = null, onMove = null, onDrag = null }) {
+function DeliveryColumns({ view, repo = null, placed = null }) {
   const columns = view?.columns ?? {};
   const drawn = placed === null || placed === void 0 ? null : new Set(placed);
-  const deliveryCards = (id) => (columns[id] ?? []).filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ""}#${card.kind}${card.number}`)).filter((card) => matchesFilter(card, id, filter));
-  const tasksByColumn = { "not-started": [], "in-progress": [], "done": [] };
-  for (const task of filter === "all" ? tasks ?? [] : []) {
-    const col = taskColumnOf(task);
-    if (tasksByColumn[col]) tasksByColumn[col].push(task);
-  }
-  const allCards = (id) => {
-    const delivery = deliveryCards(id);
-    const taskList = tasksByColumn[id] ?? [];
-    return [...taskList, ...delivery];
-  };
-  const taskIds = new Set((tasks ?? []).map((task) => task?.id));
-  const isTask = (item) => taskIds.has(item?.id);
+  const cards = (id) => (columns[id] ?? []).filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ""}#${card.kind}${card.number}`));
   return (0, import_react16.createElement)(
     "div",
     { className: "bt-del-columns" },
     stagesOf(view).map((column) => (0, import_react16.createElement)(
       "section",
-      {
-        key: column.id,
-        className: "bt-del-column",
-        "data-column": column.id,
-        ...dropProps(column.id, { dragging, onMove, onDrag })
-      },
+      { key: column.id, className: "bt-del-column", "data-column": column.id },
       (0, import_react16.createElement)(
         "h3",
         { className: "bt-board-column-head" },
         (0, import_react16.createElement)("span", null, t(column.label)),
-        (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(allCards(column.id).length))
+        (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(cards(column.id).length))
       ),
-      allCards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : allCards(column.id).map((item) => isTask(item) ? (0, import_react16.createElement)(BoardCard2, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag }) : (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? item.repo ?? ""}-${item.kind}-${item.number}`, card: item, repo: repo ?? item.repo ?? null }))
+      cards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : cards(column.id).map((card) => (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? ""}-${card.kind}-${card.number}`, card, repo }))
     ))
   );
 }
-function DeliveryWorkflowSections({ sections, repo = null, filter = "all" }) {
+function DeliveryWorkflowSections({ sections, repo = null }) {
   const list = Array.isArray(sections) ? sections : [];
   if (list.length === 0) return null;
   return (0, import_react16.createElement)("div", { className: "bt-del-workflows" }, list.map((section) => (0, import_react16.createElement)(
@@ -8887,60 +8793,27 @@ function DeliveryWorkflowSections({ sections, repo = null, filter = "all" }) {
       (0, import_react16.createElement)("span", null, section.name),
       (0, import_react16.createElement)("span", { className: "bt-wf-path" }, `workflows/${section.id}.json`)
     ),
-    (0, import_react16.createElement)("div", { className: "bt-del-columns" }, section.columns.map((column) => {
-      const cards = column.cards.filter((card) => matchesFilter(card, column.id, filter));
-      return (0, import_react16.createElement)(
-        "section",
-        {
-          key: column.id,
-          className: "bt-del-column",
-          "data-column": column.id,
-          "data-workflow": section.id
-        },
-        (0, import_react16.createElement)(
-          "h4",
-          { className: "bt-board-column-head" },
-          (0, import_react16.createElement)("span", null, column.label),
-          (0, import_react16.createElement)("span", { className: "bt-del-workflow-tag" }, section.name),
-          (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(cards.length))
-        ),
-        cards.length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : cards.map((card) => (0, import_react16.createElement)(DeliveryCard, { key: `${section.id}-${repo ?? card.repo ?? ""}-${card.kind}-${card.number}`, card, repo: repo ?? card.repo ?? null }))
-      );
-    })),
+    (0, import_react16.createElement)("div", { className: "bt-del-columns" }, section.columns.map((column) => (0, import_react16.createElement)(
+      "section",
+      {
+        key: column.id,
+        className: "bt-del-column",
+        "data-column": column.id,
+        "data-workflow": section.id
+      },
+      (0, import_react16.createElement)(
+        "h4",
+        { className: "bt-board-column-head" },
+        (0, import_react16.createElement)("span", null, column.label),
+        (0, import_react16.createElement)("span", { className: "bt-del-workflow-tag" }, section.name),
+        (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(column.cards.length))
+      ),
+      column.cards.length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : column.cards.map((card) => (0, import_react16.createElement)(DeliveryCard, { key: `${section.id}-${repo ?? card.repo ?? ""}-${card.kind}-${card.number}`, card, repo: repo ?? card.repo ?? null }))
+    ))),
     (section.unplaced ?? []).length > 0 ? (0, import_react16.createElement)("p", { className: "bt-del-hint" }, t("{count} card(s) name a node this workflow draws no column for.", { count: section.unplaced.length })) : null
   )));
 }
-function multiRepoView(entries2, { tasks, filter, roster, dragging, onMove, onDrag }) {
-  const successful = (entries2 ?? []).filter((entry) => entry?.columns !== void 0);
-  const failed = (entries2 ?? []).filter((entry) => entry?.columns === void 0);
-  const merged = { columns: { "not-started": [], "in-progress": [], "done": [] } };
-  for (const entry of successful) {
-    for (const [column, cards] of Object.entries(entry.columns)) {
-      if (merged.columns[column]) {
-        merged.columns[column].push(...cards.map((card) => ({ ...card, repo: card.repo ?? entry.repo })));
-      }
-    }
-  }
-  return (0, import_react16.createElement)(
-    "div",
-    { className: "bt-del-multi" },
-    // Successful repos: one shared column set with all cards and tasks once
-    successful.length > 0 ? (0, import_react16.createElement)(DeliveryColumns, { view: merged, repo: null, placed: null, tasks, filter, roster, dragging, onMove, onDrag }) : null,
-    // Failed repos: show error blocks
-    failed.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, {
-      key: entry.repo ?? "unknown",
-      entry,
-      tasks: [],
-      // Don't pass tasks to failed repo blocks
-      roster,
-      dragging,
-      onMove,
-      onDrag,
-      filter
-    }))
-  );
-}
-function DeliveryRepoBlock({ entry, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, filter = "all" }) {
+function DeliveryRepoBlock({ entry }) {
   const state = entry?.state ?? "fresh";
   const source = repoSourceText(entry?.repoSource);
   return (0, import_react16.createElement)(
@@ -8957,10 +8830,10 @@ function DeliveryRepoBlock({ entry, tasks = [], roster = null, dragging = null, 
       { className: "bt-del-block-state", role: "status" },
       state === "loading" ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t("The delivery board is not ready yet.")),
       entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : ""
-    ) : (0, import_react16.createElement)(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, tasks, filter, roster, dragging, onMove, onDrag })
+    ) : (0, import_react16.createElement)(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed })
   );
 }
-function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, onRetry = null, onProbe = null }) {
+function DeliveryBoard({ view, snapshot, message = "", repo = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: "fresh" } : { state: "idle" });
   const state = payload.state ?? "fresh";
   const retryAt = Number(payload.retryAt);
@@ -8973,24 +8846,18 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
     return () => clearInterval(timer);
   }, [ticking, retryAt]);
   const countdown = retryCountdown(payload.retryAt, now);
-  const [filter, setFilter] = (0, import_react16.useState)("all");
   const entries2 = Array.isArray(payload.repos) && payload.repos.length > 1 ? payload.repos : null;
-  const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   if (state === "idle") {
     return (0, import_react16.createElement)(
       "div",
-      { className: "bt-del-body", "data-view": "board", "data-state": state },
-      (0, import_react16.createElement)(BoardFilters, { filter, onFilter: setFilter }),
-      hasTasks ? (0, import_react16.createElement)(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
       message ? (0, import_react16.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("No snapshot yet."))
     );
   }
   if (state === "loading") {
     return (0, import_react16.createElement)(
       "div",
-      { className: "bt-del-body", "data-view": "board", "data-state": state },
-      (0, import_react16.createElement)(BoardFilters, { filter, onFilter: setFilter }),
-      hasTasks ? (0, import_react16.createElement)(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
       (0, import_react16.createElement)("p", { className: "bt-del-loading", role: "status" }, loadingText(payload.elapsedMs)),
       (0, import_react16.createElement)("p", { className: "bt-del-hint" }, t("The first round reads the repository once; the columns appear as soon as it lands."))
     );
@@ -9000,9 +8867,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
     const error = payload.error ?? null;
     return (0, import_react16.createElement)(
       "div",
-      { className: "bt-del-body", "data-view": "board", "data-state": state },
-      (0, import_react16.createElement)(BoardFilters, { filter, onFilter: setFilter }),
-      hasTasks ? (0, import_react16.createElement)(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
+      { className: "bt-del-body", "data-view": "delivery", "data-state": state },
       (0, import_react16.createElement)(
         "div",
         { className: "bt-board-error", role: "alert" },
@@ -9020,8 +8885,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
   const missing = payload.missing ?? [];
   return (0, import_react16.createElement)(
     "div",
-    { className: "bt-del-body", "data-view": "board", "data-state": state },
-    (0, import_react16.createElement)(BoardFilters, { filter, onFilter: setFilter }),
+    { className: "bt-del-body", "data-view": "delivery", "data-state": state },
     message ? (0, import_react16.createElement)("p", { className: "bt-board-error", role: "alert" }, message) : null,
     state === "stale" && payload.error ? (0, import_react16.createElement)(
       "p",
@@ -9034,20 +8898,19 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
     (0, import_react16.createElement)(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
     // A workflow's own columns come first: a card that names a workflow is drawn there and not in
     // the five columns below, which keep every card that names none (#1272 step 3).
-    entries2 === null ? (0, import_react16.createElement)(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null, filter }) : null,
-    entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag }) : multiRepoView(entries2, { tasks, filter, roster, dragging, onMove, onDrag })
+    entries2 === null ? (0, import_react16.createElement)(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null }) : null,
+    entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed }) : (0, import_react16.createElement)(
+      "div",
+      { className: "bt-del-repos" },
+      entries2.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, { key: entry.repo ?? "unknown", entry }))
+    )
   );
 }
-function DeliveryView({ actions, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null }) {
+function DeliveryView({ actions }) {
   const [view, retry] = useDeliveryBoard(actions);
   return (0, import_react16.createElement)(DeliveryBoard, {
     view,
     repo: view?.repo ?? null,
-    tasks,
-    roster,
-    dragging,
-    onMove,
-    onDrag,
     onRetry: actions?.deliveryBoard ? retry : null,
     onProbe: actions?.deliveryProbe ? () => actions.deliveryProbe() : null
   });
@@ -9057,7 +8920,7 @@ function DeliveryCard({ card, repo = null }) {
   return (0, import_react16.createElement)(BoardCard, {
     card: model,
     skin: DELIVERY_SKIN,
-    attrs: { "data-kind": card?.kind, "data-number": card?.number, "data-badge": card?.badge ?? void 0, "data-stage": card?.stage ?? void 0 },
+    attrs: { "data-kind": card?.kind, "data-number": card?.number, "data-badge": card?.badge ?? void 0 },
     idText: `#${card?.number ?? "?"}`,
     badge: badgeLabel(card?.badge)
   });
@@ -9079,8 +8942,6 @@ var DELIVERY_CSS = `
 .bt-del-diag{display:inline-flex;position:relative}
 .bt-del-diag-box{position:absolute;top:100%;left:0;z-index:3;display:flex;flex-direction:column;gap:6px;padding:8px;border:.5px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card,var(--bt-main));min-width:320px}
 .bt-del-diag-text{margin:0;font-size:11px;line-height:15px;white-space:pre-wrap;word-break:break-all;color:var(--bt-ink-2);max-height:220px;overflow:auto}
-.bt-del-filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.bt-del-filters .bt-soft[aria-pressed=true]{border-color:var(--bt-accent);color:var(--bt-accent);background:color-mix(in srgb,var(--bt-accent) 10%,transparent)}
 .bt-del-columns{flex:1 1 auto;min-height:0;display:flex;gap:10px;overflow:auto}
 .bt-del-column{flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;background:var(--bt-hover);overflow:auto}
 .bt-del-repos{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:auto}
@@ -9493,49 +9354,8 @@ function scopeName(roster, scope) {
   if (scope?.kind === "bot") return roster.byId?.[scope.botId]?.name || "";
   return "";
 }
-function UnifiedBoard({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, actions, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const selectedBot = scope?.kind === "bot" ? scope.botId : "";
-  const selectedRoom = scope?.kind === "group" ? scope.roomId : "";
-  const lanes = scope?.kind === "group";
-  return (0, import_react17.createElement)(
-    "div",
-    { className: "bt-board-body" },
-    (0, import_react17.createElement)(
-      "aside",
-      { className: "bt-board-rail", "aria-label": t("Task board") },
-      (0, import_react17.createElement)("h3", { className: "bt-board-rail-head" }, t("Your Bots")),
-      rail.bots.length === 0 ? (0, import_react17.createElement)("p", { className: "bt-board-empty" }, t("No tasks yet.")) : rail.bots.map((row) => {
-        const count = counts2?.[row.id] ?? { done: 0, total: 0 };
-        return (0, import_react17.createElement)(RailButton, {
-          key: row.id,
-          row,
-          selected: row.id === selectedBot,
-          onSelect,
-          meta: count.total > 0 ? t("{done}/{total}", { done: count.done, total: count.total }) : ""
-        });
-      }),
-      rail.groups.length > 0 ? (0, import_react17.createElement)("h3", { className: "bt-board-rail-head" }, t("Groups you admin")) : null,
-      rail.groups.map((row) => (0, import_react17.createElement)(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))
-    ),
-    (0, import_react17.createElement)(
-      "div",
-      { className: "bt-board-main" },
-      scope?.kind === "bot" && onCreate ? (0, import_react17.createElement)(
-        "form",
-        { className: "bt-board-add", onSubmit: (event) => {
-          event.preventDefault();
-          onCreate(draft);
-        } },
-        (0, import_react17.createElement)("input", { "aria-label": t("Task title"), placeholder: t("New task"), value: draft ?? "", onChange: (event) => onDraft?.(event.target.value) }),
-        (0, import_react17.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm" }, t("Add task"))
-      ) : null,
-      error ? (0, import_react17.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
-      lanes ? (0, import_react17.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
-      (0, import_react17.createElement)(DeliveryView, { actions, tasks, roster, dragging, onMove, onDrag })
-    )
-  );
-}
 function KanbanDialog({ roster, actions, leaving = false }) {
+  const [view, setView] = (0, import_react17.useState)("tasks");
   const rail = boardRail(roster);
   const [scope, setScope] = (0, import_react17.useState)(() => rail.bots[0] ? { kind: "bot", botId: rail.bots[0].id } : rail.groups[0] ? { kind: "group", roomId: rail.groups[0].id } : null);
   const [dragging, setDragging] = (0, import_react17.useState)(null);
@@ -9585,12 +9405,18 @@ function KanbanDialog({ roster, actions, leaving = false }) {
       (0, import_react17.createElement)(
         "div",
         { className: "bt-mem-head" },
-        (0, import_react17.createElement)("h2", { id: "bt-board-heading" }, t("Board")),
-        (0, import_react17.createElement)("span", { className: "bt-mem-status" }, name),
+        (0, import_react17.createElement)("h2", { id: "bt-board-heading" }, view === "delivery" ? t("Delivery") : t("Tasks")),
+        (0, import_react17.createElement)(
+          "div",
+          { className: "bt-board-views", role: "tablist", "aria-label": t("Board view") },
+          (0, import_react17.createElement)("button", { type: "button", role: "tab", className: "bt-soft bt-soft-sm", "data-view": "tasks", "aria-selected": view === "tasks" ? "true" : "false", onClick: () => setView("tasks") }, t("Tasks")),
+          (0, import_react17.createElement)("button", { type: "button", role: "tab", className: "bt-soft bt-soft-sm", "data-view": "delivery", "aria-selected": view === "delivery" ? "true" : "false", onClick: () => setView("delivery") }, t("Delivery"))
+        ),
+        view === "tasks" ? (0, import_react17.createElement)("span", { className: "bt-mem-status" }, name) : null,
         (0, import_react17.createElement)("span", { className: "bt-mem-head-gap" }),
-        (0, import_react17.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close board"), autoFocus: true, onClick: close }, (0, import_react17.createElement)(CloseIcon))
+        (0, import_react17.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close tasks"), autoFocus: true, onClick: close }, (0, import_react17.createElement)(CloseIcon))
       ),
-      (0, import_react17.createElement)(UnifiedBoard, {
+      view === "delivery" ? (0, import_react17.createElement)(DeliveryView, { actions }) : (0, import_react17.createElement)(BoardView, {
         roster,
         tasks: boardTasks,
         rail,
@@ -9599,7 +9425,6 @@ function KanbanDialog({ roster, actions, leaving = false }) {
         dragging,
         error,
         draft,
-        actions,
         onDraft: setDraft,
         onSelect: setScope,
         onMove: move,

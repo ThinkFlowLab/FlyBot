@@ -14,8 +14,7 @@ import { repoSlug } from './update.js'
 import { NO_REPO_MESSAGE, instanceRepoSettings, resolveRepos } from './delivery-repo.js'
 import { boardSections } from '../shared/workflow-board.js'
 
-// #1326: Workflow-based columns. The three visible stages of repo-dev; review and done-today are filters.
-export const DELIVERY_COLUMNS = ['not-started', 'in-progress', 'done']
+export const DELIVERY_COLUMNS = ['raw', 'ready', 'working', 'review', 'done-today']
 
 // State labels first on a card, then the areas; the order is the order the board shows.
 const STATE_LABELS = ['needs-human', 'needs-info', 'agent-ready', 'agent-working', 'agent-pr', 'awaiting-approval', 'hold']
@@ -146,14 +145,12 @@ export function cardOf(row, { kind, linked = null, owner = null, badge = null, s
   }
 }
 
-// #1326: Map delivery stage to workflow columns. PRs are in-progress (build/verify/gate);
-// review is a filter (column:false). Issues map by labels.
 export function columnOfDelivery(row, { kind }) {
   const labels = labelNames(row)
-  if (kind === 'pr') return 'in-progress'
-  if (labels.includes('agent-working') || labels.includes('agent-pr')) return 'in-progress'
-  if (labels.includes('agent-ready')) return 'not-started'
-  return 'not-started'
+  if (kind === 'pr') return 'review'
+  if (labels.includes('agent-working')) return 'working'
+  if (labels.includes('agent-ready')) return 'ready'
+  return 'raw'
 }
 
 // Which part of the board a path belongs to. The view turns this into advice a person can act on
@@ -546,8 +543,7 @@ export function createDeliveryBoard({ repo, repoSource = null, token, request = 
     let mergedToday = []
     let todayMetrics = null
     let weekMetrics = null
-    // #1326: Three workflow columns; done-today cards go in 'done' with data-stage='done-today' for filtering.
-    const columns = { 'not-started': [], 'in-progress': [], 'done': [] }
+    const columns = { raw: [], ready: [], working: [], review: [], 'done-today': [] }
     try {
       // The two open lists are the board itself: when they cannot be read there is no board to
       // show, so that failure is the round's, not a part's (#1211).
@@ -624,13 +620,7 @@ export function createDeliveryBoard({ repo, repoSource = null, token, request = 
         if (error?.budget) { note('budget', error); break }
         note(`comments:${pr.number}`, error)
       }
-      // An open pull request is work in progress, and `review` is a stage a card carries: the
-      // definition draws no column for it (#1326), so the card is placed by `columnOfDelivery`.
-      columns[columnOfDelivery(pr, { kind: 'pr' })].push({
-        ...cardOf(pr, { kind: 'pr', owner, ownerKind, badge, sha: String(pr.head?.sha ?? '').slice(0, 7) }),
-        badgeBasis: basis,
-        stage: 'review',
-      })
+      columns.review.push({ ...cardOf(pr, { kind: 'pr', owner, ownerKind, badge, sha: String(pr.head?.sha ?? '').slice(0, 7) }), badgeBasis: basis })
     }
     const closedInDay = (row) => Date.parse(row.closed_at ?? '') >= today
     const doneIssues = closedToday.filter(row => !isPull(row) && closedInDay(row))
@@ -642,12 +632,10 @@ export function createDeliveryBoard({ repo, repoSource = null, token, request = 
     // settle it even when that row carries no merge time.
     const mergedNumbers = new Set(donePulls.map(row => row.number))
     const abandonedPulls = closedToday.filter(row => isPull(row) && !row.pull_request?.merged_at && !mergedNumbers.has(row.number) && closedInDay(row))
-    // #1326: done-today cards go in 'done' column with stage='done-today' for filtering.
-    for (const row of donePulls) columns.done.push({ ...cardOf(row, { kind: 'pr', sha: String(row.merge_commit_sha ?? '').slice(0, 7) || null }), stage: 'done-today' })
-    for (const row of abandonedPulls) columns.done.push({ ...cardOf(row, { kind: 'pr' }), stage: 'done-today' })
-    for (const row of doneIssues) columns.done.push({ ...cardOf(row, { kind: 'issue' }), stage: 'done-today' })
-    // done column holds all done cards; done-today is a filter, not a separate column.
-    columns.done = columns.done.slice(0, MAX_DONE)
+    for (const row of donePulls) columns['done-today'].push(cardOf(row, { kind: 'pr', sha: String(row.merge_commit_sha ?? '').slice(0, 7) || null }))
+    for (const row of abandonedPulls) columns['done-today'].push(cardOf(row, { kind: 'pr' }))
+    for (const row of doneIssues) columns['done-today'].push(cardOf(row, { kind: 'issue' }))
+    columns['done-today'] = columns['done-today'].slice(0, MAX_DONE)
     const needsHuman = issues.filter(row => labelNames(row).includes('needs-human') || labelNames(row).includes('needs-info')).length
     const openPrs = pullRows.length
     return {
