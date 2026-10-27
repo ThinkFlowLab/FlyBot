@@ -32,6 +32,7 @@ window.__ModuleLoader__.load({
       'One Bot (as before)': '单个 Bot（原有方式）',
       'Concurrent runs': '同时运行',
       '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
+      Reset: '重置',
       Flow: '流程图',
       Details: 'Details',
       Runs: '运行记录',
@@ -220,7 +221,7 @@ window.__ModuleLoader__.load({
     }
 
     // Stage: reuse normal FlyBot conversation UI instead of custom card style
-    function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, editing, onToggleEdit, onCommit }) {
+    function Stage({ workflow, roster, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit }) {
       const chatRef = useRef(null)
       const run = workflow.run
       useEffect(() => {
@@ -262,7 +263,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'wf-pill-name' }, workflow.name),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
-              h('button', { type: 'button', className: 'wf-btn', onClick: onAssign }, tr('Hand a task to a Workflow')))),
+              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
           run ? h('div', { className: 'wf-strip' },
             h('div', { className: 'wf-strip-id' },
               h('div', { className: 'wf-tk' }, `${run.task?.id ?? ''} ${run.task?.title ?? ''}`),
@@ -287,7 +288,7 @@ window.__ModuleLoader__.load({
         drawer ? h('aside', { className: 'wf-drawer' },
           h('div', { className: 'wf-dr-head' },
             h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onCloseDrawer }, '×')),
-          h(DrawerBody, { workflow, roster, tab, onTab, editing, onToggleEdit, onCommit, onTip })) : null)
+          h(DrawerBody, { workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit })) : null)
     }
 
     function Bubble({ message, workflow, roster }) {
@@ -303,7 +304,7 @@ window.__ModuleLoader__.load({
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
-    function DrawerBody({ workflow, roster, tab, onTab, editing, onToggleEdit, onCommit, onTip }) {
+    function DrawerBody({ workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit }) {
       const run = workflow.run
       return h('div', { className: 'wf-dr-body' },
         h('div', { className: 'wf-dr-title' },
@@ -318,6 +319,7 @@ window.__ModuleLoader__.load({
         tab === 'details' ? h(Details, { workflow }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
+          h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onToggleEdit }, editing ? tr('Finish editing') : tr('Edit'))))
     }
 
@@ -976,6 +978,7 @@ window.__ModuleLoader__.load({
           onCloseDrawer: () => setDrawer(false),
           onToggleDrawer: () => { setDrawer(value => !value); setTab('flow') },
           onTab: (key) => { setTab(key); setDrawer(true) },
+          onReset: () => { void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onAssign: () => { setAssignOpen(true); void loadTasks() },
           onSend: () => {
             const text = draft.trim()

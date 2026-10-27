@@ -387,6 +387,22 @@ test('settings can add a loop edge and a condition edge', async () => {
   settings.unmount()
 })
 
+test('the stage has no canned demo controls', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  const labels = findAll(view.tree, node => node.type === 'button').map(node => textOf(node))
+  assert.equal(labels.some(text => text.includes('Replay demo') || text.includes('Run demo') || text.includes('重放演示') || text.includes('演示运行')), false)
+  assert.equal(labels.some(text => text === 'Next ›' || text === '下一步 ›'), false)
+  view.unmount()
+})
+
 test('Chinese labels follow the host Tasks translation', () => {
   const prev = globalThis.__flybot__
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }
