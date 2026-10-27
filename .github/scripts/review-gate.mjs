@@ -30,13 +30,18 @@
 //     `hasNotRun` is still parsed for the summary, and a PASS without it is not refused.
 // The newest qualifying report that names this tip decides, so a later FAIL at the same tip
 // vetoes an earlier PASS. A tip that moves past the report is not reviewed: the report names
-// the whole 40-character sha (#1112), so an older head stops counting.
+// the whole 40-character sha (#1112), so an older head stops counting — unless the tip moved
+// without changing the change set (#1317): when no report names the head itself, a report whose
+// `(path → blob sha)` fingerprint at the pull request's changed paths is identical at both tips
+// still describes this head, and `change-set.mjs` answers that. It fails closed, so an unreadable
+// tree or a changed blob is the same refusal as before.
 //
 // The pull request is read only through the GitHub API; no PR code is checked out or run.
 import { readFileSync, appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { SIGNERS_PATH, loadSigners, verifyReport } from './verdict-signature.mjs'
+import { sameChangeSet as sameChangeSetOf } from './change-set.mjs'
 
 const SHORT = 12
 // #676: a conclusion is read only from someone GitHub ties to this repository. The fail-closed rule
@@ -300,7 +305,11 @@ function signingState({ policy, signers, pr }) {
 // is non-empty every conclusion must verify against it (#1110); an unverified one is not a conclusion and
 // never joins the newest-wins scan, so it can neither pass nor veto. `repo` and `pr` are signed into the
 // report, so a signature cannot move to another pull request or another tip.
-export function decide({ head, author, reports, policy, admins, body, owners, repo, pr, signers } = {}) {
+// #1317: `changedPaths` is the pull request's changed-file list, read by the caller (the guard and this
+// script's own `main` both read it); `sameChangeSet` is the injected comparison, so a test drives it with
+// a stub and no network. Both are optional: without the list there is nothing to compare, and the tip
+// rule refuses exactly as it did before — the conservative answer.
+export function decide({ head, author, reports, policy, admins, body, owners, repo, pr, signers, changedPaths, sameChangeSet = sameChangeSetOf, gh } = {}) {
   const headSha = String(head ?? '').toLowerCase()
   const authorLogin = String(author ?? '').toLowerCase()
   const ownersKnown = owners !== undefined || body !== undefined
@@ -330,10 +339,25 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     // guard went green at 05:09 on a PASS naming the tip that was PASSed at 05:12 because a short tip
     // matched it. A tip that is not 40 characters names no head here; the refusal says how long it was.
     if (parsed.tip !== headSha) {
-      reasons.push(parsed.tip.length < 40
-        ? `${where(r)}: names ${parsed.tip.slice(0, SHORT)} (${parsed.tip.length} characters), not the full tip ${headSha} — a conclusion names the whole 40-character sha`
-        : `${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}`)
-      continue
+      if (parsed.tip.length < 40) {
+        reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)} (${parsed.tip.length} characters), not the full tip ${headSha} — a conclusion names the whole 40-character sha`)
+        continue
+      }
+      // #1317: a tip that moved without changing the reviewed change set keeps its conclusion. The
+      // comparison is the caller's changed-path list against the trees at both tips, and it fails
+      // closed: no list, an unreadable tree or one changed blob is the refusal this gate always gave,
+      // with the reason named so a reader can tell "the code changed" from "I could not look".
+      const moved = changedPaths && changedPaths.length
+        ? sameChangeSet({ gh, repo, pr, reviewed: parsed.tip, head: headSha, paths: changedPaths })
+        : { ok: false, read: 'the changed files of this pull request were not read' }
+      if (!moved.ok) {
+        const why = moved.path
+          ? ` — the change set differs at ${moved.path}, so that conclusion does not describe this head`
+          : ` — the change set could not be read (${moved.read})`
+        reasons.push(`${where(r)}: names ${parsed.tip.slice(0, SHORT)}, not the tip ${headSha.slice(0, SHORT)}${why}`)
+        continue
+      }
+      entry.carriedFrom = parsed.tip
     }
     // #1239: an unreadable word is not "no verdict" — it is a conclusion at this tip that nobody can
     // read, and the newest one has to be able to veto an older PASS.
@@ -408,22 +432,42 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     return { ok: false, verdict: null, by: null, tip: null, reason, judged, unverified }
   }
 
+  // #1317: a conclusion that names the head itself always decides, and the carried ones are read only
+  // when the head carries none. That is what keeps an INC at the head a veto: a carried PASS can never
+  // outrank a conclusion written at this tip, whatever the two timestamps say.
+  const exact = atTip.filter((e) => !e.carriedFrom)
+  const candidates = exact.length ? exact : atTip
   // The newest word at this tip decides, and that includes a conclusion the checks refused: an invalid
   // PASS is not evidence, and an invalid INC is still someone saying not to merge (#676). Equal
   // timestamps fall back to the order the API returned them in (oldest first), so the later one wins.
-  const last = atTip
+  const last = candidates
     .map((e, i) => ({ e, i, t: Date.parse(e.at ?? 0) || 0 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .at(-1).e
   if (!last.counts) return { ok: false, verdict: last.verdict, by: null, tip: last.tip, id: last.id, kind: last.kind, reason: last.why, judged, unverified }
   const { parsed } = last
   if (last.verdict !== 'PASS') {
-    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login} says ${last.verdict ?? 'nothing'} at this tip`, judged, unverified }
+    return { ok: false, verdict: last.verdict, by: last.login, tip: last.tip, id: last.id, kind: last.kind, carried: Boolean(last.carriedFrom), reason: `${last.login} says ${last.verdict ?? 'nothing'} at ${last.carriedFrom ? `the change set of this tip (written at ${last.tip.slice(0, SHORT)})` : 'this tip'}`, judged, unverified }
   }
   if (!parsed.ran.length) {
     return { ok: false, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS lists no command it ran`, judged, unverified }
   }
-  return { ok: true, verdict: 'PASS', by: last.login, tip: last.tip, id: last.id, kind: last.kind, reason: `${last.login}'s PASS names this tip`, judged, unverified }
+  // #1317: the allow sentence names both full shas and the fact that the comparison was made, so a reader
+  // never has to guess whether the guard looked at the trees or simply found a PASS.
+  return {
+    ok: true,
+    verdict: 'PASS',
+    by: last.login,
+    tip: last.tip,
+    id: last.id,
+    kind: last.kind,
+    carried: Boolean(last.carriedFrom),
+    reason: last.carriedFrom
+      ? `${last.login}'s PASS at ${last.tip} still describes this head ${headSha}: the change set is identical (every changed path carries the same blob at both tips)`
+      : `${last.login}'s PASS names this tip`,
+    judged,
+    unverified,
+  }
 }
 
 export function render(result, { pr, head, author } = {}) {
@@ -491,11 +535,15 @@ function main() {
   ]
 
   const policy = loadPolicy(policyPath)
+  // #1317: the changed-file list, read here so a tip that moved only because `main` moved can be told
+  // apart from one whose code changed. `decide` compares `(path → blob sha)` at both tips and refuses
+  // when the list or a tree cannot be read, so this read failing is a refusal, not a shortcut.
+  const changedPaths = list(`repos/${repo}/pulls/${pr}/files?per_page=100`).map((f) => f.filename).filter(Boolean)
   // #1110: the keys come from the same checkout the policy does, so a pull request that edits either file
   // changes only what its own run reads. `loadSigners` is fail-closed on its own; `decide` refuses when the
   // policy lists a roster and this is missing.
   const signers = loadSigners({ policy, path: arg('--signers') || process.env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
-  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers })
+  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers, gh, changedPaths })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')

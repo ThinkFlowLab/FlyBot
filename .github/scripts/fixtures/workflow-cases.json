@@ -8,20 +8,44 @@
       "where": "merge-gate.mjs `judge`: the `hold` label refuses whatever the review says",
       "sentence": "the pull request carries the `hold` label",
       "gate": {
-        "labels": ["hold"],
+        "labels": [
+          "hold"
+        ],
         "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
         "expectedHead": null,
-        "reports": [{ "verdict": "PASS", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+        "reports": [
+          {
+            "verdict": "PASS",
+            "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+            "writtenBy": "Reviewer"
+          }
+        ]
       },
       "preset": {
         "node": "gate",
         "guard": "no-hold",
         "present": [
-          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "hold" },
-          { "spec": "verdict", "revision": "abaf938b0c1d", "value": "PASS", "by": "Reviewer" },
-          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+          {
+            "spec": "pr",
+            "revision": "1274@abaf938b0c1d",
+            "value": "hold"
+          },
+          {
+            "spec": "verdict",
+            "revision": "abaf938b0c1d",
+            "value": "PASS",
+            "by": "Reviewer"
+          },
+          {
+            "spec": "check:tests-ok",
+            "revision": "abaf938b0c1d"
+          }
         ],
-        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+        "current": {
+          "pr": "1274@abaf938b0c1d",
+          "verdict": "abaf938b0c1d",
+          "check:tests-ok": "abaf938b0c1d"
+        }
       }
     },
     {
@@ -32,17 +56,39 @@
         "labels": [],
         "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
         "expectedHead": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
-        "reports": [{ "verdict": "PASS", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+        "reports": [
+          {
+            "verdict": "PASS",
+            "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+            "writtenBy": "Reviewer"
+          }
+        ]
       },
       "preset": {
         "node": "gate",
         "guard": "verdict-at-tip",
         "present": [
-          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "none" },
-          { "spec": "verdict", "revision": "175328d0c1b2", "value": "PASS", "by": "Reviewer" },
-          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+          {
+            "spec": "pr",
+            "revision": "1274@abaf938b0c1d",
+            "value": "none"
+          },
+          {
+            "spec": "verdict",
+            "revision": "175328d0c1b2",
+            "value": "PASS",
+            "by": "Reviewer"
+          },
+          {
+            "spec": "check:tests-ok",
+            "revision": "abaf938b0c1d"
+          }
         ],
-        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+        "current": {
+          "pr": "1274@abaf938b0c1d",
+          "verdict": "abaf938b0c1d",
+          "check:tests-ok": "abaf938b0c1d"
+        }
       }
     },
     {
@@ -53,18 +99,108 @@
         "labels": [],
         "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
         "expectedHead": null,
-        "reports": [{ "verdict": "INC", "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "writtenBy": "Reviewer" }]
+        "reports": [
+          {
+            "verdict": "INC",
+            "tip": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+            "writtenBy": "Reviewer"
+          }
+        ]
       },
       "preset": {
         "node": "gate",
         "guard": "verdict-says-pass",
         "present": [
-          { "spec": "pr", "revision": "1274@abaf938b0c1d", "value": "none" },
-          { "spec": "verdict", "revision": "abaf938b0c1d", "value": "INC", "by": "reviewer-agent" },
-          { "spec": "check:tests-ok", "revision": "abaf938b0c1d" }
+          {
+            "spec": "pr",
+            "revision": "1274@abaf938b0c1d",
+            "value": "none"
+          },
+          {
+            "spec": "verdict",
+            "revision": "abaf938b0c1d",
+            "value": "INC",
+            "by": "reviewer-agent"
+          },
+          {
+            "spec": "check:tests-ok",
+            "revision": "abaf938b0c1d"
+          }
         ],
-        "current": { "pr": "1274@abaf938b0c1d", "verdict": "abaf938b0c1d", "check:tests-ok": "abaf938b0c1d" }
+        "current": {
+          "pr": "1274@abaf938b0c1d",
+          "verdict": "abaf938b0c1d",
+          "check:tests-ok": "abaf938b0c1d"
+        }
       }
+    }
+  ],
+  "changeSetCases": [
+    {
+      "id": "tip-moved-same-change-set",
+      "why": "#1304's first and third PASS: the tip moved only because main moved, and every changed path carries the same blob at both tips. The conclusion written at the old tip still describes the head.",
+      "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+      "reviewed": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+      "paths": [
+        "core/src/host/turns.js",
+        "core/test/gate-check.test.js"
+      ],
+      "trees": {
+        "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90": {
+          "core/src/host/turns.js": "blob-host",
+          "core/test/gate-check.test.js": "blob-test"
+        },
+        "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f": {
+          "core/src/host/turns.js": "blob-host",
+          "core/test/gate-check.test.js": "blob-test"
+        }
+      },
+      "expect": "allow",
+      "readers": true,
+      "sentence": "reviewer-agent's PASS at 175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90 still describes this head abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f"
+    },
+    {
+      "id": "tip-moved-one-blob-changed",
+      "why": "#1304's second PASS (d7bd1c1d): an update-branch left core/package.json at 0.2.9 while main had 0.2.10. One blob differs, so the PASS does not describe the head — the case that proves the rule must stay.",
+      "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+      "reviewed": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+      "paths": [
+        "core/package.json",
+        "core/src/host/turns.js"
+      ],
+      "trees": {
+        "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90": {
+          "core/package.json": "blob-package-0.2.9",
+          "core/src/host/turns.js": "blob-host"
+        },
+        "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f": {
+          "core/package.json": "blob-package-0.2.10",
+          "core/src/host/turns.js": "blob-host"
+        }
+      },
+      "expect": "refuse",
+      "readers": true,
+      "sentence": "the change set differs at core/package.json"
+    },
+    {
+      "id": "tip-moved-tree-unreadable",
+      "why": "The old tip is gone (404) or its tree came back truncated: the comparison fails closed with the read that failed, never \"assume unchanged\".",
+      "head": "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+      "reviewed": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+      "unreadable": "175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90",
+      "paths": [
+        "core/src/host/turns.js",
+        "core/test/gate-check.test.js"
+      ],
+      "trees": {
+        "abaf938b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f": {
+          "core/src/host/turns.js": "blob-host",
+          "core/test/gate-check.test.js": "blob-test"
+        }
+      },
+      "expect": "refuse",
+      "readers": true,
+      "sentence": "the change set could not be read (git tree of 175328d0c1b2: 404)"
     }
   ]
 }

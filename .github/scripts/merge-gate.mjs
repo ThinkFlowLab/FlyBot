@@ -101,7 +101,7 @@ const short = (s) => String(s ?? '').slice(0, SHORT)
 // expectedHead: optional, a head the caller insists on (`--sha` on a hand run); a different live head
 // refuses. The queue's base sha is never a head: a merge_group entry passes none here (see
 // prFromHeadRef). reports: its comments and review bodies, oldest first (review-gate main()).
-export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo, body, owners, pr, signers } = {}) {
+export function judge({ labels, files, head, author, reports, policy, expectedHead, mode = 'queue', admins, gh, repo, body, owners, pr, signers, sameChangeSet } = {}) {
   const reasons = []
   const target = String(head ?? '').toLowerCase()
   if (!target) return { ok: false, head: '', verdict: null, reasons: ['no head sha to judge'] }
@@ -121,7 +121,7 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // A tier that needs no PASS also needs no permission lookup.
   const verdict = exempt
     ? { ok: true, verdict: null, by: null, exempt: true }
-    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers })
+    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers, gh, changedPaths: fileNames(files), sameChangeSet })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
@@ -142,11 +142,13 @@ export function render(result, { pr, labels } = {}) {
         ? `A queue entry for this head would be refused: ${result.reasons.join('; ')}. This report never fails.`
         : result.exempt
           ? `A queue entry for this head would pass without a PASS: ${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files.`
-          : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+          : `A queue entry for this head would pass: ${result.verdict?.by}'s PASS ${result.verdict?.carried ? `at ${result.verdict.tip} still describes ${short(result.head)} — the change set is identical` : `names ${short(result.head)}`}.`
       : result.ok && result.exempt
         ? `Queue entry for #${pr} may merge without a PASS: ${result.reasons.length ? 'no \`hold\`' : `${result.tier ? 'a ' + result.tier : 'a T0/T1'} tier or a mechanical release PR (AGENTS.md 6), computed from the changed files`}.`
       : result.ok
-        ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
+        ? result.verdict?.carried
+          ? `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict.by}'s PASS at ${result.verdict.tip} still describes ${short(result.head)} — the change set is identical (every changed path carries the same blob).`
+          : `Queue entry for #${pr} may merge: no \`hold\`, ${result.verdict?.by}'s PASS names ${short(result.head)}.`
         : `Queue entry for #${pr} must not merge: ${result.reasons.join('; ')}.`,
     '',
     `Pull request #${pr}, head \`${result.head}\`, labels: ${(labels ?? []).join(', ') || '(none)'}.`,

@@ -307,9 +307,13 @@ export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, 
     merged: Boolean(merged),
     labels: labels ?? [],
     // One loud sentence: a refusal says what to do ("do not enqueue") and why, so it cannot be read
-    // as a warning that some other step may override.
+    // as a warning that some other step may override. #1317: when the PASS was written at an older tip
+    // whose change set is this head's, the allow line says so and names both shas — the reader has to
+    // be able to tell "the tree I reviewed" from "a tip that merely moved".
     message: ok
-      ? `enqueue #${pr}: no \`hold\` and the gate passes`
+      ? result.verdict?.carried
+        ? `enqueue #${pr}: no \`hold\` and the gate passes — ${result.verdict.by}'s PASS at ${result.verdict.tip} still describes this head ${result.head}: the change set is identical (the tip moved without changing a changed file)`
+        : `enqueue #${pr}: no \`hold\` and the gate passes`
       : `do not enqueue #${pr}: ${reasons.join('; ')}`,
     command: `gh pr merge ${pr} --auto --squash --match-head-commit ${result.head ?? head}`,
   }

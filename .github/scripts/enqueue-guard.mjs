@@ -47,7 +47,7 @@ function arg(name) {
 // runs); `gate-check.mjs` turns the same object into the `enqueue-guard` check run the ruleset requires
 // (#812). One function with two readers, so the check and the printed command cannot disagree — #812's
 // kill condition is a second copy of these rules, and there is none.
-export function decidePull({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, expectedHead } = {}) {
+export function decidePull({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, expectedHead, sameChangeSet } = {}) {
   const list = (path) => gh('api', '--paginate', '--jq', '.[]', path).split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const repo = repoOption || env.GH_REPO || arg('--repo')
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
@@ -85,7 +85,7 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   const policy = loadPolicy(policyPath)
   // #1110: the same keys `merge-gate` reads, so the check and the printed command cannot disagree.
   const signers = loadSigners({ policy, path: arg('--signers') || env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
-  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, pr, signers, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue', body: pull.body })
+  const result = judge({ labels, files, head, author: pull.user?.login, reports, policy, gh, repo, pr, signers, expectedHead: expectedHead ?? arg('--sha'), mode: 'queue', body: pull.body, sameChangeSet })
   const mechanicalRelease = isMechanicalRelease(files.map((f) => f.filename))
   // The branch this repository owns, not a contributor's: `head.repo` is null when the fork was deleted,
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is
@@ -105,7 +105,7 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const used = decision.verdict?.id ? `${decision.verdict.kind ?? 'comment'} ${decision.verdict.id}` : 'no conclusion'
   console.log(`enqueue-guard: conclusion used: ${used}${decision.verdict?.by ? ` by ${decision.verdict.by}` : ''}${decision.verdict?.tip ? ` naming ${decision.verdict.tip}` : ''}`)
   console.log(decision.ok
-    ? `enqueue-guard: ALLOW — ${decision.message}; ${decision.exempt ? `a ${decision.tier ?? 'T0/T1'} tier or a mechanical release PR (AGENTS.md 6)` : `${decision.verdict?.by}'s PASS names this tip`}`
+    ? `enqueue-guard: ALLOW — ${decision.message}; ${decision.exempt ? `a ${decision.tier ?? 'T0/T1'} tier or a mechanical release PR (AGENTS.md 6)` : decision.verdict?.carried ? 'the change set is the one that PASS names, so the tip moved without changing it' : `${decision.verdict?.by}'s PASS names this tip`}`
     : `enqueue-guard: REFUSE — ${decision.message}`)
   if (decision.ok) {
     console.log('enqueue-guard: this guard never enqueues; run the command yourself, now:')
