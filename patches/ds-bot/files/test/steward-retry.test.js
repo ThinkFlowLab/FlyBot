@@ -41,6 +41,13 @@ const throttled = (retryAfter = 0) => Object.assign(new Error('429: rate limit e
 // A provider error that is not a rate limit: asking again would change nothing.
 const broken = () => Object.assign(new Error('500: the provider failed'), { status: 500, code: 'PROVIDER_ERROR' })
 
+// A failure as a real provider route delivers it: the stream ends on a finish chunk whose
+// reason carries the failure facts, and nothing is thrown (#1447).
+const finishFailure = (failure) => (async function* () {
+  yield { type: 'finish', reason: { kind: 'error', failure } }
+})()
+const rateLimited = (extra = {}) => finishFailure({ message: '429: rate limit exceeded (requests)', code: 'RATE_LIMIT', ...extra })
+
 // One model window, and a part whose size the test sets: `lines` for window 2000 with a
 // 100-token reserve are hard 1805 / check 1520, so `between` sits past the check line and
 // short of the hard one, and `over` is past both.
@@ -191,6 +198,49 @@ test('#1447: a throttled steward is asked again instead of moving the part on', 
   assert.deepEqual(h.condensed, ['compactNow'], 'the answer was acted on: the part was condensed in place')
   assert.equal(h.created.length, 0, 'no fresh part was started for one rate limit')
   assert.deepEqual(h.archived, [], 'nothing was archived')
+})
+
+test('#1447: a rate limit the harness reports as a finish chunk is asked again', async (t) => {
+  let stewardCalls = 0
+  const h = await start({
+    stream: (count) => {
+      if (count === 1) return rateLimited()
+      stewardCalls += 1
+      return answer('{"action":"compact","reason":"still working"}')
+    },
+  })
+  t.after(() => h.stop())
+  h.idle()
+  await until(() => h.calls.length >= 2)
+  await forMs(200)
+  assert.equal(h.calls.length, 2, 'the steward was asked twice: once refused, once answered')
+  assert.equal(stewardCalls, 1, 'the second answer is the one that counts')
+  assert.deepEqual(h.condensed, ['compactNow'], 'the answer was acted on: the part was condensed in place')
+  assert.equal(h.created.length, 0, 'no fresh part was started for one rate limit')
+  assert.deepEqual(h.archived, [], 'nothing was archived')
+})
+
+test('#1447: a finish failure known only by its 429 status is asked again, after the delay it asked for', async (t) => {
+  const asked = []
+  const h = await start({
+    stream: (count) => {
+      asked.push(Date.now())
+      // Not one of the codes this side knew: the status is the only transient fact, and
+      // the 400 ms is the provider's own, in milliseconds.
+      if (count === 1) return rateLimited({ code: 'PROVIDER_HTTP', status: 429, providerRetryAfterMs: 400 })
+      return answer('{"action":"compact","reason":"still working"}')
+    },
+  })
+  t.after(() => h.stop())
+  h.idle()
+  await until(() => h.calls.length >= 2)
+  await forMs(200)
+  assert.equal(h.calls.length, 2, 'the status alone made the failure worth asking again: one retry, then the answer')
+  assert.deepEqual(h.condensed, ['compactNow'], 'the answer was acted on: the part was condensed in place')
+  assert.equal(h.created.length, 0, 'no fresh part was started for one rate limit')
+  const gap = asked[1] - asked[0]
+  assert.ok(gap >= 300, `the provider's 400 ms was waited, not the 250 ms default (the gap was ${gap} ms)`)
+  assert.ok(gap < 3_000, `the delay was read as milliseconds, not seconds (the gap was ${gap} ms)`)
 })
 
 test('#1447: below the hard line a steward that keeps being turned down costs the round, not the part', async (t) => {

@@ -553,22 +553,33 @@ export function install(rt) {
       signal: AbortSignal.timeout(STEWARD_TIMEOUT_MS),
     })) assembler.push(chunk)
     const finish = assembler.finish
-    if (finish.kind === 'error' || finish.kind === 'aborted') throw new Error(finish.failure?.message ?? finish.kind)
+    if (finish.kind === 'error' || finish.kind === 'aborted') throw stewardFailure(finish)
     return parseDecision(assembler.blocks().filter(block => block.type === 'text').map(block => block.text).join('\n'))
   }
 
-  // A failure worth asking again: a rate limit, a timeout, a 5xx. Anything else — a
-  // request the provider refused, an answer that does not parse — is asked of the same
-  // key again and comes back the same.
+  // A failure as this side needs it: the provider's facts on the Error, not only its
+  // message. A route reports a failed request as a terminal finish chunk, and the `code`
+  // that says whether asking again can help, the `status` and the `providerRetryAfterMs`
+  // it asked for all live in that chunk's `failure` (#1447).
+  const stewardFailure = (finish) => Object.assign(new Error(finish?.failure?.message ?? finish.kind), finish?.failure ?? {})
+
+  // A failure worth asking again: a rate limit, a timeout, a 5xx. The status the provider
+  // returned is the first fact; the harness's own codes (`RATE_LIMIT`, `SERVER`,
+  // `TRANSPORT`, `TIMEOUT`) and the raw adapter codes are the ones without one. Anything
+  // else — a request the provider refused, an answer that does not parse — is asked of
+  // the same key again and comes back the same.
+  const TRANSIENT_CODES = new Set(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'throttling_error', 'rate_limited', 'REQUEST_TIMEOUT', 'ABORT_ERR'])
   const transientFailure = (error) => {
-    const code = String(error?.code ?? '')
-    if (code === 'throttling_error' || code === 'rate_limited' || code === 'TIMEOUT' || code === 'REQUEST_TIMEOUT' || code === 'ABORT_ERR') return true
     const status = Number(error?.status ?? error?.statusCode)
-    return status === 429 || (status >= 500 && status <= 599)
+    if (status === 429 || (status >= 500 && status <= 599)) return true
+    return TRANSIENT_CODES.has(String(error?.code ?? ''))
   }
 
   // The wait the provider asked for, capped, or a short backoff that grows by attempt.
+  // `providerRetryAfterMs` is already milliseconds; the raw adapters ask in seconds.
   const stewardRetryDelay = (error, attempt) => {
+    const millis = Number(error?.providerRetryAfterMs)
+    if (Number.isFinite(millis) && millis > 0) return Math.min(millis, STEWARD_RETRY_MAX_MS)
     const asked = Number(error?.retryAfter ?? error?.retry_after)
     if (Number.isFinite(asked) && asked > 0) return Math.min(asked * 1_000, STEWARD_RETRY_MAX_MS)
     return STEWARD_RETRY_MS * attempt
