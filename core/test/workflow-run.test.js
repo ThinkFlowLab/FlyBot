@@ -103,17 +103,23 @@ test('node two opens only when node one\'s output is present and current', () =>
 })
 
 // 5b. Two nodes ready at once are both opened — the definition said so, and WIP = 1 per Bot is the
-// queue's rule (#1247), not a second limit here. A node card parented to another job is not this job's
-// record, so it cannot close this job's node (#1316 pin 4: the identity is `(jobId, nodeId)`).
-// Knife: drop the `parentId` test in `cardsOfJob` → the foreign card closes `triage` and this goes red.
-test('two ready nodes open together, and another job\'s card is not this job\'s record', () => {
+// queue's rule (#1247), not a second limit here.
+// Knife: make `planJob` hand back only the first ready node (an invented one-per-pass cap) → only
+// this case reds; the identity rule below keeps its own knife.
+test('two ready nodes open together, with no second limit in the plan', () => {
   const both = planJob({
     definition: flow,
     job: { id: 'j', workflow: 'run-flow' },
     facts: facts({ present: { 'issue.ready': ready() }, current: { 'issue.ready': 'aaaa1111' } }),
   })
   assert.deepEqual(both.open.map((entry) => entry.node), ['triage', 'build'])
+})
 
+// 5c. A node card parented to another job is not this job's record, so it cannot close this job's
+// node (#1316 pin 4: the identity is `(jobId, nodeId)`).
+// Knife: drop the `parentId` test in `cardsOfJob` → the foreign card closes `triage` and only this
+// case reds; acceptance 5 above stays green.
+test('another job\'s card is not this job\'s record, in the plan or in completions', () => {
   const foreign = planJob({ definition: flow, job: { id: 'j', workflow: 'run-flow' }, cards: [{ node: 'triage', column: 'done', parentId: 'another-job' }], facts: facts() })
   assert.deepEqual(foreign.open.map((entry) => entry.node), ['triage'])
   const own = planJob({ definition: flow, job: { id: 'j', workflow: 'run-flow' }, cards: [{ node: 'triage', column: 'done', parentId: 'j' }], facts: facts() })
