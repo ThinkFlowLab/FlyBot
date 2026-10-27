@@ -8917,7 +8917,7 @@ function multiRepoView(entries2, { tasks, filter, roster, dragging, onMove, onDr
   for (const entry of successful) {
     for (const [column, cards] of Object.entries(entry.columns)) {
       if (merged.columns[column]) {
-        merged.columns[column].push(...cards);
+        merged.columns[column].push(...cards.map((card) => ({ ...card, repo: card.repo ?? entry.repo })));
       }
     }
   }

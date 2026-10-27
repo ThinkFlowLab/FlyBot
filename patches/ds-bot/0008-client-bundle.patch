@@ -10808,7 +10808,7 @@ diff --git a/client.js b/client.js
 +  for (const entry of successful) {
 +    for (const [column, cards] of Object.entries(entry.columns)) {
 +      if (merged.columns[column]) {
-+        merged.columns[column].push(...cards);
++        merged.columns[column].push(...cards.map((card) => ({ ...card, repo: card.repo ?? entry.repo })));
        }
 -      timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
 -    };

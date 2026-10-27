@@ -519,13 +519,14 @@ function multiRepoView(entries, { tasks, filter, roster, dragging, onMove, onDra
   const successful = (entries ?? []).filter(entry => entry?.columns !== undefined)
   const failed = (entries ?? []).filter(entry => entry?.columns === undefined)
   
-  // Merge all successful repo columns into one view, keeping only the workflow columns
+  // Merge all successful repo columns into one view, keeping only the workflow columns.
+  // Stamp entry.repo onto each card so data-key stays unique across repos (#1326).
   const merged = { columns: { 'not-started': [], 'in-progress': [], 'done': [] } }
   for (const entry of successful) {
     for (const [column, cards] of Object.entries(entry.columns)) {
       // Only merge columns that exist in the workflow column set
       if (merged.columns[column]) {
-        merged.columns[column].push(...cards)
+        merged.columns[column].push(...cards.map(card => ({ ...card, repo: card.repo ?? entry.repo })))
       }
     }
   }

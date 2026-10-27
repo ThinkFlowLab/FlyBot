@@ -649,7 +649,7 @@ test('a host that cannot name a repository says so, and does not send the person
 const repoSample = (repo, extra = {}) => ({
   repo, repoSource: 'config', state: 'fresh', ok: true, asOf: '2026-10-25T04:00:00Z',
   columns: {
-    'not-started': [{ kind: 'issue', number: 10, title: `${repo} untriaged`, labels: [], url: `https://x/${repo}/10`, repo }],
+    'not-started': [{ kind: 'issue', number: 10, title: `${repo} untriaged`, labels: [], url: `https://x/${repo}/10` }],
     'in-progress': [],
     'done': [],
   },
