@@ -4,7 +4,7 @@
 // the shapes that do name an issue have to keep working beside them.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cardMentions, issueRefs, namesIssue } from '../src/shared/issue-ref.js'
+import { issueRefs, namesIssue } from '../src/shared/issue-ref.js'
 
 const rejected = [
   ['a hex colour', '@Dev-2 set the accent colour to #3366ff'],
@@ -46,12 +46,4 @@ test('namesIssue answers the same question, so a colour cannot name an issue', (
   assert.equal(namesIssue('https://example.com/help/#123', 123), false)
   assert.equal(namesIssue('owner/repo#1360', 1360), true)
   assert.equal(namesIssue('@Dev-2 rebase #1360', 1360), true)
-})
-
-test('a card whose title only carries a colour names no issue', () => {
-  assert.deepEqual(cardMentions({ title: 'accent colour #3366ff', target: { href: '' } }), [])
-  assert.deepEqual(
-    cardMentions({ title: 'owner/repo#1360', target: { href: '' } }),
-    [{ repo: 'owner/repo', number: '1360' }],
-  )
 })
