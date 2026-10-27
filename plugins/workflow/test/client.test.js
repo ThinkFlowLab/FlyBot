@@ -598,10 +598,37 @@ test('the workflow stage mounts no message composer', async () => {
   view.unmount()
 })
 
+test('palette chips distinguish duplicate Bot names and expose drag affordance', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const roster = {
+    bots: [
+      { id: 'chief-a', name: 'Chief', role: 'Triage', remote: false },
+      { id: 'chief-b', name: 'Chief', role: 'Verify', remote: false },
+      { id: 'chief-c', name: 'Chief', role: '', remote: false },
+    ],
+  }
+  const view = mount(client.Section, { roster, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  button(view.tree, 'Edit').props.onClick()
+  await settle()
+  assert.ok(findAll(view.tree, node => node.props?.className?.includes('wf-palette-bot')).length >= 3)
+  assert.equal(client.botPaletteSubtitle({ id: 'chief-a', name: 'Chief', role: 'Triage' }, roster.bots), 'Triage')
+  assert.ok(client.botPaletteSubtitle({ id: 'chief-c', name: 'Chief', role: '' }, roster.bots).includes('hief-c'))
+  view.unmount()
+})
+
 test('running flow nodes use a breathing border animation only while running', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /@keyframes wf-node-live/)
   assert.match(source, /\.wf-node\.running\{[^}]*animation:wf-node-live/)
+  assert.match(source, /\.wf-palette-bot\{/)
+  assert.match(source, /\.wf-drag-ghost\{/)
   assert.match(source, /\.wf-node\.done\{/)
   assert.doesNotMatch(source, /\.wf-node\.done\{[^}]*animation/)
   assert.doesNotMatch(source, /\.wf-node\.queued\{[^}]*animation/)

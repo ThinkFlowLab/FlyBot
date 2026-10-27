@@ -220,6 +220,47 @@ window.__ModuleLoader__.load({
       return h('span', { className: 'wf-av', style: { background: color, width: size, height: size, fontSize: Math.max(11, size * 0.42) } }, (node?.name ?? '?').slice(0, 1))
     }
 
+    const BOT_TINTS = ['#4d6bfe', '#8b5cf6', '#14b8a6', '#f5a524', '#ec4899', '#1fbf6a', '#2f7cf6']
+    function botTint(bot) {
+      let hash = 0
+      for (const ch of String(bot?.id ?? bot?.name ?? '')) hash = (hash * 31 + ch.charCodeAt(0)) | 0
+      return BOT_TINTS[Math.abs(hash) % BOT_TINTS.length]
+    }
+
+    function botPaletteSubtitle(bot, peers) {
+      const role = String(bot?.role ?? '').replace(/\s+/g, ' ').trim()
+      const dupes = (peers ?? []).filter(item => item.name === bot.name).length > 1
+      if (role) return role.length > 28 ? `${role.slice(0, 27)}…` : role
+      if (dupes && bot?.id) return `…${String(bot.id).slice(-6)}`
+      return ''
+    }
+
+    function PaletteBotFace({ bot, size = 26 }) {
+      const Avatar = globalThis.__flybot__?.BotAvatar
+      if (typeof Avatar === 'function') return h(Avatar, { bot, size, badge: false, live: false })
+      const color = botTint(bot)
+      return h('span', {
+        className: 'wf-palette-av',
+        style: { background: color, width: size, height: size, fontSize: Math.max(11, size * 0.42) },
+      }, (bot?.name ?? '?').slice(0, 1))
+    }
+
+    function PaletteBotChip({ bot, peers, onPointerDown, dragging }) {
+      const sub = botPaletteSubtitle(bot, peers)
+      return h('button', {
+        type: 'button',
+        className: `wf-palette-bot${dragging ? ' dragging' : ''}`,
+        'data-bot': bot.id,
+        'aria-label': sub ? `${bot.name} · ${sub}` : bot.name,
+        onPointerDown,
+      },
+        h('span', { className: 'wf-palette-grip', 'aria-hidden': true }),
+        h(PaletteBotFace, { bot, size: 26 }),
+        h('span', { className: 'wf-palette-copy' },
+          h('span', { className: 'wf-palette-name' }, bot.name),
+          sub ? h('span', { className: 'wf-palette-sub' }, sub) : null))
+    }
+
     function nodeOf(workflow, id) {
       return workflow?.nodes?.find(node => node.id === id)
     }
@@ -408,6 +449,7 @@ window.__ModuleLoader__.load({
     function Flow({ workflow, run, roster, onTip, editing, onCommit }) {
       const [gesture, setGesture] = useState(null)
       const [ghost, setGhost] = useState(null)
+      const [dragPreview, setDragPreview] = useState(null)
       const [selectedNode, setSelectedNode] = useState(null)
       const status = run?.nodeStatus ?? {}
       const nodes = workflow.nodes.map(node => ghost?.[node.id] ? { ...node, ...ghost[node.id] } : node)
@@ -417,11 +459,17 @@ window.__ModuleLoader__.load({
       const selected = nodes.find(node => node.id === selectedNode)
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
       const movePointer = (event) => {
-        if (!gesture || gesture.kind !== 'move') return
+        if (!gesture) return
+        if (gesture.kind === 'add') {
+          setDragPreview({ x: event.clientX, y: event.clientY })
+          return
+        }
+        if (gesture.kind !== 'move') return
         setGhost({ [gesture.id]: { x: Math.round(gesture.x + event.clientX - gesture.ox), y: Math.round(gesture.y + event.clientY - gesture.oy) } })
       }
       const endPointer = (event) => {
         if (!gesture) return
+        setDragPreview(null)
         const hit = hitNode(event)
         if (gesture.kind === 'move' && ghost?.[gesture.id]) {
           commit(nodes.map(node => node.id === gesture.id ? { ...node, ...ghost[gesture.id] } : node), edges)
@@ -443,13 +491,26 @@ window.__ModuleLoader__.load({
       const updateNode = (nodeId, updates) => {
         commit(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
       }
-      return h('div', { className: 'wf-canvas', onPointerMove: movePointer, onPointerUp: endPointer },
+      return h('div', { className: 'wf-canvas', onPointerMove: movePointer, onPointerUp: endPointer, onPointerCancel: () => { setGesture(null); setGhost(null); setDragPreview(null) } },
         editing ? h('div', { className: 'wf-palette' },
-          h('div', { className: 'wf-muted' }, tr('Drag a Bot here')),
-          locals.map(bot => h('button', {
-            key: bot.id, type: 'button', className: 'wf-chip', 'data-bot': bot.id,
-            onPointerDown: (event) => { event.preventDefault?.(); setGesture({ kind: 'add', bot }) },
-          }, bot.name))) : null,
+          h('p', { className: 'wf-palette-hint' }, tr('Drag a Bot here')),
+          h('div', { className: 'wf-palette-row' },
+            locals.map(bot => h(PaletteBotChip, {
+              key: bot.id,
+              bot,
+              peers: locals,
+              dragging: gesture?.kind === 'add' && gesture.bot?.id === bot.id,
+              onPointerDown: (event) => {
+                event.preventDefault?.()
+                setGesture({ kind: 'add', bot })
+                setDragPreview({ x: event.clientX, y: event.clientY })
+              },
+            })))) : null,
+        gesture?.kind === 'add' && dragPreview ? h('div', {
+          className: 'wf-drag-ghost',
+          style: { left: dragPreview.x + 10, top: dragPreview.y + 10 },
+          'aria-hidden': true,
+        }, h(PaletteBotFace, { bot: gesture.bot, size: 24 }), h('span', { className: 'wf-drag-ghost-name' }, gesture.bot?.name ?? '')) : null,
         run ? h('div', { className: 'wf-term', title: run.task?.title ?? '' }, taskSummary(run.task, run)) : null,
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
@@ -1226,7 +1287,19 @@ window.__ModuleLoader__.load({
 .wf-chip-inline{margin-left:6px;font-size:9.5px;vertical-align:middle;font-weight:500}
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
 .wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative;overflow:auto}
-.wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%}
+.wf-palette{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:min(100%,360px);margin:0 auto 4px;padding:10px 12px;border:1px dashed var(--bt-line,rgba(20,20,20,.14));border-radius:12px;background:var(--bt-card,#fff)}
+.wf-palette-hint{margin:0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
+.wf-palette-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.wf-palette-bot{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:6px 10px 6px 6px;border:1px solid var(--bt-line,rgba(20,20,20,.1));border-radius:12px;background:var(--bt-main,#fcfcfc);color:inherit;font:inherit;cursor:grab;box-shadow:0 1px 0 rgba(20,20,20,.04);transition:border-color .15s,box-shadow .15s,transform .12s}
+.wf-palette-bot:hover{border-color:rgba(77,107,254,.35);box-shadow:0 2px 8px rgba(77,107,254,.12)}
+.wf-palette-bot:active,.wf-palette-bot.dragging{cursor:grabbing;border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 3px rgba(77,107,254,.14);transform:scale(.98)}
+.wf-palette-grip{width:6px;height:18px;flex:none;border-radius:2px;background:repeating-linear-gradient(180deg,var(--bt-ink-3,#9a9a9a) 0 2px,transparent 2px 4px);opacity:.45}
+.wf-palette-av{border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:650;flex:none}
+.wf-palette-copy{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left}
+.wf-palette-name{font-size:12.5px;font-weight:600;line-height:1.2;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-palette-sub{font-size:10.5px;color:var(--bt-ink-3,#9a9a9a);line-height:1.2;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-drag-ghost{position:fixed;z-index:100;pointer-events:none;display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 5px;border-radius:10px;border:1px solid var(--bt-accent,#4d6bfe);background:var(--bt-card,#fff);box-shadow:0 8px 20px rgba(20,20,20,.12);opacity:.92;transform:translate(-4px,-4px)}
+.wf-drag-ghost-name{font-size:12px;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wf-plane{position:relative;width:0;margin:8px auto 0;--wf-wire-span:${WIRE_SPAN}px}
 .wf-node-inspector{position:absolute;bottom:8px;right:8px;width:320px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:10}
 .wf-inspector-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600}
@@ -1315,6 +1388,7 @@ window.__ModuleLoader__.load({
     return {
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, chatPreview, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
+      botPaletteSubtitle, botTint,
     }
   },
 })
