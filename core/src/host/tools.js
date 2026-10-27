@@ -11,6 +11,37 @@ import { questionReply, replyText } from './parts.js'
 import { OTHER, settled } from './turn-origin.js'
 import { cleanName } from './delivery.js'
 
+// A run Bot (ephemeral) is not a team member: every tool below has an effect that reaches past
+// the run Bot's own Session — it messages, stops or edits another Bot, edits a group, writes or
+// attaches a capability, asks the owner for a secret, arms or changes a schedule, reads the team
+// memory, sends a file, starts a workflow or reaches the browser. connector-access.js refuses
+// each call in `ctx.tools.guard` and approvals.js answers `rejected` for the same names, so the
+// two seams cannot disagree. The names span modules (this host, the harness, plugins/social,
+// plugins/workflow, plugins/tree); a tool added to any of them lands in neither list here and
+// fails `core/test/run-bot-tools.test.js` until someone classifies it.
+export const EPHEMERAL_DENIED_TOOLS = Object.freeze([
+  'message_bot', 'stop_bot', 'create_bot', 'update_bot',
+  'create_group', 'update_group', 'delete_group', 'post_to_group',
+  'ask_user', 'save_capability', 'delete_capability', 'attach_capability', 'detach_capability',
+  'track_tasks', 'group_relay',
+  'request_secret', 'list_secrets',
+  'send_message', 'schedule_create', 'schedule_update', 'schedule_delete',
+  'message_friend_bot', 'get_friend_file', 'list_friend_bots',
+  'define_workflow', 'run_workflow',
+  'read_browser', 'recall', 'create_child_bot',
+])
+// The team-facing names a run Bot keeps: read-only, and each reads only what the run Bot itself
+// may see. `remember`/`forget` are the only writes, and `writeDenied` keeps them inside the run
+// Bot's own scope (never `team`, never another Bot's memory). The names a run Bot is served minus
+// EPHEMERAL_DENIED_TOOLS equal this list; a new tool is classified here or in the denied constant.
+export const EPHEMERAL_ALLOWED_TOOLS = Object.freeze([
+  'list_bots', 'list_models', 'list_capabilities', 'bot_schedules', 'schedule_list',
+  'read_own_chat', 'read_group_chat', 'remember', 'forget',
+])
+// One sentence that names the reason and no substitute route: the run Bot cannot become a team
+// member by finding another tool that does the same thing.
+export const EPHEMERAL_REFUSAL = 'A running Bot is not a team member.'
+
 export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
 export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
 const BLOCKING_QUESTION_TOOL = 'ask_user_question'

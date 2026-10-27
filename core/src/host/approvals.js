@@ -3,9 +3,11 @@
 // the group chat. A Bot's own chat keeps DSH's card; its requests are only noted, so
 // the team view can say who is waiting.
 import { randomUUID } from 'node:crypto'
+import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 import { OWNER, settled } from './turn-origin.js'
 
 const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
+const RUN_DENIED = new Set(EPHEMERAL_DENIED_TOOLS)
 
 // DSH has no standing grant (its outcomes are one-shot, #540), so the owner's "Always
 // allow" lives here: on the Bot or on the group, keyed by the kind of permission asked.
@@ -13,13 +15,16 @@ const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'all
 // A run Bot has no chat the owner can see, so an approval card would stall the
 // step. Connector tools are allowed only when the node's stepTools name them
 // (`github` covers `mcp__github__*`). A shell escalation to full access needs
-// `bash`, `shell` or `danger-full-access`. Other calls follow the Bot's preset
-// and are answered here, because nobody can tap the card.
+// `bash`, `shell` or `danger-full-access`. The team-reaching tools are `rejected`
+// whatever the step names, the same names connector-access.js refuses in its guard.
+// Other calls follow the Bot's preset and are answered here, because nobody can
+// tap the card.
 export function ephemeralToolVerdict(bot, toolName, reason) {
   if (!bot?.ephemeral) return undefined
+  const tool = String(toolName ?? '')
+  if (RUN_DENIED.has(tool)) return 'rejected'
   const tools = new Set((bot.stepTools ?? []).map(name => String(name).toLowerCase()))
   const grant = (name) => tools.has('*') || tools.has(String(name).toLowerCase())
-  const tool = String(toolName ?? '')
   if (tool.startsWith('mcp__')) {
     const id = tool.split('__')[1] ?? ''
     return grant(tool) || (id !== '' && grant(id)) ? 'allowed-once' : 'rejected'
@@ -48,8 +53,16 @@ export function install(rt) {
     const sessionId = request.agent?.session?.id ?? request.agent?.id
     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
-    if (botId === undefined) return next()
-    const step = ephemeralToolVerdict(rt.botOf(botId), String(request.toolName ?? ''), request.reason)
+    // A subagent child Session started by a run Bot is in neither index. Follow the parent chain
+    // (the same `rt.whoseAgent` secrets.js and connector-access.js use) and adopt the run Bot's
+    // answer there; an ordinary Bot's child keeps falling through to next() exactly as before.
+    let bot = botId === undefined ? undefined : rt.botOf(botId)
+    if (botId === undefined) {
+      const parent = rt.whoseAgent?.(request.agent)
+      if (parent?.bot?.ephemeral === undefined) return next()
+      bot = parent.bot
+    }
+    const step = ephemeralToolVerdict(bot, String(request.toolName ?? ''), request.reason)
     if (step !== undefined) return step
     if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
     const id = randomUUID()

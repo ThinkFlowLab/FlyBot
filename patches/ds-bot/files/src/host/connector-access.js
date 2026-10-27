@@ -26,6 +26,7 @@
 // The switches change only through `bot-connectors` on the channel, which Bots do not call.
 
 import { GITHUB, COMPOSIO } from './connectors.js'
+import { EPHEMERAL_DENIED_TOOLS, EPHEMERAL_REFUSAL } from './tools.js'
 import { OWNER, OTHER, settled } from './turn-origin.js'
 
 export const CONNECTOR_IDS = [GITHUB, COMPOSIO]
@@ -36,6 +37,7 @@ export const connectorOfTool = name => (typeof name === 'string' ? CONNECTOR_IDS
 // refuses a name this profile does not serve, so a name missing here only means the tool stays.
 export const SCHEDULE_TOOLS = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
 const SCHEDULES = new Set(SCHEDULE_TOOLS)
+const RUN_DENIED = new Set(EPHEMERAL_DENIED_TOOLS)
 const MAX_DEPTH = 8
 
 export function install(rt) {
@@ -102,8 +104,14 @@ export function install(rt) {
     const name = exec?.name
     const id = connectorOfTool(name)
     const schedule = SCHEDULES.has(name)
-    if (id === undefined && !schedule) return undefined
+    const team = RUN_DENIED.has(name)
+    if (id === undefined && !schedule && !team) return undefined
     const who = whoseAgent(exec.agent)
+    // A run Bot is not a team member: a tool whose effect reaches past its own Session is refused
+    // whatever the node's `tools` names, before the connector or the room answer. Everything that
+    // stays (list_bots, the memory reads and writes of its own scope, …) is in
+    // EPHEMERAL_ALLOWED_TOOLS next to it, and approvals.js answers `rejected` for the same names.
+    if (team && who.bot?.ephemeral !== undefined) return EPHEMERAL_REFUSAL
     if (who.plain === true) return undefined
     // #1237: a room Session is one of the Bot's own Sessions (store.js indexes it as groupOwners), so
     // the room rule reads the same session id whoseAgent already resolved. The tip is in the reason:
