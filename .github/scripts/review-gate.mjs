@@ -36,6 +36,16 @@
 // still describes this head, and `change-set.mjs` answers that. It fails closed, so an unreadable
 // tree or a changed blob is the same refusal as before.
 //
+// #1335: a PASS can be withdrawn, and until this both gates read the withdrawal as ordinary prose. A
+// body that opens `Correction from <Bot>: the PASS at <sha> is withdrawn` carries no `Verdict:` line,
+// so `parseReport` reported no conclusion, `decide` never put it in the newest-wins scan and an earlier
+// PASS stayed the newest word — which is how #1325 read as "passed, ready to enqueue" after its own
+// reviewer had withdrawn it. The correction is a conclusion line now, read from the header like a
+// `Verdict:` header and carrying the tip it withdraws, so it joins that one scan instead of becoming a
+// second reader of the same text. The refusal says `the PASS at <sha> was withdrawn by <Bot>`. It
+// counts only from the Bot that wrote the PASS it withdraws, or from a `reviewers` login: otherwise
+// anyone with write access could freeze a healthy pull request with one sentence.
+//
 // The pull request is read only through the GitHub API; no PR code is checked out or run.
 import { readFileSync, appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -97,6 +107,24 @@ export function adminsFor({ gh, repo, reports, policy, author } = {}) {
   return admins
 }
 
+// #1335: `Correction from <Bot>: the PASS at <sha> is withdrawn` — the one other conclusion header.
+// The name and the tip are read here, and nothing is decided: whether that name may withdraw that PASS
+// is `decide`'s identity rule, because only it sees every report at the tip. Markdown emphasis is
+// already stripped from the line by the caller, so the real body (`the PASS at `<sha>` is **withdrawn**`)
+// reads the same as a plain one. A `Correction from …:` line that names no tip, or never says
+// `withdrawn`, is ordinary prose — a correction that agrees with something is not a conclusion.
+const CORRECTION_HEADER = /^Correction\s+from\s+([^:]{1,64}?)\s*:\s*(.+)$/i
+const CORRECTION_TIP = /the PASS at\s+([0-9a-f]{7,40})\b/i
+const CORRECTION_WORD = /\bwithdrawn\b/i
+function parseCorrection(line) {
+  const header = CORRECTION_HEADER.exec(String(line ?? '').trim())
+  if (!header) return null
+  const by = header[1].trim()
+  const tip = CORRECTION_TIP.exec(header[2])
+  if (!by || !tip || !CORRECTION_WORD.test(header[2])) return null
+  return { by, tip: tip[1].toLowerCase() }
+}
+
 // The last Verifier block in one body: a comment may hold an earlier review that a later
 // one replaced, and only the last block is the verdict the reviewer stands behind.
 export function parseReport(body) {
@@ -104,7 +132,7 @@ export function parseReport(body) {
   // markdown emphasis, line for line, for everything else.
   const raw = String(body ?? '').split('\n')
   const lines = raw.map((line) => line.replace(/[*`]/g, ''))
-  const out = { tip: null, verdict: null, unknownVerdict: null, ran: [], hasNotRun: false, writer: null, attestation: null }
+  const out = { tip: null, verdict: null, unknownVerdict: null, withdraw: null, ran: [], hasNotRun: false, writer: null, attestation: null }
   // The fixed format (#637): the first non-empty line is the whole conclusion,
   // `Verdict: PASS at <sha>` (or INC / REQUEST_CHANGES). The attribution line and the evidence go
   // below it, so a verdict Chief posts for a Reviewer with no write channel parses the same way.
@@ -116,6 +144,8 @@ export function parseReport(body) {
   // The tip is read here too, which is what makes it a conclusion at that tip rather than a stray
   // sentence — a word with no tip below is still an ordinary comment.
   const firstUnknown = first ? null : /^Verdict\s*:\s*(\S+?)\s+(?:at\s+)?([0-9a-f]{7,40})\s*$/i.exec(firstLine.trim())
+  // #1335: `Correction from <Bot>: the PASS at <sha> is withdrawn` is the other conclusion header.
+  const firstCorrection = first || firstUnknown ? null : parseCorrection(firstLine)
   let start = -1
   for (let i = 0; i < lines.length; i++) {
     if (/^Tip SHA\s*:/i.test(lines[i].trim())) start = i
@@ -126,6 +156,9 @@ export function parseReport(body) {
   } else if (firstUnknown) {
     out.unknownVerdict = firstUnknown[1]
     out.tip = firstUnknown[2].toLowerCase()
+  } else if (firstCorrection) {
+    out.withdraw = firstCorrection
+    out.tip = firstCorrection.tip
   }
   // #643, #640: once the first line is the conclusion, the loop below must write neither field again.
   // A body quotes older reports (a `Tip SHA: <sha>` block with an older `Verdict: PASS`), and letting
@@ -133,8 +166,9 @@ export function parseReport(body) {
   // tip that `decide` then dropped while the PASS it refused came back to life. Both fail open.
   let ranSeen = false
   // An unreadable first-line conclusion is still the header: the quote rules below keep a later block
-  // from overwriting the first one (#643, #640), and they protect this one the same way.
-  const firstIsVerdict = first !== null || firstUnknown !== null
+  // from overwriting the first one (#643, #640), and they protect this one the same way. A correction
+  // header is protected the same way — the `Correction` body quotes the `Verdict: PASS` it withdraws.
+  const firstIsVerdict = first !== null || firstUnknown !== null || firstCorrection !== null
   // With the first line as the conclusion the evidence is below it, so scan from the top; a
   // legacy body is judged by its last block.
   const from = firstIsVerdict || start < 0 ? 0 : start
@@ -331,7 +365,7 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
   for (const r of reports ?? []) {
     const parsed = parseReport(r.body)
     if (!parsed.tip && !parsed.verdict && !parsed.unknownVerdict) continue // not a Verifier report
-    const entry = { id: r.id, login: r.login, verdict: parsed.verdict, unknownVerdict: parsed.unknownVerdict, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
+    const entry = { id: r.id, login: r.login, verdict: parsed.verdict, unknownVerdict: parsed.unknownVerdict, withdraw: parsed.withdraw, tip: parsed.tip, at: r.at, kind: r.kind, writer: parsed.writer, parsed, counts: false, why: null }
     judged.push(entry)
     if (!parsed.tip) { reasons.push(`${where(r)}: no Tip SHA`); continue }
     // #1112: the comparison is the whole sha, not a prefix. A conclusion written `at abaf938` is a
@@ -360,8 +394,9 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
       entry.carriedFrom = parsed.tip
     }
     // #1239: an unreadable word is not "no verdict" — it is a conclusion at this tip that nobody can
-    // read, and the newest one has to be able to veto an older PASS.
-    if (!parsed.verdict && !parsed.unknownVerdict) continue // a `Tip SHA` block with no verdict is not a conclusion
+    // read, and the newest one has to be able to veto an older PASS. #1335: a correction is the same
+    // shape — it carries no `Verdict:` word, but it names this tip's PASS and must reach the scan.
+    if (!parsed.verdict && !parsed.unknownVerdict && !entry.withdraw) continue // a `Tip SHA` block with no verdict is not a conclusion
     // #943: refused before the association test, with its own reason: a bot account is not a
     // conclusion for a reason unlisted logins cannot explain, and the log has to say which defect fired.
     if (isBotAccount(r)) {
@@ -373,7 +408,9 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     // conclusion. It stays out of `atTip`, so it neither passes nor refuses an older PASS, and the summary
     // lists it as unverified. Reading it here — before the association, writer and reviewers checks — is
     // what makes the rule one cut rather than one more refusal stacked on the old path.
-    if (signing.enforced) {
+    // #1335: a correction signs no verdict — there is no `Verdict:` line to put in `canonical()` — and it
+    // can only ever refuse, never pass, so the identity rule below is what keeps it honest.
+    if (signing.enforced && !entry.withdraw) {
       const signed = verifyReport({ repo, pr, head: headSha, verdict: parsed.verdict, writer: parsed.writer, body: r.body, signers: signing })
       if (!signed.ok) {
         entry.why = `${where(r)}: unverified — ${signed.reason}`
@@ -400,6 +437,9 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     // newer refusal invisible: an INC with no `Written-by:` line left an older PASS in force, and a
     // human REQUEST_CHANGES from an unlisted login did the same.
     atTip.push(entry)
+    // #1335: a correction joins the scan the same way, and its identity rule is settled after the loop,
+    // because only then is it known which PASSes this tip carries and who wrote them.
+    if (entry.withdraw) continue
     // #1239: a word outside the four the gate reads counts for nothing, but it still takes its place in
     // the newest-word scan, carrying a reason that names it. Dropping the line is the defect: an INC the
     // reviewer meant became invisible and the older PASS it withdrew stayed in force on #1221.
@@ -427,7 +467,28 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
   }
 
   if (!reviewers.size) return { ok: false, verdict: null, by: null, tip: null, reason: 'no reviewer is listed in .github/agent/review-policy.json', judged, unverified }
-  if (!atTip.length) {
+  // #1335: a correction is a conclusion only from the Bot that wrote the PASS it withdraws, or from a
+  // `reviewers` login. Without that, anyone with write access could freeze a healthy pull request with
+  // one sentence — the withdrawal would be a veto with no signature behind it. Read here rather than in
+  // the loop because the PASS it withdraws may be listed after it.
+  // Only a PASS the gate actually counted can be withdrawn by its writer: an invalid PASS is already
+  // refused on its own ground, so its `Written-by:` name must not become a licence to withdraw.
+  const passWriters = new Set(
+    atTip.filter((e) => e.verdict === 'PASS' && e.counts && e.writer).map((e) => String(e.writer).toLowerCase()),
+  )
+  const effective = []
+  for (const e of atTip) {
+    if (!e.withdraw) { effective.push(e); continue }
+    const by = String(e.withdraw.by).toLowerCase()
+    if (!passWriters.has(by) && !reviewers.has(by)) {
+      e.why = `${where({ kind: e.kind, login: e.login })}: Correction from ${e.withdraw.by} withdraws a PASS it did not write, and that name is not a reviewer listed in .github/agent/review-policy.json, so it is not a conclusion`
+      continue
+    }
+    e.why = `${where({ kind: e.kind, login: e.login })}: the PASS at ${e.withdraw.tip} was withdrawn by ${e.withdraw.by}`
+    e.counts = false
+    effective.push(e)
+  }
+  if (!effective.length) {
     const reason = reasons.length ? reasons.join('; ') : `no Verifier report names the tip ${headSha.slice(0, SHORT)}`
     return { ok: false, verdict: null, by: null, tip: null, reason, judged, unverified }
   }
@@ -435,8 +496,8 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
   // #1317: a conclusion that names the head itself always decides, and the carried ones are read only
   // when the head carries none. That is what keeps an INC at the head a veto: a carried PASS can never
   // outrank a conclusion written at this tip, whatever the two timestamps say.
-  const exact = atTip.filter((e) => !e.carriedFrom)
-  const candidates = exact.length ? exact : atTip
+  const exact = effective.filter((e) => !e.carriedFrom)
+  const candidates = exact.length ? exact : effective
   // The newest word at this tip decides, and that includes a conclusion the checks refused: an invalid
   // PASS is not evidence, and an invalid INC is still someone saying not to merge (#676). Equal
   // timestamps fall back to the order the API returned them in (oldest first), so the later one wins.
@@ -487,13 +548,16 @@ export function render(result, { pr, head, author } = {}) {
     out.push('', 'Unverified — not read as conclusions:')
     for (const e of unverifiedReports.slice(0, 10)) out.push(`- unverified: ${e.login} (${e.kind}): ${e.verdict ?? 'no verdict'} at ${(e.tip ?? 'no tip').slice(0, SHORT)} — ${String(e.why ?? '').replace(/^[^:]+: unverified — /, '')}`)
   }
-  const seen = result.judged.filter((e) => e.counts || e.verdict || e.unknownVerdict)
+  const seen = result.judged.filter((e) => e.counts || e.verdict || e.unknownVerdict || e.withdraw)
   if (seen.length) {
     out.push('', 'Verifier reports read:')
     for (const e of seen.slice(0, 10)) {
       // #1239: an unreadable word is named with its reason, so the next reader does not have to rediscover
-      // that `Incorrect` was never read as `INC`.
-      const word = e.unknownVerdict ? `"${e.unknownVerdict}", which is not a verdict word` : (e.verdict ?? 'no verdict')
+      // that `Incorrect` was never read as `INC`. #1335: a withdrawal is named the same way, with the tip
+      // it withdraws and the Bot that wrote it, so a reader can see why the PASS beside it does not count.
+      const word = e.withdraw
+        ? `withdrawal of the PASS at ${(e.withdraw.tip ?? 'no tip').slice(0, SHORT)} by ${e.withdraw.by}`
+        : e.unknownVerdict ? `"${e.unknownVerdict}", which is not a verdict word` : (e.verdict ?? 'no verdict')
       const why = e.unknownVerdict ? ` — ${String(e.why ?? '').replace(/^[^:]+:\s*/, '')}` : ''
       out.push(`- ${e.login} (${e.kind}): ${word} at ${(e.tip ?? 'no tip').slice(0, SHORT)}, written-by ${e.writer ?? 'nothing'}${e.counts ? '' : ' (not counted)'}${why}`)
     }

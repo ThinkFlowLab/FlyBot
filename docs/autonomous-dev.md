@@ -156,13 +156,22 @@ What counts as a reviewed tip, all of it:
    counting; that report is then listed as "not counted", with the sha it named.
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
    earlier PASS, and a later PASS at the same tip replaces a FAIL.
-6. **A GitHub bot account writes no conclusion** (#943): `user.type` is `Bot`, or the login ends `[bot]`, and the
+6. **A withdrawal is a conclusion line** (#1335): `Correction from <Bot>: the PASS at <sha> is withdrawn`, as the
+   body's first line, is read by the same `parseReport` and enters the same newest-wins scan at the tip it names,
+   so the gate refuses with `the PASS at <sha> was withdrawn by <Bot>` and both `enqueue-guard` and `merge-gate`
+   see it without a second parser. It counts only when `<Bot>` is the `Written-by:` of the PASS it withdraws or a
+   `reviewers` login in `.github/agent/review-policy.json`; any other name is prose and changes nothing, which is
+   what keeps one comment from parking a healthy pull request. A later PASS at the tip supersedes the withdrawal,
+   a correction that names another tip does not touch this one, and a correction quoted below a blank line is a
+   quote. `#1325` is the incident: its PASS was withdrawn at 04:15:36Z and the head still read "passed, ready to
+   enqueue" because a `Correction from …:` line carries no `Verdict:` word.
+7. **A GitHub bot account writes no conclusion** (#943): `user.type` is `Bot`, or the login ends `[bot]`, and the
    report joins `judged` with `counts: false` and a reason naming the account, whatever its body says — the real
    Reviewer voids it at that tip with `Correction from Reviewer:`. The rule is the account type and not a login
    list: every Bot writes as the shared `Birfy` account, so a list containing it would void the whole pipeline.
    `cursor[bot]`'s report at #940's tip is the case (`Correction from Reviewer`, [comment `6381646389`](https://github.com/ThinkFlowLab/FlyBot/pull/940#issuecomment-6381646389)).
 
-7. **The report can be signed by the workstation it names, and today it is not** (#1110, #1111):
+8. **The report can be signed by the workstation it names, and today it is not** (#1110, #1111):
    `Signed-by:` + `Nonce:` + `Signature:` against `.github/agent/signers.json` for the full head being judged
    is built and switched **off** — the policy has no `signers` roster and the signers file does not exist, so no
    conclusion is asked for those lines and none is dropped as `unverified:`. See [Signed conclusions](#signed-conclusions-1110)

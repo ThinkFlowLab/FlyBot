@@ -914,3 +914,31 @@ test('#1202: a fork needs no checkpoint — nobody there could claim it', () => 
   assert.equal(r.fork, true)
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
+
+// #1335 (#1325): the guard read only the newest `Verdict:` line, so a `Correction from <Bot>:` that
+// withdrew the PASS was invisible and the head still read "passed, ready to enqueue". These cases run the
+// whole way through `main` — the comment list, `judge`, `decide` and `guard` — because the defect was one
+// reader disagreeing with another, not a parse detail.
+const correction = ({ by = 'reviewer-agent', tip = HEAD, at = '2026-10-21T11:00:00Z', say = 'is withdrawn' } = {}) =>
+  ({ user: { login: 'reviewer-agent' }, body: `Correction from ${by}: the PASS at \`${tip}\` ${say}.\n\nThis is not a second verdict.`, created_at: at, author_association: 'MEMBER' })
+
+test('#1335: a PASS its own writer withdrew does not enter the queue', () => {
+  const r = run({ comments: [comment(), correction()] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), new RegExp(`the PASS at ${HEAD} was withdrawn by reviewer-agent`))
+  assert.match(r.message, /^do not enqueue #566: .*withdrawn by reviewer-agent/)
+  // The PASS is still on the pull request: the refusal has to be readable as "withdrawn", not "no PASS".
+  assert.doesNotMatch(r.reasons.join('; '), /no Verifier report names/)
+})
+
+test('#1335: a withdrawal from a name that wrote no PASS here changes nothing', () => {
+  // Dev2 is a `writers` Bot name but wrote no PASS at this tip and is not a `reviewers` login.
+  const r = run({ comments: [comment(), correction({ by: 'Dev2' })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`)
+})
+
+test('#1335: a withdrawal naming another tip leaves this tip enqueueable', () => {
+  const r = run({ comments: [comment(), correction({ tip: OLD })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})

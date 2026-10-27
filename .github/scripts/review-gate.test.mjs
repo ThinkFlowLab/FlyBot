@@ -896,3 +896,90 @@ test('#644: a conclusion from a different GitHub login needs no attestation line
   })
   assert.equal(other.ok, true, other.reason)
 })
+
+// #1335: a PASS its own reviewer withdrew stayed the newest word, because `Correction from <Bot>:` is not
+// a `Verdict:` line — `parseReport` reported no conclusion, so `decide` never put the withdrawal in the
+// newest-wins scan. On #1325 that read as "passed, ready to enqueue" 93 seconds after the writer withdrew.
+const withdraw = ({ by = 'Reviewer', tip = HEAD, at = '2026-10-18T02:00:00Z', login = 'reviewer-agent', kind = 'comment', say = 'is **withdrawn**' } = {}) =>
+  ({ login, kind, at, association: 'MEMBER', body: [`Correction from ${by}: the PASS at \`${tip}\` ${say}.`, '', 'This is not a second verdict — the tip still carries one `Verdict:` line.'].join('\n') })
+
+test('#1335: the Bot that wrote a PASS can withdraw it at this tip, and the gate refuses', () => {
+  const parsed = parseReport(withdraw().body)
+  assert.deepEqual(parsed.withdraw, { by: 'Reviewer', tip: HEAD })
+  assert.equal(parsed.tip, HEAD, 'the correction names the tip it withdraws')
+  assert.equal(parsed.verdict, null, 'a withdrawal is not a verdict word')
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw()], policy })
+  assert.equal(r.ok, false, 'a withdrawn PASS must not pass this tip')
+  assert.equal(r.verdict, null)
+  assert.match(r.reason, new RegExp(`the PASS at ${HEAD} was withdrawn by Reviewer`))
+  // The report says why the PASS beside it decided nothing.
+  const view = render(r, { pr: 1335, head: HEAD, author: 'opencode-agent' })
+  assert.match(view, /withdrawal of the PASS at/)
+  assert.match(view, /by Reviewer/)
+})
+
+test('#1335: a withdrawal that names a different tip does not touch the PASS at this one', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw({ tip: OLD })], policy })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(r.by, 'reviewer-agent')
+})
+
+test('#1335: a Correction from someone who did not write the PASS is not a conclusion', () => {
+  // Chief is a listed writer but wrote no PASS here, and is not a `reviewers` login: one sentence from any
+  // other name must not park a healthy pull request.
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw({ by: 'Chief' })], policy })
+  assert.equal(r.ok, true, r.reason)
+  const stray = r.judged.find((e) => e.withdraw)
+  assert.equal(stray.counts, false)
+  assert.match(stray.why, /withdraws a PASS it did not write/)
+})
+
+test('#1335: a user in review-policy.json reviewers may withdraw a PASS another name wrote', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw({ by: 'hsliuustc0106' })], policy })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /was withdrawn by hsliuustc0106/)
+})
+
+test('#1335: a later PASS supersedes a withdrawal — the newest word at the tip still wins', () => {
+  const reports = [
+    comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'),
+    withdraw({ at: '2026-10-18T02:00:00Z' }),
+    comment('reviewer-agent', report(), '2026-10-18T03:00:00Z'),
+  ]
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports, policy })
+  assert.equal(r.ok, true, r.reason)
+})
+
+test('#1335: the #1325 shape — a self-PASS with an Attestation, withdrawn by its writer', () => {
+  const selfPolicy = { reviewers: ['Birfy', 'hsliuustc0106'], selfReview: ['Birfy'], writers: ['Reviewer', 'Birfy'] }
+  const reports = [
+    comment('Birfy', report({ attest: true }), '2026-10-27T04:14:03Z'),
+    withdraw({ by: 'Reviewer', login: 'Birfy', at: '2026-10-27T04:15:36Z' }),
+  ]
+  const r = decide({ head: HEAD, author: 'Birfy', reports, policy: selfPolicy, owners: ['Dev'] })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /was withdrawn by Reviewer/)
+})
+
+test('#1335: a Correction quoted inside a body does not withdraw anything — the header decides', () => {
+  const body = [
+    `Verdict: PASS at ${HEAD}`,
+    'Written-by: Reviewer',
+    '',
+    'Ran:',
+    '  - npm run verify → pass',
+    '',
+    `Quoted from my earlier comment: Correction from Reviewer: the PASS at \`${HEAD}\` is withdrawn.`,
+  ].join('\n')
+  const parsed = parseReport(body)
+  assert.equal(parsed.withdraw, null, 'only the header is a conclusion line')
+  assert.equal(parsed.verdict, 'PASS')
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', body)], policy })
+  assert.equal(r.ok, true, r.reason)
+})
+
+test('#1335: a Correction that never says withdrawn is prose, not a conclusion', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw({ say: 'still stands' })], policy })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(parseReport(withdraw({ say: 'still stands' }).body).withdraw, null)
+})
