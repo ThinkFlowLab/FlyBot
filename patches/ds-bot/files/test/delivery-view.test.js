@@ -649,8 +649,9 @@ test('a host that cannot name a repository says so, and does not send the person
 const repoSample = (repo, extra = {}) => ({
   repo, repoSource: 'config', state: 'fresh', ok: true, asOf: '2026-10-25T04:00:00Z',
   columns: {
-    raw: [{ kind: 'issue', number: 10, title: `${repo} untriaged`, labels: [], url: `https://x/${repo}/10` }],
-    ready: [], working: [], review: [], 'done-today': [],
+    'not-started': [{ kind: 'issue', number: 10, title: `${repo} untriaged`, labels: [], url: `https://x/${repo}/10`, repo }],
+    'in-progress': [],
+    'done': [],
   },
   metrics: {
     dayStart: '2026-10-24T16:00:00.000Z',
@@ -728,7 +729,7 @@ test('more than one repository draws one block each, one repository draws none (
   const singleView = repoSample('acme/one')
   const one = DeliveryBoard({ view: { ...singleView, repos: [singleView] } })
   assert.equal(walk(one).filter(node => node.props?.className === 'bt-del-repo-block').length, 0)
-  assert.equal(walk(one).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
+  assert.equal(walk(one).filter(node => node.type === 'section' && node.props?.['data-column']).length, 3, 'single-repo through repos[] uses workflow columns')
   const oneHead = walk(one).find(node => node.props?.className === 'bt-del-repo')
   assert.equal(oneHead.props['data-repo'], 'acme/one')
   assert.equal(oneHead.props['data-repos'], undefined)
@@ -737,17 +738,17 @@ test('more than one repository draws one block each, one repository draws none (
   const board = DeliveryBoard({
     view: { state: 'fresh', repo: null, repoSource: null, asOf: '2026-10-25T04:00:00Z', repos: [repoSample('acme/one'), repoSample('acme/two')] },
   })
+  // #1326: Successful repos merge into one shared column set, no per-repo blocks
   const blocks = walk(board).filter(node => node.props?.className === 'bt-del-repo-block')
-  assert.deepEqual(blocks.map(node => [node.props['data-repo'], node.props['data-state']]),
-    [['acme/one', 'fresh'], ['acme/two', 'fresh']])
-  for (const block of blocks) {
-    assert.equal(walk(block).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
-    const card = walk(block).find(node => node.type === 'article')
-    // The same issue number in two repositories is two cards with two identities.
-    assert.equal(card.props['data-key'], `${block.props['data-repo']}#10`)
-  }
-  // Each block's head names the repository and where its name came from; the shared header counts.
-  assert.match(text(blocks[1]), /acme\/two\s+· from config/)
+  assert.equal(blocks.length, 0, 'no repo blocks for successful repos — all cards in one shared column set')
+  const columns = walk(board).filter(node => node.type === 'section' && node.props?.['data-column'])
+  assert.equal(columns.length, 3, 'one shared column set with 3 workflow columns')
+  const cards = walk(board).filter(node => node.type === 'article')
+  // Both repos' cards appear in the shared columns; each card keeps its repo identity
+  const keys = cards.map(card => card.props['data-key']).sort()
+  assert.ok(keys.includes('acme/one#10'), 'acme/one card present')
+  assert.ok(keys.includes('acme/two#10'), 'acme/two card present')
+  // The shared header counts repositories
   const head = walk(board).find(node => node.props?.className === 'bt-del-repo')
   assert.equal(head.props['data-repos'], '2')
   assert.equal(head.props['data-repo'], undefined)
@@ -767,14 +768,43 @@ test('a failed repository keeps its block, and the readable repository still dra
       asOf: '2026-10-25T04:00:00Z',
     },
   })
+  // #1326: Successful repos merge into shared columns; failed repos shown as error blocks
   const blocks = walk(board).filter(node => node.props?.className === 'bt-del-repo-block')
-  assert.equal(blocks.length, 2, 'a failed repository does not take the board with it')
-  assert.equal(blocks[1].props['data-state'], 'failed')
-  assert.equal(walk(blocks[0]).filter(node => node.type === 'section' && node.props?.['data-column']).length, 5)
-  assert.equal(walk(blocks[1]).some(node => node.type === 'section' && node.props?.['data-column']), false)
-  assert.match(text(blocks[1]), /GitHub answered 404 for \/repos\/acme\/two\/issues/)
+  assert.equal(blocks.length, 1, 'only the failed repo has a block')
+  assert.equal(blocks[0].props['data-state'], 'failed')
+  assert.equal(blocks[0].props['data-repo'], 'acme/two')
+  assert.equal(walk(blocks[0]).some(node => node.type === 'section' && node.props?.['data-column']), false)
+  assert.match(text(blocks[0]), /GitHub answered 404 for \/repos\/acme\/two\/issues/)
+  // The successful repo (acme/one) draws in shared columns outside the block
+  const columns = walk(board).filter(node => node.type === 'section' && node.props?.['data-column'])
+  assert.equal(columns.length, 3, 'shared columns for successful repo')
   // The partial line names whose part it was, so one repository's failure is not read as another's.
   assert.match(text(board), /acme\/two · issues was not fetched this time/)
+})
+
+test('multi-repo with tasks: each task appears exactly once (#1326)', () => {
+  const task1 = { id: 'task-abc123', title: 'First task', status: 'open', ownerBotId: 'bot-one' }
+  const task2 = { id: 'task-def456', title: 'Second task', status: 'working', ownerBotId: 'bot-one' }
+  const roster = { byId: { 'bot-one': { id: 'bot-one', name: 'TestBot' } } }
+  const board = DeliveryBoard({
+    view: { 
+      state: 'fresh', 
+      repo: null, 
+      repoSource: null, 
+      asOf: '2026-10-27T05:00:00Z', 
+      repos: [repoSample('acme/one'), repoSample('acme/two')] 
+    },
+    tasks: [task1, task2],
+    roster,
+  })
+  // Each task should appear exactly once, not duplicated per repo
+  const taskCards = walk(board).filter(node => node.props?.['data-task'])
+  assert.equal(taskCards.length, 2, 'exactly 2 task cards, not duplicated')
+  const taskIds = taskCards.map(card => card.props['data-task'])
+  assert.deepEqual(taskIds.sort(), ['task-abc123', 'task-def456'].sort())
+  // GitHub cards from both repos should also be present
+  const githubCards = walk(board).filter(node => node.props?.['data-kind'])
+  assert.ok(githubCards.length > 0, 'GitHub cards from repos are present')
 })
 
 test('no token names the GitHub side, never an empty board (#1211, #1265)', () => {

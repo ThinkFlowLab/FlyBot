@@ -480,7 +480,7 @@ function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter 
         : allCards(column.id).map(item => 
             isTask(item)
               ? h(TaskBoardCard, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag })
-              : h(DeliveryCard, { key: `${repo ?? ''}-${item.kind}-${item.number}`, card: item, repo })))))
+              : h(DeliveryCard, { key: `${repo ?? item.repo ?? ''}-${item.kind}-${item.number}`, card: item, repo: repo ?? item.repo ?? null })))))
 }
 
 // The columns a workflow definition draws (#1272 step 3, acceptance 1 and 2): one block per workflow,
@@ -511,6 +511,41 @@ function DeliveryWorkflowSections({ sections, repo = null, filter = 'all' }) {
   (section.unplaced ?? []).length > 0
     ? h('p', { className: 'bt-del-hint' }, t('{count} card(s) name a node this workflow draws no column for.', { count: section.unplaced.length }))
     : null)))
+}
+
+// #1326: Multi-repo unified board — merge successful repos into one shared column set with tasks
+// appearing once, and show failed repos as error blocks.
+function multiRepoView(entries, { tasks, filter, roster, dragging, onMove, onDrag }) {
+  const successful = (entries ?? []).filter(entry => entry?.columns !== undefined)
+  const failed = (entries ?? []).filter(entry => entry?.columns === undefined)
+  
+  // Merge all successful repo columns into one view, keeping only the workflow columns
+  const merged = { columns: { 'not-started': [], 'in-progress': [], 'done': [] } }
+  for (const entry of successful) {
+    for (const [column, cards] of Object.entries(entry.columns)) {
+      // Only merge columns that exist in the workflow column set
+      if (merged.columns[column]) {
+        merged.columns[column].push(...cards)
+      }
+    }
+  }
+  
+  return h('div', { className: 'bt-del-multi' },
+    // Successful repos: one shared column set with all cards and tasks once
+    successful.length > 0
+      ? h(DeliveryColumns, { view: merged, repo: null, placed: null, tasks, filter, roster, dragging, onMove, onDrag })
+      : null,
+    // Failed repos: show error blocks
+    failed.map(entry => h(DeliveryRepoBlock, { 
+      key: entry.repo ?? 'unknown', 
+      entry, 
+      tasks: [], // Don't pass tasks to failed repo blocks
+      roster, 
+      dragging, 
+      onMove, 
+      onDrag, 
+      filter 
+    })))
 }
 
 // A repository that cannot be read keeps its block and says so; the readable ones are drawn beside
@@ -603,8 +638,7 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, tasks
       : null,
     entries === null
       ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag })
-      : h('div', { className: 'bt-del-repos' },
-        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry, tasks, roster, dragging, onMove, onDrag, filter }))))
+      : multiRepoView(entries, { tasks, filter, roster, dragging, onMove, onDrag }))
 }
 
 export function DeliveryView({ actions, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null }) {

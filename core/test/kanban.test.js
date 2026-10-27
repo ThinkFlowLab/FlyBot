@@ -216,6 +216,40 @@ test('a delivery read with no token still shows task cards on the one board (#12
   assert.equal(all(boardView).filter(node => node.props?.role === 'tab').length, 0)
 })
 
+test('Start and Complete fire from the unified board path (#1326)', () => {
+  const moved = []
+  const openTask = task('task-open123', 'open', { title: 'Start me', ownerBotId: 's' })
+  const workingTask = task('task-working456', 'working', { title: 'Complete me', ownerBotId: 's' })
+  const actions = { 
+    closeBoard: () => {}, 
+    boardClose: () => {},
+    taskUpdate: async ({ id, column }) => { moved.push([id, column]); return { ok: true } },
+    deliveryBoard: async () => ({ ok: false, reason: 'no-github' }),
+  }
+  states.length = 0
+  // KanbanDialog states: scope, dragging, error, draft
+  // useBoardTasks states: own, groupTasks, archive
+  states.push({ kind: 'bot', botId: 's' }, null, '', '', [openTask, workingTask], [], [])
+  const boardView = expand(KanbanDialog({ roster, actions }))
+  
+  // Find Start button on open task and click it
+  const cards = all(boardView).filter(node => node.props?.['data-task'])
+  const openCard = cards.find(card => card.props['data-task'] === 'task-open123')
+  assert.ok(openCard, 'open task card found')
+  const startButton = all(openCard).find(node => node.type === 'button' && textOf(node) === 'Start')
+  assert.ok(startButton, 'Start button found on open task')
+  startButton.props.onClick()
+  assert.deepEqual(moved[0], ['task-open123', 'in-progress'], 'Start moved task to in-progress')
+  
+  // Find Complete button on working task and click it
+  const workingCard = cards.find(card => card.props['data-task'] === 'task-working456')
+  assert.ok(workingCard, 'working task card found')
+  const completeButton = all(workingCard).find(node => node.type === 'button' && textOf(node) === 'Complete')
+  assert.ok(completeButton, 'Complete button found on working task')
+  completeButton.props.onClick()
+  assert.deepEqual(moved[1], ['task-working456', 'done'], 'Complete moved task to done')
+})
+
 // #1252: the Done column is archive, not the board, and the slice has to be the *newest* finished
 // cards — a card a member just finished has an old `createdAt`, so ordering by it would hide exactly
 // the card they are looking for.

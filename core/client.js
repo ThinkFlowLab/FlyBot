@@ -8867,7 +8867,7 @@ function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter 
         (0, import_react16.createElement)("span", null, t(column.label)),
         (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(allCards(column.id).length))
       ),
-      allCards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : allCards(column.id).map((item) => isTask(item) ? (0, import_react16.createElement)(BoardCard2, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag }) : (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? ""}-${item.kind}-${item.number}`, card: item, repo }))
+      allCards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : allCards(column.id).map((item) => isTask(item) ? (0, import_react16.createElement)(BoardCard2, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag }) : (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? item.repo ?? ""}-${item.kind}-${item.number}`, card: item, repo: repo ?? item.repo ?? null }))
     ))
   );
 }
@@ -8909,6 +8909,36 @@ function DeliveryWorkflowSections({ sections, repo = null, filter = "all" }) {
     })),
     (section.unplaced ?? []).length > 0 ? (0, import_react16.createElement)("p", { className: "bt-del-hint" }, t("{count} card(s) name a node this workflow draws no column for.", { count: section.unplaced.length })) : null
   )));
+}
+function multiRepoView(entries2, { tasks, filter, roster, dragging, onMove, onDrag }) {
+  const successful = (entries2 ?? []).filter((entry) => entry?.columns !== void 0);
+  const failed = (entries2 ?? []).filter((entry) => entry?.columns === void 0);
+  const merged = { columns: { "not-started": [], "in-progress": [], "done": [] } };
+  for (const entry of successful) {
+    for (const [column, cards] of Object.entries(entry.columns)) {
+      if (merged.columns[column]) {
+        merged.columns[column].push(...cards);
+      }
+    }
+  }
+  return (0, import_react16.createElement)(
+    "div",
+    { className: "bt-del-multi" },
+    // Successful repos: one shared column set with all cards and tasks once
+    successful.length > 0 ? (0, import_react16.createElement)(DeliveryColumns, { view: merged, repo: null, placed: null, tasks, filter, roster, dragging, onMove, onDrag }) : null,
+    // Failed repos: show error blocks
+    failed.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, {
+      key: entry.repo ?? "unknown",
+      entry,
+      tasks: [],
+      // Don't pass tasks to failed repo blocks
+      roster,
+      dragging,
+      onMove,
+      onDrag,
+      filter
+    }))
+  );
 }
 function DeliveryRepoBlock({ entry, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, filter = "all" }) {
   const state = entry?.state ?? "fresh";
@@ -9005,11 +9035,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
     // A workflow's own columns come first: a card that names a workflow is drawn there and not in
     // the five columns below, which keep every card that names none (#1272 step 3).
     entries2 === null ? (0, import_react16.createElement)(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null, filter }) : null,
-    entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag }) : (0, import_react16.createElement)(
-      "div",
-      { className: "bt-del-repos" },
-      entries2.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, { key: entry.repo ?? "unknown", entry, tasks, roster, dragging, onMove, onDrag, filter }))
-    )
+    entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag }) : multiRepoView(entries2, { tasks, filter, roster, dragging, onMove, onDrag })
   );
 }
 function DeliveryView({ actions, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null }) {
