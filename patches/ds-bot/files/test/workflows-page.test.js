@@ -6,10 +6,11 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+import { DICTIONARY } from '../src/client/i18n.js'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } from './src/client/workflows.js'",
+    contents: "export { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } from './src/client/workflows.js'\nexport { installLocale } from './src/client/i18n.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -32,7 +33,21 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } = module.exports
+const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode, installLocale } = module.exports
+
+const PLUGIN_HINT = 'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.'
+
+function fakeLocale(active) {
+  const dicts = new Map()
+  return {
+    register: (ns, locale, dict) => { dicts.set(`${ns}:${locale}`, dict); return () => dicts.delete(`${ns}:${locale}`) },
+    bind: ns => (key, params) => {
+      const text = (active === 'zh' ? dicts.get(`${ns}:zh`)?.[key] : undefined) ?? key
+      return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
+    },
+    getLocale: () => ({ active }),
+  }
+}
 
 const expand = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
@@ -155,6 +170,56 @@ test('a read that never returns becomes an error, and a good payload opens as re
   assert.equal(ready.phase, 'ready')
   assert.equal(settleWorkflowRead({ ok: false, error: 'no' }).phase, 'error')
   assert.equal(settleWorkflowRead({ ok: true, templates: [], workflows: [] }).phase, 'empty')
+})
+
+test('a missing workflow plugin is an enable hint, not the host endpoint string (#1381)', async () => {
+  const missing = Object.assign(new Error('Unknown FlyBot endpoint workflow/state'), { code: 'bot/not-found' })
+  const settled = await readWorkflows(() => { throw missing }, { timeoutMs: 1000 })
+  assert.equal(settled.phase, 'error')
+  assert.equal(settled.pack, null)
+  assert.equal(settled.error, PLUGIN_HINT)
+  assert.doesNotMatch(settled.error, /Unknown FlyBot endpoint/)
+
+  const messageOnly = await readWorkflows(() => { throw new Error('Unknown FlyBot endpoint workflow/create') }, { timeoutMs: 1000 })
+  assert.equal(messageOnly.error, PLUGIN_HINT)
+  const codeOnly = await readWorkflows(() => { throw Object.assign(new Error('no such route'), { code: 'bot/not-found' }) }, { timeoutMs: 1000 })
+  assert.equal(codeOnly.error, PLUGIN_HINT)
+  const graph = await readWorkflows(() => { throw new Error('Unknown FlyBot endpoint workflow/graph') }, { timeoutMs: 1000 })
+  assert.equal(graph.error, PLUGIN_HINT)
+  const returned = settleWorkflowRead({ ok: false, error: 'Unknown FlyBot endpoint workflow/state' })
+  assert.equal(returned.phase, 'error')
+  assert.equal(returned.error, PLUGIN_HINT)
+  assert.equal(settleWorkflowRead({ ok: false, error: 'no' }).error, 'no')
+
+  const down = await readWorkflows(() => { throw new Error('workflow host down') }, { timeoutMs: 1000 })
+  assert.equal(down.error, 'workflow host down')
+  const ready = settleWorkflowRead(pack)
+  assert.equal(ready.phase, 'ready')
+  assert.equal(ready.error, '')
+
+  const view = renderView({ phase: 'error', error: PLUGIN_HINT, pack: null })
+  assert.match(text(view), /not installed or not enabled/)
+  assert.match(text(view), /@flybot\/workflow/)
+  assert.match(text(view), /Retry/)
+  assert.doesNotMatch(text(view), /Unknown FlyBot endpoint/)
+  assert.doesNotMatch(text(view), /Reading workflows/)
+  const open = renderView({ phase: 'ready', pack, opened: null, error: '' })
+  assert.match(text(open), /Factory presets/)
+  assert.doesNotMatch(text(open), /not installed or not enabled/)
+
+  assert.equal(DICTIONARY.zh[PLUGIN_HINT], '工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    const zh = renderView({ phase: 'error', error: PLUGIN_HINT, pack: null })
+    const body = text(zh)
+    assert.match(body, /工作流插件没有安装，或没有启用/)
+    assert.match(body, /@flybot\/workflow/)
+    assert.match(body, /重试/)
+    assert.doesNotMatch(body, /Unknown FlyBot endpoint/)
+    assert.doesNotMatch(body, /Retry/)
+  } finally {
+    off()
+  }
 })
 
 test('editing the graph moves a node, draws an edge, drops a local Bot and removes one', () => {

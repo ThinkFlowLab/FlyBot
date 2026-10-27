@@ -17,6 +17,8 @@ const ZH = {
   'No workflows yet.': '还没有工作流。',
   'Reading workflows…': '正在读取工作流…',
   'Could not read workflows': '读不到工作流。',
+  'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.':
+    '工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。',
   'Could not copy this workflow': '这个工作流复制不了。',
   'Could not save this workflow': '这个工作流保存不了。',
   'Use this': '用这个',

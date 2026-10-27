@@ -53,6 +53,7 @@ var ZH = {
   "No workflows yet.": "还没有工作流。",
   "Reading workflows…": "正在读取工作流…",
   "Could not read workflows": "读不到工作流。",
+  "The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.": "工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。",
   "Could not copy this workflow": "这个工作流复制不了。",
   "Could not save this workflow": "这个工作流保存不了。",
   "Use this": "用这个",
@@ -14354,10 +14355,23 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
 // src/client/workflows.js
 var import_react34 = require("react");
 var READ_MS = 8e3;
+var WORKFLOW_PLUGIN_HINT = "The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.";
 var COLORS = { Planner: "#8b5cf6", Writer: "#f0509a", Coder: "#1fbf6a", Reviewer: "#f5a524", Tester: "#14b8a6", Deployer: "#2f7cf6" };
+function workflowCallMissing(failure) {
+  const code = failure && typeof failure === "object" ? String(failure.code ?? "") : "";
+  const message = typeof failure === "string" ? failure : String(failure?.message ?? "");
+  return code === "bot/not-found" || /Unknown FlyBot endpoint workflow\//i.test(message);
+}
+function workflowCallError(failure, fallback = "Could not read workflows") {
+  if (workflowCallMissing(failure)) return WORKFLOW_PLUGIN_HINT;
+  if (typeof failure === "string" && failure.trim()) return failure.trim();
+  const message = typeof failure?.message === "string" ? failure.message.trim() : "";
+  return message || fallback;
+}
 function settleWorkflowRead(value, fallback = "Could not read workflows") {
   if (!value || value.ok === false || !Array.isArray(value.workflows)) {
-    const error = typeof value?.error === "string" && value.error.trim() ? value.error : fallback;
+    const raw = typeof value?.error === "string" && value.error.trim() ? value.error : "";
+    const error = workflowCallMissing(value) || workflowCallMissing(raw) ? WORKFLOW_PLUGIN_HINT : raw || fallback;
     return { phase: "error", error, pack: null };
   }
   const templates = Array.isArray(value.templates) ? value.templates : [];
@@ -14376,7 +14390,7 @@ function readWorkflows(call4, { timeoutMs = READ_MS } = {}) {
       resolve(value);
     };
     const timer = setTimeout(() => finish(settleWorkflowRead(null)), timeoutMs);
-    Promise.resolve().then(() => call4("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: failure?.message || "Could not read workflows", pack: null }));
+    Promise.resolve().then(() => call4("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: workflowCallError(failure), pack: null }));
   });
 }
 function moveNode(nodes, id, x, y) {
@@ -14585,6 +14599,10 @@ function Row2({ item, source, onOpen }) {
     (0, import_react34.createElement)("span", { className: "bt-chevron", "aria-hidden": true }, "›")
   );
 }
+function alertCopy(error) {
+  if (error === WORKFLOW_PLUGIN_HINT) return t("The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.");
+  return error || t("Could not read workflows");
+}
 function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
   const graph = phase === "ready" ? openedGraph(pack, opened) : null;
   const templates = pack?.templates ?? [];
@@ -14598,7 +14616,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
     error ? (0, import_react34.createElement)(
       "div",
       { className: "bt-error", role: "alert" },
-      error || t("Could not read workflows"),
+      alertCopy(error),
       phase === "error" ? (0, import_react34.createElement)("button", { type: "button", onClick: () => onRetry?.() }, t("Retry")) : null
     ) : null,
     phase === "loading" ? (0, import_react34.createElement)("p", { className: "bt-wf-status", role: "status" }, t("Reading workflows…")) : null,
@@ -14710,7 +14728,7 @@ function WorkflowsPage({ call: call4, roster }) {
         setEditing(true);
       }
     }).catch((failure) => {
-      setError(failure?.message || t("Could not copy this workflow"));
+      setError(workflowCallError(failure, t("Could not copy this workflow")));
     });
   };
   const commit = (graph) => {
@@ -14725,7 +14743,7 @@ function WorkflowsPage({ call: call4, roster }) {
       setPhase("ready");
       setError("");
     }).catch((failure) => {
-      setError(failure?.message || t("Could not save this workflow"));
+      setError(workflowCallError(failure, t("Could not save this workflow")));
     });
   };
   return (0, import_react34.createElement)(WorkflowsView, {

@@ -7,11 +7,31 @@ import { t } from './i18n.js'
 
 export const READ_MS = 8000
 
+// Shown when @flybot/workflow is not registered. A default install includes it;
+// the page says so instead of the host's "Unknown FlyBot endpoint workflow/…" string.
+const WORKFLOW_PLUGIN_HINT = 'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.'
+
 const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6' }
+
+// Social maps bot/not-found and "Unknown FlyBot endpoint social/…" the same way.
+// A workflow call uses that shape when the plugin is missing or switched off.
+function workflowCallMissing(failure) {
+  const code = failure && typeof failure === 'object' ? String(failure.code ?? '') : ''
+  const message = typeof failure === 'string' ? failure : String(failure?.message ?? '')
+  return code === 'bot/not-found' || /Unknown FlyBot endpoint workflow\//i.test(message)
+}
+
+function workflowCallError(failure, fallback = 'Could not read workflows') {
+  if (workflowCallMissing(failure)) return WORKFLOW_PLUGIN_HINT
+  if (typeof failure === 'string' && failure.trim()) return failure.trim()
+  const message = typeof failure?.message === 'string' ? failure.message.trim() : ''
+  return message || fallback
+}
 
 export function settleWorkflowRead(value, fallback = 'Could not read workflows') {
   if (!value || value.ok === false || !Array.isArray(value.workflows)) {
-    const error = typeof value?.error === 'string' && value.error.trim() ? value.error : fallback
+    const raw = typeof value?.error === 'string' && value.error.trim() ? value.error : ''
+    const error = workflowCallMissing(value) || workflowCallMissing(raw) ? WORKFLOW_PLUGIN_HINT : (raw || fallback)
     return { phase: 'error', error, pack: null }
   }
   const templates = Array.isArray(value.templates) ? value.templates : []
@@ -23,6 +43,7 @@ export function settleWorkflowRead(value, fallback = 'Could not read workflows')
 
 // One read of workflow/state. A call that throws, rejects, or never returns
 // settles as an error, so the page cannot stay on "Reading workflows…".
+// A missing plugin is bot/not-found, so that failure names the plugin.
 export function readWorkflows(call, { timeoutMs = READ_MS } = {}) {
   return new Promise((resolve) => {
     let settled = false
@@ -36,7 +57,7 @@ export function readWorkflows(call, { timeoutMs = READ_MS } = {}) {
     Promise.resolve()
       .then(() => call('workflow/state'))
       .then((value) => finish(settleWorkflowRead(value)))
-      .catch((failure) => finish({ phase: 'error', error: failure?.message || 'Could not read workflows', pack: null }))
+      .catch((failure) => finish({ phase: 'error', error: workflowCallError(failure), pack: null }))
   })
 }
 
@@ -208,6 +229,11 @@ function Row({ item, source, onOpen }) {
   h('span', { className: 'bt-chevron', 'aria-hidden': true }, '›'))
 }
 
+function alertCopy(error) {
+  if (error === WORKFLOW_PLUGIN_HINT) return t('The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.')
+  return error || t('Could not read workflows')
+}
+
 export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
   const graph = phase === 'ready' ? openedGraph(pack, opened) : null
   const templates = pack?.templates ?? []
@@ -216,7 +242,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
   const showUse = opened?.source === 'factory' || opened?.fromFactory === true
   return h('div', { className: 'bt-wf-page' },
     h('p', { className: 'bt-wf-hint' }, t('A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.')),
-    error ? h('div', { className: 'bt-error', role: 'alert' }, error || t('Could not read workflows'),
+    error ? h('div', { className: 'bt-error', role: 'alert' }, alertCopy(error),
       phase === 'error' ? h('button', { type: 'button', onClick: () => onRetry?.() }, t('Retry')) : null) : null,
     phase === 'loading' ? h('p', { className: 'bt-wf-status', role: 'status' }, t('Reading workflows…')) : null,
     phase === 'empty' ? h('p', { className: 'bt-wf-status' }, t('No workflows yet.')) : null,
@@ -306,7 +332,7 @@ export function WorkflowsPage({ call, roster }) {
         setError('')
         if (made) { setOpened({ source: 'own', id: made.id }); setEditing(true) }
       })
-      .catch((failure) => { setError(failure?.message || t('Could not copy this workflow')) })
+      .catch((failure) => { setError(workflowCallError(failure, t('Could not copy this workflow'))) })
   }
 
   const commit = (graph) => {
@@ -319,7 +345,7 @@ export function WorkflowsPage({ call, roster }) {
         setPhase('ready')
         setError('')
       })
-      .catch((failure) => { setError(failure?.message || t('Could not save this workflow')) })
+      .catch((failure) => { setError(workflowCallError(failure, t('Could not save this workflow'))) })
   }
 
   return h(WorkflowsView, {
