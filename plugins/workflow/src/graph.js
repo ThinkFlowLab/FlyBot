@@ -591,6 +591,26 @@ export function completeNode(graph, status, nodeId, ctx = {}) {
       next[id] = id === looping.edge.to ? 'running' : 'queued'
       reset.push(id)
     }
+    // The previous pass's choice stays in `fired`, and a skipped sibling is
+    // outside the body. skipClosed only moves queued nodes, so the old branch
+    // would open again. Drop decisions the body made, and queue every skipped
+    // node a reset node points at, so the next pass can take the other side.
+    const opened = new Set(body)
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const edge of forwardEdges(graph)) {
+        if (!opened.has(edge.from) || next[edge.to] !== 'skipped') continue
+        next[edge.to] = 'queued'
+        reset.push(edge.to)
+        opened.add(edge.to)
+        grew = true
+      }
+    }
+    for (const key of Object.keys(fired)) {
+      const from = key.split('>')[0]
+      if (opened.has(from)) delete fired[key]
+    }
     return {
       status: next, started: [looping.edge.to], joined: false, finished: false, layerSize: layer.length,
       loops, fired, looped: true, reset, skipped: [],

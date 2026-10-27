@@ -187,7 +187,7 @@ export function install(rt) {
       try {
         await rt.setPermission(record, preset)
       } catch (error) {
-        await rt.deleteBot(bot.id).catch(() => {})
+        await rt.deleteBot(bot.id).catch(error => warn('flybot: could not remove the Bot after a permission failure: %s', error))
         throw error
       }
     }

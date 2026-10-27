@@ -85,6 +85,31 @@ test('a loop stops at max even when the break never matches', () => {
   assert.equal(step.status.next, 'running')
 })
 
+test('a loop lets the next pass take the other branch', () => {
+  const graph = normalizeGraph({
+    nodes: [
+      { id: 'choose', name: 'Choose', outputs: [{ name: 'path' }] },
+      { id: 'left', name: 'Left' },
+      { id: 'right', name: 'Right' },
+    ],
+    edges: [
+      { from: 'choose', to: 'left', when: { output: 'path', eq: 'left' } },
+      { from: 'choose', to: 'right', when: { output: 'path', eq: 'right' } },
+      { from: 'left', to: 'choose', loop: true, max: 3 },
+    ],
+  })
+  let step = completeNode(graph, startFrontier(graph, freshStatus(graph)).status, 'choose', { outputs: { path: 'left' } })
+  assert.equal(step.status.left, 'running')
+  assert.equal(step.status.right, 'skipped')
+  step = completeNode(graph, step.status, 'left', { fired: step.fired, loops: step.loops })
+  assert.equal(step.looped, true)
+  assert.equal(step.status.choose, 'running')
+  assert.equal(step.status.right, 'queued')
+  step = completeNode(graph, step.status, 'choose', { outputs: { path: 'right' }, fired: step.fired, loops: step.loops })
+  assert.equal(step.status.right, 'running')
+  assert.equal(step.status.left, 'skipped')
+})
+
 test('a loop edge is the only cycle; an unmarked back edge is still refused', () => {
   const bare = normalizeGraph({
     nodes: [{ id: 'body', name: 'Body' }, { id: 'next', name: 'Next' }],
