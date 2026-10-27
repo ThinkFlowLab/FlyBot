@@ -174,7 +174,9 @@ test('a bot account writes no conclusion even with a valid signature (#943 survi
   const body = signed({ nonce: 'n8' })
   const r = judge([{ login: 'Birfy', type: 'Bot', body, at: '2026-10-25T08:00:00Z', kind: 'comment', association: 'COLLABORATOR' }])
   assert.equal(r.ok, false)
-  assert.match(r.reason, /written by a bot account/)
+  // #1344: the refusal sentence is about the tip; the account is named on the report it voided.
+  assert.match(r.reason, /no Verifier report names the tip/)
+  assert.match(String(r.judged?.find((e) => e.login === 'Birfy')?.why), /bot account/)
 })
 
 test('the signature lines are read from the header only: a quoted signed block below does not sign the text above', () => {

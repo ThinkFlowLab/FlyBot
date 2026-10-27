@@ -312,8 +312,21 @@ const where = (r) => `${r.kind === 'review' ? 'review' : 'comment'} by ${r.login
 // bot accounts would void the whole pipeline — so the test is the account type, plus the login shape the
 // API has always used for them (`cursor[bot]`). At #940's tip such a `Verdict:` sat beside the
 // Reviewer's; what voids it is the real Reviewer's `Correction from Reviewer:`, not a second read here.
+// #1344: and only a `User` account writes one (#1328's `cursor[bot]` self-claimed a
+// `REQUEST_CHANGES` at `ac038e55`). The field itself is read fail-closed: a report the API gives no
+// `type` for is not a conclusion either, because a missing field is not evidence that a person wrote it.
+// A `[bot]` login is still refused even when the API calls that account a `User` — the suffix is the
+// older signal, and the reviews API has always used it.
 const isBotAccount = (r) => String(r.type ?? '').toLowerCase() === 'bot' || /\[bot\]$/i.test(login(r))
+const isUserAccount = (r) => String(r.type ?? '').toLowerCase() === 'user'
 const botKind = (r) => (String(r.type ?? '').toLowerCase() === 'bot' ? 'account type Bot' : 'login ends with [bot]')
+// The one reason a report is refused for its author rather than its text, or `null`. #1344 keeps the bot
+// and no-type refusals in one place so the message cannot drift between them.
+const accountRefusal = (r) => {
+  if (isBotAccount(r)) return `written by a bot account (${botKind(r)}), so it is not a conclusion`
+  if (!isUserAccount(r)) return `written by an account the API reports as ${r.type ? `"${r.type}"` : 'no type'}, so it is not a conclusion`
+  return null
+}
 
 // #1110: what the policy asks of a signature, and the one refusal a broken configuration produces. The
 // roster lives in the policy, the public keys live in `signers.json`, and both must be present together:
@@ -399,9 +412,12 @@ export function decide({ head, author, reports, policy, admins, body, owners, re
     if (!parsed.verdict && !parsed.unknownVerdict && !entry.withdraw) continue // a `Tip SHA` block with no verdict is not a conclusion
     // #943: refused before the association test, with its own reason: a bot account is not a
     // conclusion for a reason unlisted logins cannot explain, and the log has to say which defect fired.
-    if (isBotAccount(r)) {
-      entry.why = `${where(r)}: written by a bot account (${botKind(r)}), so it is not a conclusion`
-      reasons.push(entry.why)
+    // #1344: the reason stays on the report (`judged`), not in `reasons`: the refusal sentence is
+    // about this tip having no conclusion, and naming the account there read as "a bot comment refused
+    // the merge" (#1328's summary). `#943`'s account is still named, beside the report it voided.
+    const account = accountRefusal(r)
+    if (account) {
+      entry.why = `${where(r)}: ${account}`
       continue
     }
     // #1110, before anything below can read it: a conclusion whose signature does not verify is not a

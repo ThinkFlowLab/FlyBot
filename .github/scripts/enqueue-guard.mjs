@@ -47,6 +47,50 @@ function arg(name) {
 // runs); `gate-check.mjs` turns the same object into the `enqueue-guard` check run the ruleset requires
 // (#812). One function with two readers, so the check and the printed command cannot disagree — #812's
 // kill condition is a second copy of these rules, and there is none.
+// #1344 (owner decision 2026-10-27): a branch an external agent owns is frozen while its write access is
+// unresolved, and the list of what that means is a file on the base branch, not code: the owner peels the
+// seal off by editing or deleting one JSON document, with no release of this script. The list is read at the
+// pull request's BASE commit, never its head — a branch that carries its own copy could empty the list and
+// un-freeze itself (#1346's shape) — and a pull request that edits the document is refused outright, so
+// "edit the seal from inside" is closed too. This is a queue-entry seal, not a permission boundary: a direct
+// push or an admin merge is unaffected, and the shared `Birfy` token can edit the file on `main`.
+const FROZEN_PATH = '.github/agent/frozen-branches.json'
+const FROZEN_REASON = 'frozen: external agent branch; owner decision pending'
+const FROZEN_EDIT_REASON = 'frozen: .github/agent/frozen-branches.json is not editable by a pull request'
+
+// Missing file, unreadable file, empty arrays: nothing is frozen. A broken read must not stop the whole
+// queue, and the seal is meant to be removable — both point the same way here.
+function frozenList({ gh, repo, base }) {
+  const out = { branches: [], markers: [] }
+  if (!base) return out
+  try {
+    const body = JSON.parse(gh('api', `repos/${repo}/contents/${FROZEN_PATH}?ref=${base}`))
+    const config = JSON.parse(Buffer.from(String(body?.content ?? ''), 'base64').toString('utf8'))
+    for (const key of ['branches', 'markers']) {
+      if (Array.isArray(config?.[key])) out[key] = config[key].map((v) => String(v).toLowerCase()).filter(Boolean)
+    }
+  } catch {
+    // no list, no seal
+  }
+  return out
+}
+
+// The refusal this file exists for, or `null`: the head branch starts with a listed prefix, the body carries
+// a listed marker, or the diff edits the list itself. `merged` is history and is never re-judged (#943).
+function frozenRefusal({ gh, repo, pull, files }) {
+  const touched = (files ?? []).find((f) => f && f.filename === FROZEN_PATH)
+  // An ADD is how the seal first arrives (this very pull request). A modify or a delete is the self-unlock
+  // this rule closes, whatever the branch is.
+  if (touched && touched.status !== 'added') return FROZEN_EDIT_REASON
+  if (pull?.merged) return null
+  const list = frozenList({ gh, repo, base: pull?.base?.sha })
+  const branch = String(pull?.head?.ref ?? '').toLowerCase()
+  const body = String(pull?.body ?? '').toLowerCase()
+  if (list.branches.some((prefix) => branch.startsWith(prefix))) return FROZEN_REASON
+  if (list.markers.some((marker) => body.includes(marker))) return FROZEN_REASON
+  return null
+}
+
 export function decidePull({ gh = realGh, env = process.env, repo: repoOption, pr: prOption, expectedHead, sameChangeSet } = {}) {
   const list = (path) => gh('api', '--paginate', '--jq', '.[]', path).split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const repo = repoOption || env.GH_REPO || arg('--repo')
@@ -92,6 +136,17 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // case-insensitive: `--repo thinkflowlab/flybot` used to read our own branch as a fork and print ALLOW.
   const fork = String(pull.head?.repo?.full_name ?? '').toLowerCase() !== String(repo).toLowerCase()
   const decision = guard({ pr, head, labels, body: pull.body, files: files.map((f) => f.filename), mechanicalRelease, fork, draft: pull.draft, merged: pull.merged, result, reports, policy })
+  // #1344: the seal answers before anything else can allow the entry — a well-formed PASS at the tip, an
+  // `agent-pr` label and a clean body change nothing here.
+  const frozen = frozenRefusal({ gh, repo, pull, files })
+  if (frozen) {
+    return {
+      decision: { ...decision, ok: false, reasons: [frozen], reason: frozen, message: `do not enqueue #${pr}: ${frozen}` },
+      pull,
+      repo,
+      pr,
+    }
+  }
   return { decision, pull, repo, pr }
 }
 

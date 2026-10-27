@@ -1,0 +1,4 @@
+{
+  "branches": ["cursor/"],
+  "markers": ["CURSOR_AGENT_PR_BODY"]
+}

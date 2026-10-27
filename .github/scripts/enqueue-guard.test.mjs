@@ -61,7 +61,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [], attest = null } = {}
 // #676: only a comment GitHub ties to this repository can be a conclusion, so the fixture carries the
 // association the API sends for the shared `Birfy` account.
 const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
-  ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
+  ({ user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
 
 // A body written for one rule still needs a checkpoint, or every test below would fail on the rule it is
 // not about. So the fixture appends one that agrees with the body it was given: same issue, same files.
@@ -76,7 +76,11 @@ const withCheckpoint = (text, files) => {
   return `${text}\n${checkpoint({ issue, claim, files: names.length ? names : [HOST_FILE] })}`
 }
 
-const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false } = {}) => {
+// #1344: the fixture also answers the contents read for the frozen list, at the pull request's BASE commit.
+const BASE = 'c'.repeat(40)
+const FROZEN_PATH = '.github/agent/frozen-branches.json'
+const DEFAULT_FROZEN = { branches: ['cursor/'], markers: ['CURSOR_AGENT_PR_BODY'] }
+const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false, branch = 'dev/fixture', baseSha = BASE, baseFrozen = DEFAULT_FROZEN } = {}) => {
   // `raw` is for the tests about the checkpoint itself: they must be able to hand over a body without one.
   const given = body ?? `${HEADERS}Fixes #602\n`
   const text = raw ? given : withCheckpoint(given, files)
@@ -89,13 +93,17 @@ const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels 
       if (permission == null || permission === 'throw') throw new Error('fake gh: permission ' + path)
       return JSON.stringify({ permission, role_name: permission, user: { login: 'reviewed' } })
     }
+    if (path.includes('/contents/')) {
+      if (baseFrozen === null) throw new Error('fake gh: 404 ' + path)
+      return JSON.stringify({ content: Buffer.from(JSON.stringify(baseFrozen)).toString('base64'), encoding: 'base64' })
+    }
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
     if (/\/pulls\/\d+$/.test(path)) {
       // #1112 (c): a run reads the head twice, so the fixture can answer differently the second time.
       const sha = heads ? heads[Math.min(pullReads++, heads.length - 1)] : head
-      return JSON.stringify({ head: { sha, repo: { full_name: headRepo } }, user: { login: author }, body: text, labels: labels.map((name) => ({ name })), draft, merged })
+      return JSON.stringify({ head: { sha, ref: branch, repo: { full_name: headRepo } }, base: { sha: baseSha }, user: { login: author }, body: text, labels: labels.map((name) => ({ name })), draft, merged })
     }
     // Anything else — `gh pr merge` above all — is the guard doing more than checking.
     throw new Error('fake gh: unexpected ' + path)
@@ -128,7 +136,7 @@ test('#602: a PASS at the tip lets it through, and the guard only prints the com
   assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`)
   // No `gh pr merge` was run: the fake throws on any path it does not recognise, and every call here
   // is a read.
-  for (const path of gh.calls) assert.match(path, /\/(pulls\/\d+|files|comments|reviews)(\?|$)/)
+  for (const path of gh.calls) assert.match(path, /\/(pulls\/\d+|files|comments|reviews|contents\/)/)
 })
 
 test('#602: no conclusion at the tip refuses', () => {
@@ -174,7 +182,7 @@ test('#602: the marker on a different tip is not this head', () => {
 })
 
 test('#602: prose that quotes the marker without being a conclusion is not a freeze', () => {
-  const note = { user: { login: 'Chief' }, body: 'The routine says "record only — do not merge" when the owner parks one; this one is not parked.', created_at: '2026-10-21T13:00:00Z' }
+  const note = { user: { login: 'Chief', type: 'User' }, body: 'The routine says "record only — do not merge" when the owner parks one; this one is not parked.', created_at: '2026-10-21T13:00:00Z' }
   assert.equal(recordOnlyAt([note], HEAD), null)
   assert.equal(run({ comments: [comment(report(), '2026-10-21T10:00:00Z'), note] }).ok, true)
 })
@@ -192,7 +200,7 @@ test('#602: a PASS that explains the marker in a sentence does not freeze itself
     '- A bullet saying `Record only — do not merge` in the middle of a sentence is not a marker either.',
   ].join('\n')
   assert.equal(recordOnlyAt([{ body: explaining, at: '2026-10-22T06:10:56Z' }], HEAD), null)
-  assert.equal(run({ comments: [{ user: { login: 'reviewer-agent' }, body: explaining, created_at: '2026-10-22T06:10:56Z', author_association: 'MEMBER' }] }).ok, true)
+  assert.equal(run({ comments: [{ user: { login: 'reviewer-agent', type: 'User' }, body: explaining, created_at: '2026-10-22T06:10:56Z', author_association: 'MEMBER' }] }).ok, true)
 })
 
 test('#602: the marker is a whole line, and its other language half is allowed', () => {
@@ -219,7 +227,7 @@ test('#602: the self-gate case (author Birfy, PASS by Birfy) is allowed when the
     gh: fakeGh({
       files: [HOST_FILE],
       author: 'Birfy',
-      comments: [{ user: { login: 'Birfy' }, body: report({ attest: 'reviewer-agent' }), created_at: '2026-10-21T10:31:00Z', author_association: 'OWNER' }],
+      comments: [{ user: { login: 'Birfy', type: 'User' }, body: report({ attest: 'reviewer-agent' }), created_at: '2026-10-21T10:31:00Z', author_association: 'OWNER' }],
     }),
     env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' },
     repo: 'ThinkFlowLab/FlyBot',
@@ -233,7 +241,7 @@ test('#644: the self-gate case with only the author\'s Verdict comment is refuse
     gh: fakeGh({
       files: [HOST_FILE],
       author: 'Birfy',
-      comments: [{ user: { login: 'Birfy' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'OWNER' }],
+      comments: [{ user: { login: 'Birfy', type: 'User' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'OWNER' }],
     }),
     env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' },
     repo: 'ThinkFlowLab/FlyBot',
@@ -333,7 +341,7 @@ test('#718: a fork stays exempt under any --repo spelling', () => {
 // The guard is only in the path if the instructions that tell an agent to enqueue name it; otherwise
 // the next agent runs `gh pr merge` from memory and #602 is back.
 const contributor = (login, at = '2026-10-24T03:42:31Z', body = report()) =>
-  ({ user: { login }, body, submitted_at: at, author_association: 'CONTRIBUTOR' })
+  ({ user: { login, type: 'User' }, body, submitted_at: at, author_association: 'CONTRIBUTOR' })
 
 test('#925: a MEMBER PASS is accepted and does not ask the permission API', () => {
   const gh = fakeGh({ files: [HOST_FILE], comments: [comment()] })
@@ -480,7 +488,8 @@ test('#947: a Bot name beside a real login is accepted even when it names nobody
 // #941's shape: the body starts with the agent's own HTML comment, so the lines sit on the 4th and 5th
 // line, not on the first two. Reading only the first two would refuse every agent pull request.
 test('#943: the lines are found in the first 20 lines, not only the first two', () => {
-  const r = run({ body: '<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n\n' + HEADERS + 'Fixes #943\n', comments: [comment()] })
+  // #1344: the comment text here is any agent HTML comment; the real `CURSOR_AGENT_PR_BODY_*` marker has its own case below.
+  const r = run({ body: '<!-- agent-claim: reviewer-agent -->\n\n' + HEADERS + 'Fixes #943\n', comments: [comment()] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
 
@@ -508,8 +517,11 @@ test('#943: a Verdict: written by a bot account is not a conclusion here either'
 
   const alone = run({ comments: [bot] })
   assert.equal(alone.ok, false)
-  assert.match(alone.reasons.join('; '), /cursor\[bot\].*bot account/)
-  assert.equal(alone.verdict.judged.find((e) => e.login === 'cursor[bot]').counts, false)
+  // #1344: the guard's refusal is about this tip, and the bot comment is a note beside the report it voided.
+  assert.match(alone.reasons.join('; '), /no Verifier report names the tip/)
+  const entry = alone.verdict.judged.find((e) => e.login === 'cursor[bot]')
+  assert.equal(entry.counts, false)
+  assert.match(String(entry.why), /bot account/)
 
   const both = run({ comments: [bot, shared] })
   assert.equal(both.ok, true, both.reasons.join('; '))
@@ -656,7 +668,7 @@ test('#962: Docs is registered in writers; Owner: Docs passes and an unknown own
   const policy = JSON.parse(readFileSync(REAL_POLICY, 'utf8'))
   assert.ok(policy.writers.includes('Docs'), 'writers lists Docs')
   const pass = {
-    user: { login: 'Birfy' },
+    user: { login: 'Birfy', type: 'User' },
     body: [`Verdict: PASS at ${HEAD}`, 'Written-by: Birfy', '', 'Ran: npm run verify → pass', 'Not run: smoke'].join('\n'),
     created_at: '2026-10-24T11:30:00Z',
     author_association: 'COLLABORATOR',
@@ -739,7 +751,7 @@ test('#1112: a 7-character prefix is not this tip, even though the head starts w
 })
 
 test('#1112: the summary names the comment id the decision used, and a later edit cannot change it', () => {
-  const reports = [{ id: 4242, user: { login: 'reviewer-agent' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }]
+  const reports = [{ id: 4242, user: { login: 'reviewer-agent', type: 'User' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }]
   const r = run({ comments: reports })
   assert.equal(r.ok, true, r.reasons.join('; '))
   assert.equal(r.verdict.id, 4242)
@@ -754,7 +766,7 @@ test('#1112: the printed head is the decided head, all 40 characters, and it nam
   const log = console.log
   console.log = (...a) => lines.push(a.join(' '))
   try {
-    run({ comments: [{ id: 77, user: { login: 'reviewer-agent' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }] })
+    run({ comments: [{ id: 77, user: { login: 'reviewer-agent', type: 'User' }, body: report(), created_at: '2026-10-21T10:31:00Z', author_association: 'MEMBER' }] })
   } finally { console.log = log }
   assert.match(lines[0], new RegExp(`head ${HEAD},`), 'the head is printed whole, from the value judged')
   assert.match(lines.join('\n'), /conclusion used: comment 77 by reviewer-agent naming [0-9a-f]{40}/)
@@ -920,7 +932,7 @@ test('#1202: a fork needs no checkpoint — nobody there could claim it', () => 
 // whole way through `main` — the comment list, `judge`, `decide` and `guard` — because the defect was one
 // reader disagreeing with another, not a parse detail.
 const correction = ({ by = 'reviewer-agent', tip = HEAD, at = '2026-10-21T11:00:00Z', say = 'is withdrawn' } = {}) =>
-  ({ user: { login: 'reviewer-agent' }, body: `Correction from ${by}: the PASS at \`${tip}\` ${say}.\n\nThis is not a second verdict.`, created_at: at, author_association: 'MEMBER' })
+  ({ user: { login: 'reviewer-agent', type: 'User' }, body: `Correction from ${by}: the PASS at \`${tip}\` ${say}.\n\nThis is not a second verdict.`, created_at: at, author_association: 'MEMBER' })
 
 test('#1335: a PASS its own writer withdrew does not enter the queue', () => {
   const r = run({ comments: [comment(), correction()] })
@@ -940,5 +952,41 @@ test('#1335: a withdrawal from a name that wrote no PASS here changes nothing', 
 
 test('#1335: a withdrawal naming another tip leaves this tip enqueueable', () => {
   const r = run({ comments: [comment(), correction({ tip: OLD })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// ---- #1344: the frozen seal. An external agent owns `cursor/` until its write access is settled, and the
+// list lives in a JSON document on the BASE branch so the owner can delete it without a code change. It is
+// a queue-entry seal, not a permission boundary: a direct push or an admin merge never reads it.
+test('#1344: a cursor/ branch is refused at the queue entry even with a well-formed PASS at its tip', () => {
+  const r = run({ branch: 'cursor/workflow-1318-c5f8', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('frozen: external agent branch; owner decision pending'), r.reasons.join('; '))
+  assert.match(r.message, /^do not enqueue #566: frozen: external agent branch; owner decision pending/)
+})
+
+test('#1344: emptying the list on the base branch un-freezes the branch — the seal is removable', () => {
+  const frozen = run({ branch: 'cursor/workflow-1318-c5f8', comments: [comment()] })
+  assert.equal(frozen.ok, false)
+  const released = run({ branch: 'cursor/workflow-1318-c5f8', comments: [comment()], baseFrozen: { branches: [], markers: [] } })
+  assert.equal(released.ok, true, 'with nothing listed, the branch is judged like any other: ' + released.reasons.join('; '))
+  const absent = run({ branch: 'cursor/workflow-1318-c5f8', comments: [comment()], baseFrozen: null })
+  assert.equal(absent.ok, true, 'a base without the file freezes nobody: ' + absent.reasons.join('; '))
+})
+
+test('#1344: a body carrying the agent marker is refused on a branch that matches no prefix', () => {
+  const r = run({ branch: 'dev/friendly-name', body: '<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n\nFixes #602\n', comments: [comment()] })
+  assert.equal(r.ok, false)
+  assert.ok(r.reasons.includes('frozen: external agent branch; owner decision pending'), r.reasons.join('; '))
+})
+
+test('#1344: a pull request that edits the frozen list is refused, so it cannot un-freeze itself', () => {
+  const r = run({ branch: 'cursor/workflow-1318-c5f8', comments: [comment()], baseFrozen: { branches: [], markers: [] }, files: [HOST_FILE, { filename: FROZEN_PATH, status: 'modified' }] })
+  assert.equal(r.ok, false, 'an emptied list inside the pull request is not the list that is read')
+  assert.ok(r.reasons.includes('frozen: .github/agent/frozen-branches.json is not editable by a pull request'), r.reasons.join('; '))
+})
+
+test('#1344: adding the list is how the seal arrives — an add is not an edit', () => {
+  const r = run({ branch: 'dev/1344-user-only-conclusions', comments: [comment()], baseFrozen: null, files: [HOST_FILE, { filename: FROZEN_PATH, status: 'added' }] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })

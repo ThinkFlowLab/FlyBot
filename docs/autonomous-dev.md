@@ -157,18 +157,22 @@ What counts as a reviewed tip, all of it:
 5. The **newest** report that names this tip decides, so a later FAIL at the same tip vetoes an
    earlier PASS, and a later PASS at the same tip replaces a FAIL.
 6. **A withdrawal is a conclusion line** (#1335): `Correction from <Bot>: the PASS at <sha> is withdrawn`, as the
-   body's first line, is read by the same `parseReport` and enters the same newest-wins scan at the tip it names,
+   body's first non-empty line, is read by the same `parseReport` and enters the same newest-wins scan at the tip it names,
    so the gate refuses with `the PASS at <sha> was withdrawn by <Bot>` and both `enqueue-guard` and `merge-gate`
-   see it without a second parser. It counts only when `<Bot>` is the `Written-by:` of the PASS it withdraws or a
-   `reviewers` login in `.github/agent/review-policy.json`; any other name is prose and changes nothing, which is
+   see it without a second parser. It counts only when `<Bot>` is the `Written-by:` of the **counted** PASS it withdraws — a PASS the
+   gate already refused on its own ground licenses nothing — or a `reviewers` login in `.github/agent/review-policy.json`; any other name is prose and changes nothing, which is
    what keeps one comment from parking a healthy pull request. A later PASS at the tip supersedes the withdrawal,
-   a correction that names another tip does not touch this one, and a correction quoted below a blank line is a
-   quote. `#1325` is the incident: its PASS was withdrawn at 04:15:36Z and the head still read "passed, ready to
+   a correction that names another tip whose change set differs does not touch this one — when the change sets
+   match (#1317) the carried PASS and its withdrawal are read together, so that tip is refused — and a correction
+   that is not the first non-empty line of its body is a quote. `#1325` is the incident: its PASS was withdrawn at 04:15:36Z and the head still read "passed, ready to
    enqueue" because a `Correction from …:` line carries no `Verdict:` word.
-7. **A GitHub bot account writes no conclusion** (#943): `user.type` is `Bot`, or the login ends `[bot]`, and the
-   report joins `judged` with `counts: false` and a reason naming the account, whatever its body says — the real
-   Reviewer voids it at that tip with `Correction from Reviewer:`. The rule is the account type and not a login
-   list: every Bot writes as the shared `Birfy` account, so a list containing it would void the whole pipeline.
+7. **Only a `User` account writes a conclusion** (#943, #1344): the report counts only when `user.type` is
+   `User` and the login does not end `[bot]`, whatever its body says; a `Bot` account, a `[bot]` login and a
+   report the API gives no `type` for all join `judged` with `counts: false` and a reason naming the account, and
+   none of them reaches the refusal sentence: a tip with nothing but such reports refuses with
+   `no Verifier report names the tip <sha>`. The rule is the account type and not a login list: every Bot writes
+   as the shared `Birfy` account, which is a `User`, so a list containing it would void the whole pipeline. What
+   voids a bot report is the real Reviewer's `Correction from Reviewer:` at that tip, beside it in the record.
    `cursor[bot]`'s report at #940's tip is the case (`Correction from Reviewer`, [comment `6381646389`](https://github.com/ThinkFlowLab/FlyBot/pull/940#issuecomment-6381646389)).
 
 8. **The report can be signed by the workstation it names, and today it is not** (#1110, #1111):

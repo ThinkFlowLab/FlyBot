@@ -19,7 +19,7 @@ const report = ({ tip = HEAD, verdict = 'PASS', ran = ['  - npm run verify → p
     `Verdict: ${verdict}`,
   ].join('\n')
 
-const comment = (login, body = report(), at = '2026-10-18T01:00:00Z', kind = 'comment', association = 'MEMBER') => ({ login, body, at, kind, association })
+const comment = (login, body = report(), at = '2026-10-18T01:00:00Z', kind = 'comment', association = 'MEMBER') => ({ login, body, at, kind, association, type: 'User' })
 
 test('a PASS by a listed reviewer that names the tip counts', () => {
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent')], policy })
@@ -366,7 +366,7 @@ test('#640: a quoted Tip SHA later in the body does not move the first line to a
   assert.equal(parsed.hasNotRun, true)
 
   // And the whole point: the INC is not dropped, so it still refuses the merge.
-  const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', body: report, at: when, association: 'MEMBER' })
+  const at = (report, when) => ({ kind: 'comment', login: 'reviewer-agent', type: 'User', body: report, at: when, association: 'MEMBER' })
   const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }
   const pass = ['Tip SHA: ' + head, 'Ran:', '  - npm test → pass', 'Not run:', '  - smoke', 'Verdict: PASS'].join('\n')
   const result = decide({
@@ -566,7 +566,7 @@ test('#676: a newer PASS with no command it ran still refuses over an older good
 // Anyone else's `Verdict:` line is not a conclusion, so it can neither pass nor hold a merge.
 test('#676: a conclusion from outside the repository counts for nothing', () => {
   const inc = [`Verdict: INC at ${HEAD}`, 'Written-by: Reviewer', '', 'Ran: npm test → fail'].join('\n')
-  const outsider = { login: 'passer-by', body: inc, at: '2026-10-18T02:00:00Z', kind: 'comment', association: 'NONE' }
+  const outsider = { login: 'passer-by', body: inc, at: '2026-10-18T02:00:00Z', kind: 'comment', association: 'NONE', type: 'User' }
   const r = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), outsider], policy })
   assert.equal(r.ok, true, 'the listed reviewer\'s PASS stands; an outside comment cannot block it')
   assert.equal(r.verdict, 'PASS')
@@ -575,7 +575,7 @@ test('#676: a conclusion from outside the repository counts for nothing', () => 
   assert.equal(solo.ok, false, 'nor can it pass a tip')
   assert.match(solo.reason, /author association NONE is not OWNER, MEMBER or COLLABORATOR/)
 
-  const missing = decide({ head: HEAD, author: 'opener', reports: [{ login: 'reviewer-agent', body: report(), at: '2026-10-18T01:00:00Z', kind: 'comment' }], policy })
+  const missing = decide({ head: HEAD, author: 'opener', reports: [{ login: 'reviewer-agent', body: report(), at: '2026-10-18T01:00:00Z', kind: 'comment', type: 'User' }], policy })
   assert.equal(missing.ok, false, 'an association the API did not send is not assumed')
   assert.match(missing.reason, /author association missing/)
 })
@@ -760,14 +760,16 @@ test('#928 pair: the same report counts once the API reports admin, and the look
 const botReport = (login, { tip = HEAD, verdict = 'PASS', at = '2026-10-24T07:40:42Z', kind = 'comment', association = 'NONE', type = 'Bot' } = {}) =>
   ({ login, body: report({ tip, verdict }), at, kind, association, type })
 
-test('#943: a GitHub bot account writes no conclusion, and the reason names the account', () => {
+test('#943/#1344: a GitHub bot account writes no conclusion, and the refusal names the missing report, not the bot', () => {
   const r = decide({ head: HEAD, author: 'opener', reports: [botReport('cursor[bot]')], policy })
   assert.equal(r.ok, false)
   assert.equal(r.by, null)
   const entry = r.judged.find((e) => e.login === 'cursor[bot]')
   assert.equal(entry.counts, false)
-  assert.match(String(entry.why ?? r.reason), /bot account/)
-  assert.match(String(r.reason), /cursor\[bot\]/)
+  assert.match(String(entry.why), /bot account/, 'the account is still named, on the report it voided')
+  // #1344: the refusal is about this tip carrying no conclusion. Naming the account there read as "a bot
+  // comment refused the merge" (#1328's summary), and a bot comment can never be the cause of a refusal.
+  assert.equal(r.reason, `no Verifier report names the tip ${HEAD.slice(0, 12)}`)
 })
 
 test('#943: the login ending in [bot] is the same rule when the API reports no account type', () => {
@@ -901,7 +903,7 @@ test('#644: a conclusion from a different GitHub login needs no attestation line
 // a `Verdict:` line — `parseReport` reported no conclusion, so `decide` never put the withdrawal in the
 // newest-wins scan. On #1325 that read as "passed, ready to enqueue" 93 seconds after the writer withdrew.
 const withdraw = ({ by = 'Reviewer', tip = HEAD, at = '2026-10-18T02:00:00Z', login = 'reviewer-agent', kind = 'comment', say = 'is **withdrawn**' } = {}) =>
-  ({ login, kind, at, association: 'MEMBER', body: [`Correction from ${by}: the PASS at \`${tip}\` ${say}.`, '', 'This is not a second verdict — the tip still carries one `Verdict:` line.'].join('\n') })
+  ({ login, kind, at, association: 'MEMBER', type: 'User', body: [`Correction from ${by}: the PASS at \`${tip}\` ${say}.`, '', 'This is not a second verdict — the tip still carries one `Verdict:` line.'].join('\n') })
 
 test('#1335: the Bot that wrote a PASS can withdraw it at this tip, and the gate refuses', () => {
   const parsed = parseReport(withdraw().body)
@@ -982,4 +984,27 @@ test('#1335: a Correction that never says withdrawn is prose, not a conclusion',
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [comment('reviewer-agent', report(), '2026-10-18T01:00:00Z'), withdraw({ say: 'still stands' })], policy })
   assert.equal(r.ok, true, r.reason)
   assert.equal(parseReport(withdraw({ say: 'still stands' }).body).withdraw, null)
+})
+
+// #1344: only a `User` account writes a conclusion, and the refusal is about this tip, not about who
+// commented. The field is read fail-closed: a report the API gives no `type` for is not a conclusion.
+test('#1344: a report with no account type is not a conclusion — the field is read fail-closed', () => {
+  const untyped = { ...comment('reviewer-agent'), type: undefined }
+  const r = decide({ head: HEAD, author: 'opener', reports: [untyped], policy })
+  assert.equal(r.ok, false, "a comment the API cannot type is not evidence that a person wrote it")
+  const entry = r.judged.find((e) => e.login === 'reviewer-agent')
+  assert.equal(entry.counts, false)
+  assert.match(String(entry.why), /no type/)
+  assert.equal(r.reason, `no Verifier report names the tip ${HEAD.slice(0, 12)}`)
+  const typed = decide({ head: HEAD, author: 'opener', reports: [comment('reviewer-agent')], policy })
+  assert.equal(typed.ok, true, 'type: User still counts — this is fail-closed on the field, not a new rule about people')
+})
+
+// #1344 / item 6: the identity rule is settled after the loop, so a correction listed before the PASS it
+// withdraws still refuses. Removing that order-independence (requiring the PASS to be seen first) turns
+// this case into "withdraws a PASS it did not write", which is the wrong answer.
+test('#1335: a correction listed before the PASS it withdraws still refuses — order does not matter', () => {
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: [withdraw({ at: '2026-10-18T02:00:00Z' }), comment('reviewer-agent', report(), '2026-10-18T01:00:00Z')], policy })
+  assert.equal(r.ok, false, 'the PASS it withdraws is listed after it, and the withdrawal still refuses')
+  assert.match(r.reason, new RegExp(`the PASS at ${HEAD} was withdrawn by Reviewer`))
 })

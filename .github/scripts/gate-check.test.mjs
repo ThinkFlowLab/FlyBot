@@ -26,7 +26,7 @@ const POLICY = policyFile()
 const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
   [`Verdict: ${verdict} at ${tip}`, 'Written-by: reviewer-agent', '', 'Ran: npm run verify → pass'].join('\n')
 const comment = (body = report(), at = '2026-10-23T07:00:00Z') =>
-  ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
+  ({ user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
 
 // #1202: the queue entry also reads the checkpoint block, so the fixture body carries one that agrees
 // with it: this pull request's number, the issue the body fixes, the Owner: name and the changed files.

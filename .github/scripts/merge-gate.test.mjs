@@ -14,7 +14,7 @@ const policy = { reviewers: ['reviewer-agent'], selfReview: [], writers: ['Revie
 const report = ({ tip = HEAD, verdict = 'PASS' } = {}) =>
   [`Tip SHA: ${tip}`, 'Written-by: Reviewer', 'Ran:', '  - npm run verify → pass', 'Not run:', '  - smoke — host code unchanged', `Verdict: ${verdict}`].join('\n')
 
-const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', body, at, kind, association: 'MEMBER' })
+const say = (body = report(), at = '2026-10-21T10:31:00Z', kind = 'comment') => ({ login: 'reviewer-agent', type: 'User', body, at, kind, association: 'MEMBER' })
 
 const judgeAt = (over = {}) => judge({ labels: [], head: HEAD, author: 'opener', reports: [say()], policy, ...over })
 
@@ -185,8 +185,8 @@ const runGate = (fixture) => {
   })
 }
 
-const apiComment = (body, at) => ({ user: { login: 'reviewer-agent' }, body, created_at: at, author_association: 'MEMBER' })
-const apiReview = (body, at) => ({ user: { login: 'reviewer-agent' }, body, submitted_at: at, author_association: 'MEMBER' })
+const apiComment = (body, at) => ({ user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
+const apiReview = (body, at) => ({ user: { login: 'reviewer-agent', type: 'User' }, body, submitted_at: at, author_association: 'MEMBER' })
 
 const firstLine = (verdict, tip = HEAD) => [
   `Verdict: ${verdict} at ${tip}`,
@@ -211,7 +211,7 @@ test('#637: a verdict Chief posts for the Reviewer parses like the Reviewer wrot
 test('#925: a CONTRIBUTOR review by a repo admin passes the queue entry, and a failed lookup does not', () => {
   const body = firstLine('PASS')
   const pull = JSON.stringify({ head: { sha: HEAD, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: 'opener' }, labels: [{ name: 'agent-pr' }], body: bodyWithCheckpoint('Owner: Reviewer\nReviewer: reviewer-agent\nFixes #925\n', ['core/src/host/turns.js'], 925) })
-  const review = JSON.stringify({ user: { login: 'reviewer-agent' }, body, submitted_at: '2026-10-24T03:42:31Z', author_association: 'CONTRIBUTOR' })
+  const review = JSON.stringify({ user: { login: 'reviewer-agent', type: 'User' }, body, submitted_at: '2026-10-24T03:42:31Z', author_association: 'CONTRIBUTOR' })
   const gh = (permission) => (...args) => {
     const path = args[args.length - 1]
     if (path.includes('/permission')) {
@@ -408,7 +408,7 @@ const queueReal = (fx, body = fx.comment.body, pullBody) => main({
   gh: (...args) => {
     const path = args[args.length - 1]
     if (path.includes('/files')) return fx.files.map((filename) => JSON.stringify({ filename })).join('\n')
-    if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
+    if (path.includes('/comments')) return JSON.stringify({ user: { login: fx.comment.login, type: 'User' }, body, created_at: fx.comment.created_at, author_association: 'OWNER' })
     if (path.includes('/reviews')) return ''
     if (/\/pulls\/\d+$/.test(path)) return JSON.stringify({ head: { sha: fx.head, repo: { full_name: 'ThinkFlowLab/FlyBot' } }, user: { login: fx.author }, labels: [{ name: 'agent-pr' }], body: pullBody ?? bodyWithCheckpoint(['Owner: Reviewer', 'Reviewer: Reviewer2', 'Fixes #' + fx.pr, ''].join('\n'), fx.files, fx.pr) })
     throw new Error('fake gh: unexpected ' + path)
@@ -487,7 +487,7 @@ test('#925: admin does not skip the own-author rule, and selfReview does not car
     labels: [],
     head: HEAD,
     author: 'opener',
-    reports: [{ login: 'hsliuustc0106', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }],
+    reports: [{ login: 'hsliuustc0106', type: 'User', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }],
     policy: listed,
     admins: [],
   })
@@ -497,7 +497,7 @@ test('#925: admin does not skip the own-author rule, and selfReview does not car
 
 test('#925: a selfReview login with admin on someone else\'s pull request lets the entry through', () => {
   const listed = { reviewers: ['reviewer-agent', 'hsliuustc0106'], selfReview: ['hsliuustc0106'], writers: ['Reviewer'] }
-  const other = { login: 'hsliuustc0106', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }
+  const other = { login: 'hsliuustc0106', type: 'User', body: report(), at: '2026-10-24T03:42:31Z', kind: 'comment', association: 'CONTRIBUTOR' }
   const refused = judge({ labels: [], head: HEAD, author: 'opener', reports: [other], policy: listed, admins: [] })
   assert.equal(refused.ok, false)
   assert.match(refused.reasons.join('; '), /author association CONTRIBUTOR/)
@@ -512,7 +512,9 @@ test('#943: a bot account\'s Verdict: does not let a queue entry through', () =>
   const bot = { login: 'cursor[bot]', body: report(), at: '2026-10-24T07:40:42Z', kind: 'comment', association: 'NONE', type: 'Bot' }
   const refused = judgeAt({ reports: [bot] })
   assert.equal(refused.ok, false)
-  assert.match(refused.reasons.join('; '), /bot account/)
+  // #1344: the sentence a queue entry fails on is about the tip, not the account that commented.
+  assert.match(String(refused.verdict?.reason ?? refused.reasons.join('; ')), /no Verifier report names the tip/)
+  assert.match(String(refused.verdict?.judged?.find((e) => e.login === 'cursor[bot]')?.why), /bot account/)
 
   const shared = { login: 'Birfy', body: report(), at: '2026-10-24T07:45:10Z', kind: 'comment', association: 'MEMBER', type: 'User' }
   const r = judge({ labels: [], head: HEAD, author: 'opener', reports: [bot, shared], policy: { ...policy, reviewers: ['Birfy'], selfReview: ['Birfy'] }, expectedHead: HEAD })
@@ -641,4 +643,20 @@ test('#1272 step 2: the workflow fixture sentences are the gate s own, byte for 
     assert.equal(refused.ok, false)
     assert.ok(refused.message.includes(`${entry.sentence}`), `${entry.id}: enqueue-guard said ${refused.message}`)
   }
+})
+
+// #1344: `merge-gate` builds its own report list in `main()`, so it is the one caller the account-type rule
+// had to be taught. Both halves are pinned here: a `User` PASS arrives with its type and lets the queue entry
+// through, and a report the API sends without one is not a conclusion. Removing the two `type:` lines in
+// `main()` turns the first case into the second — which is the brick this check exists to prevent.
+test('#1344: the queue entry reads the account type from the API — a User PASS allows, a typeless one refuses', () => {
+  const allowed = runGate({ comments: [apiComment(firstLine('PASS'), '2026-10-21T12:40:00Z')] })
+  assert.equal(allowed.ok, true, allowed.reasons.join('; '))
+  assert.equal(allowed.verdict.by, 'reviewer-agent')
+
+  const typeless = apiComment(firstLine('PASS'), '2026-10-21T12:40:00Z')
+  delete typeless.user.type
+  const refused = runGate({ comments: [typeless] })
+  assert.equal(refused.ok, false, 'a report the API sends with no type is not a conclusion')
+  assert.match(refused.reasons.join('; '), /no Verifier report names the tip/)
 })
