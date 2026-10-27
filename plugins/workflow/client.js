@@ -35,6 +35,10 @@ window.__ModuleLoader__.load({
       Workflow: 'Workflow',
       'One Bot (as before)': '单个 Bot（原有方式）',
       'Run demo': '演示运行',
+      'Replay demo': '重放演示',
+      'A live run is in progress': '有真实运行在进行，演示不会插队',
+      'Concurrent runs': '同时运行',
+      '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
       Pause: '暂停',
       Next: '下一步',
       Reset: '重置',
@@ -167,7 +171,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
               h('button', { type: 'button', className: 'wf-btn', onClick: onAssign }, tr('Hand a task to a Workflow')),
-              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay }, playing ? tr('Pause') : `▶ ${tr('Run demo')}`))),
+              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : `▶ ${tr('Replay demo')}`))),
           run ? h('div', { className: 'wf-strip' },
             h('div', { className: 'wf-strip-id' },
               h('div', { className: 'wf-tk' }, `${run.task?.id ?? ''} ${run.task?.title ?? ''}`),
@@ -176,6 +180,7 @@ window.__ModuleLoader__.load({
                 : (run.status === 'done' ? tr('Done') : tr('Waiting for a task')))),
             h('div', { className: 'wf-segs' }, (run.marks ?? []).map((mark, index) => h('span', { key: index, className: `wf-seg ${mark}` }))),
             h('span', { className: `wf-chip ${run.status === 'done' ? 'done' : (running[0] ? 'running' : 'queued')}` }, run.status === 'done' ? tr('Done') : (running[0] ? tr('Running') : tr('Queued'))),
+            (workflow.queueDepth > 0 || (workflow.activeCount ?? 0) > 1) ? h('span', { className: 'wf-chip queued' }, tr('{count} running · queue {depth}', { count: workflow.activeCount ?? 0, depth: workflow.queueDepth ?? 0 })) : null,
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
           h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
@@ -227,7 +232,7 @@ window.__ModuleLoader__.load({
         tab === 'details' ? h(Details, { workflow }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
-          h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay }, playing ? tr('Pause') : tr('Run demo')),
+          h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onPlay, disabled: (workflow.activeCount ?? 0) > 0 }, playing ? tr('Pause') : tr('Replay demo')),
           h('button', { type: 'button', className: 'wf-btn', onClick: onNext }, `${tr('Next')} ›`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onToggleEdit }, editing ? tr('Finish editing') : tr('Edit'))))
@@ -384,15 +389,18 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, tr('Each Bot’s own model'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot’s own permission'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('On failure')), h('span', null, tr(retries ? 'Tester retries once. Any other failed step stops the run.' : 'A failed step stops the run.'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Concurrent runs')), h('span', null, String(workflow.maxConcurrent ?? 2))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Members')), h('span', null, workflow.chain)))
     }
 
     function Runs({ workflow }) {
-      const history = workflow.run?.history ?? []
+      const history = workflow.history ?? workflow.run?.history ?? []
+      const queued = workflow.queue ?? []
       const current = workflow.run?.task
-      if (!current && history.length === 0) return h('div', { className: 'wf-muted' }, tr('No runs yet.'))
+      if (!current && history.length === 0 && queued.length === 0) return h('div', { className: 'wf-muted' }, tr('No runs yet.'))
       const rows = history.map(item => ({ ...item, current: false }))
-      if (current) rows.push({ task: current, status: workflow.run.status, current: true })
+      for (const task of queued) rows.push({ task, status: 'queued', current: false })
+      if (current && !rows.some(item => item.task?.id === current.id && item.status === workflow.run.status)) rows.push({ task: current, status: workflow.run.status, current: true })
       return h('div', null, rows.map((item, index) => h('div', { key: index, className: 'wf-hist' },
         h('span', null, `${item.task?.id ?? ''} ${item.task?.title ?? ''}`),
         h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Failed' : 'Queued')))))
@@ -401,7 +409,7 @@ window.__ModuleLoader__.load({
     function AssignModal({ workflows, tasks, roster, workflowId, onClose, onConfirm }) {
       const [taskId, setTaskId] = useState(tasks[1]?.id ?? tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
-      const bots = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && bot.id !== roster?.mainBotId).slice(0, 1)
+      const bots = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && bot.id && bot.name).slice(0, 12)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Hand a task to a Workflow') },
           h('h3', null, tr('Hand a task to a Workflow'),
@@ -623,12 +631,21 @@ window.__ModuleLoader__.load({
       }, [])
       useEffect(() => {
         if (!playing || !openId) return undefined
+        const live = (pack?.workflows ?? []).find(item => item.id === openId)
+        if ((live?.activeCount ?? 0) > 0) { setPlaying(false); return undefined }
         const timer = setInterval(() => { void call('workflow/demo-step', { workflowId: openId }).then(refresh).then(value => {
-          const run = value?.workflows?.find(item => item.id === openId)?.run
-          if (!run || run.status === 'done') setPlaying(false)
+          const row = value?.workflows?.find(item => item.id === openId)
+          if (value?.ok === false || (row?.activeCount ?? 0) > 0 || !row?.run || row.run.status === 'done') setPlaying(false)
         }) }, 1200)
         return () => clearInterval(timer)
-      }, [playing, openId])
+      }, [playing, openId, pack])
+      useEffect(() => {
+        const live = (pack?.workflows ?? []).some(item => (item.activeCount ?? 0) > 0)
+        if (!live) return undefined
+        let gone = false
+        const timer = setInterval(() => { if (!gone) void refresh() }, 2000)
+        return () => { gone = true; clearInterval(timer) }
+      }, [pack])
       useEffect(() => {
         if (!openId || typeof document === 'undefined') return undefined
         const onClick = (event) => {
@@ -665,6 +682,15 @@ window.__ModuleLoader__.load({
         if (!task) return
         if (String(target).startsWith('bot:')) {
           const botId = String(target).slice(4)
+          const value = await call('workflow/assign', { botId, taskId: task.id, title: task.title })
+          if (value?.ok === false) { setError(value.error ?? ''); return }
+          const host = globalThis.__flybot__?.host
+          if (typeof host === 'function') {
+            try { await host('task-update', { id: task.id }) } catch (updateError) {
+              // The board can be absent. The route is stored; the next card write applies the owner.
+              void updateError
+            }
+          }
           setAssignOpen(false)
           actions?.openSession?.(botId)
           return
@@ -723,7 +749,10 @@ window.__ModuleLoader__.load({
           onCloseDrawer: () => setDrawer(false),
           onToggleDrawer: () => { setDrawer(value => !value); setTab('flow') },
           onTab: (key) => { setTab(key); setDrawer(true) },
-          onPlay: () => setPlaying(value => !value),
+          onPlay: () => {
+            if ((open.activeCount ?? 0) > 0) { setError(tr('A live run is in progress')); setPlaying(false); return }
+            setPlaying(value => !value)
+          },
           onNext: () => { setPlaying(false); void call('workflow/demo-step', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onReset: () => { setPlaying(false); void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
           onAssign: () => { setAssignOpen(true); void loadTasks() },

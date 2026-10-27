@@ -29,7 +29,45 @@ function attachmentsOf(workflow, nodeId) {
   return undefined
 }
 
+function liveText(value, fallback) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  return text || fallback
+}
+
+// A live run quotes the Bot. The delivery script's canned lines stay on the demo path.
+function liveLines(workflow, task, event) {
+  const label = `${task?.id ?? ''} ${task?.title ?? ''}`.trim()
+  if (event.type === 'start') {
+    return [{ kind: 'system', tone: 'accent', text: `任务 ${label} 已进入 Workflow，${names(workflow, event.started)} 认领` }]
+  }
+  if (event.type === 'fail') {
+    const node = nodeById(workflow, event.nodeId)
+    const text = liveText(event.text, `${node?.name ?? event.nodeId} 这一步失败了，停在本节点。`)
+    return [{ kind: 'bot', botId: event.nodeId, step: stepLabel(workflow, event.nodeId), text }]
+  }
+  if (event.type === 'retry') {
+    const node = nodeById(workflow, event.nodeId)
+    return [{ kind: 'system', tone: 'bad', text: `↻ ${node?.name ?? event.nodeId} 失败后重试` }]
+  }
+  if (event.type === 'complete') {
+    const node = nodeById(workflow, event.nodeId)
+    const lines = [{
+      kind: 'bot', botId: event.nodeId, step: stepLabel(workflow, event.nodeId),
+      text: liveText(event.text, `${node?.name ?? event.nodeId} finished this step.`),
+    }]
+    if (event.started.length > 1) lines.push({ kind: 'system', text: `∥ 并行分支开始：${names(workflow, event.started)}` })
+    if (event.joined && event.layerSize > 1 && event.started.length > 0) {
+      lines.push({ kind: 'system', text: `⇢ 并行分支汇合（join）→ ${names(workflow, event.started)}` })
+    }
+    if (event.finished) lines.push({ kind: 'system', tone: 'ok', text: `✓ Workflow 运行完成 · ${task.id} · ${workflow.nodes.length} 个节点` })
+    return lines
+  }
+  if (event.type === 'note') return [{ kind: 'system', tone: event.tone, text: event.text }]
+  return []
+}
+
 export function linesFor(workflow, task, event) {
+  if (event.live === true) return liveLines(workflow, task, event)
   const label = `${task?.id ?? ''} ${task?.title ?? ''}`.trim()
   if (event.type === 'start') {
     return [{ kind: 'system', tone: 'accent', text: `任务 ${label} 已进入 Workflow，${names(workflow, event.started)} 认领` }]

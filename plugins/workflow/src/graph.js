@@ -44,6 +44,46 @@ export function cleanTools(value) {
   return tools
 }
 
+const PORT_RE = /^[a-z][a-z0-9-]{0,40}$/
+// A root node's required input is filled from the task when it uses one of these names.
+export const TASK_INPUTS = new Set(['task', 'title', 'brief'])
+
+export function cleanPorts(value, kind) {
+  if (!Array.isArray(value)) return []
+  const ports = []
+  const seen = new Set()
+  for (const item of value) {
+    const name = cleanLine(typeof item === 'string' ? item : item?.name, 40).toLowerCase()
+    if (!PORT_RE.test(name) || seen.has(name)) continue
+    seen.add(name)
+    const type = cleanLine(typeof item === 'object' && item ? item.type : '', 40) || 'text'
+    if (kind === 'in' && item?.required === true) ports.push({ name, type, required: true })
+    else ports.push({ name, type })
+    if (ports.length === 8) break
+  }
+  return ports
+}
+
+// The Bot's reply is the step result. `OUTPUT name: value` lines are that
+// node's declared outputs; a node with one output may put it in the reply body.
+export function readStepResult(text, node) {
+  const outputs = {}
+  const kept = []
+  for (const line of String(text ?? '').split('\n')) {
+    const match = /^OUTPUT\s+([a-z][a-z0-9-]{0,40})\s*:\s*(.*)$/i.exec(line.trim())
+    if (!match) { kept.push(line); continue }
+    outputs[match[1].toLowerCase()] = cleanLine(match[2], 2000)
+  }
+  const body = kept.join('\n').trim().slice(0, 2000)
+  const declared = node?.outputs ?? []
+  if (declared.length === 1 && !outputs[declared[0].name] && body) outputs[declared[0].name] = body
+  if (declared.length > 0) {
+    const allowed = new Set(declared.map(port => port.name))
+    for (const name of Object.keys(outputs)) if (!allowed.has(name)) delete outputs[name]
+  }
+  return { text: body, outputs }
+}
+
 function coord(value, fallback) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
@@ -242,6 +282,8 @@ export function addNode(graph, node) {
   const prompt = cleanPrompt(node.prompt)
   const model = cleanLine(node.model, 80)
   const tools = cleanTools(node.tools)
+  const inputs = cleanPorts(node.inputs, 'in')
+  const outputs = cleanPorts(node.outputs, 'out')
   next.nodes.push({
     id,
     name: cleanLine(node.name, 80),
@@ -250,6 +292,8 @@ export function addNode(graph, node) {
     ...(prompt ? { prompt } : {}),
     ...(model ? { model } : {}),
     ...(tools.length ? { tools } : {}),
+    ...(inputs.length ? { inputs } : {}),
+    ...(outputs.length ? { outputs } : {}),
     ...(node.botId ? { botId: String(node.botId) } : {}),
     ...(node.failOnce === true ? { failOnce: true } : {}),
     ...(Number.isFinite(Number(node.x)) ? { x: coord(node.x, 0) } : {}),
@@ -294,6 +338,67 @@ function copyStatus(status) {
 function predecessors(graph, nodeId) {
   ensure(graph)
   return graph.edges.filter(edge => edge.to === nodeId).map(edge => edge.from)
+}
+
+function ancestors(graph, nodeId, into = new Set()) {
+  for (const from of predecessors(graph, nodeId)) {
+    if (into.has(from)) continue
+    into.add(from)
+    ancestors(graph, from, into)
+  }
+  return into
+}
+
+// A required input must be produced by an upstream output of the same name.
+// A root may take `task`, `title` or `brief` from the assignment instead.
+export function missingProviders(graph) {
+  ensure(graph)
+  const missing = []
+  for (const node of graph.nodes) {
+    const roots = predecessors(graph, node.id).length === 0
+    for (const input of node.inputs ?? []) {
+      if (input.required !== true) continue
+      const provided = [...ancestors(graph, node.id)].some(id => (nodeById(graph, id)?.outputs ?? []).some(port => port.name === input.name))
+      if (!provided && !(roots && TASK_INPUTS.has(input.name))) missing.push({ nodeId: node.id, name: input.name })
+    }
+  }
+  return missing
+}
+
+function producedValue(graph, nodeId, name, produced) {
+  const direct = predecessors(graph, nodeId)
+  for (const id of direct) {
+    const value = produced?.[id]?.[name]
+    if (typeof value === 'string' && value !== '') return value
+  }
+  for (const id of ancestors(graph, nodeId)) {
+    if (direct.includes(id)) continue
+    const value = produced?.[id]?.[name]
+    if (typeof value === 'string' && value !== '') return value
+  }
+  return ''
+}
+
+export function resolveInputs(graph, nodeId, produced, task) {
+  ensure(graph)
+  const node = nodeById(graph, nodeId)
+  const bag = {}
+  const roots = predecessors(graph, nodeId).length === 0
+  for (const input of node?.inputs ?? []) {
+    let value = producedValue(graph, nodeId, input.name, produced)
+    if (!value && roots && TASK_INPUTS.has(input.name)) {
+      if (input.name === 'title' || input.name === 'brief') value = task?.title ?? ''
+      else value = `${task?.id ?? ''} ${task?.title ?? ''}`.trim()
+    }
+    if (value) bag[input.name] = value
+  }
+  return bag
+}
+
+export function unmetRequired(graph, nodeId, produced, task) {
+  const node = nodeById(graph, nodeId)
+  const have = resolveInputs(graph, nodeId, produced, task)
+  return (node?.inputs ?? []).filter(input => input.required === true && !have[input.name]).map(input => input.name)
 }
 
 // The first rank that is not finished, or -1 when every rank is done.

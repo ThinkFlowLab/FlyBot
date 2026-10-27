@@ -5,26 +5,38 @@ import { chainLabel, normalizeGraph } from './graph.js'
 const planner = {
   id: 'planner', name: 'Planner', role: '需求拆解 / 排期',
   instructions: '读取任务卡片与上下文，拆成可执行子任务，指定验收标准，并把产出交给下游节点。',
+  inputs: [{ name: 'task', type: 'text', required: true }],
+  outputs: [{ name: 'plan', type: 'text' }],
 }
 const writer = {
   id: 'writer', name: 'Writer', role: '文案 / 文档',
   instructions: 'Draft posts, docs and release notes, keep them short, and lead with the conclusion.',
+  inputs: [{ name: 'plan', type: 'text', required: true }],
+  outputs: [{ name: 'copy', type: 'text' }],
 }
 const coder = {
   id: 'coder', name: 'Coder', role: '代码实现',
   instructions: '根据 Planner 的子任务和 Writer 的文案修改代码，提交 PR，并在 PR 描述中列出变更。',
+  inputs: [{ name: 'copy', type: 'text', required: true }],
+  outputs: [{ name: 'patch', type: 'text' }],
 }
 const reviewer = {
   id: 'reviewer', name: 'Reviewer', role: '代码审查',
   instructions: '审查 Coder 的 PR：可读性、边界条件与回归风险。不通过则打回 Coder。',
+  inputs: [{ name: 'patch', type: 'text', required: true }],
+  outputs: [{ name: 'review', type: 'text' }],
 }
 const tester = {
   id: 'tester', name: 'Tester', role: '自动化测试', failOnce: true,
   instructions: '运行单元、快照和 E2E。失败时自动重试 1 次，仍失败则停在本节点。',
+  inputs: [{ name: 'patch', type: 'text', required: true }],
+  outputs: [{ name: 'report', type: 'text' }],
 }
 const deployer = {
   id: 'deployer', name: 'Deployer', role: '发布上线',
   instructions: '在 Reviewer 与 Tester 都通过后合并，灰度发布，并回填任务卡片状态。',
+  inputs: [{ name: 'review', type: 'text', required: true }, { name: 'report', type: 'text', required: true }],
+  outputs: [{ name: 'release', type: 'text' }],
 }
 
 export const DELIVERY_ID = 'delivery'
@@ -54,9 +66,9 @@ export function weeklyWorkflow() {
     trigger: 'schedule',
     scheduleLabel: '周五 17:00',
     nodes: [
-      { id: 'researcher', name: '研究员', role: '行业研究', instructions: '收集本周行业动态与竞品更新。' },
-      { id: 'analyst', name: '数据分析师', role: '数据分析', instructions: '汇总核心指标，生成周对比。' },
-      { id: 'writer', name: 'Writer', role: '成稿', instructions: '把研究数据和指标写成周报。' },
+      { id: 'researcher', name: '研究员', role: '行业研究', instructions: '收集本周行业动态与竞品更新。', inputs: [{ name: 'task', type: 'text', required: true }], outputs: [{ name: 'notes', type: 'text' }] },
+      { id: 'analyst', name: '数据分析师', role: '数据分析', instructions: '汇总核心指标，生成周对比。', inputs: [{ name: 'notes', type: 'text', required: true }], outputs: [{ name: 'metrics', type: 'text' }] },
+      { id: 'writer', name: 'Writer', role: '成稿', instructions: '把研究数据和指标写成周报。', inputs: [{ name: 'metrics', type: 'text', required: true }], outputs: [{ name: 'report', type: 'text' }] },
     ],
     layers: [['researcher'], ['analyst'], ['writer']],
     triggers: ['周报'],

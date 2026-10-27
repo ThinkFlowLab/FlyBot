@@ -188,6 +188,70 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.deepEqual(removed, ['bot-1'])
 })
 
+test('a Bot reply is what advances a live node, and a 429 reply fails it', async () => {
+  let handle
+  const created = []
+  const removed = []
+  async function send(message) { return { action: 'allow', text: message.text } }
+  send.use = (spec) => { handle = spec.handle; return () => {} }
+  send.priority = { ROUTING: 10 }
+  const fb = {
+    bot: {
+      list: () => roster,
+      async create() {
+        const id = `bot-${created.length + 1}`
+        created.push(id)
+        return id
+      },
+      async remove(id) { removed.push(id); return true },
+      send,
+    },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    tools: { register() { return () => {} } },
+    warn() {},
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  const defined = await started.service.define({
+    name: 'Lane',
+    nodes: [
+      { id: 'plan', name: 'Planner', prompt: 'Plan.', outputs: [{ name: 'plan', type: 'text' }] },
+      { id: 'code', name: 'Coder', prompt: 'Code.', inputs: [{ name: 'plan', type: 'text', required: true }], outputs: [{ name: 'patch', type: 'text' }] },
+    ],
+    edges: [{ from: 'plan', to: 'code' }],
+  })
+  const made = defined.workflows.find(item => item.name === 'Lane')
+  const opened = await started.service.runNamed({ workflow: 'Lane', brief: 'Ship the note' })
+  const run = opened.workflows.find(item => item.id === made.id).run
+  assert.equal(typeof handle, 'function')
+  assert.equal(run.nodeStatus.plan, 'running')
+  handle({ from: run.ephemeral.plan, role: 'request', text: 'not a reply' })
+  handle({ from: run.ephemeral.plan, role: 'reply', text: 'OUTPUT plan: two lines' })
+  const mid = await waitFor(() => {
+    const row = started.service.state().workflows.find(item => item.id === made.id)
+    return row.run?.nodeStatus?.code === 'running' ? row : null
+  })
+  assert.equal(mid.run.nodeStatus.plan, 'done')
+  handle({ from: run.ephemeral.code, role: 'reply', text: 'The model call failed (429).' })
+  const stopped = await waitFor(() => {
+    const row = started.service.state().workflows.find(item => item.id === made.id)
+    if (row.run?.status !== 'failed' || removed.length !== created.length) return null
+    return row
+  })
+  assert.equal(stopped.run.nodeStatus.code, 'failed')
+  assert.equal(stopped.run.ephemeral, undefined)
+  assert.deepEqual(removed.sort(), created.sort())
+})
+
+async function waitFor(read) {
+  for (let n = 0; n < 40; n += 1) {
+    const value = read()
+    if (value) return value
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  throw new Error('the reply did not move the run')
+}
+
 test('#1389: a step the host refuses is not marked as handed, and a later settle sends it again', async () => {
   let answer = { ok: false, code: 'no-sender' }
   const calls = []

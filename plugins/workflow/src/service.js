@@ -1,15 +1,16 @@
-// Workflow records and the run that a board task starts. The graph rules live
-// in graph.js; this file stores workflows, appends the chat, and refuses a
-// remote Bot or a read-only host. A task id is recorded on the run. Progress
-// lines stay scripted. With a spawn hook, each node also gets a run Bot.
+// Workflow records and the runs a board task starts. The graph rules live in
+// graph.js. A workflow keeps a FIFO queue and up to maxConcurrent live runs
+// (default 2). A live node stays running until its Bot replies. The demo
+// player is a separate script and does not move a live run.
 
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
-  chainLabel, cleanLine, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
-  nextDemoOp, nodeById, normalizeGraph, orderedIds, retryNode, rowPreview, startFrontier, validateGraph,
+  chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
+  missingProviders, nextDemoOp, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
+  rowPreview, startFrontier, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask } from './match.js'
 import { linesFor } from './narrate.js'
@@ -18,6 +19,9 @@ import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, fixtureTask, 
 const MAX_WORKFLOWS = 24
 const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
+const DEFAULT_CONCURRENT = 2
+const MAX_CONCURRENT = 8
+const HOST_CAP = 6
 
 function idOf(prefix) {
   return `${prefix}-${randomBytes(4).toString('hex')}`
@@ -38,6 +42,8 @@ function publicNode(node, bots) {
     tools: Array.isArray(node.tools) ? [...node.tools] : [],
     failOnce: node.failOnce === true,
     botId: seated?.id ?? null,
+    ...(Array.isArray(node.inputs) && node.inputs.length ? { inputs: node.inputs.map(port => ({ ...port })) } : {}),
+    ...(Array.isArray(node.outputs) && node.outputs.length ? { outputs: node.outputs.map(port => ({ ...port })) } : {}),
     x: node.x,
     y: node.y,
   }
@@ -60,6 +66,7 @@ function publicRun(workflow, run) {
     history: run.history ?? [],
     startedAt: run.startedAt,
     updatedAt: run.updatedAt,
+    ...(run.live === true ? { live: true } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
   }
 }
@@ -74,6 +81,7 @@ function blankRun(workflow, task, now, history = []) {
     steps: 0,
     stepBudget: workflow.id === DELIVERY_ID ? DELIVERY_STEPS : workflow.nodes.length + 1,
     failedOnce: {},
+    produced: {},
     history,
     startedAt: now,
     updatedAt: now,
@@ -84,7 +92,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   const file = dir ? join(dir, FILE) : null
   let state = load(file, warn) ?? seed(now())
   state.routes ??= {}
+  state.claims ??= {}
+  state.lanes ??= {}
+  state.demos ??= {}
+  if (!state.laneFormat) migrateRuns(state)
   let seq = state.seq ?? 1
+  const tails = new Map()
 
   function write() {
     if (!persist || !file) return
@@ -142,110 +155,367 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         layers: item.layers.map(layer => [...layer]),
         triggers: [...(item.triggers ?? [])],
         chain: chainLabel(item),
-        preview: rowPreview(item, state.runs[item.id]),
-        run: publicRun(item, state.runs[item.id]),
+        maxConcurrent: maxOf(item),
+        activeCount: runningOf(laneOf(item.id)).length,
+        queueDepth: (laneOf(item.id).queue ?? []).length,
+        queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
+        history: [...(laneOf(item.id).history ?? [])],
+        runs: runningOf(laneOf(item.id)).map(run => publicRun(item, run)),
+        preview: rowPreview(item, primaryRun(item.id)),
+        run: publicRun(item, primaryRun(item.id)),
         messages: state.logs[item.id] ?? [],
       }) }),
     }
+  }
+
+  function laneOf(id) {
+    state.lanes[id] ??= { active: [], queue: [], last: null, history: [] }
+    const lane = state.lanes[id]
+    lane.active ??= []
+    lane.queue ??= []
+    lane.history ??= []
+    return lane
+  }
+
+  function runningOf(lane) {
+    return (lane?.active ?? []).filter(run => run && run.status === 'running')
+  }
+
+  function globalRunning() {
+    let count = 0
+    for (const lane of Object.values(state.lanes)) count += runningOf(lane).length
+    return count
+  }
+
+  function maxOf(item) {
+    const value = Number(item?.maxConcurrent)
+    if (!Number.isInteger(value) || value < 1) return DEFAULT_CONCURRENT
+    return Math.min(MAX_CONCURRENT, value)
+  }
+
+  function primaryRun(id) {
+    const live = runningOf(laneOf(id))
+    if (live.length > 0) return live[0]
+    if (laneOf(id).last) return laneOf(id).last
+    return state.demos[id] ?? null
+  }
+
+  function storeRun(workflowId, run) {
+    const lane = laneOf(workflowId)
+    const index = lane.active.findIndex(item => item.id === run.id)
+    if (index >= 0) lane.active[index] = run
+    else if (state.demos[workflowId]?.id === run.id) state.demos[workflowId] = run
+  }
+
+  function serial(workflowId, fn) {
+    const prev = tails.get(workflowId) ?? Promise.resolve()
+    const run = prev.then(() => fn())
+    tails.set(workflowId, run.then(() => {}, () => {}))
+    return run
+  }
+
+  function sentOk(result) {
+    if (result == null) return true
+    if (result.ok === false) return false
+    if (result.action === 'deny' || result.action === 'hold') return false
+    return true
+  }
+
+  function findEphemeral(botId) {
+    if (!botId) return null
+    for (const [workflowId, lane] of Object.entries(state.lanes)) {
+      for (const run of lane.active ?? []) {
+        const nodeId = Object.entries(run.ephemeral ?? {}).find(([, id]) => id === botId)?.[0]
+        if (!nodeId) continue
+        const item = workflow(workflowId)
+        if (item) return { item, run, nodeId }
+      }
+    }
+    return null
   }
 
   function refuse(error) {
     return { ok: false, error: error?.message ?? String(error) }
   }
 
+  function gateStarted(item, run, result) {
+    // A run with Bots waits for each node's outputs. A host that cannot spawn
+    // still walks the graph when advance() is called directly.
+    if (run.live !== true || !run.ephemeral) return { result, blocked: [] }
+    const status = { ...result.status }
+    const started = []
+    const blocked = []
+    for (const id of result.started ?? []) {
+      const missing = unmetRequired(item, id, run.produced, run.task)
+      if (missing.length === 0) { started.push(id); continue }
+      const preds = item.edges.filter(edge => edge.to === id).map(edge => edge.from)
+      const stuck = preds.length === 0 || preds.every(pred => status[pred] === 'done' || status[pred] === 'failed')
+      if (stuck) {
+        status[id] = 'failed'
+        blocked.push({ id, missing })
+      } else status[id] = 'queued'
+    }
+    const finished = item.nodes.every(node => status[node.id] === 'done')
+    return { result: { ...result, status, started, finished }, blocked }
+  }
+
   function applyOp(item, run, op) {
+    let working = run
+    if (op.type === 'complete' && op.outputs && typeof op.outputs === 'object') {
+      working = { ...run, produced: { ...(run.produced ?? {}), [op.nodeId]: op.outputs } }
+    }
     let result
-    if (op.type === 'start') result = { ...startFrontier(item, run.nodeStatus), joined: false, layerSize: 0 }
-    else if (op.type === 'complete') result = completeNode(item, run.nodeStatus, op.nodeId)
-    else if (op.type === 'fail') result = failNode(item, run.nodeStatus, op.nodeId)
-    else if (op.type === 'retry') result = retryNode(item, run.nodeStatus, op.nodeId)
+    if (op.type === 'start') result = { ...startFrontier(item, working.nodeStatus), joined: false, layerSize: 0 }
+    else if (op.type === 'complete') result = completeNode(item, working.nodeStatus, op.nodeId)
+    else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId)
+    else if (op.type === 'retry') result = retryNode(item, working.nodeStatus, op.nodeId)
     else throw new Error(`Unknown step ${op.type}`)
-    const failedOnce = { ...run.failedOnce }
+    const gated = gateStarted(item, working, result)
+    result = gated.result
+    const failedOnce = { ...working.failedOnce }
     if (op.type === 'fail') failedOnce[op.nodeId] = true
-    const finished = result.finished === true
-    // A node marked failOnce is retried by the demo player. Any other failure
-    // stops the run, which is what releases its ephemeral Bots.
-    const stopped = op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce !== true
-    const steps = finished ? run.stepBudget : run.steps + 1
-    const history = finished || stopped
-      ? [...(run.history ?? []), { task: run.task, status: finished ? 'done' : 'failed', at: now() }].slice(-20)
-      : (run.history ?? [])
-    const handed = { ...run.handed }
-    if (op.type === 'fail') delete handed[op.nodeId]
+    const blocked = gated.blocked.length > 0
+    const finished = result.finished === true && !blocked
+    // A node marked failOnce is retried. Any other failure stops the run,
+    // which is what releases its ephemeral Bots. A missing required input
+    // stops the run the same way: the successor can never start.
+    const failOnce = op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce === true
+    const stopped = blocked || (op.type === 'fail' && !failOnce)
+    const steps = finished ? working.stepBudget : working.steps + 1
+    const handed = { ...working.handed }
+    if (op.type === 'fail' || op.type === 'retry') delete handed[op.nodeId]
     const next = {
-      ...run,
+      ...working,
       status: finished ? 'done' : stopped ? 'failed' : 'running',
       nodeStatus: result.status,
       steps,
       failedOnce,
-      history,
       updatedAt: now(),
       ...(Object.keys(handed).length > 0 ? { handed } : {}),
     }
     if (Object.keys(handed).length === 0) delete next.handed
-    const event = {
+    const lines = linesFor(item, working.task, {
       type: op.type,
       nodeId: op.nodeId,
       started: result.started ?? [],
       joined: result.joined === true,
       finished,
       layerSize: result.layerSize ?? 0,
+      live: working.live === true,
+      text: op.text ?? '',
+    })
+    for (const hole of gated.blocked) {
+      const node = nodeById(item, hole.id)
+      lines.push({ kind: 'system', tone: 'bad', text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${hole.missing.join(', ')}。` })
     }
-    return { run: next, lines: linesFor(item, run.task, event) }
+    return { run: next, lines }
   }
 
+  function stepBody(item, run, node) {
+    const inputs = resolveInputs(item, node.id, run.produced, run.task)
+    return {
+      botId: run.ephemeral[node.id],
+      nodeId: node.id,
+      name: node.name,
+      role: node.role ?? '',
+      prompt: node.prompt ?? node.instructions ?? '',
+      model: node.model ?? '',
+      tools: node.tools ?? [],
+      brief: run.task?.title ?? '',
+      taskId: run.task?.id ?? '',
+      inputs,
+      outputs: node.outputs ?? [],
+    }
+  }
+
+  // A dispatch that does not land is not "handed". Say so in the chat and
+  // leave the node open: the next hand-off tries again. No second send in
+  // this call — a 429 must not be hammered.
   async function handOff(item, run) {
-    if (typeof dispatch !== 'function' || !run?.ephemeral) return
-    const running = orderedIds(item, run.nodeStatus, 'running')
-    let wrote = false
+    if (typeof dispatch !== 'function' || !run?.ephemeral) return run
+    let current = run
+    const running = orderedIds(item, current.nodeStatus, 'running')
     for (const nodeId of running) {
-      if (run.handed?.[nodeId]) continue
+      if (current.handed?.[nodeId]) continue
+      if (current.status === 'failed' || current.status === 'done') break
       const node = nodeById(item, nodeId)
-      const botId = run.ephemeral[nodeId]
+      const botId = current.ephemeral?.[nodeId]
       if (!botId || !node) continue
-      const answer = await dispatch({
-        botId,
-        nodeId,
-        name: node.name,
-        role: node.role ?? '',
-        prompt: node.prompt ?? node.instructions ?? '',
-        model: node.model ?? '',
-        tools: node.tools ?? [],
-        brief: run.task?.title ?? '',
-        taskId: run.task?.id ?? '',
-      })
-      // A refused step is not handed over: leave it unmarked so the next settle
-      // tries again, and say why in one line — otherwise the run stalls silently.
-      if (answer?.ok === false) {
-        warn(`flybot-workflow: step ${nodeId} was not handed over: ${answer.code ?? 'dispatch refused'}`)
+      const body = stepBody(item, current, node)
+      let result
+      try {
+        result = await dispatch(body)
+      } catch (error) {
+        result = { ok: false, code: 'dispatch-failed', error: error?.message ?? String(error) }
+      }
+      if (!sentOk(result)) {
+        const code = result?.code || result?.action || 'dispatch-failed'
+        warn(`flybot-workflow: step ${nodeId} was not handed over: ${code}`)
+        push(item.id, [{ kind: 'system', tone: 'bad', text: `${node.name} 没有接到这一步（${code}）。` }], now())
         continue
       }
-      run.handed = { ...run.handed, [nodeId]: true }
-      wrote = true
+      current = { ...current, handed: { ...current.handed, [nodeId]: true }, inputs: { ...(current.inputs ?? {}), [nodeId]: body.inputs } }
+      storeRun(item.id, current)
     }
-    if (wrote) write()
+    write()
+    return current
   }
 
-  async function settle(workflowId) {
+  async function releaseRun(workflowId, run) {
+    const ids = Object.values(run.ephemeral ?? {})
+    delete run.ephemeral
+    delete run.handed
+    const lane = laneOf(workflowId)
+    lane.active = lane.active.filter(item => item.id !== run.id)
+    lane.last = run
+    if (run.status === 'done' || run.status === 'failed') {
+      lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+    }
+    await releaseAll(ids, release, warn)
+    write()
+  }
+
+  async function fillSlots(item) {
+    const lane = laneOf(item.id)
+    while (lane.queue.length > 0 && runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP) {
+      const task = lane.queue.shift()
+      const started = await startLive(item, task)
+      if (started?.ok === false) {
+        push(item.id, [{ kind: 'system', tone: 'bad', text: started.error ?? 'The queued task could not start' }], now())
+        write()
+        break
+      }
+    }
+  }
+
+  function rememberClaim(taskId, decision) {
+    state.claims[taskId] = decision
+    state.routes[taskId] = { key: `${decision.kind}:${decision.id}`, kind: decision.kind, id: decision.id, at: now() }
+  }
+
+  function routeBot(body) {
+    const botId = cleanLine(body.botId, 80)
+    const bot = (bots() ?? []).find(item => item && item.id === botId && item.remote !== true)
+    if (!bot) return { ok: false, error: 'No such Bot' }
+    const taskId = cleanLine(body.taskId ?? body.id, 80)
+    const title = cleanLine(body.title, 300)
+    if (!taskId || !title) return { ok: false, error: 'A task needs an id and a title' }
+    rememberClaim(taskId, { kind: 'bot', id: bot.id })
+    write()
+    return { ok: true, matched: true, decision: { kind: 'bot', id: bot.id }, ownerBotId: bot.id }
+  }
+
+  function queuedOrRunning(workflowId, taskId) {
+    const lane = laneOf(workflowId)
+    return runningOf(lane).some(run => run.task?.id === taskId) || lane.queue.some(task => task.id === taskId)
+  }
+
+  function beginRun(item, task, ephemeral) {
+    const holes = missingProviders(item)
+    if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
+    let run = { ...blankRun(item, task, now(), []), live: true }
+    if (ephemeral) run.ephemeral = ephemeral
+    const at = now()
+    push(item.id, [
+      { kind: 'time', text: '刚刚' },
+      { kind: 'system', text: `来自 Tasks 看板：${task.id} ${task.title} → 分配给 Workflow「${item.name}」` },
+    ], at)
+    const stepped = applyOp(item, run, { type: 'start' })
+    run = stepped.run
+    laneOf(item.id).active.push(run)
+    push(item.id, stepped.lines, at)
+    write()
+    return { ok: true, run }
+  }
+
+  async function startLive(item, task) {
+    let ephemeral
+    if (typeof spawn === 'function') {
+      const holes = missingProviders(item)
+      if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
+      try {
+        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
+      } catch (error) {
+        await releaseAll(error.spawned ?? [], release, warn)
+        return refuse(error)
+      }
+    }
+    const begun = beginRun(item, task, ephemeral)
+    if (begun.ok === false) {
+      if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
+      return begun
+    }
+    let run = begun.run
+    if (typeof spawn === 'function') {
+      try {
+        run = await handOff(item, run)
+      } catch (error) {
+        await releaseRun(item.id, { ...run, status: 'failed', updatedAt: now() })
+        return refuse(error)
+      }
+    }
+    if (run.status === 'done' || run.status === 'failed') await releaseRun(item.id, run)
+    return present()
+  }
+
+  function park(item, task) {
+    const lane = laneOf(item.id)
+    lane.queue.push({ ...task, enqueuedAt: now() })
+    push(item.id, [{ kind: 'system', text: `排队：${task.id} ${task.title}（前面 ${lane.queue.length - 1} 个，同时运行上限 ${maxOf(item)}）` }], now())
+    write()
+    return present()
+  }
+
+  function enqueue(item, task) {
+    if (queuedOrRunning(item.id, task.id)) return { ...present(), already: true }
+    const lane = laneOf(item.id)
+    const room = runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP
+    if (!room) return park(item, task)
+    if (typeof spawn !== 'function') {
+      const begun = beginRun(item, task)
+      return begun.ok === false ? begun : present()
+    }
+    return startLive(item, task)
+  }
+
+  function runFor(workflowId, runId, nodeId) {
+    const lane = laneOf(workflowId)
+    if (runId) return lane.active.find(run => run.id === runId) ?? null
+    const live = lane.active.find(run => run.status === 'running' && (!nodeId || run.nodeStatus?.[nodeId] === 'running'))
+    if (live) return live
+    return state.demos[workflowId] ?? null
+  }
+
+  function commitAdvance(workflowId, op) {
     const item = workflow(workflowId)
-    const run = item ? state.runs[workflowId] : undefined
-    if (!item || !run || typeof spawn !== 'function') return present()
+    if (!item) return { ok: false, error: 'No such workflow' }
+    const run = runFor(workflowId, op.runId, op.nodeId)
+    if (!run || run.status === 'idle') return { ok: false, error: 'This workflow has no running task' }
+    if (run.status === 'done' || run.status === 'failed') return { ok: false, error: 'This run is already finished' }
     try {
-      await handOff(item, run)
-    } catch (error) {
-      await releaseAll(Object.values(run.ephemeral ?? {}), release, warn)
-      delete run.ephemeral
-      delete run.handed
-      run.status = 'failed'
-      run.updatedAt = now()
+      let stepped = applyOp(item, run, op)
+      if (op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce === true && stepped.run.status === 'running') {
+        const again = applyOp(item, stepped.run, { type: 'retry', nodeId: op.nodeId })
+        stepped = { run: again.run, lines: [...stepped.lines, ...again.lines] }
+      }
+      storeRun(workflowId, stepped.run)
+      push(workflowId, stepped.lines, now())
       write()
+      return { ok: true, runId: stepped.run.id }
+    } catch (error) {
       return refuse(error)
     }
-    if (run.status === 'done' || run.status === 'failed') {
-      await releaseAll(Object.values(run.ephemeral ?? {}), release, warn)
-      delete run.ephemeral
-      delete run.handed
-      write()
+  }
+
+  async function afterStep(workflowId, runId) {
+    const item = workflow(workflowId)
+    const lane = laneOf(workflowId)
+    const run = lane.active.find(itemRun => itemRun.id === runId)
+    if (item && run && run.status === 'running' && typeof spawn === 'function') await handOff(item, run)
+    const latest = lane.active.find(itemRun => itemRun.id === runId)
+    if (latest && (latest.status === 'done' || latest.status === 'failed')) {
+      await releaseRun(workflowId, latest)
+      if (item) await fillSlots(item)
     }
     return present()
   }
@@ -303,6 +573,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           ...(Array.isArray(body.edges) ? { edges: body.edges } : { layers: body.layers }),
         })
         if (!item.name) throw new Error('A workflow needs a name')
+        const cap = Number(body.maxConcurrent)
+        if (Number.isInteger(cap) && cap >= 1 && cap <= MAX_CONCURRENT) item.maxConcurrent = cap
         state.workflows.push(item)
         const memberNames = item.nodes.map(node => node.name).join('、')
         push(item.id, [{ kind: 'system', text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}` }], now())
@@ -312,132 +584,145 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         return refuse(error)
       }
     },
-    // A board task starts a run at the first layer and posts the claim line.
-    // With a spawn hook, each node gets an ephemeral Bot before the first step.
+    // A board task joins the workflow's FIFO queue. A free slot starts it.
+    // A live run is never replaced. `botId` routes the card to that Bot and
+    // does not start a run.
     assign(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (body.botId) return routeBot(body)
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
       const task = { id: cleanLine(body.taskId ?? body.id, 80), title: cleanLine(body.title, 300) }
       if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
-      const go = (ephemeral) => mutate(workflowId, (row) => {
-        const previous = state.runs[row.id]
-        const history = previous ? [...(previous.history ?? []), { task: previous.task, status: previous.status, at: previous.updatedAt }].slice(-20) : []
-        let run = blankRun(row, task, now(), history)
-        if (ephemeral) run.ephemeral = ephemeral
-        const at = now()
-        push(row.id, [
-          { kind: 'time', text: '刚刚' },
-          { kind: 'system', text: `来自 Tasks 看板：${task.id} ${task.title} → 分配给 Workflow「${row.name}」` },
-        ], at)
-        const stepped = applyOp(row, run, { type: 'start' })
-        run = stepped.run
-        push(row.id, stepped.lines, at)
-        state.runs[row.id] = run
+      if (typeof spawn !== 'function') return enqueue(item, task)
+      return serial(workflowId, () => enqueue(item, task))
+    },
+    setConcurrency(body = {}) {
+      const workflowId = String(body.workflowId ?? '')
+      const value = Number(body.maxConcurrent)
+      const saved = mutate(workflowId, (item) => {
+        if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENT) throw new Error('maxConcurrent is an integer from 1 to 8')
+        item.maxConcurrent = value
       })
-      if (typeof spawn !== 'function') return go(undefined)
-      return (async () => {
-        const previousIds = Object.values(state.runs[workflowId]?.ephemeral ?? {})
-        let ephemeral
-        try {
-          ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
-        } catch (error) {
-          await releaseAll(error.spawned ?? [], release, warn)
-          return refuse(error)
-        }
-        const saved = go(ephemeral)
-        if (saved.ok === false) {
-          await releaseAll(Object.values(ephemeral), release, warn)
-          return saved
-        }
-        await releaseAll(previousIds, release, warn)
-        return settle(workflowId)
-      })()
+      if (saved.ok === false || typeof spawn !== 'function') return saved
+      return serial(workflowId, async () => {
+        await fillSlots(workflow(workflowId))
+        return present()
+      })
     },
     advance(body = {}) {
       const workflowId = String(body.workflowId ?? '')
       const outcome = body.outcome === 'failed' ? 'fail' : 'complete'
       const nodeId = String(body.nodeId ?? '')
-      const step = () => mutate(workflowId, (item) => {
-        const run = state.runs[item.id]
-        if (!run || run.status === 'idle') throw new Error('This workflow has no running task')
-        if (run.status === 'done' || run.status === 'failed') throw new Error('This run is already finished')
-        const stepped = applyOp(item, run, { type: outcome, nodeId })
-        state.runs[item.id] = stepped.run
-        push(item.id, stepped.lines, now())
-      })
-      if (typeof spawn !== 'function') return step()
-      return (async () => {
+      const step = () => commitAdvance(workflowId, { type: outcome, nodeId, text: body.text, outputs: body.outputs, runId: body.runId })
+      if (typeof spawn !== 'function') {
         const saved = step()
-        if (saved.ok === false) return saved
-        return settle(workflowId)
-      })()
+        if (saved?.ok === false) return saved
+        const lane = laneOf(workflowId)
+        const run = lane.active.find(item => item.id === saved.runId)
+        if (run && (run.status === 'done' || run.status === 'failed')) {
+          lane.active = lane.active.filter(item => item.id !== run.id)
+          lane.last = run
+          lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+          const item = workflow(workflowId)
+          if (item) {
+            while (lane.queue.length > 0 && runningOf(lane).length < maxOf(item) && globalRunning() < HOST_CAP) {
+              const task = lane.queue.shift()
+              const begun = beginRun(item, task)
+              if (begun.ok === false) break
+            }
+          }
+          write()
+        }
+        return present()
+      }
+      return serial(workflowId, async () => {
+        const saved = step()
+        if (saved?.ok === false) return saved
+        return afterStep(workflowId, saved.runId)
+      })
     },
+    // The Bot's reply is the step result. A node that is no longer running
+    // has already moved; a second report does not move it again.
+    stepResult(body = {}) {
+      const found = findEphemeral(String(body.botId ?? ''))
+      if (!found) return present()
+      if (found.run.nodeStatus?.[found.nodeId] !== 'running') return present()
+      const node = nodeById(found.item, found.nodeId)
+      const parsed = readStepResult(body.text ?? '', node)
+      const text = parsed.text || cleanLine(body.text, 2000)
+      return this.advance({
+        workflowId: found.item.id,
+        runId: found.run.id,
+        nodeId: found.nodeId,
+        outcome: body.ok === false ? 'failed' : 'done',
+        text,
+        outputs: parsed.outputs,
+      })
+    },
+    ownsBot(botId) {
+      return findEphemeral(botId) !== null
+    },
+    // Replay the scripted demo. It never moves a live run.
     demoStep(body = {}) {
       const workflowId = String(body.workflowId ?? '')
-      const step = (ephemeral) => mutate(workflowId, (item) => {
-        let run = state.runs[item.id]
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      if (runningOf(laneOf(workflowId)).length > 0) return { ok: false, error: 'A live run is in progress' }
+      try {
+        let run = state.demos[item.id]
         if (!run) throw new Error('This workflow has no task')
         if (run.status === 'failed') throw new Error('This run is already finished')
         const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
         if (op.type === 'restart') {
           run = blankRun(item, run.task, now(), run.history)
-          if (ephemeral) run.ephemeral = ephemeral
           push(item.id, [{ kind: 'time', text: '重新演示' }], now())
-        } else if (ephemeral && op.type === 'start') {
-          run = { ...run, ephemeral }
         }
         const stepped = applyOp(item, run, op.type === 'restart' ? { type: 'start' } : op)
-        state.runs[item.id] = stepped.run
+        state.demos[item.id] = stepped.run
         push(item.id, stepped.lines, now())
-      })
-      if (typeof spawn !== 'function') return step(undefined)
-      return (async () => {
-        if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
-        const item = workflow(workflowId)
-        if (!item) return { ok: false, error: 'No such workflow' }
-        const run = state.runs[item.id]
-        if (!run) return { ok: false, error: 'This workflow has no task' }
-        if (run.status === 'failed') return { ok: false, error: 'This run is already finished' }
-        const op = nextDemoOp(item, run.nodeStatus, { failedOnce: run.failedOnce })
-        let ephemeral
-        let previousIds = []
-        if (op.type === 'restart' || op.type === 'start') {
-          previousIds = Object.values(run.ephemeral ?? {})
-          try {
-            ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn)
-          } catch (error) {
-            await releaseAll(error.spawned ?? [], release, warn)
-            return refuse(error)
-          }
-        }
-        const saved = step(ephemeral)
-        if (saved.ok === false) {
-          if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
-          return saved
-        }
-        await releaseAll(previousIds, release, warn)
-        return settle(workflowId)
-      })()
+        write()
+        return present()
+      } catch (error) {
+        return refuse(error)
+      }
     },
     reset(body = {}) {
       const workflowId = String(body.workflowId ?? '')
-      const step = () => mutate(workflowId, (item) => {
-        const run = state.runs[item.id]
-        if (!run) throw new Error('This workflow has no task')
-        const kept = { ...blankRun(item, run.task, now(), run.history), id: run.id, startedAt: run.startedAt }
-        state.runs[item.id] = kept
-        push(item.id, linesFor(item, run.task, { type: 'reset' }), now())
-      })
-      if (typeof spawn !== 'function') return step()
-      return (async () => {
-        const ids = Object.values(state.runs[workflowId]?.ephemeral ?? {})
-        const saved = step()
+      const take = () => {
+        const item = workflow(workflowId)
+        if (!item) return { ok: false, error: 'No such workflow' }
+        const lane = laneOf(workflowId)
+        const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
+        const live = lane.active[0] ?? lane.last
+        lane.active = []
+        lane.queue = []
+        if (live) {
+          const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
+          lane.last = kept
+          push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
+        }
+        const demo = state.demos[item.id]
+        if (demo) {
+          state.demos[item.id] = { ...blankRun(item, demo.task, now(), demo.history), id: demo.id, startedAt: demo.startedAt }
+          if (!live) push(item.id, linesFor(item, demo.task, { type: 'reset' }), now())
+        }
+        if (!live && !demo) return { ok: false, error: 'This workflow has no task' }
+        write()
+        return { ok: true, ids }
+      }
+      if (typeof spawn !== 'function') {
+        const saved = take()
+        return saved.ok === false ? saved : present()
+      }
+      return serial(workflowId, async () => {
+        const saved = take()
         if (saved.ok === false) return saved
-        await releaseAll(ids, release, warn)
+        await releaseAll(saved.ids, release, warn)
         return present()
-      })()
+      })
     },
     say(body = {}) {
       return mutate(String(body.workflowId ?? ''), (item) => {
@@ -445,7 +730,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         if (!text) throw new Error('A message needs text')
         const at = now()
         const lines = [{ kind: 'user', text }]
-        const run = state.runs[item.id]
+        const run = primaryRun(item.id)
         const running = run ? orderedIds(item, run.nodeStatus, 'running')[0] : undefined
         if (running) {
           const node = nodeById(item, running)
@@ -474,7 +759,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         item.nodes = next.nodes
         item.edges = next.edges
         item.layers = next.layers
-        const run = state.runs[item.id]
+        const run = primaryRun(item.id)
         if (run) {
           const ids = new Set(item.nodes.map(node => node.id))
           const nodeStatus = {}
@@ -511,54 +796,63 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     // Auto-assign an open board task. A miss leaves the task untouched.
     ingest(task = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
-      const decision = matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
-      if (!decision) return { ok: true, matched: false }
       const taskId = cleanLine(task.id, 80)
       if (!taskId) return { ok: false, error: 'A task needs an id' }
+      const claimed = state.claims[taskId]
+      const decision = claimed?.kind === 'bot' || claimed?.kind === 'workflow'
+        ? claimed
+        : matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
+      if (!decision) return { ok: true, matched: false }
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
       if (prev?.key === key) return { ok: true, matched: true, already: true, decision }
-      if (decision.kind === 'workflow') {
-        const run = state.runs[decision.id]
-        const live = run && run.task?.id === taskId && run.status === 'running'
-        if (live) {
-          state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
-          write()
-          return { ok: true, matched: true, already: true, decision }
-        }
-        const title = cleanLine(task.title, 300)
-        if (!title) return { ok: false, error: 'A task needs a title' }
-        const assigned = this.assign({ workflowId: decision.id, taskId, title })
-        const finish = (value) => {
-          if (value?.ok === false) return value
-          state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
-          write()
-          return { ...present(), matched: true, already: false, decision }
-        }
-        if (typeof assigned?.then === 'function') return assigned.then(finish)
-        return finish(assigned)
+      if (decision.kind === 'bot') {
+        rememberClaim(taskId, decision)
+        write()
+        return { ok: true, matched: true, already: false, decision }
       }
-      state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
-      write()
-      return { ok: true, matched: true, already: false, decision }
+      const demo = state.demos[decision.id]
+      if (demo && demo.task?.id === taskId && demo.status === 'running') {
+        state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
+        write()
+        return { ok: true, matched: true, already: true, decision }
+      }
+      if (queuedOrRunning(decision.id, taskId)) {
+        state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
+        write()
+        return { ok: true, matched: true, already: true, decision }
+      }
+      const title = cleanLine(task.title, 300)
+      if (!title) return { ok: false, error: 'A task needs a title' }
+      const assigned = this.assign({ workflowId: decision.id, taskId, title })
+      const finish = (value) => {
+        if (value?.ok === false) return value
+        rememberClaim(taskId, decision)
+        write()
+        return { ...present(), matched: true, already: false, decision }
+      }
+      if (typeof assigned?.then === 'function') return assigned.then(finish)
+      return finish(assigned)
     },
     reap() {
       if (typeof release !== 'function') return Promise.resolve()
       const stale = []
-      for (const run of Object.values(state.runs)) {
-        if (!run?.ephemeral) continue
-        if (run.status === 'running') continue
-        stale.push(...Object.values(run.ephemeral))
-        delete run.ephemeral
-        delete run.handed
+      for (const lane of Object.values(state.lanes)) {
+        for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
+          if (!run.ephemeral) continue
+          if (run.status === 'running') continue
+          stale.push(...Object.values(run.ephemeral))
+          delete run.ephemeral
+          delete run.handed
+        }
       }
       if (stale.length === 0) return Promise.resolve()
       return releaseAll(stale, release, warn).then(() => { write() })
     },
     dispose() {
-      const ids = Object.values(state.runs).flatMap(run => Object.values(run?.ephemeral ?? {}))
-      for (const run of Object.values(state.runs)) {
-        if (!run) continue
+      const runs = Object.values(state.lanes).flatMap(lane => [...(lane.active ?? []), lane.last].filter(Boolean))
+      const ids = runs.flatMap(run => Object.values(run?.ephemeral ?? {}))
+      for (const run of runs) {
         delete run.ephemeral
         delete run.handed
       }
@@ -577,6 +871,8 @@ function seat(nodes, roster) {
     const prompt = cleanPrompt(node.prompt)
     const model = cleanLine(node.model, 80)
     const tools = cleanTools(node.tools)
+    const inputs = cleanPorts(node.inputs, 'in')
+    const outputs = cleanPorts(node.outputs, 'out')
     return {
       id: cleanLine(node.id, 40).toLowerCase(),
       name: cleanLine(node.name || bot?.name, 80),
@@ -585,6 +881,8 @@ function seat(nodes, roster) {
       ...(prompt ? { prompt } : {}),
       ...(model ? { model } : {}),
       ...(tools.length ? { tools } : {}),
+      ...(inputs.length ? { inputs } : {}),
+      ...(outputs.length ? { outputs } : {}),
       ...(botId ? { botId } : {}),
       ...(node.failOnce === true ? { failOnce: true } : {}),
       ...(Number.isFinite(Number(node.x)) ? { x: Number(node.x) } : {}),
@@ -642,7 +940,25 @@ function seed(now) {
     { kind: 'bot', botId: 'writer', step: '3/3', text: '周报已发布。' },
     { kind: 'system', tone: 'ok', text: '✓ 运行完成' },
   ])
-  return { version: 1, workflows: [delivery, weekly], runs, logs, seq }
+  return {
+    version: 1, workflows: [delivery, weekly], runs: {}, demos: runs, lanes: {}, claims: {}, routes: {},
+    logs, seq, laneFormat: true,
+  }
+}
+
+function migrateRuns(state) {
+  state.lanes ??= {}
+  state.demos ??= {}
+  state.claims ??= {}
+  if (state.laneFormat === true) return
+  for (const [id, run] of Object.entries(state.runs ?? {})) {
+    if (!run || typeof run !== 'object' || state.lanes[id]) continue
+    const history = Array.isArray(run.history) ? run.history.filter(item => item?.status === 'done' || item?.status === 'failed') : []
+    if (run.status === 'running') state.lanes[id] = { active: [{ ...run, live: true }], queue: [], last: null, history }
+    else state.lanes[id] = { active: [], queue: [], last: run, history }
+  }
+  state.runs = {}
+  state.laneFormat = true
 }
 
 function load(file, warn) {

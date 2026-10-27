@@ -26,19 +26,19 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 
 | File | Role |
 | --- | --- |
-| `plugins/workflow/index.js` | Plugin entry (`flybot-workflow`). Endpoints, `run_workflow`, `define_workflow`, and the board listener. |
-| `plugins/workflow/src/graph.js` | Nodes, edges and positions. A node starts when every predecessor is done. Same-rank nodes run together. A cycle is refused. |
-| `plugins/workflow/src/service.js` | The store, template copies, `saveGraph`, `define`, `runNamed`, `ingest`. A spawn hook makes one run Bot per node. |
+| `plugins/workflow/index.js` | Plugin entry (`flybot-workflow`). Endpoints, `run_workflow`, `define_workflow`, the board listener, and the reply middleware that reports a step result. |
+| `plugins/workflow/src/graph.js` | Nodes, edges, positions, and named inputs and outputs. A node starts when every predecessor is done. Same-rank nodes run together. A cycle is refused. A required input with no upstream provider is refused before a run starts. |
+| `plugins/workflow/src/service.js` | The store, lanes (active runs, FIFO queue, terminal history), `maxConcurrent`, `saveGraph`, `define`, `runNamed`, `ingest`, `stepResult`. A spawn hook makes one run Bot per node. A dispatch that does not land is not marked handed. |
 | `plugins/workflow/src/ephemeral.js` | Builds each node's run Bot from its prompt, role, model and tools, and releases the ids the host returns. |
 | `plugins/workflow/src/match.js` | Which open card matches a Workflow or a local Bot. |
-| `plugins/workflow/src/template.js` | 发布交付流水线 (a parallel branch) and the weekly report. |
-| `plugins/workflow/src/narrate.js` | Progress lines for a step. A join line is only for a rank of more than one node. |
-| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, flowchart editor, and Settings → Workflow graphs. The stage and the dialogs portal onto `document.body`; a missing container stays in the section tree. |
+| `plugins/workflow/src/template.js` | 发布交付流水线 (a parallel branch) and the weekly report, each node with the inputs and outputs that edge carries. |
+| `plugins/workflow/src/narrate.js` | Progress lines for a step. A live run quotes the Bot reply. The canned delivery copy is the demo player only. A join line is only for a rank of more than one node. |
+| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, flowchart editor, and Settings → Workflow graphs. Replay demo is disabled while a live run exists. The stage shows the queue and refreshes state while one is active. The stage and the dialogs portal onto `document.body`; a missing container stays in the section tree. |
 
 ## Entry points
 
 - Endpoint `workflow/state` and `workflow/templates` are reads.
-- `workflow/create`, `workflow/assign`, `workflow/graph`, `workflow/advance`, `workflow/demo-step`, `workflow/reset`, `workflow/say`, `workflow/ingest` write.
+- `workflow/create`, `workflow/assign`, `workflow/concurrency`, `workflow/graph`, `workflow/advance`, `workflow/demo-step`, `workflow/reset`, `workflow/say`, `workflow/ingest` write. `workflow/concurrency` sets that workflow's `maxConcurrent` (an integer from 1 to 8).
 - Tool `run_workflow` starts a named run with a brief. Tool `define_workflow` writes the same graph the canvas edits.
 - `flybot.tasks.onWrite` calls `ingest`. A new Bot match returns `{ ownerBotId }`. A Workflow match starts the run inside the plugin and leaves the card's owner to the host.
 
@@ -46,13 +46,15 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 
 1. Friends' Bots are not nodes. A `remote` Bot is refused by create, define and the matcher.
 2. The canvas and the run share one graph: nodes, edges and positions. A drag commits `workflow/graph`. Status highlighting reads that same graph. Replacing edges does not recompute who is already running.
-3. Progress lines stay scripted, and a run does not create a schedule. `scheduleLabel` is display text. When the host can create Bots, starting a run (`assign`, `run_workflow`, `ingest`, or a demo that starts or restarts) spawns one ephemeral Bot per node from that node's prompt, role, model and tools, sends it the step from the Main Bot, and removes every instance when the run finishes, fails for good, or is reset. A `failOnce` retry keeps them. They are hidden and left out of the sidebar. Loading the plugin does not spawn Bots for the seeded fixture run.
-4. Auto-assign considers an `open` card only. First hit wins: a `workflow:` token, then `workflowId` / `workflow`, then an assignee that names a workflow, then a `bot:` token, then an assignee that names a local Bot, then the longest trigger contained in the title, note or criteria. A miss returns no route. A second ingest of the same task and target is a no-op, and a live run for that task id is not restarted.
-5. The browser draws text only. Names and messages are React text children. The unit renderer asserts a hostile name is not markup.
-6. `enabled: false` registers no endpoint, tool or listener and writes nothing.
-7. A sidebar click opens the stage or a dialog and leaves the Workflows section in place. The stage and the dialogs portal onto `document.body`. When that container is missing they stay in the section tree; the click does not throw.
-8. A node's prompt and the graph are one record. Settings → Workflow graphs, the flowchart's prompt fields, and `define_workflow` all write `workflow/graph`. A run reads that record; it does not define it.
+3. A live run advances only when its ephemeral Bot replies, and that reply is the chat line. `workflow/demo-step` replays the seeded script and refuses while that workflow has a live run; the stage does not start the replay timer while `activeCount` is greater than 0. A run does not create a schedule. `scheduleLabel` is display text. When the host can create Bots, starting a live run (`assign`, `run_workflow`, `ingest`) spawns one ephemeral Bot per node from that node's prompt, role, model and tools, sends it the step from the Main Bot, and removes every instance when the run finishes, fails for good, or is reset. A `failOnce` retry keeps them. They are hidden and left out of the sidebar. Loading the plugin does not spawn Bots for the seeded fixture. A dispatch that does not land is not marked handed. The chat names the code, and the next hand-off tries that node again. It is not sent twice in the same hand-off. A reply that says the model call failed, including HTTP 429, fails that node and does not start its successor.
+4. Each workflow keeps a FIFO queue and up to `maxConcurrent` live runs (default 2, an integer from 1 to 8 on the record or via `workflow/concurrency`). The host runs at most 6 live runs at once. A task that does not fit is enqueued. It does not replace a running run or release that run's Bots. History records a finished or failed run only. Lowering the cap does not stop a run that has already started. Assigning `{ botId }` claims the card for that local Bot and does not enqueue. A remote Bot is refused.
+5. A node declares up to eight inputs and eight outputs. A required input is an output of the same name on an ancestor, or `task`, `title`, or `brief` on a root. A start with no provider is refused, and Bots spawned for that attempt are released. On a Bot-backed run a successor stays queued until its required inputs are present. If every predecessor is done or failed and an input is still missing, that node fails and the run stops. The dispatch text carries `Input <name>: <value>`. The Bot reports `OUTPUT <name>: <value>`; a single declared output may be the reply body. Nodes start in edge order.
+6. Auto-assign considers an `open` card only. A saved Bot claim beats a workflow trigger. Otherwise first hit wins: a `workflow:` token, then `workflowId` / `workflow`, then an assignee that names a workflow, then a `bot:` token, then an assignee that names a local Bot, then the longest trigger contained in the title, note or criteria. A miss returns no route. A second ingest of the same task and target is a no-op, and a live run for that task id is not restarted.
+7. The browser draws text only. Names and messages are React text children. The unit renderer asserts a hostile name is not markup.
+8. `enabled: false` registers no endpoint, tool or listener and writes nothing.
+9. A sidebar click opens the stage or a dialog and leaves the Workflows section in place. The stage and the dialogs portal onto `document.body`. When that container is missing they stay in the section tree; the click does not throw.
+10. A node's prompt and the graph are one record. Settings → Workflow graphs, the flowchart's prompt fields, and `define_workflow` all write `workflow/graph`. A run reads that record; it does not define it.
 
 ## Tests
 
-`plugins/workflow/test/`: graph advance and join, graph edit, assign and persistence, templates, `define` / `runNamed`, the matcher, ephemeral spawn and cleanup, the client canvas, the settings page, and a sidebar click that leaves the Workflows section in place. Run `npm test` in `plugins/workflow`. The host seam that applies `ownerBotId` is `core/test/task-route.test.js`. The host omission of run Bots is `core/test/flybot.test.js`.
+`plugins/workflow/test/`: graph advance and join, graph edit, assign and persistence, the FIFO queue and concurrency cap, Bot-reply advance, a dispatch that fails without being marked handed, assign-to-bot versus assign-to-workflow, inputs and outputs along edges, templates, `define` / `runNamed`, the matcher, ephemeral spawn and cleanup, the reply middleware, the client canvas, the settings page, and a sidebar click that leaves the Workflows section in place. Run `npm test` in `plugins/workflow`. The host seam that applies `ownerBotId` is `core/test/task-route.test.js`. The host omission of run Bots is `core/test/flybot.test.js`.

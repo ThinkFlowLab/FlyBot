@@ -79,7 +79,7 @@ test('advance walks the parallel join: Deployer stays queued until both branches
 
 test('the demo step fails Tester once and still joins both branches', () => {
   const svc = service()
-  svc.assign({ workflowId: DELIVERY_ID, taskId: '#1280', title: '缩短交付组群 notice' })
+  svc.reset({ workflowId: DELIVERY_ID })
   const ops = []
   for (let i = 0; i < 12 && delivery(svc.state()).run.status !== 'done'; i += 1) {
     const before = delivery(svc.state()).run.nodeStatus.tester
@@ -187,13 +187,10 @@ test('a dragged graph persists and the reloaded run still highlights those nodes
     assert.equal(loaded.nodes.find(node => node.id === 'coder').x, coder.x + 48)
     assert.equal(loaded.run.nodeStatus.coder, 'running')
     assert.equal(loaded.run.nodeStatus.planner, 'done')
-    second.assign({ workflowId: DELIVERY_ID, taskId: '#9', title: 'Ship the note' })
-    second.advance({ workflowId: DELIVERY_ID, nodeId: 'planner', outcome: 'done' })
-    const opened = second.advance({ workflowId: DELIVERY_ID, nodeId: 'writer', outcome: 'done' })
-    const run = delivery(opened).run
-    assert.equal(run.nodeStatus.coder, 'running')
-    assert.equal(run.nodeStatus.tester, 'running')
-    assert.equal(run.nodeStatus.deployer, 'queued')
+    const refused = second.assign({ workflowId: DELIVERY_ID, taskId: '#9', title: 'Ship the note' })
+    assert.equal(refused.ok, false)
+    assert.match(refused.error, /patch/)
+    assert.equal(delivery(second.state()).run.nodeStatus.coder, 'running')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -60,8 +60,14 @@ export function apply(ctx, config = {}) {
     async dispatch(step) {
       const from = (fb.bot.list?.() ?? []).find(bot => bot.isMain)?.id
       if (!from || typeof fb.bot.send !== 'function') return { ok: false, code: 'no-sender' }
-      const text = `Task ${step.taskId}: ${step.brief}\nDo this step and reply with the result.`
-      return fb.bot.send({ from, to: step.botId, text, role: 'request' })
+      const lines = [`Task ${step.taskId}: ${step.brief}`]
+      for (const [name, value] of Object.entries(step.inputs ?? {})) {
+        if (value) lines.push(`Input ${name}: ${value}`)
+      }
+      const outputs = (step.outputs ?? []).map(port => port.name).filter(Boolean)
+      if (outputs.length > 0) lines.push(`When you finish, add one line per output: OUTPUT <name>: <value> (${outputs.join(', ')}).`)
+      lines.push('Reply with the result of this step.')
+      return fb.bot.send({ from, to: step.botId, text: lines.join('\n'), role: 'request' })
     },
   } : {}
   const service = createWorkflowService({
@@ -77,6 +83,7 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/state', () => service.state(), { read: true }),
     fb.api.handle('workflow/create', body => service.create(body)),
     fb.api.handle('workflow/assign', body => service.assign(body)),
+    fb.api.handle('workflow/concurrency', body => service.setConcurrency(body)),
     fb.api.handle('workflow/advance', body => service.advance(body)),
     fb.api.handle('workflow/demo-step', body => service.demoStep(body)),
     fb.api.handle('workflow/reset', body => service.reset(body)),
@@ -98,15 +105,33 @@ export function apply(ctx, config = {}) {
     }))
     offs.push(fb.tools.register({
       name: 'define_workflow',
-      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, x?, y? } and edges are { from, to }. prompt is that node\'s Bot system prompt. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
+      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? } and edges are { from, to }. prompt is that node\'s Bot system prompt. inputs and outputs are { name, type?, required? }. A required input must be produced upstream, or be task, title, or brief on a root. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
       parameters: {
         name: { type: 'string', required: true, description: 'Workflow name' },
         workflow: { type: 'string', description: 'Existing id or name to replace. Omit to create.' },
-        nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools, and an optional local botId.' },
+        nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools, inputs, outputs, and an optional local botId.' },
         edges: { type: 'array', required: true, description: 'Hand-offs { from, to }. A fork is two edges out; a join is two edges in.' },
       },
       execute: args => service.define(args ?? {}),
     }))
+  }
+  if (typeof fb.bot?.send?.use === 'function') {
+    const off = fb.bot.send.use({
+      name: 'workflow-step',
+      priority: fb.bot.send.priority?.ROUTING,
+      handle(msg) {
+        const from = typeof msg.from === 'string' ? msg.from : ''
+        if (msg.role !== 'reply' || !from || service.ownsBot(from) !== true) return undefined
+        const text = String(msg.text ?? '')
+        const failed = /could not answer your message|model call failed|\b429\b|rate limit/i.test(text)
+        // The reply is the step result. Let it deliver, and move the node from it.
+        void Promise.resolve(service.stepResult({ botId: from, text, ok: !failed })).catch(error => {
+          fb.warn?.('flybot-workflow: step result failed: %s', error)
+        })
+        return undefined
+      },
+    })
+    if (typeof off === 'function') offs.push(off)
   }
   if (typeof fb.tasks?.onWrite === 'function') {
     offs.push(fb.tasks.onWrite(task => {
