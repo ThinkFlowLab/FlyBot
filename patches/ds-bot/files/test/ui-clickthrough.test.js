@@ -1,4 +1,4 @@
-// #1335: a real mouse click-through of a running FlyBot found UI defects that no test covered.
+// #1347: a real mouse click-through of a running FlyBot found UI defects that no test covered.
 // Each one is a shape of the shipped page, so each test reads the CSS or the source that draws it and
 // asserts the property that was wrong — not the fix by name. Nothing here imports a client module:
 // those need React from a DSH install, and the neighbours (`ui-polish-406.test.js`) read the text.
@@ -20,7 +20,7 @@ const rule = (css, selector) => {
 const ruleLine = (css, selector) => css.split('\n').find(line => line.startsWith(`${selector}{`)) ?? ''
 const block = (css, opener) => css.match(new RegExp(`${opener.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? ''
 
-test('#1335: a settings row never breaks its own label or its control words', () => {
+test('#1347: a settings row never breaks its own label or its control words', () => {
   const css = read('bot-settings.js')
   const label = rule(css, '.bt-bs-row>.bt-set-copy>.bt-bs-label')
   assert.match(label, /white-space:nowrap/, 'the label is one line, so "Name" cannot become "Nam" + "e"')
@@ -34,7 +34,7 @@ test('#1335: a settings row never breaks its own label or its control words', ()
   assert.match(rule(css, '.bt-bs-row>.bt-set-copy'), /flex:1 1 8ch/)
 })
 
-test('#1335: the panel is a container, and below 300px the row stacks instead of clipping', () => {
+test('#1347: the panel is a container, and below 300px the row stacks instead of clipping', () => {
   // A container query only fires where one is declared; without the declaration the rule is dead CSS
   // that reads green and fixes nothing.
   assert.match(ruleLine(read('styles.js'), '.bt-panel'), /container:bt-panel\/inline-size/)
@@ -46,7 +46,7 @@ test('#1335: the panel is a container, and below 300px the row stacks instead of
   assert.match(rule(read('model-test.js'), '.bt-model-test>.bt-soft'), /white-space:nowrap/)
 })
 
-test('#1335: a preview shows the words of a line, never its fence', () => {
+test('#1347: a preview shows the words of a line, never its fence', () => {
   assert.equal(visibleText('<untrusted-message from="Coder (Bob)">\nhello there\n</untrusted-message>'), 'hello there')
   // The shape a real instance showed in its sidebar: the opener arrived cut, so only its tail survived.
   assert.equal(visibleText('kick from="User"> B test 4 >'), 'kick B test 4 >')
@@ -59,7 +59,7 @@ test('#1335: a preview shows the words of a line, never its fence', () => {
   assert.equal(visibleText(undefined), '')
 })
 
-test('#1335: both sidebar row kinds read their preview through that helper', () => {
+test('#1347: both sidebar row kinds read their preview through that helper', () => {
   const text = read('text.js')
   const preview = text.slice(text.indexOf('export function previewOf'), text.indexOf('const formatTokens'))
   assert.match(preview, /return visibleText\(/, 'a Bot row preview is sanitized where it is built')
@@ -69,7 +69,7 @@ test('#1335: both sidebar row kinds read their preview through that helper', () 
   assert.match(channel, /const previewText = last \? visibleText\(last\.text\) : ''/, 'the host sends words, not a fence')
 })
 
-test('#1335: the details drawer copies, says so, and names the button for what it does', () => {
+test('#1347: the details drawer copies, says so, and names the button for what it does', () => {
   const source = read('details-drawer.js')
   // The accessible name matches the behaviour: no "Share" on a button that only copies.
   assert.match(source, /'aria-label': copied \? t\('Copied conversation'\) : t\('Copy conversation'\)/)
@@ -85,7 +85,7 @@ test('#1335: the details drawer copies, says so, and names the button for what i
   }
 })
 
-test('#1335: the mode word beside the title does not look like a control', () => {
+test('#1347: the mode word beside the title does not look like a control', () => {
   const chip = rule(read('styles.js'), '[data-slot="conversation.session.header.actions"] [class*="_label"]')
   assert.match(chip, /background:none/, 'no fill, so it reads as a status')
   assert.match(chip, /border-radius:0/)
@@ -93,7 +93,7 @@ test('#1335: the mode word beside the title does not look like a control', () =>
   assert.match(chip, /cursor:help/)
 })
 
-test('#1335: a Bot chat with nothing said yet draws its own header', () => {
+test('#1347: a Bot chat with nothing said yet draws its own header', () => {
   const source = read('flybot-slots.js')
   // The same `blank` fact #998 uses for a group, and only then: never beside a header the shell drew.
   assert.match(source, /const botRoom = blank && bot !== undefined && !bot\.remote \? bot : null/)
@@ -105,7 +105,7 @@ test('#1335: a Bot chat with nothing said yet draws its own header', () => {
   assert.match(rule(source, '.bt-chat-strip'), /display:flex/)
 })
 
-test('#1335: a blank column says why it is blank, and only while it is blank', () => {
+test('#1347: a blank column says why it is blank, and only while it is blank', () => {
   const source = read('flybot-slots.js')
   // The sentence lives in the strip that already stands in for the missing header, so it is drawn and
   // withdrawn by the same `blank` condition — never beside the shell's own header.
@@ -115,7 +115,7 @@ test('#1335: a blank column says why it is blank, and only while it is blank', (
   assert.match(read('i18n.js'), /'No messages yet\. Say something to \{name\}\.'/)
 })
 
-test('#1335: a provider refusal reads as a sentence that says what to change', () => {
+test('#1347: a provider refusal reads as a sentence that says what to change', () => {
   // The exact text a real Inbox showed, cut off where the host stops storing it.
   const raw = '404: {"code":"UnsupportedModel","message":"The requested model does not support the coding plan feature. Please use a model that supports it'
   const said = failureSentence(raw, key => key)
@@ -140,7 +140,7 @@ test('#1335: a provider refusal reads as a sentence that says what to change', (
   }
 })
 
-test('#1335: the built bundle carries these rules, so a page reload shows them', () => {
+test('#1347: the built bundle carries these rules, so a page reload shows them', () => {
   // The app runs client.js, not src/. A constant that never reached the bundle leaves every fix above
   // in the source only.
   const bundle = readFileSync(new URL('../client.js', import.meta.url), 'utf8')

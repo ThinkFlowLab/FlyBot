@@ -209,7 +209,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  // null until the user sets a width: the Bot page then opens at DETAILS_WIDTH and the
 -// browser at DEFAULT_WIDTH.
 +// browser at DEFAULT_WIDTH. A saved width narrower than DETAILS_WIDTH is a *stored* choice from a
-+// narrower policy (#1335 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
++// narrower policy (#1347 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
 +// what the panel can be dragged to is enforced here.
  const savedWidth = () => {
    try {
@@ -2453,7 +2453,7 @@ diff --git a/src/client/text.js b/src/client/text.js
 -    if (text !== '') return stripHeader(text).replace(/\s+/g, ' ').trim()
 +    const text = (unsentTurns.includes(entry.turn) ? '' : entry.response) || entry.prompt || ''
 +    // The outline flattens a reply to one line, so its trace ends at a space there. A stored line can
-+    // still carry its untrusted fence, and a row is one line someone reads: no marker reaches it (#1335).
++    // still carry its untrusted fence, and a row is one line someone reads: no marker reaches it (#1347).
 +    if (text !== '') return visibleText(stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, ''))
    }
    return ''

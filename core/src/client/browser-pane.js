@@ -45,7 +45,7 @@ export function Favicon({ src, className }) {
 
 // null until the user sets a width: the Bot page then opens at DETAILS_WIDTH and the
 // browser at DEFAULT_WIDTH. A saved width narrower than DETAILS_WIDTH is a *stored* choice from a
-// narrower policy (#1335 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
+// narrower policy (#1347 raised DETAILS_WIDTH from 320 to 380), so it is kept: only the floor of
 // what the panel can be dragged to is enforced here.
 const savedWidth = () => {
   try {

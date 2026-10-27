@@ -257,7 +257,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     .then(() => { setError(''); return true })
     .catch(failure => { setError(failure?.message ?? String(failure)); return false })
   const share = () => {
-    // #1335: a copy that says nothing is a click that did nothing to anyone watching. The clipboard
+    // #1347: a copy that says nothing is a click that did nothing to anyone watching. The clipboard
     // write is a promise and can be refused (no permission, no user gesture), so the toast reports
     // what actually happened instead of the tick alone claiming success.
     const text = transcript
@@ -289,7 +289,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
       : null,
     bot || room ? h('button', {
       type: 'button', className: 'bt-round',
-      // #1335: the accessible name says what the click does, which is copy — "Share conversation"
+      // #1347: the accessible name says what the click does, which is copy — "Share conversation"
       // promised a sharing step that never came. It still says "Copied" after a copy, so a screen
       // reader hears the same confirmation the toast gives.
       'aria-label': copied ? t('Copied conversation') : t('Copy conversation'),

@@ -190,12 +190,12 @@ test('#998: the session dock tells a slot whether the chat is still blank', asyn
   } finally { off() }
 })
 
-// #1335: a Bot chat's first paint has no header either (`headerBlank`), so the column under it is a
+// #1347: a Bot chat's first paint has no header either (`headerBlank`), so the column under it is a
 // blank box with a composer. The dock draws its own strip on exactly the same fact a group's does —
 // and never for a friend's Bot chat, which is not this home's and has its own hint, nor beside a header
 // the shell has already drawn. The strip's own text is asserted through its component (`BotChatStrip`),
 // because this renderer does not resolve function components.
-test('#1335: a blank Bot chat draws its own strip, and only while it is blank', async () => {
+test('#1347: a blank Bot chat draws its own strip, and only while it is blank', async () => {
   const { FlyBotSessionDock, BotChatStrip, registry } = await import('../src/client/flybot-slots.js')
   const off = registry().register('flybot.session.dock', { id: 'probe-strip', component: () => null })
   const strips = node => {

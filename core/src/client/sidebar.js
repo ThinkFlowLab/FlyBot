@@ -151,7 +151,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   const id = room.id
   const fallback = useSessions(list => nameMentions(previewOf(list, id), roster))
   // The host's line is the same kind of stored text as a Bot chat's, so the row reads it the same way:
-  // a fence or a marker fragment must never reach the row (#1335).
+  // a fence or a marker fragment must never reach the row (#1347).
   const preview = nameMentions(visibleText(room.preview), roster) || fallback
   const active = useSessionRetainInfo(id, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(id)?.completionUnread === true) || (marked && !active)

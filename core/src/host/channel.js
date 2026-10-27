@@ -149,7 +149,7 @@ export function install(rt) {
       const parts = [...Object.values(sessions ?? {}), ...Object.values(segments ?? {}).flat().map(segment => segment.sessionId)]
       const last = (log ?? []).filter(line => line.kind === undefined).at(-1)
       // The row is read by a person: a fence, or the fragment an older write left behind, is never part
-      // of it (#130, #1335). `visibleText` also folds the line to one line, as a row always was.
+      // of it (#130, #1347). `visibleText` also folds the line to one line, as a row always was.
       const previewText = last ? visibleText(last.text) : ''
       const previewWho = last && (last.authorKind === 'human' && last.who && last.who !== 'User' ? `${last.who}: ${previewText}` : last.who === 'User' ? previewText : `${last.who}：${previewText}`)
       const presented = rt.presentRoom?.({ ...room, log }, actor) ?? room

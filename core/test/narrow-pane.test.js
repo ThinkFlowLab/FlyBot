@@ -14,7 +14,7 @@ const rule = (selector) => {
 
 test('#705: a narrow window shrinks the Details panel before it starves the conversation', () => {
   assert.equal(MIN_DETAILS, 240)
-  // #1335: the Details panel opens at 380, not 320. A settings row holds a label and its control on
+  // #1347: the Details panel opens at 380, not 320. A settings row holds a label and its control on
   // one line ("Name" beside its field, "Test connection" beside its hint); at 320 the label took 36px
   // and broke into "Nam" + "e", and the button into "Test connecti" + "on".
   assert.equal(DETAILS_WIDTH, 380)

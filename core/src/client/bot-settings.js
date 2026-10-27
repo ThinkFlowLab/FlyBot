@@ -277,7 +277,7 @@ export const BOT_SETTINGS_CSS = `
 .bt-bs-row{min-height:48px}
 label.bt-bs-row{cursor:text}
 .bt-bs-label{font-size:13px;line-height:18px;font-weight:500}
-/* #1335: a row keeps its label and its control side by side. The *label* is one line — "Name" used to
+/* #1347: a row keeps its label and its control side by side. The *label* is one line — "Name" used to
    break into "Nam" + "e" inside a 36px column — and a control never breaks its own words: "Test
    connection" came out as "Test connecti" / "on" and Main Bot's "Change" as "Ch/an/ge". The hint under
    a label is prose, so it wraps and is never cut: the row grows instead. */
@@ -307,7 +307,7 @@ ${MODEL_TEST_CSS}
 .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
 .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
 @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
-/* #1335: the panel's floor is 240px, where a label and a 96px field cannot share a line honestly. Below
+/* #1347: the panel's floor is 240px, where a label and a 96px field cannot share a line honestly. Below
    300px the row stacks instead: the copy keeps its whole width on top, the control sits under it and
    keeps its own words. Nothing is clipped to fit a width that is not there. */
 @container bt-panel (max-width:300px){

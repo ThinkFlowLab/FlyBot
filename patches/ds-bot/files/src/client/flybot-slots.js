@@ -173,7 +173,7 @@ export function FlyBotSessionDock({ sessionId, useRoster, actions, session }) {
   // that fact on the snapshot, and a failed first send never turns it back off, so standing in for a
   // header the host is already drawing cannot happen.
   const blank = session?.blank === true && session?.promptAttempted !== true
-  // #1335: a Bot's chat has the same first-paint problem as a group's, and the sidebar row is the only
+  // #1347: a Bot's chat has the same first-paint problem as a group's, and the sidebar row is the only
   // thing naming it. The shell draws `headerBlank` with no title for a Session that has said nothing,
   // so the panel below the composer reads as a blank column: no name, no avatar, no way back to the
   // Bot's details. The strip is the same one a group gets (#998) and reads the same `blank` fact.
@@ -185,7 +185,7 @@ export function FlyBotSessionDock({ sessionId, useRoster, actions, session }) {
       h(Safe, { entry, props: { sessionId, roster, room, bot, actions, call, t, blank: blank === true, claim: ids => claimApprovals(`${entry.id}:${sessionId}`, ids) } }))))
 }
 
-// A Bot chat's own header before its first turn (#1335): who this chat is with, that nothing has been
+// A Bot chat's own header before its first turn (#1347): who this chat is with, that nothing has been
 // said yet, and the one thing a blank column cannot offer — its details. It is the dock's own child, so
 // it disappears the moment the shell draws the real header (the same `blank` condition #998 uses).
 export function BotChatStrip({ bot, roster, actions, sessionId }) {
@@ -350,7 +350,7 @@ export const fileSize = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).
 
 export const FLYBOT_CSS = `
 .bt-flybot-session-dock{width:100%;max-width:min(992px,100%);margin:0 auto;padding:0 0 6px;box-sizing:border-box}
-/* #1335: a Bot chat's own strip before its first turn, the same shape a group's uses (#998): one row
+/* #1347: a Bot chat's own strip before its first turn, the same shape a group's uses (#998): one row
    above the composer naming the chat, so a blank column is never nameless. */
 .bt-chat-strip{display:flex;align-items:center;gap:12px;width:100%;max-width:min(992px,100%);margin:0 auto 10px;padding:10px 12px;box-sizing:border-box;border:.5px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card,var(--bt-main));animation:bt-rise .18s ease-out}
 .bt-chat-strip-who{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}

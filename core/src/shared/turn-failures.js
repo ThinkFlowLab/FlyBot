@@ -13,7 +13,7 @@ export const failureLines = (snapshot, place, t, limit = FAILURE_LINES_SHOWN) =>
     .map(entry => ({
       id: `turn-failure-${entry.id}`,
       // The stored text can be a provider's JSON body cut mid-sentence; `failureSentence` says the
-      // same fact in words that name what to change (#1335).
+      // same fact in words that name what to change (#1347).
       text: t('Could not run: {error}', { error: entry.failed === undefined ? t('the model call failed') : failureSentence(entry.failed, t) }),
       ...(Number(entry.streak) > 1 ? { streak: Number(entry.streak) } : {}),
     }))

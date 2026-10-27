@@ -285,7 +285,7 @@ export function previewOf(list, id, hiddenTurns = [], unsentTurns = []) {
     if (hiddenTurns.includes(entry.turn)) continue
     const text = (unsentTurns.includes(entry.turn) ? '' : entry.response) || entry.prompt || ''
     // The outline flattens a reply to one line, so its trace ends at a space there. A stored line can
-    // still carry its untrusted fence, and a row is one line someone reads: no marker reaches it (#1335).
+    // still carry its untrusted fence, and a row is one line someone reads: no marker reaches it (#1347).
     if (text !== '') return visibleText(stripTrace(stripHeader(text)).replace(/\s+/g, ' ').trim().replace(/^[^\s→]{1,40}(?: → [^\s→]{1,40})+ (?=\S)/, ''))
   }
   return ''

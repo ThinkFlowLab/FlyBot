@@ -4,7 +4,7 @@
 // DETAILS_WIDTH..DETAILS_MAX, so a wider browser comes back to DETAILS_MAX and a narrower one keeps
 // its width; the browser takes any width from MIN_WIDTH.
 export const DEFAULT_WIDTH = 520
-// #1335: 320 was too narrow for the settings form the details view hosts. A label and its control
+// #1347: 320 was too narrow for the settings form the details view hosts. A label and its control
 // share one row ("Name" beside the name field, "Test connection" beside its hint), and at 320 the
 // label took 36px — "Nam" on one line and "e" on the next — while the button broke into
 // "Test connecti" / "on". 380 keeps every such row on one line at the default text size.

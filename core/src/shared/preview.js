@@ -4,7 +4,7 @@
 // fence is data: a person reading a sidebar row must never see it. `unwrapUntrusted` handles the one
 // shape this code writes today, a complete wrap. A stored line can also carry a *broken* fence — an
 // older write, a hand-edited log, a nested fragment — and then the wrapper leaks into the preview as
-// `from="User"> B踢后测4 >`, which is what a real instance showed in its sidebar (#1335).
+// `from="User"> B踢后测4 >`, which is what a real instance showed in its sidebar (#1347).
 //
 // So a preview is read the same way whatever shape the fence is in: unwrap the complete wraps, then
 // remove whatever marker fragments are left, until neither changes the text. Words that never were

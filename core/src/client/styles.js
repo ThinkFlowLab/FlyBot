@@ -506,7 +506,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 /* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
 .bt-flybot-room-members{padding:10px 12px}
 .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
-/* #1335: a row's copy never breaks its own label. The label used to be a bare inline span inside a
+/* #1347: a row's copy never breaks its own label. The label used to be a bare inline span inside a
    column that flexed down to 36px, so "Name" came out as "Nam" + "e"; a single-word label is now one
    line, and the hint below it is what wraps when the column is short. */
 .bt-set-copy>.bt-bs-label,.bt-set-copy>.bt-set-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -873,7 +873,7 @@ export const CONVERSATION_CSS = `
 [class*="_header"] [class*="switcherTitle"]{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;text-overflow:ellipsis}
 [class*="_header"] [class*="switcherTrigger"]{height:auto;align-items:flex-start}
 [class*="_header"] .bt-head .bt-mark{width:22px!important;height:22px!important;--bt-size:22px}
-/* #1335: "Standard mode" beside the title reads as a control — a filled chip with an icon — but the
+/* #1347: "Standard mode" beside the title reads as a control — a filled chip with an icon — but the
    shell draws it as a span with no click handler (dsh-client-ui-agent-preset, AgentPresetLabel):
    clicking it does nothing, and the only thing behind it is a hover title. In a Bot chat the mode is
    fixed for the whole Session anyway, so the chip becomes what it is: a status word on the title's

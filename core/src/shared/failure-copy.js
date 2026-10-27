@@ -1,4 +1,4 @@
-// A failed turn's sentence a person can act on (#1335).
+// A failed turn's sentence a person can act on (#1347).
 //
 // The host keeps what the provider said, cut to a length that fits a card
 // (`noteEnded` in host/turns.js). That text is a JSON body more often than not, so a real
