@@ -6,10 +6,20 @@ name: Label hygiene
 # prints `before:`/`after:` counts so the cleanup is verified rather than trusted.
 #
 # `hold` is untouched: only a human removes it (AGENTS.md → Merge gates).
+#
+# A close is the moment the label stops being true, so the same job also runs on it (#1401):
+# otherwise the board reads a finished item as in flight until the next 19:30Z sweep, up to 24 hours.
+# The pull-request side is `pull_request_target`, not `pull_request`, for the write token: a
+# `pull_request` run from a fork is read-only, so it could not remove the label it came for
+# (gate-check.test.mjs carries the same rule for #812).
 on:
   schedule:
     - cron: '30 19 * * *' # 03:30 Asia/Shanghai, a quiet hour
   workflow_dispatch:
+  issues:
+    types: [closed]
+  pull_request_target:
+    types: [closed]
 
 concurrency:
   group: label-hygiene

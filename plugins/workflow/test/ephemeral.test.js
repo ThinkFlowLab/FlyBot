@@ -2,6 +2,9 @@
 // The instance is hidden (the sidebar predicate rejects it), does the step,
 // and is removed when the run finishes, fails for good, or is reset.
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { isShownRemoteChat } from '../../../core/src/shared/remote-label.js'
 import { apply } from '../index.js'
@@ -298,4 +301,178 @@ test('#1389: a step the host refuses is not marked as handed, and a later settle
   assert.equal(codeCalls.length, 2)
   assert.equal(codeCalls[0].botId, codeCalls[1].botId)
   assert.match(warnings.join('\n'), /no-sender/)
+})
+
+// #1388: reap is the only path that cleans up a run whose host went away, and the
+// plugin calls it exactly once, at load. A run still marked `running` at that
+// moment is what a restart leaves behind: nothing resumes it, so its ephemeral
+// Bots are abandoned. Loading must release them and end the run as failed, or
+// they stay hidden in the roster with no way to remove them.
+function persistent(dir, released, clock) {
+  return createWorkflowService({
+    dir,
+    persist: true,
+    now: () => clock(),
+    bots: () => roster,
+    spawn: async (spec) => `eph-${spec.nodeId}`,
+    release: async (id) => { released.push(id) },
+    dispatch: async () => ({ ok: true }),
+  })
+}
+
+function readStore(dir) {
+  return JSON.parse(readFileSync(join(dir, 'workflows.json'), 'utf8'))
+}
+
+// The lane store keeps a live run on `lanes[id].active` and the one that just
+// ended on `lanes[id].last`. An older file still has `runs[id]`.
+function persistedRun(dir, workflowId) {
+  const store = readStore(dir)
+  const lane = store.lanes?.[workflowId]
+  if (!lane) return store.runs?.[workflowId] ?? null
+  const active = (lane.active ?? []).find(run => run && (run.ephemeral || run.status === 'running'))
+  return active ?? lane.last ?? null
+}
+
+test('a load reaps the run a restart left running: its Bots go and the run ends failed (#1388)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-reap-'))
+  const released = []
+  let clock = 1_700_000_000_000
+  try {
+    const before = persistent(dir, released, () => clock)
+    const made = before.define({
+      name: 'Lane',
+      nodes: [
+        { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+        { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+      ],
+      edges: [{ from: 'plan', to: 'code' }],
+    }).workflows.find(item => item.name === 'Lane')
+    await before.runNamed({ workflow: 'Lane', brief: 'Ship the note' })
+    const saved = persistedRun(dir, made.id)
+    assert.equal(saved.status, 'running')
+    assert.deepEqual(Object.values(saved.ephemeral).sort(), ['eph-code', 'eph-plan'])
+    assert.equal(released.length, 0)
+
+    // The host restarted here. This load is the only chance to clean up.
+    clock += 60_000
+    const after = persistent(dir, released, () => clock)
+    await after.reap()
+    assert.deepEqual(released.sort(), ['eph-code', 'eph-plan'])
+    const run = after.state().workflows.find(item => item.id === made.id).run
+    assert.equal(run.status, 'failed')
+    assert.equal(run.ephemeral, undefined)
+    assert.equal(run.handed, undefined)
+    assert.equal(run.updatedAt, clock)
+    const settled = persistedRun(dir, made.id)
+    assert.equal(settled.status, 'failed')
+    assert.equal(settled.ephemeral, undefined)
+    assert.equal('handed' in settled, false)
+    assert.equal(settled.updatedAt, clock)
+
+    // A second load finds nothing left to release.
+    released.length = 0
+    await persistent(dir, released, () => clock).reap()
+    assert.deepEqual(released, [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a finished run stays done, and a run with no ephemeral Bots is not touched (#1388)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-reap-done-'))
+  const released = []
+  let clock = 1_700_000_000_000
+  try {
+    const svc = persistent(dir, released, () => clock)
+    const quick = svc.define({
+      name: 'Quick',
+      nodes: [{ id: 'only', name: 'Planner', role: 'plan', prompt: 'Say it once.' }],
+      edges: [],
+    }).workflows.find(item => item.name === 'Quick')
+    await svc.runNamed({ workflow: 'Quick', brief: 'One step' })
+    await svc.advance({ workflowId: quick.id, nodeId: 'only', outcome: 'done' })
+    released.length = 0
+    const finished = persistedRun(dir, quick.id)
+    assert.equal(finished.status, 'done')
+    assert.equal(finished.ephemeral, undefined)
+    const finishedAt = finished.updatedAt
+
+    // A run record whose ephemeral map is already gone (the shape the restart
+    // leaves when it lost the map) is outside this fix: reap must not rewrite it.
+    const idle = svc.define({ name: 'Idle', nodes: [{ id: 'one', name: 'Planner', role: 'plan', prompt: 'Wait.' }], edges: [] })
+      .workflows.find(item => item.name === 'Idle')
+    const store = readStore(dir)
+    const lane = store.lanes[idle.id] ?? { active: [], queue: [], last: null, history: [] }
+    lane.active = [...(lane.active ?? []), {
+      id: 'run-bare',
+      workflowId: idle.id,
+      task: null,
+      status: 'running',
+      nodeStatus: {},
+      steps: 0,
+      stepBudget: 1,
+      failedOnce: {},
+      history: [],
+      startedAt: 5,
+      updatedAt: 6,
+    }]
+    store.lanes[idle.id] = lane
+    const written = JSON.stringify(store)
+    writeFileSync(join(dir, 'workflows.json'), written)
+
+    clock += 60_000
+    const after = persistent(dir, released, () => clock)
+    await after.reap()
+    assert.deepEqual(released, [])
+    const kept = after.state().workflows.find(item => item.id === quick.id).run
+    assert.equal(kept.status, 'done')
+    assert.equal(kept.updatedAt, finishedAt)
+    const bare = after.state().workflows.find(item => item.id === idle.id).run
+    assert.equal(bare.status, 'running')
+    assert.equal(bare.updatedAt, 6)
+    // Nothing to release means nothing is written: the file it loaded is intact.
+    assert.equal(readFileSync(join(dir, 'workflows.json'), 'utf8'), written)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the plugin load itself reaps a run the restart left running (#1388)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-reap-apply-'))
+  const released = []
+  const clock = () => 1_700_000_000_000
+  try {
+    const before = persistent(dir, released, clock)
+    const made = before.define({
+      name: 'Lane',
+      nodes: [{ id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' }],
+      edges: [],
+    }).workflows.find(item => item.name === 'Lane')
+    await before.runNamed({ workflow: 'Lane', brief: 'Ship the note' })
+    assert.equal(persistedRun(dir, made.id).status, 'running')
+
+    // Loading the plugin is where the abandoned run is recognised.
+    const fb = {
+      bot: {
+        list: () => roster,
+        async create() { return 'bot-1' },
+        async remove(id) { released.push(id); return true },
+        async send() { return { action: 'allow' } },
+      },
+      readOnly: () => false,
+      api: { handle() { return () => {} } },
+      tools: { register() { return () => {} } },
+      warn() {},
+    }
+    const loaded = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { dir })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.deepEqual(released, ['eph-plan'])
+    const run = loaded.service.state().workflows.find(item => item.id === made.id).run
+    assert.equal(run.status, 'failed')
+    assert.equal(run.ephemeral, undefined)
+    loaded.dispose()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

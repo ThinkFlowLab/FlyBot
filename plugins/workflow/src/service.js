@@ -921,16 +921,36 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     reap() {
       if (typeof release !== 'function') return Promise.resolve()
       const stale = []
-      for (const lane of Object.values(state.lanes)) {
+      const abandoned = []
+      for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
+        const seen = new Set()
         for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
-          if (!run.ephemeral) continue
-          if (run.status === 'running') continue
+          if (!run?.ephemeral || seen.has(run)) continue
+          seen.add(run)
+          // A run still marked running here was cut off with the host that ran it,
+          // and nothing resumes it: its instances are abandoned, not in progress.
+          // Release them and end the run, or they stay hidden with no way to remove
+          // them. A run that already ended keeps its own status (#1388).
+          if (run.status === 'running') {
+            abandoned.push({ workflowId, run })
+            continue
+          }
           stale.push(...Object.values(run.ephemeral))
           delete run.ephemeral
           delete run.handed
         }
       }
-      if (stale.length === 0) return Promise.resolve()
+      for (const { workflowId, run } of abandoned) {
+        stale.push(...Object.values(run.ephemeral))
+        const ended = { ...run, status: 'failed', updatedAt: now() }
+        delete ended.ephemeral
+        delete ended.handed
+        const lane = laneOf(workflowId)
+        lane.active = lane.active.filter(item => item.id !== run.id)
+        lane.last = ended
+        lane.history = [...lane.history, { task: ended.task, status: ended.status, at: ended.updatedAt }].slice(-20)
+      }
+      if (stale.length === 0 && abandoned.length === 0) return Promise.resolve()
       return releaseAll(stale, release, warn).then(() => { write() })
     },
     dispose() {
