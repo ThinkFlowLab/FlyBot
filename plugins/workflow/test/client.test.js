@@ -295,6 +295,9 @@ test('settings and the flowchart save a node prompt and a link on the same graph
   }
   const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
   await settle()
+  // Click Edit to enable inspector and edge form
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
   // Click the coder node to select it and open inspector
   const coderNode = findAll(settings.tree, node => node.props?.['data-node'] === 'coder')[0]
   assert.ok(coderNode, 'coder node should exist in canvas')
@@ -373,6 +376,9 @@ test('settings can add a loop edge and a condition edge', async () => {
     return { ok: true, workflows: [graph] }
   }
   const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  // Click Edit to enable edge form controls
+  button(settings.tree, 'Edit').props.onClick()
   await settle()
   const pick = (label) => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
   pick('Kind').props.onChange({ target: { value: 'loop' } })
