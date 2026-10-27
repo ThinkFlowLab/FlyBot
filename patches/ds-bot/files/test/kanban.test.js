@@ -31,7 +31,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     return platform[name]
   },
 })
-const { ARCHIVE_SHOWN, BoardView, KanbanDialog, boardColumns, boardTasksFor, boardRail, canMoveTask, columnTree, shortId, useBoardTasks } = module.exports
+const { ARCHIVE_SHOWN, UnifiedBoard, KanbanDialog, boardColumns, boardTasksFor, boardRail, canMoveTask, columnTree, shortId, useBoardTasks } = module.exports
 
 const expand = (node) => {
   if (Array.isArray(node)) return node.flatMap(expand)
@@ -85,10 +85,10 @@ test('columns follow the task state and a card carries id, priority and progress
   assert.equal(canMoveTask(roster, tasks[3]), false)
 })
 
-test('the board draws the three columns, nests the child, and moves only the owner\'s card', () => {
+test('the unified board draws the three columns and moves only the owner\'s card', () => {
   const moved = []
   const tree = expand({
-    type: BoardView,
+    type: UnifiedBoard,
     props: {
       roster,
       tasks: tasks.filter(item => item.ownerBotId === 's'),
@@ -109,8 +109,15 @@ test('the board draws the three columns, nests the child, and moves only the own
   assert.match(textOf(tree), /High/)
   assert.match(textOf(tree), /40%/)
   assert.match(textOf(tree), /Halfway/)
-  assert.match(textOf(tree), /Start task/)
-  assert.match(textOf(tree), /Complete task/)
+  // #1345: the removed board view printed "Start task"/"Complete task" over a column while a card
+  // was dragged.
+  // The one board draws no such hint (#1326) and the two strings now render nowhere, so the coverage
+  // kept here is the part that carried the behaviour: every column is still a drop target, and a
+  // drop stays a request the board\'s own onMove decides.
+  for (const column of byClass(tree, 'bt-board-column')) {
+    assert.equal(typeof column.props.onDrop, 'function', `column ${column.props['data-column']} takes a drop`)
+    assert.equal(typeof column.props.onDragOver, 'function')
+  }
   // A task card names its source and its identity on the one card model (#1265 step 1).
   const card = all(tree).find(node => node.props?.['data-task'] === 'task-abcdef123456')
   assert.equal(card.props['data-source'], 'task')
@@ -125,7 +132,7 @@ test('the board draws the three columns, nests the child, and moves only the own
   progress.props.onDrop({ preventDefault() {}, dataTransfer: { getData: () => 'task-abcdef123456' } })
   assert.deepEqual(moved[1], ['task-abcdef123456', 'in-progress'])
   const group = expand({
-    type: BoardView,
+    type: UnifiedBoard,
     props: {
       roster,
       tasks: [tasks[3]],
@@ -143,7 +150,7 @@ test('the board draws the three columns, nests the child, and moves only the own
   assert.equal(byClass(group, 'bt-board-card')[0].props.draggable, undefined)
 })
 
-test('a group column nests subtasks under the overall task', () => {
+test('a group board shows an overall task and its subtasks in their own columns', () => {
   const overall = task('task-aaaaaa111111', 'open', { title: 'Ship it', kind: 'group', ownerBotId: 'a', priority: 'high', updatedAt: 5 })
   const child = task('task-bbbbbb222222', 'open', { title: 'Write it', ownerBotId: 's', parentId: overall.id, parentTitle: 'Ship it', priority: 'urgent', updatedAt: 6 })
   const later = task('task-cccccc333333', 'working', { title: 'Check it', ownerBotId: 'b', ownerBotName: 'Other', parentId: overall.id, parentTitle: 'Ship it', progress: 10, updatedAt: 7 })
@@ -154,7 +161,7 @@ test('a group column nests subtasks under the overall task', () => {
   assert.equal(open.nests[0].children.map(item => item.id).join('|'), child.id)
   assert.equal(open.loose.map(item => item.id).join('|'), tasks[3].id)
   const tree = expand({
-    type: BoardView,
+    type: UnifiedBoard,
     props: {
       roster,
       tasks: [overall, child, later, tasks[3]],
@@ -169,8 +176,11 @@ test('a group column nests subtasks under the overall task', () => {
   assert.match(textOf(notStarted), /Group task/)
   assert.match(textOf(notStarted), /Ship it/)
   assert.match(textOf(notStarted), /Write it/)
-  assert.equal(all(notStarted).some(node => node.props?.['data-parent'] === overall.id), true)
-  assert.match(textOf(progress), /Part of Ship it/)
+  // #1345: the removed board view nested a subtask under its overall card (`data-parent`, "Part of X"). The one
+  // board draws every task card flat in the column its own state names (#1326), so the DOM no longer
+  // nests; the model still does (asserted above). Recorded, not silently dropped: #1358 tracks it.
+  assert.equal(all(tree).some(node => node.props?.['data-parent'] !== undefined), false)
+  assert.equal(textOf(notStarted).includes('Part of Ship it'), false)
   assert.match(textOf(progress), /Check it/)
   assert.match(textOf(notStarted), /Theirs/)
 })

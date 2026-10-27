@@ -134,31 +134,8 @@ function statusLabel(status) {
   }
 }
 
-function dropLabel(column) {
-  if (column === 'in-progress') return t('Start task')
-  if (column === 'done') return t('Complete task')
-  return t('Not started')
-}
-
-function columnTitle(column) {
-  if (column === 'in-progress') return t('In progress')
-  if (column === 'done') return t('Done')
-  return t('Not started')
-}
-
 function botName(roster, task) {
   return roster?.byId?.[task.ownerBotId]?.name || task.ownerBotName || ''
-}
-
-function lanesOf(tasks, roster) {
-  const order = []
-  const map = new Map()
-  for (const task of tasks) {
-    const id = task.ownerBotId ?? ''
-    if (!map.has(id)) { map.set(id, []); order.push(id) }
-    map.get(id).push(task)
-  }
-  return order.map(id => ({ id, name: botName(roster, map.get(id)[0]) || id, tasks: map.get(id) }))
 }
 
 const upsert = (list, task) => (list.some(item => item.id === task.id) ? list.map(item => item.id === task.id ? task : item) : [...list, task])
@@ -275,72 +252,6 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   })
 }
 
-function cardProps(task, roster, onMove, onDrag, partOf) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf }
-}
-
-function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
-  const tree = lanes ? columnTree(tasks) : null
-  const linked = tree ? tree.loose.filter(task => task.parentId || task.parentTitle) : []
-  const plain = tree ? tree.loose.filter(task => !task.parentId && !task.parentTitle) : tasks
-  return h('section', {
-    className: 'bt-board-column',
-    'data-column': column,
-    'aria-label': columnTitle(column),
-    onDragOver: (event) => { if (!dragging) return; event.preventDefault() },
-    onDrop: (event) => {
-      event.preventDefault()
-      const id = event.dataTransfer?.getData('text/plain')
-      if (id) onMove?.(id, column)
-      onDrag?.(null)
-    },
-  },
-  h('h3', { className: 'bt-board-column-head' },
-    h('span', null, columnTitle(column)),
-    h('span', { className: 'bt-board-count' }, String(tasks.length))),
-  dragging ? h('div', { className: 'bt-board-drop' }, dropLabel(column)) : null,
-  tasks.length === 0 && !dragging ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.')) : null,
-  tree ? tree.nests.map(nest => h('div', { key: nest.task.id, className: 'bt-board-nest' },
-    h(BoardCard, cardProps(nest.task, roster, onMove, onDrag)),
-    nest.children.map(child => h('div', { key: child.id, className: 'bt-board-subtask', 'data-parent': nest.task.id },
-      h(BoardCard, cardProps(child, roster, onMove, onDrag)))))) : null,
-  linked.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || '') })),
-  lanes
-    ? lanesOf(plain, roster).map(lane => h('div', { key: lane.id, className: 'bt-board-lane' },
-        h('span', { className: 'bt-board-lane-name' }, lane.name),
-        lane.tasks.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))))
-    : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) })))
-}
-
-export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const columns = boardColumns(tasks)
-  const lanes = scope?.kind === 'group'
-  const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
-  const selectedRoom = scope?.kind === 'group' ? scope.roomId : ''
-  return h('div', { className: 'bt-board-body' },
-    h('aside', { className: 'bt-board-rail', 'aria-label': t('Task board') },
-      h('h3', { className: 'bt-board-rail-head' }, t('Your Bots')),
-      rail.bots.length === 0 ? h('p', { className: 'bt-board-empty' }, t('No tasks yet.')) : rail.bots.map(row => {
-        const count = counts?.[row.id] ?? { done: 0, total: 0 }
-        return h(RailButton, {
-          key: row.id, row, selected: row.id === selectedBot, onSelect,
-          meta: count.total > 0 ? t('{done}/{total}', { done: count.done, total: count.total }) : '',
-        })
-      }),
-      rail.groups.length > 0 ? h('h3', { className: 'bt-board-rail-head' }, t('Groups you admin')) : null,
-      rail.groups.map(row => h(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))),
-    h('div', { className: 'bt-board-main' },
-      error ? h('p', { className: 'bt-board-error', role: 'alert' }, error) : null,
-      lanes ? h('p', { className: 'bt-board-hint' }, t('Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.')) : null,
-      scope?.kind === 'bot' && onCreate ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
-        h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
-        h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
-      h('div', { className: 'bt-board-columns' },
-        ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
-          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag,
-        })))))
-}
-
 export function KanbanRow({ wide, useUi, actions }) {
   const open = useUi ? useUi(value => Boolean(value.board)) : false
   const label = t('Tasks')
@@ -360,7 +271,7 @@ function scopeName(roster, scope) {
 
 // #1326: one board that shows both task cards and delivery cards together, no tab split.
 // Columns come from workflow definitions; task cards map into the same columns as delivery cards.
-function UnifiedBoard({ roster, tasks, rail, scope, counts, dragging, error, draft, actions, onDraft, onSelect, onMove, onDrag, onCreate }) {
+export function UnifiedBoard({ roster, tasks, rail, scope, counts, dragging, error, draft, actions, onDraft, onSelect, onMove, onDrag, onCreate }) {
   const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
   const selectedRoom = scope?.kind === 'group' ? scope.roomId : ''
   const lanes = scope?.kind === 'group'
