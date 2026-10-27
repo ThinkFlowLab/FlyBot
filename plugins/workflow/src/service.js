@@ -214,11 +214,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function primaryRun(id) {
     const live = runningOf(laneOf(id))
     if (live.length > 0) return live[0]
-    // Replay moves the script. A finished live run stays on the stage until
-    // that script is the one being stepped.
-    if (state.demoOnTop?.[id] === true && state.demos[id]) return state.demos[id]
+    // A finished lane.last stays up until Replay. demoStep marks the script
+    // as the run on stage; otherwise the graph stays on that finished lane
+    // while the canned lines append to the demo.
+    const demo = state.demos[id]
+    if (state.demoOnTop?.[id] === true && demo) return demo
     if (laneOf(id).last) return laneOf(id).last
-    return state.demos[id] ?? null
+    return demo ?? null
   }
 
   function storeRun(workflowId, run) {

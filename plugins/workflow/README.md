@@ -42,7 +42,7 @@ The delivery template passes `task` → `plan` → `copy` → `patch`, then `rev
 
 An edge may be a condition or a loop. A condition is `when: { output, eq }` on the edge out of the node that produced `output`. The edge is taken only when that output equals `eq`. `when: { else: true }` is the other branch, taken when no `eq` edge matched. A node that no taken edge reaches is skipped. A later join starts once every incoming edge is either taken and done, or skipped.
 
-A loop is `loop: true` on the edge that returns to the body, with `max` from 1 to 8 (default 3) and an optional `until: { output, eq }`. The body runs again while `until` does not match and the run count is still under `max`. The forward edges wait until the loop stops. A loop is the only cycle the graph allows. Settings → Workflow graphs can add a link, a condition, or a loop. Replay keeps showing a finished live run until you step the demo script; the next replay step is the script.
+A loop is `loop: true` on the edge that returns to the body, with `max` from 1 to 8 (default 3) and an optional `until: { output, eq }`. The body runs again while `until` does not match and the run count is still under `max`. The forward edges wait until the loop stops. A loop is the only cycle the graph allows. Settings → Workflow graphs can add a link, a condition, or a loop. Replay keeps showing a finished live run until you step the demo script; the next replay step is the script, and the graph's node status moves with it.
 
 ## When a step does not land
 
@@ -89,6 +89,6 @@ Workflow 是一组本地 Bot 的群聊式运行。侧栏打开同一次运行：
 
 每个节点最多声明 8 个输入和 8 个输出，名字为小写字母开头的短名。必填输入必须由上游同名输出提供；根节点可以用 `task`、`title` 或 `brief`。没有提供者时，运行拒绝开始。Bot 用 `OUTPUT 名字: 值` 交回输出；只声明一个输出时，回复正文即可。
 
-边可以是条件或循环。条件是 `when: { output, eq }`，只有该输出等于 `eq` 才走这条边；`when: { else: true }` 是其余分支。没被选中的节点标为跳过，汇合节点不因此卡住。循环边是 `loop: true`，`max` 为 1 到 8（默认 3），可选 `until: { output, eq }`。在达到 `max` 或 `until` 命中之前，循环体再跑一遍，正向的边先等着。只有循环边可以成环。设置页可以添加连线、条件或循环。真实运行结束后，舞台仍显示那次运行，直到重放演示再走一步，之后显示的是演示脚本。
+边可以是条件或循环。条件是 `when: { output, eq }`，只有该输出等于 `eq` 才走这条边；`when: { else: true }` 是其余分支。没被选中的节点标为跳过，汇合节点不因此卡住。循环边是 `loop: true`，`max` 为 1 到 8（默认 3），可选 `until: { output, eq }`。在达到 `max` 或 `until` 命中之前，循环体再跑一遍，正向的边先等着。只有循环边可以成环。设置页可以添加连线、条件或循环。真实运行结束后，舞台仍显示那次运行，直到重放演示再走一步，之后显示的是演示脚本，节点状态跟着演示走。
 
 派发没有送达（例如没有 Main 可发送，`no-sender`）不会记成已交接。聊天里写明原因，节点保持运行，下一次交接再发送。同一次交接里不会连发，避免把 429 打成一串。这次运行和它的 Bot 会留到这一步被接受、运行因别的原因失败，或被重置。回复是「could not answer your message」或「model call failed」时，该节点失败且不自动连试，后续节点不开始。成功回复里提到 429 或 rate limit 不会让节点失败。

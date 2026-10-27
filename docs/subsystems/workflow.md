@@ -55,7 +55,7 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 9. The browser draws text only. Names and messages are React text children. The unit renderer asserts a hostile name is not markup.
 10. `enabled: false` registers no endpoint, tool or listener and writes nothing.
 11. A sidebar click opens the stage or a dialog and leaves the Workflows section in place. The stage and the dialogs portal onto `document.body`. When that container is missing they stay in the section tree; the click does not throw.
-12. A node's prompt and the graph are one record. Settings → Workflow graphs, the flowchart's prompt fields, and `define_workflow` all write `workflow/graph`. A run reads that record; it does not define it. Replay steps the seeded script. After a live run has finished, the stage keeps that run until Replay steps the script, and then the script is what the stage shows.
+12. A node's prompt and the graph are one record. Settings → Workflow graphs, the flowchart's prompt fields, and `define_workflow` all write `workflow/graph`. A run reads that record; it does not define it. Replay steps the seeded script. After a live run has finished, the stage keeps that run until Replay steps the script. From that step on, the stage shows the demo, including its `nodeStatus`, ahead of the finished `lane.last`. A running live lane still wins. A migrated finished script is the same: it stays done until Replay, and then the presented nodes follow the demo.
 
 ## Tests
 
