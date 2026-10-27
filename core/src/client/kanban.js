@@ -358,10 +358,36 @@ function scopeName(roster, scope) {
   return ''
 }
 
+// #1326: one board that shows both task cards and delivery cards together, no tab split.
+// Columns come from workflow definitions; task cards map into the same columns as delivery cards.
+function UnifiedBoard({ roster, tasks, rail, scope, counts, dragging, error, draft, actions, onDraft, onSelect, onMove, onDrag, onCreate }) {
+  const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
+  const selectedRoom = scope?.kind === 'group' ? scope.roomId : ''
+  const lanes = scope?.kind === 'group'
+  return h('div', { className: 'bt-board-body' },
+    h('aside', { className: 'bt-board-rail', 'aria-label': t('Task board') },
+      h('h3', { className: 'bt-board-rail-head' }, t('Your Bots')),
+      rail.bots.length === 0 ? h('p', { className: 'bt-board-empty' }, t('No tasks yet.')) : rail.bots.map(row => {
+        const count = counts?.[row.id] ?? { done: 0, total: 0 }
+        return h(RailButton, {
+          key: row.id, row, selected: row.id === selectedBot, onSelect,
+          meta: count.total > 0 ? t('{done}/{total}', { done: count.done, total: count.total }) : '',
+        })
+      }),
+      rail.groups.length > 0 ? h('h3', { className: 'bt-board-rail-head' }, t('Groups you admin')) : null,
+      rail.groups.map(row => h(RailButton, { key: row.id, row, selected: row.id === selectedRoom, onSelect }))),
+    h('div', { className: 'bt-board-main' },
+      scope?.kind === 'bot' && onCreate ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
+        h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
+        h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
+      error ? h('p', { className: 'bt-board-error', role: 'alert' }, error) : null,
+      lanes ? h('p', { className: 'bt-board-hint' }, t('Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.')) : null,
+      h(DeliveryView, { actions, tasks, roster, dragging, onMove, onDrag })))
+}
+
 export function KanbanDialog({ roster, actions, leaving = false }) {
-  // Two views on one surface: the per-Bot task board (#1058) and the repository's delivery
-  // board (#1173). Delivery is repo-wide, so its rail would be a lie — it is not rendered.
-  const [view, setView] = useState('tasks')
+  // One board (#1326): task cards and delivery cards together, no tab split. The rail is per-Bot
+  // for task scope; delivery is repo-wide and reads from actions.deliveryBoard.
   const rail = boardRail(roster)
   const [scope, setScope] = useState(() => (rail.bots[0] ? { kind: 'bot', botId: rail.bots[0].id } : rail.groups[0] ? { kind: 'group', roomId: rail.groups[0].id } : null))
   const [dragging, setDragging] = useState(null)
@@ -405,19 +431,14 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     h('div', { className: 'bt-scrim', onClick: close }),
     h('div', { className: 'bt-mem bt-board', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'bt-board-heading' },
       h('div', { className: 'bt-mem-head' },
-        h('h2', { id: 'bt-board-heading' }, view === 'delivery' ? t('Delivery') : t('Tasks')),
-        h('div', { className: 'bt-board-views', role: 'tablist', 'aria-label': t('Board view') },
-          h('button', { type: 'button', role: 'tab', className: 'bt-soft bt-soft-sm', 'data-view': 'tasks', 'aria-selected': view === 'tasks' ? 'true' : 'false', onClick: () => setView('tasks') }, t('Tasks')),
-          h('button', { type: 'button', role: 'tab', className: 'bt-soft bt-soft-sm', 'data-view': 'delivery', 'aria-selected': view === 'delivery' ? 'true' : 'false', onClick: () => setView('delivery') }, t('Delivery'))),
-        view === 'tasks' ? h('span', { className: 'bt-mem-status' }, name) : null,
+        h('h2', { id: 'bt-board-heading' }, t('Board')),
+        h('span', { className: 'bt-mem-status' }, name),
         h('span', { className: 'bt-mem-head-gap' }),
-        h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close tasks'), autoFocus: true, onClick: close }, h(CloseIcon))),
-      view === 'delivery'
-        ? h(DeliveryView, { actions })
-        : h(BoardView, {
-            roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft,
-            onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
-          })))
+        h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
+      h(UnifiedBoard, {
+        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, actions,
+        onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
+      })))
 }
 
 export const KANBAN_CSS = `

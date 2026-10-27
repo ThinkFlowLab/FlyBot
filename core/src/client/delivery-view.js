@@ -6,11 +6,15 @@
 // `loading` counts the seconds, `failed` names the endpoint, the status and what to do about it,
 // `stale` keeps the old board and hangs the reason beside it, `partial` says which part was not
 // read. The poll is fast while a round is running (2 s) and slow once there is something to read.
+//
+// #1326: One board that shows both task cards and delivery cards together, columns from workflow
+// definitions, filters for stages with column:false (review, done-today).
 import { createElement as h, useEffect, useState } from 'react'
 import { t } from './i18n.js'
+import { columnOf } from '../shared/task-board.js'
 import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
 import { githubCard } from '../shared/board-card.js'
-import { BoardCard, DELIVERY_SKIN } from './board-card.js'
+import { BoardCard, DELIVERY_SKIN, TASK_SKIN } from './board-card.js'
 
 const POLL_MS = 60_000
 // While the host is still building there is nothing to see, so ask often; once the board is up,
@@ -32,12 +36,12 @@ export function pollDelay(state, payload = null, now = Date.now()) {
   return POLL_MS
 }
 
+// #1326: Columns from workflow definitions. The three visible stages of repo-dev.
+// Stages with column:false (review, done-today) are filters, not columns.
 export const DELIVERY_COLUMNS = [
-  { id: 'raw', label: 'Original issue' },
-  { id: 'ready', label: 'Ready to start' },
-  { id: 'working', label: 'In progress' },
-  { id: 'review', label: 'In review' },
-  { id: 'done-today', label: 'Done today' },
+  { id: 'not-started', label: 'Not started' },
+  { id: 'in-progress', label: 'In progress' },
+  { id: 'done', label: 'Done' },
 ]
 
 // The columns to draw for one payload, in one place (#1265 step 4). The snapshot names which
@@ -67,6 +71,84 @@ const BADGES = {
 }
 
 export const badgeLabel = (badge) => (badge ? t(BADGES[badge] ?? badge) : '')
+
+// #1326: Task cards in workflow columns. Task status maps to column: open/claimed → not-started,
+// working/blocked/result-ready → in-progress, accepted/cancelled/failed → done.
+function taskColumnOf(task) {
+  const col = columnOf(task)
+  if (col === 'not-started') return 'not-started'
+  if (col === 'in-progress') return 'in-progress'
+  return 'done'
+}
+
+// A task on the one board reads through the same card a delivery card does (#1265 step 1, #1326):
+// one identity line, one title, and the Bot that has it — only the source differs.
+const priorityLabel = (priority) => t(priority === 'urgent' ? 'Highest' : priority === 'high' ? 'High' : 'Low')
+const taskShortId = (id) => `#${String(id ?? '').replace('task-', '').slice(-6)}`
+function taskCardModel(task, roster) {
+  return {
+    source: 'task',
+    key: `task:${task?.id}`,
+    title: task?.title ?? '',
+    owner: roster?.byId?.[task?.ownerBotId]?.name ?? null,
+    ownerKind: 'bot',
+  }
+}
+
+// A column takes a card dropped on it, and the board's own `onMove` decides whether that move is
+// allowed — the drop is a request, never a write from the client (#1326).
+const dropProps = (column, { dragging, onMove, onDrag }) => ({
+  onDragOver: (event) => { if (!dragging) return; event.preventDefault() },
+  onDrop: (event) => {
+    event.preventDefault()
+    const id = event.dataTransfer?.getData('text/plain') ?? ''
+    if (id) onMove?.(id, column)
+    onDrag?.(null)
+  },
+})
+
+const taskCardNode = (task, { roster, onMove, onDrag }) => h(BoardCard, {
+  key: task.id,
+  card: taskCardModel(task, roster),
+  skin: TASK_SKIN,
+  attrs: { 'data-task': task.id },
+  idText: taskShortId(task.id),
+  topExtra: task.priority && task.priority !== 'normal'
+    ? h('span', { className: 'bt-board-priority', 'data-priority': task.priority }, priorityLabel(task.priority))
+    : null,
+  draggable: Boolean(onMove),
+  dragValue: task.id,
+  onDragStart: () => onDrag?.(task.id),
+  onDragEnd: () => onDrag?.(null),
+})
+
+// Simplified task column renderer for degraded states (no GitHub snapshot).
+function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onDrag = null }) {
+  const columns = { 'not-started': [], 'in-progress': [], 'done': [] }
+  for (const task of tasks ?? []) {
+    const col = taskColumnOf(task)
+    if (columns[col]) columns[col].push(task)
+  }
+  const columnTitles = {
+    'not-started': t('Not started'),
+    'in-progress': t('In progress'),
+    'done': t('Done'),
+  }
+  return h('div', { className: 'bt-board-columns' },
+    ['not-started', 'in-progress', 'done'].map(column => h('section', {
+      key: column,
+      className: 'bt-board-column',
+      'data-column': column,
+      'aria-label': columnTitles[column],
+      ...dropProps(column, { dragging, onMove, onDrag }),
+    },
+    h('h3', { className: 'bt-board-column-head' },
+      h('span', null, columnTitles[column]),
+      h('span', { className: 'bt-board-count' }, String(columns[column].length))),
+    columns[column].length === 0
+      ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.'))
+      : columns[column].map(task => taskCardNode(task, { roster, onMove, onDrag })))))
+}
 
 export function duration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return '—'
@@ -357,28 +439,75 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
       onProbe ? h(Diagnose, { onProbe }) : null))
 }
 
-// One repository's columns (#1265 step 4). The card key carries the repository, so the same issue
-// number in two repositories is two cards and neither is mistaken for the other.
-function DeliveryColumns({ view, repo = null, placed = null }) {
+// #1326: the stages a definition draws no column for — a review, today's finished cards — are
+// filters, not lanes. A filter narrows which cards a column shows; it never reorders the columns, and
+// one board keeps one set of them.
+const BOARD_FILTERS = ['all', 'review', 'done-today']
+function BoardFilters({ filter, onFilter }) {
+  return h('div', { className: 'bt-del-filters', role: 'group', 'aria-label': t('Filter') },
+    BOARD_FILTERS.map(id => h('button', {
+      key: id,
+      type: 'button',
+      className: 'bt-soft bt-soft-sm',
+      'data-filter': id,
+      'aria-pressed': filter === id ? 'true' : 'false',
+      onClick: () => onFilter(id),
+    }, id === 'all' ? t('All') : id === 'review' ? t('Review') : t('Done today'))))
+}
+
+const stageOf = (card, column) => card?.stage ?? column
+const matchesFilter = (card, column, filter) => filter === 'all' || stageOf(card, column) === filter
+
+// One repository's columns (#1265 step 4, #1326). Task cards and delivery cards together.
+function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter = 'all', roster = null, dragging = null, onMove = null, onDrag = null }) {
   const columns = view?.columns ?? {}
   // A card a workflow section already draws is not drawn again here (#1272 step 3): the section owns
   // it, and the five legacy columns keep every card that names no workflow.
   const drawn = placed === null || placed === undefined ? null : new Set(placed)
-  const cards = (id) => (columns[id] ?? []).filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ''}#${card.kind}${card.number}`))
+  const deliveryCards = (id) => (columns[id] ?? [])
+    .filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ''}#${card.kind}${card.number}`))
+    .filter((card) => matchesFilter(card, id, filter))
+  
+  // #1326: Task cards map into the same columns. Map task column to delivery column.
+  const tasksByColumn = { 'not-started': [], 'in-progress': [], 'done': [] }
+  // A task card names no review or done-today stage, so a stage filter narrows it away rather than
+  // moving it to a lane it never named (#1326).
+  for (const task of filter === 'all' ? tasks ?? [] : []) {
+    const col = taskColumnOf(task)
+    if (tasksByColumn[col]) tasksByColumn[col].push(task)
+  }
+  
+  const allCards = (id) => {
+    const delivery = deliveryCards(id)
+    const taskList = tasksByColumn[id] ?? []
+    return [...taskList, ...delivery]
+  }
+  
+  // The two kinds share these columns, so which one a card is has to come from where it was read,
+  // never from guessing at its fields.
+  const taskIds = new Set((tasks ?? []).map(task => task?.id))
+  const isTask = (item) => taskIds.has(item?.id)
+  
   return h('div', { className: 'bt-del-columns' },
-    stagesOf(view).map(column => h('section', { key: column.id, className: 'bt-del-column', 'data-column': column.id },
+    stagesOf(view).map(column => h('section', {
+      key: column.id, className: 'bt-del-column', 'data-column': column.id,
+      ...dropProps(column.id, { dragging, onMove, onDrag }),
+    },
       h('h3', { className: 'bt-board-column-head' },
         h('span', null, t(column.label)),
-        h('span', { className: 'bt-board-count' }, String(cards(column.id).length))),
-      cards(column.id).length === 0
+        h('span', { className: 'bt-board-count' }, String(allCards(column.id).length))),
+      allCards(column.id).length === 0
         ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-        : cards(column.id).map(card => h(DeliveryCard, { key: `${repo ?? ''}-${card.kind}-${card.number}`, card, repo })))))
+        : allCards(column.id).map(item => 
+            isTask(item)
+              ? taskCardNode(item, { roster, onMove, onDrag })
+              : h(DeliveryCard, { key: `${repo ?? ''}-${item.kind}-${item.number}`, card: item, repo })))))
 }
 
 // The columns a workflow definition draws (#1272 step 3, acceptance 1 and 2): one block per workflow,
 // the columns in the definition's own order, and every header naming the workflow it belongs to — so
 // two workflows never share a column and a reader can always tell whose column it is.
-function DeliveryWorkflowSections({ sections, repo = null }) {
+function DeliveryWorkflowSections({ sections, repo = null, filter = 'all' }) {
   const list = Array.isArray(sections) ? sections : []
   if (list.length === 0) return null
   return h('div', { className: 'bt-del-workflows' }, list.map(section => h('section', {
@@ -387,16 +516,19 @@ function DeliveryWorkflowSections({ sections, repo = null }) {
   h('h3', { className: 'bt-del-workflow-name' },
     h('span', null, section.name),
     h('span', { className: 'bt-wf-path' }, `workflows/${section.id}.json`)),
-  h('div', { className: 'bt-del-columns' }, section.columns.map(column => h('section', {
-    key: column.id, className: 'bt-del-column', 'data-column': column.id, 'data-workflow': section.id,
-  },
-  h('h4', { className: 'bt-board-column-head' },
-    h('span', null, column.label),
-    h('span', { className: 'bt-del-workflow-tag' }, section.name),
-    h('span', { className: 'bt-board-count' }, String(column.cards.length))),
-  column.cards.length === 0
-    ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-    : column.cards.map(card => h(DeliveryCard, { key: `${section.id}-${repo ?? card.repo ?? ''}-${card.kind}-${card.number}`, card, repo: repo ?? card.repo ?? null }))))),
+  h('div', { className: 'bt-del-columns' }, section.columns.map(column => {
+    const cards = column.cards.filter(card => matchesFilter(card, column.id, filter))
+    return h('section', {
+      key: column.id, className: 'bt-del-column', 'data-column': column.id, 'data-workflow': section.id,
+    },
+    h('h4', { className: 'bt-board-column-head' },
+      h('span', null, column.label),
+      h('span', { className: 'bt-del-workflow-tag' }, section.name),
+      h('span', { className: 'bt-board-count' }, String(cards.length))),
+    cards.length === 0
+      ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
+      : cards.map(card => h(DeliveryCard, { key: `${section.id}-${repo ?? card.repo ?? ''}-${card.kind}-${card.number}`, card, repo: repo ?? card.repo ?? null })))
+  })),
   (section.unplaced ?? []).length > 0
     ? h('p', { className: 'bt-del-hint' }, t('{count} card(s) name a node this workflow draws no column for.', { count: section.unplaced.length }))
     : null)))
@@ -404,7 +536,7 @@ function DeliveryWorkflowSections({ sections, repo = null }) {
 
 // A repository that cannot be read keeps its block and says so; the readable ones are drawn beside
 // it, which is why one failure no longer empties the board (#1265, #1211).
-function DeliveryRepoBlock({ entry }) {
+function DeliveryRepoBlock({ entry, filter = 'all' }) {
   const state = entry?.state ?? 'fresh'
   const source = repoSourceText(entry?.repoSource)
   return h('section', { className: 'bt-del-repo-block', 'data-repo': entry?.repo ?? undefined, 'data-state': state },
@@ -414,10 +546,10 @@ function DeliveryRepoBlock({ entry }) {
       ? h('p', { className: 'bt-del-block-state', role: 'status' },
         state === 'loading' ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t('The delivery board is not ready yet.')),
         entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : '')
-      : h(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed }))
+      : h(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, filter }))
 }
 
-export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRetry = null, onProbe = null }) {
+export function DeliveryBoard({ view, snapshot, message = '', repo = null, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, onRetry = null, onProbe = null }) {
   const payload = view ?? (snapshot ? { ...snapshot, state: 'fresh' } : { state: 'idle' })
   const state = payload.state ?? 'fresh'
   // The countdown promises a number that moves, so the screen redraws once a second while a retry
@@ -433,17 +565,25 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
     return () => clearInterval(timer)
   }, [ticking, retryAt])
   const countdown = retryCountdown(payload.retryAt, now)
+  // The filter is view state: it narrows which cards the columns show and never reorders them (#1326).
+  const [filter, setFilter] = useState('all')
   // More than one repository is one block per repository; exactly one is today's single board.
   const entries = Array.isArray(payload.repos) && payload.repos.length > 1 ? payload.repos : null
   // "No snapshot yet." belongs to a host that has never tried; every attempt has a better word.
+  // #1326: Task cards still render when delivery fails.
+  const hasTasks = Array.isArray(tasks) && tasks.length > 0
   if (state === 'idle') {
-    return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
+    return h('div', { className: 'bt-del-body', 'data-view': 'board', 'data-state': state },
+      h(BoardFilters, { filter, onFilter: setFilter }),
+      hasTasks ? h(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
       message
         ? h('p', { className: 'bt-board-error', role: 'alert' }, message)
         : h('p', { className: 'bt-board-empty' }, t('No snapshot yet.')))
   }
   if (state === 'loading') {
-    return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
+    return h('div', { className: 'bt-del-body', 'data-view': 'board', 'data-state': state },
+      h(BoardFilters, { filter, onFilter: setFilter }),
+      hasTasks ? h(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
       h('p', { className: 'bt-del-loading', role: 'status' }, loadingText(payload.elapsedMs)),
       h('p', { className: 'bt-del-hint' }, t('The first round reads the repository once; the columns appear as soon as it lands.')))
   }
@@ -452,7 +592,9 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
   const hasBoard = Boolean(payload.columns) || (entries !== null && entries.some(entry => entry.columns !== undefined))
   if (state === 'failed' || !hasBoard) {
     const error = payload.error ?? null
-    return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
+    return h('div', { className: 'bt-del-body', 'data-view': 'board', 'data-state': state },
+      h(BoardFilters, { filter, onFilter: setFilter }),
+      hasTasks ? h(TaskColumns, { tasks, roster, dragging, onMove, onDrag }) : null,
       h('div', { className: 'bt-board-error', role: 'alert' },
         h('p', null, String(error?.message ?? message ?? t('The delivery board is not ready yet.'))),
         error ? h('p', { className: 'bt-del-hint' }, hintFor(error, { repo })) : null,
@@ -463,7 +605,8 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
         onRetry ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-del-retry', onClick: onRetry }, t('Retry')) : null))
   }
   const missing = payload.missing ?? []
-  return h('div', { className: 'bt-del-body', 'data-view': 'delivery', 'data-state': state },
+  return h('div', { className: 'bt-del-body', 'data-view': 'board', 'data-state': state },
+    h(BoardFilters, { filter, onFilter: setFilter }),
     message ? h('p', { className: 'bt-board-error', role: 'alert' }, message) : null,
     state === 'stale' && payload.error
       ? h('p', { className: 'bt-del-stale', role: 'status' }, staleText(payload.asOf, payload.error),
@@ -477,19 +620,24 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
     // A workflow's own columns come first: a card that names a workflow is drawn there and not in
     // the five columns below, which keep every card that names none (#1272 step 3).
     entries === null
-      ? h(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null })
+      ? h(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null, filter })
       : null,
     entries === null
-      ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed })
+      ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag })
       : h('div', { className: 'bt-del-repos' },
-        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry }))))
+        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry, filter }))))
 }
 
-export function DeliveryView({ actions }) {
+export function DeliveryView({ actions, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null }) {
   const [view, retry] = useDeliveryBoard(actions)
   return h(DeliveryBoard, {
     view,
     repo: view?.repo ?? null,
+    tasks,
+    roster,
+    dragging,
+    onMove,
+    onDrag,
     onRetry: actions?.deliveryBoard ? retry : null,
     onProbe: actions?.deliveryProbe ? () => actions.deliveryProbe() : null,
   })
@@ -502,7 +650,7 @@ export function DeliveryCard({ card, repo = null }) {
   return h(BoardCard, {
     card: model,
     skin: DELIVERY_SKIN,
-    attrs: { 'data-kind': card?.kind, 'data-number': card?.number, 'data-badge': card?.badge ?? undefined },
+    attrs: { 'data-kind': card?.kind, 'data-number': card?.number, 'data-badge': card?.badge ?? undefined, 'data-stage': card?.stage ?? undefined },
     idText: `#${card?.number ?? '?'}`,
     badge: badgeLabel(card?.badge),
   })
@@ -525,6 +673,8 @@ export const DELIVERY_CSS = `
 .bt-del-diag{display:inline-flex;position:relative}
 .bt-del-diag-box{position:absolute;top:100%;left:0;z-index:3;display:flex;flex-direction:column;gap:6px;padding:8px;border:.5px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card,var(--bt-main));min-width:320px}
 .bt-del-diag-text{margin:0;font-size:11px;line-height:15px;white-space:pre-wrap;word-break:break-all;color:var(--bt-ink-2);max-height:220px;overflow:auto}
+.bt-del-filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bt-del-filters .bt-soft[aria-pressed=true]{border-color:var(--bt-accent);color:var(--bt-accent);background:color-mix(in srgb,var(--bt-accent) 10%,transparent)}
 .bt-del-columns{flex:1 1 auto;min-height:0;display:flex;gap:10px;overflow:auto}
 .bt-del-column{flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;background:var(--bt-hover);overflow:auto}
 .bt-del-repos{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:auto}

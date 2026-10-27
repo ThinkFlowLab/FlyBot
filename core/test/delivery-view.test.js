@@ -143,8 +143,25 @@ const snapshot = {
   },
 }
 
-test('five delivery columns, localized labels, badge wording (#1173)', () => {
-  assert.deepEqual([...DELIVERY_COLUMNS.map(column => column.id)], ['raw', 'ready', 'working', 'review', 'done-today'])
+// #1326: the host draws the definition's three lanes; `review` and `done-today` are stages a card
+// carries, not lanes of their own.
+const threeLane = {
+  ...snapshot,
+  columns: {
+    'not-started': [
+      { kind: 'issue', number: 10, title: 'Untriaged', labels: ['bug'], url: 'https://x/10', owner: null },
+      { kind: 'issue', number: 11, title: 'Ready', labels: ['agent-ready'], url: 'https://x/11', owner: 'Dev' },
+    ],
+    'in-progress': [
+      { kind: 'issue', number: 12, title: 'Working', labels: ['agent-working'], url: 'https://x/12', linked: 41 },
+      { kind: 'pr', number: 41, title: 'Fix', labels: [], url: 'https://x/41', badge: 'inc', sha: 'abcdef1', stage: 'review' },
+    ],
+    done: [{ kind: 'pr', number: 40, title: 'Merged', labels: [], url: 'https://x/40', stage: 'done-today' }],
+  },
+}
+
+test('three delivery columns, localized labels, badge wording (#1173, #1326)', () => {
+  assert.deepEqual([...DELIVERY_COLUMNS.map(column => column.id)], ['not-started', 'in-progress', 'done'])
   assert.equal(badgeLabel('inc'), 'INC · rework')
   assert.equal(badgeLabel('pass-enqueue'), 'PASS · waiting for enqueue')
   assert.equal(badgeLabel('pass-merge'), 'PASS · waiting for merge')
@@ -645,13 +662,60 @@ const repoSample = (repo, extra = {}) => ({
   ...extra,
 })
 
-test('the visible columns come from the payload through one entry point (#1265)', () => {
-  assert.equal(stagesOf({ columns: snapshot.columns }).map(column => column.id).join('|'), DELIVERY_COLUMNS.map(column => column.id).join('|'))
-  // The snapshot says which columns exist; a definition that ships three draws three, not five.
-  assert.equal(stagesOf({ columns: { raw: [], working: [], 'done-today': [] } }).map(column => column.id).join('|'), 'raw|working|done-today')
+test('the visible columns come from the payload through one entry point (#1265, #1326)', () => {
+  // The payload names the columns it has; the default is the definition's three lanes.
+  assert.equal(stagesOf({ columns: threeLane.columns }).map(column => column.id).join('|'), 'not-started|in-progress|done')
   // An id this build has no label for still renders under its own id rather than disappearing.
   assert.equal(stagesOf({ columns: { review: [], triage: [] } }).map(column => column.id).join('|'), 'review|triage')
   assert.equal(stagesOf({}).map(column => column.id).join('|'), DELIVERY_COLUMNS.map(column => column.id).join('|'))
+})
+
+test('#1326: the stages that draw no lane are filters, and a filter narrows without reordering', () => {
+  const board = mount(DeliveryBoard, { snapshot: threeLane, message: '' })
+  // The definition ships three lanes; review and done-today are stages, so no fourth or fifth lane.
+  const lanes = (tree) => walk(tree).filter(node => node.type === 'section' && node.props?.['data-column']).map(node => node.props['data-column'])
+  assert.deepEqual(lanes(board.draw()), ['not-started', 'in-progress', 'done'])
+  const bar = walk(board.draw()).find(node => node.props?.className === 'bt-del-filters')
+  assert.ok(bar, 'the board draws one filter bar')
+  const filterButtons = walk(bar).filter(node => node.type === 'button')
+  assert.deepEqual(filterButtons.map(node => node.props['data-filter']), ['all', 'review', 'done-today'])
+  assert.deepEqual(filterButtons.map(node => node.props['aria-pressed']), ['true', 'false', 'false'])
+  // A finished card keeps the stage it came with, so a stage assertion needs no fifth lane.
+  const done = walk(board.draw()).find(node => node.type === 'section' && node.props?.['data-column'] === 'done')
+  assert.equal(walk(done).some(node => node.props?.['data-stage'] === 'done-today'), true)
+  // Pressing a filter narrows the cards and leaves the columns in their order.
+  filterButtons[1].props.onClick()
+  const reviewOnly = board.draw()
+  assert.deepEqual(lanes(reviewOnly), ['not-started', 'in-progress', 'done'])
+  const pressed = walk(reviewOnly).find(node => node.props?.className === 'bt-del-filters')
+  assert.deepEqual(walk(pressed).filter(node => node.type === 'button').map(node => node.props['aria-pressed']), ['false', 'true', 'false'])
+  const shown = walk(reviewOnly).filter(node => node.type === 'section' && node.props?.['data-column']).map(node => walk(node).filter(item => item.props?.['data-number']).map(item => item.props['data-number']))
+  assert.deepEqual(shown, [[], [41], []])
+})
+
+test('#1326: a task card is the shared card, and a drop only asks the board to move it', () => {
+  const moved = []
+  const board = mount(DeliveryBoard, {
+    view: { ...threeLane, state: 'fresh' },
+    tasks: [{ id: 'task-abc123456', title: 'Draft the note', status: 'working', ownerBotId: 's', column: 'in-progress', priority: 'high' }],
+    roster: { byId: { s: { name: 'Writer' } } },
+    dragging: 'task-abc123456',
+    onMove: (id, column) => moved.push([id, column]),
+    onDrag: (id) => moved.push(['drag', id]),
+  })
+  const tree = board.draw()
+  const card = walk(tree).find(node => node.props?.['data-task'] === 'task-abc123456')
+  assert.equal(card.props['data-source'], 'task')
+  assert.equal(card.props['data-key'], 'task:task-abc123456')
+  assert.match(text(card), /Draft the note/)
+  assert.match(text(card), /Writer/, 'the card names the Bot that has the task')
+  assert.match(text(card), /High/)
+  // Dragging reports the card, and the drop reports the column it landed on: the host decides, the
+  // view never writes (#1326).
+  card.props.onDragStart({ dataTransfer: { setData: () => {} } })
+  const done = walk(tree).find(node => node.type === 'section' && node.props?.['data-column'] === 'done')
+  done.props.onDrop({ preventDefault: () => {}, dataTransfer: { getData: () => 'task-abc123456' } })
+  assert.deepEqual(moved, [['drag', 'task-abc123456'], ['task-abc123456', 'done'], ['drag', null]])
 })
 
 test('more than one repository draws one block each, one repository draws none (#1265)', () => {

@@ -194,6 +194,8 @@ const ZH = {
   '{from} → {to}': '{from} → {to}',
   '+{count} more': '另有 {count} 条',
   delegated: '委托转达',
+  All: '全部',
+  Filter: '筛选',
   Review: '查看',
   'Attached files': '附件',
   Retry: '重试',
@@ -682,7 +684,9 @@ const ZH = {
   'Could not comment on {target}: {error}': '无法在 {target} 上留言：{error}',
   'Could not confirm the comment on {target} went out': '无法确认 {target} 上的留言是否发出',
   // Bot task board (#1058)
+  Board: '看板',
   Tasks: '任务',
+  'Close board': '关闭看板',
   'Close tasks': '关闭任务',
   'Task board': '任务板',
   'Not started': '未开始',
