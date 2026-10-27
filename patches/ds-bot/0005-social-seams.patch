@@ -734,7 +734,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.load()
            return ok(await rt.connectorEndpoint(endpoint, body))
          case 'capability-save':
-@@ -241,11 +241,22 @@ export function install(rt) {
+@@ -241,11 +241,24 @@ export function install(rt) {
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -753,7 +753,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +          await rt.load()
 +          const leaked = unshareableReference(actor, [body.title, body.prompt].filter(part => typeof part === 'string').join('\n'))
 +          if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
-+          return ok(await rt.scheduleEndpoint(endpoint, body))
++          // The actor goes down with the request: a copy's source and an edit's own Session
++          // are owner-scoped in the data layer, where authz cannot see them (#1321).
++          return ok(await rt.scheduleEndpoint(endpoint, body, actor))
 +        }
          case 'memory-view':
          case 'memory-ask':
