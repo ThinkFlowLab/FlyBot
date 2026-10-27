@@ -1,0 +1,1 @@
+Workflow UI polish: Chinese sub-labels in flowchart nodes are now more readable (12px font, higher contrast); status badges in the 运行记录 tab are vertically centered with comfortable row padding; Details tab key-value pairs have improved padding and wrapping.
