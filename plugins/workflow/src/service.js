@@ -849,6 +849,39 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     },
     reset(body = {}) {
       const workflowId = String(body.workflowId ?? '')
+      const runId = body.runId ? String(body.runId) : ''
+      if (runId) {
+        const stopOne = () => {
+          const item = workflow(workflowId)
+          if (!item) return { ok: false, error: 'No such workflow' }
+          const lane = laneOf(workflowId)
+          const run = lane.active.find(itemRun => itemRun.id === runId)
+          if (!run || run.live !== true || run.status !== 'running') return { ok: false, error: 'No live run to stop' }
+          const ids = Object.values(run.ephemeral ?? {})
+          const ended = { ...run, status: 'failed', updatedAt: now() }
+          delete ended.ephemeral
+          delete ended.handed
+          lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
+          lane.last = ended
+          lane.history = [...lane.history, { task: ended.task, status: ended.status, at: ended.updatedAt }].slice(-20)
+          push(workflowId, [{ kind: 'system', tone: 'bad', text: `■ 已停止 · ${summarizeTask(run.task)}` }], now())
+          write()
+          return { ok: true, ids }
+        }
+        if (typeof spawn !== 'function') {
+          const saved = stopOne()
+          if (saved.ok === false) return saved
+          drainSync()
+          return present()
+        }
+        return hostSerial(async () => {
+          const saved = stopOne()
+          if (saved.ok === false) return saved
+          await releaseAll(saved.ids, release, warn)
+          await drainAll()
+          return present()
+        })
+      }
       const take = () => {
         const item = workflow(workflowId)
         if (!item) return { ok: false, error: 'No such workflow' }

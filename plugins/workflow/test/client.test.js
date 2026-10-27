@@ -406,6 +406,40 @@ test('sidebar preview ignores a stale busy preview when nothing is live', async 
   view.unmount()
 })
 
+test('two concurrent live runs each get their own pause and stop controls', async () => {
+  const graph = delivery()
+  graph.activeCount = 2
+  graph.queueDepth = 0
+  graph.runs = [
+    { ...graph.run, id: 'run-a', task: { id: '#1422', title: 'PR 1422' }, taskSummary: '#1422 · PR 1422' },
+    { ...graph.run, id: 'run-b', task: { id: '#1395', title: 'PR 1395' }, taskSummary: '#1395 · PR 1395' },
+  ]
+  graph.run = graph.runs[0]
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  const strips = findAll(view.tree, node => node.props?.className === 'wf-strip' && node.props?.['data-run-id'])
+  assert.equal(strips.length, 2)
+  const pauseButtons = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Pause')
+  assert.equal(pauseButtons.length, 2)
+  const stopButtons = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Stop')
+  assert.equal(stopButtons.length, 2)
+  pauseButtons[1].props.onClick()
+  await settle()
+  assert.ok(calls.some(item => item.name === 'workflow/pause' && item.body.runId === 'run-b'))
+  stopButtons[0].props.onClick()
+  await settle()
+  assert.ok(calls.some(item => item.name === 'workflow/reset' && item.body.runId === 'run-a'))
+  view.unmount()
+})
+
 test('a live run shows pause, resume, and progress controls', async () => {
   const graph = delivery()
   graph.activeCount = 1
@@ -560,6 +594,60 @@ test('a sidebar workflow row can be deleted from the context menu', async () => 
   view.unmount()
 })
 
+test('run history lists every live run that activeCount includes', () => {
+  const workflow = {
+    activeCount: 2,
+    history: [],
+    queue: [],
+    runs: [
+      { id: 'run-a', live: true, status: 'running', task: { id: '#1422', title: 'PR 1422' } },
+      { id: 'run-b', live: true, status: 'running', task: { id: '#1395', title: 'PR 1395' } },
+    ],
+    run: { id: 'run-a', live: true, status: 'running', task: { id: '#1422', title: 'PR 1422' } },
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.filter(row => row.status === 'running').length, 2)
+  assert.equal(rows.length, 2)
+})
+
+test('run history does not invent a second running row when only one live run exists', () => {
+  const workflow = {
+    activeCount: 1,
+    history: [{ task: { id: '#1', title: 'Old' }, status: 'done' }],
+    queue: [],
+    runs: [{ id: 'run-a', live: true, status: 'running', task: { id: '#1422', title: 'PR 1422' } }],
+    run: { id: 'run-a', live: true, status: 'running', task: { id: '#1422', title: 'PR 1422' } },
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.filter(row => row.status === 'running').length, 1)
+})
+
+test('the runs tab shows one running row per concurrent live run', async () => {
+  const graph = delivery()
+  graph.activeCount = 2
+  graph.queueDepth = 0
+  graph.runs = [
+    { id: 'run-a', live: true, status: 'running', task: { id: '#1422', title: 'PR 1422' }, taskSummary: '#1422 · PR 1422' },
+    { id: 'run-b', live: true, status: 'running', task: { id: '#1395', title: 'PR 1395' }, taskSummary: '#1395 · PR 1395' },
+  ]
+  graph.run = graph.runs[0]
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(view.tree, 'Progress').props.onClick()
+  await settle()
+  const running = findAll(view.tree, node => node.props?.className === 'wf-chip running')
+  assert.equal(running.length, 2)
+  const text = textOf(view.tree)
+  assert.ok(text.includes('PR 1422'))
+  assert.ok(text.includes('PR 1395'))
+  view.unmount()
+})
+
 test('wire paths for a linear three-node graph connect each step vertically', () => {
   const nodes = [
     { id: 'a', x: 0, y: 0 },
@@ -573,6 +661,24 @@ test('wire paths for a linear three-node graph connect each step vertically', ()
   assert.match(ab, new RegExp(`^M ${span} ${out} C ${span} ${(out + 108) / 2}, ${span} ${(out + 108) / 2}, ${span} 108$`))
   const y1b = 108 + out
   assert.match(bc, new RegExp(`^M ${span} ${y1b} C ${span} ${(y1b + 216) / 2}, ${span} ${(y1b + 216) / 2}, ${span} 216$`))
+})
+
+test('wire paths between parallel nodes use orthogonal segments, not wide curves', () => {
+  const from = { x: 80, y: 260 }
+  const to = { x: 320, y: 380 }
+  const path = client.wirePath(from, to)
+  assert.match(path, /^M .+ L .+ L .+ L /)
+  assert.equal(path.includes('C '), false)
+})
+
+test('parallel branch frames wrap node bounds without hard-coded width', () => {
+  const members = [
+    { id: 'a', x: 80, y: 380 },
+    { id: 'b', x: 320, y: 380 },
+  ]
+  const frame = client.parallelFrameStyle(members)
+  assert.equal(frame.width, 320 - 80 + client.NODE_W + 20)
+  assert.equal(frame.left, 80 - client.NODE_W / 2 - 10)
 })
 
 test('the workflow stage mounts no message composer', async () => {

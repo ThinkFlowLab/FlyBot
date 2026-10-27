@@ -47,6 +47,36 @@ function delivery(state) {
   return state.workflows.find(item => item.id === DELIVERY_ID)
 }
 
+test('stopping one live run leaves the other running and releases only its Bots', async () => {
+  const { svc, spawned, released } = harness()
+  svc.setConcurrency({ workflowId: DELIVERY_ID, maxConcurrent: 2 })
+  const first = await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1422', title: 'PR 1422' })
+  const second = await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1395', title: 'PR 1395' })
+  const lane = delivery(second)
+  assert.equal(lane.activeCount, 2)
+  const victim = lane.runs.find(run => run.task.id === '#1422')
+  const kept = lane.runs.find(run => run.task.id === '#1395')
+  const botsBefore = spawned.length
+  const stopped = await svc.reset({ workflowId: DELIVERY_ID, runId: victim.id })
+  const after = delivery(stopped)
+  assert.equal(after.activeCount, 1)
+  assert.equal(after.runs[0].task.id, '#1395')
+  assert.equal(after.runs[0].id, kept.id)
+  assert.ok(released.length > 0)
+  assert.equal(spawned.length, botsBefore)
+})
+
+test('activeCount matches the number of live runs returned in workflow.runs', async () => {
+  const { svc } = harness()
+  svc.setConcurrency({ workflowId: DELIVERY_ID, maxConcurrent: 2 })
+  await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1422', title: 'PR 1422' })
+  const both = delivery(await svc.assign({ workflowId: DELIVERY_ID, taskId: '#1395', title: 'PR 1395' }))
+  assert.equal(both.activeCount, 2)
+  assert.equal(both.runs.length, 2)
+  assert.equal(both.runs.filter(run => run.live === true && run.status === 'running').length, 2)
+  assert.equal(both.activeCount, both.runs.length)
+})
+
 test('a second assign queues behind a live run and does not release its Bots', async () => {
   const { svc, spawned, released } = harness()
   svc.setConcurrency({ workflowId: DELIVERY_ID, maxConcurrent: 1 })
