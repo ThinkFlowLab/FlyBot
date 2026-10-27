@@ -10,7 +10,7 @@ A group-shaped chat of local Bots, with a flowchart the owner can drag (#1318). 
 
 This is not the workflow-definition engine. That engine (#1272) stores `workflows/<id>.json` and guards artifacts. This plugin does not read or write those files and does not call that engine.
 
-Settings → Workflows (#1364) is this plugin's list. The page lives in the core client and calls `workflow/state`, `workflow/create` and `workflow/graph`. Factory rows are `templateCatalog()` — id, name, description, triggers, plus the drawable `nodes`, `edges`, `layers` and `chain` — and the owner's rows are the saved workflows. The sidebar chat is unchanged.
+Settings → Workflows (#1364) is this plugin's list. The page lives in the core client and calls `workflow/state`, `workflow/create` and `workflow/graph`. Factory rows are `templateCatalog()` — id, name, description, triggers, plus the drawable `nodes`, `edges`, `layers` and `chain` — and the owner's rows are the saved workflows. The settings page does not replace the sidebar chat. A sidebar click opens this plugin's stage and leaves the Workflows section in place.
 
 ## Owns
 
@@ -32,7 +32,7 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 | `plugins/workflow/src/match.js` | Which open card matches a Workflow or a local Bot. |
 | `plugins/workflow/src/template.js` | 发布交付流水线 (a parallel branch) and the weekly report. |
 | `plugins/workflow/src/narrate.js` | Progress lines for a step. A join line is only for a rank of more than one node. |
-| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, and the flowchart editor. |
+| `plugins/workflow/client.js` | Sidebar section, chat stage, assign dialog, and the flowchart editor. The stage and the dialogs portal onto `document.body`; a missing container stays in the section tree. |
 
 ## Entry points
 
@@ -49,6 +49,7 @@ Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, 
 4. Auto-assign considers an `open` card only. First hit wins: a `workflow:` token, then `workflowId` / `workflow`, then an assignee that names a workflow, then a `bot:` token, then an assignee that names a local Bot, then the longest trigger contained in the title, note or criteria. A miss returns no route. A second ingest of the same task and target is a no-op, and a live run for that task id is not restarted.
 5. The browser draws text only. Names and messages are React text children. The unit renderer asserts a hostile name is not markup.
 6. `enabled: false` registers no endpoint, tool or listener and writes nothing.
+7. A sidebar click opens the stage or a dialog and leaves the Workflows section in place. The stage and the dialogs portal onto `document.body`. When that container is missing they stay in the section tree; the click does not throw.
 
 ## Tests
 

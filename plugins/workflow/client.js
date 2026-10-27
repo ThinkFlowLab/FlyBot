@@ -6,13 +6,21 @@ window.__ModuleLoader__.load({
   id: '@flybot/workflow',
   factory: (require) => {
     const { createElement: h, useEffect, useRef, useState } = require('react')
-    let portal = (node) => node
+    // createPortal with no container throws. The sidebar slot boundary then draws
+    // nothing until reload, so a click on a row, New, or Hand-a-task removes the
+    // whole Workflows section (#1375). A missing body keeps the node in the tree.
+    let createPortal = null
     try {
       const dom = require('react-dom')
-      if (typeof dom?.createPortal === 'function') portal = dom.createPortal.bind(dom)
+      if (typeof dom?.createPortal === 'function') createPortal = dom.createPortal
     } catch (error) {
       // The unit renderer supplies react only. The chat then stays in the section tree.
       void error
+    }
+    function portal(node) {
+      const root = typeof document !== 'undefined' ? document.body : null
+      if (typeof createPortal !== 'function' || !root) return node
+      return createPortal(node, root)
     }
 
     const ZH = {

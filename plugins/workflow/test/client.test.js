@@ -100,13 +100,16 @@ const documentStub = {
 }
 globalThis.document = documentStub
 
-function loadClient() {
+function loadClient(reactDom) {
   const modules = new Map()
   const window = {
     __ModuleLoader__: {
       load: ({ id, factory }) => modules.set(id, factory(name => {
         if (name === 'react') return react
-        if (name === 'react-dom') throw new Error('no react-dom in the unit renderer')
+        if (name === 'react-dom') {
+          if (reactDom) return reactDom
+          throw new Error('no react-dom in the unit renderer')
+        }
         return {}
       })),
     },
@@ -227,6 +230,55 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   await settle()
   assert.ok(calls.some(item => item.name === 'workflow/create' && item.body.template === 'delivery'))
   view.unmount()
+})
+
+test('clicking a sidebar workflow, New, or Hand-a-task keeps the section and opens the stage', async () => {
+  // The shell's createPortal throws when the container is missing — the same
+  // throw the sidebar slot boundary turns into an empty Workflows section (#1375).
+  const portals = []
+  const reactDom = {
+    createPortal(node, container) {
+      if (!container || container.nodeType !== 1) throw new Error('Target container is not a DOM element.')
+      portals.push(container)
+      return { type: 'portal', props: { container }, children: [node] }
+    },
+  }
+  const opened = loadClient(reactDom)
+  const body = { nodeType: 1 }
+  const prevBody = document.body
+  document.body = body
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  try {
+    const view = mount(opened.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0]
+    assert.doesNotThrow(() => row.props.onClick())
+    assert.ok(textOf(view.tree).includes('Workflows'))
+    assert.ok(textOf(view.tree).includes('发布交付流水线'))
+    assert.ok(findAll(view.tree, node => node.props?.className === 'wf-stage').length > 0)
+    assert.ok(portals.length > 0)
+    assert.ok(portals.every(container => container === body))
+
+    const beforeNew = portals.length
+    button(view.tree, 'New').props.onClick()
+    assert.ok(textOf(view.tree).includes('Workflows'))
+    assert.ok(findAll(view.tree, node => node.props?.className === 'wf-modal').length > 0)
+    assert.ok(portals.length > beforeNew)
+
+    const beforeAssign = portals.length
+    findAll(view.tree, node => node.type === 'button' && node.props.className === 'wf-row wf-assign-row')[0].props.onClick()
+    assert.ok(textOf(view.tree).includes('Workflows'))
+    assert.ok(textOf(view.tree).includes('Hand a task to a Workflow'))
+    assert.ok(portals.length > beforeAssign)
+    assert.ok(portals.every(container => container === body))
+    view.unmount()
+  } finally {
+    document.body = prevBody
+  }
 })
 
 test('Chinese labels follow the host Tasks translation', () => {
