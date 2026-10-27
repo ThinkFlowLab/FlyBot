@@ -990,3 +990,12 @@ test('#1344: adding the list is how the seal arrives — an add is not an edit',
   const r = run({ branch: 'dev/1344-user-only-conclusions', comments: [comment()], baseFrozen: null, files: [HOST_FILE, { filename: FROZEN_PATH, status: 'added' }] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
+
+// #1350: `merged` is history and is answered before anything else. The guard is re-run on every event
+// (`labeled` above all), so a merged pull request that edited this file would otherwise go red on a later
+// run — the refusal exists to stop a seal being undone, and that merge has already happened.
+test('#1350: a merged pull request is not refused, even when its diff edited the frozen list', () => {
+  const r = run({ merged: true, files: [HOST_FILE, { filename: FROZEN_PATH, status: 'modified' }], comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.reasons.length, 0)
+})

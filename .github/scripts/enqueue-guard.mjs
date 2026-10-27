@@ -78,11 +78,15 @@ function frozenList({ gh, repo, base }) {
 // The refusal this file exists for, or `null`: the head branch starts with a listed prefix, the body carries
 // a listed marker, or the diff edits the list itself. `merged` is history and is never re-judged (#943).
 function frozenRefusal({ gh, repo, pull, files }) {
+  // #1350: `merged` is answered before the list is read, and before the edit check below — the guard runs
+  // again on every event (`labeled` above all), and a merged pull request that edited this file has already
+  // made its edit. Judged after it, that run goes red on a merge nobody can undo, which is the opposite of
+  // what "never re-judged" means. The edit check still refuses every unmerged pull request.
+  if (pull?.merged) return null
   const touched = (files ?? []).find((f) => f && f.filename === FROZEN_PATH)
   // An ADD is how the seal first arrives (this very pull request). A modify or a delete is the self-unlock
   // this rule closes, whatever the branch is.
   if (touched && touched.status !== 'added') return FROZEN_EDIT_REASON
-  if (pull?.merged) return null
   const list = frozenList({ gh, repo, base: pull?.base?.sha })
   const branch = String(pull?.head?.ref ?? '').toLowerCase()
   const body = String(pull?.body ?? '').toLowerCase()
