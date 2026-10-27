@@ -292,11 +292,20 @@ test('settings and the flowchart save a node prompt and a link on the same graph
   }
   const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
   await settle()
-  const box = findAll(settings.tree, node => node.props?.['data-prompt'] === 'coder')[0]
-  assert.equal(box.props.defaultValue, 'Implement it.')
+  // Click the coder node to select it and open inspector
+  const coderNode = findAll(settings.tree, node => node.props?.['data-node'] === 'coder')[0]
+  assert.ok(coderNode, 'coder node should exist in canvas')
+  coderNode.props.onClick()
+  await settle()
+  // Find the textarea in the inspector
+  const inspectorAreas = findAll(settings.tree, node => node.type === 'textarea')
+  const box = inspectorAreas.find(area => area.props?.value === 'Implement it.')
+  assert.ok(box, 'inspector textarea with coder prompt should exist')
+  assert.equal(box.props.value, 'Implement it.')
   const hostile = 'Keep the diff small.\n<script>alert(1)</script>'
-  box.props.onBlur({ target: { value: hostile } })
-  const saved = calls.find(item => item.name === 'workflow/graph')
+  box.props.onChange({ target: { value: hostile } })
+  await settle()
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
   assert.equal(saved.body.workflowId, 'delivery')
   assert.equal(saved.body.nodes.find(node => node.id === 'coder').prompt, hostile)
   assert.equal(htmlOf(settings.tree).includes('<script'), false)
@@ -321,10 +330,19 @@ test('settings and the flowchart save a node prompt and a link on the same graph
   findAll(flow.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   button(flow.tree, 'Flow').props.onClick()
   button(flow.tree, 'Edit').props.onClick()
-  const area = findAll(flow.tree, node => node.props?.['data-prompt'] === 'coder')[0]
-  assert.equal(area.props.defaultValue, 'Implement it.')
-  area.props.onBlur({ target: { value: 'Keep the diff small.' } })
-  const edited = flowCalls.find(item => item.name === 'workflow/graph')
+  await settle()
+  // Click the coder node in the flowchart drawer to select it
+  const flowCoderNode = findAll(flow.tree, node => node.props?.['data-node'] === 'coder')[0]
+  assert.ok(flowCoderNode, 'coder node should exist in flow canvas')
+  flowCoderNode.props.onClick()
+  await settle()
+  // Find the textarea in the per-node inspector
+  const flowInspectorAreas = findAll(flow.tree, node => node.type === 'textarea')
+  const area = flowInspectorAreas.find(a => (a.props?.value || a.props?.defaultValue) === 'Implement it.')
+  assert.ok(area, 'inspector textarea with coder prompt should exist')
+  area.props.onChange({ target: { value: 'Keep the diff small.' } })
+  await settle()
+  const edited = flowCalls.filter(item => item.name === 'workflow/graph').at(-1)
   assert.equal(edited.body.nodes.find(node => node.id === 'coder').prompt, 'Keep the diff small.')
   assert.equal(htmlOf(flow.tree).includes('<script'), false)
   flow.unmount()

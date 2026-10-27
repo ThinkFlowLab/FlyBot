@@ -627,6 +627,22 @@ window.__ModuleLoader__.load({
         save(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
       }
       
+      const [edgeForm, setEdgeForm] = useState({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+      
+      const addEdge = () => {
+        if (!edgeForm.from || !edgeForm.to) return
+        const edge = { from: edgeForm.from, to: edgeForm.to }
+        if (edgeForm.kind === 'loop') {
+          edge.loop = true
+          edge.max = Number(edgeForm.max) || 5
+          if (edgeForm.until.output) edge.until = edgeForm.until
+        } else if (edgeForm.kind === 'condition') {
+          edge.when = edgeForm.until
+        }
+        save(nodes, edges.concat([edge]))
+        setEdgeForm({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+      }
+      
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
@@ -671,7 +687,54 @@ window.__ModuleLoader__.load({
                   placeholder: 'github, bash, read, edit...',
                   onChange: (event) => updateNode(selected.id, { tools: event.target.value.split(',').map(s => s.trim()).filter(Boolean) }),
                 })))) : h('div', { className: 'wf-inspector wf-inspector-empty' },
-            h('p', null, tr('Select a node to edit')))) : null)
+            h('p', null, tr('Select a node to edit'))),
+          nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
+            h('h3', null, tr('Add link')),
+            h('div', { className: 'wf-edge-fields' },
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('Kind')),
+                h('select', {
+                  'aria-label': tr('Kind'),
+                  value: edgeForm.kind,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, kind: event.target.value }),
+                }, h('option', { value: 'forward' }, tr('Link')), h('option', { value: 'condition' }, tr('Condition')), h('option', { value: 'loop' }, tr('Loop')))),
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('From node')),
+                h('select', {
+                  'aria-label': tr('From node'),
+                  value: edgeForm.from,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, from: event.target.value }),
+                }, h('option', { value: '' }), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+              h('label', { className: 'wf-field' },
+                h('span', null, tr('To node')),
+                h('select', {
+                  'aria-label': tr('To node'),
+                  value: edgeForm.to,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, to: event.target.value }),
+                }, h('option', { value: '' }), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+              edgeForm.kind === 'loop' ? h('label', { className: 'wf-field' },
+                h('span', null, tr('Max iterations')),
+                h('input', {
+                  type: 'number',
+                  'aria-label': tr('Max iterations'),
+                  value: edgeForm.max,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, max: event.target.value }),
+                })) : null,
+              edgeForm.kind === 'loop' || edgeForm.kind === 'condition' ? h('label', { className: 'wf-field' },
+                h('span', null, edgeForm.kind === 'loop' ? tr('until') : tr('when')),
+                h('input', {
+                  'aria-label': edgeForm.kind === 'loop' ? tr('until') : tr('when'),
+                  value: edgeForm.until.output,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, output: event.target.value } }),
+                })) : null,
+              edgeForm.kind === 'loop' || edgeForm.kind === 'condition' ? h('label', { className: 'wf-field' },
+                h('span', null, tr('Equals')),
+                h('input', {
+                  'aria-label': tr('Equals'),
+                  value: edgeForm.until.eq,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, eq: event.target.value } }),
+                })) : null,
+              h('button', { type: 'button', onClick: addEdge }, tr('Add link')))) : null) : null)
     }
 
     function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit }) {
