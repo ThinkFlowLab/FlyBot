@@ -516,7 +516,9 @@ export function install(rt) {
           await rt.load()
           const leaked = unshareableReference(actor, [body.title, body.prompt].filter(part => typeof part === 'string').join('\n'))
           if (leaked !== undefined) return fail('You do not own that chat', 'bot/forbidden')
-          return ok(await rt.scheduleEndpoint(endpoint, body))
+          // The actor goes down with the request: a copy's source and an edit's own Session
+          // are owner-scoped in the data layer, where authz cannot see them (#1321).
+          return ok(await rt.scheduleEndpoint(endpoint, body, actor))
         }
         case 'memory-view':
         case 'memory-ask':

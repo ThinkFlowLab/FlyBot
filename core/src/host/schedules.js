@@ -167,6 +167,26 @@ export function install(rt) {
     return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
   }
   const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
+  // A source the caller names — a copy's `copyFrom`, an edit's own Session — is the caller's
+  // to read only while it belongs to the caller's own user (#1321). `rt.sessionOwnedBy` is not
+  // this rule: it also lets a room's current member through, and being able to speak in a room
+  // is not being allowed to read a task's text. A room's task is the user's only while every
+  // Bot in it is (`rt.roomOwnedBy`). Enforced only where someone has signed in; alone on the
+  // deployment the legacy single-human path is untouched.
+  const ownedByActor = (owner, actor) => {
+    if (owner === undefined) return false
+    if (owner.roomId !== undefined) return rt.roomOwnedBy?.(actor, owner.roomId) === true
+    return state.bots[owner.botId]?.ownerId === actor.memberId
+  }
+  // An unreadable source answers exactly as an unknown one does: one sentence ("No such
+  // task"), no second wording, and nothing about the other owner's task leaks. Where owner
+  // scoping is on, a missing actor fails closed: no actor is not a licence to read.
+  const sourceOf = (sessionId, actor) => {
+    const owner = ownerOf(sessionId)
+    if (owner === undefined) return undefined
+    if (rt.authzEnforced?.() && (!actor || !ownedByActor(owner, actor))) return undefined
+    return owner
+  }
   // Paused tasks, by their DSH id: { id, sessionId, record, pausedAt }. DSH ids are
   // unique across the host, so a paused task keeps the id it had.
   const paused = () => {
@@ -317,11 +337,11 @@ export function install(rt) {
   // under it, and no delivery history. Nothing needs re-arming: the copy's instant is the
   // source's, and the source's own row already keeps it in the driver's global minimum. A
   // paused source has no next run to keep, so its copy goes through `create`, as Resume does.
-  async function copySchedule(body) {
+  async function copySchedule(body, actor) {
     const from = body.copyFrom ?? {}
     const sourceSession = String(from.sessionId ?? '')
     const sourceId = String(from.id ?? '')
-    const owner = ownerOf(sourceSession)
+    const owner = sourceOf(sourceSession, actor)
     if (owner === undefined) throw invalid('No such task')
     const held = pausedEntry(sourceSession, sourceId)
     const source = held !== undefined ? held.record : await findRecord(sourceSession, sourceId)
@@ -392,11 +412,11 @@ export function install(rt) {
   // Edit: a paused task stays paused with its new content; an active one is updated in
   // place on the same Session, otherwise created anew before the old one is deleted.
   // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
-  async function updateSchedule(body) {
+  async function updateSchedule(body, actor) {
     ensureService()
     const sessionId = String(body.sessionId ?? '')
     const id = String(body.id ?? '')
-    if (ownerOf(sessionId) === undefined) throw invalid('No such task')
+    if (sourceOf(sessionId, actor) === undefined) throw invalid('No such task')
     const content = contentOf(body)
     const keep = body.when?.kind === 'keep'
     const held = pausedEntry(sessionId, id)
@@ -556,16 +576,16 @@ export function install(rt) {
 
   const endpoints = {
     schedules: () => schedulesView(),
-    async 'schedule-create'(body) {
+    async 'schedule-create'(body, actor) {
       ensureService()
-      if (body.copyFrom !== undefined) return copySchedule(body)
+      if (body.copyFrom !== undefined) return copySchedule(body, actor)
       const { sessionId, title, prompt } = contentOf(body)
       const timing = selectorOf(body.when)
       refuseDuringQuietHours(timing, body.when?.timeZone)
       await service.create(sessionId, { title, prompt, ...timing })
       return schedulesView()
     },
-    'schedule-update': body => updateSchedule(body),
+    'schedule-update': (body, actor) => updateSchedule(body, actor),
     'schedule-pause': body => pauseSchedule(body),
     'schedule-resume': body => resumeSchedule(body),
     'schedule-retry': body => retrySchedule(body),
@@ -638,7 +658,7 @@ export function install(rt) {
   }
 
   Object.assign(rt, {
-    scheduleEndpoint: (endpoint, body) => endpoints[endpoint](body ?? {}),
+    scheduleEndpoint: (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor),
     moveSchedules,
     scheduleRunStarted: runStarted,
     scheduleRunEnded: runEnded,

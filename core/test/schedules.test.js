@@ -680,3 +680,149 @@ test('#628: a Bot with no task in any Session gets an answer that is about the B
   const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
   assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
 })
+
+// #1321: two owners on one host. `copyFrom` and `schedule-update` resolve a source Session the
+// way the page does, and the host knowing that Session is not the caller being allowed to read
+// its task: a copy or an edit may only touch a task of the caller's own user.
+const TWO_OWNERS = {
+  version: 2,
+  mainBotIds: ['m1'],
+  revision: 1,
+  members: {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
+    'owner-2': { id: 'owner-2', createdAt: 2 },
+  },
+  bots: {
+    m1: { id: 'm1', sessionId: 'm1', name: 'Chief', role: 'Chief of Staff', instructions: '', createdAt: 1, ownerId: 'owner-1' },
+    a1: { id: 'a1', sessionId: 'a1', name: 'A Bot', role: '', instructions: '', createdAt: 2, ownerId: 'owner-1' },
+    b1: { id: 'b1', sessionId: 'b1', name: 'B Bot', role: '', instructions: '', createdAt: 3, ownerId: 'owner-2' },
+  },
+  rooms: {
+    // One owner's room: every member Bot belongs to owner-1.
+    g3: { id: 'g3', name: 'Own room', named: true, members: ['a1'], admin: 'a1', mode: 'admin', notice: '', createdAt: 5,
+      participants: [{ kind: 'bot', id: 'a1', joinedSeq: 1 }, { kind: 'human', id: 'owner-1', joinedSeq: 1 }] },
+    // A shared room: a Bot of each owner, and both humans seated. Membership is not ownership.
+    g2: { id: 'g2', name: 'Shared room', named: true, members: ['a1', 'b1'], admin: 'a1', mode: 'admin', notice: '', createdAt: 6,
+      participants: [{ kind: 'bot', id: 'a1', joinedSeq: 1 }, { kind: 'bot', id: 'b1', joinedSeq: 2 },
+        { kind: 'human', id: 'owner-1', joinedSeq: 1 }, { kind: 'human', id: 'owner-2', joinedSeq: 2 }] },
+  },
+  exchanges: [],
+  exchangeTurns: {},
+  questions: {},
+}
+
+// The channel route with a member signed in: the cookie the browser sends is the token below.
+function signedIn(t, team = TWO_OWNERS) {
+  const schedule = scheduleService()
+  const { ctx, home, rt } = setup({ schedule }, team)
+  rt.authenticate = async (token) => {
+    if (token === 'tok-a') return { memberId: 'owner-1', displayName: 'A' }
+    if (token === 'tok-b') return { memberId: 'owner-2', displayName: 'B' }
+    return null
+  }
+  const callAs = async (endpoint, payload, token) => {
+    const headers = { 'content-type': 'application/json' }
+    if (token) headers['x-flybot-member-session'] = token
+    return (await ctx.route.fetch(new Request('http://localhost/api/bot', { method: 'POST', headers, body: JSON.stringify({ endpoint, payload }) }))).json()
+  }
+  return { ctx, home, schedule, rt, callAs }
+}
+
+// One member signed in is what turns owner scoping on; the state file itself stays the team's.
+const signedInNow = async (rt, callAs) => {
+  await callAs('schedules', {}, 'tok-a')
+  rt.state.authSessions = { 's-a': { memberId: 'owner-1', tokenHash: 'a' }, 's-b': { memberId: 'owner-2', tokenHash: 'b' } }
+}
+
+test('#1321: a copy reads only the caller’s own task; a peer’s task is refused as unknown', async (t) => {
+  const { ctx, home, schedule, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  const made = await callAs('schedule-create', { target: 'a1', title: 'Private', prompt: 'Read my mail', when: DAILY }, 'tok-a')
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [id] = schedule.tasks.keys()
+
+  // Another owner is refused, in the sentence an unknown source already gets: one sentence,
+  // never a second wording that would tell the caller the task is real.
+  const foreign = await callAs('schedule-create', { target: 'b1', copyFrom: { sessionId: 'a1', id } }, 'tok-b')
+  assert.equal(foreign.ok, false, 'a foreign task is not copyable')
+  assert.equal(foreign.error.message, 'No such task', 'the refusal is the existing sentence, verbatim')
+
+  // Fail closed in the data layer: with owner scoping on, a request that reaches the endpoint
+  // with no actor is refused, not let through. (The route refuses it earlier, "Sign in first".)
+  await assert.rejects(() => rt.scheduleEndpoint('schedule-create', { target: 'm1', copyFrom: { sessionId: 'a1', id } }), /No such task/)
+})
+
+test('#1321: a refused copy writes nothing, and its refusal carries nothing of the source', async (t) => {
+  const { ctx, home, schedule, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  const title = 'Board notes only the owner may read'
+  const made = await callAs('schedule-create', { target: 'a1', title, prompt: 'Summarise the private board', when: DAILY }, 'tok-a')
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [id] = schedule.tasks.keys()
+  const before = schedule.tasks.size
+
+  const foreign = await callAs('schedule-create', { target: 'b1', copyFrom: { sessionId: 'a1', id } }, 'tok-b')
+  assert.equal(foreign.ok, false, 'a foreign task is not copyable')
+  // Nothing was written: no new row, and the source is untouched.
+  assert.equal(schedule.tasks.size, before, 'the refused copy created nothing')
+  assert.equal(schedule.tasks.get(id).record.title, title)
+  assert.deepEqual([...schedule.tasks.values()].map(task => task.sessionId), ['a1'])
+  // Nothing of the source came back in the refusal: not the title, not a word of the prompt.
+  assert.equal(foreign.error.message, 'No such task')
+  const wire = JSON.stringify(foreign)
+  assert.ok(!wire.includes(title), 'the refusal does not echo the source title')
+  assert.ok(!wire.includes('private board'), 'the refusal does not echo the source prompt')
+  assert.ok(!wire.includes('a1'), 'the refusal does not name the source Session either')
+})
+
+test('#1321: with owner scoping on, the same user still copies their own task', async (t) => {
+  const { ctx, home, schedule, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
+  const made = await callAs('schedule-create', { target: 'a1', title: 'Private', prompt: 'Read my mail', when: DAILY }, 'tok-a')
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [id] = schedule.tasks.keys()
+
+  const own = await callAs('schedule-create', { target: 'm1', copyFrom: { sessionId: 'a1', id } }, 'tok-a')
+  assert.equal(own.ok, true, JSON.stringify(own))
+  assert.deepEqual([...schedule.tasks.values()].map(task => [task.sessionId, task.record.title]), [['a1', 'Private'], ['m1', 'Private']], 'the copy landed and carries the source text')
+})
+
+test('#1321: an edit reads only the caller’s own user — being seated in the room is not owning it', async (t) => {
+  const { ctx, home, schedule, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+
+  // owner-1's own room: the task's Session is that room, and its member Bot is owner-1's.
+  const ownMade = await callAs('schedule-create', { target: 'g3', title: 'Brief', prompt: 'Sum up', when: DAILY }, 'tok-a')
+  assert.equal(ownMade.ok, true, JSON.stringify(ownMade))
+  const ownId = [...schedule.tasks.values()].find(task => task.sessionId === 'g3').record.id
+  const own = await callAs('schedule-update', { sessionId: 'g3', id: ownId, target: 'g3', title: 'Renamed', prompt: 'x', when: DAILY }, 'tok-a')
+  assert.equal(own.ok, true, JSON.stringify(own))
+  assert.equal(schedule.tasks.get(ownId).record.title, 'Renamed')
+
+  // A shared room: owner-2 is a current human participant, so authz lets the request past.
+  // The data layer still refuses, because the room's member Bots are not all owner-2's.
+  const sharedMade = await callAs('schedule-create', { target: 'g2', title: 'Shared brief', prompt: 'Sum up the room', when: DAILY }, 'tok-a')
+  assert.equal(sharedMade.ok, true, JSON.stringify(sharedMade))
+  const sharedId = [...schedule.tasks.values()].find(task => task.sessionId === 'g2').record.id
+  const foreign = await callAs('schedule-update', { sessionId: 'g2', id: sharedId, target: 'g2', title: 'Mine now', prompt: 'x', when: DAILY }, 'tok-b')
+  assert.equal(foreign.ok, false, 'membership is not ownership')
+  assert.match(foreign.error.message, /No such task/)
+  assert.equal(schedule.tasks.get(sharedId).record.title, 'Shared brief', 'the task was not rewritten')
+})
+
+test('#1321: with nobody signed in the single-human path still copies across Bots', async (t) => {
+  const { ctx, home, schedule, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await callAs('schedule-create', { target: 'a1', title: 'Private', prompt: 'Read my mail', when: DAILY }, 'tok-a')
+  const [id] = schedule.tasks.keys()
+  // Not signed in: `authzEnforced()` is false, so the legacy path is untouched — the same
+  // behavior a one-person deployment had before #1321.
+  const copied = await callAs('schedule-create', { target: 'b1', copyFrom: { sessionId: 'a1', id } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  assert.equal([...schedule.tasks.values()].at(-1).sessionId, 'b1')
+})
