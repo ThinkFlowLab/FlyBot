@@ -382,8 +382,8 @@ window.__ModuleLoader__.load({
             ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-pri', onClick: (event) => { stopBubble(event); onResume?.(run.id) } }, tr('Resume'))
             : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); onPause?.(run.id) } }, tr('Pause'))) : null,
           run.status === 'running' ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-danger-outline', onClick: (event) => { stopBubble(event); onStop?.(run.id) } }, tr('Stop')) : null,
-          h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onTab('runs'); onOpenDrawer?.() } }, tr('Progress')),
-          h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onTab('flow'); onOpenDrawer?.() } }, tr('Flow'))))
+          h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onOpenDrawer?.(); onTab('runs') } }, tr('Progress')),
+          h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onOpenDrawer?.(); onTab('flow') } }, tr('Flow'))))
     }
 
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
@@ -495,8 +495,8 @@ window.__ModuleLoader__.load({
     }
 
     function liveStageRuns(workflow) {
-      let liveRuns = (workflow.runs ?? []).filter(run => run?.live === true && run.status === 'running')
-      if (liveRuns.length === 0 && workflow.run?.live === true && workflow.run.status === 'running') {
+      let liveRuns = (workflow.runs ?? []).filter(run => run?.live === true && (run.status === 'running' || run.status === 'failed'))
+      if (liveRuns.length === 0 && workflow.run?.live === true && (workflow.run.status === 'running' || workflow.run.status === 'failed')) {
         liveRuns = [workflow.run]
       }
       return liveRuns
@@ -508,7 +508,7 @@ window.__ModuleLoader__.load({
         const picked = live.find(run => run.id === focusedRunId)
         if (picked) return picked
       }
-      if (workflow.run?.live === true && workflow.run.status === 'running') return workflow.run
+      if (workflow.run?.live === true && (workflow.run.status === 'running' || workflow.run.status === 'failed')) return workflow.run
       return live[0] ?? null
     }
 
@@ -1149,7 +1149,7 @@ window.__ModuleLoader__.load({
 
       // Hide the shell's composer when a Workflow stage is open (#1486)
       useEffect(() => {
-        if (typeof document === 'undefined') return undefined
+        if (typeof document === 'undefined' || !document.body || !document.body.dataset) return undefined
         if (!open) return undefined
         document.body.dataset.btWorkflow = ''
         return () => { delete document.body.dataset.btWorkflow }

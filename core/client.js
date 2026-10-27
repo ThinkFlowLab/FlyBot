@@ -904,6 +904,7 @@ var ZH = {
   "{count} updates": "{count} 条更新",
   "Once more if it still waits after 15 min.": "等了 15 分钟还没批准时再提醒一次。",
   Notifications: "通知",
+  "In other chats": "在其他对话时",
   "When your Bots finish, fail, or wait for your approval while you are in another chat or app.": "你的 Bot 完成、失败或等你批准时提醒你（你在别的对话或应用里时）。",
   "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
   "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
@@ -16699,8 +16700,7 @@ function GeneralPage({ roster, actions, run }) {
       SetSection,
       { key: "notify", title: t("Notifications") },
       (0, import_react39.createElement)(SwitchRow, {
-        label: t("Notifications"),
-        showLabel: false,
+        label: t("In other chats"),
         hint: t("When your Bots finish, fail, or wait for your approval while you are in another chat or app."),
         on: prefs.notifications !== false,
         onChange: (on) => run(actions.setPrefs({ notifications: on }))

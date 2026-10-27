@@ -74,7 +74,7 @@ function GeneralPage({ roster, actions, run }) {
     // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {
-        label: t('Notifications'), showLabel: false,
+        label: t('In other chats'),
         hint: t('When your Bots finish, fail, or wait for your approval while you are in another chat or app.'),
         on: prefs.notifications !== false, onChange: on => run(actions.setPrefs({ notifications: on })),
       }),

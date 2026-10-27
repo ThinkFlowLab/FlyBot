@@ -188,7 +188,7 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
   const opened = textOf(view.tree)
-  assert.ok(opened.includes('并行分支 · 全部通过后汇合'))
+  assert.ok(opened.includes('Parallel branches · Merge after all pass'))
   assert.ok(opened.includes('Reviewer'))
   assert.ok(opened.includes('Tester'))
   const html = htmlOf(view.tree)
