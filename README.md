@@ -6,117 +6,103 @@
 </p>
 
 <p align="center">
-  <b>A team of long-lived AI Bots that can split work down a tree and chat with your friends' Bots.</b>
+  <b>Long-lived AI Bots that work as a team in your browser: one request goes in, the team takes it apart, one answer comes back.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/ThinkFlowLab/FlyBot/actions/workflows/test.yml"><img alt="Test" src="https://github.com/ThinkFlowLab/FlyBot/actions/workflows/test.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/ThinkFlowLab/FlyBot/actions/workflows/nightly.yml"><img alt="Nightly" src="https://github.com/ThinkFlowLab/FlyBot/actions/workflows/nightly.yml/badge.svg?branch=main"></a>
-  <img alt="DSH" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-3B5BFD">
+  <a href="https://github.com/ThinkFlowLab/FlyBot/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ThinkFlowLab/FlyBot"></a>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A522.19-339933?logo=node.js&logoColor=white">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache_2.0-green"></a>
 </p>
 
 <p align="center">English | <a href="README.zh.md">中文</a></p>
 
-FlyBot is three plugins on top of a pinned [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core for
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
+FlyBot is a local team of AI Bots you run in your own browser, on top of
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). You talk to one Bot — the **Chief**. It keeps
+the rest of the team, hands each part of a job to the Bot whose role fits, and comes back with one answer. Every Bot
+keeps its own memory, working folder, model and schedules between turns, so the team you set up on Monday is still
+there on Friday.
 
-- **`@flybot/tree`** — a recursive Bot tree that splits a request, delegates level by level, and combines answers on the way back up.
-- **`@flybot/social`** — connect your Bots as friends with other homes and chat through a self-hosted [Bot Social](https://github.com/Birfy/bot-social) server, with owner approvals.
-- **`@flybot/timeline`** (optional, off by default) — see where your team's time goes: swimlanes per Bot, who waits on whom, and how busy each Bot is.
+## Is this for you?
 
-## Features
+**Yes, if** you want work that outlives one chat — a team that keeps its own notes, folders and schedules and picks
+it up again tomorrow; you would rather run it yourself, on your machine, with your own model keys; or you want your
+Bots to be able to talk to a friend's Bots.
 
-### Tree plugin (`@flybot/tree`)
+**Probably not, if** you just need one quick answer (any chat app does that), or you want a framework to build your
+own agents on — FlyBot is an app you run, on top of DeepSeek Harness.
 
-Turns your Bots into one recursive tree that splits a request into parts, sends each part down a level, and combines the answers on the way back up.
+## See it work
+
+### One request, a whole team
 
 ![Tree plugin: Chief splits a Hangzhou trip across Travel, Food, and Budget](docs/images/demo-tree.gif)
 
-*Demo: Chief starts alone in the sidebar, creates the child Bots Travel, Food and Budget, hands each one a part, and then combines their answers into one plan. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-tree.mp4)
+*Demo: Chief starts alone in the sidebar, creates the child Bots Travel, Food and Budget, hands each one a part, and
+then combines their answers into one plan. Some waiting is sped up.*
+[Watch the full video (MP4)](docs/images/demo-tree.mp4)
 
-- **One root.** The tree's root is the Main Bot (Chief); no new bot is created for it. A separate `Root` bot is created only if the team has Bots but no Main Bot. Every other local Bot joins the tree, including one made with `create_bot` or the Bot list, under the same limits as `create_child_bot`. The tree organizes itself by role: a new Bot goes into the group that matches its role, and when a level is full (and once a day) related Bots are grouped under a suitable existing lead or a new lead with a clear role, such as "FlyBot Lead" for dev / test / repo Bots or "Life Lead" for cooking / shopping. Duplicate Bots are merged and long-idle ones archived after 30 days; nothing is deleted. Every change is logged, the sidebar shows what the last reorganization did, and one click undoes it.
-- **Children on demand.** Any tree Bot (not only the Main/root) calls `create_child_bot(name, role_description)` to make a child directly under *itself*; the tool takes no parent argument. Calls are handled one at a time per parent, so parallel calls never go over the limits or create two siblings with the same name. The rules:
-  - names are 1–40 characters, and duplicate sibling names are rejected (case and spaces ignored);
-  - depth is at most 5 (the root counts as 1), with at most 8 children per Bot (set in `limits.json` or the plugin config);
-  - a new child is usable only by its creator's owner; sharing it still needs an independent per-Bot grant (default deny — no publish).
-- **Level-by-level delegation.** Each Bot sees only its direct children (`list_children()`), never deeper levels.
-  - A Bot with children acts as coordinator: it splits the task, sends each part to the child whose scope fits, waits, and combines the answers for its parent.
-  - A Bot with no children does the work itself.
-- **Message rules** (the `tree` send policy):
-  - a tree Bot may message its parent, its direct children, and remote (friends') Bots (the tree never blocks remote messages; the social plugin decides);
-  - the root may also message any local Bot;
-  - local Bots outside the tree may message only the root;
-  - `stopped` and `report` notices are never blocked, so Chief can always stop any Bot.
-- **Reparenting.** When a Bot is deleted, its children move up to its parent. The parent and every moved subtree get a fresh prompt and trace, and no child is dropped. If the parent is then over `maxChildren`, its children are regrouped by role the same way.
-- **Trace line.** When a tree Bot answers its *parent*, it starts the answer with its path, e.g. `Chief → Work → Dev`. Replies to you or to a friend's Bot never include it, and the root never adds one.
-- **Your prompts are kept.** The plugin adds its rules in a marked block inside each Bot's system prompt and replaces only that block, so text you wrote yourself is never overwritten.
-- **Sidebar.** The Bot list is drawn as one expandable tree with Chief on top. Retired, archived and other Main Bots are shown directly under Chief, with a tag for archived, idle or (rarely) outside-the-tree Bots; every other Bot is drawn where the tree has it.
+- **You only talk to the Chief.** It splits the request and sends each part one level down; a Bot with children
+  coordinates, a Bot without children does the work itself.
+- **The tree grows itself.** Any Bot can create a child for a slice of work. Bots are grouped by role, duplicates
+  are merged, and a Bot idle for 30 days is archived — never deleted, and each reorganization can be undone in one
+  click.
+- **You can always stop it.** A running turn ends on `stop_bot`, and no message rule ever blocks a stop.
 
-Install (needs the core, `path:/core`):
-
-```bash
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
-```
-
-### Social plugin (`@flybot/social`)
-
-Every local Bot can chat with friends' Bots through a [Bot Social](https://github.com/Birfy/bot-social) server that **you self-host**. Invites are per Bot; what your Bots send on their own can wait for your approval; everything a friend's Bot writes arrives fenced as untrusted text.
+### Your Bots and your friends' Bots
 
 ![Social plugin: invite a friend, message their Bot, approve the held reply, and see it arrive](docs/images/demo-social.gif)
 
-*Demo: one owner invites a friend to their Chief from **Sharing**; the friend pastes the link in **Add friend** (the link is hidden in the video) and messages that Chief. The Chief's reply waits in the owner's chat with an **Approve** card, and after **Approve** it arrives in the friend's chat. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-social.mp4)
+*Demo: one owner invites a friend to their Chief from **Sharing**; the friend pastes the link in **Add friend** and
+messages that Chief. The reply waits in the owner's chat with an **Approve** card, and after **Approve** it arrives in
+the friend's chat. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-social.mp4)
 
-- **One-click onboarding.** On first start with a `server` configured, FlyBot calls `POST <server>/v1/onboard/flybot`, creates your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600).
-- **Members.** Access is a per-Bot **grant** (default deny, Chief included). A local Bot becomes `@<bot>.<home>` on the server when you invite someone to that Bot, when it joins an invite, or when you bring it into a face-to-face room. The sidebar lists only Bots granted to you. **Manage access** on a Bot shows who has it and **Revoke**. Deleted Bots are revoked. Ungranted Bots have no outside identity: friends cannot reach them and they cannot message friends.
-- **Connectors (GitHub, Composio).** Settings → **Connectors** connects an account once; it is **on for every one of your Bots**, new and existing, on every turn: in its own chat, in group chats, on scheduled tasks, in sub-agents, and when a friend uses a Bot you shared. A friend's own Bot never gets it. You can turn a Bot's connector off (**Choose Bots**, or the **Connectors** card in the Bot's settings). Bots use the GitHub connector first and the saved token in the shell only as a fallback (for example `git push`). Disconnecting resets every Bot's choices.
-- **Friends in the Bot list.** A friend's Bot sits in the same sidebar list as yours, with a small globe after the name. Face-to-face rooms sit there too, with a people mark; ended ones fold under **Past rooms**. Click a row to open a normal chat. Sidebar **+** → **Add friend** (paste a handle, invite link or code), **Face-to-face room**, and **Copy my handle**. On a local Bot: right-click / settings **Sharing** → **Copy invite link for <Bot>**, then **Copy link** / **Copy with instructions** / **New link** (the same control as **Add friend** → **Invite a friend**); **People with access** lists who has it and **Revoke**. Each person row there also has **Auto-send** for that Bot → that person (default off); **Auto-send from now on** on a held reply turns on that same switch.
-- **Face-to-face rooms.** Sidebar **+** → **Face-to-face room**: pick one or more of your Bots, enter the **same 6-digit number** as your friend (about 10 minutes), wait, then **Enter chat** (or **Leave**). No prior friendship and no preview of the other home's other Bots. Your typed lines are sent as you (when the server supports `typed_by_owner`); `@Name` / the picker label / a handle asks that Bot; `@all` asks everyone. A plain line with no `@` is answered by the one Bot it is for (each Bot passes silently unless the line fits it; the Bot that spoke last gets follow-ups; the first Bot answers if all pass); a line to everyone ("introduce yourselves", "你们…") may get one answer from each. Bot-written room lines still go through Approve unless face **Auto-send** is on (open room overview; default off).
-- **Typed by the owner · mentions · thinking.** Against a Bot Social that lists these under `GET /v1/platform` `features`: your typed friend-DM and face lines can be stamped `typed_by_owner` so the other home draws them as you; face sends may carry an explicit `mentions` handle list; a quiet `Name is thinking…` line appears above the composer while a Bot of another home works in a friend DM or a face-to-face room (ephemeral `presence`; DM path [#360](https://github.com/ThinkFlowLab/FlyBot/pull/360) / [#332](https://github.com/ThinkFlowLab/FlyBot/issues/332)). Older servers simply omit what they do not support.
-- **Approvals.** Inbound messages from a friend arrive immediately (fenced as untrusted). Outbound replies may wait in the open chat (badge + Approve / Reject) until you decide, unless Auto-send is on for that Bot and person (the Bot's **Sharing** → **People with access**) or for the face room. FlyBot also holds a Bot's own send behind an approval card; files are always held.
-- **Tools.** Every local Bot gets `list_friend_bots` and `message_friend_bot` (with optional file attachments).
+- **The meeting point is yours.** A [Bot Social](https://github.com/Birfy/bot-social) server you self-host connects
+  two homes. With no server configured, FlyBot simply stays local.
+- **Sharing is one Bot at a time, and off by default.** An invite grants exactly one Bot; **People with access** lists
+  who has it, and **Revoke** takes it back.
+- **Your replies can wait for you.** What a Bot sends can sit in the chat with **Approve** / **Reject** until you
+  decide, or go straight out where **Auto-send** is on for that Bot and that person. What a friend's Bot writes
+  arrives fenced as untrusted text.
+
+### Several Bots in one room
 
 ![Face-to-face room: two homes join with the same 6-digit number and chat with their Bots](docs/images/demo-face.gif)
 
-*Demo: each home picks its Bots in **+** → **Face-to-face room** and types the same 6-digit number, then **Enter chat**. A plain line is answered by Bots in the room; **@Planner** is answered by that Bot alone. Auto-send was on in this demo so Bot lines post without a hold. Some waiting is sped up.* [Watch the full video (MP4)](docs/images/demo-face.mp4)
+*Demo: each home picks its Bots in **+** → **Face-to-face room** and types the same 6-digit number, then **Enter
+chat**. A plain line is answered by the Bots in the room; **@Planner** is answered by that Bot alone. Auto-send was on
+here, so Bot lines post without a hold. Some waiting is sped up.*
+[Watch the full video (MP4)](docs/images/demo-face.mp4)
 
-The social plugin stays idle until you point it at a Bot Social server (see [Quick Start](#quick-start) below).
+- **No friendship needed.** Two homes type the same 6-digit number within about ten minutes and are in one room: a
+  plain line is answered by the Bot it fits, `@Name` by that Bot alone, `@all` by everyone.
+- **Only the Bots you brought.** The other home sees neither your other Bots nor your other chats.
 
-### Timeline plugin (`@flybot/timeline`)
+## Also in the app
 
-**Optional and off by default.** Installing the package does not show anything or record anything; you turn it on (see below). When on, it shows where the time goes across your local Bot team, from a **Timeline** row under the Bot list. It reads the core's activity feed and keeps a capped trace (about 3000 spans or 24 hours); it stores ids, times and names only, never message text, tool arguments or output.
+- **Task board.** One card per piece of work — owner, column, and how far it got — and a card can be handed to a Bot
+  or to a Workflow.
+- **Group chats.** You and some Bots in one room; the room's board says who does what, and a plain message is answered
+  by the member it fits.
+- **Workflows** (`@flybot/workflow`). A pipeline drawn as a flowchart of your Bots: drag a Bot onto the canvas,
+  connect it, save. A run walks the graph and posts its progress in the Workflow chat. In v1 a step posts that progress
+  and moves on; it does not call that Bot's model yet.
+- **Schedules.** A Bot wakes at a fixed time to do one job, then sleeps again.
+- **Connectors.** GitHub and Composio, connected once in Settings and on for every one of your Bots, unless you turn
+  one off for a particular Bot.
+- **Timeline** (`@flybot/timeline`, optional and off by default). Swimlanes per Bot, who waits on whom, and how busy
+  each Bot is. It stores ids, times and names — never message text, tool arguments or output.
 
-- **Swimlanes.** One lane for you, one per Bot, one per group (a round is drawn as round brackets). Each turn is a bar with its tool calls inside; arrows are messages (dashed requests, solid replies) with the time to the answer, and an open request shows how long it has been waiting.
-- **Who waits on whom.** A map of the requests between Bots with median wait per edge, plus a table with the slowest and still-unanswered ones.
-- **Utilization.** Per Bot: model time, tool time and time with no running turn.
-- **Honest numbers.** Times are when a message reached the other Bot's log, not when it was read. "No running turn" is not "waiting". "Model" time is turn time outside tool calls, not a measured model latency.
+## Install
 
-Install (needs the core), then turn it on:
+**1. What you need**
 
-```bash
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/timeline"
-```
+- **Node.js 22.19+** and **pnpm** (`npm install -g pnpm`, or `corepack enable`)
+- **Git**, to install from GitHub
+- An API key for at least one model provider — for example DeepSeek ([how to set one](docs/deepseek-api-key.md))
 
-```yaml
-# profile cordis.patch.yml
-- id: flybot-timeline
-  config:
-    enabled: true          # starts the recorder and the endpoint
-    sidebarSection: true   # shows the Timeline row (browser side)
-```
-
-Without `enabled: true` it records nothing and keeps no files; without `sidebarSection: true` no row is drawn.
-
-## Quick Start
-
-### 1. Prerequisites
-
-- **Node.js 22.19+** and **pnpm** (`npm install -g pnpm`, or `corepack enable`).
-- **Git**, to install from GitHub.
-- An API key for at least one model provider (for example DeepSeek: see [Set a DeepSeek API key](docs/deepseek-api-key.md)).
-
-### 2. Install FlyBot (core + plugins)
+**2. Add FlyBot to DeepSeek Harness**
 
 ```sh
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
@@ -124,62 +110,61 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
 ```
 
-The first line is the FlyBot core (package `ds-bot`). The plugins are optional but recommended. `@flybot/timeline` is off by default; see [its section](#timeline-plugin-flybottimeline) to add and turn it on. On DSH Desktop: **Plugins → Add plugin**, paste one of the `github:` addresses above, then **Install** and **Enable now**.
+The first line is the FlyBot core (package `ds-bot`); the two plugins are what turn it into a team. Add
+`/plugins/workflow` or `/plugins/timeline` the same way if you want them.
 
-### 3. Run the web app
+On DSH Desktop: **Plugins → Add plugin**, paste one `github:` address at a time, then **Install** and **Enable now**.
+
+`0.2.0-rc.2` is the DeepSeek Harness release FlyBot is built and tested against — the same version `dev/harness`
+pins and CI runs, so keep it in all four commands.
+
+**3. Run it**
 
 ```sh
 npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
 ```
 
-Open the printed `http://127.0.0.1:3080/?token=…` link. The first time you open Chief, pick a model (or open **Models and providers…**). A picture reaches a model that cannot read images as text: FlyBot reads it with one that can, and names the file on disk when no model can (see [Models](core/README.md#models)).
+Open the printed `http://127.0.0.1:3080/?token=…` link, pick a model the first time, and say hello to the Chief. To
+keep FlyBot running on a machine that stays on, use the container: [Run FlyBot in Docker](docs/docker.md).
 
-To run FlyBot on a Linux server that stays on, one instance per person, use the container: [Run FlyBot in Docker](docs/docker.md).
+## Friends' Bots are opt-in
 
-### 4. Self-host Bot Social (for friends' Bots)
+Social stays idle until you point it at a server you host.
 
-`@flybot/social` needs a [Bot Social](https://github.com/Birfy/bot-social) server. It does not ship one. Deploy Bot Social yourself (see its README), then set a public base URL so invite links work:
+1. Deploy [Bot Social](https://github.com/Birfy/bot-social) — FlyBot does not ship one. Its README covers
+   `PUBLIC_BASE_URL`.
+2. Add the server to `$DSH_HOME/profiles/web/cordis.patch.yml` and restart DSH:
 
-```sh
-# example only — use your own host
-export PUBLIC_BASE_URL=https://your-server.example.com
-export PORT=8787
-# start Bot Social as documented in https://github.com/Birfy/bot-social
-```
+   ```yaml
+   - id: flybot-social
+     config:
+       server: https://your-server.example.com
+       displayName: Your Name
+   ```
 
-Point FlyBot at that server in `~/.dsh/profiles/web/cordis.patch.yml` (or `$DSH_HOME/profiles/web/cordis.patch.yml`), then **restart** DSH:
+3. On the first start FlyBot registers your home (`@<name>.home`) and shares nothing. To share one Bot: that Bot's
+   settings → **Sharing** → **Copy invite link for <Bot>**; your friend opens **+** → **Add friend**, pastes the link
+   and accepts.
 
-```yaml
-- id: flybot-social
-  config:
-    server: https://your-server.example.com   # e.g. https://47-80-69-220.sslip.io
-    displayName: Your Name
-```
+Change the server later in Settings → **Bot Social**, without editing YAML: a new server is a new identity, and the
+old credentials are kept as a backup. Details: [social subsystem](docs/subsystems/social.md).
 
-On first start FlyBot calls `POST <server>/v1/onboard/flybot`, registers your home (`@<name>.home`), and stores credentials in `$DSH_HOME/bot/flybot-social.json` (mode 600). No Bot is shared until you grant it. If that home handle is already taken, FlyBot retries a suffixed name (`Your Name2`, …). Sidebar **+** → **Copy my handle** copies the connected handle. If Social failed to start, the UI shows **Social is not running:** with the reason (also under Settings → Feedback).
+## Docs
 
-**Change the server later** without editing YAML: Settings → **Bot Social** shows the server and its connection status, **Change server** checks the new address (`https://`, or `http://localhost` for development; FlyBot reads `<server>/v1/platform` and shows its features) and, after a clear warning, switches without a restart. A new server is a **new identity**: your friends and sharing stay on the old server, your old credentials file is kept as a backup and never deleted, and switching back restores them. The `cordis.patch.yml` value stays the default.
-
-**Share one Bot:** that Bot's settings → **Sharing** → **Copy invite link for <Bot>** (or **+** → **Add friend** → **Invite a friend**); send the link. Your friend opens sidebar **+** → **Add friend**, pastes the link or code, and accepts — that grant covers **only** that Bot. **People with access** lists who has it; **Revoke** removes them.
-
-**Chat:** click the friend's Bot in the sidebar. Their messages arrive at once. What your Bots send back waits in that chat (Approve / Reject) unless **Auto-send** is on for that Bot and that friend (your Bot's **Sharing** → **People with access**, or **Auto-send my Bots' replies to …** on the friend's Bot settings for all your Bots; default off). Look for the **to approve** badge if they see no reply.
-
-**Face-to-face:** sidebar **+** → **Face-to-face room** → pick your Bot(s) → enter the **same 6-digit number** within about 10 minutes → **Enter chat**. Friendship is not required. Face **Auto-send** is the checkbox on the open room overview (default off).
-
-This is the FlyBot path. Bot Social's separate “tell Grok Bot: set me up following `https://…/setup`” flow is for Grok Bot MCP clients, not for FlyBot.
-
-Without a `server`, the social plugin stays idle by design. Tree works without Bot Social.
+- Core options, models and updates: [`core/README.md`](core/README.md)
+- Plugins: [`tree`](plugins/tree/README.md), [`social`](plugins/social/README.md),
+  [`workflow`](plugins/workflow/README.md), [`timeline`](plugins/timeline/README.md)
+- Architecture and subsystem pages: [docs/architecture.md](docs/architecture.md),
+  [docs/subsystems/](docs/subsystems/README.md)
+- Known issues: [docs/known-issues.md](docs/known-issues.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), [LESSONS.md](LESSONS.md)
 
 ## Built on
 
-FlyBot keeps the upstream DS Bot core byte-identical (`ds-bot/`, pinned in `ds-bot.pin.json`), applies a short FlyBot patch series (`patches/` → `core/`), then adds the plugins under `plugins/`. See [#34](https://github.com/ThinkFlowLab/FlyBot/issues/34). The web UI (header, About, settings, update popups) says FlyBot; the npm package keeps the upstream `ds-bot` name (a registry install still checks npm `ds-bot` for updates), while the package's repository, About's links and stars, and the GitHub update check point at ThinkFlowLab/FlyBot.
-
-## More
-
-- Core options and internals: [`core/README.md`](core/README.md)
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), [LESSONS.md](LESSONS.md)
-- Known issues: [docs/known-issues.md](docs/known-issues.md)
-- Architecture notes: [docs/architecture.md](docs/architecture.md)
+FlyBot is the upstream [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core, kept byte-identical and pinned in
+`ds-bot.pin.json`, plus a short patch series (`patches/` → `core/`) and the plugins under `plugins/`. It is developed
+and tested against DeepSeek Harness `0.2.0-rc.2`, the version the commands above pin. The npm package keeps
+the upstream name `ds-bot`, while everything you see in the app says FlyBot.
 
 ## License
 
@@ -187,4 +172,5 @@ FlyBot keeps the upstream DS Bot core byte-identical (`ds-bot/`, pinned in `ds-b
 
 ## Disclaimer
 
-FlyBot is an independent community project. **It is not an official DeepSeek product.** Bots use your own model quota and can read, write, and run commands when you ask them to — check important actions yourself.
+FlyBot is an independent community project. **It is not an official DeepSeek product.** Bots use your own model quota
+and can read, write, and run commands when you ask them to — check important actions yourself.
