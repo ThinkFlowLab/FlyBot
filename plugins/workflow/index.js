@@ -61,7 +61,13 @@ export function apply(ctx, config = {}) {
       const from = (fb.bot.list?.() ?? []).find(bot => bot.isMain)?.id
       if (!from || typeof fb.bot.send !== 'function') return { ok: false, code: 'no-sender' }
       const text = `Task ${step.taskId}: ${step.brief}\nDo this step and reply with the result.`
-      return fb.bot.send({ from, to: step.botId, text, role: 'request' })
+      const answer = await fb.bot.send({ from, to: step.botId, text, role: 'request' })
+      // The host refuses with { action: 'deny' | 'hold' } and no ok key, which
+      // handOff would read as delivered. Answer in its own vocabulary instead.
+      if (answer?.action === 'deny' || answer?.action === 'hold') {
+        return { ok: false, code: answer.action, reason: answer.reason }
+      }
+      return answer
     },
   } : {}
   const service = createWorkflowService({

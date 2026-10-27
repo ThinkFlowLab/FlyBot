@@ -388,3 +388,71 @@ test('the plugin load itself reaps a run the restart left running (#1388)', asyn
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// #1407: the host answers a refused hand-off with { action: 'deny' | 'hold' },
+// never with { ok: false }. `dispatch` has to normalise that shape, or the run
+// welds the node shut exactly like #1389 did through { ok: false }.
+function hosted(answerFor) {
+  const created = []
+  const sent = []
+  const warnings = []
+  const fb = {
+    bot: {
+      list: () => roster,
+      async create() { created.push({}); return `bot-${created.length}` },
+      async remove() { return true },
+      async send(message) { sent.push(message); return answerFor(message) },
+    },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    tools: { register() { return () => {} } },
+    warn: (...args) => warnings.push(args.join(' ')),
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  return { service: started.service, sent, warnings }
+}
+
+function pairNodes() {
+  return [
+    { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+    { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+  ]
+}
+
+for (const refused of [
+  { action: 'deny', reason: 'DENY_OUTSIDE', by: { bot: 'tree' } },
+  { action: 'hold', approvalId: 'approval-1', reason: 'Owner approval is required', by: { bot: 'policy' } },
+]) {
+  test(`#1407: a ${refused.action} answer is not marked as handed and is dispatched again`, async () => {
+    const { service, sent, warnings } = hosted(() => refused)
+    const made = await service.define({ name: 'Pair', nodes: pairNodes(), edges: [] })
+    const workflowId = made.workflows.find(item => item.name === 'Pair').id
+    const started = await service.runNamed({ workflow: 'Pair', brief: 'Ship the note' })
+    assert.equal(started.ok, true)
+    const run = started.workflows.find(item => item.id === workflowId).run
+    assert.equal(run.status, 'running')
+    assert.equal(sent.length, 2)
+    assert.match(warnings.join('\n'), new RegExp(`was not handed over: ${refused.action}`))
+
+    // The refused step is not welded shut: the next settle sends it again, to the same Bot.
+    assert.deepEqual(sent.map(message => message.to).sort(), ['bot-1', 'bot-2'])
+    const codeTo = sent[1].to
+    const moved = await service.advance({ workflowId, nodeId: 'plan', outcome: 'done' })
+    assert.equal(moved.ok, true)
+    const resent = sent.filter(message => message.to === codeTo)
+    assert.equal(resent.length, 2)
+    assert.equal(warnings.length, 3)
+  })
+}
+
+test('#1407: an allow answer is still marked as handed', async () => {
+  const { service, sent, warnings } = hosted(() => ({ action: 'allow' }))
+  const made = await service.define({ name: 'Pair', nodes: pairNodes(), edges: [] })
+  const workflowId = made.workflows.find(item => item.name === 'Pair').id
+  const started = await service.runNamed({ workflow: 'Pair', brief: 'Ship the note' })
+  assert.equal(started.ok, true)
+  assert.deepEqual(warnings, [])
+  const moved = await service.advance({ workflowId, nodeId: 'plan', outcome: 'done' })
+  assert.equal(moved.ok, true)
+  assert.equal(sent.length, 2)
+})
