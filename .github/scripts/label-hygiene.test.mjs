@@ -11,7 +11,9 @@ const issue = (number, state, labels, title = `Item ${number}`) =>
 
 // A fake API over a page store: `GET repos/x/y/issues?state=closed&labels=<name>` filters like GitHub
 // (state and one label), and a DELETE removes that label from the item. Every call is recorded.
-const fakeGh = (items) => {
+// `failures` maps `<number>/<label>` to a refusal: `stderr` is the status line `gh` writes, `stdout`
+// the JSON body it writes, and `remove: false` keeps the label on the item like a real refusal does.
+const fakeGh = (items, failures = {}) => {
   const store = items.map(item => ({ ...item, labels: item.labels }))
   const calls = []
   const gh = (...args) => {
@@ -21,7 +23,14 @@ const fakeGh = (items) => {
       const m = /\/issues\/(\d+)\/labels\/(.+)$/.exec(path)
       const item = store.find(i => String(i.number) === m[1])
       const name = decodeURIComponent(m[2])
-      item.labels = item.labels.filter(l => l.name !== name)
+      const failure = failures[`${m[1]}/${name}`]
+      if (failure?.remove !== false) item.labels = item.labels.filter(l => l.name !== name)
+      if (failure) {
+        const error = new Error(failure.stderr)
+        error.stderr = failure.stderr
+        error.stdout = failure.stdout ?? ''
+        throw error
+      }
       return ''
     }
     const url = new URL('https://api.github.com/' + path)
@@ -40,6 +49,15 @@ const fakeGh = (items) => {
 }
 
 const run = (gh, apply) => main({ gh, env: { GH_REPO: 'ThinkFlowLab/FlyBot' }, repo: 'ThinkFlowLab/FlyBot', apply })
+
+// Capture what the run prints: the failure line and the refusal's response body are the evidence, so
+// the tests pin them the way the live log reads.
+const capture = (fn) => {
+  const lines = []
+  const log = console.log
+  console.log = (...args) => lines.push(args.join(' '))
+  try { return { result: fn(), lines } } finally { console.log = log }
+}
 
 test('#738: a dry run prints what it would do and removes nothing', () => {
   const gh = fakeGh([issue(602, 'closed', ['agent-working', 'bug', 'risk:T1'])])
@@ -130,4 +148,73 @@ test('#1401: closing an item is a trigger, and the daily sweep stays', () => {
   assert.match(wf, /^ {2}group: label-hygiene$/m, 'one sweep at a time')
   assert.match(wf, /^ {2}cancel-in-progress: false$/m, 'a close must not cancel the sweep it needs')
   assert.match(wf, /run: node \.github\/scripts\/label-hygiene\.mjs --apply$/m, 'the close event runs the same --apply as the sweep')
+})
+
+test('#1418: a 422 is a refusal, not "already gone": the sweep continues and the read-back keeps the run red', () => {
+  // The live shape from #1418: the label is still on the item after a 422 (job 122128075345, #1359).
+  const gh = fakeGh([
+    issue(1356, 'closed', ['agent-working']),
+    issue(1359, 'closed', ['agent-pr']),
+    issue(1400, 'closed', ['agent-working', 'bug']),
+  ], {
+    '1356/agent-working': {
+      remove: false,
+      stderr: 'gh: Validation Failed (HTTP 422)',
+      stdout: '{"message":"Validation Failed","errors":[{"resource":"Issue","field":"labels","code":"unprocessable"}]}',
+    },
+  })
+  const { result: r, lines } = capture(() => run(gh, true))
+  assert.equal(gh.deletes().length, 3, 'the first refusal must not abandon the items behind it')
+  assert.deepEqual(gh.store.find(i => i.number === 1356).labels.map(l => l.name), ['agent-working'], 'a 422 leaves its label on the item')
+  assert.deepEqual(gh.store.filter(i => i.number !== 1356).map(i => i.labels.map(l => l.name)), [[], ['bug']], 'the other items are still cleaned')
+  assert.deepEqual(r.skipped, [], 'a 422 is never reported as already gone')
+  assert.deepEqual(r.failed.map(f => [f.number, f.name]), [[1356, 'agent-working']])
+  assert.equal(r.ok, false, 'the label is still stale at the read-back')
+  const text = lines.join('\n')
+  assert.match(text, /label-hygiene: FAILED #1356 agent-working: Validation Failed \(HTTP 422\)/)
+  assert.match(text, /"message":"Validation Failed"/, 'the response body is printed, not only the status line')
+  assert.doesNotMatch(text, /label-hygiene: skip #1356/)
+  assert.match(text, /label-hygiene: FAILED: #1356 \(agent-working:/, 'the failed summary is printed before the read-back')
+  assert.match(text, /STILL STALE: #1356 \(agent-working\)/)
+})
+
+test('#1418: a 404 means the label is already gone: one skip line and a clean board is green', () => {
+  const gh = fakeGh([
+    issue(1356, 'closed', ['agent-working']),
+    issue(1359, 'closed', ['agent-pr']),
+  ], {
+    '1356/agent-working': {
+      stderr: 'gh: Not Found (HTTP 404)',
+      stdout: '{"message":"Not Found","documentation_url":"https://docs.github.com/rest"}',
+    },
+  })
+  const { result: r, lines } = capture(() => run(gh, true))
+  assert.equal(gh.deletes().length, 2)
+  assert.deepEqual(r.skipped.map(s => [s.number, s.name]), [[1356, 'agent-working']])
+  assert.deepEqual(r.failed, [])
+  assert.equal(r.ok, true, 'a label that was gone before the call does not fail the sweep')
+  const text = lines.join('\n')
+  assert.match(text, /label-hygiene: skip #1356 agent-working: already gone/)
+  assert.doesNotMatch(text, /STILL STALE/)
+})
+
+test('#1418: an unexpected write failure is collected, the rest is cleaned, and the run names it and exits non-zero', () => {
+  const gh = fakeGh([1354, 1356, 1358].map(n => issue(n, 'closed', ['agent-working', 'bug'])), {
+    '1356/agent-working': {
+      remove: false,
+      stderr: 'gh: Server Error (HTTP 500)',
+      stdout: '{"message":"Server Error"}',
+    },
+  })
+  const { result: r, lines } = capture(() => run(gh, true))
+  assert.equal(gh.deletes().length, 3)
+  assert.deepEqual(r.failed.map(f => [f.number, f.name]), [[1356, 'agent-working']])
+  assert.deepEqual(r.skipped, [])
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.after.map(i => i.number), [1356], 'the label that really failed stays on the board')
+  assert.deepEqual(gh.store.filter(i => i.number !== 1356).map(i => i.labels.map(l => l.name)), [['bug'], ['bug']])
+  const text = lines.join('\n')
+  assert.match(text, /FAILED #1356 agent-working: Server Error \(HTTP 500\)/)
+  assert.match(text, /label-hygiene: FAILED: #1356 \(agent-working:/)
+  assert.match(text, /STILL STALE: #1356 \(agent-working\)/)
 })
