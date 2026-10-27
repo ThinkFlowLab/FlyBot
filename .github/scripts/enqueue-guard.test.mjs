@@ -480,7 +480,9 @@ test('#947: a Bot name beside a real login is accepted even when it names nobody
 // #941's shape: the body starts with the agent's own HTML comment, so the lines sit on the 4th and 5th
 // line, not on the first two. Reading only the first two would refuse every agent pull request.
 test('#943: the lines are found in the first 20 lines, not only the first two', () => {
-  // #1344: the comment text here is any agent HTML comment; the real `CURSOR_AGENT_PR_BODY_*` marker has its own case below.
+  // #1344: the comment text here is any agent HTML comment. The `CURSOR_AGENT_PR_BODY_*` marker has no
+  // producer or reader left — #1371 removed `frozen-branches.json` and `enqueue-guard.mjs` never looked
+  // for it — so this case covers the comment-prefixed body shape only.
   const r = run({ body: '<!-- agent-claim: reviewer-agent -->\n\n' + HEADERS + 'Fixes #943\n', comments: [comment()] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
