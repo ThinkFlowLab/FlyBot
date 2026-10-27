@@ -1024,8 +1024,6 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const factoryIds = new Set((pack?.templates ?? []).map(item => item.id))
-
       const confirmRename = async (workflowId, name) => {
         const trimmed = String(name ?? '').trim()
         if (!trimmed) return
@@ -1104,8 +1102,8 @@ window.__ModuleLoader__.load({
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
           onClick: () => { setOpenId(item.id) },
           onContextMenu: (event) => {
-            if (factoryIds.has(item.id)) return
             event.preventDefault()
+            event.stopPropagation?.()
             setRowMenu({ x: event.clientX, y: event.clientY, workflow: item })
           },
         },
@@ -1168,13 +1166,14 @@ window.__ModuleLoader__.load({
           h('div', null, tip.node.role),
           h('div', { className: 'wf-k' }, 'Instructions'),
           h('div', null, tip.node.instructions)) : null,
-        rowMenu ? h('div', {
+        rowMenu ? portal(h('div', {
           className: 'wf-context-menu',
           style: { left: rowMenu.x, top: rowMenu.y },
+          onPointerDown: (event) => event.stopPropagation(),
           onClick: (event) => event.stopPropagation(),
         },
           h('button', { type: 'button', onClick: () => { setRenaming(rowMenu.workflow); setRowMenu(null) } }, tr('Rename')),
-          h('button', { type: 'button', className: 'wf-danger-text', onClick: () => { setDeleting(rowMenu.workflow); setRowMenu(null) } }, tr('Delete'))) : null,
+          h('button', { type: 'button', className: 'wf-danger-text', onClick: () => { setDeleting(rowMenu.workflow); setRowMenu(null) } }, tr('Delete')))) : null,
         renaming ? portal(h(RenameModal, {
           workflow: renaming,
           onClose: () => setRenaming(null),

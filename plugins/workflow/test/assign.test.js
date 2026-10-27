@@ -307,7 +307,7 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.equal(off.enabled, false)
 })
 
-test('rename changes workflow name and refuses factory presets', () => {
+test('rename changes workflow name, including seeded delivery rows', () => {
   const svc = service()
   const lane = svc.create({
     name: 'Release lane',
@@ -324,7 +324,9 @@ test('rename changes workflow name and refuses factory presets', () => {
   
   assert.equal(svc.rename({ workflowId: 'missing' }).ok, false)
   assert.equal(svc.rename({ workflowId: laneId, name: '' }).ok, false)
-  assert.equal(svc.rename({ workflowId: DELIVERY_ID, name: 'Changed' }).ok, false)
+  const deliveryRenamed = svc.rename({ workflowId: DELIVERY_ID, name: '发布交付流水线 改' })
+  assert.equal(deliveryRenamed.ok, true)
+  assert.equal(deliveryRenamed.workflows.find(item => item.id === DELIVERY_ID).name, '发布交付流水线 改')
 })
 
 test('delete removes workflow and releases its ephemeral Bots', () => {
@@ -344,14 +346,18 @@ test('delete removes workflow and releases its ephemeral Bots', () => {
       assert.equal(result.ok, true)
       assert.ok(!result.workflows.some(item => item.id === laneId))
       assert.equal(svc.delete({ workflowId: 'missing' }).ok, false)
-      assert.equal(svc.delete({ workflowId: DELIVERY_ID }).ok, false)
+      const dropDelivery = svc.delete({ workflowId: DELIVERY_ID })
+      assert.equal(dropDelivery.ok, true)
+      assert.ok(!dropDelivery.workflows.some(item => item.id === DELIVERY_ID))
     })
   }
   
   assert.equal(deleted.ok, true)
   assert.ok(!deleted.workflows.some(item => item.id === laneId))
   assert.equal(svc.delete({ workflowId: 'missing' }).ok, false)
-  assert.equal(svc.delete({ workflowId: DELIVERY_ID }).ok, false)
+  const dropDelivery = svc.delete({ workflowId: DELIVERY_ID })
+  assert.equal(dropDelivery.ok, true)
+  assert.ok(!dropDelivery.workflows.some(item => item.id === DELIVERY_ID))
 })
 
 test('delete cleans up runs, logs, and routes', () => {

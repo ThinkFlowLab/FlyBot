@@ -492,6 +492,49 @@ test('the flowchart canvas CSS clips overflow inside its panel', () => {
   assert.match(source, /\.wf-stage\{[^}]*overflow:hidden/)
 })
 
+test('delivery workflow rows are deletable even when template ids match', async () => {
+  const graph = delivery()
+  const calls = []
+  let workflows = [graph]
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') {
+      return {
+        workflows,
+        templates: [{ id: 'delivery', name: '发布交付流水线' }, { id: 'weekly', name: '周报汇总流程' }],
+      }
+    }
+    if (name === 'workflow/delete' && body.workflowId === 'delivery') {
+      workflows = []
+      return { workflows }
+    }
+    return { ok: true, workflows }
+  }
+  const prevBody = document.body
+  document.body = { nodeType: 1 }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0]
+    assert.ok(row)
+    row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 40, clientY: 40 })
+    await settle()
+    const deleteBtn = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Delete')[0]
+    assert.ok(deleteBtn, 'context menu Delete')
+    deleteBtn.props.onClick()
+    await settle()
+    const confirm = findAll(view.tree, node => node.type === 'button' && node.props.className === 'wf-btn wf-danger')[0]
+    assert.ok(confirm, 'delete confirm')
+    confirm.props.onClick()
+    await settle()
+    assert.ok(calls.some(item => item.name === 'workflow/delete' && item.body.workflowId === 'delivery'))
+    assert.equal(textOf(view.tree).includes('发布交付流水线'), false)
+    view.unmount()
+  } finally {
+    document.body = prevBody
+  }
+})
+
 test('a sidebar workflow row can be deleted from the context menu', async () => {
   const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
   const calls = []
@@ -504,7 +547,7 @@ test('a sidebar workflow row can be deleted from the context menu', async () => 
   const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
   await settle()
   const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
-  row.props.onContextMenu({ preventDefault() {}, clientX: 40, clientY: 40 })
+  row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 40, clientY: 40 })
   await settle()
   const deleteBtn = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Delete')[0]
   assert.ok(deleteBtn)

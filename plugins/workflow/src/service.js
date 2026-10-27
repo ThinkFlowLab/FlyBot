@@ -630,8 +630,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
-      const template = templateById(item.id)
-      if (template) return { ok: false, error: 'Cannot rename a factory preset' }
       const name = cleanLine(body.name, 80)
       if (!name) return { ok: false, error: 'A workflow needs a name' }
       item.name = name
@@ -646,16 +644,19 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
-      const template = templateById(item.id)
-      if (template) return { ok: false, error: 'Cannot delete a factory preset' }
-      const run = state.runs[workflowId]
-      const releasing = run ? Object.values(run.ephemeral ?? {}) : []
+      const lane = laneOf(workflowId)
+      const releasing = (lane.active ?? []).flatMap(run => Object.values(run.ephemeral ?? {}))
       const finish = () => {
         state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
+        delete state.lanes[workflowId]
+        delete state.demos[workflowId]
         delete state.runs[workflowId]
         delete state.logs[workflowId]
         Object.keys(state.routes).forEach(taskId => {
           if (state.routes[taskId]?.id === workflowId) delete state.routes[taskId]
+        })
+        Object.keys(state.claims ?? {}).forEach(taskId => {
+          if (state.routes[taskId]?.id === workflowId) delete state.claims[taskId]
         })
         write()
         return present()
