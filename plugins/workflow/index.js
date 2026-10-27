@@ -25,7 +25,10 @@ export function apply(ctx, config = {}) {
   const fb = ctx.flybot.scope('flybot-workflow')
   const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
   const persist = config.persist !== false
-  const liveNames = new Set()
+  // The runner names held by the ephemeral Bots this plugin spawned, keyed by
+  // Bot id, so a release gives its name back instead of keeping it for the
+  // lifetime of the process (#1387).
+  const liveNames = new Map()
   const lifecycle = typeof fb.bot?.create === 'function' ? {
     async spawn(spec) {
       const tools = Array.isArray(spec.tools) ? spec.tools : []
@@ -35,7 +38,7 @@ export function apply(ctx, config = {}) {
       const prompt = [spec.prompt, ...notes].filter(Boolean).join('\n\n')
       let last
       for (let n = 0; n < 4; n += 1) {
-        const taken = new Set([...(fb.bot.list?.() ?? []).map(bot => bot.name), ...liveNames])
+        const taken = new Set([...(fb.bot.list?.() ?? []).map(bot => bot.name), ...liveNames.keys()])
         const name = runnerName(spec.name, taken)
         try {
           const id = await fb.bot.create({
@@ -50,7 +53,7 @@ export function apply(ctx, config = {}) {
             permission: permissionFor(tools),
             fields: { nodeId: spec.nodeId, tools },
           })
-          liveNames.add(name)
+          liveNames.set(name, id)
           return id
         } catch (error) {
           last = error
@@ -60,6 +63,9 @@ export function apply(ctx, config = {}) {
       throw last
     },
     release(id) {
+      // The instance is going away, so its name is free again. Without this the
+      // allocator treats every name this process ever handed out as taken.
+      for (const [name, owner] of liveNames) if (owner === id) liveNames.delete(name)
       if (typeof fb.bot.remove !== 'function') return undefined
       return fb.bot.remove(id)
     },
@@ -150,7 +156,13 @@ export function apply(ctx, config = {}) {
       return null
     }))
   }
-  const dispose = () => { service.dispose(); for (const off of offs.splice(0)) off() }
+  // The hooks come off at once; the Bot release is behind a promise, so hand it
+  // back instead of dropping it (#1387).
+  const dispose = () => {
+    const released = service.dispose()
+    for (const off of offs.splice(0)) off()
+    return released
+  }
   if (typeof ctx.effect === 'function') ctx.effect(() => dispose, 'flybot-workflow')
   else ctx.on?.('dispose', dispose)
   return { service, enabled: true, dispose }

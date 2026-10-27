@@ -999,12 +999,19 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     dispose() {
       const runs = Object.values(state.lanes).flatMap(lane => [...(lane.active ?? []), lane.last].filter(Boolean))
       const ids = runs.flatMap(run => Object.values(run?.ephemeral ?? {}))
-      for (const run of runs) {
-        delete run.ephemeral
-        delete run.handed
-      }
-      if (ids.length > 0) write()
-      void releaseAll(ids, release, warn)
+      // Release first, then forget the ids (#1387). A record that drops an id
+      // before its Bot is gone leaves a hidden Bot that no state names, so
+      // nothing can ever find it again. releaseAll reports a failed id through
+      // `warn` instead of rejecting, so one bad release cannot skip the write.
+      // The caller awaits this: a disposer that returns before the Bots are
+      // gone is not a cleanup.
+      return releaseAll(ids, release, warn).then(() => {
+        for (const run of runs) {
+          delete run.ephemeral
+          delete run.handed
+        }
+        if (ids.length > 0) write()
+      })
     },
   }
 }
