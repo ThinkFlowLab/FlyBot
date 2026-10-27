@@ -3,6 +3,7 @@
 // merge-gate.mjs is tested: the fixtures are real API pages, and every removal is a recorded call.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { main, plan, planItem, STALE_LABELS } from './label-hygiene.mjs'
 
 const issue = (number, state, labels, title = `Item ${number}`) =>
@@ -105,4 +106,28 @@ test('#738: the keep-list is a closed set, so a new label is not removed by acci
   // status:done). A status label added to the list without a test would widen the blast radius.
   assert.deepEqual(STALE_LABELS, ['agent-working', 'agent-pr', 'agent-ready', 'agent-task', 'awaiting-approval'])
   for (const keep of ['bug', 'area:ui', 'risk:T3', 'hold', 'needs-human', 'status:done']) assert.equal(STALE_LABELS.includes(keep), false)
+})
+
+test('#1401: a closed item that still carries hold loses only its status label', () => {
+  const gh = fakeGh([issue(800, 'closed', ['hold', 'agent-working', 'bug', 'area:automation'])])
+  const r = run(gh, true)
+  assert.deepEqual(r.items.map(i => [i.number, i.stale]), [[800, ['agent-working']]])
+  assert.deepEqual(gh.store[0].labels.map(l => l.name), ['hold', 'bug', 'area:automation'], 'hold is human-only, in both directions')
+  assert.deepEqual(gh.deletes(), ['api -X DELETE repos/ThinkFlowLab/FlyBot/issues/800/labels/agent-working'])
+})
+
+test('#1401: closing an item is a trigger, and the daily sweep stays', () => {
+  const wf = readFileSync(new URL('../workflows/label-hygiene.yml', import.meta.url), 'utf8')
+  const triggers = wf.slice(wf.indexOf('\non:\n'), wf.indexOf('\nconcurrency:'))
+  assert.match(triggers, /^ {2}issues:\n {4}types: \[closed\]$/m, 'a closed issue runs the same cleanup')
+  assert.match(triggers, /^ {2}pull_request_target:\n {4}types: \[closed\]$/m, 'a closed pull request too, with the write token')
+  // A `pull_request` run from a fork is read-only and could not remove the label it came for.
+  assert.doesNotMatch(triggers, /^ {2}pull_request:\s*$/m)
+  assert.match(triggers, /^ {2}schedule:\n {4}- cron: '30 19 \* \* \*'/m, 'the daily sweep stays')
+  assert.match(triggers, /^ {2}workflow_dispatch:$/m, 'and the manual backfill stays')
+  const perms = wf.slice(wf.indexOf('\npermissions:\n'), wf.indexOf('\njobs:')).trim().split('\n').map(line => line.trim())
+  assert.deepEqual(perms, ['permissions:', 'contents: read', 'issues: write', 'pull-requests: write'], 'the close event adds no permission')
+  assert.match(wf, /^ {2}group: label-hygiene$/m, 'one sweep at a time')
+  assert.match(wf, /^ {2}cancel-in-progress: false$/m, 'a close must not cancel the sweep it needs')
+  assert.match(wf, /run: node \.github\/scripts\/label-hygiene\.mjs --apply$/m, 'the close event runs the same --apply as the sweep')
 })
