@@ -37,17 +37,21 @@ const CHANGE = { at: 'at', every: 'every_seconds', daily: 'daily', weekly: 'week
 function scheduleService() {
   const tasks = new Map()
   const updates = []
+  // Every create in order: the paused-copy branch is the one path that must land here (#1319).
+  const created = []
   let next = 1
   // DSH runs management and delivery through one queue (`serialize`); the fake keeps one too.
   let chain = Promise.resolve()
   const service = {
     tasks,
     updates,
+    created,
     failCreate: false,
     failDelete: false,
     failPut: false,
     async create(sessionId, request) {
       if (this.failCreate) throw new Error('create failed')
+      created.push({ sessionId, request })
       const id = `schedule-${next++}`
       const kind = Object.keys(request).find(key => !['title', 'prompt'].includes(key))
       const record = { id, title: request.title, prompt: request.prompt, timing: request[kind], ...KINDS[kind](request[kind]) }
@@ -405,6 +409,37 @@ test('#1287: a copy keeps a daily rule’s time and zone, and an earlier part’
   const groupCopy = [...schedule.tasks.values()].find(task => task.record.title === 'Old part' && task.record.id !== oldId)
   assert.equal(groupCopy.sessionId, 'g1', 'a group copy lands on the group’s own Session')
   assert.equal(groupCopy.record.scheduledAt, schedule.tasks.get(oldId).record.scheduledAt, 'and keeps the next run')
+})
+
+// #1319: a paused source has no next run to keep, so its copy takes the other branch of
+// `copySchedule` — DSH's `create`, as Resume does — and gets a fresh interval anchored to now.
+test('#1319: a copy of a paused task goes through create and re-anchors its next run', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  let clock = Date.parse('2030-01-01T12:00:00.000Z')
+  t.mock.method(Date, 'now', () => clock)
+
+  await call('schedule-create', { target: 'm1', title: 'Watch', prompt: 'Check the board', when: { kind: 'every', minutes: 120 } })
+  const [sourceId] = schedule.tasks.keys()
+  assert.equal((await call('schedule-pause', { sessionId: 'm1', id: sourceId })).ok, true)
+  assert.equal(schedule.tasks.size, 0, 'the source left DSH, so it has no next run to keep')
+  schedule.created.length = 0
+
+  // This branch shares the refusals of the active one, and they run before it.
+  assert.match((await call('schedule-create', { target: 'm1', copyFrom: { sessionId: 'm1', id: sourceId } })).error.message, /different Bot or group chat/)
+  assert.deepEqual(schedule.created, [], 'a refused copy creates nothing')
+
+  clock += 10 * 60_000
+  const copied = await call('schedule-create', { target: 'w1', copyFrom: { sessionId: 'm1', id: sourceId } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  assert.deepEqual(schedule.created.map(entry => [entry.sessionId, entry.request]), [['w2', { title: 'Watch', prompt: 'Check the board', every_seconds: 7200 }]], 'a paused copy is created, on the target’s current part, with the source’s request')
+  const [copyId, copy] = [...schedule.tasks.entries()][0]
+  assert.match(copyId, /^schedule-/, 'the copy gets DSH’s own id shape')
+  assert.notEqual(copyId, sourceId, 'never the paused source’s id')
+  assert.equal(copy.sessionId, 'w2')
+  assert.equal(copy.record.scheduledAt, new Date(clock + 7200_000).toISOString(), 'its next run is anchored to now + interval, as Resume re-anchors one')
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).pausedSchedules[sourceId].record.title, 'Watch', 'the paused source stays paused')
 })
 
 test('pause keeps the task in FlyBot and removes it from DSH; resume brings it back', async (t) => {
