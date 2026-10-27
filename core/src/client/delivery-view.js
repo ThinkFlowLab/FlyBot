@@ -14,7 +14,8 @@ import { t } from './i18n.js'
 import { columnOf } from '../shared/task-board.js'
 import { DeliveryMetrics, DELIVERY_CHART_CSS, todayPartial } from './delivery-chart.js'
 import { githubCard } from '../shared/board-card.js'
-import { BoardCard, DELIVERY_SKIN, TASK_SKIN } from './board-card.js'
+import { BoardCard, DELIVERY_SKIN } from './board-card.js'
+import { BoardCard as TaskBoardCard, canMoveTask } from './kanban.js'
 
 const POLL_MS = 60_000
 // While the host is still building there is nothing to see, so ask often; once the board is up,
@@ -81,20 +82,6 @@ function taskColumnOf(task) {
   return 'done'
 }
 
-// A task on the one board reads through the same card a delivery card does (#1265 step 1, #1326):
-// one identity line, one title, and the Bot that has it — only the source differs.
-const priorityLabel = (priority) => t(priority === 'urgent' ? 'Highest' : priority === 'high' ? 'High' : 'Low')
-const taskShortId = (id) => `#${String(id ?? '').replace('task-', '').slice(-6)}`
-function taskCardModel(task, roster) {
-  return {
-    source: 'task',
-    key: `task:${task?.id}`,
-    title: task?.title ?? '',
-    owner: roster?.byId?.[task?.ownerBotId]?.name ?? null,
-    ownerKind: 'bot',
-  }
-}
-
 // A column takes a card dropped on it, and the board's own `onMove` decides whether that move is
 // allowed — the drop is a request, never a write from the client (#1326).
 const dropProps = (column, { dragging, onMove, onDrag }) => ({
@@ -105,21 +92,6 @@ const dropProps = (column, { dragging, onMove, onDrag }) => ({
     if (id) onMove?.(id, column)
     onDrag?.(null)
   },
-})
-
-const taskCardNode = (task, { roster, onMove, onDrag }) => h(BoardCard, {
-  key: task.id,
-  card: taskCardModel(task, roster),
-  skin: TASK_SKIN,
-  attrs: { 'data-task': task.id },
-  idText: taskShortId(task.id),
-  topExtra: task.priority && task.priority !== 'normal'
-    ? h('span', { className: 'bt-board-priority', 'data-priority': task.priority }, priorityLabel(task.priority))
-    : null,
-  draggable: Boolean(onMove),
-  dragValue: task.id,
-  onDragStart: () => onDrag?.(task.id),
-  onDragEnd: () => onDrag?.(null),
 })
 
 // Simplified task column renderer for degraded states (no GitHub snapshot).
@@ -147,7 +119,14 @@ function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onD
       h('span', { className: 'bt-board-count' }, String(columns[column].length))),
     columns[column].length === 0
       ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.'))
-      : columns[column].map(task => taskCardNode(task, { roster, onMove, onDrag })))))
+      : columns[column].map(task => h(TaskBoardCard, { 
+          key: task.id, 
+          task, 
+          roster, 
+          movable: canMoveTask(roster, task), 
+          onMove, 
+          onDrag 
+        })))))
 }
 
 export function duration(ms) {
@@ -500,7 +479,7 @@ function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter 
         ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
         : allCards(column.id).map(item => 
             isTask(item)
-              ? taskCardNode(item, { roster, onMove, onDrag })
+              ? h(TaskBoardCard, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag })
               : h(DeliveryCard, { key: `${repo ?? ''}-${item.kind}-${item.number}`, card: item, repo })))))
 }
 
@@ -536,7 +515,7 @@ function DeliveryWorkflowSections({ sections, repo = null, filter = 'all' }) {
 
 // A repository that cannot be read keeps its block and says so; the readable ones are drawn beside
 // it, which is why one failure no longer empties the board (#1265, #1211).
-function DeliveryRepoBlock({ entry, filter = 'all' }) {
+function DeliveryRepoBlock({ entry, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, filter = 'all' }) {
   const state = entry?.state ?? 'fresh'
   const source = repoSourceText(entry?.repoSource)
   return h('section', { className: 'bt-del-repo-block', 'data-repo': entry?.repo ?? undefined, 'data-state': state },
@@ -546,7 +525,7 @@ function DeliveryRepoBlock({ entry, filter = 'all' }) {
       ? h('p', { className: 'bt-del-block-state', role: 'status' },
         state === 'loading' ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t('The delivery board is not ready yet.')),
         entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : '')
-      : h(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, filter }))
+      : h(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, tasks, filter, roster, dragging, onMove, onDrag }))
 }
 
 export function DeliveryBoard({ view, snapshot, message = '', repo = null, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, onRetry = null, onProbe = null }) {
@@ -625,7 +604,7 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, tasks
     entries === null
       ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag })
       : h('div', { className: 'bt-del-repos' },
-        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry, filter }))))
+        entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry, tasks, roster, dragging, onMove, onDrag, filter }))))
 }
 
 export function DeliveryView({ actions, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null }) {

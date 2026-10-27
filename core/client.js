@@ -8487,17 +8487,6 @@ function taskColumnOf(task) {
   if (col === "in-progress") return "in-progress";
   return "done";
 }
-var priorityLabel = (priority) => t(priority === "urgent" ? "Highest" : priority === "high" ? "High" : "Low");
-var taskShortId = (id) => `#${String(id ?? "").replace("task-", "").slice(-6)}`;
-function taskCardModel(task, roster) {
-  return {
-    source: "task",
-    key: `task:${task?.id}`,
-    title: task?.title ?? "",
-    owner: roster?.byId?.[task?.ownerBotId]?.name ?? null,
-    ownerKind: "bot"
-  };
-}
 var dropProps = (column, { dragging, onMove, onDrag }) => ({
   onDragOver: (event) => {
     if (!dragging) return;
@@ -8509,18 +8498,6 @@ var dropProps = (column, { dragging, onMove, onDrag }) => ({
     if (id) onMove?.(id, column);
     onDrag?.(null);
   }
-});
-var taskCardNode = (task, { roster, onMove, onDrag }) => (0, import_react16.createElement)(BoardCard, {
-  key: task.id,
-  card: taskCardModel(task, roster),
-  skin: TASK_SKIN,
-  attrs: { "data-task": task.id },
-  idText: taskShortId(task.id),
-  topExtra: task.priority && task.priority !== "normal" ? (0, import_react16.createElement)("span", { className: "bt-board-priority", "data-priority": task.priority }, priorityLabel(task.priority)) : null,
-  draggable: Boolean(onMove),
-  dragValue: task.id,
-  onDragStart: () => onDrag?.(task.id),
-  onDragEnd: () => onDrag?.(null)
 });
 function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onDrag = null }) {
   const columns = { "not-started": [], "in-progress": [], "done": [] };
@@ -8551,7 +8528,14 @@ function TaskColumns({ tasks, roster = null, dragging = null, onMove = null, onD
         (0, import_react16.createElement)("span", null, columnTitles[column]),
         (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(columns[column].length))
       ),
-      columns[column].length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : columns[column].map((task) => taskCardNode(task, { roster, onMove, onDrag }))
+      columns[column].length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : columns[column].map((task) => (0, import_react16.createElement)(BoardCard2, {
+        key: task.id,
+        task,
+        roster,
+        movable: canMoveTask(roster, task),
+        onMove,
+        onDrag
+      }))
     ))
   );
 }
@@ -8883,7 +8867,7 @@ function DeliveryColumns({ view, repo = null, placed = null, tasks = [], filter 
         (0, import_react16.createElement)("span", null, t(column.label)),
         (0, import_react16.createElement)("span", { className: "bt-board-count" }, String(allCards(column.id).length))
       ),
-      allCards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : allCards(column.id).map((item) => isTask(item) ? taskCardNode(item, { roster, onMove, onDrag }) : (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? ""}-${item.kind}-${item.number}`, card: item, repo }))
+      allCards(column.id).length === 0 ? (0, import_react16.createElement)("p", { className: "bt-board-empty" }, t("Nothing here.")) : allCards(column.id).map((item) => isTask(item) ? (0, import_react16.createElement)(BoardCard2, { key: item.id, task: item, roster, movable: canMoveTask(roster, item), onMove, onDrag }) : (0, import_react16.createElement)(DeliveryCard, { key: `${repo ?? ""}-${item.kind}-${item.number}`, card: item, repo }))
     ))
   );
 }
@@ -8926,7 +8910,7 @@ function DeliveryWorkflowSections({ sections, repo = null, filter = "all" }) {
     (section.unplaced ?? []).length > 0 ? (0, import_react16.createElement)("p", { className: "bt-del-hint" }, t("{count} card(s) name a node this workflow draws no column for.", { count: section.unplaced.length })) : null
   )));
 }
-function DeliveryRepoBlock({ entry, filter = "all" }) {
+function DeliveryRepoBlock({ entry, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, filter = "all" }) {
   const state = entry?.state ?? "fresh";
   const source = repoSourceText(entry?.repoSource);
   return (0, import_react16.createElement)(
@@ -8943,7 +8927,7 @@ function DeliveryRepoBlock({ entry, filter = "all" }) {
       { className: "bt-del-block-state", role: "status" },
       state === "loading" ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t("The delivery board is not ready yet.")),
       entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : ""
-    ) : (0, import_react16.createElement)(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, filter })
+    ) : (0, import_react16.createElement)(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed, tasks, filter, roster, dragging, onMove, onDrag })
   );
 }
 function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], roster = null, dragging = null, onMove = null, onDrag = null, onRetry = null, onProbe = null }) {
@@ -9024,7 +9008,7 @@ function DeliveryBoard({ view, snapshot, message = "", repo = null, tasks = [], 
     entries2 === null ? (0, import_react16.createElement)(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed, tasks, filter, roster, dragging, onMove, onDrag }) : (0, import_react16.createElement)(
       "div",
       { className: "bt-del-repos" },
-      entries2.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, { key: entry.repo ?? "unknown", entry, filter }))
+      entries2.map((entry) => (0, import_react16.createElement)(DeliveryRepoBlock, { key: entry.repo ?? "unknown", entry, tasks, roster, dragging, onMove, onDrag, filter }))
     )
   );
 }
@@ -9191,7 +9175,7 @@ function canMoveTask(roster, task) {
   const bot = roster?.byId?.[task?.ownerBotId];
   return Boolean(bot && !bot.remote && (!bot.ownerId || bot.ownerId === me));
 }
-function priorityLabel2(priority) {
+function priorityLabel(priority) {
   if (priority === "urgent") return t("Highest");
   if (priority === "high") return t("High");
   if (priority === "low") return t("Low");
@@ -9319,7 +9303,7 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
     idText: shortId(task.id),
     emptyTitle: t("Untitled task"),
     topExtra: [
-      (0, import_react17.createElement)("span", { key: "priority", className: "bt-board-priority", "data-priority": priority }, priorityLabel2(priority)),
+      (0, import_react17.createElement)("span", { key: "priority", className: "bt-board-priority", "data-priority": priority }, priorityLabel(priority)),
       (0, import_react17.createElement)("span", { key: "status", className: "bt-board-status" }, statusLabel(task.status))
     ],
     note: task.note ?? "",
