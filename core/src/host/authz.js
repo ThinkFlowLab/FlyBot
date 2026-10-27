@@ -60,6 +60,9 @@ const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss
 const TASK_ENDPOINTS = new Set([
   'tasks', 'task-create', 'task-update', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-send-back', 'task-cancel',
   'task-wait-input', 'task-answer-input',
+  // Saving a workflow definition writes `workflows/<id>.json` in the workspace (#1272 step 3): the
+  // write needs a signed-in actor, and it is an explicit entry rather than a `task-*` prefix.
+  'workflow-save',
 ])
 
 const deny = (code, message) => ({ ok: false, code, message })
@@ -399,7 +402,7 @@ export function install(rt) {
     if (NO_ACTOR_ALLOWED.has(ep) || ep.startsWith('auth-')) return ALLOW
     if (ep === 'state' || ep === 'models' || ep === 'efforts' || ep === 'repo-stars' || ep === 'update-check'
       || ep === 'diagnostics' || ep === 'diagnostics-log' || ep === 'usage'
-      || ep === 'delivery-board' || ep === 'delivery-probe') return ALLOW
+      || ep === 'delivery-board' || ep === 'delivery-probe' || ep === 'workflows') return ALLOW
 
     return deny('bot/not-found', `Unknown endpoint ${ep}`)
   }

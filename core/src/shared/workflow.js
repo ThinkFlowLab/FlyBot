@@ -402,13 +402,13 @@ function guardRefusals(node, facts) {
   for (const guard of node.guards) {
     const spec = canonicalSpec(guard.spec)
     if (!spec) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec: guard.spec }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec: guard.spec }), unreadable: false })
       continue
     }
     // Read before the fact: an unknown check is a defect in the file, and a reader has to be told
     // that rather than shown a refusal about a fact that was never looked at.
     if (!GUARD_CHECKS.includes(guard.is)) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec, guard, unchecked: guard.is }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, guard, unchecked: guard.is }), unreadable: false })
       continue
     }
     const have = artifactAt(present, spec)
@@ -416,18 +416,43 @@ function guardRefusals(node, facts) {
     if (!have) {
       // A guard's own sentence says what the fact said, and a fact that is not there said nothing:
       // the node's wording answers this one, or the sentence would name two revisions that do not exist.
-      refusals.push({ guard, refusal: renderRefusal(node, { spec }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec }), unreadable: false })
       continue
     }
     if (guard.is === 'fresh' && !state.fresh) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, stale: true, have: state.have, now: state.now }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, stale: true, have: state.have, now: state.now }), unreadable: state.reason === 'unreadable' })
       continue
     }
     if (guard.is === 'equals' && String(have.value ?? '') !== String(guard.value ?? '')) {
-      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, have: have.revision, want: guard.value }) })
+      refusals.push({ guard, refusal: renderRefusal(node, { spec, input: have, guard, have: have.revision, want: guard.value }), unreadable: false })
     }
   }
   return refusals
+}
+
+// One row per guard of one node, in the order the definition lists them (#1272 step 3, acceptance
+// 5): the sentence a guard would print under these facts, or no sentence when it holds. This reads
+// the same function `enterNode` reads, so the editor's preview and the board's refusal cannot
+// disagree; it exists because the editor shows every guard while `enterNode` answers with the first
+// refusal only.
+export function guardRows(raw, nodeId, facts = {}) {
+  const node = nodeById(normaliseWorkflow(raw), nodeId)
+  if (!node) return []
+  const refused = new Map(guardRefusals(node, facts).map((entry) => [entry.guard.id, entry]))
+  return node.guards.map((guard) => {
+    const entry = refused.get(guard.id)
+    return {
+      id: guard.id,
+      spec: guard.spec,
+      is: guard.is,
+      value: guard.value,
+      // `holds` is a guard that was read and passes; `refuse` carries the producer's sentence, and
+      // `unreadable` says the source could not be read, which is never a pass.
+      state: entry === undefined ? 'holds' : entry.unreadable ? 'unreadable' : 'refuse',
+      sentence: entry?.refusal ?? null,
+      unreadable: entry === undefined ? false : entry.unreadable === true,
+    }
+  })
 }
 
 // Whether this node may start: every input present, every one of them current, and every guard

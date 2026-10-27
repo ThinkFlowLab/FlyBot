@@ -727,6 +727,10 @@ export function apply(ctx) {
     wakeUpdate()
   }
   actions.repoStars = () => call('repo-stars')
+  // A workflow definition is read and written through the host (#1272 step 3): the page never writes
+  // a file or GitHub itself, and workflow-save is the endpoint authz allows.
+  actions.workflows = (payload) => call('workflows', payload)
+  actions.workflowSave = (payload) => call('workflow-save', payload)
   actions.noteTurnTime = (sessionId, turn, key, time) => {
     if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
     turnClock.set((state) => {

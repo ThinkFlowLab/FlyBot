@@ -5,6 +5,32 @@
 export const NAMESPACE = 'ds-bot'
 
 const ZH = {
+  // Workflows (#1272 step 3)
+  Workflows: '工作流',
+  'A workflow is a file: workflows/<id>.json. Columns, the flowchart and the refusals are all drawn from it.':
+    '工作流就是一个文件：workflows/<id>.json。列、流程图和拒绝语都从它画出来。',
+  'Factory presets': '出厂预设',
+  Yours: '你自己的',
+  'project default': '项目默认',
+  'Reading workflows…': '正在读取工作流…',
+  Customize: '定制一份',
+  Save: '保存',
+  'Use for this project': '本项目使用',
+  'This node has no guards, so nothing refuses it but its inputs.': '这个节点没有 guard，除了输入之外没有别的东西会拒绝它。',
+  Guards: 'Guard',
+  Edges: '边',
+  'Guards of {node}': '{node} 的 Guard',
+  holds: '成立',
+  'cannot read': '读不到',
+  refuses: '拒绝',
+  'The flowchart, drawn from the node table': '流程图，按节点表绘制',
+  'This host could not read the facts, so these guards say what they could not read — none of them is a pass.':
+    '这台主机读不到事实，所以这些 guard 只说读不到什么——没有一条算通过。',
+  'Saved workflows/{id}.json': '已保存 workflows/{id}.json',
+  'Could not open this workflow': '打不开这个工作流',
+  'This definition cannot be saved': '这个定义不能保存',
+  'This definition cannot be copied': '这个定义不能复制',
+  '{count} card(s) name a node this workflow draws no column for.': '有 {count} 张卡指向这个工作流不画列的节点。',
   // Shared
   'Main Bot': '主 Bot',
   Working: '工作中',
@@ -848,7 +874,6 @@ const ZH = {
   'At least {count} characters.': '至少 {count} 个字符。',
   'Replace value': '替换值',
   'Saving…': '保存中…',
-  Save: '保存',
   'Allowing…': '允许中…',
   Allow: '允许',
   '{bot} asked for {name}': '{bot} 请求了 {name}',

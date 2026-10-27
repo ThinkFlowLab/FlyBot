@@ -42,6 +42,7 @@ import * as dshUpdate from './src/host/dsh-update.js'
 import * as hooks from './src/host/hooks.js'
 import * as remoteChat from './src/host/remote-chat.js'
 import * as deliveryBoard from './src/host/delivery-board.js'
+import * as workflowStore from './src/host/workflow-store.js'
 import * as channel from './src/host/channel.js'
 
 export { COLORS } from './src/host/constants.js'
@@ -53,7 +54,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, deliveryBoard, channel]
+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, deliveryBoard, workflowStore, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

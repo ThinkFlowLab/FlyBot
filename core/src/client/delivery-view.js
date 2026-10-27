@@ -359,16 +359,47 @@ export function DeliveryHeader({ view, snapshot, repo = null, onRetry = null, on
 
 // One repository's columns (#1265 step 4). The card key carries the repository, so the same issue
 // number in two repositories is two cards and neither is mistaken for the other.
-function DeliveryColumns({ view, repo = null }) {
+function DeliveryColumns({ view, repo = null, placed = null }) {
   const columns = view?.columns ?? {}
+  // A card a workflow section already draws is not drawn again here (#1272 step 3): the section owns
+  // it, and the five legacy columns keep every card that names no workflow.
+  const drawn = placed === null || placed === undefined ? null : new Set(placed)
+  const cards = (id) => (columns[id] ?? []).filter((card) => drawn === null || !drawn.has(`${repo ?? card.repo ?? ''}#${card.kind}${card.number}`))
   return h('div', { className: 'bt-del-columns' },
     stagesOf(view).map(column => h('section', { key: column.id, className: 'bt-del-column', 'data-column': column.id },
       h('h3', { className: 'bt-board-column-head' },
         h('span', null, t(column.label)),
-        h('span', { className: 'bt-board-count' }, String((columns[column.id] ?? []).length))),
-      (columns[column.id] ?? []).length === 0
+        h('span', { className: 'bt-board-count' }, String(cards(column.id).length))),
+      cards(column.id).length === 0
         ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
-        : (columns[column.id] ?? []).map(card => h(DeliveryCard, { key: `${repo ?? ''}-${card.kind}-${card.number}`, card, repo })))))
+        : cards(column.id).map(card => h(DeliveryCard, { key: `${repo ?? ''}-${card.kind}-${card.number}`, card, repo })))))
+}
+
+// The columns a workflow definition draws (#1272 step 3, acceptance 1 and 2): one block per workflow,
+// the columns in the definition's own order, and every header naming the workflow it belongs to — so
+// two workflows never share a column and a reader can always tell whose column it is.
+function DeliveryWorkflowSections({ sections, repo = null }) {
+  const list = Array.isArray(sections) ? sections : []
+  if (list.length === 0) return null
+  return h('div', { className: 'bt-del-workflows' }, list.map(section => h('section', {
+    key: section.id, className: 'bt-del-workflow', 'data-workflow': section.id,
+  },
+  h('h3', { className: 'bt-del-workflow-name' },
+    h('span', null, section.name),
+    h('span', { className: 'bt-wf-path' }, `workflows/${section.id}.json`)),
+  h('div', { className: 'bt-del-columns' }, section.columns.map(column => h('section', {
+    key: column.id, className: 'bt-del-column', 'data-column': column.id, 'data-workflow': section.id,
+  },
+  h('h4', { className: 'bt-board-column-head' },
+    h('span', null, column.label),
+    h('span', { className: 'bt-del-workflow-tag' }, section.name),
+    h('span', { className: 'bt-board-count' }, String(column.cards.length))),
+  column.cards.length === 0
+    ? h('p', { className: 'bt-board-empty' }, t('Nothing here.'))
+    : column.cards.map(card => h(DeliveryCard, { key: `${section.id}-${repo ?? card.repo ?? ''}-${card.kind}-${card.number}`, card, repo: repo ?? card.repo ?? null }))))),
+  (section.unplaced ?? []).length > 0
+    ? h('p', { className: 'bt-del-hint' }, t('{count} card(s) name a node this workflow draws no column for.', { count: section.unplaced.length }))
+    : null)))
 }
 
 // A repository that cannot be read keeps its block and says so; the readable ones are drawn beside
@@ -383,7 +414,7 @@ function DeliveryRepoBlock({ entry }) {
       ? h('p', { className: 'bt-del-block-state', role: 'status' },
         state === 'loading' ? loadingText(entry?.elapsedMs) : String(entry?.error?.message ?? t('The delivery board is not ready yet.')),
         entry?.error ? ` · ${hintFor(entry.error, { repo: entry.repo })}` : '')
-      : h(DeliveryColumns, { view: entry, repo: entry.repo }))
+      : h(DeliveryColumns, { view: entry, repo: entry.repo, placed: entry.placed }))
 }
 
 export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRetry = null, onProbe = null }) {
@@ -443,8 +474,13 @@ export function DeliveryBoard({ view, snapshot, message = '', repo = null, onRet
       ? h('p', { className: 'bt-del-partial', role: 'status' }, missing.map(entry => missingText(entry)).join(' · '))
       : null,
     h(DeliveryHeader, { view: payload, repo, onRetry, onProbe }),
+    // A workflow's own columns come first: a card that names a workflow is drawn there and not in
+    // the five columns below, which keep every card that names none (#1272 step 3).
     entries === null
-      ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null })
+      ? h(DeliveryWorkflowSections, { sections: payload.workflows, repo: repo ?? payload.repo ?? null })
+      : null,
+    entries === null
+      ? h(DeliveryColumns, { view: payload, repo: repo ?? payload.repo ?? null, placed: payload.placed })
       : h('div', { className: 'bt-del-repos' },
         entries.map(entry => h(DeliveryRepoBlock, { key: entry.repo ?? 'unknown', entry }))))
 }

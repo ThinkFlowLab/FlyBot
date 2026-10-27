@@ -2,6 +2,8 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { ACCENT_INKS, INKS } from './inks.js'
 import { isMainOf } from './sources.js'
 import { allThemes } from './themes.js'
+import { WorkflowIcon } from './icons.js'
+import { WorkflowsPage } from './workflows.js'
 import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
@@ -24,8 +26,8 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
 // Settings dialog: a 198px page list beside the page. Bots and group chats each list
 // their members, and one opens on its own settings form. Usage widens the dialog.
-const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
+const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
 
 function SetSection({ title, children }) {
   return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
@@ -228,6 +230,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
+          shown === 'workflows' ? h(WorkflowsPage, { actions }) : null,
           pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
           shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,

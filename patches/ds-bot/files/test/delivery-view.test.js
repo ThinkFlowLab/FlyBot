@@ -733,3 +733,36 @@ test('no token names the GitHub side, never an empty board (#1211, #1265)', () =
   assert.equal(all.props['data-state'], 'failed')
   assert.doesNotMatch(text(all), /Nothing here\./)
 })
+
+// A workflow's columns are the definition's (#1272 step 3, acceptance 1 and 2): the section draws its
+// own columns beside the five legacy ones, every header names the workflow, and a card a section
+// draws is not drawn a second time below it.
+test('a workflow draws its own columns, named by the workflow, and its card once (#1272 step 3)', () => {
+  const placed = { kind: 'issue', number: 21, title: 'Content card', labels: ['workflow:content', 'node:草稿'], url: 'https://x/21', repo: 'o/r' }
+  const payload = {
+    ...snapshot,
+    repo: 'o/r',
+    columns: { ...snapshot.columns, ready: [...snapshot.columns.ready, placed] },
+    workflows: [{ id: 'content', name: 'Content', columns: [
+      { id: '选题', label: '选题', cards: [] },
+      { id: '草稿', label: '草稿', cards: [placed] },
+    ], unplaced: [] }],
+    placed: ['o/r#issue21'],
+  }
+  const board = DeliveryBoard({ snapshot: payload })
+  const section = walk(board).find(node => node.props?.['data-workflow'] === 'content')
+  assert.ok(section, 'the workflow section is drawn')
+  assert.match(text(section), /Content/)
+  const workflowColumns = walk(section).filter(node => node.props?.['data-column']).map(node => node.props['data-column'])
+  assert.deepEqual([...workflowColumns], ['选题', '草稿'])
+  // The legacy five are still there and still named.
+  const legacy = walk(board).filter(node => node.type === 'section' && node.props?.['data-column'] && node.props['data-workflow'] === undefined)
+  assert.deepEqual([...legacy.map(node => node.props['data-column'])], ['raw', 'ready', 'working', 'review', 'done-today'])
+  // The card is in the definition's column, and only there: no column holds two workflows, and the
+  // card is drawn once.
+  const drawn = walk(board).filter(node => node.props?.['data-number'] === 21)
+  assert.equal(drawn.length, 1)
+  assert.ok(walk(section).includes(drawn[0]))
+  const ready = legacy.find(node => node.props['data-column'] === 'ready')
+  assert.equal(walk(ready).some(node => node.props?.['data-number'] === 21), false)
+})

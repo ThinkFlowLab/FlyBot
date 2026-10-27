@@ -496,7 +496,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +  // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
 +  // delivery-board serves the cached snapshot and delivery-probe only GETs GitHub (#1225); both were
 +  // missing, so a window that only reads the team could not open the board at all.
-+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe'])
++  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'delivery-board', 'delivery-probe', 'workflows'])
 +
 +  // A chat reference chip names a Session whose snapshot rides to every recipient of
 +  // the message, so the author must be able to read what they share (#53, #106).
@@ -826,7 +826,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +319,120 @@ export function install(rt) {
+@@ -319,32 +319,126 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -849,6 +849,12 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        case 'delivery-probe':
 +          await rt.load()
 +          return ok(await rt.deliveryProbe(body))
++        // A workflow definition is read by the page and written by `workflow-save`, which is in
++        // authz's TASK_ENDPOINTS: the client writes a file through the host, never to GitHub
++        // (#1272 step 3, acceptance 7).
++        case 'workflows':
++        case 'workflow-save':
++          return ok(await rt.workflowEndpoint(endpoint, body))
 +        case 'share-brief':
 +          await rt.load()
 +          await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

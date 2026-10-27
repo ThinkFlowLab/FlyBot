@@ -12,6 +12,7 @@
 // to do about it. "No GitHub connection yet" is reserved for a host that has never tried.
 import { repoSlug } from './update.js'
 import { NO_REPO_MESSAGE, instanceRepoSettings, resolveRepos } from './delivery-repo.js'
+import { boardSections } from '../shared/workflow-board.js'
 
 export const DELIVERY_COLUMNS = ['raw', 'ready', 'working', 'review', 'done-today']
 
@@ -118,12 +119,22 @@ const verdictOf = (comments) => {
 // A delivery card is a GitHub issue or pull request, never a Bot task record (#1173 keeps the
 // track_tasks board separate).
 export function cardOf(row, { kind, linked = null, owner = null, badge = null, sha = null } = {}) {
+  const labels = orderLabels(labelNames(row))
+  // Which workflow and which node the card is in (#1272 step 3): two labels, the same shape as every
+  // other state a card carries. A card without them is today's card and keeps the five columns it
+  // always had (#1299 acceptance 8); nothing here invents a placement for a card that names none.
+  const prefixed = (prefix) => {
+    const found = labels.find((name) => name.startsWith(prefix))
+    return found === undefined ? null : found.slice(prefix.length) || null
+  }
   return {
     kind,
     number: row.number,
     title: String(row.title ?? ''),
     url: String(row.html_url ?? ''),
-    labels: orderLabels(labelNames(row)),
+    labels,
+    workflow: prefixed('workflow:'),
+    node: prefixed('node:'),
     owner,
     created: row.created_at ?? null,
     updated: row.updated_at ?? null,
@@ -951,8 +962,35 @@ export function install(rt) {
       const view = await boardFor(entry).read({ force: payload?.force === true, wait: payload?.wait === true })
       views.push({ ...view, repo: entry.repo, repoSource: entry.source })
     }
-    return combineRepos(views)
+    const decorated = views.map((view) => ({ ...view, ...withWorkflowColumns(view) }))
+    return { ...combineRepos(decorated), ...sectionsOf(combinedCards(decorated)) }
   }
+  // Every card of every repository, each stamped with its own repository, so the same number in two
+  // repositories is two cards.
+  const combinedCards = (views) => {
+    const cards = []
+    for (const view of views) {
+      if (view.columns === undefined || view.columns === null) continue
+      for (const id of DELIVERY_COLUMNS) for (const card of view.columns[id] ?? []) cards.push({ ...card, repo: view.repo ?? null })
+    }
+    return cards
+  }
+  // Cards that name a workflow and a node are laid in a column of that workflow's definition
+  // (#1272 step 3, acceptance 1 and 2). The section is additive: the repository's own five columns
+  // keep every other card, and `placed` names the cards a section draws so the view does not draw
+  // one twice. A card that names no workflow, or names one this host does not have, stays in the
+  // columns it has always been in — losing a card would be worse than an old column.
+  const sectionsOf = (cards) => {
+    let definitions = []
+    try { definitions = rt.workflowDefinitions?.() ?? [] } catch { definitions = [] }
+    const { sections } = boardSections(definitions, cards)
+    const placed = sections.flatMap((section) => section.columns.flatMap((column) => column.cards))
+      .map((card) => `${card.repo ?? ''}#${card.kind}${card.number}`)
+    return { workflows: sections, placed }
+  }
+  const withWorkflowColumns = (view) => sectionsOf(view.columns === undefined || view.columns === null
+    ? []
+    : DELIVERY_COLUMNS.flatMap((id) => (view.columns[id] ?? []).map((card) => ({ ...card, repo: card.repo ?? view.repo ?? null }))))
   // The 诊断 button and `--probe` run this one function (#1211): same reads, same statuses. One
   // repository answers exactly as before; more than one is one report with the repository named on
   // every row, because a status without its repository cannot be acted on.

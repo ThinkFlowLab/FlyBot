@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { combineRepos, createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
+import { cardOf, combineRepos, createDeliveryBoard, dailySeries, DELIVERY_COLUMNS, describeResponse, install, median, probeGitHub, startOfDay, BUILD_BUDGET_MS, BACKOFF_MS } from '../src/host/delivery-board.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installChannel } from '../src/host/channel.js'
 
@@ -1094,4 +1094,19 @@ test('the aggregation rules: oldest snapshot, partial body, and no invented medi
   ])
   assert.equal(withMissing.state, 'partial')
   assert.deepEqual(withMissing.missing.map(entry => [entry.repo, entry.part]), [['acme/one', 'ci']])
+})
+
+// A card names its workflow and its node with two labels (#1272 step 3, acceptance 8): a card that
+// carries them can be laid in its workflow's column, and a card that carries none is exactly today's
+// card — the same fields, the five columns it always had, nothing invented.
+test('a card reads its workflow and node from its labels, and a card without them is unchanged (#1272 step 3)', () => {
+  const tagged = cardOf({ number: 5, title: 'tagged', html_url: 'u', labels: [{ name: 'workflow:repo-dev' }, { name: 'node:build' }, { name: 'bug' }] }, { kind: 'issue' })
+  assert.equal(tagged.workflow, 'repo-dev')
+  assert.equal(tagged.node, 'build')
+  assert.deepEqual([...tagged.labels], ['bug', 'node:build', 'workflow:repo-dev'])
+  const plain = cardOf({ number: 6, title: 'plain', html_url: 'u', labels: [{ name: 'bug' }] }, { kind: 'issue' })
+  assert.equal(plain.workflow, null)
+  assert.equal(plain.node, null)
+  // A label with the prefix and nothing after it names no workflow rather than an empty one.
+  assert.equal(cardOf({ number: 7, labels: [{ name: 'workflow:' }] }, { kind: 'issue' }).workflow, null)
 })
