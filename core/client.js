@@ -56,7 +56,12 @@ var ZH = {
   "The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.": "工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。",
   "Could not copy this workflow": "这个工作流复制不了。",
   "Could not save this workflow": "这个工作流保存不了。",
+  "Could not rename this workflow": "这个工作流改不了名。",
+  "Could not delete this workflow": "这个工作流删不掉。",
   "Use this": "用这个",
+  "Rename workflow": "重命名工作流",
+  "Delete workflow": "删除工作流",
+  'Are you sure you want to delete "{name}"? This cannot be undone.': "确定删除「{name}」吗？删除后无法恢复。",
   "Finish editing": "完成",
   "Drag a Bot here": "把 Bot 拖到图上",
   "System prompt": "系统提示词",
@@ -14603,7 +14608,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
     )
   );
 }
-function Row2({ item, source, onOpen }) {
+function Row2({ item, source, onOpen, onRename, onDelete }) {
   return (0, import_react34.createElement)(
     "button",
     {
@@ -14619,6 +14624,30 @@ function Row2({ item, source, onOpen }) {
       (0, import_react34.createElement)("span", null, item.name),
       (0, import_react34.createElement)("span", { className: "bt-set-hint" }, item.preview || chainOf(item) || item.description || "")
     ),
+    source === "own" ? (0, import_react34.createElement)(
+      "span",
+      { className: "bt-set-actions" },
+      (0, import_react34.createElement)("button", {
+        type: "button",
+        className: "bt-set-action",
+        "aria-label": t("Rename"),
+        title: t("Rename"),
+        onClick: (event) => {
+          event.stopPropagation();
+          onRename?.(item);
+        }
+      }, "✎"),
+      (0, import_react34.createElement)("button", {
+        type: "button",
+        className: "bt-set-action",
+        "aria-label": t("Delete"),
+        title: t("Delete"),
+        onClick: (event) => {
+          event.stopPropagation();
+          onDelete?.(item);
+        }
+      }, "×")
+    ) : null,
     (0, import_react34.createElement)("span", { className: "bt-chevron", "aria-hidden": true }, "›")
   );
 }
@@ -14626,7 +14655,7 @@ function alertCopy(error) {
   if (error === WORKFLOW_PLUGIN_HINT) return t("The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.");
   return error || t("Could not read workflows");
 }
-function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit }) {
+function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
   const graph = phase === "ready" ? openedGraph(pack, opened) : null;
   const templates = pack?.templates ?? [];
   const templateIds = new Set(templates.map((item) => item.id));
@@ -14670,7 +14699,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         (0, import_react34.createElement)(
           "div",
           { className: "bt-set-card" },
-          yours.length === 0 ? (0, import_react34.createElement)("div", { className: "bt-set-row" }, (0, import_react34.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react34.createElement)(Row2, { key: item.id, item, source: "own", onOpen: () => onOpen?.(item, "own") }))
+          yours.length === 0 ? (0, import_react34.createElement)("div", { className: "bt-set-row" }, (0, import_react34.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react34.createElement)(Row2, { key: item.id, item, source: "own", onOpen: () => onOpen?.(item, "own"), onRename, onDelete }))
         )
       )
     ) : null,
@@ -14695,12 +14724,60 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
     ) : null
   );
 }
+function RenameModal({ workflow, onClose, onConfirm }) {
+  const [name, setName] = (0, import_react34.useState)(workflow?.name ?? "");
+  return (0, import_react34.createElement)(
+    "div",
+    { className: "bt-modal-mask", onClick: (event) => {
+      if (event.target === event.currentTarget) onClose?.();
+    } },
+    (0, import_react34.createElement)(
+      "div",
+      { className: "bt-modal", role: "dialog", "aria-modal": true, "aria-label": t("Rename workflow") },
+      (0, import_react34.createElement)("h3", null, t("Rename workflow")),
+      (0, import_react34.createElement)(
+        "label",
+        { className: "bt-field" },
+        t("Name"),
+        (0, import_react34.createElement)("input", { type: "text", value: name, onChange: (event) => setName(event.target.value), autoFocus: true })
+      ),
+      (0, import_react34.createElement)(
+        "div",
+        { className: "bt-modal-actions" },
+        (0, import_react34.createElement)("button", { type: "button", onClick: onClose }, t("Cancel")),
+        (0, import_react34.createElement)("button", { type: "button", onClick: () => onConfirm?.(name) }, t("Rename"))
+      )
+    )
+  );
+}
+function DeleteModal({ workflow, onClose, onConfirm }) {
+  return (0, import_react34.createElement)(
+    "div",
+    { className: "bt-modal-mask", onClick: (event) => {
+      if (event.target === event.currentTarget) onClose?.();
+    } },
+    (0, import_react34.createElement)(
+      "div",
+      { className: "bt-modal", role: "dialog", "aria-modal": true, "aria-label": t("Delete workflow") },
+      (0, import_react34.createElement)("h3", null, t("Delete workflow")),
+      (0, import_react34.createElement)("p", null, t('Are you sure you want to delete "{name}"? This cannot be undone.', { name: workflow?.name ?? "" })),
+      (0, import_react34.createElement)(
+        "div",
+        { className: "bt-modal-actions" },
+        (0, import_react34.createElement)("button", { type: "button", onClick: onClose }, t("Cancel")),
+        (0, import_react34.createElement)("button", { type: "button", className: "bt-danger", onClick: onConfirm }, t("Delete"))
+      )
+    )
+  );
+}
 function WorkflowsPage({ call: call4, roster }) {
   const [phase, setPhase] = (0, import_react34.useState)("loading");
   const [pack, setPack] = (0, import_react34.useState)(null);
   const [error, setError] = (0, import_react34.useState)("");
   const [opened, setOpened] = (0, import_react34.useState)(null);
   const [editing, setEditing] = (0, import_react34.useState)(false);
+  const [renaming, setRenaming] = (0, import_react34.useState)(null);
+  const [deleting, setDeleting] = (0, import_react34.useState)(null);
   const invoke = typeof call4 === "function" ? call4 : () => Promise.reject(new Error("Could not read workflows"));
   const apply2 = (settled) => {
     setPhase(settled.phase);
@@ -14754,6 +14831,44 @@ function WorkflowsPage({ call: call4, roster }) {
       setError(workflowCallError(failure, t("Could not copy this workflow")));
     });
   };
+  const rename = (item) => {
+    setRenaming(item);
+  };
+  const confirmRename = (workflowId, name) => {
+    if (!name.trim()) return;
+    Promise.resolve(invoke("workflow/rename", { workflowId, name: name.trim() })).then((value) => {
+      const settled = settleWorkflowRead(value);
+      if (settled.phase === "error") {
+        setError(settled.error);
+        return;
+      }
+      setPack(settled.pack);
+      setPhase("ready");
+      setError("");
+      setRenaming(null);
+    }).catch((failure) => {
+      setError(workflowCallError(failure, t("Could not rename this workflow")));
+    });
+  };
+  const deleteWorkflow = (item) => {
+    setDeleting(item);
+  };
+  const confirmDelete = (workflowId) => {
+    Promise.resolve(invoke("workflow/delete", { workflowId })).then((value) => {
+      const settled = settleWorkflowRead(value);
+      if (settled.phase === "error") {
+        setError(settled.error);
+        return;
+      }
+      setPack(settled.pack);
+      setPhase(settled.phase);
+      setError("");
+      setDeleting(null);
+      if (opened?.id === workflowId) setOpened(null);
+    }).catch((failure) => {
+      setError(workflowCallError(failure, t("Could not delete this workflow")));
+    });
+  };
   const commit = (graph) => {
     if (!opened || opened.source !== "own") return;
     Promise.resolve(invoke("workflow/graph", { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges })).then((value) => {
@@ -14769,23 +14884,39 @@ function WorkflowsPage({ call: call4, roster }) {
       setError(workflowCallError(failure, t("Could not save this workflow")));
     });
   };
-  return (0, import_react34.createElement)(WorkflowsView, {
-    phase,
-    pack,
-    error,
-    opened,
-    editing,
-    roster,
-    onOpen: open,
-    onBack: () => {
-      setOpened(null);
-      setEditing(false);
-    },
-    onEditing: setEditing,
-    onRetry: retry,
-    onUse: useTemplate,
-    onCommit: commit
-  });
+  return (0, import_react34.createElement)(
+    "div",
+    null,
+    (0, import_react34.createElement)(WorkflowsView, {
+      phase,
+      pack,
+      error,
+      opened,
+      editing,
+      roster,
+      onOpen: open,
+      onBack: () => {
+        setOpened(null);
+        setEditing(false);
+      },
+      onEditing: setEditing,
+      onRetry: retry,
+      onUse: useTemplate,
+      onCommit: commit,
+      onRename: rename,
+      onDelete: deleteWorkflow
+    }),
+    renaming ? (0, import_react34.createElement)(RenameModal, {
+      workflow: renaming,
+      onClose: () => setRenaming(null),
+      onConfirm: (name) => confirmRename(renaming.id, name)
+    }) : null,
+    deleting ? (0, import_react34.createElement)(DeleteModal, {
+      workflow: deleting,
+      onClose: () => setDeleting(null),
+      onConfirm: () => confirmDelete(deleting.id)
+    }) : null
+  );
 }
 
 // src/client/usage-data.js
