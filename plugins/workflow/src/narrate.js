@@ -2,7 +2,7 @@
 // any other graph gets a short line that names the Bot and the task. Text is
 // plain: the client renders it as a text node.
 
-import { nodeById, stepLabel } from './graph.js'
+import { nodeById, stepLabel, summarizeTask } from './graph.js'
 import { DELIVERY_ID } from './template.js'
 
 function names(workflow, ids) {
@@ -36,9 +36,9 @@ function liveText(value, fallback) {
 
 // A live run quotes the Bot. The delivery script's canned lines stay on the demo path.
 function liveLines(workflow, task, event) {
-  const label = `${task?.id ?? ''} ${task?.title ?? ''}`.trim()
+  const label = summarizeTask(task)
   if (event.type === 'start') {
-    return [{ kind: 'system', tone: 'accent', text: `任务 ${label} 已进入 Workflow，${names(workflow, event.started)} 认领` }]
+    return [{ kind: 'system', tone: 'accent', text: `开始 · ${label} · ${names(workflow, event.started)}` }]
   }
   if (event.type === 'fail') {
     const node = nodeById(workflow, event.nodeId)
@@ -59,7 +59,7 @@ function liveLines(workflow, task, event) {
     if (event.joined && event.layerSize > 1 && event.started.length > 0) {
       lines.push({ kind: 'system', text: `⇢ 并行分支汇合（join）→ ${names(workflow, event.started)}` })
     }
-    if (event.finished) lines.push({ kind: 'system', tone: 'ok', text: `✓ Workflow 运行完成 · ${task.id} · ${workflow.nodes.length} 个节点` })
+    if (event.finished) lines.push({ kind: 'system', tone: 'ok', text: `✓ 完成 · ${summarizeTask(task)} · ${workflow.nodes.length} 步` })
     return lines
   }
   if (event.type === 'note') return [{ kind: 'system', tone: event.tone, text: event.text }]
@@ -96,7 +96,7 @@ export function linesFor(workflow, task, event) {
     if (event.joined && event.layerSize > 1 && event.started.length > 0) {
       lines.push({ kind: 'system', text: `⇢ 并行分支汇合（join）→ ${names(workflow, event.started)}` })
     }
-    if (event.finished) lines.push({ kind: 'system', tone: 'ok', text: `✓ Workflow 运行完成 · ${task.id} · ${workflow.nodes.length} 个节点` })
+    if (event.finished) lines.push({ kind: 'system', tone: 'ok', text: `✓ 完成 · ${summarizeTask(task)} · ${workflow.nodes.length} 步` })
     return lines
   }
   if (event.type === 'reset') return [{ kind: 'system', text: '↺ 已重置运行' }]

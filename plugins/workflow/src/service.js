@@ -10,7 +10,7 @@ import { releaseAll, spawnAll } from './ephemeral.js'
 import {
   chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
   missingProviders, nextDemoOp, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
-  rowPreview, startFrontier, unmetRequired, validateGraph,
+  rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask } from './match.js'
 import { linesFor } from './narrate.js'
@@ -66,6 +66,7 @@ function publicRun(workflow, run) {
     id: run.id,
     workflowId: run.workflowId,
     task: run.task,
+    taskSummary: summarizeTask(run.task),
     status: run.status,
     nodeStatus: { ...run.nodeStatus },
     steps: run.steps,
@@ -78,6 +79,7 @@ function publicRun(workflow, run) {
     startedAt: run.startedAt,
     updatedAt: run.updatedAt,
     ...(run.live === true ? { live: true } : {}),
+    ...(run.paused === true ? { paused: true } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
   }
 }
@@ -179,8 +181,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
         history: [...(laneOf(item.id).history ?? [])],
         runs: runningOf(laneOf(item.id)).map(run => publicRun(item, run)),
-        preview: rowPreview(item, primaryRun(item.id)),
-        run: publicRun(item, primaryRun(item.id)),
+        preview: rowPreview(item, displayRun(item.id)),
+        run: publicRun(item, displayRun(item.id)),
         messages: state.logs[item.id] ?? [],
       }) }),
     }
@@ -214,13 +216,21 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function primaryRun(id) {
     const live = runningOf(laneOf(id))
     if (live.length > 0) return live[0]
-    // A finished lane.last stays up until Replay. demoStep marks the script
-    // as the run on stage; otherwise the graph stays on that finished lane
-    // while the canned lines append to the demo.
     const demo = state.demos[id]
     if (state.demoOnTop?.[id] === true && demo) return demo
     if (laneOf(id).last) return laneOf(id).last
     return demo ?? null
+  }
+
+  // Product UI reads this: live runs (and the last finished live run), or a
+  // demo only while demo-step has explicitly raised it — never the seed script.
+  function displayRun(id) {
+    const live = runningOf(laneOf(id))
+    if (live.length > 0) return live[0]
+    if (state.demoOnTop?.[id] === true && state.demos[id]) return state.demos[id]
+    const last = laneOf(id).last
+    if (last?.live === true) return last
+    return null
   }
 
   function storeRun(workflowId, run) {
@@ -355,7 +365,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   // leave the node open: the next hand-off tries again. No second send in
   // this call — a 429 must not be hammered.
   async function handOff(item, run) {
-    if (typeof dispatch !== 'function' || !run?.ephemeral) return run
+    if (typeof dispatch !== 'function' || !run?.ephemeral || run.paused === true) return run
     let current = run
     const running = orderedIds(item, current.nodeStatus, 'running')
     for (const nodeId of running) {
@@ -485,7 +495,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const at = now()
     push(item.id, [
       { kind: 'time', text: '刚刚' },
-      { kind: 'system', text: `来自 Tasks 看板：${task.id} ${task.title} → 分配给 Workflow「${item.name}」` },
+      { kind: 'system', text: `任务已分配 · ${summarizeTask(task)} → ${item.name}` },
     ], at)
     const stepped = applyOp(item, run, { type: 'start' })
     run = stepped.run
@@ -529,7 +539,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const lane = laneOf(item.id)
     state.queueSeq = (state.queueSeq ?? 0) + 1
     lane.queue.push({ id: task.id, title: task.title, enqueuedAt: now(), queueSeq: state.queueSeq })
-    push(item.id, [{ kind: 'system', text: `排队：${task.id} ${task.title}（前面 ${lane.queue.length - 1} 个，同时运行上限 ${maxOf(item)}）` }], now())
+    push(item.id, [{ kind: 'system', text: `排队 · ${summarizeTask(task)}（前面 ${lane.queue.length - 1} 个）` }], now())
     write()
   }
 
@@ -814,6 +824,43 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       } catch (error) {
         return refuse(error)
       }
+    },
+    pause(body = {}) {
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const workflowId = String(body.workflowId ?? '')
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      const lane = laneOf(workflowId)
+      const runId = body.runId ? String(body.runId) : ''
+      let run = runId ? lane.active.find(itemRun => itemRun.id === runId) : lane.active.find(itemRun => itemRun.live === true && itemRun.status === 'running')
+      if (!run || run.live !== true) return { ok: false, error: 'No live run to pause' }
+      if (run.paused === true) return present()
+      run = { ...run, paused: true, updatedAt: now() }
+      storeRun(workflowId, run)
+      push(workflowId, [{ kind: 'system', text: `⏸ 已暂停 · ${summarizeTask(run.task)}` }], now())
+      write()
+      return present()
+    },
+    resume(body = {}) {
+      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      const workflowId = String(body.workflowId ?? '')
+      const item = workflow(workflowId)
+      if (!item) return { ok: false, error: 'No such workflow' }
+      const lane = laneOf(workflowId)
+      const runId = body.runId ? String(body.runId) : ''
+      let run = runId ? lane.active.find(itemRun => itemRun.id === runId) : lane.active.find(itemRun => itemRun.live === true && itemRun.status === 'running')
+      if (!run || run.live !== true) return { ok: false, error: 'No live run to resume' }
+      if (run.paused !== true) return present()
+      run = { ...run, paused: false, updatedAt: now() }
+      storeRun(workflowId, run)
+      push(workflowId, [{ kind: 'system', text: `▶ 已继续 · ${summarizeTask(run.task)}` }], now())
+      write()
+      if (typeof spawn !== 'function') return present()
+      return hostSerial(async () => {
+        const latest = lane.active.find(itemRun => itemRun.id === run.id) ?? run
+        await handOff(item, latest)
+        return present()
+      })
     },
     reset(body = {}) {
       const workflowId = String(body.workflowId ?? '')

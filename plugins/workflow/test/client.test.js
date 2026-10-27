@@ -128,7 +128,8 @@ function delivery() {
     name: '发布交付流水线',
     description: 'Ship a notice',
     chain: 'Planner → Writer → Coder → Reviewer ‖ Tester → Deployer',
-    preview: 'Coder 正在处理 #1280…',
+    preview: '等待任务',
+    activeCount: 0,
     trigger: 'manual',
     layers: [['planner'], ['writer'], ['coder'], ['reviewer', 'tester'], ['deployer']],
     nodes: [
@@ -149,8 +150,10 @@ function delivery() {
     ],
     messages: [{ id: 'm1', kind: 'user', text: SCRIPT }],
     run: {
+      live: true,
       status: 'running',
       task: { id: '#1280', title: '缩短交付组群 notice' },
+      taskSummary: '#1280 · 缩短交付组群 notice',
       nodeStatus: { planner: 'done', writer: 'done', coder: 'running', reviewer: 'queued', tester: 'queued', deployer: 'queued' },
       running: ['coder'],
       doneCount: 2,
@@ -180,7 +183,7 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   await settle()
   assert.ok(calls.some(item => item.name === 'workflow/state'))
   assert.ok(textOf(view.tree).includes('发布交付流水线'))
-  assert.ok(textOf(view.tree).includes('Coder 正在处理 #1280…'))
+  assert.ok(textOf(view.tree).includes('等待任务'))
 
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
@@ -385,6 +388,27 @@ test('settings can add a loop edge and a condition edge', async () => {
   assert.equal(loop.max, 3)
   assert.deepEqual(loop.until, { output: 'stop', eq: 'yes' })
   settings.unmount()
+})
+
+test('a live run shows pause, resume, and progress controls', async () => {
+  const graph = delivery()
+  graph.activeCount = 1
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  const labels = findAll(view.tree, node => node.type === 'button').map(node => textOf(node))
+  assert.ok(labels.includes('Pause'))
+  assert.ok(labels.includes('Progress'))
+  button(view.tree, 'Pause').props.onClick()
+  await settle()
+  assert.ok(calls.some(item => item.name === 'workflow/pause' && item.body.workflowId === 'delivery'))
+  view.unmount()
 })
 
 test('the stage has no canned demo controls', async () => {

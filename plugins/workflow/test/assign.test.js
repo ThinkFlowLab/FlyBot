@@ -25,12 +25,8 @@ function delivery(state) {
 test('assigning a board task starts the run at the first Bot and posts the claim', () => {
   const svc = service()
   const opened = delivery(svc.state())
-  assert.equal(opened.preview, 'Coder 正在处理 #1280…')
-  assert.equal(opened.run.steps, 3)
-  assert.equal(opened.run.stepBudget, 10)
-  assert.equal(opened.run.doneCount, 2)
-  assert.deepEqual(opened.run.running, ['coder'])
-  assert.equal(opened.run.nodeStatus.deployer, 'queued')
+  assert.equal(opened.preview, '等待任务')
+  assert.equal(opened.run, null)
   assert.ok(opened.messages.some(message => message.kind === 'user' && message.text.includes('#1280')))
 
   const assigned = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1281', title: '发布说明：Workflow Beta 上线' })
@@ -43,8 +39,8 @@ test('assigning a board task starts the run at the first Bot and posts the claim
   assert.equal(run.nodeStatus.deployer, 'queued')
   const claim = delivery(assigned).messages.filter(message => message.tone === 'accent').at(-1)
   assert.match(claim.text, /#1281/)
-  assert.match(claim.text, /Planner 认领/)
-  assert.ok(delivery(assigned).messages.some(message => message.text.includes('Tasks 看板')))
+  assert.match(claim.text, /Planner/)
+  assert.ok(delivery(assigned).messages.some(message => message.text.includes('任务已分配')))
   assert.equal(svc.assign({ workflowId: DELIVERY_ID, taskId: '', title: 'x' }).ok, false)
 })
 
@@ -81,10 +77,12 @@ test('the demo step fails Tester once and still joins both branches', () => {
   const svc = service()
   svc.reset({ workflowId: DELIVERY_ID })
   const ops = []
-  for (let i = 0; i < 12 && delivery(svc.state()).run.status !== 'done'; i += 1) {
-    const before = delivery(svc.state()).run.nodeStatus.tester
+  for (let i = 0; i < 12; i += 1) {
+    const run = delivery(svc.state()).run
+    if (run?.status === 'done') break
+    const before = run?.nodeStatus?.tester
     svc.demoStep({ workflowId: DELIVERY_ID })
-    const after = delivery(svc.state()).run.nodeStatus.tester
+    const after = delivery(svc.state()).run?.nodeStatus?.tester
     if (before !== after) ops.push(`${before}->${after}`)
   }
   assert.ok(ops.includes('running->failed'), ops.join(','))
@@ -168,6 +166,9 @@ test('a dragged graph persists and the reloaded run still highlights those nodes
   const dir = mkdtempSync(join(tmpdir(), 'flybot-wf-edit-'))
   try {
     const first = createWorkflowService({ dir, persist: true, now: () => 5, bots: () => roster })
+    first.assign({ workflowId: DELIVERY_ID, taskId: '#edit', title: 'Persist the graph' })
+    first.advance({ workflowId: DELIVERY_ID, nodeId: 'planner', outcome: 'done' })
+    first.advance({ workflowId: DELIVERY_ID, nodeId: 'writer', outcome: 'done' })
     const before = delivery(first.state())
     const coder = before.nodes.find(node => node.id === 'coder')
     const saved = first.saveGraph({
@@ -258,12 +259,14 @@ test('an open task auto-starts the matching workflow, and a miss stays unassigne
 
   const held = svc.ingest({ id: '#1280', title: '缩短交付组群 notice', status: 'open' })
   assert.equal(held.already, true)
-  assert.equal(delivery(svc.state()).run.steps, 3)
+  assert.equal(delivery(svc.state()).preview, '等待任务')
 
   const weekly = svc.ingest({ id: '#50', title: '周五周报', status: 'open' })
   assert.equal(weekly.matched, true)
   assert.equal(weekly.decision.id, 'weekly')
-  assert.equal(svc.state().workflows.find(item => item.id === 'weekly').run.status, 'running')
+  const weekRun = svc.state().workflows.find(item => item.id === 'weekly').run
+  assert.equal(weekRun.live, true)
+  assert.equal(weekRun.status, 'running')
   const again = svc.ingest({ id: '#50', title: '周五周报', status: 'open' })
   assert.equal(again.already, true)
 

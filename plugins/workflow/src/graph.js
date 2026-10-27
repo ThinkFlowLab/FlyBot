@@ -687,15 +687,29 @@ export function chainLabel(graph) {
   return graph.layers.map(layer => layer.map(id => nodeById(graph, id)?.name ?? id).join(' ‖ ')).join(' → ')
 }
 
+export function summarizeTask(task, maxTitle = 72) {
+  const id = cleanLine(task?.id, 80)
+  const title = cleanLine(task?.title, maxTitle)
+  if (!id && !title) return ''
+  if (!title) return id
+  if (!id) return title
+  return `${id} · ${title}`
+}
+
 export function rowPreview(workflow, run) {
-  if (run?.status === 'running') {
+  const live = run?.live === true
+  if (live && run?.status === 'running') {
     const id = orderedIds(workflow, run.nodeStatus, 'running')[0]
     const name = id ? nodeById(workflow, id)?.name : ''
     const task = run.task?.id ?? ''
+    if (run.paused === true) {
+      return name && task ? `已暂停 · ${name} · ${task}` : (task ? `已暂停 · ${task}` : '已暂停')
+    }
     return name ? `${name} 正在处理 ${task}…` : '运行中'
   }
   if (workflow.trigger === 'schedule' && workflow.scheduleLabel) return `下次运行：${workflow.scheduleLabel}`
-  return run?.status === 'done' && run.task?.id ? `✓ ${run.task.id} 已完成` : '等待任务'
+  if (live && run?.status === 'done' && run.task?.id) return `✓ ${run.task.id} 已完成`
+  return '等待任务'
 }
 
 export function stepLabel(graph, nodeId) {

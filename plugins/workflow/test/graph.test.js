@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   addNode, chainLabel, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
   moveNode, nextDemoOp, normalizeGraph, reconnectEdge, removeEdge, removeNode, retryNode,
-  rowPreview, startFrontier, validateGraph,
+  rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
 import { deliveryWorkflow, weeklyWorkflow } from '../src/template.js'
 
@@ -146,10 +146,15 @@ test('a canvas can add and remove a local Bot without losing the other seats', (
   assert.throws(() => addNode(graph, { id: 'planner', name: 'Planner' }), /listed twice/)
 })
 
-test('the sidebar line names the running Bot, otherwise the schedule', () => {
+test('the sidebar line names a live running Bot, never a demo script', () => {
   const status = runToCoder()
-  const run = { status: 'running', nodeStatus: status, task: { id: '#1280', title: 'notice' } }
-  assert.equal(rowPreview(delivery, run), 'Coder 正在处理 #1280…')
-  assert.equal(rowPreview(weeklyWorkflow(), { status: 'done', nodeStatus: {}, task: { id: 'W42' } }), '下次运行：周五 17:00')
+  const live = { status: 'running', live: true, nodeStatus: status, task: { id: '#1280', title: 'notice' } }
+  assert.equal(rowPreview(delivery, live), 'Coder 正在处理 #1280…')
+  const demo = { status: 'running', nodeStatus: status, task: { id: '#1280', title: 'notice' } }
+  assert.equal(rowPreview(delivery, demo), '等待任务')
+  const paused = { ...live, paused: true }
+  assert.equal(rowPreview(delivery, paused), '已暂停 · Coder · #1280')
+  assert.equal(rowPreview(weeklyWorkflow(), { status: 'done', live: true, nodeStatus: {}, task: { id: 'W42' } }), '下次运行：周五 17:00')
   assert.equal(rowPreview(delivery, null), '等待任务')
+  assert.equal(summarizeTask({ id: '#9', title: 'a'.repeat(120) }).length <= 80, true)
 })

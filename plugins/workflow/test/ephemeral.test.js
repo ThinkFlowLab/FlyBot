@@ -133,8 +133,9 @@ test('a failed step tears the instances down, a fail-once step keeps them, and r
   assert.equal(held.workflows.find(item => item.id === retry.id).run.status, 'running')
   assert.equal(again.released.length, 0)
   const cancelled = await again.svc.reset({ workflowId: retry.id })
-  assert.equal(cancelled.workflows.find(item => item.id === retry.id).run.status, 'idle')
-  assert.equal(cancelled.workflows.find(item => item.id === retry.id).run.ephemeral, undefined)
+  const cleared = cancelled.workflows.find(item => item.id === retry.id)
+  assert.equal(cleared.run, null)
+  assert.equal(cleared.activeCount, 0)
   assert.deepEqual(again.released.sort(), again.spawned.map(item => item.id).sort())
 })
 

@@ -43,6 +43,9 @@ window.__ModuleLoader__.load({
       'Not started': '待办',
       'In progress': '进行中',
       'Close': '关闭',
+      Pause: '暂停',
+      Resume: '继续',
+      Progress: '进度',
       'New workflow': '新建 Workflow',
       Name: '名称',
       'Add a Bot': '添加 Bot',
@@ -177,6 +180,23 @@ window.__ModuleLoader__.load({
       if (text.startsWith('task-')) return `#${text.slice(-6)}`
       return text
     }
+    const CHAT_PREVIEW = 240
+    function taskSummary(task, run) {
+      if (run?.taskSummary) return run.taskSummary
+      const id = shortId(task?.id ?? '')
+      const title = String(task?.title ?? '').replace(/\s+/g, ' ').trim()
+      if (!id && !title) return ''
+      if (!title) return id
+      if (!id) return title.length > 72 ? `${title.slice(0, 69)}…` : title
+      const room = Math.max(24, 72 - id.length - 3)
+      const short = title.length > room ? `${title.slice(0, room - 1)}…` : title
+      return `${id} · ${short}`
+    }
+    function chatPreview(text) {
+      const line = String(text ?? '').replace(/\s+/g, ' ').trim()
+      if (line.length <= CHAT_PREVIEW) return line
+      return `${line.slice(0, CHAT_PREVIEW - 1)}…`
+    }
     function glyph() {
       return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', 'aria-hidden': true },
         h('rect', { x: 9, y: 2, width: 6, height: 5, rx: 1.5 }),
@@ -260,9 +280,9 @@ window.__ModuleLoader__.load({
     }
 
     // Stage: reuse normal FlyBot conversation UI instead of custom card style
-    function Stage({ workflow, roster, stageLeft, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit }) {
+    function Stage({ workflow, roster, stageLeft, drawer, tab, draft, onDraft, onCloseDrawer, onToggleDrawer, onTab, onAssign, onSend, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume }) {
       const chatRef = useRef(null)
-      const run = workflow.run
+      const run = workflow.run?.live === true ? workflow.run : null
       useEffect(() => {
         const el = chatRef.current
         if (el) el.scrollTop = el.scrollHeight
@@ -284,11 +304,11 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'wf-stage', style: { left: stageLeft } },
           h(ConversationHeader, {
             title: workflow.name,
-            subtitle: run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task'),
+            subtitle: run ? taskSummary(run.task, run) : tr('Waiting for a task'),
             onAction: onToggleDrawer
           }),
           h(Conversation, {
-            messages,
+            messages: messages.map(msg => ({ ...msg, text: chatPreview(msg.text) })),
             onSend: (text) => { onDraft(text); onSend() }
           }))
       }
@@ -306,13 +326,20 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
           run ? h('div', { className: 'wf-strip' },
             h('div', { className: 'wf-strip-id' },
-              h('div', { className: 'wf-tk' }, `${run.task?.id ?? ''} ${run.task?.title ?? ''}`),
-              h('div', { className: 'wf-meta' }, running[0]
-                ? `${tr('Running')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
-                : (run.status === 'done' ? tr('Done') : tr('Waiting for a task')))),
-            h('div', { className: 'wf-segs' }, (run.marks ?? []).map((mark, index) => h('span', { key: index, className: `wf-seg ${mark}` }))),
-            h('span', { className: `wf-chip ${run.status === 'done' ? 'done' : (running[0] ? 'running' : 'queued')}` }, run.status === 'done' ? tr('Done') : (running[0] ? tr('Running') : tr('Queued'))),
+              h('div', { className: 'wf-tk', title: run.task?.title ?? '' }, taskSummary(run.task, run)),
+              h('div', { className: 'wf-meta' }, run.paused
+                ? `${tr('Pause')} · ${running.map(node => node.name).join(' ‖ ') || '—'} · ${run.doneCount}/${run.nodeCount}`
+                : (running[0]
+                  ? `${tr('Running')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
+                  : (run.status === 'done' ? tr('Done') : tr('Waiting for a task'))))),
+            h('div', { className: 'wf-segs', 'aria-label': tr('Progress'), title: tr('Progress') }, (run.marks ?? []).map((mark, index) => h('span', { key: index, className: `wf-seg ${mark}` }))),
+            h('span', { className: `wf-chip ${run.status === 'done' ? 'done' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued'))}` },
+              run.status === 'done' ? tr('Done') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued')))),
             (workflow.queueDepth > 0 || (workflow.activeCount ?? 0) > 1) ? h('span', { className: 'wf-chip queued' }, tr('{count} running · queue {depth}', { count: workflow.activeCount ?? 0, depth: workflow.queueDepth ?? 0 })) : null,
+            run.status === 'running' ? (run.paused
+              ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-pri', onClick: onResume }, tr('Resume'))
+              : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: onPause }, tr('Pause'))) : null,
+            h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => { onTab('runs'); onToggleDrawer() } }, tr('Progress')),
             h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onTab('flow') }, tr('Flow'))) : null,
           h('div', { className: 'wf-chat', ref: chatRef },
             h('div', { className: 'wf-chat-in' },
@@ -333,19 +360,19 @@ window.__ModuleLoader__.load({
 
     function Bubble({ message, workflow, roster }) {
       if (message.kind === 'time') return h('div', { className: 'wf-ts' }, message.text)
-      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}` }, message.text)
-      if (message.kind === 'user') return h('div', { className: 'wf-user' }, message.text)
+      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}` }, chatPreview(message.text))
+      if (message.kind === 'user') return h('div', { className: 'wf-user' }, chatPreview(message.text))
       const node = nodeOf(workflow, message.botId) ?? { id: message.botId, name: message.botId }
       return h('div', { className: 'wf-msg' },
         h(Mark, { node, roster, size: 28 }),
         h('div', null,
           h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, `步骤 ${message.step}`) : null),
-          h('div', { className: 'wf-bub' }, message.text,
+          h('div', { className: 'wf-bub' }, chatPreview(message.text),
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
     function DrawerBody({ workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit }) {
-      const run = workflow.run
+      const run = workflow.run?.live === true ? workflow.run : null
       return h('div', { className: 'wf-dr-body' },
         h('div', { className: 'wf-dr-title' },
           h('div', { className: 'wf-ico wf-ico-lg' }, glyph()),
@@ -439,7 +466,7 @@ window.__ModuleLoader__.load({
             key: bot.id, type: 'button', className: 'wf-chip', 'data-bot': bot.id,
             onPointerDown: (event) => { event.preventDefault?.(); setGesture({ kind: 'add', bot }) },
           }, bot.name))) : null,
-        h('div', { className: 'wf-term' }, run?.task ? `${run.task.id} ${run.task.title}` : tr('Waiting for a task')),
+        run ? h('div', { className: 'wf-term', title: run.task?.title ?? '' }, taskSummary(run.task, run)) : null,
         h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
             edges.map(edge => {
@@ -505,13 +532,13 @@ window.__ModuleLoader__.load({
     }
 
     function FlowNode({ node, status, roster }) {
-      return [
-        h('span', { className: `wf-chip ${status}` }, tr(STATUS_KEY[status] ?? 'Idle')),
+      return h('div', { className: 'wf-node-row' },
         h(Mark, { node, roster, size: 28 }),
         h('span', { className: 'wf-nt' },
-          h('span', { className: 'wf-nm' }, node.name),
-          h('span', { className: 'wf-rl' }, node.role)),
-      ]
+          h('span', { className: 'wf-nm' },
+            node.name,
+            h('span', { className: `wf-chip wf-chip-inline ${status}` }, tr(STATUS_KEY[status] ?? 'Idle'))),
+          h('span', { className: 'wf-rl' }, node.role)))
     }
 
     function Details({ workflow }) {
@@ -537,7 +564,7 @@ window.__ModuleLoader__.load({
       for (const task of queued) rows.push({ task, status: 'queued', current: false })
       if (current && !rows.some(item => item.task?.id === current.id && item.status === workflow.run.status)) rows.push({ task: current, status: workflow.run.status, current: true })
       return h('div', null, rows.map((item, index) => h('div', { key: index, className: 'wf-hist' },
-        h('span', null, `${item.task?.id ?? ''} ${item.task?.title ?? ''}`),
+        h('span', { title: item.task?.title ?? '' }, taskSummary(item.task, item)),
         h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Failed' : 'Queued')))))
     }
 
@@ -1080,7 +1107,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-txt' },
             h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow')),
             h('span', { className: 'wf-t2' }, item.preview || tr('Waiting for a task'))),
-          item.run?.status === 'running' ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
+          (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
         h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
@@ -1107,6 +1134,12 @@ window.__ModuleLoader__.load({
             void call('workflow/say', { workflowId: open.id, text }).then(value => { if (value?.workflows) setPack(value) })
           },
           onTip: setTip,
+          onPause: () => {
+            void call('workflow/pause', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) })
+          },
+          onResume: () => {
+            void call('workflow/resume', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) })
+          },
         })) : null,
         assignOpen ? portal(h(AssignModal, {
           workflows, tasks, roster, workflowId: openId || workflows[0]?.id,
@@ -1172,8 +1205,8 @@ window.__ModuleLoader__.load({
 .wf-btn.wf-pri{background:var(--bt-accent,#4d6bfe);border-color:var(--bt-accent,#4d6bfe);color:#fff}
 .wf-btn.wf-dark{background:var(--bt-user,#070707);color:var(--bt-user-ink,#fcfcfc);border-color:var(--bt-user,#070707)}
 .wf-btn.wf-sm{height:28px}
-.wf-strip{margin:0 auto 4px;width:min(720px,calc(100% - 48px));border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:12px}
-.wf-tk{font-weight:600}.wf-meta{font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.wf-strip{margin:0 auto 4px;width:min(720px,calc(100% - 48px));border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wf-tk{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(360px,42vw)}.wf-meta{font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap}
 .wf-segs{display:flex;gap:3px;flex:1;min-width:80px}
 .wf-seg{height:5px;border-radius:3px;background:var(--bt-active,rgba(119,119,119,.17));flex:1}
 .wf-seg.done{background:var(--bt-accent,#4d6bfe)}.wf-seg.failed{background:#e5484d}.wf-seg.running{background:rgba(77,107,254,.35)}
@@ -1206,11 +1239,13 @@ window.__ModuleLoader__.load({
 .wf-dr-body{flex:1;overflow:auto;padding:4px 18px 20px}
 .wf-dr-title{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px}
 .wf-dr-title h2{font-size:16px;font-weight:600;margin:0}
-.wf-dr-title p{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.5;margin:0}
+.wf-dr-title p{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.5;margin:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .wf-tabs{display:flex;justify-content:center;gap:4px;margin:6px 0 12px}
 .wf-tabs button{padding:4px 10px;border-radius:7px;border:0;background:transparent;color:var(--bt-ink-2,rgba(20,20,20,.6));cursor:pointer;font:inherit}
 .wf-tabs button.on{background:var(--bt-active,rgba(119,119,119,.17));color:var(--bt-ink,#141414)}
-.wf-term{font-size:11px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:3px 10px}
+.wf-term{font-size:11px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:3px 10px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-node-row{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+.wf-chip-inline{margin-left:6px;font-size:9.5px;vertical-align:middle;font-weight:500}
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
 .wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative;overflow:auto}
 .wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%}
@@ -1229,7 +1264,6 @@ window.__ModuleLoader__.load({
 .wf-node.running{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 3px rgba(77,107,254,.12)}
 .wf-node.done{border-color:rgba(22,163,74,.35)}.wf-node.failed{border-color:#e5484d}
 .wf-node.selected{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px rgba(77,107,254,.2)}
-.wf-node .wf-chip{position:absolute;top:-9px;right:8px}
 .wf-nt{min-width:0;flex:1;display:flex;flex-direction:column}
 .wf-nm{font-weight:600;font-size:12.5px}.wf-rl{font-size:11px;color:var(--bt-ink-3,#9a9a9a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wf-box{border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);padding:10px 12px}
@@ -1298,6 +1332,6 @@ window.__ModuleLoader__.load({
       return off
     }
 
-    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, stageMessages }
+    return { name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings, tr, columnOf, shortId, stageMessages, taskSummary, chatPreview }
   },
 })
