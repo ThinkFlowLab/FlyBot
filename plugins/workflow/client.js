@@ -108,6 +108,9 @@ window.__ModuleLoader__.load({
       'Could not delete this workflow': '无法删除该 Workflow',
       'Reading workflows…': '正在读取 Workflow…',
       'Changes are saved automatically': '更改会自动保存',
+      'Next run: {time}': '下次运行：{time}',
+      'Step {step}': '步骤 {step}',
+      'Parallel branches · Merge after all pass': '并行分支 · 全部通过后汇合',
     }
 
     function zhUi() {
@@ -194,8 +197,12 @@ window.__ModuleLoader__.load({
       if (!id && !title) return ''
       if (!title) return id
       if (!id) return title.length > 72 ? `${title.slice(0, 69)}…` : title
+      // Remove issue number prefix from title if it duplicates the id
+      let cleanTitle = title
+      const issueMatch = title.match(/^issue\s+#?\d+\s*[:\-–—]\s*/i)
+      if (issueMatch && id) cleanTitle = title.slice(issueMatch[0].length)
       const room = Math.max(24, 72 - id.length - 3)
-      const short = title.length > room ? `${title.slice(0, room - 1)}…` : title
+      const short = cleanTitle.length > room ? `${cleanTitle.slice(0, room - 1)}…` : cleanTitle
       return `${id} · ${short}`
     }
     function chatPreview(text) {
@@ -206,7 +213,7 @@ window.__ModuleLoader__.load({
     function sidebarPreview(item) {
       const busy = (item.activeCount ?? 0) > 0 && item.run?.live === true
       if (busy) return item.preview || tr('Waiting for a task')
-      if (item.trigger === 'schedule' && item.scheduleLabel) return `下次运行：${item.scheduleLabel}`
+      if (item.trigger === 'schedule' && item.scheduleLabel) return tr('Next run: {time}', { time: item.scheduleLabel })
       return tr('Waiting for a task')
     }
     function glyph() {
@@ -423,7 +430,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wf-msg' },
         h(Mark, { node, roster, size: 28 }),
         h('div', null,
-          h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, `步骤 ${message.step}`) : null),
+          h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, tr('Step {step}', { step: message.step })) : null),
           h('div', { className: 'wf-bub', title: message.text }, chatPreview(message.text),
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
@@ -614,7 +621,7 @@ window.__ModuleLoader__.load({
             return h('div', {
               key: layer.join('+'), className: 'wf-par wf-abs',
               style: parallelFrameStyle(members),
-            }, h('div', { className: 'wf-plabel' }, '并行分支 · 全部通过后汇合'))
+            }, h('div', { className: 'wf-plabel' }, tr('Parallel branches · Merge after all pass')))
           }),
           nodes.map(node => h('div', {
             key: node.id,
@@ -1139,6 +1146,14 @@ window.__ModuleLoader__.load({
         if (live.length === 0) { setFocusedRunId(null); return }
         if (!live.some(run => run.id === focusedRunId)) setFocusedRunId(live[0].id)
       }, [open?.id, open?.activeCount, open?.runs?.length, focusedRunId])
+
+      // Hide the shell's composer when a Workflow stage is open (#1486)
+      useEffect(() => {
+        if (typeof document === 'undefined') return undefined
+        if (!open) return undefined
+        document.body.dataset.btWorkflow = ''
+        return () => { delete document.body.dataset.btWorkflow }
+      }, [open?.id])
 
       const loadTasks = async () => {
         const host = globalThis.__flybot__?.host

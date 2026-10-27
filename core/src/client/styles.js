@@ -1051,6 +1051,7 @@ body[data-bt-friend-chat] [data-composer-stats]{display:none!important}
 body[data-bt-room] .bt-voice{display:none!important}
 body[data-bt-room] [data-composer-card] [class*="_activity"]{display:none!important}
 body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+body[data-bt-workflow] [data-composer-card]{display:none!important}
 .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
 [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
 .bt-q{order:1}

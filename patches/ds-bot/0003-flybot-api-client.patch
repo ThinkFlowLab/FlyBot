@@ -2988,14 +2988,16 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
  /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
  [data-composer-card] button[class*="_add"]{display:none!important}
-@@ -905,6 +905,7 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -905,7 +905,9 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  .bt-mic:active,.bt-voice:active{scale:.9}
  [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
  body[data-bt-room] .bt-voice{display:none!important}
 +body[data-bt-room] [data-composer-card] [class*="_activity"]{display:none!important}
  body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
++body[data-bt-workflow] [data-composer-card]{display:none!important}
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+ .bt-q{order:1}
 @@ -959,6 +959,7 @@ div:has(> nav [class*="_marks"]){display:none!important}
  .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
  .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
