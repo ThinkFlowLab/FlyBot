@@ -353,7 +353,7 @@ export function CopyRow({ task, roster, actions, onView, onCancel }) {
     ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
     ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
   ]
-  const [target, setTarget] = useState(others[0]?.[0] ?? '')
+  const [target, setTarget] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const submit = (event) => {

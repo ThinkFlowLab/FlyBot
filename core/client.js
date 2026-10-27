@@ -12296,7 +12296,7 @@ function CopyRow({ task, roster, actions, onView, onCancel }) {
     ...roster.bots.filter((bot) => bot.id !== task.botId).map((bot) => [bot.id, bot.name]),
     ...roster.rooms.filter((room2) => room2.id !== task.roomId).map((room2) => [room2.id, room2.name])
   ];
-  const [target, setTarget] = (0, import_react24.useState)(others[0]?.[0] ?? "");
+  const [target, setTarget] = (0, import_react24.useState)("");
   const [busy, setBusy] = (0, import_react24.useState)(false);
   const [error, setError] = (0, import_react24.useState)("");
   const submit = (event) => {

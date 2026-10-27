@@ -264,6 +264,28 @@ test('Copy asks for another chat and posts schedule-create with copyFrom (#1287)
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ target: 'b2', copyFrom: { sessionId: 'chat-b1', id: 's1' } }])
 })
 
+// #1322: the picker opens on its placeholder, not on the first other chat — `others[0]` is roster
+// order, so the old opening state made one click on Copy send the task to whichever Bot sorted
+// first. A person has to pick a target; a submit without one sends nothing.
+test('the copy picker opens with no target chosen, so one click cannot send it (#1322)', async () => {
+  const sent = []
+  const actions = { ...spy(), scheduleCreate: async (task) => { sent.push(task); return OFF } }
+  const form = render(h(CopyRow, { task: ACTIVE, roster: OTHERS, actions, onView() {}, onCancel() {} }))
+  const select = all(form).find(node => node.type === 'select')
+  assert.equal(select.props.value, '', 'the placeholder is the opening choice, never the first other chat')
+  const copy = buttonsOf(form).find(button => text(button).includes('Copy'))
+  assert.equal(copy.props.disabled, true, 'Copy is disabled until a target is picked')
+  form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(sent, [], 'submitting with no target sends nothing')
+  // The target a person picked is the one sent, and only that chat.
+  seeded.push('g1')
+  const picked = render(h(CopyRow, { task: ACTIVE, roster: OTHERS, actions, onView() {}, onCancel() {} }))
+  picked.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ target: 'g1', copyFrom: { sessionId: 'chat-b1', id: 's1' } }])
+})
+
 test('a task row offers Copy (#1287)', () => {
   seeded.push({ available: true, tasks: [ACTIVE] }, null)
   const card = render(BotSchedules({ bot: { id: 'b1' }, roster: OTHERS, actions: { ...spy(), scheduleCreate: async () => OFF } }))
