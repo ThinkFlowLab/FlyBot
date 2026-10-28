@@ -190,7 +190,6 @@ window.__ModuleLoader__.load({
       if (text.startsWith('task-')) return `#${text.slice(-6)}`
       return text
     }
-    const CHAT_PREVIEW = 240
     function taskSummary(task, run) {
       if (run?.taskSummary) return run.taskSummary
       const id = shortId(task?.id ?? '')
@@ -205,11 +204,6 @@ window.__ModuleLoader__.load({
       const room = Math.max(24, 72 - id.length - 3)
       const short = cleanTitle.length > room ? `${cleanTitle.slice(0, room - 1)}…` : cleanTitle
       return `${id} · ${short}`
-    }
-    function chatPreview(text) {
-      const line = String(text ?? '').replace(/\s+/g, ' ').trim()
-      if (line.length <= CHAT_PREVIEW) return line
-      return `${line.slice(0, CHAT_PREVIEW - 1)}…`
     }
     function sidebarPreview(item) {
       const busy = (item.activeCount ?? 0) > 0 && item.run?.live === true
@@ -425,14 +419,14 @@ window.__ModuleLoader__.load({
 
     function Bubble({ message, workflow, roster }) {
       if (message.kind === 'time') return h('div', { className: 'wf-ts' }, message.text)
-      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}`, title: message.text }, chatPreview(message.text))
-      if (message.kind === 'user') return h('div', { className: 'wf-user', title: message.text }, chatPreview(message.text))
+      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}`, title: message.text }, message.text)
+      if (message.kind === 'user') return h('div', { className: 'wf-user', title: message.text }, message.text)
       const node = nodeOf(workflow, message.botId) ?? { id: message.botId, name: message.botId }
       return h('div', { className: 'wf-msg' },
         h(Mark, { node, roster, size: 28 }),
         h('div', null,
           h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, tr('Step {step}', { step: message.step })) : null),
-          h('div', { className: 'wf-bub', title: message.text }, chatPreview(message.text),
+          h('div', { className: 'wf-bub', title: message.text }, message.text,
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
@@ -1534,7 +1528,7 @@ window.__ModuleLoader__.load({
 
     return {
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
-      tr, columnOf, shortId, stageMessages, taskSummary, chatPreview, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
+      tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
       runHistoryRows, liveStageRuns, resolveFocusedRun, parallelFrameStyle, NODE_W,
       botPaletteSubtitle, botTint,
     }
