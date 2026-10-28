@@ -81,3 +81,33 @@ test('moving to another Session moves the effects, and a group chat sets the roo
   assert.equal(doc.body.dataset.btRoom, undefined, 'teardown clears the last Session\'s flags')
   assert.deepEqual(visits, [['begin', 's1'], ['end', 's1'], ['begin', 's2'], ['end', 's2']], 'teardown ends the open visit')
 })
+
+test('a face room whose "@" watcher notifies the sessions source does not re-enter apply', () => {
+  // Warming the trigger controller retains the Session and publishes the retention
+  // synchronously, so `apply()` runs again while it is still setting up the face "@"
+  // filter (#979). That re-entry used to construct a second controller, notify again
+  // and run about 300 turns deep until V8 threw `RangeError: Maximum call stack size
+  // exceeded` — in the UI the room's history lost the notification it was waiting on.
+  const doc = new JSDOM('<body></body>').window.document
+  const sessions = source({ byId: { s1: { id: 's1', retainedBy: { mainView: 1 }, blank: false } } })
+  const roster = source({ byId: {}, roomsById: {} })
+  let calls = 0
+  const actions = {
+    beginVisit: () => {},
+    endVisit: () => {},
+    filterFaceAtMenu: () => {
+      calls += 1
+      // The shape `publishRetention` has: listeners are told inside the call, before it returns.
+      const snapshot = sessions.getSnapshot()
+      sessions.set({ byId: { ...snapshot.byId } })
+      return () => {}
+    },
+  }
+  const off = installHeaderEffects({ sessions, roster, actions, doc })
+  assert.doesNotThrow(
+    () => roster.set({ byId: {}, roomsById: { s1: { id: 's1', name: 'Face', origin: 'face-to-face' } } }),
+    'the retention notification must not run apply back into itself',
+  )
+  assert.equal(calls, 1, 'the filter is installed once for the Session, not once per notification')
+  off()
+})

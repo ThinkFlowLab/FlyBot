@@ -33,7 +33,13 @@ export function installHeaderEffects({ sessions, roster, actions, doc = globalTh
     held?.off()
     slots.set(id, { dep, off: setup() ?? (() => {}) })
   }
-  const apply = () => {
+  // A source may notify synchronously from inside a pass — the shell's own contract, and a
+  // face room's "@" filter warms a trigger controller that publishes a retention right
+  // away. Re-entering there rebuilt that filter forever (#979), so a pass that lands while
+  // one is running is remembered and runs once after it, instead of nesting.
+  let running = false
+  let again = false
+  const pass = () => {
     const list = sessions.getSnapshot()
     const state = roster.getSnapshot()
     const row = Object.values(list?.byId ?? {}).find(entry => (entry?.retainedBy?.mainView ?? 0) > 0)
@@ -82,6 +88,12 @@ export function installHeaderEffects({ sessions, roster, actions, doc = globalTh
       doc.body.dataset.btRoom = ''
       return () => { delete doc.body.dataset.btRoom }
     })
+  }
+  const apply = () => {
+    if (running) { again = true; return }
+    running = true
+    try { pass() } finally { running = false }
+    if (again) { again = false; apply() }
   }
   apply()
   const offSessions = sessions.subscribe(apply)

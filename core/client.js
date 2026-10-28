@@ -10059,7 +10059,9 @@ function installHeaderEffects({ sessions, roster, actions, doc = globalThis.docu
     slots.set(id, { dep, off: setup() ?? (() => {
     }) });
   };
-  const apply2 = () => {
+  let running = false;
+  let again = false;
+  const pass = () => {
     const list = sessions.getSnapshot();
     const state = roster.getSnapshot();
     const row = Object.values(list?.byId ?? {}).find((entry) => (entry?.retainedBy?.mainView ?? 0) > 0);
@@ -10101,6 +10103,22 @@ function installHeaderEffects({ sessions, roster, actions, doc = globalThis.docu
         delete doc.body.dataset.btRoom;
       };
     });
+  };
+  const apply2 = () => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    try {
+      pass();
+    } finally {
+      running = false;
+    }
+    if (again) {
+      again = false;
+      apply2();
+    }
   };
   apply2();
   const offSessions = sessions.subscribe(apply2);
