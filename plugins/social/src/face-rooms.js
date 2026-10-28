@@ -137,9 +137,15 @@ export function countdownLabel(expiresAt, now = Date.now(), offsetMs = 0) {
 }
 
 const ALREADY_LEFT = new Set(['bot_not_found', 'not_a_member', 'room_closed', 'face_room_not_found', 'code_void'])
+// An outage is not an ending: these codes and any 5xx mean the server could not answer, so the
+// room and its grants must be kept (social.js:4382 otherwise moves it to Past rooms).
+const NOT_LEFT = new Set(['server_error', 'unreachable'])
+const serverDown = (code, status) => Number(status) >= 500 || NOT_LEFT.has(code) || code.startsWith('server_')
+const FACE_NOT_ANSWERING = 'Bot Social is not answering right now. Try again in a moment.'
 export function alreadyLeftFace(error) {
   const code = String(error?.code ?? '')
   if (ALREADY_LEFT.has(code)) return true
+  if (serverDown(code, error?.status)) return false
   return /not one of yours on Bot Social|no longer in this room|has closed|not available|no longer valid/i.test(String(error?.message ?? error ?? ''))
 }
 
@@ -221,6 +227,7 @@ export function mapFaceError(data, status) {
     else if (status === 429) message = retryAfter != null
       ? `Too many attempts. Try again in ${formatRetryAfter(retryAfter)}.`
       : 'Too many attempts. Try again in a few minutes.'
+    else if (serverDown(code, status)) message = FACE_NOT_ANSWERING
   }
   return new FaceRoomError(message, code || 'face_room_error', { retryAfter, scope: payload.scope, status, confirmCode })
 }
@@ -720,6 +727,17 @@ const normHandle = (handle) => {
   return body ? `@${body}` : ''
 }
 
+// fetch reports a reset syscall on `error.code` or on `error.cause.code`; TLS failures carry no
+// code at all. Either way the join never reached Bot Social, so it is retryable, not an ending.
+const DROPPED_CODES = new Set(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN'])
+function droppedConnection(error) {
+  for (const candidate of [error, error?.cause, error?.cause?.cause]) {
+    if (candidate && DROPPED_CODES.has(String(candidate.code ?? ''))) return true
+  }
+  const text = [error?.message, error?.cause?.message].filter(Boolean).join(' ')
+  return /ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|certificate|CERT_|SSL routines|TLS handshake|self[- ]signed/i.test(text)
+}
+
 export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetch, timeoutMs = CALL_TIMEOUT_MS } = {}) {
   if (!server) throw new Error('flybot-social: server URL is required')
   if (!token) throw new Error('flybot-social: owner connector token is required')
@@ -757,6 +775,11 @@ export function createFaceRoomApi({ server, token, fetch: fetchImpl = socialFetc
       if (error instanceof FaceRoomError) throw error
       if (signal.aborted || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
         throw new FaceRoomError(`Bot Social did not answer in ${Math.round(timeoutMs / 1000)}s`, 'timeout')
+      }
+      if (droppedConnection(error)) {
+        const wrapped = new FaceRoomError(FACE_NOT_ANSWERING, 'unreachable')
+        wrapped.cause = error
+        throw wrapped
       }
       throw error
     }

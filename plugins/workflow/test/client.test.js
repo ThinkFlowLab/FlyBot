@@ -525,6 +525,76 @@ test('stage chat hides workflow node Bot lines but keeps owner Bots and system l
   assert.deepEqual(visible.map(message => message.id), ['1', '3', '4'])
 })
 
+async function stageChatText(messages, roster) {
+  const graph = delivery()
+  graph.messages = messages
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  const text = textOf(view.tree)
+  view.unmount()
+  return text
+}
+
+function longLine(kind) {
+  const tail = kind === 'user' ? '让发布说明覆盖四个小节，并保留每条验收命令的原文。'
+    : kind === 'system' ? '系统提示的每一行都要完整显示，不能丢尾巴。'
+      : '这是 Chief 的原话，一个字都不能丢。'
+  const line = `${kind.toUpperCase()} ${tail.repeat(20)}END`
+  assert.ok(line.length > 240, `the fixture must exceed the 240-character preview cap, got ${line.length}`)
+  return line
+}
+
+function assertFull(text, line) {
+  assert.equal(text.includes(line), true, `the stage chat dropped part of a ${line.length}-character line`)
+  assert.equal(text.includes(`${line.slice(0, 239)}…`), false, 'the stage chat still clipped a line at 240 characters')
+}
+
+test('a long user line in the stage chat renders in full', async () => {
+  const long = longLine('user')
+  const text = await stageChatText([{ id: 'm1', kind: 'user', text: long }], { bots: [] })
+  assertFull(text, long)
+})
+
+test('a long system line in the stage chat renders in full', async () => {
+  const long = longLine('system')
+  const text = await stageChatText([{ id: 'm1', kind: 'system', text: long }], { bots: [] })
+  assertFull(text, long)
+})
+
+test('a long roster Bot line in the stage chat renders in full', async () => {
+  const long = longLine('bot')
+  const roster = { bots: [], byId: { 'bot-chief': { id: 'bot-chief', name: 'Chief' } } }
+  const text = await stageChatText([{ id: 'm1', kind: 'bot', botId: 'bot-chief', text: long }], roster)
+  assertFull(text, long)
+})
+
+test('the stage strip still clips a long task title as a summary', async () => {
+  const graph = delivery()
+  const longTitle = '让发布说明覆盖四个小节并保留每条验收命令的原文'.repeat(12)
+  graph.run.task = { id: '#1460', title: longTitle }
+  delete graph.run.taskSummary
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  const text = textOf(view.tree)
+  const summary = client.taskSummary({ id: '#1460', title: longTitle })
+  assert.equal(text.includes(summary), true, 'the stage strip lost its task summary')
+  assert.equal(text.includes(longTitle), false, 'the stage strip rendered a full task title instead of a summary')
+  assert.equal(summary.endsWith('…'), true)
+  view.unmount()
+})
+
 test('the hand-a-task modal lists live Tasks board rows only', async () => {
   const graph = delivery()
   const call = async (name) => {

@@ -93,6 +93,58 @@ test('error mapping covers the FACE_ROOMS.md codes', () => {
   assert.equal(formatRetryAfter(60), '1 minute')
 })
 
+test('a 5xx at join says Bot Social is not answering, not "try another number"', () => {
+  const copy = 'Bot Social is not answering right now. Try again in a moment.'
+  for (const status of [500, 502, 503, 530]) {
+    const error = mapFaceError({}, status)
+    assert.equal(error.message, copy, `status ${status}`)
+    assert.equal(error.code, 'face_room_error', `status ${status}`)
+    assert.equal(error.status, status)
+  }
+  const server = mapFaceError({ error: { code: 'server_error', message: 'internal' } }, 502)
+  assert.equal(server.message, copy)
+  assert.equal(server.code, 'server_error')
+  assert.equal(server.status, 502)
+  // A server outage must never read like a room that is gone: social.js:4382 treats
+  // "already left" as a reason to move the room to Past rooms and drop every grant.
+  assert.doesNotMatch(mapFaceError({}, 500).message, /not one of yours on Bot Social|no longer in this room|has closed|not available|no longer valid/i)
+  assert.equal(alreadyLeftFace(mapFaceError({}, 500)), false)
+  assert.equal(alreadyLeftFace(mapFaceError({ error: { code: 'server_error' } }, 502)), false)
+  // The guard must also beat the message regex: a proxy 5xx can carry a room-gone line.
+  assert.equal(alreadyLeftFace(new FaceRoomError('You are no longer in this room.', 'proxy_bad_gateway', { status: 502 })), false)
+  assert.equal(alreadyLeftFace({ code: 'server_error', message: 'This room has closed.' }), false)
+  assert.equal(alreadyLeftFace(mapFaceError({ error: { code: 'room_closed' } }, 409)), true)
+  // 401 and 429 keep their own sentence, byte for byte.
+  assert.equal(mapFaceError(null, 401).message, 'Bot Social signed you out. Reconnect in Friends\' Bots, or restart FlyBot.')
+  assert.equal(mapFaceError(null, 429).message, 'Too many attempts. Try again in a few minutes.')
+})
+
+test('a dropped connection at join is unreachable, not a raw ECONNRESET', async () => {
+  const copy = 'Bot Social is not answering right now. Try again in a moment.'
+  for (const code of ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN']) {
+    const failure = Object.assign(new Error('fetch failed'), { code, cause: Object.assign(new Error('read failed'), { code }) })
+    const api = createFaceRoomApi({ server: 'https://s', token: 't', fetch: async () => { throw failure } })
+    await assert.rejects(() => api.list(), (error) => {
+      assert.equal(error.code, 'unreachable', code)
+      assert.equal(error.message, copy, code)
+      assert.equal(error.cause, failure, `${code} keeps the original error reachable`)
+      return true
+    })
+  }
+  // fetch's own wrapper hides the syscall code on `cause`.
+  const wrapped = createFaceRoomApi({
+    server: 'https://s', token: 't',
+    fetch: async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }) },
+  })
+  await assert.rejects(() => wrapped.list(), error => error.code === 'unreachable' && error.message === copy)
+  // A TLS failure carries no syscall code at all.
+  for (const message of ['unable to verify the first certificate', 'certificate has expired', 'socket hang up']) {
+    const tls = createFaceRoomApi({ server: 'https://s', token: 't', fetch: async () => { throw new Error(message) } })
+    await assert.rejects(() => tls.list(), error => error.code === 'unreachable' && error.message === copy, message)
+  }
+  assert.equal(alreadyLeftFace(new FaceRoomError(copy, 'unreachable')), false)
+})
+
 test('countdown copy for a candidate room', () => {
   const now = Date.parse('2026-10-15T10:00:00.000Z')
   assert.equal(countdownLabel('2026-10-15T10:08:00.000Z', now), '8:00 left to join')
