@@ -18,7 +18,7 @@ RUN node .github/scripts/check-pack.mjs /pkgs \
 # Stage 2: the runtime.
 FROM ${NODE_IMAGE}
 # DSH as pinned in the README; pnpm is what `dsh plugin` uses to manage the profile.
-ARG DSH_VERSION=0.2.0-rc.2
+ARG DSH_VERSION=0.2.1-rc.2
 ARG PNPM_VERSION=10.34.6
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git tini \

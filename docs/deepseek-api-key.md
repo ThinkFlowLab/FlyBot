@@ -34,7 +34,7 @@ If the file already exists, add the `DEEPSEEK_API_KEY` line under `refs` and kee
 Set `DEEPSEEK_API_KEY` in the shell that starts DSH:
 
 ```sh
-DEEPSEEK_API_KEY=sk-your-key npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
+DEEPSEEK_API_KEY=sk-your-key npx -y @deepseek-ai/dsh@0.2.1-rc.2 web --port 3080
 ```
 
 DSH reads the environment once, at start, so a key exported later needs a restart. While it is set, it wins over every other place and DSH treats the key as read-only: saving a different key in the app is refused until you start DSH without the variable.

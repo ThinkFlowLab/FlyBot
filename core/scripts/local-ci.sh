@@ -34,9 +34,9 @@ step="npm ci"
 echo "=== $step ==="
 npm ci --no-fund --no-audit
 
-step="Install DSH 0.2.0-rc.2"
+step="Install DSH 0.2.1-rc.2"
 echo "=== $step ==="
-npm run harness -- --no-save @deepseek-ai/dsh@0.2.0-rc.2
+npm run harness -- --no-save @deepseek-ai/dsh@0.2.1-rc.2
 
 step="lint"
 echo "=== $step ==="

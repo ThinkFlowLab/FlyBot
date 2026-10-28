@@ -63,15 +63,19 @@ export async function spawnAll(nodes, roster, spawn, workflowModel = '', caps = 
   }
 }
 
+// Returns the ids whose release failed: that Bot is still there, so the caller
+// must keep naming it and let a later attempt retry the release (#1476).
 export async function releaseAll(ids, release, warn = () => {}) {
-  if (typeof release !== 'function') return
+  const failed = []
+  if (typeof release !== 'function') return failed
   for (const id of ids) {
     if (!id) continue
     try {
       await release(id)
     } catch (error) {
-      // The instance may already be gone. The run record still drops the id.
+      failed.push(id)
       warn(`flybot-workflow: could not remove ${id}: ${error?.message ?? error}`)
     }
   }
+  return failed
 }

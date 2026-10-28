@@ -135,5 +135,5 @@ test('settled: the verdict that holds now, from the team as it is now', () => {
 test('#626: the no-request kind list is derived from the DSH version the tests run against', () => {
   const harness = new URL('../dev/harness/package.json', import.meta.url)
   const pinned = JSON.parse(readFileSync(harness, 'utf8')).dependencies['@deepseek-ai/dsh']
-  assert.equal(pinned, '0.2.0-rc.2', 'DSH moved: re-read MessageSourceMap and update NOTICE_KINDS in src/host/turn-origin.js')
+  assert.equal(pinned, '0.2.1-rc.2', 'DSH moved: re-read MessageSourceMap and update NOTICE_KINDS in src/host/turn-origin.js')
 })
