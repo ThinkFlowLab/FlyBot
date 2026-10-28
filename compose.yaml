@@ -8,14 +8,18 @@ services:
     build: .
     image: flybot:${FLYBOT_TAG:-local}
     restart: unless-stopped
-    ports:
-      # Host loopback only. For remote access use your own HTTPS proxy or an SSH tunnel;
-      # never publish this port on a public address.
-      - "127.0.0.1:${FLYBOT_PORT:-3080}:3080"
+    # Host networking, and the server binds the host's 127.0.0.1 only (docker/web.patch.yml):
+    # DSH 0.2.1 refuses a wildcard bind, and with host networking the port is still the host's
+    # loopback instead of a published one. For remote access use your own HTTPS proxy or an SSH
+    # tunnel; never expose this port on a public address. Linux Docker only: Docker Desktop does
+    # not route host networking to the host.
+    network_mode: host
     environment:
       # Passed only when set in your shell or in .env next to this file; otherwise save the
       # key in the app (it is kept on the data volume).
       - DEEPSEEK_API_KEY
+      # The port the server binds on the host loopback; the entry point defaults to 3080.
+      - FLYBOT_PORT
     volumes:
       - data:/data
 volumes:

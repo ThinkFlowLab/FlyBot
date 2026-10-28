@@ -11,12 +11,12 @@ You build the image yourself. FlyBot does not publish an image.
 - **One data volume**, `/data`: the DSH home (Bots, Sessions, settings, credentials), the Bots' working folder `/data/workspace` and the pnpm store.
 - **A normal user**, not root (uid 1000).
 - **No keys in the image.** You give the DeepSeek key at run time.
-- **The port on `127.0.0.1` only.** For access from another machine use your own HTTPS reverse proxy or an SSH tunnel. Never publish the port on a public address: whoever reaches it with the sign-in link controls your Bots, and they can run commands.
+- **The port on `127.0.0.1` only.** The container shares the host's network (`network_mode: host`) and the web server binds that loopback itself, because DSH 0.2.1 refuses a wildcard host. For access from another machine use your own HTTPS reverse proxy or an SSH tunnel. Never publish the port on a public address: whoever reaches it with the sign-in link controls your Bots, and they can run commands.
 - **A health check**: `docker compose ps` shows `healthy` once the web server answers.
 
 ## Start
 
-You need Docker with the compose plugin and a clone of this repository.
+You need Docker with the compose plugin on Linux — Docker Desktop for macOS and Windows does not route host networking, so `network_mode: host` there does not reach your machine — and a clone of this repository.
 
 ```sh
 git clone https://github.com/ThinkFlowLab/FlyBot && cd FlyBot
