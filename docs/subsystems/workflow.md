@@ -12,6 +12,8 @@ This is not the workflow-definition engine. That engine (#1272) stores `workflow
 
 Settings → Workflows (#1364) is this plugin's list. The page lives in the core client and calls `workflow/state`, `workflow/create` and `workflow/graph`. Factory rows are `templateCatalog()` — id, name, description, triggers, plus the drawable `nodes`, `edges`, `layers` and `chain` — and the owner's rows are the saved workflows. The settings page does not replace the sidebar chat. A sidebar click opens this plugin's stage and leaves the Workflows section in place.
 
+A host call on that page that throws, rejects, or never answers ends on the page's own `.wf-err` alert instead of staying on `Reading workflows…` or looking saved: a failed read offers `Try again`, and a failed save or model change clears the `Changes are saved automatically` hint. A successful call clears the alert again.
+
 ## Owns
 
 Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, the browser chat and the flowchart canvas.
