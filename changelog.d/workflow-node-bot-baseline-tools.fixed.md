@@ -1,0 +1,1 @@
+Workflow node Bots now get baseline tools (`read`, `edit`, `bash`, `github`) when no explicit `tools` list is configured, enabling GitHub access and shell operations by default. Previously, nodes with empty or missing `tools` were restricted to `workspace-write` permission only, causing failures when prompts expected GitHub or bash access.

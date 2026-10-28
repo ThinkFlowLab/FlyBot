@@ -185,6 +185,63 @@ test('a spawn that fails halfway removes the instances it already made and does 
   assert.equal(svc.state().workflows.find(item => item.id === made.id).run, null)
 })
 
+test('a node with no tools gets baseline tools (read, edit, bash, github) and full access permission', async () => {
+  const created = []
+  const fb = {
+    bot: {
+      list: () => roster,
+      async create(spec) {
+        const id = `bot-${created.length + 1}`
+        created.push(spec)
+        return id
+      },
+      async remove() { return true },
+      async send() { return { action: 'allow' } },
+    },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    tools: { register() { return () => {} } },
+    warn() {},
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  
+  // Node with no tools field gets baseline
+  const noTools = await started.service.define({
+    name: 'NoTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.' }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'NoTools', brief: 'Test baseline' })
+  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
+  assert.equal(created[0].permission, 'danger-full-access')
+  assert.match(created[0].systemPrompt, /You can use these tools: read, edit, bash, github\./)
+  assert.match(created[0].systemPrompt, /GitHub \(mcp__github__\*\) is granted/)
+  
+  // Node with explicit empty tools list also gets baseline (no use case for truly empty)
+  created.length = 0
+  const emptyTools = await started.service.define({
+    name: 'EmptyTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.', tools: [] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'EmptyTools', brief: 'Test empty' })
+  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
+  assert.equal(created[0].permission, 'danger-full-access')
+  
+  // Node with explicit tools uses those tools
+  created.length = 0
+  const customTools = await started.service.define({
+    name: 'CustomTools',
+    nodes: [{ id: 'reader', name: 'Reader', prompt: 'Just read.', tools: ['read'] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'CustomTools', brief: 'Test custom' })
+  assert.deepEqual(created[0].tools, ['read'])
+  assert.equal(created[0].permission, 'workspace-write')
+  assert.match(created[0].systemPrompt, /You can use these tools: read\./)
+  assert.doesNotMatch(created[0].systemPrompt, /GitHub/)
+})
+
 test('apply wires spawn to a hidden ephemeral create and removes those Bots when the run ends', async () => {
   const created = []
   const removed = []
@@ -217,9 +274,12 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(created.length, 1)
   assert.equal(created[0].ephemeral, true)
   assert.equal(created[0].hidden, true)
-  assert.equal(created[0].permission, 'workspace-write')
-  assert.deepEqual(created[0].tools, [])
+  // A node with no tools gets the baseline: read, edit, bash, github. bash gives full access.
+  assert.equal(created[0].permission, 'danger-full-access')
+  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
   assert.match(created[0].systemPrompt, /Write the plan\./)
+  assert.match(created[0].systemPrompt, /You can use these tools: read, edit, bash, github\./)
+  assert.match(created[0].systemPrompt, /GitHub \(mcp__github__\*\) is granted/)
   assert.equal(created[0].name.startsWith('Planner '), true)
   assert.notEqual(created[0].name, 'Planner')
   assert.equal(sent.length, 1)

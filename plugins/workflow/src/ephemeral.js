@@ -5,10 +5,20 @@ import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
 const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
 
-// A step that names a shell gets full access. Anything else can still write
-// the workspace. A node with no tools is not left on a read-only default.
+// When a node has no explicit tools list, it gets the baseline: file operations,
+// shell and connectors. An explicit empty list also gets the baseline, because
+// EPHEMERAL_DENIED_TOOLS at the guard/approval layer already narrows what a run
+// Bot may reach (#1466), so tools: [] naming nothing reachable is not useful.
+// A step that names a shell (or gets it from the baseline) runs with full access.
+const BASELINE_TOOLS = ['read', 'edit', 'bash', 'github']
+
+export function defaultedTools(tools) {
+  const explicit = cleanTools(tools)
+  return explicit.length > 0 ? explicit : BASELINE_TOOLS
+}
+
 export function permissionFor(tools) {
-  const names = cleanTools(tools)
+  const names = defaultedTools(tools)
   if (names.some(name => SHELL.has(name))) return 'danger-full-access'
   return 'workspace-write'
 }
@@ -26,7 +36,7 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
     role: cleanLine(node.role || seated?.role, 80),
     prompt,
     model: cleanLine(workflowModel || node.model || seated?.model, 80),
-    tools: cleanTools(node.tools),
+    tools: defaultedTools(node.tools),
     hidden: true,
     ephemeral: true,
   }
