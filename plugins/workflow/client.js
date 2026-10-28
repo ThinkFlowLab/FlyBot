@@ -521,14 +521,22 @@ window.__ModuleLoader__.load({
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
     function Stage({ workflow, roster, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop }) {
       const chatRef = useRef(null)
+      const chatFoot = useRef({ height: 0, shown: 0 })
       const liveRuns = liveStageRuns(workflow)
       const viewRun = resolveFocusedRun(workflow, focusedRunId)
       const showSummary = (workflow.queueDepth ?? 0) > 0 || liveRuns.length > 1
+      const visible = stageMessages(workflow, workflow.messages, roster)
       useEffect(() => {
         const el = chatRef.current
-        if (el) el.scrollTop = el.scrollHeight
+        if (!el) { chatFoot.current = { height: 0, shown: 0 }; return }
+        const prev = chatFoot.current
+        chatFoot.current = { height: el.scrollHeight, shown: visible.length }
+        // A stage line that is filtered out changes no pixel, so it must not move the chat.
+        if (visible.length <= prev.shown) return
+        // Follow a new line only from the bottom; a reader who scrolled up keeps their place.
+        if (prev.height > 0 && el.scrollTop + (el.clientHeight ?? 0) < prev.height - 24) return
+        el.scrollTop = el.scrollHeight
       }, [workflow.messages.length])
-      const visible = stageMessages(workflow, workflow.messages, roster)
       return h('div', { className: 'wf-stage', style: { left: stageLeft } },
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },

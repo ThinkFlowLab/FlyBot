@@ -39,7 +39,29 @@ const react = {
 }
 
 function mount(Component, props = {}) {
-  const root = { instances: new Map(), pending: [], rendering: false, dirty: false, tree: undefined }
+  const root = { instances: new Map(), elements: new Map(), pending: [], rendering: false, dirty: false, tree: undefined }
+  // The renderer has no DOM: a host element's ref gets a stand-in that answers
+  // getBoundingClientRect from `live.rectWidth` and keeps a scroll box, so a
+  // component that measures or scrolls its own container is observable — the
+  // stage chat's scroll effect is a no-op otherwise, because useRef keeps
+  // chatRef.current null.
+  const elementAt = (path) => {
+    let el = root.elements.get(path)
+    if (!el) {
+      el = {
+        scrollTop: 0, scrollHeight: 0, clientHeight: 0, focused: false, focus() { this.focused = true },
+        getBoundingClientRect: () => ({ width: live.rectWidth, height: 0 }), dataset: {},
+      }
+      root.elements.set(path, el)
+    }
+    return el
+  }
+  const attachRef = (ref, path) => {
+    if (!ref) return
+    const el = elementAt(path)
+    if (typeof ref === 'function') ref(el)
+    else if (typeof ref === 'object') ref.current = el
+  }
   const expand = (node, path) => {
     if (node === null || node === undefined || typeof node === 'boolean') return undefined
     if (typeof node !== 'object') return String(node)
@@ -52,14 +74,7 @@ function mount(Component, props = {}) {
       live.idx = 0
       return expand(node.type({ ...node.props, children: node.children }), `${path}/c`)
     }
-    // The renderer has no DOM: a host element's ref gets a stand-in that answers
-    // getBoundingClientRect from `live.rectWidth`.
-    const ref = node.props?.ref
-    if (ref) {
-      const el = { getBoundingClientRect: () => ({ width: live.rectWidth, height: 0 }), dataset: {} }
-      if (typeof ref === 'function') ref(el)
-      else if (typeof ref === 'object') ref.current = el
-    }
+    attachRef(node.props?.ref, path)
     return { type: node.type, props: node.props, children: node.children.map((child, i) => expand(child, `${path}.${i}`)).flat(Infinity).filter(child => child !== undefined) }
   }
   const render = () => {
@@ -81,6 +96,7 @@ function mount(Component, props = {}) {
   render()
   return {
     get tree() { return root.tree },
+    rerender(nextProps = {}) { Object.assign(props, nextProps); root.schedule() },
     unmount() { for (const inst of root.instances.values()) for (const slot of inst.hooks) slot?.cleanup?.(); root.instances.clear() },
   }
 }
@@ -727,6 +743,57 @@ test('stage chat hides workflow node Bot lines but keeps owner Bots and system l
   const roster = { byId: { 'bot-chief': { id: 'bot-chief', name: 'Chief' } } }
   const visible = client.stageMessages(workflow, workflow.messages, roster)
   assert.deepEqual(visible.map(message => message.id), ['1', '3', '4'])
+})
+
+// The stage chat follows a new line only while the reader is at the bottom: the
+// scroll effect used the raw message count, so a filtered node reply dragged it
+// down without one visible line changing.
+async function openStageChat(messages) {
+  const graph = delivery()
+  graph.messages = messages
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  const chat = findAll(view.tree, node => node.props?.className === 'wf-chat')[0]
+  assert.ok(chat, 'the stage chat did not mount, so its scroll effect could not run')
+  const chatEl = chat.props.ref?.current
+  assert.ok(chatEl, 'mount() never attached the stage chat ref, so the scroll effect is a no-op')
+  return { view, graph, chatEl }
+}
+
+test('the stage chat follows a new visible line to the bottom', async () => {
+  const { view, graph, chatEl } = await openStageChat([{ id: 'm1', kind: 'user', text: '一条可见的说明' }])
+  chatEl.clientHeight = 100
+  chatEl.scrollHeight = 800
+  chatEl.scrollTop = 800
+  graph.messages = [...graph.messages, { id: 'm2', kind: 'system', text: '任务已进入 Workflow' }]
+  chatEl.scrollHeight = 900
+  view.rerender()
+  assert.equal(chatEl.scrollTop, 900, 'a new visible stage line did not scroll the chat to the bottom')
+  view.unmount()
+})
+
+test('the stage chat keeps its place when the new lines are filtered node replies', async () => {
+  const { view, graph, chatEl } = await openStageChat([
+    { id: 'm1', kind: 'user', text: '一条可见的说明' },
+    { id: 'm2', kind: 'system', text: '任务已进入 Workflow' },
+  ])
+  chatEl.clientHeight = 100
+  chatEl.scrollHeight = 800
+  chatEl.scrollTop = 0 // the reader scrolled up
+  graph.messages = [...graph.messages,
+    { id: 'm3', kind: 'bot', botId: 'coder', text: 'node step output' },
+    { id: 'm4', kind: 'bot', botId: 'writer', text: 'another node step output' },
+  ]
+  assert.equal(client.stageMessages(graph, graph.messages, { bots: [] }).length, 2, 'the fixture must filter both new node replies out of the stage chat')
+  view.rerender()
+  assert.equal(chatEl.scrollTop, 0, 'a filtered node reply still dragged the stage chat to the bottom')
+  view.unmount()
 })
 
 async function stageChatText(messages, roster) {
