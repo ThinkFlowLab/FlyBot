@@ -1,1 +1,0 @@
-**Workflow step deadlines arm without an ephemeral Bot map (#1571):** a live running step now gets the ten-minute `STEP_DEADLINE_MS` even when the host cannot spawn run Bots, so a silent step cannot hold a lane forever. A test covers expiry with no reply and no ephemeral map.

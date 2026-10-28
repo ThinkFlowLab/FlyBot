@@ -1,1 +1,0 @@
-Workflow graphs now support choosing a model for the whole Workflow. Settings → Workflow graphs and the Details panel show the chosen model; when set, every ephemeral Bot in a run uses it instead of the seated Bot's model.

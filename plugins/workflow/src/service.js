@@ -1240,12 +1240,15 @@ export function createWorkflowService({
         const item = workflow(workflowId)
         if (!item) return { ok: false, error: 'No such workflow' }
         const lane = laneOf(workflowId)
-        const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         const live = lane.active[0] ?? (lane.last?.live === true ? lane.last : null)
+        // A reset that cannot keep a task has to be refused before it touches
+        // the lane: clearing first drops the queue, and a live run's Bot ids, on
+        // a path that never writes or releases them.
+        if (!live?.task) return { ok: false, error: 'This workflow has no task' }
+        const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         for (const run of lane.active) clearRunTimers(run.id)
         lane.active = []
         lane.queue = []
-        if (!live?.task) return { ok: false, error: 'This workflow has no task' }
         const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
         lane.last = kept
         push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
@@ -1266,8 +1269,12 @@ export function createWorkflowService({
     },
     // Replace the graph the canvas and the run share. Positions and edges
     // persist; a node that remains keeps its run status, a new one waits.
+    // A node dropped while it is running takes its run with it: the run is
+    // ended the way Stop/Reset/dispose end one, so nothing is left `running`
+    // with no node to advance it and no way to release the lane (#1549).
     saveGraph(body = {}) {
-      return mutate(String(body.workflowId ?? ''), (item) => {
+      const endedRuns = []
+      const saved = mutate(String(body.workflowId ?? ''), (item) => {
         // #1544: a save from a Bot records it as the graph's author; a save with no Bot behind it (the
         // canvas, the API, a template copy) is the owner's own edit and lifts the ceiling again.
         const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
@@ -1286,20 +1293,56 @@ export function createWorkflowService({
           edges: body.edges,
           layers: undefined,
         })
-        item.nodes = next.nodes
-        item.edges = next.edges
-        item.layers = next.layers
         const lane = laneOf(item.id)
-        const run = displayRun(item.id)
-        if (run?.live === true) {
-          const ids = new Set(item.nodes.map(node => node.id))
-          const nodeStatus = {}
-          for (const id of ids) nodeStatus[id] = run.nodeStatus?.[id] ?? 'queued'
-          const nextRun = { ...run, nodeStatus, updatedAt: now() }
-          if (lane.active.some(itemRun => itemRun.id === run.id)) storeRun(item.id, nextRun)
+        const liveRuns = lane.active.filter(itemRun => itemRun.live === true)
+        if (lane.last?.live === true && !liveRuns.some(itemRun => itemRun.id === lane.last.id)) liveRuns.push(lane.last)
+        const ids = new Set(next.nodes.map(node => node.id))
+        for (const run of liveRuns) {
+          // endRun settles the node map against the graph it ran on, so it must
+          // see the old nodes; the next graph is applied after this loop.
+          const dropped = orderedIds(item, run.nodeStatus, 'running').filter(id => !ids.has(id))
+          const names = dropped.map(id => nodeById(item, id)?.name ?? id)
+          const ended = dropped.length > 0
+          const settled = ended ? endRun(item, run, { code: 'stopped' }) : run
+          // A run that continues settles against the new graph, so a node this edit
+          // dropped leaves its map. A run this edit ended keeps its own map — the
+          // failed node included — the way reset() and dispose() keep theirs (#1424).
+          let nodeStatus = settled.nodeStatus ?? {}
+          if (!ended) {
+            nodeStatus = {}
+            for (const id of ids) nodeStatus[id] = settled.nodeStatus?.[id] ?? 'queued'
+          }
+          const nextRun = { ...settled, nodeStatus, updatedAt: now() }
+          if (ended) endedRuns.push({ run: nextRun, names })
+          else if (lane.active.some(itemRun => itemRun.id === run.id)) storeRun(item.id, nextRun)
           else if (lane.last?.id === run.id) lane.last = nextRun
           syncTimers(item, nextRun)
         }
+        item.nodes = next.nodes
+        item.edges = next.edges
+        item.layers = next.layers
+        for (const { run, names } of endedRuns) {
+          lane.active = lane.active.filter(itemRun => itemRun.id !== run.id)
+          lane.last = run
+          lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+          push(item.id, [{ kind: 'system', tone: 'bad', text: `■ 已停止 · ${summarizeTask(run.task)}（图编辑删除了正在运行的节点：${names.join('、')}）` }], now())
+        }
+      })
+      if (saved.ok === false || endedRuns.length === 0) return saved
+      const releasing = endedRuns.flatMap(({ run }) => Object.values(run.ephemeral ?? {}))
+      for (const { run } of endedRuns) {
+        delete run.ephemeral
+        delete run.handed
+      }
+      write()
+      if (typeof spawn !== 'function') {
+        drainSync()
+        return present()
+      }
+      return hostSerial(async () => {
+        await releaseAll(releasing, release, warn)
+        await drainAll()
+        return present()
       })
     },
     // A Bot (or the owner) writes a graph. A name that already exists is replaced.
@@ -1309,14 +1352,19 @@ export function createWorkflowService({
       const authoredBy = cleanLine(body.callerBotId, 80) || undefined
       const existing = body.workflow ? findWorkflow(body.workflow) : undefined
       if (existing) {
-        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [], ...(authoredBy ? { authoredBy } : {}) })
-        if (saved.ok === false) return saved
-        const name = cleanLine(body.name, 80)
-        if (name) {
-          existing.name = name
-          write()
+        const finish = () => {
+          const name = cleanLine(body.name, 80)
+          if (name) {
+            existing.name = name
+            write()
+          }
+          return present()
         }
-        return present()
+        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [], ...(authoredBy ? { authoredBy } : {}) })
+        // saveGraph returns a promise when the edit had to end a live run.
+        if (typeof saved?.then === 'function') return saved.then(value => (value?.ok === false ? value : finish()))
+        if (saved.ok === false) return saved
+        return finish()
       }
       return this.create({ name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description, ...(authoredBy ? { authoredBy } : {}) })
     },

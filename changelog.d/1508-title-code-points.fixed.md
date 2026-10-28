@@ -1,1 +1,0 @@
-Workflow Runs and timeline rows now show the whole task title (`#id · title`) with a single-line CSS ellipsis and the full text in the tooltip, so a title containing an emoji or a CJK Ext-B character can no longer be cut mid-character and render as a replacement character ([#1508](https://github.com/ThinkFlowLab/FlyBot/issues/1508)).
