@@ -789,10 +789,10 @@ test('the built-in delivery nodes hand their connector list to the host', async 
     assert.notEqual(state?.ok, false, `${nodeId} advanced: ${state?.error ?? ''}`)
   }
   const byNode = new Map(created.map(spec => [spec.fields.nodeId, spec]))
-  assert.deepEqual(byNode.get('coder').tools, ['github', 'bash', 'read', 'edit'], 'Coder names github')
+  assert.deepEqual(byNode.get('coder').tools, ['github'], 'Coder names github')
   assert.deepEqual(byNode.get('reviewer').tools, ['github'], 'Reviewer names github')
   assert.deepEqual(byNode.get('deployer').tools, ['github'], 'Deployer names github')
-  assert.deepEqual(byNode.get('tester').tools, ['bash'], 'Tester names no connector')
+  assert.deepEqual(byNode.get('tester').tools, [], 'Tester names no connector')
   assert.deepEqual(byNode.get('planner').tools, [], 'Planner names no connector')
   for (const spec of created) assert.equal(spec.permission, 'danger-full-access', 'file and shell rights are a normal Bot\'s')
 })

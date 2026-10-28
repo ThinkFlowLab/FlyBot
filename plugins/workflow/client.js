@@ -68,7 +68,7 @@ window.__ModuleLoader__.load({
       'Each Bot\'s own model': '跟随各个 Bot 的模型',
       '{count} models': '{count} 个模型',
       Permissions: '权限',
-      'Each Bot\'s own permission': '跟随各个 Bot 的权限',
+      'Full access, same as a normal Bot': '完全访问，与普通 Bot 相同',
       'On failure': '失败策略',
       'Tester retries once. Any other failed step stops the run.': 'Tester 失败后自动重试 1 次。其他节点失败则停住。',
       'A failed step stops the run.': '失败的节点停住，等你处理。',
@@ -879,7 +879,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wf-box' },
         h('div', { className: 'wf-kv' }, h('span', null, tr('Trigger')), h('span', null, trigger)),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, modelLabel)),
-        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot\'s own permission'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Full access, same as a normal Bot'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('On failure')), h('span', null, tr(retries ? 'Tester retries once. Any other failed step stops the run.' : 'A failed step stops the run.'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Concurrent runs')), h('span', null, String(workflow.maxConcurrent ?? 2))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Members')), h('span', null, workflow.chain)))

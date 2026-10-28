@@ -1722,3 +1722,37 @@ test('#1493: a failed sibling run stays on the stage, and its row carries time a
   assert.equal(textOf(older).includes('Done'), true)
   view.unmount()
 })
+
+test('the drawer details name the permission every node Bot actually runs with', async () => {
+  // #1535 made every node Bot danger-full-access, so a row claiming each Bot follows
+  // its own permission was stale (#1548): the details must say the run's full access
+  // is the same as a normal Bot's, and must not claim a per-Bot choice.
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    if (name === 'workflow/messages') return { messages: graph.messages }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Details')[0].props.onClick()
+  await settle()
+  const rows = findAll(view.tree, node => node.props?.className === 'wf-kv')
+  const permission = rows.find(row => textOf(row.children?.[0] ?? '') === client.tr('Permissions'))
+  assert.ok(permission, 'the details list a Permissions row')
+  const value = textOf(permission.children[1])
+  assert.doesNotMatch(value, /own permission/i, 'a node Bot does not pick its own permission')
+  assert.match(value, /full access/i, 'the row names the full access a node Bot runs with')
+  assert.match(value, /same as a normal Bot/i, 'and says it is a normal Bot\'s full access')
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }
+  try {
+    assert.equal(client.tr('Full access, same as a normal Bot'), '完全访问，与普通 Bot 相同', 'the row is translated')
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+  view.unmount()
+})

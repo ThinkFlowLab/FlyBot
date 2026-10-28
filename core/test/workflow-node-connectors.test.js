@@ -132,9 +132,9 @@ test('the built-in delivery nodes make github available exactly where the node n
     assert.match(guardFor(bot.id, COMPOSIO[0]), /not granted to this run/, `${nodeId} may not call composio`)
   }
 
-  // The tester names bash only, and planner/writer name nothing: no connector for either.
+  // The tester, planner and writer name nothing, so none of them reaches a connector.
   const tester = byNode.get('tester')
-  assert.deepEqual(tester.stepTools, ['bash'])
+  assert.equal(tester.stepTools, undefined, 'the tester names no connector')
   assert.match(guardFor(tester.id, GITHUB[0]), /not granted to this run/)
   for (const nodeId of ['planner', 'writer']) {
     const bot = byNode.get(nodeId)

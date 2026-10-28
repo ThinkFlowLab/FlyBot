@@ -30,7 +30,7 @@ const writer = {
 const coder = {
   id: 'coder', name: 'Coder', role: '代码实现',
   instructions: '根据 Planner 的子任务和 Writer 的文案修改代码，提交 PR，并在 PR 描述中列出变更。',
-  tools: ['github', 'bash', 'read', 'edit'],
+  tools: ['github'],
   inputs: [{ name: 'copy', type: 'text', required: true }],
   outputs: [{ name: 'patch', type: 'text' }],
 }
@@ -44,7 +44,6 @@ const reviewer = {
 const tester = {
   id: 'tester', name: 'Tester', role: '自动化测试', failOnce: true,
   instructions: '运行单元、快照和 E2E。失败时自动重试 1 次，仍失败则停在本节点。',
-  tools: ['bash'],
   inputs: [{ name: 'patch', type: 'text', required: true }],
   outputs: [{ name: 'report', type: 'text' }],
 }
