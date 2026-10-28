@@ -37,6 +37,8 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'effect ds-bot: state lock',
     'on llm/adapters-updated',
     'on session/event',
+    'on session/event',
+    'on agent/status',
     'effect ds-bot: agent tool restrict retry',
     'on agent/created',
     'effect ds-bot: identity section',
