@@ -226,6 +226,8 @@ export function createWorkflowService({
       push(workflowId, [{
         kind: 'system',
         tone: 'bad',
+        key: '{node} timed out: no reply for {minutes} minutes, the run was marked failed.',
+        params: { node: node?.name ?? nodeId, minutes },
         text: `${node?.name ?? nodeId} 超时：${minutes} 分钟没有回包，run 已标记失败。`,
       }], now())
       endRun(item, run)
@@ -469,7 +471,14 @@ export function createWorkflowService({
     })
     for (const hole of gated.blocked) {
       const node = nodeById(item, hole.id)
-      lines.push({ kind: 'system', tone: 'bad', text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${hole.missing.join(', ')}。` })
+      const missing = hole.missing.join(', ')
+      lines.push({
+        kind: 'system',
+        tone: 'bad',
+        key: '{node} cannot start: missing input {missing}.',
+        params: { node: node?.name ?? hole.id, missing },
+        text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${missing}。`,
+      })
     }
     return { run: next, lines }
   }
@@ -520,10 +529,13 @@ export function createWorkflowService({
         warn(`flybot-workflow: step ${nodeId} was not handed over: ${code}`)
         if (tries <= HANDOFF_RETRY_DELAYS_MS.length) {
           const delay = HANDOFF_RETRY_DELAYS_MS[tries - 1]
+          const seconds = delay / 1000
           push(item.id, [{
             kind: 'system',
             tone: 'bad',
-            text: `${node.name} 没有接到这一步（${code}），${delay / 1000} 秒后重试（${tries}/${HANDOFF_RETRY_DELAYS_MS.length}）。`,
+            key: '{node} did not take this step ({code}); retrying in {seconds}s ({tries}/{total}).',
+            params: { node: node.name, code, seconds, tries, total: HANDOFF_RETRY_DELAYS_MS.length },
+            text: `${node.name} 没有接到这一步（${code}），${seconds} 秒后重试（${tries}/${HANDOFF_RETRY_DELAYS_MS.length}）。`,
           }], now())
           setTimerAt('retry', current.id, nodeId, delay, () => hostSerial(() => afterStep(item.id, current.id))
             .catch(error => warn(`flybot-workflow: the retry for step ${nodeId} failed: ${error?.message ?? error}`)))
@@ -532,6 +544,8 @@ export function createWorkflowService({
         push(item.id, [{
           kind: 'system',
           tone: 'bad',
+          key: '{node} did not take this step ({code}); {total} retries did not land, the run failed.',
+          params: { node: node.name, code, total: HANDOFF_RETRY_DELAYS_MS.length },
           text: `${node.name} 没有接到这一步（${code}），重试 ${HANDOFF_RETRY_DELAYS_MS.length} 次仍未落地，run 已标记失败。`,
         }], now())
         // The run cannot finish without this step: end it the way every other
@@ -677,9 +691,15 @@ export function createWorkflowService({
     let run = { ...blankRun(item, task, now(), []), live: true }
     if (ephemeral) run.ephemeral = ephemeral
     const at = now()
+    const taskLabel = summarizeTask(task)
     push(item.id, [
-      { kind: 'time', text: '刚刚' },
-      { kind: 'system', text: `任务已分配 · ${summarizeTask(task)} → ${item.name}` },
+      { kind: 'time' },
+      {
+        kind: 'system',
+        key: 'Task assigned · {task} → {workflow}',
+        params: { task: taskLabel, workflow: item.name },
+        text: `任务已分配 · ${taskLabel} → ${item.name}`,
+      },
     ], at)
     const stepped = applyOp(item, run, { type: 'start' })
     run = stepped.run
@@ -737,7 +757,13 @@ export function createWorkflowService({
       // #1544: a parked run starts later without its caller in hand; keep it, or the ceiling is lost.
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
     })
-    push(item.id, [{ kind: 'system', text: `排队 · ${summarizeTask(task)}（前面 ${lane.queue.length - 1} 个）` }], now())
+    const ahead = lane.queue.length - 1
+    push(item.id, [{
+      kind: 'system',
+      key: 'Queued · {task} ({ahead} ahead)',
+      params: { task: summarizeTask(task), ahead },
+      text: `排队 · ${summarizeTask(task)}（前面 ${ahead} 个）`,
+    }], now())
     write()
   }
 
@@ -921,7 +947,13 @@ export function createWorkflowService({
         }
         state.workflows.push(item)
         const memberNames = item.nodes.map(node => node.name).join('、')
-        push(item.id, [{ kind: 'system', text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}` }], now())
+        const members = item.nodes.map(node => node.name).join(', ')
+        push(item.id, [{
+          kind: 'system',
+          key: 'Workflow "{name}" created · members {members}',
+          params: { name: item.name, members },
+          text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}`,
+        }], now())
         write()
         return present()
       } catch (error) {
@@ -1059,7 +1091,12 @@ export function createWorkflowService({
       run = { ...run, paused: true, updatedAt: now() }
       storeRun(workflowId, run)
       syncTimers(item, run)
-      push(workflowId, [{ kind: 'system', text: `⏸ 已暂停 · ${summarizeTask(run.task)}` }], now())
+      push(workflowId, [{
+        kind: 'system',
+        key: '⏸ Paused · {task}',
+        params: { task: summarizeTask(run.task) },
+        text: `⏸ 已暂停 · ${summarizeTask(run.task)}`,
+      }], now())
       write()
       return present()
     },
@@ -1076,7 +1113,12 @@ export function createWorkflowService({
       run = { ...run, paused: false, updatedAt: now() }
       storeRun(workflowId, run)
       syncTimers(item, run)
-      push(workflowId, [{ kind: 'system', text: `▶ 已继续 · ${summarizeTask(run.task)}` }], now())
+      push(workflowId, [{
+        kind: 'system',
+        key: '▶ Resumed · {task}',
+        params: { task: summarizeTask(run.task) },
+        text: `▶ 已继续 · ${summarizeTask(run.task)}`,
+      }], now())
       write()
       if (typeof spawn !== 'function') return present()
       return hostSerial(async () => {
@@ -1105,7 +1147,13 @@ export function createWorkflowService({
           lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
           lane.last = ended
           lane.history = [...lane.history, { task: ended.task, status: ended.status, at: ended.updatedAt }].slice(-20)
-          push(workflowId, [{ kind: 'system', tone: 'bad', text: `■ 已停止 · ${summarizeTask(run.task)}` }], now())
+          push(workflowId, [{
+            kind: 'system',
+            tone: 'bad',
+            key: '■ Stopped · {task}',
+            params: { task: summarizeTask(run.task) },
+            text: `■ 已停止 · ${summarizeTask(run.task)}`,
+          }], now())
           write()
           return { ok: true, ids }
         }

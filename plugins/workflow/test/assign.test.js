@@ -39,7 +39,8 @@ test('assigning a board task starts the run at the first Bot and posts the claim
   const claim = delivery(assigned).messages.filter(message => message.tone === 'accent').at(-1)
   assert.match(claim.text, /#1281/)
   assert.match(claim.text, /Planner/)
-  assert.ok(delivery(assigned).messages.some(message => message.text.includes('任务已分配')))
+  // Timeline rows no longer all carry `text` (#1489): a time row is a stamp.
+  assert.ok(delivery(assigned).messages.some(message => message.text?.includes('任务已分配')))
   assert.equal(svc.assign({ workflowId: DELIVERY_ID, taskId: '', title: 'x' }).ok, false)
 })
 
@@ -54,7 +55,7 @@ test('advance walks the parallel join: Deployer stays queued until both branches
   assert.equal(mid.nodeStatus.reviewer, 'running')
   assert.equal(mid.nodeStatus.tester, 'running')
   assert.equal(mid.nodeStatus.deployer, 'queued')
-  assert.ok(delivery(opened).messages.some(message => message.text.includes('并行分支开始')))
+  assert.ok(delivery(opened).messages.some(message => message.text?.includes('并行分支开始')))
 
   const half = step('reviewer', 'done')
   assert.equal(delivery(half).run.nodeStatus.deployer, 'queued')
@@ -62,7 +63,7 @@ test('advance walks the parallel join: Deployer stays queued until both branches
 
   const joined = step('tester', 'done')
   assert.equal(delivery(joined).run.nodeStatus.deployer, 'running')
-  assert.ok(delivery(joined).messages.some(message => message.text.includes('汇合')))
+  assert.ok(delivery(joined).messages.some(message => message.text?.includes('汇合')))
 
   const finished = step('deployer', 'done')
   const done = delivery(finished).run

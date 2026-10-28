@@ -118,6 +118,41 @@ window.__ModuleLoader__.load({
       'Next run: {time}': '下次运行：{time}',
       'Step {step}': '步骤 {step}',
       'Parallel branches · Merge after all pass': '并行分支 · 全部通过后汇合',
+      // Stage timeline (#1489). The key is the English line; service.js and
+      // narrate.js keep the Chinese text only as the fallback for rows written
+      // before the key existed.
+      'Task assigned · {task} → {workflow}': '任务已分配 · {task} → {workflow}',
+      'Queued · {task} ({ahead} ahead)': '排队 · {task}（前面 {ahead} 个）',
+      'Workflow "{name}" created · members {members}': 'Workflow「{name}」已创建 · 成员 {members}',
+      '⏸ Paused · {task}': '⏸ 已暂停 · {task}',
+      '▶ Resumed · {task}': '▶ 已继续 · {task}',
+      '■ Stopped · {task}': '■ 已停止 · {task}',
+      '{node} cannot start: missing input {missing}.': '{node} 不能开始：缺少输入 {missing}。',
+      '{node} did not take this step ({code}).': '{node} 没有接到这一步（{code}）。',
+      '{node} did not take this step ({code}); retrying in {seconds}s ({tries}/{total}).': '{node} 没有接到这一步（{code}），{seconds} 秒后重试（{tries}/{total}）。',
+      '{node} did not take this step ({code}); {total} retries did not land, the run failed.': '{node} 没有接到这一步（{code}），重试 {total} 次仍未落地，run 已标记失败。',
+      '{node} timed out: no reply for {minutes} minutes, the run was marked failed.': '{node} 超时：{minutes} 分钟没有回包，run 已标记失败。',
+      'Started · {task} · {nodes}': '开始 · {task} · {nodes}',
+      'Task {task} entered the workflow; {nodes} claimed it': '任务 {task} 已进入 Workflow，{nodes} 认领',
+      '{node} failed; went back to {nodes} to retry': '{node} 失败，已返回 {nodes} 重试',
+      '↺ Recovered from failure → {nodes}': '↺ 失败恢复 → {nodes}',
+      '{node} failed this step and stops here.': '{node} 这一步失败了，停在本节点。',
+      'Snapshot test notice.snap does not match (old copy snapshot not updated). Retried 1/2 automatically, and Coder was asked to update the snapshot.': '快照测试 notice.snap 不一致（旧文案快照未更新）。自动重试 1/2，并已通知 Coder 更新快照。',
+      '↻ {node} retried after a failure': '↻ {node} 失败后重试',
+      '↻ {node} retried automatically after a failure': '↻ {node} 失败后自动重试',
+      '↻ Tester retried automatically after a failure · Coder pushed the snapshot update': '↻ Tester 失败后自动重试 · Coder 已推送快照更新',
+      '{node} finished this step.': '{node} 完成了这一步。',
+      '∥ Parallel branches started: {nodes}': '∥ 并行分支开始：{nodes}',
+      '⇢ Parallel branches joined (join) → {nodes}': '⇢ 并行分支汇合（join）→ {nodes}',
+      '✓ Done · {task} · {steps} steps': '✓ 完成 · {task} · {steps} 步',
+      '↺ Run reset': '↺ 已重置运行',
+      'Broke down "{task}": Writer gets the notice under 2 lines, conclusion first; Coder replaces the copy and the collapse logic; Reviewer and Tester verify in parallel.': '已拆解「{task}」：Writer 把 notice 压到 2 行以内，结论先行；Coder 替换文案与折叠逻辑；Reviewer 与 Tester 并行验收。',
+      'Draft done (86 chars → 31): "The delivery team is set up; members sync automatically. Tap here for progress →"': '草稿完成（原 86 字 → 31 字）：「交付组已建好，成员会自动同步。点此查看进度 →」',
+      'Patch submitted: replaces the copy and collapses anything over 2 lines. 3 files changed.': '补丁已提交：替换文案，超过 2 行自动折叠。改动 3 个文件。',
+      'Review passed. Suggestion: make the collapse threshold a constant, NOTICE_MAX_LINES.': 'Review 通过。建议把折叠阈值做成常量 NOTICE_MAX_LINES。',
+      'Retry passed: unit 128/128, snapshots 24/24, E2E 6/6.': '重试通过：单元 128/128，快照 24/24，E2E 6/6。',
+      'Merged and rolled out to 10% of traffic. Board card {id} moved to Done.': '已合并并灰度 10% 发布。看板卡片 {id} 已移到「已完成」。',
+      '{node} finished this step of "{task}".': '{node} 完成了「{task}」的这一步。',
     }
 
     function zhUi() {
@@ -162,10 +197,25 @@ window.__ModuleLoader__.load({
     }
     function tr(key, params) {
       const host = globalThis.__flybot__?.t
-      const fromHost = typeof host === 'function' ? host(key, params) : key
-      if (fromHost !== key) return fromHost
-      const text = zhUi() && Object.hasOwn(ZH, key) ? ZH[key] : key
+      // Ask the host for the key alone: it fills an unknown key's params itself,
+      // and that fill would hide the plugin's own copy from the fallback below.
+      const fromHost = typeof host === 'function' ? host(key) : key
+      const text = fromHost !== key ? fromHost : zhUi() && Object.hasOwn(ZH, key) ? ZH[key] : key
       return fill(text, params)
+    }
+
+    // The stage clock at the ages the core's list rows use: "just now", "5 min",
+    // "3 h", "2 d", then a date. Read at render time, so a Done run ages; only a
+    // row written before the stamp existed still paints its stored text.
+    function relativeTime(at) {
+      const ms = Number(at)
+      if (!Number.isFinite(ms)) return ''
+      const diff = Math.max(0, Date.now() - ms)
+      if (diff < 60_000) return tr('just now')
+      if (diff < 3_600_000) return tr('{n} min', { n: Math.floor(diff / 60_000) })
+      if (diff < 86_400_000) return tr('{n} h', { n: Math.floor(diff / 3_600_000) })
+      if (diff < 30 * 86_400_000) return tr('{n} d', { n: Math.floor(diff / 86_400_000) })
+      return new Date(ms).toLocaleDateString(zhUi() ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })
     }
 
     const STATUS_KEY = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', idle: 'Idle' }
@@ -467,15 +517,19 @@ window.__ModuleLoader__.load({
     }
 
     function Bubble({ message, workflow, roster }) {
-      if (message.kind === 'time') return h('div', { className: 'wf-ts' }, message.text)
-      if (message.kind === 'system') return h('div', { className: `wf-sys ${message.tone ?? ''}`, title: message.text }, message.text)
+      if (message.kind === 'time') return h('div', { className: 'wf-ts' }, relativeTime(message.at) || message.text)
+      if (message.kind === 'system') {
+        const text = message.key ? tr(message.key, message.params) : message.text
+        return h('div', { className: `wf-sys ${message.tone ?? ''}`, title: text }, text)
+      }
       if (message.kind === 'user') return h('div', { className: 'wf-user', title: message.text }, message.text)
       const node = nodeOf(workflow, message.botId) ?? { id: message.botId, name: message.botId }
+      const text = message.key ? tr(message.key, message.params) : message.text
       return h('div', { className: 'wf-msg' },
         h(Mark, { node, roster, size: 28 }),
         h('div', null,
-          h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, tr('Step {step}', { step: message.step })) : null),
-          h('div', { className: 'wf-bub', title: message.text }, message.text,
+          h('div', { className: 'wf-who' }, node.name, message.step ? h('span', { className: 'wf-step' }, tr('Step {step}', { step: tr(message.step) })) : null),
+          h('div', { className: 'wf-bub', title: text }, text,
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
@@ -1591,7 +1645,7 @@ window.__ModuleLoader__.load({
 .wf-chip.failed{background:rgba(229,72,77,.12);color:#e5484d}
 .wf-chat{flex:1;overflow:auto;padding:10px 0 20px}
 .wf-chat-in{width:min(760px,calc(100% - 48px));margin:0 auto;display:flex;flex-direction:column;gap:10px}
-.wf-ts{text-align:center;font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
+.wf-ts{text-align:center;font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .wf-sys{align-self:center;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));border:1px dashed var(--bt-line,rgba(20,20,20,.08));padding:4px 10px;border-radius:12px;max-width:90%;text-align:center;word-wrap:break-word;overflow-wrap:break-word}
 .wf-sys.accent{color:var(--bt-accent,#4d6bfe);background:rgba(77,107,254,.1);border-style:solid}
 .wf-sys.ok{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
