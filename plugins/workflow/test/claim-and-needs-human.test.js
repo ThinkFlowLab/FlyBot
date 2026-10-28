@@ -163,7 +163,7 @@ test('#1538: needs-human in any step ends the run', () => {
   assert.notEqual(run.nodeStatus.implement, 'running')
 })
 
-test('#1538: needs-human detection is case-insensitive and works in text body', () => {
+test('#1538/#1546: the early-end directive is case-insensitive and line-owning', () => {
   const svc = service()
   const workflow = deliveryPipeline()
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
@@ -171,12 +171,12 @@ test('#1538: needs-human detection is case-insensitive and works in text body', 
   
   svc.assign({ workflowId, taskId: '#1541', title: 'Another needs-human case' })
   
-  // Various ways needs-human might appear - in text body (not just outputs)
+  // The reply ends the run only through the directive line, in any case.
   const triageResult = svc.advance({
     workflowId,
     nodeId: 'triage',
     outcome: 'done',
-    text: 'This issue NEEDS-HUMAN review before proceeding with implementation.',
+    text: 'Triage report follows.\n\nEarly-End NEEDS-HUMAN\n',
     outputs: { status: 'blocked' },
   })
   

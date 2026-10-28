@@ -431,12 +431,16 @@ export function missingProviders(graph) {
 // Check if a step result indicates the workflow should end early.
 // Returns { shouldEnd: true, reason: string } if the run should stop, or { shouldEnd: false } to continue.
 // Reasons: needs-human (#1538), already-claimed (#1537), tip-unchanged, open-pr.
-// Prefer structured OUTPUT values or a whole-line "EARLY-END <reason>" directive; also honor
-// common completion phrases so a Bot that forgets the marker still cannot burn loop/onFail max.
+// `needs-human` and `already-claimed` end a run only on a structured signal (#1546): a
+// declared OUTPUT that equals the marker, or a whole reply line that is exactly
+// "EARLY-END <reason>". A step that quotes, negates or reports one of them is still working.
+// `tip-unchanged` and `open-pr` keep that same structured signal plus their prose fallbacks,
+// so a Bot that forgets the marker cannot burn a loop or an onFail attempt on the same tip.
 function checkEarlyEnd(outputs, text) {
   const lowerText = String(text ?? '').toLowerCase()
   const outputValues = Object.values(outputs ?? {}).map(v => String(v ?? '').toLowerCase().trim())
   const reasons = ['needs-human', 'already-claimed', 'tip-unchanged', 'open-pr']
+  const strict = new Set(['needs-human', 'already-claimed'])
 
   for (const line of lowerText.split(/\r?\n/)) {
     const match = line.trim().match(/^early-end\s+([a-z0-9_-]+)$/i)
@@ -446,18 +450,10 @@ function checkEarlyEnd(outputs, text) {
   }
 
   for (const reason of reasons) {
-    if (outputValues.some(v => v === reason || v.includes(reason))) {
+    // A strict reason must be the whole value; a prose fallback may contain it.
+    if (outputValues.some(v => v === reason || (!strict.has(reason) && v.includes(reason)))) {
       return { shouldEnd: true, reason }
     }
-  }
-
-  if (lowerText.includes('needs-human')) {
-    return { shouldEnd: true, reason: 'needs-human' }
-  }
-
-  if (outputValues.some(v => v.includes('already-claimed')) ||
-      (lowerText.includes('already claimed') && (lowerText.includes('agent-working') || lowerText.includes('claimed-by')))) {
-    return { shouldEnd: true, reason: 'already-claimed' }
   }
 
   if (/tip[\s_-]*unchanged|unchanged[\s_-]*tip/.test(lowerText)) {
