@@ -1,0 +1,1 @@
+A board card a Bot records itself with `track_tasks` now starts the Workflow it names, or queues on that lane when it is at `maxConcurrent`; the Workflow panel also says when a host does not pass board writes to the plugin, instead of looking manual-only by design ([#1462](https://github.com/ThinkFlowLab/FlyBot/issues/1462)).

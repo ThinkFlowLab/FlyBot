@@ -125,7 +125,7 @@ function blankRun(workflow, task, now, history = []) {
 }
 
 export function createWorkflowService({
-  dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, spawn, release, dispatch,
+  dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, tasksWired = false, spawn, release, dispatch,
   setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = handle => clearTimeout(handle),
 } = {}) {
   const file = dir ? join(dir, FILE) : null
@@ -279,6 +279,7 @@ export function createWorkflowService({
     return {
       ok: true,
       version: 1,
+      tasksWired,
       templates: templateCatalog(),
       workflows: state.workflows.map(raw => {
         const item = readyWorkflow(raw)

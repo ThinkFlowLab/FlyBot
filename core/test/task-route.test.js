@@ -94,3 +94,36 @@ test('task-create and task-update apply a local owner and ignore a remote or a t
   assert.equal(updated.ownerBotName, 'Dev2')
   assert.equal(seen.filter(item => item.kind === 'update').length, 1)
 })
+
+// The conversation path writes the same board (#1462): a Bot records its own card with
+// `track_tasks`, and a `workflow:<id>` on it has to reach the listener like any other write.
+test('a card written through track_tasks asks the listener and returns the routed owner', async (t) => {
+  const rt = await start(t)
+  const seen = []
+  rt.flybot.scope('flybot-workflow').tasks.onWrite((task, kind) => {
+    seen.push({ title: task.title, kind, owner: task.ownerBotId })
+    if (String(task.title).includes('route-me')) return { ownerBotId: 'd2' }
+    return null
+  })
+
+  const [routed] = await rt.trackBotTasks('d1', { tasks: [{ title: 'please route-me' }] })
+  assert.equal(routed.title, 'please route-me')
+  assert.equal(routed.ownerBotId, 'd2', 'the returned view carries the routed owner')
+  assert.deepEqual(seen, [{ title: 'please route-me', kind: 'create', owner: 'd1' }])
+
+  const [plain] = await rt.trackBotTasks('d1', { tasks: [{ title: 'leave this card' }] })
+  assert.equal(plain.ownerBotId, 'd1')
+  assert.equal(seen.at(-1).kind, 'create')
+
+  const [updated] = await rt.trackBotTasks('d1', { tasks: [{ id: plain.id, title: 'now route-me' }] })
+  assert.equal(updated.ownerBotId, 'd2')
+  assert.equal(seen.at(-1).kind, 'update')
+  assert.equal(seen.at(-1).title, 'now route-me')
+})
+
+test('track_tasks without a listener is still a plain board write', async (t) => {
+  const rt = await start(t)
+  const [card] = await rt.trackBotTasks('d1', { tasks: [{ title: 'workflow:delivery' }] })
+  assert.equal(card.ownerBotId, 'd1')
+  assert.equal(card.status, 'open')
+})

@@ -1355,6 +1355,28 @@ test('a stage control that never answers settles as an error', async () => {
   assert.deepEqual(value, { ok: false, error: 'The run did not answer' })
 })
 
+// A host that never hands board writes over looks manual-only unless the panel says so (#1462).
+test('a host without the board wiring says so on the panel, and a wired host says nothing', async () => {
+  const graph = delivery()
+  const mountWith = async (tasksWired) => {
+    const call = async name => (name === 'workflow/state'
+      ? { ok: true, workflows: [graph], templates: [], tasksWired }
+      : { ok: true, workflows: [graph] })
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    return view
+  }
+  const unwired = await mountWith(false)
+  const lines = findAll(unwired.tree, node => node.props?.className === 'wf-wiring').map(textOf)
+  assert.equal(lines.length, 1)
+  assert.match(lines[0], /does not pass task writes/)
+  unwired.unmount()
+
+  const wired = await mountWith(true)
+  assert.equal(findAll(wired.tree, node => node.props?.className === 'wf-wiring').length, 0)
+  wired.unmount()
+})
+
 const cssRule = (source, selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = new RegExp(`${escaped}\\{([^}]*)\\}`).exec(source)

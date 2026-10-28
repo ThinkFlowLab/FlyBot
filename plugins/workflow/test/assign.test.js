@@ -325,6 +325,7 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.ok(names.some(([name, read]) => name === 'workflow/templates' && read))
   assert.ok(!names.some(([name]) => name === 'workflow/say'), 'the removed say endpoint is not registered')
   assert.equal(writes.length, 1)
+  assert.equal(started.service.state().tasksWired, true)
   assert.deepEqual(writes[0]({ id: '#9', title: 'please', status: 'open', assignee: 'Coder' }), { ownerBotId: 'bot-coder' })
   assert.equal(writes[0]({ id: '#10', title: 'nothing', status: 'open' }), null)
   const tools = []
@@ -333,6 +334,22 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.deepEqual(tools, ['run_workflow', 'define_workflow'])
   const off = apply({ flybot: { scope: () => fb } }, { enabled: false })
   assert.equal(off.enabled, false)
+})
+
+// A host without the board hook is reported, not silently treated as manual-only (#1462).
+test('a host without tasks.onWrite warns once and reports the missing wiring in state', () => {
+  const warnings = []
+  const fb = {
+    bot: { list: () => roster, send: { use() { return () => {} } } },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    warn(message) { warnings.push(String(message)) },
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  assert.equal(started.enabled, true)
+  assert.equal(started.service.state().tasksWired, false)
+  assert.equal(warnings.filter(line => line.includes('tasks.onWrite')).length, 1)
+  assert.equal(warnings.length, 1)
 })
 
 test('rename changes workflow name, including seeded delivery rows', () => {

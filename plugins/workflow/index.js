@@ -88,12 +88,15 @@ export function apply(ctx, config = {}) {
       return fb.bot.send({ from, to: step.botId, text: lines.join('\n'), role: 'request' })
     },
   } : {}
+  // A host that does not hand board writes over cannot start a run from a card (#1462).
+  const tasksWired = typeof fb.tasks?.onWrite === 'function'
   const service = createWorkflowService({
     dir: persist ? (config.dir ?? join(dshHome, 'bot', 'flybot-workflow')) : undefined,
     persist,
     bots: () => fb.bot?.list?.() ?? [],
     readOnly: () => fb.readOnly?.() === true,
     warn: (...args) => fb.warn?.(...args),
+    tasksWired,
     ...lifecycle,
   })
   void service.reap?.().catch(error => fb.warn?.('flybot-workflow: reap failed: %s', error))
@@ -163,7 +166,7 @@ export function apply(ctx, config = {}) {
   } else {
     fb.warn?.('flybot-workflow: send middleware not available; ephemeral bot replies may leak')
   }
-  if (typeof fb.tasks?.onWrite === 'function') {
+  if (tasksWired) {
     offs.push(fb.tasks.onWrite(task => {
       const result = service.ingest(task ?? {})
       if (result?.matched === true && result.already !== true && result.decision?.kind === 'bot') {
@@ -171,6 +174,8 @@ export function apply(ctx, config = {}) {
       }
       return null
     }))
+  } else {
+    fb.warn?.('flybot-workflow: tasks.onWrite is not available, so a board card cannot start a run')
   }
   // The hooks come off at once; the Bot release is behind a promise, so hand it
   // back instead of dropping it (#1387).

@@ -1491,6 +1491,8 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wf-sec' },
           h('span', null, tr('Workflows')),
           h('button', { type: 'button', className: 'wf-new', onClick: () => setCreating(true) }, tr('New'))),
+        pack?.tasksWired === false ? h('div', { className: 'wf-wiring', role: 'status' },
+          tr('This host does not pass task writes to Workflows, so a card on the board cannot start a run.')) : null,
         workflows.length === 0 && !readError ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
         workflows.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
@@ -1748,6 +1750,7 @@ window.__ModuleLoader__.load({
 .wf-tip .wf-k{color:var(--bt-ink-3,#9a9a9a);font-size:11px;margin-top:6px}
 .wf-muted{font-size:12px;color:var(--bt-ink-3,#9a9a9a);padding:4px 8px}
 .wf-err{font-size:12px;color:#e5484d;padding:4px 8px}
+.wf-wiring{font-size:12px;color:var(--bt-ink-3,#9a9a9a);padding:2px 8px 6px;line-height:1.5}
 .wf-assign-row{opacity:.9}
 .wf-par{position:relative;z-index:0;pointer-events:none;border:1px dashed var(--bt-ink-3,#9a9a9a);border-radius:14px;padding:16px 8px 8px}
 .wf-node.wf-abs{z-index:1}
