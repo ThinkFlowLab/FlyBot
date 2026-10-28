@@ -1534,14 +1534,18 @@ export function createWorkflowService({
       const runs = []
       let endedLive = false
       for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
-        for (const run of [...(lane.active ?? [])]) {
+        // Collect before archiving: archiveCutoffRun removes the run from
+        // `active` and makes it `last`, so a collection after the loop names
+        // only the run archived last and leaks every earlier run's Bots (#1472).
+        const live = [...(lane.active ?? [])]
+        runs.push(...[...live, lane.last].filter(Boolean))
+        for (const run of live) {
           if (run?.live === true && run.status === 'running') {
             endRun(workflow(workflowId), run, { code: 'host-ended' })
             archiveCutoffRun(workflowId, run)
             endedLive = true
           }
         }
-        runs.push(...[...(lane.active ?? []), lane.last].filter(Boolean))
       }
       for (const run of runs) ids.push(...Object.values(run?.ephemeral ?? {}))
       // Release first, then forget the ids (#1387). End live runs before the

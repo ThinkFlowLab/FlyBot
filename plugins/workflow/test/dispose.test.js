@@ -263,3 +263,47 @@ test('#1387: a released runner name goes back into the pool', async (t) => {
   // it six times and fall back to the 3-byte name.
   assert.deepEqual(names, ['Planner aaaa', 'Planner aaaa'])
 })
+
+test('#1472: dispose() releases the Bots of every concurrent live run, not just the last one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-dispose-1472-'))
+  const released = []
+  const spawned = []
+  let seq = 0
+  try {
+    // One lane at the default maxConcurrent of 2: two assigns start two live
+    // runs, each holding one instance per node.
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      spawn: async (spec) => {
+        seq += 1
+        const id = `eph-${spec.nodeId}-${seq}`
+        spawned.push(id)
+        return id
+      },
+      release: async (id) => { released.push(id) },
+      dispatch: async () => ({ ok: true }),
+    })
+    const made = pair('Lane', svc)
+    await svc.assign({ workflowId: made.id, taskId: '#1472a', title: 'First task' })
+    await svc.assign({ workflowId: made.id, taskId: '#1472b', title: 'Second task' })
+    assert.equal(svc.state().workflows.find(item => item.id === made.id).activeCount, 2)
+    assert.equal(spawned.length, 4)
+    assert.equal(new Set(spawned).size, 4)
+
+    await svc.dispose()
+
+    // Every instance the lane held is released, not only the run archived last.
+    assert.deepEqual([...released].sort(), [...spawned].sort())
+    assert.equal(released.length, 4)
+    const lane = readStore(dir).lanes[made.id]
+    assert.equal(lane.active.length, 0)
+    assert.deepEqual(lane.history.map(row => row.status), ['failed', 'failed'])
+    // #1387's invariant: no id is dropped while its Bot may still be alive.
+    for (const id of spawned) assert.equal(storeText(dir).includes(id), false, id)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

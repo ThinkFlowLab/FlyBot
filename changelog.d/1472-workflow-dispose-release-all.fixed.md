@@ -1,0 +1,1 @@
+Workflow: unloading the plugin now releases the run Bots of every live run in a workflow, not only the last one, so a workflow with two concurrent runs no longer leaves hidden Bots that no saved record names ([#1472](https://github.com/ThinkFlowLab/FlyBot/issues/1472)).
