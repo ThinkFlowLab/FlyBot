@@ -6,6 +6,26 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-10-29
+
+### Changed
+
+- FlyBot now builds, tests and installs on DeepSeek Harness `0.2.1-rc.2`, the current npm `latest`; the README commands, the CI workflows, the container image and the install help all pin that version ([#1384](https://github.com/ThinkFlowLab/FlyBot/issues/1384)). The container now runs with host networking and the web server binds the host's `127.0.0.1` itself, because DSH 0.2.1 refuses a wildcard host — same loopback-only exposure as before, Linux Docker only.
+
+### Fixed
+
+- The "Hand a task to a Workflow" dialog now selects the first card of the Tasks board as soon as the board arrives, so `Assign` posts the task instead of closing on a silent no-op, and an empty board leaves it disabled. When the Tasks board cannot be loaded the dialog shows the error with a `Retry` control instead of claiming there are no tasks to assign, and `Assign` stays disabled while the load is in flight or failed. ([#1457](https://github.com/ThinkFlowLab/FlyBot/issues/1457), [#1458](https://github.com/ThinkFlowLab/FlyBot/issues/1458))
+- Workflow: unloading the plugin now releases the run Bots of every live run in a workflow, not only the last one, so a workflow with two concurrent runs no longer leaves hidden Bots that no saved record names ([#1472](https://github.com/ThinkFlowLab/FlyBot/issues/1472)).
+- Fixed workflow Stop and Reset writing the state change before the run's Bots were released, which erased the only id record of a Bot whose release failed. A failed release now keeps that id named on the still-live run, so the next Stop, Reset, dispose or reload retries it. The run is left Paused with `releasePending`, so it hands off nothing more and `resume` is refused; Stop again is the retry, and a whole-workflow Reset freezes every run it did not reset. ([#1476](https://github.com/ThinkFlowLab/FlyBot/issues/1476))
+- The Workflow settings page now reports a failed host call instead of staying on "Reading workflows…": a workflow read, graph save or model change whose host call throws, rejects or never answers ends on the page's own alert, a failed read offers "Try again", and a failed save no longer claims changes are saved automatically ([#1504](https://github.com/ThinkFlowLab/FlyBot/issues/1504)).
+- The Workflow stage chat scrolls itself only while it is already at the bottom. A workflow node's own reply is filtered out of the stage, so it no longer drags the chat down, and a reader who scrolled up keeps their place. ([#1518](https://github.com/ThinkFlowLab/FlyBot/issues/1518))
+- A `workflow/reset` with no task to keep is now refused before it clears the lane, so a workflow that is waiting with queued tasks and no live run keeps its queue instead of losing every queued task to a refused reset, and a run whose Bot instances were never given a task no longer disappears with them ([#1531](https://github.com/ThinkFlowLab/FlyBot/issues/1531)).
+- The failure recovery edge added by #1529 reset only the recovery target and the failing node, so a node on the way back stayed `done` and the retry was fed the output it had just rejected. Recovery now resets every node from the target through the failing node and re-runs them in order. ([#1541](https://github.com/ThinkFlowLab/FlyBot/issues/1541))
+- The failure recovery added by #1529 accepted a `max` from 1 to 8 but never recovered on `max: 1`: the first failure already read as the limit, so the run failed at once and the attempt counter stayed empty. `max` now counts recoveries, so `max: 1` recovers once and `max: 8` still means at most eight. ([#1542](https://github.com/ThinkFlowLab/FlyBot/issues/1542))
+- A step that only mentioned `needs-human` or `already-claimed` in its reply ended its own run, so quoting an issue title, writing `No needs-human label on this issue`, or reporting the label as absent stopped the pipeline. A run now ends early only on a structured signal: a declared output equal to the marker, or a reply line that is exactly `EARLY-END needs-human` / `EARLY-END already-claimed`. ([#1546](https://github.com/ThinkFlowLab/FlyBot/issues/1546))
+- Deleting a running node from the workflow canvas no longer strands its run: the edit ends that run the way Stop does — the node is failed, the run is archived `failed`, its node Bots are released and a queued task takes the lane. Before, the run stayed `running` with a queued-only node map and no timer, so under `maxConcurrent: 1` nothing could ever start behind it. ([#1549](https://github.com/ThinkFlowLab/FlyBot/issues/1549))
+- Opening a face-to-face room for the first time no longer fails its history with `Maximum call stack size exceeded`. The header effects now coalesce a synchronous session notification instead of re-entering themselves, so the room's transcript renders on the first open ([#979](https://github.com/ThinkFlowLab/FlyBot/issues/979)).
+
 ## [0.2.12] - 2026-10-28
 
 ### Added

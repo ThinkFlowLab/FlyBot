@@ -1,1 +1,0 @@
-Opening a face-to-face room for the first time no longer fails its history with `Maximum call stack size exceeded`. The header effects now coalesce a synchronous session notification instead of re-entering themselves, so the room's transcript renders on the first open ([#979](https://github.com/ThinkFlowLab/FlyBot/issues/979)).
