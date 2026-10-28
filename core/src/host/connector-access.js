@@ -157,6 +157,12 @@ export function install(rt) {
       // #1555: the caller is the reason, not the step list — a friend's Bot started this run, and a remote
       // Bot has no switch table of ours to intersect with, so it reads as every connector switched off.
       if (remoteCaller(bot)) return `The ${id} connector is not available to a run started by a friend's Bot.`
+      // #1543: a run Bot's own switch is the honest reason when the step did name the connector. The
+      // settings sentence below is wrong for it — a run Bot is hidden, so its owner has no page to
+      // flip the switch on — and the tools list cannot either; say both instead of blaming the graph.
+      if (turnedOff(bot, id)) {
+        return `The ${id} connector is turned off for ${bot.name}. A step's tools list can narrow what a run may use, but it cannot turn a connector back on.`
+      }
       // #1544: the step did name it — a Bot's switch is what refuses it, and naming it again in the
       // graph cannot turn it back on.
       const cap = capOff(bot, id)
