@@ -424,6 +424,26 @@ export function missingProviders(graph) {
   return missing
 }
 
+// Check if a step result indicates the workflow should end early.
+// Returns { shouldEnd: true, reason: string } if the run should stop, or { shouldEnd: false } to continue.
+function checkEarlyEnd(outputs, text) {
+  const lowerText = String(text ?? '').toLowerCase()
+  const outputValues = Object.values(outputs ?? {}).map(v => String(v ?? '').toLowerCase())
+  
+  // Check for needs-human marker (issue #1538)
+  if (lowerText.includes('needs-human') || outputValues.some(v => v.includes('needs-human'))) {
+    return { shouldEnd: true, reason: 'needs-human' }
+  }
+  
+  // Check for already-claimed marker (issue #1537)
+  if (outputValues.some(v => v.includes('already-claimed')) ||
+      (lowerText.includes('already claimed') && (lowerText.includes('agent-working') || lowerText.includes('claimed-by')))) {
+    return { shouldEnd: true, reason: 'already-claimed' }
+  }
+  
+  return { shouldEnd: false }
+}
+
 function producedValue(graph, nodeId, name, produced) {
   const direct = predecessors(graph, nodeId)
   for (const id of direct) {
@@ -604,6 +624,25 @@ export function completeNode(graph, status, nodeId, ctx = {}) {
   const outputs = ctx.outputs && typeof ctx.outputs === 'object' ? ctx.outputs : {}
   const loops = { ...(ctx.loops ?? {}) }
   const fired = { ...(ctx.fired ?? {}) }
+  
+  // Check if this completion should end the run early (#1537, #1538)
+  const earlyEnd = checkEarlyEnd(outputs, ctx.text)
+  if (earlyEnd.shouldEnd) {
+    return {
+      status: next,
+      started: [],
+      joined: false,
+      finished: true,
+      layerSize: layer.length,
+      loops,
+      fired,
+      looped: false,
+      reset: [],
+      skipped: [],
+      earlyEnd: earlyEnd.reason,
+    }
+  }
+  
   const looping = loopDecision(graph, nodeId, outputs, ctx.loops)
   if (looping) {
     loops[edgeKey(looping.edge)] = looping.ran

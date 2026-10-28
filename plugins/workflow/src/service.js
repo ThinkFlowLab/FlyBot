@@ -283,6 +283,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       outputs: working.produced?.[op.nodeId] ?? {},
       loops: working.loops ?? {},
       fired: working.fired ?? {},
+      text: op.text ?? '',
     })
     else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId, {
       failAttempts: working.failAttempts ?? {},
@@ -294,13 +295,16 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const failedOnce = { ...working.failedOnce }
     if (op.type === 'fail') failedOnce[op.nodeId] = true
     const blocked = gated.blocked.length > 0
-    const finished = result.finished === true && !blocked
+    // Early end takes precedence over normal finish - when needs-human or already-claimed
+    // is detected, the run should end even if not all nodes are done (#1537, #1538)
+    const earlyEnded = result.earlyEnd != null
+    const finished = earlyEnded || (result.finished === true && !blocked)
     // A node marked failOnce is retried. Any other failure stops the run,
     // unless a failure recovery edge exists: then reset to the recovery target.
     // A missing required input stops the run the same way: the successor can never start.
     const failOnce = op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce === true
     const recovered = op.type === 'fail' && result.recovered === true
-    const stopped = blocked || (op.type === 'fail' && !failOnce && !recovered)
+    const stopped = blocked || (op.type === 'fail' && !failOnce && !recovered) || earlyEnded
     const steps = finished ? working.stepBudget : working.steps + 1
     const handed = { ...working.handed }
     if (op.type === 'fail' || op.type === 'retry') delete handed[op.nodeId]
@@ -316,6 +320,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       ...(result.fired ? { fired: result.fired } : {}),
       ...(result.failAttempts ? { failAttempts: result.failAttempts } : {}),
       ...(Object.keys(handed).length > 0 ? { handed } : {}),
+      ...(earlyEnded ? { earlyEnd: result.earlyEnd } : {}),
     }
     if (Object.keys(handed).length === 0) delete next.handed
     const lines = linesFor(item, working.task, {
@@ -328,6 +333,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       live: working.live === true,
       text: op.text ?? '',
       recovered: result.recovered === true,
+      earlyEnd: result.earlyEnd,
     })
     for (const hole of gated.blocked) {
       const node = nodeById(item, hole.id)
