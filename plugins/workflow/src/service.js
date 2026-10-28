@@ -24,8 +24,23 @@ const MAX_CONCURRENT = 8
 // (#1530). These are the only two numbers a stuck run depends on: how long one
 // step may stay unanswered, and how long a hand-off that did not land waits
 // before it is tried again. Both are cleared with the step they belong to.
-export const STEP_DEADLINE_MS = 10 * 60 * 1000
+// Ten minutes was shorter than the work a node is asked to do — implementing or
+// reviewing a change takes twenty to forty — so every step that did real work
+// was killed mid-flight (#1580). The default covers one such step now, and a
+// workflow may set its own within these bounds.
+export const DEFAULT_STEP_TIMEOUT_MINUTES = 45
+export const MIN_STEP_TIMEOUT_MINUTES = 1
+export const MAX_STEP_TIMEOUT_MINUTES = 120
+export const STEP_DEADLINE_MS = DEFAULT_STEP_TIMEOUT_MINUTES * 60 * 1000
 export const HANDOFF_RETRY_DELAYS_MS = [1000, 2000]
+
+function stepTimeoutValue(raw) {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) {
+    throw new Error(`stepTimeoutMinutes is an integer from ${MIN_STEP_TIMEOUT_MINUTES} to ${MAX_STEP_TIMEOUT_MINUTES}`)
+  }
+  return value
+}
 
 function idOf(prefix) {
   return `${prefix}-${randomBytes(4).toString('hex')}`
@@ -176,7 +191,7 @@ export function createWorkflowService({
 
   function armDeadline(item, run, nodeId) {
     if (timers.has(`deadline:${run.id}:${nodeId}`)) return
-    setTimerAt('deadline', run.id, nodeId, STEP_DEADLINE_MS, () => expireStep(item.id, run.id, nodeId))
+    setTimerAt('deadline', run.id, nodeId, stepTimeoutMsOf(item), () => expireStep(item.id, run.id, nodeId))
   }
 
   // Give every running step the deadline it started with and drop the timers of
@@ -199,9 +214,9 @@ export function createWorkflowService({
   // A step nobody answers is not progress. Fail the run, free its Bots and say
   // which step timed out, so a dead Bot cannot hold a lane slot forever.
   function expireStep(workflowId, runId, nodeId) {
-    const minutes = Math.round(STEP_DEADLINE_MS / 60_000)
     return hostSerial(async () => {
       const item = workflow(workflowId)
+      const minutes = stepTimeoutMinutesOf(item)
       const lane = laneOf(workflowId)
       const run = lane.active.find(candidate => candidate.id === runId)
       if (!item || !run || run.status !== 'running' || run.paused === true) return
@@ -278,6 +293,7 @@ export function createWorkflowService({
         triggers: [...(item.triggers ?? [])],
         chain: chainLabel(item),
         maxConcurrent: maxOf(item),
+        stepTimeoutMinutes: stepTimeoutMinutesOf(item),
         activeCount: runningOf(laneOf(item.id)).length,
         queueDepth: (laneOf(item.id).queue ?? []).length,
         queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
@@ -307,6 +323,19 @@ export function createWorkflowService({
     const value = Number(item?.maxConcurrent)
     if (!Number.isInteger(value) || value < 1) return DEFAULT_CONCURRENT
     return Math.min(MAX_CONCURRENT, value)
+  }
+
+  // How long this workflow lets one live step stay unanswered (#1580). A stored
+  // value outside the bounds can only come from a file edited by hand, so it
+  // falls back to the default instead of ending the run early.
+  function stepTimeoutMinutesOf(item) {
+    const value = Number(item?.stepTimeoutMinutes)
+    if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) return DEFAULT_STEP_TIMEOUT_MINUTES
+    return value
+  }
+
+  function stepTimeoutMsOf(item) {
+    return stepTimeoutMinutesOf(item) * 60_000
   }
 
   function displayRun(id) {
@@ -887,6 +916,9 @@ export function createWorkflowService({
         if (authoredBy) item.authoredBy = authoredBy
         const cap = Number(body.maxConcurrent)
         if (Number.isInteger(cap) && cap >= 1 && cap <= MAX_CONCURRENT) item.maxConcurrent = cap
+        if (body.stepTimeoutMinutes !== undefined && body.stepTimeoutMinutes !== null && body.stepTimeoutMinutes !== '') {
+          item.stepTimeoutMinutes = stepTimeoutValue(body.stepTimeoutMinutes)
+        }
         state.workflows.push(item)
         const memberNames = item.nodes.map(node => node.name).join('、')
         push(item.id, [{ kind: 'system', text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}` }], now())
@@ -930,6 +962,15 @@ export function createWorkflowService({
         await drainAll()
         return present()
       })
+    },
+    setStepTimeout(body = {}) {
+      const workflowId = String(body.workflowId ?? '')
+      const raw = body.stepTimeoutMinutes
+      const saved = mutate(workflowId, (item) => {
+        if (raw === null || raw === '') delete item.stepTimeoutMinutes
+        else item.stepTimeoutMinutes = stepTimeoutValue(raw)
+      })
+      return saved
     },
     setModel(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }

@@ -6,7 +6,7 @@
 // timers are cleared when the step moves or the run stops.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { HANDOFF_RETRY_DELAYS_MS, STEP_DEADLINE_MS, createWorkflowService } from '../src/service.js'
+import { DEFAULT_STEP_TIMEOUT_MINUTES, HANDOFF_RETRY_DELAYS_MS, STEP_DEADLINE_MS, createWorkflowService } from '../src/service.js'
 
 const CLOCK = 1_700_000_000_000
 const ROSTER = [
@@ -316,4 +316,76 @@ test('#1530: a live step with no ephemeral map still expires at the deadline', a
   assert.equal(after.run.nodeStatus.plan, 'failed')
   assert.ok(warnings.some(line => /timed out|超时/.test(line)))
   assert.equal(timers.pending(), 0)
+})
+
+// #1580: the deadline is per workflow, and ten minutes was shorter than the work
+// a node does, so every implementing or reviewing step was killed mid-flight.
+const TIMED_NODES = [
+  { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+  { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+]
+
+function makeTimed(svc, minutes, name) {
+  const made = svc.create({
+    name,
+    nodes: TIMED_NODES,
+    edges: [{ from: 'plan', to: 'code' }],
+    ...(minutes === undefined ? {} : { stepTimeoutMinutes: minutes }),
+  })
+  assert.equal(made.ok, true)
+  return made.workflows.find(item => item.name === name)
+}
+
+test('#1580: the default deadline covers real work, so ten minutes no longer fails a step', async () => {
+  const { svc, released, timers } = harness()
+  const flow = makeTimed(svc, undefined, 'Default deadline')
+  assert.equal(DEFAULT_STEP_TIMEOUT_MINUTES, 45)
+  assert.equal(row(svc.state(), flow.id).stepTimeoutMinutes, DEFAULT_STEP_TIMEOUT_MINUTES)
+
+  await svc.assign({ workflowId: flow.id, taskId: '#1580-default', title: 'Real work' })
+  await timers.tick(10 * 60 * 1000)
+  assert.equal(row(svc.state(), flow.id).run.status, 'running', 'ten minutes is inside the default')
+  assert.equal(released.length, 0)
+
+  await timers.tick(STEP_DEADLINE_MS - 10 * 60 * 1000)
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run.status, 'failed')
+  assert.equal(after.run.nodeStatus.plan, 'failed')
+  assert.match(chat(svc.state(), flow.id), /45 分钟/)
+})
+
+test('#1580: a workflow that sets stepTimeoutMinutes times its steps out on its own number', async () => {
+  const { svc, timers } = harness()
+  const flow = makeTimed(svc, 20, 'Twenty minute step')
+  assert.equal(row(svc.state(), flow.id).stepTimeoutMinutes, 20)
+
+  await svc.assign({ workflowId: flow.id, taskId: '#1580-own', title: 'Own number' })
+  await timers.tick(20 * 60 * 1000 - 1)
+  assert.equal(row(svc.state(), flow.id).run.status, 'running')
+
+  await timers.tick(1)
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run.status, 'failed')
+  assert.match(chat(svc.state(), flow.id), /20 分钟/)
+})
+
+test('#1580: a stepTimeoutMinutes outside 1..120 is refused when the workflow is written', () => {
+  const { svc } = harness()
+  for (const [value, name] of [[0, 'Zero'], [121, 'Too long'], ['abc', 'Not a number'], [-5, 'Negative'], [1.5, 'Fractional']]) {
+    const made = svc.create({ name, stepTimeoutMinutes: value, nodes: TIMED_NODES, edges: [{ from: 'plan', to: 'code' }] })
+    assert.equal(made.ok, false, name + ' must be refused')
+    assert.match(String(made.error), /stepTimeoutMinutes/)
+  }
+
+  const made = svc.create({ name: 'Set later', nodes: TIMED_NODES, edges: [{ from: 'plan', to: 'code' }] })
+  assert.equal(made.ok, true)
+  const flow = made.workflows.find(item => item.name === 'Set later')
+  assert.equal(flow.stepTimeoutMinutes, DEFAULT_STEP_TIMEOUT_MINUTES)
+  assert.equal(svc.setStepTimeout({ workflowId: flow.id, stepTimeoutMinutes: 999 }).ok, false)
+  const good = svc.setStepTimeout({ workflowId: flow.id, stepTimeoutMinutes: 30 })
+  assert.equal(good.ok, true)
+  assert.equal(row(good, flow.id).stepTimeoutMinutes, 30)
+  const cleared = svc.setStepTimeout({ workflowId: flow.id, stepTimeoutMinutes: null })
+  assert.equal(cleared.ok, true)
+  assert.equal(row(cleared, flow.id).stepTimeoutMinutes, DEFAULT_STEP_TIMEOUT_MINUTES)
 })

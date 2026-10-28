@@ -104,6 +104,7 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/delete', body => service.delete(body)),
     fb.api.handle('workflow/assign', body => service.assign(body)),
     fb.api.handle('workflow/concurrency', body => service.setConcurrency(body)),
+    fb.api.handle('workflow/step-timeout', body => service.setStepTimeout(body)),
     fb.api.handle('workflow/set-model', body => service.setModel(body)),
     fb.api.handle('workflow/advance', body => service.advance(body)),
     fb.api.handle('workflow/reset', body => service.reset(body)),
