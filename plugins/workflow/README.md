@@ -42,9 +42,9 @@ An edge may be a condition, a loop, or a failure recovery. A condition is `when:
 
 A loop is `loop: true` on the edge that returns to the body, with `max` from 1 to 8 (default 3) and an optional `until: { output, eq }`. The body runs again while `until` does not match and the run count is still under `max`. A branch the previous pass skipped can be chosen the next time. The forward edges wait until the loop stops. A loop is the only cycle the graph allows for success paths.
 
-A failure recovery is `onFail: true` on an edge pointing from the failing node back to an upstream node, with `max` from 1 to 8 (default 3). When the node fails and recovery attempts remain, the workflow resets to the recovery target and runs through the failing node again. After `max` recovery attempts, the node fails permanently and the run stops. Failure recovery edges do not interfere with success-path loops or `failOnce` retry behavior.
+A failure recovery is `onFail: true` on an edge pointing from the failing node back to an upstream node, with `max` from 1 to 8 recoveries (default 3). When the node fails and fewer than `max` recoveries have run, the workflow resets the body from the recovery target through the failing node and runs it again. After `max` recoveries, the node fails permanently and the run stops. Failure recovery edges do not interfere with success-path loops or `failOnce` retry behavior.
 
-Settings → Workflow graphs can add a link, a condition, a loop, or a failure recovery. After a live run finishes, the stage keeps showing that run until a new one starts.
+Settings → Workflow graphs can add a link, a condition, or a loop. A failure recovery edge is added through `define_workflow` (`onFail: true`); the Settings canvas has no control for it yet. After a live run finishes, the stage keeps showing that run until a new one starts.
 
 ## When a step does not land
 
@@ -57,7 +57,7 @@ A reply that says the model could not answer (`could not answer your message` or
 A local Bot uses the same store:
 
 - `run_workflow` — `workflow` (id or exact name) and `brief` (the task). Optional `task` id. This joins the same queue a manual assign uses.
-- `define_workflow` — `name`, `nodes` (`{ id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? }`), `edges` (`{ from, to, when?, loop?, max?, until? }`). `prompt` is that node's Bot system prompt. `tools` names the connectors the ephemeral Bot may call (`github`, `composio`); a node that names none reaches none. `botId` is optional. `inputs` and `outputs` are `{ name, type?, required? }`. `when` chooses an edge; `loop: true` with `max` is the only cycle. Pass `workflow` to replace one. A friend's Bot is refused. This writes the same graph Settings and the flowchart edit.
+- `define_workflow` — `name`, `nodes` (`{ id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? }`), `edges` (`{ from, to, when?, loop?, max?, until?, onFail? }`). `prompt` is that node's Bot system prompt. `tools` names the connectors the ephemeral Bot may call (`github`, `composio`); a node that names none reaches none. `botId` is optional. `inputs` and `outputs` are `{ name, type?, required? }`. `when` chooses an edge; `loop: true` with `max` is the only cycle. Pass `workflow` to replace one. A friend's Bot is refused. This writes the same graph Settings and the flowchart edit.
 
 ## Install
 

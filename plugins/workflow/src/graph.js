@@ -571,13 +571,14 @@ function loopDecision(graph, nodeId, outputs, loops, text) {
   return null
 }
 
-// Check if a failed node has an onFail edge and attempts remaining.
+// Check if a failed node has an onFail edge and recoveries left. `max` counts
+// recoveries, unlike a loop edge's max which counts how many times its body runs.
 function failRecoveryDecision(graph, nodeId, failAttempts) {
   const edges = graph.edges.filter(edge => edge.onFail === true && edge.from === nodeId)
   for (const edge of edges) {
     const ran = (Number(failAttempts?.[edgeKey(edge)]) || 0) + 1
     const max = Number.isInteger(edge.max) ? edge.max : 3
-    if (ran >= max) continue
+    if (ran > max) continue
     return { edge, ran }
   }
   return null
@@ -744,7 +745,7 @@ export function failNode(graph, status, nodeId, ctx = {}) {
   if (recovery) {
     // Failure recovery: reset to the upstream target node
     failAttempts[edgeKey(recovery.edge)] = recovery.ran
-    const body = loopBody(graph, recovery.edge.to, nodeId)
+    const body = loopBody(graph, nodeId, recovery.edge.to)
     const next = copyStatus(status)
     const reset = []
     

@@ -89,12 +89,21 @@ describe('Failure recovery', () => {
     failAttempts = result.failAttempts
     assert.equal(failAttempts['review>draft'], 2)
 
-    // Third attempt: draft → review (fail) → STOP (max 3 exhausted)
+    // Third attempt: draft → review (fail) → draft (recovery 3)
     status = completeNode(graph, status, 'draft').status
     result = failNode(graph, status, 'review', { failAttempts })
-    
+    assert.equal(result.recovered, true)
+    status = result.status
+    failAttempts = result.failAttempts
+    assert.equal(failAttempts['review>draft'], 3)
+
+    // Fourth attempt: draft → review (fail) → STOP (max 3 recoveries used)
+    status = completeNode(graph, status, 'draft').status
+    result = failNode(graph, status, 'review', { failAttempts })
+
     assert.equal(result.recovered, undefined)
     assert.equal(result.status.review, 'failed')
+    assert.equal(result.failAttempts['review>draft'], 3)
   })
 
   it('does not break existing failOnce behavior', () => {
