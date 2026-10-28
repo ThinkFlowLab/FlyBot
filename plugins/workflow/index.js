@@ -31,11 +31,11 @@ export function apply(ctx, config = {}) {
   const liveNames = new Map()
   const lifecycle = typeof fb.bot?.create === 'function' ? {
     async spawn(spec) {
-      const tools = Array.isArray(spec.tools) ? spec.tools : []
-      const notes = []
-      if (tools.length > 0) notes.push(`You can use these tools: ${tools.join(', ')}.`)
-      if (tools.includes('github')) notes.push('GitHub (mcp__github__*) is granted for this step: issues, pull requests, reviews and comments.')
-      const prompt = [spec.prompt, ...notes].filter(Boolean).join('\n\n')
+      // Every Workflow node Bot gets the same full tool/connector grant a normal sidebar Bot
+      // gets (GitHub, Composio, file/shell, team tools), limited only by EPHEMERAL_DENIED_TOOLS
+      // at the guard layer. spec.tools is documentation only; the tools field is always omitted
+      // from fb.bot.create so the Bot inherits all available tools.
+      const prompt = spec.prompt
       let last
       for (let n = 0; n < 4; n += 1) {
         const taken = new Set([...(fb.bot.list?.() ?? []).map(bot => bot.name), ...liveNames.keys()])
@@ -49,9 +49,8 @@ export function apply(ctx, config = {}) {
             ...(spec.model ? { model: spec.model } : {}),
             hidden: true,
             ephemeral: true,
-            tools,
-            permission: permissionFor(tools),
-            fields: { nodeId: spec.nodeId, tools },
+            permission: permissionFor(),
+            fields: { nodeId: spec.nodeId, tools: spec.tools ?? null },
           })
           liveNames.set(name, id)
           return id

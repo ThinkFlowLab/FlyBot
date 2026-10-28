@@ -185,6 +185,73 @@ test('a spawn that fails halfway removes the instances it already made and does 
   assert.equal(svc.state().workflows.find(item => item.id === made.id).run, null)
 })
 
+test('every node Bot gets full tool grant; node.tools is documentation only', async () => {
+  const created = []
+  const fb = {
+    bot: {
+      list: () => roster,
+      async create(spec) {
+        const id = `bot-${created.length + 1}`
+        created.push(spec)
+        return id
+      },
+      async remove() { return true },
+      async send() { return { action: 'allow' } },
+    },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    tools: { register() { return () => {} } },
+    warn() {},
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  
+  // Node with no tools: tools field omitted, gets full grant, danger-full-access
+  await started.service.define({
+    name: 'NoTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.' }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'NoTools', brief: 'Test no tools' })
+  assert.equal('tools' in created[0], false, 'tools field always omitted from fb.bot.create')
+  assert.equal(created[0].permission, 'danger-full-access', 'all node Bots get full access')
+  assert.equal(created[0].systemPrompt, 'Do the work.', 'prompt has no tool-specific notes')
+  
+  // Node with explicit empty tools: same behavior (tools omitted, full grant)
+  created.length = 0
+  await started.service.define({
+    name: 'EmptyTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.', tools: [] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'EmptyTools', brief: 'Test empty' })
+  assert.equal('tools' in created[0], false, 'tools field omitted even when node.tools is []')
+  assert.equal(created[0].permission, 'danger-full-access')
+  
+  // Node with explicit tools: STILL gets full grant (tools is documentation only)
+  created.length = 0
+  await started.service.define({
+    name: 'CustomTools',
+    nodes: [{ id: 'reader', name: 'Reader', prompt: 'Just read.', tools: ['read'] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'CustomTools', brief: 'Test custom' })
+  assert.equal('tools' in created[0], false, 'tools field omitted regardless of node.tools value')
+  assert.equal(created[0].permission, 'danger-full-access', 'explicit tools do not restrict grant')
+  assert.deepEqual(created[0].fields.tools, ['read'], 'fields.tools stores node.tools as documentation')
+  assert.equal(created[0].systemPrompt, 'Just read.', 'no tool notes added')
+  
+  // Node with bash in tools: same full grant (node.tools does not affect permission)
+  created.length = 0
+  await started.service.define({
+    name: 'ShellTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Run commands.', tools: ['bash', 'read'] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'ShellTools', brief: 'Test shell' })
+  assert.equal('tools' in created[0], false, 'tools field omitted')
+  assert.equal(created[0].permission, 'danger-full-access')
+})
+
 test('apply wires spawn to a hidden ephemeral create and removes those Bots when the run ends', async () => {
   const created = []
   const removed = []
@@ -217,9 +284,12 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(created.length, 1)
   assert.equal(created[0].ephemeral, true)
   assert.equal(created[0].hidden, true)
-  assert.equal(created[0].permission, 'workspace-write')
-  assert.deepEqual(created[0].tools, [])
+  // Every node Bot omits the tools field and gets danger-full-access, inheriting all available
+  // tools (GitHub, Composio, file/shell, team tools limited by EPHEMERAL_DENIED_TOOLS).
+  assert.equal(created[0].permission, 'danger-full-access')
+  assert.equal('tools' in created[0], false, 'tools field always omitted from fb.bot.create')
   assert.match(created[0].systemPrompt, /Write the plan\./)
+  assert.doesNotMatch(created[0].systemPrompt, /You can use these tools:/, 'no tool-specific notes')
   assert.equal(created[0].name.startsWith('Planner '), true)
   assert.notEqual(created[0].name, 'Planner')
   assert.equal(sent.length, 1)

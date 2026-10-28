@@ -3,14 +3,13 @@
 // deletes it when the run finishes, fails for good, or is cancelled.
 import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
-const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
-
-// A step that names a shell gets full access. Anything else can still write
-// the workspace. A node with no tools is not left on a read-only default.
-export function permissionFor(tools) {
-  const names = cleanTools(tools)
-  if (names.some(name => SHELL.has(name))) return 'danger-full-access'
-  return 'workspace-write'
+// Every Workflow node Bot gets the full tool/connector grant a normal sidebar Bot gets
+// (GitHub, Composio, file/shell tools, team tools), limited only by EPHEMERAL_DENIED_TOOLS
+// at the guard/approval layer (#1466). The node.tools field does not restrict this grant;
+// it is treated as documentation only. All node Bots get 'danger-full-access' to match
+// normal Bots with shell access.
+export function permissionFor() {
+  return 'danger-full-access'
 }
 
 export function nodeConfig(node, roster = [], workflowModel = '') {
@@ -20,6 +19,8 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
   const prompt = cleanPrompt(node?.prompt)
     || cleanPrompt(seated?.systemPrompt || seated?.instructions || '')
     || cleanPrompt(node?.instructions)
+  // node.tools is kept as documentation only; spawn always omits the tools field so every
+  // node Bot inherits the full grant a normal Bot gets, limited by EPHEMERAL_DENIED_TOOLS.
   return {
     nodeId: node.id,
     name: node.name,
