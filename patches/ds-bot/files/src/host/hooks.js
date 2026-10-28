@@ -683,6 +683,8 @@ export function install(rt) {
     const bot = rt.botOf(id)
     if (bot === undefined) return false
     if (bot.ephemeral?.plugin !== plugin) throw new Error('flybot: only the plugin that created this run Bot can remove it')
+    // Tombstone before deletion so late replies are denied (#1524)
+    if (bot.ephemeral) tombstoneEphemeral(id)
     await rt.deleteBot(id)
     return true
   }
@@ -734,14 +736,14 @@ export function install(rt) {
 
   // The gate around ds-bot's own rt.deliver. Approved and re-sent messages pass through.
   // CRITICAL FIX (#1524): Ephemeral Bot replies must ALWAYS go through middleware (which calls
-  // stepResult) even when deferred/resumed/retried, so gated() returns true for ephemeral senders.
+  // stepResult) even when deferred/resumed/retried/resent, so gated() returns true for ephemeral senders.
   const gated = args => {
-    if (!args.fromId || !BOT_TO_BOT_ROLES.has(args.role) || args.flybotChecked || args.resent) return false
+    if (!args.fromId || !BOT_TO_BOT_ROLES.has(args.role) || args.flybotChecked) return false
     const from = rt.botOf(args.fromId)
-    // Ephemeral bots (or tombstoned removed bots) always route through middleware, even when deferred/resumed/retried
+    // Ephemeral bots (or tombstoned removed bots) always route through middleware, even when deferred/resumed/retried/resent
     if (from?.ephemeral || wasEphemeral(args.fromId)) return true
-    // Normal bots skip middleware when deferred/resumed/retried
-    return from !== undefined && !args.resumed && !args.retried && !args.deferred
+    // Normal bots skip middleware when deferred/resumed/retried/resent
+    return from !== undefined && !args.resent && !args.resumed && !args.retried && !args.deferred
   }
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
