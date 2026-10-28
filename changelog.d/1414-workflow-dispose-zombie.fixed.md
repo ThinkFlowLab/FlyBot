@@ -1,1 +1,0 @@
-Plugin unload no longer persists workflow runs as `running` after their ephemeral Bot map is cleared; the next load also ends live runs that were already left in that zombie shape ([#1414](https://github.com/ThinkFlowLab/FlyBot/issues/1414)).

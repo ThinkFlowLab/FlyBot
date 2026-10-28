@@ -1,1 +1,0 @@
-Workflow stage no longer shows the shell's message composer. Tasks are handed to the graph; the stage provides only pause/resume/progress controls. ([#1486](https://github.com/ThinkFlowLab/FlyBot/issues/1486))

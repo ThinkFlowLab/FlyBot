@@ -5,6 +5,7 @@ import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { ActivityIndicator } from './activity-row.js'
+import { BusyAckBubble } from './busy-ack.js'
 import { t } from './i18n.js'
 import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
 
@@ -43,7 +44,7 @@ function MemoryNotice({ shown }) {
     h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
 }
 
-export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
+export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster(value => value)
   const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
   const firstTurns = useSessions((list) => {
@@ -96,7 +97,8 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
     h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
-    h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }))
+    h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
+    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }))
 }
 
 // New-message pills. "N new messages ↓" takes Back to bottom's place when

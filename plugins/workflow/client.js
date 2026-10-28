@@ -68,7 +68,7 @@ window.__ModuleLoader__.load({
       'Each Bot\'s own model': '跟随各个 Bot 的模型',
       '{count} models': '{count} 个模型',
       Permissions: '权限',
-      'Each Bot\'s own permission': '跟随各个 Bot 的权限',
+      'Full access, same as a normal Bot': '完全访问，与普通 Bot 相同',
       'On failure': '失败策略',
       'Tester retries once. Any other failed step stops the run.': 'Tester 失败后自动重试 1 次。其他节点失败则停住。',
       'A failed step stops the run.': '失败的节点停住，等你处理。',
@@ -120,6 +120,8 @@ window.__ModuleLoader__.load({
       'Could not stop this run': '无法停止本次运行',
       'Reading workflows…': '正在读取 Workflow…',
       'Changes are saved automatically': '更改会自动保存',
+      'Try again': '重试',
+      'Could not change the model': '无法更改模型',
       'Next run: {time}': '下次运行：{time}',
       'Step {step}': '步骤 {step}',
       'Parallel branches · Merge after all pass': '并行分支 · 全部通过后汇合',
@@ -166,9 +168,11 @@ window.__ModuleLoader__.load({
       const host = globalThis.__flybot__?.t
       return typeof host === 'function' && host('Tasks') === '任务'
     }
-    // A stage control calls the host too: a throw, a rejection or a host that never answers
-    // settles as one error string, so Pause, Stop, Reset and a graph save cannot fail silently.
-    // Same shape as readWorkflows()/workflowCallError() in core/src/client/workflows.js.
+    // A host call that must end: a throw, a rejection or a host that never answers settles
+    // as one error string, so a failed read cannot leave the page on "Reading workflows…",
+    // a failed save cannot look saved, and a stage control (Pause, Stop, Reset) cannot fail
+    // silently either. Same shape as readWorkflows()/workflowCallError() in
+    // core/src/client/workflows.js, kept here because this page reads the plugin's own calls.
     const CALL_TIMEOUT_MS = 10000
     function callError(failure, fallback) {
       if (typeof failure === 'string' && failure.trim()) return failure.trim()
@@ -324,20 +328,21 @@ window.__ModuleLoader__.load({
       if (text.startsWith('task-')) return `#${text.slice(-6)}`
       return text
     }
+    // The row clips itself with CSS (single line + ellipsis) and the full title
+    // rides in a tooltip, so never cut the string: a UTF-16 offset can land
+    // inside a surrogate pair and render an emoji/CJK Ext-B title as a replacement character.
     function taskSummary(task, run) {
       if (run?.taskSummary) return run.taskSummary
       const id = shortId(task?.id ?? '')
       const title = String(task?.title ?? '').replace(/\s+/g, ' ').trim()
       if (!id && !title) return ''
       if (!title) return id
-      if (!id) return title.length > 72 ? `${title.slice(0, 69)}…` : title
+      if (!id) return title
       // Remove issue number prefix from title if it duplicates the id
       let cleanTitle = title
       const issueMatch = title.match(/^issue\s+#?\d+\s*[:\-–—]\s*/i)
       if (issueMatch && id) cleanTitle = title.slice(issueMatch[0].length)
-      const room = Math.max(24, 72 - id.length - 3)
-      const short = cleanTitle.length > room ? `${cleanTitle.slice(0, room - 1)}…` : cleanTitle
-      return `${id} · ${short}`
+      return `${id} · ${cleanTitle}`
     }
     function sidebarPreview(item) {
       const busy = (item.activeCount ?? 0) > 0 && item.run?.live === true
@@ -520,14 +525,22 @@ window.__ModuleLoader__.load({
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
     function Stage({ workflow, roster, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop }) {
       const chatRef = useRef(null)
+      const chatFoot = useRef({ height: 0, shown: 0 })
       const liveRuns = liveStageRuns(workflow)
       const viewRun = resolveFocusedRun(workflow, focusedRunId)
       const showSummary = (workflow.queueDepth ?? 0) > 0 || liveRuns.length > 1
+      const visible = stageMessages(workflow, workflow.messages, roster)
       useEffect(() => {
         const el = chatRef.current
-        if (el) el.scrollTop = el.scrollHeight
+        if (!el) { chatFoot.current = { height: 0, shown: 0 }; return }
+        const prev = chatFoot.current
+        chatFoot.current = { height: el.scrollHeight, shown: visible.length }
+        // A stage line that is filtered out changes no pixel, so it must not move the chat.
+        if (visible.length <= prev.shown) return
+        // Follow a new line only from the bottom; a reader who scrolled up keeps their place.
+        if (prev.height > 0 && el.scrollTop + (el.clientHeight ?? 0) < prev.height - 24) return
+        el.scrollTop = el.scrollHeight
       }, [workflow.messages.length])
-      const visible = stageMessages(workflow, workflow.messages, roster)
       return h('div', { className: 'wf-stage', style: { left: stageLeft } },
         h('div', { className: 'wf-main' },
           h('div', { className: 'wf-top' },
@@ -693,7 +706,11 @@ window.__ModuleLoader__.load({
         current: workflow.run?.id === run.id,
       }))
       for (const task of queued) rows.push({ task, status: 'queued', current: false })
-      const seen = new Set(rows.map(row => row.id ?? `${row.task?.id ?? ''}|${row.at ?? ''}`))
+      const seen = new Set()
+      for (const row of rows) {
+        if (row.id) seen.add(row.id)
+        seen.add(`${row.task?.id ?? ''}|${row.at ?? ''}`)
+      }
       for (const item of history) {
         const key = item.id ?? `${item.task?.id ?? ''}|${item.at ?? ''}`
         if (seen.has(key)) continue
@@ -875,7 +892,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wf-box' },
         h('div', { className: 'wf-kv' }, h('span', null, tr('Trigger')), h('span', null, trigger)),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Model')), h('span', null, modelLabel)),
-        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Each Bot\'s own permission'))),
+        h('div', { className: 'wf-kv' }, h('span', null, tr('Permissions')), h('span', null, tr('Full access, same as a normal Bot'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('On failure')), h('span', null, tr(retries ? 'Tester retries once. Any other failed step stops the run.' : 'A failed step stops the run.'))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Concurrent runs')), h('span', null, String(workflow.maxConcurrent ?? 2))),
         h('div', { className: 'wf-kv' }, h('span', null, tr('Members')), h('span', null, workflow.chain)))
@@ -1024,11 +1041,13 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = useState(false)
       const [error, setError] = useState('')
       const [loading, setLoading] = useState(true)
-      
+      const [attempt, setAttempt] = useState(0)
+
       useEffect(() => {
         let gone = false
         setLoading(true)
-        void Promise.resolve(call('workflow/state')).then(value => {
+        setError('')
+        void settledCall(call, 'workflow/state', undefined, 'The workflow host did not answer').then(value => {
           if (gone) return
           setLoading(false)
           if (value && Array.isArray(value.workflows)) {
@@ -1038,7 +1057,7 @@ window.__ModuleLoader__.load({
           } else setError(value?.error ?? 'The workflow host did not answer')
         })
         return () => { gone = true }
-      }, [])
+      }, [attempt])
       
       useEffect(() => {
         ensureCss()
@@ -1054,9 +1073,9 @@ window.__ModuleLoader__.load({
       
       const save = (nodes, edges) => {
         if (!current) return
-        void Promise.resolve(call('workflow/graph', { workflowId: current.id, nodes, edges })).then(value => {
-          if (value?.ok === false) { setError(value.error ?? ''); return }
-          if (value?.workflows) setPack(value)
+        void settledCall(call, 'workflow/graph', { workflowId: current.id, nodes, edges }, 'Could not save this workflow').then(value => {
+          if (value?.ok === false) { setError(value.error ?? tr('Could not save this workflow')); return }
+          if (value?.workflows) { setPack(value); setError('') }
         })
       }
       
@@ -1103,6 +1122,9 @@ window.__ModuleLoader__.load({
       
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
+        error && !pack && !loading
+          ? h('button', { type: 'button', className: 'wf-btn', onClick: () => setAttempt(value => value + 1) }, tr('Try again'))
+          : null,
         loading ? h('div', { className: 'wf-muted' }, tr('Reading workflows…')) : null,
         !loading && workflows.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
         current ? h('div', { className: 'wf-settings-layout' },
@@ -1120,9 +1142,9 @@ window.__ModuleLoader__.load({
                 value: current.model || '',
                 onChange: (event) => {
                   const model = event.target.value || null
-                  void Promise.resolve(call('workflow/set-model', { workflowId: current.id, model })).then(value => {
-                    if (value?.ok === false) { setError(value.error ?? ''); return }
-                    if (value?.workflows) setPack(value)
+                  void settledCall(call, 'workflow/set-model', { workflowId: current.id, model }, 'Could not change the model').then(value => {
+                    if (value?.ok === false) { setError(value.error ?? tr('Could not change the model')); return }
+                    if (value?.workflows) { setPack(value); setError('') }
                   })
                 },
               },
@@ -1147,7 +1169,7 @@ window.__ModuleLoader__.load({
               })),
             h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
               editing ? tr('Finish editing') : tr('Edit')),
-            editing ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
+            editing && !error ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
           h('div', { className: 'wf-canvas-main' },
             h(GraphCanvas, {
               workflow: current,

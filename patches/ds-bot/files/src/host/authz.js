@@ -191,6 +191,10 @@ export function install(rt) {
     const pick = obj => Object.fromEntries(Object.entries(obj ?? {}).filter(([id]) => mine(id)))
     return {
       activity: pick(full.activity),
+      busyAcks: Object.fromEntries(Object.entries(full.busyAcks ?? {}).filter(([sessionId]) => {
+        const botId = rt.chatOwners?.get(sessionId)
+        return botId !== undefined && mine(botId)
+      })),
       work: {
         bots: pick(full.work.bots),
         rooms: Object.fromEntries(Object.entries(full.work.rooms ?? {}).filter(([id]) => roomMemberOf(actor, id) || roomOwnedBy(actor, id))),

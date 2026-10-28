@@ -1,1 +1,0 @@
-A run ended by a restart, by a step that threw, or by stopping it kept the nodes it had been running: the run said `failed` while the flow strip still painted "Running now" for that node. Ending a run now marks those nodes `failed` with it, from one helper every path goes through ([#1424](https://github.com/ThinkFlowLab/FlyBot/issues/1424)).

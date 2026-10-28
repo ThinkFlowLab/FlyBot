@@ -26,7 +26,7 @@ export const SCHEDULED = 'scheduled'
 // The messages that carry nobody's request, by source kind — one list, because everything else
 // fails closed as 'other' (#620): a kind missing here takes the connector tools away in the middle
 // of a turn the owner started (#626), and a kind wrongly added here would hand them out.
-// Derived from `MessageSourceMap` in @deepseek-ai/dsh-llm (0.2.0-rc.2, the version
+// Derived from `MessageSourceMap` in @deepseek-ai/dsh-llm (0.2.1-rc.2, the version
 // core/dev/harness/package.json pins). A kind is not recognisable by its `form` alone: the kinds
 // below that declare no `form` at all (`working-directory`, `ptc-mode`, `cordis-host-runner`) would
 // read as opaque content, and `webhook` declares `form: 'notice'` while being an outside delivery

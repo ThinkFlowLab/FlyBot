@@ -18,8 +18,12 @@ function stripControls(value) {
   return out
 }
 
+// Cut on code points, never on UTF-16 units: a unit offset can split a surrogate
+// pair and leave a lone surrogate, which renders as a replacement character.
 export function cleanLine(value, max = 300) {
-  return stripControls(value).replace(/\s+/g, ' ').trim().slice(0, max)
+  const text = stripControls(value).replace(/\s+/g, ' ').trim()
+  if (!Number.isFinite(max) || text.length <= max) return text
+  return Array.from(text).slice(0, max).join('')
 }
 
 // A node prompt keeps line breaks. Other controls become spaces.
@@ -817,9 +821,11 @@ export function chainLabel(graph) {
   return graph.layers.map(layer => layer.map(id => nodeById(graph, id)?.name ?? id).join(' ‖ ')).join(' → ')
 }
 
-export function summarizeTask(task, maxTitle = 72) {
+// The label is rendered whole: the row clips it with CSS ellipsis and the full
+// title stays in the tooltip, so a length cap here only risks a split character.
+export function summarizeTask(task) {
   const id = cleanLine(task?.id, 80)
-  const title = cleanLine(task?.title, maxTitle)
+  const title = cleanLine(task?.title, Infinity)
   if (!id && !title) return ''
   if (!title) return id
   if (!id) return title

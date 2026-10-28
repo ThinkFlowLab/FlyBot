@@ -56,14 +56,14 @@ diff --git a/package-lock.json b/package-lock.json
  {
    "name": "ds-bot",
 -  "version": "0.1.5",
-+  "version": "0.2.11",
++  "version": "0.2.12",
    "lockfileVersion": 3,
    "requires": true,
    "packages": {
      "": {
        "name": "ds-bot",
 -      "version": "0.1.5",
-+      "version": "0.2.11",
++      "version": "0.2.12",
        "license": "Apache-2.0",
 +      "dependencies": {
 +        "@larksuiteoapi/node-sdk": "1.76.0"
@@ -694,7 +694,7 @@ diff --git a/package.json b/package.json
  {
    "name": "ds-bot",
 -  "version": "0.1.5",
-+  "version": "0.2.11",
++  "version": "0.2.12",
    "description": "DS Bot: a team of long-lived Bots for DeepSeek Harness, with Main Bots, Bot-to-Bot messages and group chats",
    "keywords": [
      "dsh-plugin",
@@ -871,3 +871,17 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +test('Report on GitHub opens a new issue in FlyBot\'s own repository', () => {
 +  assert.equal(ISSUES_URL, 'https://github.com/ThinkFlowLab/FlyBot/issues/new')
 +})
+
+diff --git a/dev/harness/package.json b/dev/harness/package.json
+--- a/dev/harness/package.json
++++ b/dev/harness/package.json
+@@ -2,8 +2,8 @@
+   "name": "ds-bot-test-harness",
+   "private": true,
+   "description": "The DeepSeek Harness packages that the unit tests and the linter run against. Install with npm run harness in ds-bot/.",
+   "dependencies": {
+-    "@deepseek-ai/dsh": "0.2.0-rc.2",
++    "@deepseek-ai/dsh": "0.2.1-rc.2",
+     "jsdom": "29.1.1",
+     "oxlint": "1.76.0"
+   }

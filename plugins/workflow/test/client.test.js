@@ -39,7 +39,29 @@ const react = {
 }
 
 function mount(Component, props = {}) {
-  const root = { instances: new Map(), pending: [], rendering: false, dirty: false, tree: undefined }
+  const root = { instances: new Map(), elements: new Map(), pending: [], rendering: false, dirty: false, tree: undefined }
+  // The renderer has no DOM: a host element's ref gets a stand-in that answers
+  // getBoundingClientRect from `live.rectWidth` and keeps a scroll box, so a
+  // component that measures or scrolls its own container is observable — the
+  // stage chat's scroll effect is a no-op otherwise, because useRef keeps
+  // chatRef.current null.
+  const elementAt = (path) => {
+    let el = root.elements.get(path)
+    if (!el) {
+      el = {
+        scrollTop: 0, scrollHeight: 0, clientHeight: 0, focused: false, focus() { this.focused = true },
+        getBoundingClientRect: () => ({ width: live.rectWidth, height: 0 }), dataset: {},
+      }
+      root.elements.set(path, el)
+    }
+    return el
+  }
+  const attachRef = (ref, path) => {
+    if (!ref) return
+    const el = elementAt(path)
+    if (typeof ref === 'function') ref(el)
+    else if (typeof ref === 'object') ref.current = el
+  }
   const expand = (node, path) => {
     if (node === null || node === undefined || typeof node === 'boolean') return undefined
     if (typeof node !== 'object') return String(node)
@@ -52,14 +74,7 @@ function mount(Component, props = {}) {
       live.idx = 0
       return expand(node.type({ ...node.props, children: node.children }), `${path}/c`)
     }
-    // The renderer has no DOM: a host element's ref gets a stand-in that answers
-    // getBoundingClientRect from `live.rectWidth`.
-    const ref = node.props?.ref
-    if (ref) {
-      const el = { getBoundingClientRect: () => ({ width: live.rectWidth, height: 0 }), dataset: {} }
-      if (typeof ref === 'function') ref(el)
-      else if (typeof ref === 'object') ref.current = el
-    }
+    attachRef(node.props?.ref, path)
     return { type: node.type, props: node.props, children: node.children.map((child, i) => expand(child, `${path}.${i}`)).flat(Infinity).filter(child => child !== undefined) }
   }
   const render = () => {
@@ -81,6 +96,7 @@ function mount(Component, props = {}) {
   render()
   return {
     get tree() { return root.tree },
+    rerender(nextProps = {}) { Object.assign(props, nextProps); root.schedule() },
     unmount() { for (const inst of root.instances.values()) for (const slot of inst.hooks) slot?.cleanup?.(); root.instances.clear() },
   }
 }
@@ -729,6 +745,57 @@ test('stage chat hides workflow node Bot lines but keeps owner Bots and system l
   assert.deepEqual(visible.map(message => message.id), ['1', '3', '4'])
 })
 
+// The stage chat follows a new line only while the reader is at the bottom: the
+// scroll effect used the raw message count, so a filtered node reply dragged it
+// down without one visible line changing.
+async function openStageChat(messages) {
+  const graph = delivery()
+  graph.messages = messages
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  const chat = findAll(view.tree, node => node.props?.className === 'wf-chat')[0]
+  assert.ok(chat, 'the stage chat did not mount, so its scroll effect could not run')
+  const chatEl = chat.props.ref?.current
+  assert.ok(chatEl, 'mount() never attached the stage chat ref, so the scroll effect is a no-op')
+  return { view, graph, chatEl }
+}
+
+test('the stage chat follows a new visible line to the bottom', async () => {
+  const { view, graph, chatEl } = await openStageChat([{ id: 'm1', kind: 'user', text: '一条可见的说明' }])
+  chatEl.clientHeight = 100
+  chatEl.scrollHeight = 800
+  chatEl.scrollTop = 800
+  graph.messages = [...graph.messages, { id: 'm2', kind: 'system', text: '任务已进入 Workflow' }]
+  chatEl.scrollHeight = 900
+  view.rerender()
+  assert.equal(chatEl.scrollTop, 900, 'a new visible stage line did not scroll the chat to the bottom')
+  view.unmount()
+})
+
+test('the stage chat keeps its place when the new lines are filtered node replies', async () => {
+  const { view, graph, chatEl } = await openStageChat([
+    { id: 'm1', kind: 'user', text: '一条可见的说明' },
+    { id: 'm2', kind: 'system', text: '任务已进入 Workflow' },
+  ])
+  chatEl.clientHeight = 100
+  chatEl.scrollHeight = 800
+  chatEl.scrollTop = 0 // the reader scrolled up
+  graph.messages = [...graph.messages,
+    { id: 'm3', kind: 'bot', botId: 'coder', text: 'node step output' },
+    { id: 'm4', kind: 'bot', botId: 'writer', text: 'another node step output' },
+  ]
+  assert.equal(client.stageMessages(graph, graph.messages, { bots: [] }).length, 2, 'the fixture must filter both new node replies out of the stage chat')
+  view.rerender()
+  assert.equal(chatEl.scrollTop, 0, 'a filtered node reply still dragged the stage chat to the bottom')
+  view.unmount()
+})
+
 async function stageChatText(messages, roster) {
   const graph = delivery()
   graph.messages = messages
@@ -752,6 +819,21 @@ function longLine(kind) {
   const line = `${kind.toUpperCase()} ${tail.repeat(20)}END`
   assert.ok(line.length > 240, `the fixture must exceed the 240-character preview cap, got ${line.length}`)
   return line
+}
+
+// A lone surrogate is what a UTF-16 cut leaves behind; it renders as \u{FFFD}.
+function hasLoneSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true
+      i += 1
+      continue
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true
+  }
+  return false
 }
 
 function assertFull(text, line) {
@@ -778,9 +860,11 @@ test('a long roster Bot line in the stage chat renders in full', async () => {
   assertFull(text, long)
 })
 
-test('the stage strip still clips a long task title as a summary', async () => {
+test('a long emoji/CJK Ext-B task title renders whole, never cut mid-character', async () => {
   const graph = delivery()
-  const longTitle = '让发布说明覆盖四个小节并保留每条验收命令的原文'.repeat(12)
+  // 60 UTF-16 units then an astral pair: the old 61st-unit cut landed inside the
+  // surrogate pair and left a lone surrogate (rendered as \u{FFFD}).
+  const longTitle = `${'发布说明'.repeat(15)}🚀𠀋${'验收命令'.repeat(12)}`
   graph.run.task = { id: '#1460', title: longTitle }
   delete graph.run.taskSummary
   const call = async (name) => {
@@ -791,11 +875,24 @@ test('the stage strip still clips a long task title as a summary', async () => {
   await settle()
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   await settle()
-  const text = textOf(view.tree)
   const summary = client.taskSummary({ id: '#1460', title: longTitle })
-  assert.equal(text.includes(summary), true, 'the stage strip lost its task summary')
-  assert.equal(text.includes(longTitle), false, 'the stage strip rendered a full task title instead of a summary')
-  assert.equal(summary.endsWith('…'), true)
+  assert.equal(summary, `#1460 · ${longTitle}`, 'the task summary is not the whole id and title')
+  assert.equal(hasLoneSurrogate(summary), false, 'the task summary ends in a lone surrogate')
+  assert.equal(textOf(view.tree).includes(longTitle), true, 'the stage strip dropped part of the task title')
+
+  // The tooltip keeps the whole title, and the row clips itself in CSS instead.
+  const label = findAll(view.tree, node => node.props?.className === 'wf-tk')[0]
+  assert.equal(label.props.title, longTitle, 'the row tooltip lost the whole title')
+  const css = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const rule = css.split('\n').find(line => line.startsWith('.wf-tk{'))
+  assert.match(rule, /white-space:nowrap/, 'the task row is no longer single-line')
+  assert.match(rule, /text-overflow:ellipsis/, 'the task row no longer ellipsizes')
+
+  // An id-less title takes the other branch, which used to cut at 69 units.
+  const bareTitle = `${'验收命令'.repeat(17)}🚀`
+  const bare = client.taskSummary({ title: bareTitle })
+  assert.equal(bare, bareTitle, 'the id-less task summary is not the whole title')
+  assert.equal(hasLoneSurrogate(bare), false, 'the id-less task summary ends in a lone surrogate')
   view.unmount()
 })
 
@@ -929,6 +1026,36 @@ test('run history does not invent a second running row when only one live run ex
   }
   const rows = client.runHistoryRows(workflow)
   assert.equal(rows.filter(row => row.status === 'running').length, 1)
+})
+
+test('a failed live attempt is listed once, as failed, not as its own history row (#1583)', () => {
+  const task = { id: '#1422', title: 'PR 1422' }
+  const workflow = {
+    activeCount: 0,
+    queue: [],
+    runs: [{ id: 'run-a', live: true, status: 'failed', task, updatedAt: 1_700_000_000_000 }],
+    run: { id: 'run-a', live: true, status: 'failed', task, updatedAt: 1_700_000_000_000 },
+    history: [{ task, status: 'failed', at: 1_700_000_000_000 }],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].status, 'failed')
+  assert.equal(rows.filter(row => row.status === 'running').length, 0)
+})
+
+test('a genuine retry still shows the failed attempt and the current one (#1583)', () => {
+  const task = { id: '#1422', title: 'PR 1422' }
+  const workflow = {
+    activeCount: 1,
+    queue: [],
+    runs: [{ id: 'run-b', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 }],
+    run: { id: 'run-b', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 },
+    history: [{ task, status: 'failed', at: 1_700_000_000_000 }],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.status), ['running', 'failed'])
+  assert.deepEqual(rows.map(row => row.current), [true, false])
 })
 
 test('the runs tab shows one running row per concurrent live run', async () => {
@@ -1691,4 +1818,139 @@ test('#1493: a failed sibling run stays on the stage, and its row carries time a
   assert.ok(older, 'a history row was dropped')
   assert.equal(textOf(older).includes('Done'), true)
   view.unmount()
+})
+
+test('the drawer details name the permission every node Bot actually runs with', async () => {
+  // #1535 made every node Bot danger-full-access, so a row claiming each Bot follows
+  // its own permission was stale (#1548): the details must say the run's full access
+  // is the same as a normal Bot's, and must not claim a per-Bot choice.
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    if (name === 'workflow/messages') return { messages: graph.messages }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Details')[0].props.onClick()
+  await settle()
+  const rows = findAll(view.tree, node => node.props?.className === 'wf-kv')
+  const permission = rows.find(row => textOf(row.children?.[0] ?? '') === client.tr('Permissions'))
+  assert.ok(permission, 'the details list a Permissions row')
+  const value = textOf(permission.children[1])
+  assert.doesNotMatch(value, /own permission/i, 'a node Bot does not pick its own permission')
+  assert.match(value, /full access/i, 'the row names the full access a node Bot runs with')
+  assert.match(value, /same as a normal Bot/i, 'and says it is a normal Bot\'s full access')
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }
+  try {
+    assert.equal(client.tr('Full access, same as a normal Bot'), '完全访问，与普通 Bot 相同', 'the row is translated')
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+  view.unmount()
+})
+
+// A failed call must end on the page's own alert, not on a spinner and not on a
+// claim that something was saved: the three call sites of work/state, graph and
+// set-model each report, recover, and leave no rejection behind.
+test('a failed workflow/state read ends on the alert with a retry, not on "Reading workflows…"', async () => {
+  await withUnhandled(async (unhandled) => {
+    const calls = []
+    let down = true
+    const call = async (name) => {
+      calls.push(name)
+      if (name === 'workflow/state') {
+        if (down) throw new Error('The workflow host did not answer')
+        return { workflows: [delivery()], templates: [] }
+      }
+      return { ok: true, workflows: [delivery()] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    assert.deepEqual(calls, ['workflow/state'])
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The workflow host did not answer'])
+    assert.equal(textOf(view.tree).includes('Reading workflows…'), false)
+    assert.deepEqual(unhandled, [])
+
+    down = false
+    button(view.tree, 'Try again').props.onClick()
+    await settle()
+    assert.deepEqual(calls, ['workflow/state', 'workflow/state'])
+    assert.equal(findAll(view.tree, node => node.props?.role === 'alert').length, 0)
+    assert.ok(textOf(view.tree).includes('发布交付流水线'))
+    view.unmount()
+  })
+})
+
+test('a failed graph save shows the alert and stops claiming changes are saved automatically', async () => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    let failure = new Error('The workflow store refused the write')
+    const calls = []
+    const call = async (name) => {
+      calls.push(name)
+      if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+      if (name === 'workflow/graph') {
+        if (failure) throw failure
+        return { ok: true, workflows: [graph] }
+      }
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    button(view.tree, 'Edit').props.onClick()
+    await settle()
+    assert.ok(textOf(view.tree).includes('Changes are saved automatically'))
+    const pick = (label) => findAll(view.tree, node => node.props?.['aria-label'] === label)[0]
+    pick('From node').props.onChange({ target: { value: 'coder' } })
+    pick('To node').props.onChange({ target: { value: 'planner' } })
+    button(view.tree, 'Add link').props.onClick()
+    await settle()
+    assert.ok(calls.includes('workflow/graph'))
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The workflow store refused the write'])
+    assert.equal(textOf(view.tree).includes('Changes are saved automatically'), false)
+    assert.deepEqual(unhandled, [])
+
+    failure = null
+    pick('From node').props.onChange({ target: { value: 'coder' } })
+    pick('To node').props.onChange({ target: { value: 'planner' } })
+    button(view.tree, 'Add link').props.onClick()
+    await settle()
+    assert.equal(findAll(view.tree, node => node.props?.role === 'alert').length, 0)
+    assert.ok(textOf(view.tree).includes('Changes are saved automatically'))
+    view.unmount()
+  })
+})
+
+test('a failed model change is reported, not silently taken as saved', async () => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    const call = async (name, body) => {
+      if (name === 'workflow/state') {
+        return { workflows: [graph], roster: { models: [{ ref: 'deepseek/pro', name: 'Pro', provider: 'deepseek' }] } }
+      }
+      if (name === 'workflow/set-model') throw new Error('The model switch failed')
+      void body
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    findAll(view.tree, node => node.props?.['aria-label'] === 'Model')[0].props.onChange({ target: { value: 'deepseek/pro' } })
+    await settle()
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The model switch failed'])
+    assert.deepEqual(unhandled, [])
+    view.unmount()
+  })
+})
+
+test('a workflow host call that never answers settles as an error', async () => {
+  const value = await client.settledCall(async () => new Promise(() => {}), 'workflow/state', undefined, 'The workflow host did not answer', 5)
+  assert.deepEqual(value, { ok: false, error: 'The workflow host did not answer' })
 })

@@ -34,7 +34,7 @@ A required input must be an output of the same name on an ancestor. A root node 
 
 On a live run, a successor stays queued until its required inputs are present. If every predecessor is already done or failed and an input is still missing, that node fails and the run stops. The dispatch text includes `Input <name>: <value>`. The Bot reports outputs as `OUTPUT <name>: <value>`. A node with one declared output may put that value in the reply body.
 
-The delivery template passes `task` → `plan` → `copy` → `patch`, then `review` and `report` into `release`. Coder and Tester name `bash`; Coder, Reviewer and Deployer name `github`. The weekly template passes `task` → `notes` → `metrics` → `report`.
+The delivery template passes `task` → `plan` → `copy` → `patch`, then `review` and `report` into `release`. Coder, Reviewer and Deployer name `github`; the Tester names none, because `bash` is not a connector and grants nothing here (#1535). The weekly template passes `task` → `notes` → `metrics` → `report`.
 
 ## Branches and loops
 

@@ -967,6 +967,9 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 [data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
 [data-chat-running]>span:not([role=status]){display:none!important}
 [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
+.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
+.bt-busy-ack .bt-astack{align-items:flex-start}
+.bt-busy-ack .bt-bubble{opacity:.92}
 .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
 .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 .bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}

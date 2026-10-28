@@ -105,9 +105,9 @@ here, so Bot lines post without a hold. Some waiting is sped up.*
 **2. Add FlyBot to DeepSeek Harness**
 
 ```sh
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
 ```
 
 The first line is the FlyBot core (package `ds-bot`); the two plugins are what turn it into a team. Add
@@ -115,13 +115,13 @@ The first line is the FlyBot core (package `ds-bot`); the two plugins are what t
 
 On DSH Desktop: **Plugins → Add plugin**, paste one `github:` address at a time, then **Install** and **Enable now**.
 
-`0.2.0-rc.2` is the DeepSeek Harness release FlyBot is built and tested against — the same version `core/dev/harness`
+`0.2.1-rc.2` is the DeepSeek Harness release FlyBot is built and tested against — the same version `core/dev/harness`
 pins and CI runs, so keep it in all four commands.
 
 **3. Run it**
 
 ```sh
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 web --port 3080
 ```
 
 Open the printed `http://127.0.0.1:3080/?token=…` link, pick a model the first time, and say hello to the Chief. To
@@ -163,7 +163,7 @@ old credentials are kept as a backup. Details: [social subsystem](docs/subsystem
 
 FlyBot is the upstream [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core, kept byte-identical and pinned in
 `ds-bot.pin.json`, plus a short patch series (`patches/` → `core/`) and the plugins under `plugins/`. It is developed
-and tested against DeepSeek Harness `0.2.0-rc.2`, the version the commands above pin. The npm package keeps
+and tested against DeepSeek Harness `0.2.1-rc.2`, the version the commands above pin. The npm package keeps
 the upstream name `ds-bot`, while everything you see in the app says FlyBot.
 
 ## License

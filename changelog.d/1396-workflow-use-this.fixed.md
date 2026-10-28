@@ -1,1 +1,0 @@
-Settings → Workflows keeps the "Use this" entry on a factory preset that already has a live copy, so the preset can still be copied into a workflow of your own. ([#1396](https://github.com/ThinkFlowLab/FlyBot/issues/1396))

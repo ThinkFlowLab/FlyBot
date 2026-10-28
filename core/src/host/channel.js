@@ -205,6 +205,7 @@ export function install(rt) {
   const live = actor => {
     const full = {
       activity: rt.activityView(),
+      busyAcks: rt.busyAcksView?.() ?? {},
       work: { bots: rt.workView(), rooms: rt.roomWorkView(), approvals: rt.approvalsView(), ended: rt.endedView?.() ?? [] },
       memoryNews: rt.memoryNews(),
       memoryReviews: rt.memoryReviews(),
