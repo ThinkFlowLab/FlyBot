@@ -177,6 +177,11 @@ window.__ModuleLoader__.load({
     const NODE_WIRE_OUT = 56
     const NODE_W = 168
     const NODE_H = 72
+    // The flowchart drawer is a fixed 400px panel with 18px side padding, so its
+    // Flow tab fits the graph into 364px. Settings keeps its own scrolling world
+    // plane; only the drawer fits every node and edge to the panel width (#1513).
+    const DRAWER_FLOW_W = 364
+    const FIT_PAD = 12
 
     function workflowNodeIds(workflow) {
       return new Set((workflow?.nodes ?? []).map(node => node.id))
@@ -501,10 +506,13 @@ window.__ModuleLoader__.load({
       return (nested ?? direct)?.dataset?.node || ''
     }
 
-    function wirePath(from, to) {
-      const x1 = (from.x ?? 0) + WIRE_SPAN
+    // The Settings plane is zero-width, so world x sits on a ±WIRE_SPAN centre
+    // line; the fitted drawer plane starts at 0, so it passes span 0 (#1513).
+    function wirePath(from, to, span = WIRE_SPAN) {
+      const shift = typeof span === 'number' ? span : WIRE_SPAN
+      const x1 = (from.x ?? 0) + shift
       const y1 = (from.y ?? 0) + NODE_WIRE_OUT
-      const x2 = (to.x ?? 0) + WIRE_SPAN
+      const x2 = (to.x ?? 0) + shift
       const y2 = to.y ?? 0
       if (Math.abs(x1 - x2) < 0.5) {
         const mid = (y1 + y2) / 2
@@ -525,6 +533,35 @@ window.__ModuleLoader__.load({
         top: minY - 20,
         width: maxX - minX + NODE_W + pad * 2,
         height: maxY - minY + pad,
+      }
+    }
+
+    // Fit a graph to a panel width: only the node centres scale, never the node
+    // boxes, so labels stay readable. Positions come back in panel coordinates
+    // (x from the left edge, y from the top), the graph is centred horizontally,
+    // and `scale` is never above 1 so a wide Settings canvas never enlarges it.
+    // It maps world → fitted; `offsetX` / `offsetY` invert a pointer position.
+    function fitPlane(nodes, panelWidth = DRAWER_FLOW_W) {
+      const width = Math.max(Number(panelWidth) || DRAWER_FLOW_W, NODE_W + FIT_PAD * 2)
+      const list = (nodes ?? []).filter(node => node && typeof node === 'object')
+      const xs = list.map(node => Number(node.x) || 0)
+      const ys = list.map(node => Number(node.y) || 0)
+      const minX = xs.length ? Math.min(...xs) : 0
+      const maxX = xs.length ? Math.max(...xs) : 0
+      const minY = ys.length ? Math.min(...ys) : 0
+      const maxY = ys.length ? Math.max(...ys) : 0
+      const span = maxX - minX
+      const room = Math.max(0, width - FIT_PAD * 2 - NODE_W)
+      const scale = span > 0 ? Math.min(1, room / span) : 1
+      const offsetX = width / 2 - ((minX + maxX) / 2) * scale
+      const offsetY = FIT_PAD - minY
+      return {
+        width,
+        scale,
+        offsetX,
+        offsetY,
+        height: Math.max(420, maxY + NODE_H + FIT_PAD + offsetY),
+        nodes: list.map(node => ({ ...node, x: (node.x ?? 0) * scale + offsetX, y: (node.y ?? 0) + offsetY })),
       }
     }
 
@@ -561,11 +598,11 @@ window.__ModuleLoader__.load({
       return rows
     }
 
-    function wireSvgProps(height) {
+    function wireSvgProps(height, width = WIRE_SPAN * 2) {
       return {
-        width: WIRE_SPAN * 2,
+        width,
         height,
-        viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
+        viewBox: `0 0 ${width} ${height}`,
       }
     }
 
@@ -577,7 +614,12 @@ window.__ModuleLoader__.load({
       const status = run?.nodeStatus ?? {}
       const nodes = workflow.nodes.map(node => ghost?.[node.id] ? { ...node, ...ghost[node.id] } : node)
       const edges = workflow.edges ?? []
-      const height = Math.max(420, ...nodes.map(node => (node.y ?? 0) + 150), 0)
+      // The drawer paints a fitted copy; `nodes` stays the world graph so a drag
+      // commits the same coordinates the Settings canvas would (#1513).
+      const plane = fitPlane(nodes, DRAWER_FLOW_W)
+      const fitted = new Map(plane.nodes.map(node => [node.id, node]))
+      const scale = plane.scale || 1
+      const height = plane.height
       const locals = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && !nodes.some(node => node.botId === bot.id))
       const selected = nodes.find(node => node.id === selectedNode)
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
@@ -588,7 +630,10 @@ window.__ModuleLoader__.load({
           return
         }
         if (gesture.kind !== 'move') return
-        setGhost({ [gesture.id]: { x: Math.round(gesture.x + event.clientX - gesture.ox), y: Math.round(gesture.y + event.clientY - gesture.oy) } })
+        // The panel is fitted, so a pointer delta is worth delta / scale in the
+        // stored world graph; the scale is the one the drag started with.
+        const k = gesture.scale || 1
+        setGhost({ [gesture.id]: { x: Math.round(gesture.x + (event.clientX - gesture.ox) / k), y: Math.round(gesture.y + event.clientY - gesture.oy) } })
       }
       const endPointer = (event) => {
         if (!gesture) return
@@ -604,8 +649,8 @@ window.__ModuleLoader__.load({
           else if (!hit) commit(workflow.nodes, rest)
         } else if (gesture.kind === 'add' && event.target?.dataset?.plane) {
           const bot = gesture.bot
-          const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX) : 24
-          const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY) : 24
+          const x = Number.isFinite(event.offsetX) ? Math.round((event.offsetX - plane.offsetX) / scale) : 24
+          const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY - plane.offsetY) : 24
           commit(workflow.nodes.concat([{ id: nextNodeId(workflow.nodes), name: bot.name, botId: bot.id, role: bot.role ?? '', x, y }]), edges)
         }
         setGesture(null)
@@ -614,7 +659,7 @@ window.__ModuleLoader__.load({
       const updateNode = (nodeId, updates) => {
         commit(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
       }
-      return h('div', { className: 'wf-canvas', onPointerMove: movePointer, onPointerUp: endPointer, onPointerCancel: () => { setGesture(null); setGhost(null); setDragPreview(null) } },
+      return h('div', { className: 'wf-canvas', 'data-fit': 'drawer', onPointerMove: movePointer, onPointerUp: endPointer, onPointerCancel: () => { setGesture(null); setGhost(null); setDragPreview(null) } },
         editing ? h('div', { className: 'wf-palette' },
           h('p', { className: 'wf-palette-hint' }, tr('Drag a Bot here')),
           h('div', { className: 'wf-palette-row' },
@@ -635,14 +680,14 @@ window.__ModuleLoader__.load({
           'aria-hidden': true,
         }, h(PaletteBotFace, { bot: gesture.bot, size: 24 }), h('span', { className: 'wf-drag-ghost-name' }, gesture.bot?.name ?? '')) : null,
         run ? h('div', { className: 'wf-term', title: run.task?.title ?? '' }, taskSummary(run.task, run)) : null,
-        h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
-          h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
+        h('div', { className: 'wf-plane', 'data-plane': '1', style: { height, width: plane.width } },
+          h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height, plane.width) },
             edges.map(edge => {
-              const from = nodes.find(node => node.id === edge.from)
-              const to = nodes.find(node => node.id === edge.to)
+              const from = fitted.get(edge.from)
+              const to = fitted.get(edge.to)
               if (!from || !to) return null
               return h('g', { key: `${edge.from}>${edge.to}` },
-                h('path', { d: wirePath(from, to) }),
+                h('path', { d: wirePath(from, to, 0) }),
                 editing ? h('circle', {
                   cx: to.x, cy: to.y, r: 7, className: 'wf-end',
                   'data-port': 'end', 'data-src': edge.from, 'data-dst': edge.to,
@@ -650,39 +695,42 @@ window.__ModuleLoader__.load({
                 }) : null)
             })),
           (workflow.layers ?? []).filter(layer => layer.length > 1).map(layer => {
-            const members = layer.map(id => nodes.find(node => node.id === id)).filter(Boolean)
+            const members = layer.map(id => fitted.get(id)).filter(Boolean)
             if (members.length < 2) return null
             return h('div', {
               key: layer.join('+'), className: 'wf-par wf-abs',
               style: parallelFrameStyle(members),
             }, h('div', { className: 'wf-plabel' }, tr('Parallel branches · Merge after all pass')))
           }),
-          nodes.map(node => h('div', {
-            key: node.id,
-            'data-node': node.id,
-            className: `wf-node wf-abs ${status[node.id] ?? 'queued'} ${selectedNode === node.id ? 'selected' : ''}`,
-            style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
-            onClick: () => editing ? setSelectedNode(node.id) : null,
-            onPointerDown: (event) => {
-              if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
-              setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x, y: node.y })
-            },
-            onMouseEnter: editing ? (event) => onTip?.({ x: event.clientX, y: event.clientY, node }) : null,
-            onMouseLeave: editing ? () => onTip?.(null) : null,
-          },
-            editing ? h('button', {
-              type: 'button', className: `wf-port out${gesture?.kind === 'wire' && gesture.from === node.id ? ' wiring' : ''}`, 'data-port': 'out', 'aria-label': node.name,
-              onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); setGesture({ kind: 'wire', from: node.id }) },
-            }) : null,
-            editing ? h('button', {
-              type: 'button', className: 'wf-mini', 'data-remove': node.id, 'aria-label': tr('Remove'),
-              onClick: (event) => {
-                event.stopPropagation?.()
-                commit(workflow.nodes.filter(item => item.id !== node.id), edges.filter(edge => edge.from !== node.id && edge.to !== node.id))
-                setSelectedNode(null)
+          nodes.map(node => {
+            const spot = fitted.get(node.id) ?? node
+            return h('div', {
+              key: node.id,
+              'data-node': node.id,
+              className: `wf-node wf-abs ${status[node.id] ?? 'queued'} ${selectedNode === node.id ? 'selected' : ''}`,
+              style: { left: spot.x - NODE_W / 2, top: spot.y },
+              onClick: () => editing ? setSelectedNode(node.id) : null,
+              onPointerDown: (event) => {
+                if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
+                setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x, y: node.y, scale })
               },
-            }, '×') : null,
-            h(FlowNode, { node, status: status[node.id] ?? 'queued', roster })))),
+              onMouseEnter: editing ? (event) => onTip?.({ x: event.clientX, y: event.clientY, node }) : null,
+              onMouseLeave: editing ? () => onTip?.(null) : null,
+            },
+              editing ? h('button', {
+                type: 'button', className: `wf-port out${gesture?.kind === 'wire' && gesture.from === node.id ? ' wiring' : ''}`, 'data-port': 'out', 'aria-label': node.name,
+                onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); setGesture({ kind: 'wire', from: node.id }) },
+              }) : null,
+              editing ? h('button', {
+                type: 'button', className: 'wf-mini', 'data-remove': node.id, 'aria-label': tr('Remove'),
+                onClick: (event) => {
+                  event.stopPropagation?.()
+                  commit(workflow.nodes.filter(item => item.id !== node.id), edges.filter(edge => edge.from !== node.id && edge.to !== node.id))
+                  setSelectedNode(null)
+                },
+              }, '×') : null,
+              h(FlowNode, { node, status: status[node.id] ?? 'queued', roster }))
+          })),
         run?.status === 'done' ? h('div', { className: 'wf-term on' }, tr('Done')) : null,
         editing && selected ? h('div', { className: 'wf-node-inspector' },
           h('div', { className: 'wf-inspector-header' },
@@ -1520,7 +1568,7 @@ window.__ModuleLoader__.load({
 .wf-drawer{width:400px;flex:none;min-width:0;overflow:hidden;border-left:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;background:var(--bt-main,#fcfcfc)}
 .wf-dr-head{display:flex;justify-content:flex-end;padding:12px}
 .wf-icon{width:28px;height:28px;border-radius:8px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);cursor:pointer;color:inherit}
-.wf-dr-body{flex:1;overflow:auto;padding:4px 18px 20px}
+.wf-dr-body{flex:1;overflow:auto;overflow-x:hidden;padding:4px 18px 20px}
 .wf-dr-title{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px}
 .wf-dr-title h2{font-size:16px;font-weight:600;margin:0}
 .wf-dr-title p{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.5;margin:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -1532,6 +1580,10 @@ window.__ModuleLoader__.load({
 .wf-chip-inline{margin-left:6px;font-size:9.5px;vertical-align:middle;font-weight:500}
 .wf-term.on{color:#16a34a;background:rgba(22,163,74,.1);border-color:transparent}
 .wf-canvas{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:440px;position:relative;overflow:auto}
+.wf-canvas[data-fit="drawer"]{min-height:0;align-items:stretch;overflow:hidden}
+.wf-canvas[data-fit="drawer"] .wf-plane{width:100%;margin:2px 0 0}
+.wf-canvas[data-fit="drawer"] .wf-wires{left:0;width:100%;overflow:visible}
+.wf-canvas[data-fit="drawer"] .wf-term{white-space:normal;overflow:visible;text-overflow:clip;text-align:center;line-height:1.35;align-self:center;max-width:100%}
 .wf-palette{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:min(100%,360px);margin:0 auto 4px;padding:10px 12px;border:1px dashed var(--bt-line,rgba(20,20,20,.14));border-radius:12px;background:var(--bt-card,#fff)}
 .wf-palette-hint{margin:0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
 .wf-palette-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
@@ -1601,7 +1653,7 @@ window.__ModuleLoader__.load({
 .wf-assign-row{opacity:.9}
 .wf-par{position:relative;z-index:0;pointer-events:none;border:1px dashed var(--bt-ink-3,#9a9a9a);border-radius:14px;padding:16px 8px 8px}
 .wf-node.wf-abs{z-index:1}
-.wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:nowrap}
+.wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:normal;text-align:center;line-height:1.25;max-width:calc(100% - 16px)}
 .wf-settings-canvas{padding:16px}
 .wf-settings-layout{display:flex;flex-direction:column;gap:16px}
 .wf-settings-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -1646,7 +1698,8 @@ window.__ModuleLoader__.load({
     return {
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
-      runHistoryRows, liveStageRuns, resolveFocusedRun, parallelFrameStyle, NODE_W,
+      runHistoryRows, liveStageRuns, resolveFocusedRun, parallelFrameStyle, fitPlane,
+      DRAWER_FLOW_W, NODE_W, NODE_H,
       botPaletteSubtitle, botTint, settledCall,
     }
   },

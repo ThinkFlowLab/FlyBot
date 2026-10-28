@@ -225,17 +225,18 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   button(view.tree, 'Edit').props.onClick()
   const coder = findAll(view.tree, node => node.props?.['data-node'] === 'coder')[0]
   coder.props.onPointerDown({ clientX: 10, clientY: 20, target: { dataset: {} } })
-  let canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  let canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerMove({ clientX: 58, clientY: 44 })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ clientX: 58, clientY: 44, target: { dataset: {} } })
+  const fit = client.fitPlane(graph.nodes, client.DRAWER_FLOW_W)
   const moved = calls.find(item => item.name === 'workflow/graph')
-  assert.equal(moved.body.nodes.find(node => node.id === 'coder').x, 248)
-  assert.equal(moved.body.nodes.find(node => node.id === 'coder').y, 284)
+  assert.equal(moved.body.nodes.find(node => node.id === 'coder').x, Math.round(200 + 48 / fit.scale))
+  assert.equal(moved.body.nodes.find(node => node.id === 'coder').y, 260 + 24)
 
   const port = findAll(view.tree, node => node.props?.['data-port'] === 'out' && node.props['aria-label'] === 'Writer')[0]
   port.props.onPointerDown({ preventDefault() {}, stopPropagation() {}, target: { dataset: { port: 'out' } } })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ target: { dataset: { node: 'tester' }, closest() { return null } } })
   const wired = calls.filter(item => item.name === 'workflow/graph').at(-1)
   assert.ok(wired.body.edges.some(edge => edge.from === 'writer' && edge.to === 'tester'))
@@ -244,13 +245,13 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   assert.ok(docs)
   assert.equal(findAll(view.tree, node => node.props?.['data-bot'] === 'bot-friend').length, 0)
   docs.props.onPointerDown({ preventDefault() {}, target: { dataset: { bot: 'bot-docs' } } })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ target: { dataset: { plane: '1' } }, offsetX: 30, offsetY: 40 })
   const added = calls.filter(item => item.name === 'workflow/graph').at(-1)
   const seat = added.body.nodes.find(node => node.botId === 'bot-docs')
   assert.equal(seat.name, 'Docs')
-  assert.equal(seat.x, 30)
-  assert.equal(seat.y, 40)
+  assert.equal(seat.x, Math.round((30 - fit.offsetX) / fit.scale))
+  assert.equal(seat.y, Math.round(40 - fit.offsetY))
 
   button(view.tree, 'New').props.onClick()
   const template = findAll(view.tree, node => node.type === 'button' && node.props.className === 'wf-btn' && textOf(node) === '发布交付流水线')[0]
@@ -892,6 +893,88 @@ test('parallel branch frames wrap node bounds without hard-coded width', () => {
   const frame = client.parallelFrameStyle(members)
   assert.equal(frame.width, 320 - 80 + client.NODE_W + 20)
   assert.equal(frame.left, 80 - client.NODE_W / 2 - 10)
+})
+
+test('the drawer fits every node and edge inside a 400px panel', () => {
+  const graph = delivery()
+  const panel = client.DRAWER_FLOW_W
+  assert.equal(panel, 364, 'the drawer Flow content box is 400px minus two 18px paddings')
+  const plane = client.fitPlane(graph.nodes, panel)
+  assert.equal(plane.width, panel)
+  assert.ok(plane.scale > 0 && plane.scale <= 1, 'the fit never enlarges the graph')
+  for (const node of plane.nodes) {
+    const left = node.x - client.NODE_W / 2
+    const right = node.x + client.NODE_W / 2
+    assert.ok(left >= 0 && right <= panel, `${node.id} box ${left}..${right} is outside 0..${panel}`)
+  }
+  for (const layer of graph.layers.filter(layer => layer.length > 1)) {
+    const members = layer.map(id => plane.nodes.find(node => node.id === id))
+    const frame = client.parallelFrameStyle(members)
+    assert.ok(frame.left >= 0 && frame.left + frame.width <= panel, `${layer.join('+')} frame ${frame.left}..${frame.left + frame.width} is outside 0..${panel}`)
+  }
+  assert.ok(plane.scale < 1, 'GAP_X=188 parallel columns cannot fit a 364px panel at scale 1')
+  for (const edge of graph.edges) {
+    const from = plane.nodes.find(node => node.id === edge.from)
+    const to = plane.nodes.find(node => node.id === edge.to)
+    for (const point of [{ x: from.x, y: from.y + client.NODE_WIRE_OUT }, { x: to.x, y: to.y }]) {
+      assert.ok(point.x >= 0 && point.x <= panel, `${edge.from}>${edge.to} leaves the plane at x=${point.x}`)
+      assert.ok(point.y >= 0 && point.y <= plane.height)
+    }
+  }
+})
+
+test('fitted wire endpoints land on the node anchors and stay inside the plane', () => {
+  const graph = delivery()
+  const plane = client.fitPlane(graph.nodes, client.DRAWER_FLOW_W)
+  const at = id => plane.nodes.find(node => node.id === id)
+  const edges = graph.edges.concat([{ from: 'deployer', to: 'planner', loop: true, max: 2 }])
+  for (const edge of edges) {
+    const from = at(edge.from)
+    const to = at(edge.to)
+    const d = client.wirePath(from, to, 0)
+    assert.ok(d.startsWith(`M ${from.x} ${from.y + client.NODE_WIRE_OUT} `), `${edge.from}>${edge.to} did not leave the source bottom anchor: ${d}`)
+    const numbers = d.match(/-?\d+(?:\.\d+)?/g).map(Number)
+    assert.equal(numbers.at(-2), to.x, `${edge.from}>${edge.to} did not land on the target x anchor`)
+    assert.equal(numbers.at(-1), to.y, `${edge.from}>${edge.to} did not land on the target y anchor`)
+    assert.ok(numbers.filter((_, i) => i % 2 === 0).every(x => x >= 0 && x <= plane.width), `${edge.from}>${edge.to} leaves the fitted width`)
+    assert.ok(numbers.filter((_, i) => i % 2 === 1).every(y => y >= 0 && y <= plane.height), `${edge.from}>${edge.to} leaves the fitted height`)
+  }
+})
+
+test('the drawer canvas does not scroll sideways and its labels wrap', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /\.wf-canvas\[data-fit="drawer"\]\{[^}]*overflow:hidden/, 'the fitted drawer canvas still scrolls')
+  assert.match(source, /\.wf-dr-body\{[^}]*overflow:auto/, 'the drawer body lost its single vertical scroll')
+  const label = source.match(/\.wf-plabel\{[^}]*\}/)[0]
+  assert.equal(label.includes('white-space:nowrap'), false, 'the parallel label is still clipped at the panel edge')
+  assert.match(label, /white-space:normal/)
+  const term = source.match(/\.wf-canvas\[data-fit="drawer"\] \.wf-term\{[^}]*\}/)[0]
+  assert.match(term, /white-space:normal/)
+  assert.equal(term.includes('text-overflow:ellipsis'), false)
+})
+
+test('the drawer Flow mounts the fitted narrow canvas and Settings keeps the scrolling one', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const section = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(section.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(section.tree, 'Flow').props.onClick()
+  const narrow = findAll(section.tree, node => node.props?.['data-fit'] === 'drawer')
+  assert.equal(narrow.length, 1, 'the drawer Flow canvas is not the fitted variant')
+  assert.equal(narrow[0].props['data-fit'], 'drawer')
+  const plane = findAll(section.tree, node => node.props?.['data-plane'] === '1')[0]
+  assert.ok(plane.props.style.width > 0 && plane.props.style.width <= client.DRAWER_FLOW_W)
+  section.unmount()
+
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  assert.equal(findAll(settings.tree, node => node.props?.['data-fit'] === 'drawer').length, 0)
+  assert.equal(findAll(settings.tree, node => node.props?.className === 'wf-canvas-view').length, 1)
+  settings.unmount()
 })
 
 test('the workflow stage mounts no message composer', async () => {
