@@ -1240,12 +1240,15 @@ export function createWorkflowService({
         const item = workflow(workflowId)
         if (!item) return { ok: false, error: 'No such workflow' }
         const lane = laneOf(workflowId)
-        const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         const live = lane.active[0] ?? (lane.last?.live === true ? lane.last : null)
+        // A reset that cannot keep a task has to be refused before it touches
+        // the lane: clearing first drops the queue, and a live run's Bot ids, on
+        // a path that never writes or releases them.
+        if (!live?.task) return { ok: false, error: 'This workflow has no task' }
+        const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         for (const run of lane.active) clearRunTimers(run.id)
         lane.active = []
         lane.queue = []
-        if (!live?.task) return { ok: false, error: 'This workflow has no task' }
         const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
         lane.last = kept
         push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
