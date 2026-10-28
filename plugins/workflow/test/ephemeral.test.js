@@ -442,6 +442,21 @@ function persistedRun(dir, workflowId) {
   return active ?? lane.last ?? null
 }
 
+// #1425: the plugin starts reap without awaiting it (index.js:92), so this test waits for the
+// state reap writes, never for a fixed wall-clock delay: a 20 ms sleep passes on a fast box and
+// flakes on a loaded runner, and the failure it produces looks like the bug the test hunts. The
+// deadline only bounds failure, and the message names the state the run was last in.
+async function untilRun(dir, workflowId, settled, { timeout = 2000, interval = 10 } = {}) {
+  const deadline = Date.now() + timeout
+  let last
+  for (;;) {
+    last = persistedRun(dir, workflowId)
+    if (settled(last)) return last
+    if (Date.now() >= deadline) throw new Error(`the run was not reaped within ${timeout} ms; last state: ${JSON.stringify(last)}`)
+    await new Promise((resolve) => setTimeout(resolve, interval))
+  }
+}
+
 test('a load reaps the run a restart left running: its Bots go and the run ends failed (#1388)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wf-reap-'))
   const released = []
@@ -576,7 +591,9 @@ test('the plugin load itself reaps a run the restart left running (#1388)', asyn
       warn() {},
     }
     const loaded = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { dir })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    // Loading calls reap without awaiting it; wait for what it writes, with a deadline.
+    const settled = await untilRun(dir, made.id, (run) => run?.status === 'failed' && run.ephemeral === undefined)
+    assert.equal('handed' in settled, false)
     assert.deepEqual(released, ['eph-plan'])
     const run = loaded.service.state().workflows.find(item => item.id === made.id).run
     assert.equal(run.status, 'failed')
