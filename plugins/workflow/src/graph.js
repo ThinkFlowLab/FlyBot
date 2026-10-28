@@ -426,21 +426,44 @@ export function missingProviders(graph) {
 
 // Check if a step result indicates the workflow should end early.
 // Returns { shouldEnd: true, reason: string } if the run should stop, or { shouldEnd: false } to continue.
+// Reasons: needs-human (#1538), already-claimed (#1537), tip-unchanged, open-pr.
+// Prefer structured OUTPUT values or a whole-line "EARLY-END <reason>" directive; also honor
+// common completion phrases so a Bot that forgets the marker still cannot burn loop/onFail max.
 function checkEarlyEnd(outputs, text) {
   const lowerText = String(text ?? '').toLowerCase()
-  const outputValues = Object.values(outputs ?? {}).map(v => String(v ?? '').toLowerCase())
-  
-  // Check for needs-human marker (issue #1538)
-  if (lowerText.includes('needs-human') || outputValues.some(v => v.includes('needs-human'))) {
+  const outputValues = Object.values(outputs ?? {}).map(v => String(v ?? '').toLowerCase().trim())
+  const reasons = ['needs-human', 'already-claimed', 'tip-unchanged', 'open-pr']
+
+  for (const line of lowerText.split(/\r?\n/)) {
+    const match = line.trim().match(/^early-end\s+([a-z0-9_-]+)$/i)
+    if (match && reasons.includes(match[1].toLowerCase())) {
+      return { shouldEnd: true, reason: match[1].toLowerCase() }
+    }
+  }
+
+  for (const reason of reasons) {
+    if (outputValues.some(v => v === reason || v.includes(reason))) {
+      return { shouldEnd: true, reason }
+    }
+  }
+
+  if (lowerText.includes('needs-human')) {
     return { shouldEnd: true, reason: 'needs-human' }
   }
-  
-  // Check for already-claimed marker (issue #1537)
+
   if (outputValues.some(v => v.includes('already-claimed')) ||
       (lowerText.includes('already claimed') && (lowerText.includes('agent-working') || lowerText.includes('claimed-by')))) {
     return { shouldEnd: true, reason: 'already-claimed' }
   }
-  
+
+  if (/tip[\s_-]*unchanged|unchanged[\s_-]*tip/.test(lowerText)) {
+    return { shouldEnd: true, reason: 'tip-unchanged' }
+  }
+
+  if (/open\s+pr\s+already|already\s+has\s+(an\s+)?open\s+pr|has\s+(an\s+)?open\s+pr|found\s+(an\s+)?open\s+pr/.test(lowerText)) {
+    return { shouldEnd: true, reason: 'open-pr' }
+  }
+
   return { shouldEnd: false }
 }
 
@@ -530,7 +553,9 @@ function takenFrom(graph, nodeId, outputs) {
   return fired
 }
 
-function loopDecision(graph, nodeId, outputs, loops) {
+function loopDecision(graph, nodeId, outputs, loops, text) {
+  // Do not take a success-path loop when the completion already signals stop.
+  if (checkEarlyEnd(outputs, text).shouldEnd) return null
   const edges = graph.edges.filter(edge => edge.loop === true && edge.from === nodeId)
   for (const edge of edges) {
     const ran = (Number(loops?.[edgeKey(edge)]) || 0) + 1
@@ -643,7 +668,7 @@ export function completeNode(graph, status, nodeId, ctx = {}) {
     }
   }
   
-  const looping = loopDecision(graph, nodeId, outputs, ctx.loops)
+  const looping = loopDecision(graph, nodeId, outputs, ctx.loops, ctx.text)
   if (looping) {
     loops[edgeKey(looping.edge)] = looping.ran
     const body = loopBody(graph, nodeId, looping.edge.to)
@@ -690,7 +715,25 @@ export function completeNode(graph, status, nodeId, ctx = {}) {
 export function failNode(graph, status, nodeId, ctx = {}) {
   if (!nodeById(graph, nodeId)) throw new Error(`Unknown Bot ${nodeId}`)
   if (status[nodeId] !== 'running') throw new Error(`${nodeId} is not running`)
-  
+
+  // Tip-unchanged / open-PR / needs-human / already-claimed must not burn onFail max
+  // looping Claim↔Verify on the same tip. Early-end wins over recovery.
+  const earlyEnd = checkEarlyEnd(ctx.outputs ?? {}, ctx.text)
+  if (earlyEnd.shouldEnd) {
+    const next = copyStatus(status)
+    next[nodeId] = 'done'
+    return {
+      status: next,
+      started: [],
+      joined: false,
+      finished: true,
+      failAttempts: { ...(ctx.failAttempts ?? {}) },
+      recovered: false,
+      reset: [],
+      earlyEnd: earlyEnd.reason,
+    }
+  }
+
   const failAttempts = { ...(ctx.failAttempts ?? {}) }
   const recovery = failRecoveryDecision(graph, nodeId, failAttempts)
   

@@ -261,3 +261,59 @@ test('#1530: a reply that no longer matches a running step is warned about once,
   assert.ok(warnings.length > before)
   assert.equal(row(svc.state(), flow.id).run.status, 'failed')
 })
+
+
+test('#1530: a live step with no ephemeral map still expires at the deadline', async () => {
+  // Hosts that cannot spawn still start live runs via advance(); the deadline
+  // must arm without an ephemeral map so a silent step cannot hold the lane.
+  const timers = (() => {
+    let seq = 0
+    const queue = new Map()
+    return {
+      setTimer(fn, ms) {
+        const id = ++seq
+        queue.set(id, { fn, due: Math.max(1, Number(ms) || 0) })
+        return id
+      },
+      clearTimer(id) { queue.delete(id) },
+      async tick(ms) {
+        let left = Math.max(0, Number(ms) || 0)
+        for (;;) {
+          let next
+          for (const [id, entry] of queue) {
+            if (entry.due > left) continue
+            if (!next || entry.due < next.entry.due) next = { id, entry }
+          }
+          if (!next) break
+          queue.delete(next.id)
+          left -= next.entry.due
+          for (const entry of queue.values()) entry.due -= next.entry.due
+          await next.entry.fn()
+        }
+        for (const entry of queue.values()) entry.due -= left
+      },
+      pending: () => queue.size,
+    }
+  })()
+  const warnings = []
+  const svc = createWorkflowService({
+    persist: false,
+    now: () => CLOCK,
+    bots: () => ROSTER,
+    // no spawn / release / dispatch → no ephemeral map
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    warn: (line) => warnings.push(String(line)),
+  })
+  const flow = make(svc, 'No ephemeral deadline')
+  await svc.assign({ workflowId: flow.id, taskId: '#1530-no-eph', title: 'Silent step' })
+  assert.equal(row(svc.state(), flow.id).run.nodeStatus.plan, 'running')
+  assert.equal(row(svc.state(), flow.id).run.ephemeral, undefined)
+  assert.equal(timers.pending(), 1, 'deadline arms without ephemeral')
+  await timers.tick(STEP_DEADLINE_MS)
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run.status, 'failed')
+  assert.equal(after.run.nodeStatus.plan, 'failed')
+  assert.ok(warnings.some(line => /timed out|超时/.test(line)))
+  assert.equal(timers.pending(), 0)
+})

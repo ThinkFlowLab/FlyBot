@@ -183,7 +183,10 @@ export function createWorkflowService({
   // steps that moved. A hand-off retry does not push a deadline out: the wait
   // the owner saw is the wait the deadline measures.
   function syncTimers(item, run) {
-    if (run?.live !== true || !run.ephemeral) return
+    // Arm deadlines for every live running step. Ephemeral maps are usual on
+    // production runs, but a host that cannot spawn still walks the graph via
+    // advance(); without this the step could sit unanswered forever (#1530).
+    if (run?.live !== true) return
     const running = new Set(orderedIds(item, run.nodeStatus, 'running'))
     for (const [key, entry] of [...timers]) {
       if (entry.runId !== run.id) continue
@@ -385,6 +388,8 @@ export function createWorkflowService({
     })
     else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId, {
       failAttempts: working.failAttempts ?? {},
+      outputs: op.outputs ?? working.produced?.[op.nodeId] ?? {},
+      text: op.text ?? '',
     })
     else if (op.type === 'retry') result = retryNode(item, working.nodeStatus, op.nodeId)
     else throw new Error(`Unknown step ${op.type}`)
@@ -393,8 +398,8 @@ export function createWorkflowService({
     const failedOnce = { ...working.failedOnce }
     if (op.type === 'fail') failedOnce[op.nodeId] = true
     const blocked = gated.blocked.length > 0
-    // Early end takes precedence over normal finish - when needs-human or already-claimed
-    // is detected, the run should end even if not all nodes are done (#1537, #1538)
+    // Early end takes precedence over normal finish — needs-human, already-claimed,
+    // tip-unchanged, or open-pr end the run even if not all nodes are done (#1537, #1538).
     const earlyEnded = result.earlyEnd != null
     const finished = earlyEnded || (result.finished === true && !blocked)
     // A node marked failOnce is retried. Any other failure stops the run,
