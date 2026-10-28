@@ -3,8 +3,6 @@
 // deletes it when the run finishes, fails for good, or is cancelled.
 import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
-const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
-
 // Every Workflow node Bot gets the full tool/connector grant a normal sidebar Bot gets
 // (GitHub, Composio, file/shell tools, team tools), limited only by EPHEMERAL_DENIED_TOOLS
 // at the guard/approval layer (#1466). The node.tools field does not restrict this grant;

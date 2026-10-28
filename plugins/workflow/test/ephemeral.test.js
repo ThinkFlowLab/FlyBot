@@ -206,7 +206,7 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
   const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
   
   // Node with no tools: tools field omitted, gets full grant, danger-full-access
-  const noTools = await started.service.define({
+  await started.service.define({
     name: 'NoTools',
     nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.' }],
     edges: [],
@@ -218,7 +218,7 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
   
   // Node with explicit empty tools: same behavior (tools omitted, full grant)
   created.length = 0
-  const emptyTools = await started.service.define({
+  await started.service.define({
     name: 'EmptyTools',
     nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.', tools: [] }],
     edges: [],
@@ -229,7 +229,7 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
   
   // Node with explicit tools: STILL gets full grant (tools is documentation only)
   created.length = 0
-  const customTools = await started.service.define({
+  await started.service.define({
     name: 'CustomTools',
     nodes: [{ id: 'reader', name: 'Reader', prompt: 'Just read.', tools: ['read'] }],
     edges: [],
@@ -242,7 +242,7 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
   
   // Node with bash in tools: same full grant (node.tools does not affect permission)
   created.length = 0
-  const shellTools = await started.service.define({
+  await started.service.define({
     name: 'ShellTools',
     nodes: [{ id: 'worker', name: 'Worker', prompt: 'Run commands.', tools: ['bash', 'read'] }],
     edges: [],
