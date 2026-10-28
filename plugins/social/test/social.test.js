@@ -3006,6 +3006,9 @@ test('#182: a peer leaving closes the room here and a later poll does not reopen
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
   body.members = body.members.filter(member => member.handle !== '@chief.bob.home')
+  // #1606: the first peerless snapshot keeps the room open; the second agreeing one closes it.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open', 'one peerless snapshot keeps the room open')
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'closed')
   await call('flybot/social/face-rooms', { poll: true })

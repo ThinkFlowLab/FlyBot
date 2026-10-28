@@ -4000,22 +4000,11 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // the member list lags behind the seats, and a single dropped or half-read response looks the
   // same. An open room ends only when two snapshots in a row agree that every other home is gone,
   // or when a snapshot carries the leave itself; anything less than that must not close the room.
-  const peerMisses = new Map()
-  // Two snapshots in a row with no peer, or a snapshot carrying the leave itself.
-  function peersGone(snapshot) {
-    const roomId = snapshot?.roomId
-    if ((snapshot?.events ?? []).some(event => event?.type === 'member.left')) {
-      peerMisses.delete(roomId)
-      return true
-    }
-    const misses = (peerMisses.get(roomId) ?? 0) + 1
-    peerMisses.set(roomId, misses)
-    return misses >= 2
-  }
-  function faceSnapshotPast(snapshot, hosted) {
+  // `peerGone` is the caller's verdict from #1606: two snapshots in a row with no other home, or a
+  // snapshot carrying the leave itself. One peerless snapshot on its own never ends a room.
+  function faceSnapshotPast(snapshot, hosted, peerGone = false) {
     const status = snapshot?.status || hosted?.face?.status
     if (status === 'closed' || status === 'left') return { status }
-    peerMisses.delete(snapshot?.roomId)
     // Once the room is left or closed here, a later poll must not reopen it (#182): the peer's
     // leave shows at once and stays shown without a reload.
     const held = hosted?.face?.status
@@ -4025,16 +4014,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (held === 'left' || held === 'closed') return { status: held }
     const expiresAt = snapshot?.expiresAt || hosted?.face?.expiresAt
     const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
-    const previousRemotes = (hosted?.participants ?? []).filter(p => p.leftSeq === undefined && p.remote === true)
     const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
-    // A snapshot that still lists another home clears the miss count (#1606).
-    if (currentRemotes.length > 0) peerMisses.delete(snapshot?.roomId)
     // Every other home left an open room: it has ended here, including when the next snapshot
     // falls back to the waiting lobby (candidate, startedAt omitted). A room that was only ever
     // a candidate lobby stays one until its window runs out (#1072, #304). Checked before the
     // expired-candidate return so a started room still leaves on Bot Social.
     const wasOpen = held === 'open' || Boolean(hosted?.face?.startedAt)
-    if ((status === 'open' || wasOpen) && previousRemotes.length > 0 && currentRemotes.length === 0 && peersGone(snapshot)) return { status: 'closed', peersGone: true }
+    if ((status === 'open' || wasOpen) && peerGone) return { status: 'closed', peersGone: true }
     if (status === 'candidate' && expiresAt) {
       const at = Date.parse(expiresAt)
       if (Number.isFinite(at) && at <= now()) return { status: 'closed' }
@@ -4052,16 +4038,41 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   function neverShared(hosted) {
     return !(hosted?.participants ?? []).some(p => p.remote === true)
   }
+  function facePeersGone(snapshot, hosted, locals) {
+    const roomId = snapshot?.roomId
+    const mine = new Set(locals.map(bot => bot.handle).filter(Boolean).map(norm))
+    const here = new Set()
+    for (const member of snapshot?.members ?? []) {
+      const handle = norm(member?.handle)
+      if (handle && !mine.has(handle)) here.add(handle)
+    }
+    const known = facePeers.get(roomId) ?? new Set()
+    for (const p of hosted?.participants ?? []) {
+      if (p.leftSeq === undefined && p.remote === true && p.handle) known.add(norm(p.handle))
+    }
+    for (const handle of here) known.add(handle)
+    facePeers.set(roomId, known)
+    const left = (snapshot?.events ?? []).some(event => event?.type === 'member.left')
+    const misses = here.size > 0 ? 0 : (facePeerMisses.get(roomId) ?? 0) + (known.size > 0 ? 1 : 0)
+    facePeerMisses.set(roomId, misses)
+    return known.size > 0 && here.size === 0 && (left || misses >= 2)
+  }
+  // #1606: the seats a snapshot lists, and how many snapshots in a row each room has gone without
+  // them. Right after face-start the member list lags behind the seats, so one snapshot with no
+  // other home proves nothing; the room ends on the second agreeing snapshot or on the leave itself.
+  const facePeers = new Map()
+  const facePeerMisses = new Map()
   async function applyFaceSnapshot(snapshot, { asBot } = {}) {
     if (!snapshot?.roomId || !flybot.rooms?.upsertFace) return undefined
     const attested = await serverAttests()
     const locals = bringable()
     const hosted = flybot.rooms.ofFace?.(snapshot.roomId)
+    const gone = snapshot.status === 'closed' || snapshot.status === 'left' ? false : facePeersGone(snapshot, hosted, locals)
     const previousLive = new Set((hosted?.participants ?? [])
       .filter(p => p.leftSeq === undefined)
       .map(p => norm(p.handle || p.id))
       .filter(Boolean))
-    const past = faceSnapshotPast(snapshot, hosted)
+    const past = faceSnapshotPast(snapshot, hosted, gone)
     const title = faceRoomTitle(snapshot, { code: settings.faceRooms[snapshot.roomId]?.joinCode, room: hosted })
     const room = await flybot.rooms.upsertFace({
       roomId: snapshot.roomId,
