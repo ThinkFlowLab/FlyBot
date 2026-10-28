@@ -1105,7 +1105,6 @@ test('#1493: a failed sibling run stays on the stage, and its row carries time a
     if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
     return { ok: true, workflows: [graph] }
   }
-  const focused = []
   const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
   await settle()
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
