@@ -2587,6 +2587,9 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   // #304: the title keeps the number it was joined by, through polls and the end.
   assert.match(ctx.flybot.rooms.ofFace('frm_123456').name, / · 123456$/)
   room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  // #1606: one snapshot with no peer listed is not proof everyone left; two agreeing snapshots are.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open', 'one peerless snapshot keeps the room open')
   const listed = (await call('flybot/social/face-rooms', { poll: true })).value
   const past = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
   // This home did not leave: the room ended around it, so it reads Closed, not Left (#304) ...
@@ -2607,6 +2610,29 @@ test('when the last peer leaves, the face room moves to Past rooms', async (t) =
   assert.equal(again.name, 'Face-to-face · Danyang, Bob · 123456')
   assert.equal(again.members.length, 2)
   assert.equal(again.endedAt, past.endedAt)
+})
+
+// #1606: face-start seats the peer here at once while the server's member list still lags; one
+// peerless snapshot must not end the room (it flipped to closed 1-3 s after face-start).
+test('#1606: one snapshot with no peer listed does not close an open face room', async (t) => {
+  const { ctx, call, server } = await faceSocial(t)
+  const room = server.face.peer('160616')
+  await call('flybot/social/face-join', { code: '160616' })
+  room.status = 'open'
+  room.started_at = new Date().toISOString()
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_160616').face.status, 'open')
+  // A snapshot whose member list has not caught up: the room must stay open and keep its seat.
+  room.members = []
+  const first = (await call('flybot/social/face-rooms', { poll: true })).value.rooms.find(item => item.faceRoomId === 'frm_160616')
+  assert.equal(first.status, 'open', 'one peerless snapshot keeps the room open')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_160616').face.status, 'open')
+  assert.equal(room.status, 'open', 'the room was not left on Bot Social')
+  assert.equal(server.calls.some(c => c.name === 'REST POST /frm_160616/leave'), false, 'no face-leave for one snapshot')
+  // Two snapshots in a row that agree are a peer leave: the room ends and this home leaves it.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_160616').face.status, 'closed')
+  assert.ok(server.calls.some(c => c.name === 'REST POST /frm_160616/leave'))
 })
 
 // #1103: B left room 739184 and A's pane showed both "SelfB1025 left the room" and the
@@ -2730,6 +2756,10 @@ test('#304: a failed automatic leave is tried again on the next poll', async (t)
   room.members.push({ bot_id: 'bot_peer', handle: '@coder.bob.home', display_name: 'Coder', owner_name: 'Bob', published: false, label: 'Coder · Bob' })
   await call('flybot/social/face-rooms', { poll: true })
   room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  // #1606: the first peerless snapshot keeps the room open and leaves nothing.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(leaves.length, 0, 'one peerless snapshot does not leave')
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(leaves.length, 1)
   assert.equal(room.status, 'open', 'the first leave failed')
@@ -2793,6 +2823,9 @@ test('#1072: an open face room whose next snapshot is a waiting lobby closes ins
   delete room.started_at
   room.expires_at = new Date(Date.now() + 10 * 60_000).toISOString()
   room.members = room.members.filter(member => member.handle !== '@coder.bob.home')
+  // #1606: one peerless snapshot keeps it open, the second ends it.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_123456').face.status, 'open')
   const listed = (await call('flybot/social/face-rooms', { poll: true })).value
   const past = listed.rooms.find(item => item.faceRoomId === 'frm_123456')
   const hosted = ctx.flybot.rooms.ofFace('frm_123456')
@@ -10272,6 +10305,9 @@ test('#458: a room stays open while two or more people are in it; it closes when
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'open', 'Bob left; Carol and I are still here')
   room.members = room.members.filter(member => member.handle !== carol.handle)
+  // #1606: two agreeing peerless snapshots, not one.
+  await call('flybot/social/face-rooms', { poll: true })
+  assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'open', 'one peerless snapshot keeps the room open')
   await call('flybot/social/face-rooms', { poll: true })
   assert.equal(ctx.flybot.rooms.ofFace('frm_444444').face.status, 'closed', 'only I am left')
   const past = (await call('flybot/social/face-rooms', { poll: false })).value.rooms.find(item => item.faceRoomId === 'frm_444444')

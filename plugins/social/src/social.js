@@ -3996,9 +3996,26 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const mine = (snapshot?.members ?? hosted?.participants ?? []).find(member => locals.has(norm(member.handle)))
     return cleanText(mine?.ownerName || mine?.owner_name, '') || 'Someone'
   }
+  // #1606: one snapshot that lists no peer is not proof the peers left. Right after face-start
+  // the member list lags behind the seats, and a single dropped or half-read response looks the
+  // same. An open room ends only when two snapshots in a row agree that every other home is gone,
+  // or when a snapshot carries the leave itself; anything less than that must not close the room.
+  const peerMisses = new Map()
+  // Two snapshots in a row with no peer, or a snapshot carrying the leave itself.
+  function peersGone(snapshot) {
+    const roomId = snapshot?.roomId
+    if ((snapshot?.events ?? []).some(event => event?.type === 'member.left')) {
+      peerMisses.delete(roomId)
+      return true
+    }
+    const misses = (peerMisses.get(roomId) ?? 0) + 1
+    peerMisses.set(roomId, misses)
+    return misses >= 2
+  }
   function faceSnapshotPast(snapshot, hosted) {
     const status = snapshot?.status || hosted?.face?.status
     if (status === 'closed' || status === 'left') return { status }
+    peerMisses.delete(snapshot?.roomId)
     // Once the room is left or closed here, a later poll must not reopen it (#182): the peer's
     // leave shows at once and stays shown without a reload.
     const held = hosted?.face?.status
@@ -4010,12 +4027,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const locals = new Set(bringable().map(bot => bot.handle).filter(Boolean))
     const previousRemotes = (hosted?.participants ?? []).filter(p => p.leftSeq === undefined && p.remote === true)
     const currentRemotes = (snapshot?.members ?? []).filter(member => member.handle && !locals.has(norm(member.handle)))
+    // A snapshot that still lists another home clears the miss count (#1606).
+    if (currentRemotes.length > 0) peerMisses.delete(snapshot?.roomId)
     // Every other home left an open room: it has ended here, including when the next snapshot
     // falls back to the waiting lobby (candidate, startedAt omitted). A room that was only ever
     // a candidate lobby stays one until its window runs out (#1072, #304). Checked before the
     // expired-candidate return so a started room still leaves on Bot Social.
     const wasOpen = held === 'open' || Boolean(hosted?.face?.startedAt)
-    if ((status === 'open' || wasOpen) && previousRemotes.length > 0 && currentRemotes.length === 0) return { status: 'closed', peersGone: true }
+    if ((status === 'open' || wasOpen) && previousRemotes.length > 0 && currentRemotes.length === 0 && peersGone(snapshot)) return { status: 'closed', peersGone: true }
     if (status === 'candidate' && expiresAt) {
       const at = Date.parse(expiresAt)
       if (Number.isFinite(at) && at <= now()) return { status: 'closed' }
