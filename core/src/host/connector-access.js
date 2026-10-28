@@ -144,6 +144,12 @@ export function install(rt) {
     if (allowed(bot, id)) return undefined
     if (bot.remote !== undefined) return `The ${id} connector is not available to a friend's Bot.`
     if (bot.ephemeral !== undefined) {
+      // #1543: a run Bot's own switch is the honest reason when the step did name the connector. The
+      // settings sentence below is wrong for it — a run Bot is hidden, so its owner has no page to
+      // flip the switch on — and the tools list cannot either; say both instead of blaming the graph.
+      if (turnedOff(bot, id)) {
+        return `The ${id} connector is turned off for ${bot.name}. A step's tools list can narrow what a run may use, but it cannot turn a connector back on.`
+      }
       // #1544: the step did name it — a Bot's switch is what refuses it, and naming it again in the
       // graph cannot turn it back on.
       const cap = capOff(bot, id)

@@ -609,3 +609,24 @@ test('a run Bot does not reopen a connector the Bot that started the run switche
   // A Bot that no longer exists has no switch list to read: the answer stays what it was.
   assert.equal(guard(GITHUB[0], 'caller-gone'), undefined)
 })
+
+// #1543: when a run Bot's own connector switch is off, the refusal must name that switch. The step's
+// tools list did name the connector, so blaming it sends the reader to fix the graph instead of the
+// toggle. The sentence also has to say the tools list cannot turn it back on — a run Bot is
+// hidden: true and the owner cannot find it on the settings page to flip the switch there.
+test('a run Bot names the switch that turned a connector off, not the step tools', async (t) => {
+  const state = team()
+  state.bots.switched = {
+    id: 'switched', sessionId: 'switched', name: 'Coder Off', role: 'Run', instructions: '', createdAt: 4,
+    hidden: true, ephemeral: { plugin: 'flybot-workflow' }, stepTools: ['github'], connectors: { github: false },
+  }
+  const { agentFor, guard, stop } = await setup({ state })
+  t.after(stop)
+  await agentFor('switched')
+  const reason = guard(GITHUB[0], 'switched')
+  assert.ok(reason, 'the call is still refused: this fixes the reason, not the decision')
+  assert.match(reason, /The github connector is turned off for Coder Off\./, 'the Bot whose switch is off is named')
+  assert.match(reason, /A step's tools list can narrow what a run may use, but it cannot turn a connector back on\./)
+  assert.doesNotMatch(reason, /not granted to this run/, 'the step tools did name it, so that is not the reason')
+  assert.doesNotMatch(reason, /settings/, 'a run Bot is hidden from the settings page, so do not send the reader there')
+})
