@@ -34,9 +34,8 @@ test('#1537: Claim step skips when issue already claimed (agent-working label)',
   assert.equal(created.ok, true)
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1513', title: 'Fix overflow bug' })
-  assert.equal(assigned.ok, true)
-  assert.equal(assigned.workflows.find(w => w.id === workflowId).run.nodeStatus.triage, 'running')
+  svc.assign({ workflowId, taskId: '#1513', title: 'Fix overflow bug' })
+  assert.equal(svc.state().workflows.find(w => w.id === workflowId).run.nodeStatus.triage, 'running')
   
   // Triage completes
   svc.advance({ workflowId, nodeId: 'triage', outcome: 'done', outputs: { status: 'agent-ready' } })
@@ -67,7 +66,7 @@ test('#1537: Claim step skips when open PR already exists fixing the issue', () 
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1514', title: 'Another bug' })
+  svc.assign({ workflowId, taskId: '#1514', title: 'Another bug' })
   svc.advance({ workflowId, nodeId: 'triage', outcome: 'done', outputs: { status: 'agent-ready' } })
   
   // Claim Bot finds an existing PR
@@ -91,7 +90,7 @@ test('#1537: Claim step proceeds normally when issue is not claimed', () => {
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1520', title: 'Unclaimed bug' })
+  svc.assign({ workflowId, taskId: '#1520', title: 'Unclaimed bug' })
   svc.advance({ workflowId, nodeId: 'triage', outcome: 'done', outputs: { status: 'agent-ready' } })
   
   // Claim Bot successfully claims
@@ -116,7 +115,7 @@ test('#1538: Triage step marking needs-human ends the workflow run', () => {
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1506', title: 'Needs human decision' })
+  svc.assign({ workflowId, taskId: '#1506', title: 'Needs human decision' })
   
   // Triage marks needs-human
   const triageResult = svc.advance({
@@ -145,7 +144,7 @@ test('#1538: needs-human in any step ends the run', () => {
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1540', title: 'Issue needing human later' })
+  svc.assign({ workflowId, taskId: '#1540', title: 'Issue needing human later' })
   svc.advance({ workflowId, nodeId: 'triage', outcome: 'done', outputs: { status: 'agent-ready' } })
   
   // Claim discovers it needs human
@@ -170,7 +169,7 @@ test('#1538: needs-human detection is case-insensitive and works in text body', 
   const created = svc.create({ name: workflow.name, nodes: workflow.nodes, edges: workflow.edges })
   const workflowId = created.workflows.find(w => w.name === workflow.name).id
   
-  const assigned = svc.assign({ workflowId, taskId: '#1541', title: 'Another needs-human case' })
+  svc.assign({ workflowId, taskId: '#1541', title: 'Another needs-human case' })
   
   // Various ways needs-human might appear - in text body (not just outputs)
   const triageResult = svc.advance({
