@@ -3,11 +3,9 @@
 // deletes it when the run finishes, fails for good, or is cancelled.
 import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
-// Every Workflow node Bot gets the full tool/connector grant a normal sidebar Bot gets
-// (GitHub, Composio, file/shell tools, team tools), limited only by EPHEMERAL_DENIED_TOOLS
-// at the guard/approval layer (#1466). The node.tools field does not restrict this grant;
-// it is treated as documentation only. All node Bots get 'danger-full-access' to match
-// normal Bots with shell access.
+// A Workflow node Bot has the file and shell rights a normal sidebar Bot has: the same
+// 'danger-full-access' preset. node.tools selects connectors only (see nodeConfig); the team
+// tools stay refused by EPHEMERAL_DENIED_TOOLS at the guard/approval layer (#1466).
 export function permissionFor() {
   return 'danger-full-access'
 }
@@ -19,8 +17,9 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
   const prompt = cleanPrompt(node?.prompt)
     || cleanPrompt(seated?.systemPrompt || seated?.instructions || '')
     || cleanPrompt(node?.instructions)
-  // node.tools is kept as documentation only; spawn always omits the tools field so every
-  // node Bot inherits the full grant a normal Bot gets, limited by EPHEMERAL_DENIED_TOOLS.
+  // node.tools names the connectors this node may call: spawn passes it to the host, which records
+  // it as stepTools, and connector-access.js allows only a connector a node declared. A node that
+  // names none reaches none. File and shell access comes from permissionFor(), not from here.
   return {
     nodeId: node.id,
     name: node.name,

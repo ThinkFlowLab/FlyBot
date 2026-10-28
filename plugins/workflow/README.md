@@ -20,7 +20,7 @@ This is not the workflow-definition engine (`workflows/<id>.json`, #1272). This 
 
 ## A live run
 
-Assigning a task, `run_workflow`, or a Workflow match starts a live run. One hidden ephemeral Bot is created per node, used for that step, and removed when the run finishes. A node does not need a permanent sidebar Bot. `tools` on the node is what that Bot can use: `github` grants the GitHub connector (pull requests, reviews, comments), `bash` grants a shell at full access, and every step gets at least workspace write. The Main Bot sends that node its step. The node stays `running` until that Bot replies. The reply is the chat line for the step. The next node starts only after that reply, and only along the edges: every predecessor is done first, and nodes that share a rank run together.
+Assigning a task, `run_workflow`, or a Workflow match starts a live run. One hidden ephemeral Bot is created per node, used for that step, and removed when the run finishes. A node does not need a permanent sidebar Bot. `tools` on the node selects the connectors that Bot may call: `github` grants the GitHub connector (pull requests, reviews, comments) and `composio` the Composio one, and a connector the node does not name is refused. File and shell access does not come from that list: every node Bot has the same full access a normal sidebar Bot has. The Main Bot sends that node its step. The node stays `running` until that Bot replies. The reply is the chat line for the step. The next node starts only after that reply, and only along the edges: every predecessor is done first, and nodes that share a rank run together.
 
 A second task does not replace a run that is already going, and it does not release that run's Bots. It waits in a FIFO queue. The stage shows a chip when more than one run is active or the queue is not empty, and it refreshes `workflow/state` while a live run exists. That refresh does not advance the graph. The product UI does not offer a canned demo replay; only live runs advance the graph.
 
@@ -57,7 +57,7 @@ A reply that says the model could not answer (`could not answer your message` or
 A local Bot uses the same store:
 
 - `run_workflow` — `workflow` (id or exact name) and `brief` (the task). Optional `task` id. This joins the same queue a manual assign uses.
-- `define_workflow` — `name`, `nodes` (`{ id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? }`), `edges` (`{ from, to, when?, loop?, max?, until? }`). `prompt` is that node's Bot system prompt. `tools` equips the ephemeral Bot (`github`, `bash`, `read`, `edit`). `botId` is optional. `inputs` and `outputs` are `{ name, type?, required? }`. `when` chooses an edge; `loop: true` with `max` is the only cycle. Pass `workflow` to replace one. A friend's Bot is refused. This writes the same graph Settings and the flowchart edit.
+- `define_workflow` — `name`, `nodes` (`{ id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? }`), `edges` (`{ from, to, when?, loop?, max?, until? }`). `prompt` is that node's Bot system prompt. `tools` names the connectors the ephemeral Bot may call (`github`, `composio`); a node that names none reaches none. `botId` is optional. `inputs` and `outputs` are `{ name, type?, required? }`. `when` chooses an edge; `loop: true` with `max` is the only cycle. Pass `workflow` to replace one. A friend's Bot is refused. This writes the same graph Settings and the flowchart edit.
 
 ## Install
 
@@ -75,7 +75,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 npm test
 ```
 
-Endpoints, all under `flybot/workflow/`: `state`, `templates` (read), `create`, `assign`, `concurrency`, `advance`, `reset`, `say`, `graph`, `ingest`.
+Endpoints, all under `flybot/workflow/`: `state`, `templates` (read), `create`, `assign`, `concurrency`, `advance`, `reset`, `graph`, `ingest`.
 
 ## 中文
 
@@ -83,7 +83,7 @@ Workflow 是一组本地 Bot 的群聊式运行。侧栏打开同一次运行：
 
 把看板任务交给一个 Workflow，会开始一次真实运行，或在已有运行占满时排进 FIFO 队列。交给一个本地 Bot，只把卡片的负责人设成该 Bot，不会启动 Workflow。远程 Bot 会被拒绝。
 
-一次真实运行会为每个节点创建一个隐藏的临时 Bot，用完即删。节点不必绑定侧栏里的永久 Bot。`tools` 决定这个 Bot 能用什么：`github` 授予 GitHub 连接器（拉取请求、评审、评论），`bash` 授予完整权限的 shell，其余步骤至少可以写工作区。节点一直处于运行中，直到该 Bot 回复。回复写入 Workflow 聊天，下一节点才沿边开始。正在进行的运行不会被新任务替换，也不会因此释放它的 Bot。历史里只留下已完成或已失败的运行。
+一次真实运行会为每个节点创建一个隐藏的临时 Bot，用完即删。节点不必绑定侧栏里的永久 Bot。`tools` 决定这个 Bot 能调用哪些连接器：`github` 授予 GitHub 连接器（拉取请求、评审、评论），`composio` 授予 Composio，没写进去的连接器一律拒绝。文件与 shell 权限不来自这个列表：每个节点 Bot 都和侧栏里的普通 Bot 一样有完整权限。节点一直处于运行中，直到该 Bot 回复。回复写入 Workflow 聊天，下一节点才沿边开始。正在进行的运行不会被新任务替换，也不会因此释放它的 Bot。历史里只留下已完成或已失败的运行。
 
 每个 Workflow 同时运行的上限是 `maxConcurrent`，默认 2，取 1 到 8 的整数，在创建时传入、调用 `workflow/concurrency` 或在设置 → Workflow graphs 里调整。某个运行结束后，所有 Workflow 里最早排队、且自己还有空位的任务会开始。新的分配排在已经排队的任务后面。降低上限不会停掉已经开始的运行。舞台在详情里显示当前上限；有排队或同时多于一个运行时显示队列条。有真实运行时，页面只刷新状态。产品界面不提供预置演示重放，只有真实运行会推进图。
 

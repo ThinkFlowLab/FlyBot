@@ -9,6 +9,7 @@ import { test } from 'node:test'
 import { isShownRemoteChat } from '../../../core/src/shared/remote-label.js'
 import { apply } from '../index.js'
 import { createWorkflowService } from '../src/service.js'
+import { DELIVERY_ID } from '../src/template.js'
 
 const roster = [
   { id: 'main', name: 'Chief', role: 'lead', isMain: true, remote: false },
@@ -185,7 +186,7 @@ test('a spawn that fails halfway removes the instances it already made and does 
   assert.equal(svc.state().workflows.find(item => item.id === made.id).run, null)
 })
 
-test('every node Bot gets full tool grant; node.tools is documentation only', async () => {
+test('a node Bot keeps full file/shell rights and passes node.tools as its connector list', async () => {
   const created = []
   const fb = {
     bot: {
@@ -205,18 +206,19 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
   }
   const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
   
-  // Node with no tools: tools field omitted, gets full grant, danger-full-access
+  // Node with no tools: an empty connector list, so the host writes no stepTools and refuses
+  // every connector. File and shell rights still come from the permission preset.
   await started.service.define({
     name: 'NoTools',
     nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.' }],
     edges: [],
   })
   await started.service.runNamed({ workflow: 'NoTools', brief: 'Test no tools' })
-  assert.equal('tools' in created[0], false, 'tools field always omitted from fb.bot.create')
-  assert.equal(created[0].permission, 'danger-full-access', 'all node Bots get full access')
+  assert.deepEqual(created[0].tools, [], 'a node that names no connector passes an empty list')
+  assert.equal(created[0].permission, 'danger-full-access', 'file and shell rights are a normal Bot\'s')
   assert.equal(created[0].systemPrompt, 'Do the work.', 'prompt has no tool-specific notes')
   
-  // Node with explicit empty tools: same behavior (tools omitted, full grant)
+  // Node with explicit empty tools: the same empty connector list
   created.length = 0
   await started.service.define({
     name: 'EmptyTools',
@@ -224,10 +226,10 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
     edges: [],
   })
   await started.service.runNamed({ workflow: 'EmptyTools', brief: 'Test empty' })
-  assert.equal('tools' in created[0], false, 'tools field omitted even when node.tools is []')
+  assert.deepEqual(created[0].tools, [], 'tools: [] names no connector')
   assert.equal(created[0].permission, 'danger-full-access')
   
-  // Node with explicit tools: STILL gets full grant (tools is documentation only)
+  // Node with explicit tools: the list travels as the connector list
   created.length = 0
   await started.service.define({
     name: 'CustomTools',
@@ -235,12 +237,12 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
     edges: [],
   })
   await started.service.runNamed({ workflow: 'CustomTools', brief: 'Test custom' })
-  assert.equal('tools' in created[0], false, 'tools field omitted regardless of node.tools value')
-  assert.equal(created[0].permission, 'danger-full-access', 'explicit tools do not restrict grant')
-  assert.deepEqual(created[0].fields.tools, ['read'], 'fields.tools stores node.tools as documentation')
+  assert.deepEqual(created[0].tools, ['read'], 'node.tools reaches fb.bot.create')
+  assert.equal(created[0].permission, 'danger-full-access', 'the list does not change file/shell rights')
+  assert.deepEqual(created[0].fields.tools, ['read'], 'fields.tools keeps the list for the UI')
   assert.equal(created[0].systemPrompt, 'Just read.', 'no tool notes added')
   
-  // Node with bash in tools: same full grant (node.tools does not affect permission)
+  // Node with bash in tools: the list still travels, and the permission preset is unchanged
   created.length = 0
   await started.service.define({
     name: 'ShellTools',
@@ -248,7 +250,7 @@ test('every node Bot gets full tool grant; node.tools is documentation only', as
     edges: [],
   })
   await started.service.runNamed({ workflow: 'ShellTools', brief: 'Test shell' })
-  assert.equal('tools' in created[0], false, 'tools field omitted')
+  assert.deepEqual(created[0].tools, ['bash', 'read'])
   assert.equal(created[0].permission, 'danger-full-access')
 })
 
@@ -284,10 +286,10 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(created.length, 1)
   assert.equal(created[0].ephemeral, true)
   assert.equal(created[0].hidden, true)
-  // Every node Bot omits the tools field and gets danger-full-access, inheriting all available
-  // tools (GitHub, Composio, file/shell, team tools limited by EPHEMERAL_DENIED_TOOLS).
+  // A node Bot keeps the file/shell preset a normal Bot has and passes its connector list
+  // (empty for a node that names none) so the host can record stepTools.
   assert.equal(created[0].permission, 'danger-full-access')
-  assert.equal('tools' in created[0], false, 'tools field always omitted from fb.bot.create')
+  assert.deepEqual(created[0].tools, [], 'a node that names no connector passes an empty list')
   assert.match(created[0].systemPrompt, /Write the plan\./)
   assert.doesNotMatch(created[0].systemPrompt, /You can use these tools:/, 'no tool-specific notes')
   assert.equal(created[0].name.startsWith('Planner '), true)
@@ -724,4 +726,40 @@ test('an ended run keeps its ending when reap drops the records it still holds (
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('the built-in delivery nodes hand their connector list to the host', async () => {
+  const created = []
+  const fb = {
+    bot: {
+      list: () => roster,
+      async create(spec) {
+        created.push(spec)
+        return `bot-${created.length}`
+      },
+      async remove() { return true },
+      async send() { return { action: 'allow' } },
+    },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    tools: { register() { return () => {} } },
+    warn() {},
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  assert.equal(started.enabled, true)
+  const run = await started.service.assign({ workflowId: DELIVERY_ID, taskId: 'task-1521', title: 'Ship it' })
+  assert.equal(run.ok, true)
+  // Each edge carries one output, so a step has to produce it for the next node to start.
+  const outputs = { planner: { plan: 'the plan' }, writer: { copy: 'the copy' }, coder: { patch: 'the patch' }, reviewer: { review: 'lgtm' }, tester: { report: 'green' } }
+  for (const nodeId of ['planner', 'writer', 'coder', 'reviewer', 'tester']) {
+    const state = await started.service.advance({ workflowId: DELIVERY_ID, nodeId, outcome: 'done', outputs: outputs[nodeId] })
+    assert.notEqual(state?.ok, false, `${nodeId} advanced: ${state?.error ?? ''}`)
+  }
+  const byNode = new Map(created.map(spec => [spec.fields.nodeId, spec]))
+  assert.deepEqual(byNode.get('coder').tools, ['github', 'bash', 'read', 'edit'], 'Coder names github')
+  assert.deepEqual(byNode.get('reviewer').tools, ['github'], 'Reviewer names github')
+  assert.deepEqual(byNode.get('deployer').tools, ['github'], 'Deployer names github')
+  assert.deepEqual(byNode.get('tester').tools, ['bash'], 'Tester names no connector')
+  assert.deepEqual(byNode.get('planner').tools, [], 'Planner names no connector')
+  for (const spec of created) assert.equal(spec.permission, 'danger-full-access', 'file and shell rights are a normal Bot\'s')
 })

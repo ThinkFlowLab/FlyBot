@@ -31,10 +31,11 @@ export function apply(ctx, config = {}) {
   const liveNames = new Map()
   const lifecycle = typeof fb.bot?.create === 'function' ? {
     async spawn(spec) {
-      // Every Workflow node Bot gets the same full tool/connector grant a normal sidebar Bot
-      // gets (GitHub, Composio, file/shell, team tools), limited only by EPHEMERAL_DENIED_TOOLS
-      // at the guard layer. spec.tools is documentation only; the tools field is always omitted
-      // from fb.bot.create so the Bot inherits all available tools.
+      // A node Bot keeps the file and shell rights a normal sidebar Bot has (permissionFor()).
+      // spec.tools only selects connectors: the host records it as stepTools, and connector-access.js
+      // then allows mcp__github__*/mcp__composio__* only for a connector the node named, refusing
+      // every other one, so a node that declares nothing reaches no connector. EPHEMERAL_DENIED_TOOLS
+      // still refuses the team tools whatever the node declares.
       const prompt = spec.prompt
       let last
       for (let n = 0; n < 4; n += 1) {
@@ -50,6 +51,7 @@ export function apply(ctx, config = {}) {
             hidden: true,
             ephemeral: true,
             permission: permissionFor(),
+            tools: spec.tools,
             fields: { nodeId: spec.nodeId, tools: spec.tools ?? null },
           })
           liveNames.set(name, id)
@@ -103,7 +105,6 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/reset', body => service.reset(body)),
     fb.api.handle('workflow/pause', body => service.pause(body)),
     fb.api.handle('workflow/resume', body => service.resume(body)),
-    fb.api.handle('workflow/say', body => service.say(body)),
     fb.api.handle('workflow/graph', body => service.saveGraph(body)),
     fb.api.handle('workflow/templates', () => ({ ok: true, templates: service.state().templates }), { read: true }),
     fb.api.handle('workflow/ingest', body => service.ingest(body)),
@@ -121,11 +122,11 @@ export function apply(ctx, config = {}) {
     }))
     offs.push(fb.tools.register({
       name: 'define_workflow',
-      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? } and edges are { from, to, when?, loop?, max?, until? }. prompt is that node\'s Bot system prompt. tools name what the ephemeral run Bot may use (github grants mcp__github__*; bash grants a shell). A node does not need a permanent botId. inputs and outputs are { name, type?, required? }. A required input must be produced upstream, or be task, title, or brief on a root. when chooses an edge; loop with max (and optional until) is the only cycle. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
+      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? } and edges are { from, to, when?, loop?, max?, until? }. prompt is that node\'s Bot system prompt. tools names the connectors the ephemeral run Bot may call (github grants mcp__github__*, composio grants mcp__composio__*); the file and shell rights are a normal Bot\'s, and a node that names no connector gets none. A node does not need a permanent botId. inputs and outputs are { name, type?, required? }. A required input must be produced upstream, or be task, title, or brief on a root. when chooses an edge; loop with max (and optional until) is the only cycle. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
       parameters: {
         name: { type: 'string', required: true, description: 'Workflow name' },
         workflow: { type: 'string', description: 'Existing id or name to replace. Omit to create.' },
-        nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools (github, bash, read, edit, …), inputs, outputs, and an optional local botId. Real work uses an ephemeral Bot per run, not a seated botId.' },
+        nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools (the connectors it may call: github, composio), inputs, outputs, and an optional local botId. Real work uses an ephemeral Bot per run, not a seated botId.' },
         edges: { type: 'array', required: true, description: 'Hand-offs { from, to }. A fork is two edges out; a join is two edges in. A condition is when: { output, eq } or { else: true }. A loop is loop: true with max (1–8, default 3) and optional until: { output, eq }.' },
       },
       execute: args => service.define(args ?? {}),

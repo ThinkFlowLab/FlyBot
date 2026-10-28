@@ -122,21 +122,11 @@ test('create seats a local Bot and refuses a remote one', () => {
   }).ok, false)
 })
 
-test('a read-only host refuses assign, and a say lands in the workflow chat', () => {
+test('a read-only host refuses assign', () => {
   const svc = service({ readOnly: () => true })
   const refused = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1', title: 'No' })
   assert.equal(refused.ok, false)
   assert.equal(refused.code, 'read-only')
-
-  const live = service()
-  const said = live.say({ workflowId: DELIVERY_ID, text: '请把 notice 再短一点' })
-  const messages = delivery(said).messages
-  assert.ok(messages.some(message => message.kind === 'user' && message.text.includes('请把 notice 再短一点')))
-  live.assign({ workflowId: DELIVERY_ID, taskId: '#say', title: 'Notice tweak' })
-  const withRun = live.say({ workflowId: DELIVERY_ID, text: '继续' })
-  const tail = delivery(withRun).messages
-  assert.equal(tail.at(-2).kind, 'user')
-  assert.match(tail.at(-1).text, /Planner|收到/)
 })
 
 test('the store reloads a workflow file and drops a file that does not parse', () => {
@@ -298,6 +288,7 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.ok(names.some(([name]) => name === 'workflow/assign'))
   assert.ok(names.some(([name]) => name === 'workflow/graph'))
   assert.ok(names.some(([name, read]) => name === 'workflow/templates' && read))
+  assert.ok(!names.some(([name]) => name === 'workflow/say'), 'the removed say endpoint is not registered')
   assert.equal(writes.length, 1)
   assert.deepEqual(writes[0]({ id: '#9', title: 'please', status: 'open', assignee: 'Coder' }), { ownerBotId: 'bot-coder' })
   assert.equal(writes[0]({ id: '#10', title: 'nothing', status: 'open' }), null)

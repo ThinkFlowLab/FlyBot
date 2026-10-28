@@ -108,6 +108,11 @@ window.__ModuleLoader__.load({
       'No open tasks on the Tasks board.': 'Tasks 看板上没有可分配的任务。',
       'Could not rename this workflow': '无法重命名该 Workflow',
       'Could not delete this workflow': '无法删除该 Workflow',
+      'Could not save this workflow': '无法保存该 Workflow',
+      'Could not reset this workflow': '无法重置该 Workflow',
+      'Could not pause this run': '无法暂停本次运行',
+      'Could not resume this run': '无法继续本次运行',
+      'Could not stop this run': '无法停止本次运行',
       'Reading workflows…': '正在读取 Workflow…',
       'Changes are saved automatically': '更改会自动保存',
       'Next run: {time}': '下次运行：{time}',
@@ -118,6 +123,39 @@ window.__ModuleLoader__.load({
     function zhUi() {
       const host = globalThis.__flybot__?.t
       return typeof host === 'function' && host('Tasks') === '任务'
+    }
+    // A stage control calls the host too: a throw, a rejection or a host that never answers
+    // settles as one error string, so Pause, Stop, Reset and a graph save cannot fail silently.
+    // Same shape as readWorkflows()/workflowCallError() in core/src/client/workflows.js.
+    const CALL_TIMEOUT_MS = 10000
+    function callError(failure, fallback) {
+      if (typeof failure === 'string' && failure.trim()) return failure.trim()
+      const message = typeof failure?.message === 'string' ? failure.message.trim() : ''
+      return message || fallback
+    }
+    function settledCall(call, name, body, fallback, timeoutMs = CALL_TIMEOUT_MS) {
+      return new Promise((resolve) => {
+        let settled = false
+        const finish = (value) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve(value)
+        }
+        const timer = setTimeout(() => finish({ ok: false, error: fallback }), timeoutMs)
+        let pending
+        try {
+          pending = body === undefined ? call(name) : call(name, body)
+        } catch (failure) {
+          finish({ ok: false, error: callError(failure, fallback) })
+          return
+        }
+        Promise.resolve(pending)
+          .then((value) => finish(value === null || value === undefined
+            ? { ok: false, error: fallback }
+            : (value.ok === false ? { ok: false, error: callError(value.error, fallback) } : value)))
+          .catch((failure) => finish({ ok: false, error: callError(failure, fallback) }))
+      })
     }
     function fill(text, params) {
       return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
@@ -1008,11 +1046,30 @@ window.__ModuleLoader__.load({
 
     function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit, roster }) {
       const [gesture, setGesture] = useState(null)
+      const stageRef = useRef(null)
+      const [panelWidth, setPanelWidth] = useState(0)
       const nodes = workflow?.nodes ?? []
       const edges = workflow?.edges ?? []
       const height = Math.max(420, ...nodes.map(node => (node.y ?? 0) + 150), 0)
       const run = workflow?.run?.live === true ? workflow.run : null
       const status = run?.nodeStatus ?? {}
+      // The graph is authored on the 960px design plane. Drawing it at that width
+      // inside the settings page grew a second scrollbar and cut edges at the
+      // border, so the plane is scaled down to the width the canvas has (#1483).
+      const scale = panelWidth > 0 ? Math.min(1, panelWidth / (WIRE_SPAN * 2)) : 1
+      const drawnHeight = Math.round(height * scale)
+      useEffect(() => {
+        const el = stageRef.current
+        const measure = () => {
+          const measured = el?.getBoundingClientRect?.().width
+          if (Number.isFinite(measured) && measured > 0 && Math.abs(measured - panelWidth) > 0.5) setPanelWidth(measured)
+        }
+        measure()
+        if (typeof ResizeObserver !== 'function' || !el) return undefined
+        const observer = new ResizeObserver(measure)
+        observer.observe(el)
+        return () => observer.disconnect()
+      }, [panelWidth])
       
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
       
@@ -1020,10 +1077,12 @@ window.__ModuleLoader__.load({
         if (!gesture || gesture.kind !== 'move') return
         const node = nodes.find(n => n.id === gesture.id)
         if (!node) return
+        // The plane is scaled to the canvas, so a pointer delta in screen pixels
+        // is a larger delta in the graph's own coordinates.
         commit(nodes.map(n => n.id === gesture.id ? {
           ...n,
-          x: Math.round((node.x ?? 0) + event.clientX - gesture.ox),
-          y: Math.round((node.y ?? 0) + event.clientY - gesture.oy)
+          x: Math.round((node.x ?? 0) + (event.clientX - gesture.ox) / scale),
+          y: Math.round((node.y ?? 0) + (event.clientY - gesture.oy) / scale)
         } : n), edges)
         setGesture({ ...gesture, ox: event.clientX, oy: event.clientY })
       }
@@ -1037,8 +1096,9 @@ window.__ModuleLoader__.load({
         setGesture(null)
       }
       
-      return h('div', { className: 'wf-canvas-view', onPointerMove: movePointer, onPointerUp: endPointer },
-        h('div', { className: 'wf-plane', 'data-plane': '1', style: { height } },
+      return h('div', { className: 'wf-canvas-view', ref: stageRef, onPointerMove: movePointer, onPointerUp: endPointer },
+        h('div', { className: 'wf-plane', 'data-plane': '1', style: { width: panelWidth, height: drawnHeight } },
+          h('div', { className: 'wf-canvas-fit', style: { height, transform: `scale(${scale})` } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height) },
             edges.map(edge => {
               const from = nodes.find(node => node.id === edge.from)
@@ -1069,7 +1129,7 @@ window.__ModuleLoader__.load({
                 setGesture({ kind: 'wire', from: node.id })
               },
             }) : null,
-            h(FlowNode, { node, status: status[node.id] ?? 'idle', roster: roster ?? {} })))))
+            h(FlowNode, { node, status: status[node.id] ?? 'idle', roster: roster ?? {} }))))))
     }
 
     function conversationLeft() {
@@ -1104,6 +1164,8 @@ window.__ModuleLoader__.load({
       const [renaming, setRenaming] = useState(null)
       const [deleting, setDeleting] = useState(null)
       const stageLeft = useConversationInset()
+
+      const stageCall = (name, body, fallback) => settledCall(call, name, body, fallback)
 
       const refresh = async () => {
         const value = await call('workflow/state')
@@ -1310,8 +1372,9 @@ window.__ModuleLoader__.load({
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
           onCommit: (graph) => {
-            void call('workflow/graph', { workflowId: open.id, nodes: graph.nodes, edges: graph.edges }).then(value => {
+            void stageCall('workflow/graph', { workflowId: open.id, nodes: graph.nodes, edges: graph.edges }, 'Could not save this workflow').then(value => {
               if (value?.ok === false) { setError(value.error ?? ''); return }
+              setError('')
               if (value?.workflows) setPack(value)
             })
           },
@@ -1319,17 +1382,35 @@ window.__ModuleLoader__.load({
           onOpenDrawer: () => setDrawer(true),
           onToggleDrawer: () => { setDrawer(value => !value); setTab('flow') },
           onTab: (key) => { setTab(key); setDrawer(true) },
-          onReset: () => { void call('workflow/reset', { workflowId: open.id }).then(value => { if (value?.workflows) setPack(value) }) },
+          onReset: () => {
+            void stageCall('workflow/reset', { workflowId: open.id }, 'Could not reset this workflow').then(value => {
+              if (value?.ok === false) { setError(value.error ?? ''); return }
+              setError('')
+              if (value?.workflows) setPack(value)
+            })
+          },
           onAssign: () => { setAssignOpen(true); void loadTasks() },
           onTip: setTip,
           onPause: (runId) => {
-            void call('workflow/pause', { workflowId: open.id, runId }).then(value => { if (value?.workflows) setPack(value) })
+            void stageCall('workflow/pause', { workflowId: open.id, runId }, 'Could not pause this run').then(value => {
+              if (value?.ok === false) { setError(value.error ?? ''); return }
+              setError('')
+              if (value?.workflows) setPack(value)
+            })
           },
           onResume: (runId) => {
-            void call('workflow/resume', { workflowId: open.id, runId }).then(value => { if (value?.workflows) setPack(value) })
+            void stageCall('workflow/resume', { workflowId: open.id, runId }, 'Could not resume this run').then(value => {
+              if (value?.ok === false) { setError(value.error ?? ''); return }
+              setError('')
+              if (value?.workflows) setPack(value)
+            })
           },
           onStop: (runId) => {
-            void call('workflow/reset', { workflowId: open.id, runId }).then(value => { if (value?.workflows) setPack(value) })
+            void stageCall('workflow/reset', { workflowId: open.id, runId }, 'Could not stop this run').then(value => {
+              if (value?.ok === false) { setError(value.error ?? ''); return }
+              setError('')
+              if (value?.workflows) setPack(value)
+            })
           },
         })) : null,
         assignOpen ? portal(h(AssignModal, {
@@ -1526,7 +1607,9 @@ window.__ModuleLoader__.load({
 .wf-settings-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .wf-autosave-hint{font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
 .wf-canvas-main{flex:1;min-height:500px;display:flex;flex-direction:column;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
-.wf-canvas-view{width:100%;height:100%;min-height:0;position:relative;overflow:auto}
+.wf-canvas-view{width:100%;height:100%;min-height:0;position:relative;overflow:visible}
+.wf-canvas-fit{position:relative;width:0;margin:0 auto;transform-origin:50% 0}
+.wf-canvas-view .wf-wires path{stroke:var(--bt-ink-2,rgba(20,20,20,.55));stroke-width:2.5}
 .wf-cards-empty{padding:8px 4px 12px}
 .wf-context-menu{position:fixed;z-index:95;min-width:140px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:2px}
 .wf-context-menu button{border:0;background:transparent;color:inherit;font:inherit;font-size:12.5px;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
@@ -1564,7 +1647,7 @@ window.__ModuleLoader__.load({
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
       runHistoryRows, liveStageRuns, resolveFocusedRun, parallelFrameStyle, NODE_W,
-      botPaletteSubtitle, botTint,
+      botPaletteSubtitle, botTint, settledCall,
     }
   },
 })

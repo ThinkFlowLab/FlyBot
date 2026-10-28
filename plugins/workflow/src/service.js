@@ -935,21 +935,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         return present()
       })
     },
-    say(body = {}) {
-      return mutate(String(body.workflowId ?? ''), (item) => {
-        const text = cleanLine(body.text, 2000)
-        if (!text) throw new Error('A message needs text')
-        const at = now()
-        const lines = [{ kind: 'user', text }]
-        const run = displayRun(item.id)
-        const running = run?.live === true ? orderedIds(item, run.nodeStatus, 'running')[0] : undefined
-        if (running) {
-          const node = nodeById(item, running)
-          lines.push({ kind: 'bot', botId: running, step: '进行中', text: `${node?.name ?? running}：收到。我继续处理「${run.task?.title ?? ''}」。` })
-        }
-        push(item.id, lines, at)
-      })
-    },
     // Replace the graph the canvas and the run share. Positions and edges
     // persist; a node that remains keeps its run status, a new one waits.
     saveGraph(body = {}) {
