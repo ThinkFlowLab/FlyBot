@@ -53,6 +53,9 @@ function publicEdge(edge) {
     out.loop = true
     out.max = edge.max
     if (edge.until) out.until = { output: edge.until.output, eq: edge.until.eq }
+  } else if (edge.onFail === true) {
+    out.onFail = true
+    out.max = edge.max
   } else if (edge.when?.else === true) out.when = { else: true }
   else if (edge.when) out.when = { output: edge.when.output, eq: edge.when.eq }
   return out
@@ -281,7 +284,9 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       loops: working.loops ?? {},
       fired: working.fired ?? {},
     })
-    else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId)
+    else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId, {
+      failAttempts: working.failAttempts ?? {},
+    })
     else if (op.type === 'retry') result = retryNode(item, working.nodeStatus, op.nodeId)
     else throw new Error(`Unknown step ${op.type}`)
     const gated = gateStarted(item, working, result)
@@ -291,10 +296,11 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const blocked = gated.blocked.length > 0
     const finished = result.finished === true && !blocked
     // A node marked failOnce is retried. Any other failure stops the run,
-    // which is what releases its ephemeral Bots. A missing required input
-    // stops the run the same way: the successor can never start.
+    // unless a failure recovery edge exists: then reset to the recovery target.
+    // A missing required input stops the run the same way: the successor can never start.
     const failOnce = op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce === true
-    const stopped = blocked || (op.type === 'fail' && !failOnce)
+    const recovered = op.type === 'fail' && result.recovered === true
+    const stopped = blocked || (op.type === 'fail' && !failOnce && !recovered)
     const steps = finished ? working.stepBudget : working.steps + 1
     const handed = { ...working.handed }
     if (op.type === 'fail' || op.type === 'retry') delete handed[op.nodeId]
@@ -308,6 +314,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       updatedAt: now(),
       ...(result.loops ? { loops: result.loops } : {}),
       ...(result.fired ? { fired: result.fired } : {}),
+      ...(result.failAttempts ? { failAttempts: result.failAttempts } : {}),
       ...(Object.keys(handed).length > 0 ? { handed } : {}),
     }
     if (Object.keys(handed).length === 0) delete next.handed
@@ -320,6 +327,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       layerSize: result.layerSize ?? 0,
       live: working.live === true,
       text: op.text ?? '',
+      recovered: result.recovered === true,
     })
     for (const hole of gated.blocked) {
       const node = nodeById(item, hole.id)

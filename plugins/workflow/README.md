@@ -38,9 +38,13 @@ The delivery template passes `task` → `plan` → `copy` → `patch`, then `rev
 
 ## Branches and loops
 
-An edge may be a condition or a loop. A condition is `when: { output, eq }` on the edge out of the node that produced `output`. The edge is taken only when that output equals `eq`. `when: { else: true }` is the other branch, taken when no `eq` edge matched. A node that no taken edge reaches is skipped. A later join starts once every incoming edge is either taken and done, or skipped.
+An edge may be a condition, a loop, or a failure recovery. A condition is `when: { output, eq }` on the edge out of the node that produced `output`. The edge is taken only when that output equals `eq`. `when: { else: true }` is the other branch, taken when no `eq` edge matched. A node that no taken edge reaches is skipped. A later join starts once every incoming edge is either taken and done, or skipped.
 
-A loop is `loop: true` on the edge that returns to the body, with `max` from 1 to 8 (default 3) and an optional `until: { output, eq }`. The body runs again while `until` does not match and the run count is still under `max`. A branch the previous pass skipped can be chosen the next time. The forward edges wait until the loop stops. A loop is the only cycle the graph allows. Settings → Workflow graphs can add a link, a condition, or a loop. After a live run finishes, the stage keeps showing that run until a new one starts.
+A loop is `loop: true` on the edge that returns to the body, with `max` from 1 to 8 (default 3) and an optional `until: { output, eq }`. The body runs again while `until` does not match and the run count is still under `max`. A branch the previous pass skipped can be chosen the next time. The forward edges wait until the loop stops. A loop is the only cycle the graph allows for success paths.
+
+A failure recovery is `onFail: true` on an edge pointing from the failing node back to an upstream node, with `max` from 1 to 8 (default 3). When the node fails and recovery attempts remain, the workflow resets to the recovery target and runs through the failing node again. After `max` recovery attempts, the node fails permanently and the run stops. Failure recovery edges do not interfere with success-path loops or `failOnce` retry behavior.
+
+Settings → Workflow graphs can add a link, a condition, a loop, or a failure recovery. After a live run finishes, the stage keeps showing that run until a new one starts.
 
 ## When a step does not land
 

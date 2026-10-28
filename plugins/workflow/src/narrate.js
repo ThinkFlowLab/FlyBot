@@ -42,6 +42,14 @@ function liveLines(workflow, task, event) {
   }
   if (event.type === 'fail') {
     const node = nodeById(workflow, event.nodeId)
+    if (event.recovered === true && event.started.length > 0) {
+      const target = names(workflow, event.started)
+      const text = liveText(event.text, `${node?.name ?? event.nodeId} 失败，已返回 ${target} 重试`)
+      return [
+        { kind: 'bot', botId: event.nodeId, step: stepLabel(workflow, event.nodeId), text },
+        { kind: 'system', tone: 'bad', text: `↺ 失败恢复 → ${target}` },
+      ]
+    }
     const text = liveText(event.text, `${node?.name ?? event.nodeId} 这一步失败了，停在本节点。`)
     return [{ kind: 'bot', botId: event.nodeId, step: stepLabel(workflow, event.nodeId), text }]
   }
@@ -74,6 +82,14 @@ export function linesFor(workflow, task, event) {
   }
   if (event.type === 'fail') {
     const node = nodeById(workflow, event.nodeId)
+    if (event.recovered === true && event.started.length > 0) {
+      const target = names(workflow, event.started)
+      return [
+        { kind: 'bot', botId: event.nodeId, step: stepLabel(workflow, event.nodeId),
+          text: `${node?.name ?? event.nodeId} 失败，已返回 ${target} 重试` },
+        { kind: 'system', tone: 'bad', text: `↺ 失败恢复 → ${target}` },
+      ]
+    }
     const text = workflow.id === DELIVERY_ID && event.nodeId === 'tester'
       ? '快照测试 notice.snap 不一致（旧文案快照未更新）。自动重试 1/2，并已通知 Coder 更新快照。'
       : `${node?.name ?? event.nodeId} 这一步失败了，停在本节点。`

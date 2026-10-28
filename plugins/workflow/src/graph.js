@@ -110,6 +110,7 @@ function cleanWhen(value, allowElse) {
 
 // A loop is the only edge that may cycle. max is how many times the body runs
 // (1–8, default 3). until stops early when that output equals eq.
+// An onFail edge recovers from failure by returning to the from node.
 function cleanEdge(edge) {
   const from = String(edge?.from ?? '')
   const to = String(edge?.to ?? '')
@@ -124,6 +125,15 @@ function cleanEdge(edge) {
       ...(until ? { until } : {}),
     }
   }
+  if (edge?.onFail === true) {
+    const max = Number(edge.max)
+    return {
+      from,
+      to,
+      onFail: true,
+      max: Number.isInteger(max) && max >= 1 && max <= 8 ? max : 3,
+    }
+  }
   const when = cleanWhen(edge.when, true)
   return { from, to, ...(when ? { when } : {}) }
 }
@@ -132,7 +142,7 @@ function edgeKey(edge) {
   return `${edge.from}>${edge.to}`
 }
 
-// Longest-path ranks. A forward cycle is refused. A loop edge is not ranked.
+// Longest-path ranks. A forward cycle is refused. Loop and onFail edges are not ranked.
 // Nodes keep their list order inside a rank.
 export function ranksOf(nodes, edges) {
   const ids = nodes.map(node => node.id)
@@ -141,7 +151,7 @@ export function ranksOf(nodes, edges) {
   const succs = new Map(ids.map(id => [id, []]))
   for (const edge of edges) {
     if (!known.has(edge.from) || !known.has(edge.to)) throw new Error(`Link names an unknown Bot ${edge.from} → ${edge.to}`)
-    if (edge.loop === true) continue
+    if (edge.loop === true || edge.onFail === true) continue
     if (edge.from === edge.to) throw new Error('A Bot cannot connect to itself')
     preds.get(edge.to).push(edge.from)
     succs.get(edge.from).push(edge.to)
@@ -369,7 +379,7 @@ function copyStatus(status) {
 }
 
 function forwardEdges(graph) {
-  return graph.edges.filter(edge => edge.loop !== true)
+  return graph.edges.filter(edge => edge.loop !== true && edge.onFail !== true)
 }
 
 function predecessors(graph, nodeId) {
@@ -512,6 +522,18 @@ function loopDecision(graph, nodeId, outputs, loops) {
   return null
 }
 
+// Check if a failed node has an onFail edge and attempts remaining.
+function failRecoveryDecision(graph, nodeId, failAttempts) {
+  const edges = graph.edges.filter(edge => edge.onFail === true && edge.from === nodeId)
+  for (const edge of edges) {
+    const ran = (Number(failAttempts?.[edgeKey(edge)]) || 0) + 1
+    const max = Number.isInteger(edge.max) ? edge.max : 3
+    if (ran >= max) continue
+    return { edge, ran }
+  }
+  return null
+}
+
 // Nodes the loop runs again: forward-reachable from the target that can still
 // reach the source. A self-loop is that one node. The exit stays queued.
 function loopBody(graph, source, target) {
@@ -626,12 +648,40 @@ export function completeNode(graph, status, nodeId, ctx = {}) {
   }
 }
 
-export function failNode(graph, status, nodeId) {
+export function failNode(graph, status, nodeId, ctx = {}) {
   if (!nodeById(graph, nodeId)) throw new Error(`Unknown Bot ${nodeId}`)
   if (status[nodeId] !== 'running') throw new Error(`${nodeId} is not running`)
+  
+  const failAttempts = { ...(ctx.failAttempts ?? {}) }
+  const recovery = failRecoveryDecision(graph, nodeId, failAttempts)
+  
+  if (recovery) {
+    // Failure recovery: reset to the upstream target node
+    failAttempts[edgeKey(recovery.edge)] = recovery.ran
+    const body = loopBody(graph, recovery.edge.to, nodeId)
+    const next = copyStatus(status)
+    const reset = []
+    
+    for (const id of body) {
+      next[id] = id === recovery.edge.to ? 'running' : 'queued'
+      reset.push(id)
+    }
+    
+    return {
+      status: next,
+      started: [recovery.edge.to],
+      joined: false,
+      finished: false,
+      failAttempts,
+      recovered: true,
+      reset,
+    }
+  }
+  
+  // No recovery or attempts exhausted: fail normally
   const next = copyStatus(status)
   next[nodeId] = 'failed'
-  return { status: next, started: [], joined: false, finished: false }
+  return { status: next, started: [], joined: false, finished: false, failAttempts }
 }
 
 export function retryNode(graph, status, nodeId) {
