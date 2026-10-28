@@ -81,6 +81,7 @@ function publicRun(workflow, run) {
     updatedAt: run.updatedAt,
     ...(run.live === true ? { live: true } : {}),
     ...(run.paused === true ? { paused: true } : {}),
+    ...(run.earlyEnd ? { earlyEnd: run.earlyEnd } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
   }
 }
