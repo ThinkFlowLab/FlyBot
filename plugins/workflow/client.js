@@ -685,14 +685,32 @@ window.__ModuleLoader__.load({
       return liveRuns
     }
 
+    function attemptTime(run) {
+      return Number(run?.updatedAt ?? run?.startedAt ?? run?.at ?? 0) || 0
+    }
+
+    // A retry keeps the older attempt as a row of its own, so the room must open on
+    // the newest attempt for that taskId, not on whichever row went live first (#1507).
+    function newestAttempt(workflow, run) {
+      if (!run?.task?.id) return run
+      let best = run
+      for (const item of liveStageRuns(workflow)) {
+        if (item.task?.id !== run.task.id) continue
+        if (attemptTime(item) > attemptTime(best)) best = item
+      }
+      return best
+    }
+
     function resolveFocusedRun(workflow, focusedRunId) {
       const live = liveStageRuns(workflow)
       if (focusedRunId) {
         const picked = live.find(run => run.id === focusedRunId)
         if (picked) return picked
       }
-      if (workflow.run?.live === true && (workflow.run.status === 'running' || workflow.run.status === 'failed')) return workflow.run
-      return live[0] ?? null
+      const current = workflow.run?.live === true && (workflow.run.status === 'running' || workflow.run.status === 'failed')
+        ? workflow.run
+        : live[0] ?? null
+      return current ? newestAttempt(workflow, current) : null
     }
 
     function runHistoryRows(workflow) {
@@ -702,6 +720,7 @@ window.__ModuleLoader__.load({
       if (liveRuns.length === 0 && history.length === 0 && queued.length === 0) return null
       const rows = liveRuns.map(run => ({
         id: run.id,
+        live: true,
         task: run.task,
         status: run.status,
         at: run.updatedAt,
@@ -718,6 +737,32 @@ window.__ModuleLoader__.load({
         const key = item.id ?? `${item.task?.id ?? ''}|${item.at ?? ''}`
         if (seen.has(key)) continue
         rows.push({ ...item, current: false })
+      }
+      return markSuperseded(rows)
+    }
+
+    // Retries are not folded: every attempt keeps its row and the older finished one
+    // names the attempt that replaced it. Two live attempts are both left unmarked,
+    // because either may still be the one that matters (#1507).
+    function markSuperseded(rows) {
+      const byTask = new Map()
+      rows.forEach((row, index) => {
+        const taskId = row.task?.id
+        if (!taskId) return
+        const list = byTask.get(taskId) ?? []
+        list.push({ row, index })
+        byTask.set(taskId, list)
+      })
+      for (const list of byTask.values()) {
+        if (list.length < 2) continue
+        const ordered = [...list].sort((a, b) => attemptTime(a.row) - attemptTime(b.row) || a.index - b.index)
+        const newest = ordered[ordered.length - 1].row
+        for (const { row } of ordered.slice(0, -1)) {
+          if (row.live === true || row.status === 'running' || row.status === 'queued') continue
+          if (!row.id || !newest.id) continue
+          row.supersededBy = newest.id
+          newest.retryOf = row.id
+        }
       }
       return rows
     }
@@ -908,6 +953,8 @@ window.__ModuleLoader__.load({
         h('span', { className: 'wf-hist-task', title: item.task?.title ?? '' }, taskSummary(item.task, item)),
         h('span', { className: 'wf-hist-meta' },
           item.at ? h('span', { className: 'wf-hist-time' }, runTime(item.at)) : null,
+          item.supersededBy ? h('span', { className: 'wf-hist-retry', title: item.supersededBy }, `superseded by ${item.supersededBy}`) : null,
+          item.retryOf ? h('span', { className: 'wf-hist-retry', title: item.retryOf }, `retry of ${item.retryOf}`) : null,
           item.status === 'failed'
             ? h('span', { className: 'wf-hist-reason', title: failureText(item) }, failureText(item))
             : null),
@@ -1483,7 +1530,7 @@ window.__ModuleLoader__.load({
         if (!open) { setFocusedRunId(null); return }
         const live = liveStageRuns(open)
         if (live.length === 0) { setFocusedRunId(null); return }
-        if (!live.some(run => run.id === focusedRunId)) setFocusedRunId(live[0].id)
+        if (!live.some(run => run.id === focusedRunId)) setFocusedRunId(resolveFocusedRun(open, null)?.id ?? live[0].id)
       }, [open?.id, open?.activeCount, open?.runs?.length, focusedRunId])
 
       // Hide the shell's composer when a Workflow stage is open (#1486)
@@ -1909,7 +1956,7 @@ window.__ModuleLoader__.load({
     return {
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
-      runHistoryRows, liveStageRuns, resolveFocusedRun, parallelFrameStyle, fitPlane,
+      runHistoryRows, liveStageRuns, resolveFocusedRun, newestAttempt, parallelFrameStyle, fitPlane,
       DRAWER_FLOW_W, NODE_W, NODE_H,
       botPaletteSubtitle, botTint, settledCall,
     }

@@ -2108,3 +2108,39 @@ test('#1458: Assign stays disabled while the Tasks board is still loading', asyn
     globalThis.__flybot__ = prev
   }
 })
+
+test('an older finished attempt is marked superseded by the newer attempt for the same task (#1507)', () => {
+  const task = { id: '#1507', title: 'PR 1507' }
+  const workflow = {
+    activeCount: 1,
+    queue: [],
+    runs: [{ id: 'run-new', live: true, status: 'running', task, updatedAt: 1_700_000_200_000 }],
+    run: { id: 'run-new', live: true, status: 'running', task, updatedAt: 1_700_000_200_000 },
+    history: [{ id: 'run-old', task, status: 'failed', at: 1_700_000_000_000 }],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 2)
+  const older = rows.find(row => row.id === 'run-old')
+  const newer = rows.find(row => row.id === 'run-new')
+  assert.equal(older.supersededBy, 'run-new')
+  assert.equal(newer.retryOf, 'run-old')
+  assert.equal(client.resolveFocusedRun(workflow, null).id, 'run-new')
+})
+
+test('two live attempts for one task are both left unmarked (#1507)', () => {
+  const task = { id: '#1507', title: 'PR 1507' }
+  const workflow = {
+    activeCount: 2,
+    queue: [],
+    runs: [
+      { id: 'run-a', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 },
+      { id: 'run-b', live: true, status: 'running', task, updatedAt: 1_700_000_200_000 },
+    ],
+    run: { id: 'run-a', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 },
+    history: [],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 2)
+  assert.equal(rows.some(row => row.supersededBy || row.retryOf), false)
+  assert.equal(client.resolveFocusedRun(workflow, null).id, 'run-b')
+})
