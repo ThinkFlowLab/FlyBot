@@ -5,7 +5,6 @@ import { test } from 'node:test'
 
 test('#1524: ephemeral node reply is not delivered to Main Bot chat', async () => {
   const roster = [{ id: 'main', name: 'Chief', isMain: true, remote: false }]
-  const delivered = []
   const created = []
   const removed = []
   
@@ -39,11 +38,6 @@ test('#1524: ephemeral node reply is not delivered to Main Bot chat', async () =
     warn() {},
   }
 
-  // Mock dispatch that captures what would be sent
-  const mockDispatch = async (step) => {
-    return { ok: true }
-  }
-
   // Apply workflow plugin
   const { apply } = await import('../../plugins/workflow/index.js')
   const plugin = apply(
@@ -51,12 +45,6 @@ test('#1524: ephemeral node reply is not delivered to Main Bot chat', async () =
     { persist: false }
   )
   const service = plugin.service
-
-  // Mock deliver to capture actual deliveries
-  const mockDeliver = async (args) => {
-    delivered.push({ from: args.fromId, to: args.toId, role: args.role, text: args.text })
-    return 'exchange-id'
-  }
 
   // Create a simple workflow
   const defined = await service.define({
