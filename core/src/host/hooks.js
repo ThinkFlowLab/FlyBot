@@ -728,8 +728,17 @@ export function install(rt) {
   send.priority = SEND_PRIORITY
 
   // The gate around ds-bot's own rt.deliver. Approved and re-sent messages pass through.
-  const gated = args => args.fromId !== undefined && rt.botOf(args.fromId) !== undefined && BOT_TO_BOT_ROLES.has(args.role)
-    && !args.flybotChecked && !args.resent && !args.resumed && !args.retried && !args.deferred
+  const gated = args => {
+    const is = args.fromId !== undefined && rt.botOf(args.fromId) !== undefined && BOT_TO_BOT_ROLES.has(args.role)
+      && !args.flybotChecked && !args.resent && !args.resumed && !args.retried && !args.deferred
+    // DEBUG #1524: Log when a Bot-to-Bot reply is NOT gated (this would be the leak)
+    if (args.role === 'reply' && args.fromId && !is) {
+      const from = rt.botOf(args.fromId)
+      warn('flybot: Bot-to-Bot reply NOT gated: fromId=%s, botExists=%s, role=%s, flybotChecked=%s, resent=%s, resumed=%s, retried=%s, deferred=%s',
+        args.fromId, from !== undefined, args.role, args.flybotChecked, args.resent, args.resumed, args.retried, args.deferred)
+    }
+    return is
+  }
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
@@ -747,7 +756,12 @@ export function install(rt) {
     if (!gated(args)) return innerDeliver(args)
     const exchangeId = args.exchangeId ?? randomUUID()
     const msg = { from: args.fromId, to: args.toId, target: targetOf(args.toId), text: args.text, role: args.role, hop: args.hop ?? 0, via: 'ds-bot', exchangeId, deliverArgs: { ...args, exchangeId } }
-    noteOutcome(exchangeId, await run(msg))
+    const outcome = await run(msg)
+    noteOutcome(exchangeId, outcome)
+    // DEBUG #1524: Log when middleware denies a delivery
+    if (outcome.action === 'deny' && args.role === 'reply') {
+      warn('flybot: workflow node Bot reply denied by %s: from=%s, to=%s, reason=%s', outcome.by, args.fromId, args.toId, outcome.reason)
+    }
     return exchangeId
   }
 
