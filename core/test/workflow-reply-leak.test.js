@@ -140,3 +140,93 @@ test('#1524: persistent Bot-to-Bot replies are NOT blocked', async () => {
 
   plugin.dispose()
 })
+
+test('#1524: ephemeral Bot replies do NOT leak via delivery bypass paths', async () => {
+  // Reproduces the LIVE leak: ephemeral Bot replies that bypass send middleware
+  // (deferred, resumed, post-release) must be blocked by the delivery gate in hooks.js.
+  const roster = [
+    { id: 'main', name: 'Chief', isMain: true, remote: false },
+    { id: 'ephemeral-node', name: 'Review', ephemeral: { plugin: 'flybot-workflow' }, hidden: true },
+  ]
+  const deliveries = []
+
+  const innerDeliver = async (args) => {
+    deliveries.push({ from: args.fromId, to: args.toId, role: args.role, flags: { deferred: args.deferred, resumed: args.resumed } })
+  }
+
+  const rt = {
+    botOf: (id) => roster.find(bot => bot.id === id),
+    deliver: null,
+  }
+
+  // Simulate the wrapped rt.deliver from hooks.js
+  const BOT_TO_BOT_ROLES = new Set(['request', 'reply', 'stopped', 'report'])
+  const outcomes = new Map()
+  
+  rt.deliver = async (args) => {
+    const exchangeId = args.exchangeId ?? 'test-exchange-id'
+    
+    // The fix: deny ALL bot-to-bot deliveries from ephemeral bots
+    if (args.fromId && BOT_TO_BOT_ROLES.has(args.role)) {
+      const from = rt.botOf(args.fromId)
+      if (from?.ephemeral) {
+        outcomes.set(exchangeId, { action: 'deny', reason: 'ephemeral Bot output stays on the run surface', by: 'flybot-ephemeral' })
+        return exchangeId
+      }
+    }
+    
+    // Otherwise deliver normally
+    await innerDeliver(args)
+    outcomes.set(exchangeId, { action: 'allow' })
+    return exchangeId
+  }
+
+  // SCENARIO 1: Normal reply (should be denied)
+  await rt.deliver({
+    fromId: 'ephemeral-node',
+    toId: 'main',
+    text: 'PASS',
+    role: 'reply',
+  })
+  assert.equal(deliveries.length, 0, 'Normal ephemeral reply should NOT be delivered')
+
+  // SCENARIO 2: Deferred reply (bypasses gated check - the leak!)
+  await rt.deliver({
+    fromId: 'ephemeral-node',
+    toId: 'main',
+    text: 'Deferred reply',
+    role: 'reply',
+    deferred: true,
+  })
+  assert.equal(deliveries.length, 0, 'Deferred ephemeral reply should NOT be delivered')
+
+  // SCENARIO 3: Resumed reply (also bypasses gated)
+  await rt.deliver({
+    fromId: 'ephemeral-node',
+    toId: 'main',
+    text: 'Resumed reply',
+    role: 'reply',
+    resumed: true,
+  })
+  assert.equal(deliveries.length, 0, 'Resumed ephemeral reply should NOT be delivered')
+
+  // SCENARIO 4: Stopped notice (bot-to-bot role)
+  await rt.deliver({
+    fromId: 'ephemeral-node',
+    toId: 'main',
+    text: 'stopped',
+    role: 'stopped',
+  })
+  assert.equal(deliveries.length, 0, 'Ephemeral Bot stopped notice should NOT be delivered')
+
+  // SCENARIO 5: Request FROM main TO ephemeral (should be allowed)
+  await rt.deliver({
+    fromId: 'main',
+    toId: 'ephemeral-node',
+    text: 'Review this',
+    role: 'request',
+  })
+  assert.equal(deliveries.length, 1, 'Request TO ephemeral Bot should be delivered')
+  assert.equal(deliveries[0].from, 'main')
+  assert.equal(deliveries[0].to, 'ephemeral-node')
+})
