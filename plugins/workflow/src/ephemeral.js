@@ -5,14 +5,13 @@ import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
 const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
 
-// A node with no explicit tools list inherits the full tool grant a normal Bot gets,
-// limited only by EPHEMERAL_DENIED_TOOLS at the guard/approval layer (#1466). An
-// explicit list restricts to those tools. Permission is 'danger-full-access' when the
-// node names a shell, otherwise 'workspace-write'.
-export function permissionFor(tools) {
-  const names = cleanTools(tools)
-  if (names.some(name => SHELL.has(name))) return 'danger-full-access'
-  return 'workspace-write'
+// Every Workflow node Bot gets the full tool/connector grant a normal sidebar Bot gets
+// (GitHub, Composio, file/shell tools, team tools), limited only by EPHEMERAL_DENIED_TOOLS
+// at the guard/approval layer (#1466). The node.tools field does not restrict this grant;
+// it is treated as documentation only. All node Bots get 'danger-full-access' to match
+// normal Bots with shell access.
+export function permissionFor() {
+  return 'danger-full-access'
 }
 
 export function nodeConfig(node, roster = [], workflowModel = '') {
@@ -22,16 +21,15 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
   const prompt = cleanPrompt(node?.prompt)
     || cleanPrompt(seated?.systemPrompt || seated?.instructions || '')
     || cleanPrompt(node?.instructions)
-  // An explicit tools list is kept; no list (or an empty one) is returned as undefined
-  // so the spawn inherits all tools a normal Bot gets, limited by EPHEMERAL_DENIED_TOOLS.
-  const explicit = cleanTools(node.tools)
+  // node.tools is kept as documentation only; spawn always omits the tools field so every
+  // node Bot inherits the full grant a normal Bot gets, limited by EPHEMERAL_DENIED_TOOLS.
   return {
     nodeId: node.id,
     name: node.name,
     role: cleanLine(node.role || seated?.role, 80),
     prompt,
     model: cleanLine(workflowModel || node.model || seated?.model, 80),
-    tools: explicit.length > 0 ? explicit : undefined,
+    tools: cleanTools(node.tools),
     hidden: true,
     ephemeral: true,
   }
