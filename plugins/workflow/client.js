@@ -111,6 +111,9 @@ window.__ModuleLoader__.load({
       'Rename workflow': '重命名 Workflow',
       'Are you sure you want to delete "{name}"? This cannot be undone.': '确定删除「{name}」？此操作无法撤销。',
       'No open tasks on the Tasks board.': 'Tasks 看板上没有可分配的任务。',
+      'Loading the Tasks board…': '正在读取 Tasks 看板…',
+      'Could not load the Tasks board.': '无法读取 Tasks 看板。',
+      Retry: '重试',
       'Could not rename this workflow': '无法重命名该 Workflow',
       'Could not delete this workflow': '无法删除该 Workflow',
       'Could not save this workflow': '无法保存该 Workflow',
@@ -935,9 +938,17 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
     }
 
-    function AssignModal({ workflows, tasks, roster, workflowId, onClose, onConfirm }) {
+    function AssignModal({ workflows, tasks, tasksStatus, tasksError, roster, workflowId, onClose, onConfirm, onRetry }) {
       const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
+      // #1457: the dialog opens before loadTasks() answers, so the first client render can have no
+      // rows; select the first card once they arrive, or when the selected card is gone.
+      useEffect(() => {
+        if (tasks.length === 0) return
+        if (taskId && tasks.some(task => task.id === taskId)) return
+        setTaskId(tasks[0].id)
+      }, [tasks, taskId])
+      const canAssign = tasksStatus === 'ready' && tasks.some(task => task.id === taskId)
       const seen = new Set()
       const bots = (roster?.bots ?? []).filter(bot => {
         if (!bot || bot.remote === true || !bot.id || !bot.name) return false
@@ -953,14 +964,20 @@ window.__ModuleLoader__.load({
             h('p', { className: 'wf-hint' }, tr('A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.'))),
           h('div', { className: 'wf-modal-body' },
             h('div', { className: 'wf-step-h' }, h('b', null, '1'), tr('Pick a task card')),
-            tasks.length === 0
-              ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('No open tasks on the Tasks board.'))
-              : h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
-                key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
-              },
-                h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
-                h('div', { className: 'wf-tt' }, task.title),
-                h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
+            tasksStatus === 'failed'
+              ? h('div', { className: 'wf-assign-fail' },
+                h('div', { className: 'wf-err', role: 'alert' }, tasksError || tr('Could not load the Tasks board.')),
+                h('button', { type: 'button', className: 'wf-btn', onClick: () => onRetry?.() }, tr('Retry')))
+              : tasksStatus !== 'ready'
+                ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('Loading the Tasks board…'))
+                : tasks.length === 0
+                  ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('No open tasks on the Tasks board.'))
+                  : h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
+                    key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
+                  },
+                    h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
+                    h('div', { className: 'wf-tt' }, task.title),
+                    h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
             h('div', { className: 'wf-step-h' }, h('b', null, '2'), tr('Pick who runs it')),
             h('div', { className: 'wf-targets' },
               workflows.map(item => h('button', {
@@ -981,7 +998,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'wf-rad' }))))),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
-            h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onConfirm({ taskId, target }) }, tr('Assign')))))
+            h('button', { type: 'button', className: 'wf-btn wf-dark', disabled: !canAssign, onClick: () => { if (canAssign) onConfirm({ taskId, target }) } }, tr('Assign')))))
     }
 
     function CreateModal({ roster, templates, onClose, onCreate, onTemplate }) {
@@ -1370,6 +1387,8 @@ window.__ModuleLoader__.load({
       const [assignOpen, setAssignOpen] = useState(false)
       const [creating, setCreating] = useState(false)
       const [tasks, setTasks] = useState([])
+      const [tasksStatus, setTasksStatus] = useState('idle')
+      const [tasksError, setTasksError] = useState('')
       const [tip, setTip] = useState(null)
       const [error, setError] = useState('')
       const [editing, setEditing] = useState(false)
@@ -1420,7 +1439,9 @@ window.__ModuleLoader__.load({
         const root = globalThis.__flybot__
         if (!root) return undefined
         const prev = root.openWorkflowAssign
-        root.openWorkflowAssign = () => { setAssignOpen(true); setOpenId(id => id) }
+        // #1457: this path opened the dialog without ever loading the board, so it could only
+        // ever show the frozen empty state.
+        root.openWorkflowAssign = () => { setAssignOpen(true); setOpenId(id => id); void loadTasks() }
         return () => { root.openWorkflowAssign = prev }
       }, [])
       
@@ -1465,8 +1486,15 @@ window.__ModuleLoader__.load({
       }, [open?.id])
 
       const loadTasks = async () => {
+        setTasksStatus('loading')
+        setTasksError('')
         const host = globalThis.__flybot__?.host
-        if (typeof host !== 'function') { setTasks([]); return }
+        if (typeof host !== 'function') {
+          setTasks([])
+          setTasksError(tr('Could not load the Tasks board.'))
+          setTasksStatus('failed')
+          return
+        }
         try {
           const rows = await host('tasks', {})
           const real = Array.isArray(rows)
@@ -1475,9 +1503,14 @@ window.__ModuleLoader__.load({
             }))
             : []
           setTasks(real)
+          setTasksStatus('ready')
         } catch (loadError) {
-          void loadError
+          // #1458: an empty list here used to be rendered as "no tasks to assign", which told the
+          // owner the board was empty instead of that the load had failed.
+          const detail = String(loadError?.message ?? '').trim()
           setTasks([])
+          setTasksError(`${tr('Could not load the Tasks board.')}${detail ? ` (${detail})` : ''}`)
+          setTasksStatus('failed')
         }
       }
 
@@ -1624,8 +1657,8 @@ window.__ModuleLoader__.load({
           },
         })) : null,
         assignOpen ? portal(h(AssignModal, {
-          workflows, tasks, roster, workflowId: openId || workflows[0]?.id,
-          onClose: () => setAssignOpen(false), onConfirm: confirmAssign,
+          workflows, tasks, tasksStatus, tasksError, roster, workflowId: openId || workflows[0]?.id,
+          onClose: () => setAssignOpen(false), onConfirm: confirmAssign, onRetry: loadTasks,
         })) : null,
         creating ? portal(h(CreateModal, {
           roster, templates: pack?.templates, onClose: () => setCreating(false), onCreate: create,
@@ -1831,6 +1864,7 @@ window.__ModuleLoader__.load({
 .wf-canvas-fit{position:relative;width:0;margin:0 auto;transform-origin:50% 0}
 .wf-canvas-view .wf-wires path{stroke:var(--bt-ink-2,rgba(20,20,20,.55));stroke-width:2.5}
 .wf-cards-empty{padding:8px 4px 12px}
+.wf-assign-fail{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:4px 0 8px}
 .wf-context-menu{position:fixed;z-index:95;min-width:140px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:2px}
 .wf-context-menu button{border:0;background:transparent;color:inherit;font:inherit;font-size:12.5px;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
 .wf-context-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}

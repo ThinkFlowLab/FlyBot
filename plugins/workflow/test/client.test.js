@@ -1853,3 +1853,157 @@ test('the drawer details name the permission every node Bot actually runs with',
   }
   view.unmount()
 })
+
+// #1457: the dialog opens before the board arrives, so the first client render
+// selected nothing and `Assign` looked accepted while it posted nothing.
+test('#1457: the assign dialog selects the first loaded card and Assign posts it', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => {
+      if (channel !== 'tasks') return []
+      return [
+        { id: 'task-live-1', title: 'Real board card one', status: 'open', priority: 'P1' },
+        { id: 'task-live-2', title: 'Real board card two', status: 'open', priority: 'P2' },
+      ]
+    },
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+
+    const cards = findAll(view.tree, node => typeof node.props?.className === 'string' && node.props.className.startsWith('wf-kcard'))
+    assert.equal(cards.length, 2)
+    const selected = cards.filter(card => card.props.className.includes('sel'))
+    assert.equal(selected.length, 1, 'exactly one card is preselected')
+    assert.ok(textOf(selected[0]).includes('Real board card one'))
+
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    assert.ok(assign, 'Assign button')
+    assert.equal(assign.props.disabled, false)
+
+    assign.props.onClick()
+    await settle()
+    const posted = calls.filter(item => item.name === 'workflow/assign')
+    assert.equal(posted.length, 1, 'the click posts one assign')
+    assert.equal(posted[0].body.taskId, 'task-live-1')
+    assert.equal(posted[0].body.title, 'Real board card one')
+    assert.equal(textOf(view.tree).includes('Pick a task card'), false, 'the dialog closes')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+test('#1457: an empty board keeps Assign disabled, so the click is not a silent no-op', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { host: async () => [] }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+    assert.ok(textOf(view.tree).includes('No open tasks on the Tasks board.'))
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    assert.equal(assign.props.disabled, true)
+    assign.props.onClick()
+    await settle()
+    assert.equal(calls.some(item => item.name === 'workflow/assign'), false)
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+// #1458: a rejected Tasks call used to be rendered as a genuinely empty board,
+// so the owner was told there is nothing to assign instead of that the load failed.
+test('#1458: a failed Tasks load shows the error and a Retry, never the empty-board hint', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  let broken = true
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => {
+      if (channel !== 'tasks') return []
+      if (broken) throw new Error('host is busy')
+      return [{ id: 'task-live-1', title: 'Real board card one', status: 'open', priority: 'P1' }]
+    },
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+
+    const text = textOf(view.tree)
+    assert.equal(text.includes('No open tasks on the Tasks board.'), false, 'a failed load is not an empty board')
+    assert.ok(text.includes('host is busy'), 'the host message is shown')
+    assert.ok(findAll(view.tree, node => String(node.props?.className ?? '').includes('wf-err')).length > 0)
+
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    assert.equal(assign.props.disabled, true, 'Assign is not clickable while the load failed')
+    assign.props.onClick()
+    await settle()
+    assert.equal(calls.some(item => item.name === 'workflow/assign'), false)
+
+    broken = false
+    const retry = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Retry')[0]
+    assert.ok(retry, 'a Retry control')
+    retry.props.onClick()
+    await settle()
+    assert.ok(textOf(view.tree).includes('Real board card one'), 'Retry loads the board')
+    assert.equal(findAll(view.tree, node => String(node.props?.className ?? '').includes('wf-err')).length, 0)
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+test('#1458: Assign stays disabled while the Tasks board is still loading', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  let release
+  const pending = new Promise(resolve => { release = resolve })
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel === 'tasks' ? pending.then(() => [{ id: 'task-live-1', title: 'Real board card one', status: 'open' }]) : []),
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+    const early = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    assert.equal(early.props.disabled, true, 'no click before the cards are there')
+    release()
+    await settle()
+    const later = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    assert.equal(later.props.disabled, false, 'clickable once a card is selected')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
