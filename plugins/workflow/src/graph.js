@@ -19,7 +19,7 @@ function stripControls(value) {
 }
 
 // Cut on code points, never on UTF-16 units: a unit offset can split a surrogate
-// pair and leave a lone surrogate (rendered `�`) at the end of a long title.
+// pair and leave a lone surrogate, which renders as a replacement character.
 export function cleanLine(value, max = 300) {
   const text = stripControls(value).replace(/\s+/g, ' ').trim()
   if (!Number.isFinite(max) || text.length <= max) return text

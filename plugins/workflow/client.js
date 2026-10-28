@@ -326,7 +326,7 @@ window.__ModuleLoader__.load({
     }
     // The row clips itself with CSS (single line + ellipsis) and the full title
     // rides in a tooltip, so never cut the string: a UTF-16 offset can land
-    // inside a surrogate pair and render an emoji/CJK Ext-B title as �.
+    // inside a surrogate pair and render an emoji/CJK Ext-B title as a replacement character.
     function taskSummary(task, run) {
       if (run?.taskSummary) return run.taskSummary
       const id = shortId(task?.id ?? '')
