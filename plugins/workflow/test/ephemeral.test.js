@@ -763,3 +763,111 @@ test('the built-in delivery nodes hand their connector list to the host', async 
   assert.deepEqual(byNode.get('planner').tools, [], 'Planner names no connector')
   for (const spec of created) assert.equal(spec.permission, 'danger-full-access', 'file and shell rights are a normal Bot\'s')
 })
+
+// #1544: a connector a Bot switched off must not be reopened by a Workflow. The run records the Bot
+// that started it (createdBy) and every Bot whose switches cap its connectors (cappedBy): the caller
+// when a Bot's tool call started the run, and the Bot that saved the graph when the board, the canvas
+// or the API did. `core/src/host/connector-access.js` intersects the node's `tools` with them.
+test('#1544: the run Bot records the Bot that started the run, and the Bot that saved the graph caps it', async () => {
+  const { svc, spawned } = harness()
+  svc.define({
+    name: 'Launder',
+    nodes: [{ id: 'code', name: 'Coder', prompt: 'Code.', tools: ['github'] }],
+    edges: [],
+    callerBotId: 'bot-planner',
+  })
+  const started = await svc.runNamed({ workflow: 'Launder', brief: 'Ship the note', callerBotId: 'main' })
+  assert.equal(started.ok, true)
+  const spec = spawned.at(-1).spec
+  assert.equal(spec.createdBy, 'main')
+  assert.deepEqual(spec.cappedBy, ['main', 'bot-planner'])
+  assert.deepEqual(spec.tools, ['github'])
+})
+
+test('#1544: a run with no calling Bot is capped by the Bot that saved the graph', async () => {
+  const { svc, spawned } = harness()
+  const made = svc.define({
+    name: 'Board lane',
+    nodes: [{ id: 'code', name: 'Coder', prompt: 'Code.', tools: ['github'] }],
+    edges: [],
+    callerBotId: 'bot-planner',
+  }).workflows.find(item => item.name === 'Board lane')
+  // The board (ingest) and the canvas have no calling Bot; the graph's author is the ceiling then.
+  const started = await svc.assign({ workflowId: made.id, taskId: '#1544', title: 'From the board' })
+  assert.equal(started.ok, true)
+  const spec = spawned.at(-1).spec
+  assert.equal('createdBy' in spec, false, 'no Bot started this run')
+  assert.deepEqual(spec.cappedBy, ['bot-planner'])
+  // A save with no Bot behind it is the owner's own edit: it lifts the ceiling again.
+  svc.saveGraph({ workflowId: made.id, nodes: made.nodes, edges: made.edges })
+  await svc.reset({ workflowId: made.id, runId: started.workflows.find(item => item.id === made.id).run.id })
+  await svc.assign({ workflowId: made.id, taskId: '#1544b', title: 'After the owner edit' })
+  assert.equal('cappedBy' in spawned.at(-1).spec, false, 'the owner own edit leaves no Bot ceiling')
+  // The board's own path: a trigger match auto-starts the run from ingest, with no caller in hand.
+  const authored = svc.create({
+    name: 'Trigger lane',
+    nodes: [{ id: 'code', name: 'Coder', prompt: 'Code.', tools: ['github'] }],
+    edges: [],
+    triggers: ['wash'],
+    callerBotId: 'bot-planner',
+  }).workflows.find(item => item.name === 'Trigger lane')
+  const ingested = await svc.ingest({ id: '#1544c', title: 'please wash this', status: 'open' })
+  assert.equal(ingested.matched, true)
+  const boardRun = ingested.workflows.find(item => item.id === authored.id)
+  assert.equal(boardRun.run.task.id, '#1544c')
+  assert.deepEqual(spawned.at(-1).spec.cappedBy, ['bot-planner'], 'the graph author caps a run the board started')
+})
+
+test('#1544: a parked run keeps the caller and the author across the queue', async () => {
+  const { svc, spawned } = harness()
+  const made = svc.define({
+    name: 'Parked',
+    nodes: [{ id: 'code', name: 'Coder', prompt: 'Code.', tools: ['github'] }],
+    edges: [],
+    callerBotId: 'bot-planner',
+  }).workflows.find(item => item.name === 'Parked')
+  svc.setConcurrency({ workflowId: made.id, maxConcurrent: 1 })
+  const first = await svc.assign({ workflowId: made.id, taskId: '#a', title: 'First' })
+  const parked = await svc.runNamed({ workflow: 'Parked', brief: 'Second', callerBotId: 'main' })
+  assert.equal(parked.workflows.find(item => item.id === made.id).queueDepth, 1)
+  const before = spawned.length
+  await svc.reset({ workflowId: made.id, runId: first.workflows.find(item => item.id === made.id).run.id })
+  const drained = spawned.slice(before).map(entry => entry.spec)
+  assert.deepEqual(drained.map(spec => spec.createdBy), ['main'])
+  assert.deepEqual(drained.map(spec => spec.cappedBy), [['main', 'bot-planner']])
+})
+
+test('#1544: the workflow tools hand the calling Bot on to the run they start', async () => {
+  const boot = () => {
+    const specs = {}
+    const created = []
+    async function send() { return { action: 'allow' } }
+    send.use = () => () => {}
+    send.priority = { ROUTING: 10 }
+    const fb = {
+      bot: {
+        list: () => roster,
+        async create(spec) { created.push(spec); return `bot-${created.length}` },
+        async remove() { return true },
+        send,
+      },
+      readOnly: () => false,
+      api: { handle() { return () => {} } },
+      tools: { register(spec) { specs[spec.name] = spec; return () => {} } },
+      warn() {},
+    }
+    const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+    return { started, specs, created }
+  }
+  const one = boot()
+  // The host wraps fb.tools.register's execute and passes the caller as the second argument's botId.
+  await one.specs.define_workflow.execute({
+    name: 'Caller lane',
+    nodes: [{ id: 'code', name: 'Coder', prompt: 'Code.', tools: ['github'] }],
+    edges: [],
+  }, { botId: 'main' })
+  await one.specs.run_workflow.execute({ workflow: 'Caller lane', brief: 'Ship the note' }, { botId: 'bot-planner' })
+  const spawnedSpec = one.created.at(-1)
+  assert.equal(spawnedSpec.createdBy, 'bot-planner')
+  assert.deepEqual(spawnedSpec.cappedBy, ['bot-planner', 'main'])
+})

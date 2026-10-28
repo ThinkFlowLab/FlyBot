@@ -168,10 +168,26 @@ export function install(rt) {
     return tools
   }
 
-  async function create({ name, systemPrompt, fields, role, instructions, createdBy, plugin = SHARED, hidden, ephemeral, model, tools, permission } = {}) {
+  // #1544: the Bots whose connector switches cap an ephemeral Bot (a Workflow run names the Bot that
+  // started it and the Bot that saved the graph). Only the ids are stored; each is read at call time,
+  // so a switch flipped later applies at once and a Bot that is gone stops capping.
+  function cleanCappedBy(value) {
+    if (!Array.isArray(value)) return []
+    const ids = []
+    for (const item of value) {
+      const id = String(item ?? '').trim()
+      if (id === '' || ids.includes(id)) continue
+      ids.push(id)
+      if (ids.length === 8) break
+    }
+    return ids
+  }
+
+  async function create({ name, systemPrompt, fields, role, instructions, createdBy, cappedBy, plugin = SHARED, hidden, ephemeral, model, tools, permission } = {}) {
     checkName('plugin', plugin)
     await rt.load()
     const stepTools = ephemeral === true ? cleanStepTools(tools) : []
+    const caps = ephemeral === true ? cleanCappedBy(cappedBy) : []
     const preset = ephemeral === true ? String(permission ?? '').trim() : ''
     const bot = await rt.createBot({
       name, role, instructions, createdBy,
@@ -184,6 +200,7 @@ export function install(rt) {
     })
     const record = rt.botOf(bot.id)
     if (record && stepTools.length > 0) record.stepTools = stepTools
+    if (record && caps.length > 0) record.cappedBy = caps
     if (record && preset) {
       try {
         await rt.setPermission(record, preset)
@@ -192,7 +209,7 @@ export function install(rt) {
         throw error
       }
     }
-    if (record && (stepTools.length > 0 || preset)) await rt.save()
+    if (record && (stepTools.length > 0 || caps.length > 0 || preset)) await rt.save()
     for (const [key, value] of Object.entries(fields ?? {})) fire('change', { botId: bot.id, plugin, key, value: clone(value), prev: undefined })
     return bot.id
   }

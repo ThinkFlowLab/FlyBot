@@ -2326,7 +2326,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // The prompts in a due scheduled task's message. DSH frames it for the model: one
  // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
  export function reminderPrompts(text) {
-@@ -62,6 +62,15 @@ export function reminderPrompts(text) {
+@@ -62,6 +62,105 @@ export function reminderPrompts(text) {
    }
  }
  export const stripHeader = text => text.replace(HEADER, '')
@@ -2338,6 +2338,96 @@ diff --git a/src/client/text.js b/src/client/text.js
 +  const line = text.match(TRACE)?.[0]
 +  if (!line || /[.!?。！？:：,，]/.test(line.replace(/[^\S\n]*\n+$/, '').replace(/→/g, ''))) return text
 +  return text.slice(line.length).replace(/^\s+/, '')
++}
++
++// The copy export reads a stored turn the way the drawer's rows read one (#130, #1347): a
++// delegation trace or an untrusted fence is routing or format, never something a person copies.
++// Copy is read line by line, so the paragraph breaks a person typed stay paragraph breaks (#1406):
++// only a line that is nothing but a trace goes, and only the first line loses a leading trace.
++const COPY_FENCE = /untrusted-(?:message|file)\b/i
++const escapeName = name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
++const sortedNames = names => (Array.isArray(names) ? names : [])
++  .map(name => String(name ?? '').trim())
++  .filter(Boolean)
++  .sort((a, b) => b.length - a.length)
++// A whole line that is only a trace: every hop is a known Bot name, so `Chief → SelfB1` is routing
++// and goes, while `Chief → Product Hi there` stays a line whose leading `Chief → Product` is then
++// read as the trace it is. Without names no hop is known, so no whole line is dropped.
++const isTraceLine = (line, known) => {
++  if (known.length === 0 || /[.!?。！？:：,，]/.test(line.replace(/→/g, ''))) return false
++  const hop = `(?:${known.map(escapeName).join('|')})`
++  return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line)
++}
++// The flat trace: `Chief → Product` and the words on the same line. Only a first hop that is a
++// Bot's name — whole, exactly, longest name first so `Dev Lead` never matches as `Dev` — is
++// routing. `Settings → Models 页面` is a person naming a setting, so it stays as written.
++export function stripFlatTrace(text, names = []) {
++  const body = String(text ?? '')
++  const known = sortedNames(names)
++  if (known.length === 0) return body
++  const hop = `(?:${known.map(escapeName).join('|')})`
++  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})*[ \\t]*(?=\\S)`)
++  const found = trace.exec(body)
++  return found ? body.slice(found[0].length) : body
++}
++// `names` are the Bots a trace can start from: the roster's, longest first. Without them no first
++// hop can be proven to be a name, so nothing is stripped — a missing roster must never eat prose.
++export function copyBodyOf(text, names = []) {
++  let body = String(text ?? '')
++  for (let previous; previous !== body;) {
++    previous = body
++    body = stripHeader(body)
++  }
++  const lines = []
++  const known = sortedNames(names)
++  let first = true
++  for (const raw of body.split('\n')) {
++    // Only the fence marker itself goes through the fence reader (a marker is a wrap, not words);
++    // what it empties was never a paragraph, so it is dropped rather than kept as a blank line.
++    if (COPY_FENCE.test(raw)) {
++      const words = visibleText(raw)
++      if (words !== '') {
++        lines.push(first ? stripFlatTrace(words, known) : words)
++        first = false
++      }
++      continue
++    }
++    const line = raw.trim()
++    if (line === '') {
++      lines.push('')
++      continue
++    }
++    if (isTraceLine(line, known)) continue
++    // The first line of the reply is the one a delegation trace can stand on.
++    lines.push(first ? stripFlatTrace(line, known) : line)
++    first = false
++  }
++  return lines.join('\n').trim()
++}
++
++// The names a flat trace may start from: every Bot the drawer already knows, longest first, so a
++// name that contains a shorter one is one alternative and never two ("Dev Lead" before "Dev").
++export function copyNames(roster) {
++  const names = []
++  const records = [...Object.values(roster?.byId ?? {}), ...(Array.isArray(roster?.bots) ? roster.bots : [])]
++  for (const bot of records) {
++    const name = typeof bot?.name === 'string' ? bot.name.trim() : ''
++    if (name && !names.includes(name)) names.push(name)
++  }
++  return names.sort((a, b) => b.length - a.length)
++}
++// The conversation copy export: one `**Name:**` line per turn, the owner's own lines kept as they
++// were, and every stored marker read away. `list` is the session list the drawer already holds.
++export function transcriptOf(list, id, name, hiddenTurns = [], names = []) {
++  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
++  if (!Array.isArray(outline)) return ''
++  const lines = []
++  for (const entry of outline) {
++    if (hiddenTurns.includes(entry.turn)) continue
++    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t('You')}:** ${entry.prompt.trim()}`)
++    if (entry.response) lines.push(`**${name}:** ${copyBodyOf(entry.response, names)}`)
++  }
++  return lines.join('\n\n')
 +}
  
  // Of the Bots in a conversation, the one whose memory changed last, by the host's
@@ -2379,7 +2469,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // parts) are not events in the chat, nor is a request handed back after its line was
  // already shown: deferred, resumed after a restart, or retried after a tool call
  // written as text.
-@@ -200,18 +200,72 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
+@@ -200,18 +200,84 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
  }
  
  // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
@@ -2452,6 +2542,18 @@ diff --git a/src/client/text.js b/src/client/text.js
 +export const botNames = roster => [...(roster?.bots ?? []), ...(roster?.remoteBots ?? []), ...(roster?.agents ?? [])]
 +  .map(entry => entry?.name).filter(name => typeof name === 'string' && name !== '')
 +
++// What voice mode reads aloud: a reply's words, read the one way a row reads a stored line — header,
++// fence and a known-name delegation trace dropped (#1395, #1408) — and then with the Markdown a speech
++// synthesiser would otherwise say out loud (a code fence, a link's target, emphasis marks).
++export function speechOf(text, names = []) {
++  return readableLine(text, names)
++    .replace(/```[\s\S]*?```/g, ' ')
++    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
++    .replace(/[*_`#>|~-]+/g, ' ')
++    .replace(/\s+/g, ' ')
++    .trim()
++}
++
  const formatTokens = count => (count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count))
  
  // Same buckets as the shell's usage pill: every prompt-side billing bucket plus output.
@@ -2494,6 +2596,21 @@ diff --git a/src/client/text.js b/src/client/text.js
 diff --git a/src/client/voice.js b/src/client/voice.js
 --- a/src/client/voice.js
 +++ b/src/client/voice.js
+@@ -1,5 +1,5 @@
+ import { createElement as h, useEffect, useRef, useState } from 'react'
+-import { stripHeader } from './text.js'
++import { botNames, speechOf } from './text.js'
+ import { MicIcon, CloseIcon } from './icons.js'
+ import { BotMark, RoomAvatar } from './mark.js'
+ import { speechApi, useDictation } from './composer.js'
+@@ -12,7 +12,6 @@ import { openCapture, speechCatalog, transcribeWave, turnDetector } from './spee
+ // again. With DSH's Voice Input plugin on, its recognizer hears the user: one
+ // recording ends after a pause and is transcribed whole. Otherwise the browser's
+ // own speech recognition does. The browser's speech synthesis reads the answer.
+-const plainSpeech = text => stripHeader(text).replace(/```[\s\S]*?```/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|~-]+/g, ' ').replace(/\s+/g, ' ').trim()
+ const VOICE_LABELS = {
+   listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', paused: 'Paused',
+   setup: 'Voice input needs its speech model', unsupported: 'Voice chat is not available in this browser',
 @@ -27,7 +27,7 @@ function useMicLevel(enabled) {
      let audio = null
      let frame = 0
@@ -2503,6 +2620,15 @@ diff --git a/src/client/voice.js b/src/client/voice.js
        if (stopped) { media.getTracks().forEach(track => track.stop()); return }
        stream = media
        audio = new AudioContext()
+@@ -184,7 +184,7 @@ export function VoiceMode({ sessionId, roster, actions, useSessions, useSessionS
+     const [count, text] = [lastReply.slice(0, lastReply.indexOf('|')), lastReply.slice(lastReply.indexOf('|') + 1)]
+     if (count === waiting.current || !text.trim()) return
+     waiting.current = null
+-    const spoken = plainSpeech(text)
++    const spoken = speechOf(text, botNames(roster))
+     setSaid(spoken)
+     setHeard('')
+     if (!window.speechSynthesis || !spoken) { setPhase('listening'); return }
 diff --git a/src/host/agents.js b/src/host/agents.js
 --- a/src/host/agents.js
 +++ b/src/host/agents.js

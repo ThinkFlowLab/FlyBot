@@ -660,6 +660,7 @@ export function install(rt) {
       return task
     }
     const saved = []
+    const kinds = []
     const batch = new Map()
     for (const item of items) {
       if (item === null || typeof item !== 'object' || Array.isArray(item)) throw invalid('Each task must be an object')
@@ -771,9 +772,14 @@ export function install(rt) {
       if (task.title) batch.set(task.title, task)
       batch.set(task.id, task)
       saved.push(task)
+      kinds.push(isNew ? 'create' : 'update')
     }
     prune()
     await save()
+    // The conversation path is a board write like task-create and task-update, so a plugin
+    // has to see it: a card a Bot records itself with `workflow:<id>` starts nothing
+    // otherwise (#1462). Routing after the save also keeps a routed owner visible.
+    for (let at = 0; at < saved.length; at += 1) await routeOpenTask(saved[at], kinds[at])
     return saved.map(view)
   }
 

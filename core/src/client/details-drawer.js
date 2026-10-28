@@ -1,6 +1,6 @@
 import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
 import { isMainOf } from './sources.js'
-import { HEADER, currentPart, stripHeader, usageOf } from './text.js'
+import { copyNames, currentPart, transcriptOf, usageOf } from './text.js'
 import { PlusIcon, ShareIcon, CloseIcon, ChevronLeftIcon, GearIcon } from './icons.js'
 import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './mark.js'
 import { GlobeIcon, Favicon } from './browser-pane.js'
@@ -17,18 +17,6 @@ import { t } from './i18n.js'
 import { remoteBotTitle, roomTitle, copiedToClipboard } from '../shared/remote-label.js'
 import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
-
-function transcriptOf(list, id, name, hiddenTurns = []) {
-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
-  if (!Array.isArray(outline)) return ''
-  const lines = []
-  for (const entry of outline) {
-    if (hiddenTurns.includes(entry.turn)) continue
-    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t('You')}:** ${entry.prompt.trim()}`)
-    if (entry.response) lines.push(`**${name}:** ${stripHeader(entry.response).trim()}`)
-  }
-  return lines.join('\n\n')
-}
 
 const TAB_LABELS = { details: 'Details', browser: 'Browser' }
 
@@ -251,7 +239,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
   const bot = owner
   const running = useSessionStatus(map => map.get(part)?.running === true)
   const doing = useActivity(map => map[bot?.id ?? sessionId])
-  const transcript = useSessions(list => transcriptOf(list, part, bot?.name ?? room?.name ?? t('Bot'), roster.exchangeTurns[part]))
+  const transcript = useSessions(list => transcriptOf(list, part, bot?.name ?? room?.name ?? t('Bot'), roster.exchangeTurns[part], copyNames(roster)))
   const usage = useSessions(list => usageOf(list, [part, ...(bot?.parts ?? room?.parts ?? [])]))
   const run = promise => Promise.resolve(promise)
     .then(() => { setError(''); return true })

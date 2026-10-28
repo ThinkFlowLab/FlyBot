@@ -2,6 +2,19 @@
 // own fixture (a delivery pipeline with one parallel join, and a Friday digest).
 import { chainLabel, normalizeGraph } from './graph.js'
 
+
+// Prompt guidance for Settings graphs that run Claim / Verify / Triage style
+// steps. Paste into node instructions so Bots emit early-end markers the engine
+// honors (see checkEarlyEnd in graph.js). Without these, loop/onFail edges with
+// max=3 can re-burn Claim↔Verify on the same tip SHA.
+export const EARLY_END_GUIDANCE = [
+  'Early-end markers (emit one and stop; the engine ends the run and will not loop or onFail-retry):',
+  '- needs-human: OUTPUT status: needs-human  (or a whole line: EARLY-END needs-human)',
+  '- already-claimed: OUTPUT claimed: already-claimed  (or EARLY-END already-claimed) when agent-working / Claimed-by is present',
+  '- open-pr: OUTPUT claimed: open-pr  (or EARLY-END open-pr / already-claimed) when an open PR already fixes the issue — do not claim again',
+  '- tip-unchanged: OUTPUT status: tip-unchanged  (or EARLY-END tip-unchanged) when the tip SHA did not change; Verify must escalate once, not re-run the full suite',
+].join('\n')
+
 const planner = {
   id: 'planner', name: 'Planner', role: '需求拆解 / 排期',
   instructions: '读取任务卡片与上下文，拆成可执行子任务，指定验收标准，并把产出交给下游节点。',
@@ -23,7 +36,7 @@ const coder = {
 }
 const reviewer = {
   id: 'reviewer', name: 'Reviewer', role: '代码审查',
-  instructions: '审查 Coder 的 PR：可读性、边界条件与回归风险。不通过则打回 Coder。',
+  instructions: '审查 Coder 的 PR：可读性、边界条件与回归风险。不通过则打回 Coder。若 tip SHA 未变（tip-unchanged），输出 tip-unchanged / EARLY-END tip-unchanged 并只升级一次，不要整套重跑。',
   tools: ['github'],
   inputs: [{ name: 'patch', type: 'text', required: true }],
   outputs: [{ name: 'review', type: 'text' }],

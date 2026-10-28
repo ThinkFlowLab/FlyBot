@@ -6,8 +6,11 @@
 // 3. `assignee` naming a workflow (id or exact name).
 // 4. A `bot:<id or name>` token.
 // 5. `assignee` naming a local Bot (id or exact name). A remote Bot never matches.
-// 6. A workflow trigger keyword contained in the title, note or criteria.
-//    The longest trigger wins. A tie keeps the earlier workflow.
+// 6. A workflow trigger keyword in the title, note, criteria or tags.
+//    The longest trigger wins. A tie keeps the earlier workflow. An ASCII
+//    trigger must be a whole word (`notice` does not match `noticeable`, `pr`
+//    does not match `Improve`); a non-ASCII trigger matches inside a longer
+//    text, because a script such as CJK has no word boundary.
 //
 // Only an `open` task is considered. Claimed, working and finished cards are left alone.
 
@@ -23,6 +26,16 @@ function text(value) {
 function haystack(task) {
   const tags = Array.isArray(task.tags) ? task.tags.map(text) : []
   return [task.title, task.note, task.criteria, ...tags].map(text).filter(Boolean).join('\n')
+}
+
+// #1559: an ASCII trigger is a word, not a fragment. `notice` must not fire
+// on `noticeable` and `pr` must not fire on `Improve`. A trigger that is not
+// plain ASCII keeps substring matching, since CJK has no word boundary. The
+// two-character minimum is a separate guard and stays where it is.
+function containsTrigger(lower, word) {
+  if (!/^[\x00-\x7f]+$/.test(word)) return lower.includes(word)
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![a-z0-9_])${escaped}(?![a-z0-9_])`).test(lower)
 }
 
 function findWorkflow(workflows, raw) {
@@ -71,7 +84,7 @@ export function matchTask(task, { workflows = [], bots = [] } = {}) {
   for (const item of graphs) {
     for (const trigger of item.triggers ?? []) {
       const word = text(trigger).toLowerCase()
-      if (word.length < 2 || !lower.includes(word)) continue
+      if (word.length < 2 || !containsTrigger(lower, word)) continue
       if (word.length > bestLength) {
         best = item
         bestLength = word.length

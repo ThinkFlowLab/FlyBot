@@ -39,7 +39,8 @@ test('assigning a board task starts the run at the first Bot and posts the claim
   const claim = delivery(assigned).messages.filter(message => message.tone === 'accent').at(-1)
   assert.match(claim.text, /#1281/)
   assert.match(claim.text, /Planner/)
-  assert.ok(delivery(assigned).messages.some(message => message.text.includes('任务已分配')))
+  // Timeline rows no longer all carry `text` (#1489): a time row is a stamp.
+  assert.ok(delivery(assigned).messages.some(message => message.text?.includes('任务已分配')))
   assert.equal(svc.assign({ workflowId: DELIVERY_ID, taskId: '', title: 'x' }).ok, false)
 })
 
@@ -54,7 +55,7 @@ test('advance walks the parallel join: Deployer stays queued until both branches
   assert.equal(mid.nodeStatus.reviewer, 'running')
   assert.equal(mid.nodeStatus.tester, 'running')
   assert.equal(mid.nodeStatus.deployer, 'queued')
-  assert.ok(delivery(opened).messages.some(message => message.text.includes('并行分支开始')))
+  assert.ok(delivery(opened).messages.some(message => message.text?.includes('并行分支开始')))
 
   const half = step('reviewer', 'done')
   assert.equal(delivery(half).run.nodeStatus.deployer, 'queued')
@@ -62,7 +63,7 @@ test('advance walks the parallel join: Deployer stays queued until both branches
 
   const joined = step('tester', 'done')
   assert.equal(delivery(joined).run.nodeStatus.deployer, 'running')
-  assert.ok(delivery(joined).messages.some(message => message.text.includes('汇合')))
+  assert.ok(delivery(joined).messages.some(message => message.text?.includes('汇合')))
 
   const finished = step('deployer', 'done')
   const done = delivery(finished).run
@@ -271,6 +272,40 @@ test('an open task auto-starts the matching workflow, and a miss stays unassigne
   assert.equal(svc.ingest({ id: '#53', title: 'notice', status: 'accepted' }).matched, false)
 })
 
+test('an ASCII trigger matches a whole word, and a non-ASCII trigger still matches inside one', () => {
+  const svc = service()
+  const workflows = svc.state().workflows
+  const route = title => matchTask({ id: '#1', title, status: 'open' }, { workflows, bots: [] })
+
+  // A trigger inside a longer word is not a hit: the card only mentions it.
+  assert.equal(route('noticeable bug in logging'), null)
+  assert.equal(route('notices about the release'), null)
+  assert.equal(route('noticed at last'), null)
+
+  // The whole word is there, so it still routes.
+  assert.deepEqual(route('notice'), { kind: 'workflow', id: DELIVERY_ID })
+  assert.deepEqual(route('notice: deploy paused'), { kind: 'workflow', id: DELIVERY_ID })
+  assert.deepEqual(route('缩短交付组群 notice'), { kind: 'workflow', id: DELIVERY_ID })
+
+  // Non-ASCII triggers have no word boundary and keep matching inside a longer text.
+  assert.deepEqual(route('写周报'), { kind: 'workflow', id: 'weekly' })
+  assert.deepEqual(route('周五周报'), { kind: 'workflow', id: 'weekly' })
+
+  // A two-character ASCII trigger is still legal, but only as its own word.
+  const prLanes = [{ id: 'wf-pr', name: 'PR lane', triggers: ['pr'] }]
+  const prRoute = title => matchTask({ id: '#1', title, status: 'open' }, { workflows: prLanes, bots: [] })
+  assert.equal(prRoute('Improve onboarding docs'), null)
+  assert.equal(prRoute('Prepare release notes'), null)
+  assert.equal(prRoute('Sprint planning'), null)
+  assert.deepEqual(prRoute('pr'), { kind: 'workflow', id: 'wf-pr' })
+  assert.deepEqual(prRoute('open a PR to fix it'), { kind: 'workflow', id: 'wf-pr' })
+  assert.deepEqual(prRoute('PR: bump deps'), { kind: 'workflow', id: 'wf-pr' })
+
+  // The existing under-two-characters guard is untouched.
+  const oneChar = [{ id: 'wf-one', name: 'One', triggers: ['x'] }]
+  assert.equal(matchTask({ id: '#1', title: 'x', status: 'open' }, { workflows: oneChar, bots: [] }), null)
+})
+
 test('apply registers the workflow endpoints and stays quiet when disabled', () => {
   const names = []
   const writes = []
@@ -290,6 +325,7 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.ok(names.some(([name, read]) => name === 'workflow/templates' && read))
   assert.ok(!names.some(([name]) => name === 'workflow/say'), 'the removed say endpoint is not registered')
   assert.equal(writes.length, 1)
+  assert.equal(started.service.state().tasksWired, true)
   assert.deepEqual(writes[0]({ id: '#9', title: 'please', status: 'open', assignee: 'Coder' }), { ownerBotId: 'bot-coder' })
   assert.equal(writes[0]({ id: '#10', title: 'nothing', status: 'open' }), null)
   const tools = []
@@ -298,6 +334,22 @@ test('apply registers the workflow endpoints and stays quiet when disabled', () 
   assert.deepEqual(tools, ['run_workflow', 'define_workflow'])
   const off = apply({ flybot: { scope: () => fb } }, { enabled: false })
   assert.equal(off.enabled, false)
+})
+
+// A host without the board hook is reported, not silently treated as manual-only (#1462).
+test('a host without tasks.onWrite warns once and reports the missing wiring in state', () => {
+  const warnings = []
+  const fb = {
+    bot: { list: () => roster, send: { use() { return () => {} } } },
+    readOnly: () => false,
+    api: { handle() { return () => {} } },
+    warn(message) { warnings.push(String(message)) },
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  assert.equal(started.enabled, true)
+  assert.equal(started.service.state().tasksWired, false)
+  assert.equal(warnings.filter(line => line.includes('tasks.onWrite')).length, 1)
+  assert.equal(warnings.length, 1)
 })
 
 test('rename changes workflow name, including seeded delivery rows', () => {

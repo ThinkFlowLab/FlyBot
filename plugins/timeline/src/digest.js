@@ -31,6 +31,7 @@ export function formatMs(ms) {
 }
 
 const percent = (part) => `${Math.round(part * 100)}%`
+const turnWord = (n) => (n === 1 ? 'turn' : 'turns')
 const pad = n => String(n).padStart(2, '0')
 // The reader's own clock, the hours the panel header prints (`fmtClock` in client.js): a report
 // copied from the panel must not name a different time than the header above the button.
@@ -60,18 +61,23 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
     const turns = use.turns ?? 0
     const errors = use.errors ?? 0
     const waiting = waitingBy.get(use.lane) ?? 0
-    const errorRate = turns > 0 ? errors / turns : 0
+    // `turns` counts the turns that began in the window; `errors` counts every overlapping failed
+    // turn, so a failure that began before the window is in one and not the other. Count against
+    // the larger of the two, the way `health.js` already does (timeline.md invariant 5): dividing
+    // by `turns` alone printed `1 turns, 3 failed (300%)`, a failure count above its turn count.
+    const counted = Math.max(turns, errors)
+    const errorRate = counted > 0 ? errors / counted : 0
     const busyShare = use.windowMs > 0 ? use.busyMs / use.windowMs : 0
     const flags = []
-    if (turns >= ERROR_TURNS_MIN && errorRate >= ERROR_RATE_MIN) flags.push(`${errors} of ${turns} turns failed`)
+    if (counted >= ERROR_TURNS_MIN && errorRate >= ERROR_RATE_MIN) flags.push(`${errors} of ${counted} turns failed`)
     if (turns > 0 && busyShare >= BUSY_MIN) flags.push(`busy ${percent(busyShare)} of the window`)
-    if (turns === 0) flags.push('no turns')
+    if (counted === 0) flags.push('no turns')
     if (waiting > 0) flags.push(`${waiting} request(s) unanswered`)
     return {
       id: use.lane,
       name: lane?.name ?? use.lane,
       main: lane?.main === true,
-      turns, errors, errorRate, busyShare,
+      turns, errors, counted, errorRate, busyShare,
       running: use.running === true,
       tokens: { input: usage.input ?? 0, output: usage.output ?? 0, cacheRead: usage.cacheRead ?? 0, cacheWrite: usage.cacheWrite ?? 0, calls: usage.calls ?? 0 },
       tools: (toolUseBy.get(use.lane) ?? []).slice(0, TOP_TOOLS),
@@ -90,6 +96,7 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
   const team = {
     turns: bots.reduce((sum, bot) => sum + bot.turns, 0),
     errors: bots.reduce((sum, bot) => sum + bot.errors, 0),
+    counted: bots.reduce((sum, bot) => sum + bot.counted, 0),
     tokens: { input: sumTokens('input'), output: sumTokens('output'), cacheRead: sumTokens('cacheRead'), cacheWrite: sumTokens('cacheWrite'), calls: sumTokens('calls') },
     longestWait: longest === undefined ? null : { id: longest.id, from: longest.from, to: longest.to, waitedMs: longest.waitedMs ?? 0 },
     unhealthy: bots.filter(bot => bot.turns >= ERROR_TURNS_MIN && bot.errorRate >= ERROR_RATE_MIN).map(bot => bot.id),
@@ -105,9 +112,12 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
   } else {
     for (const bot of bots) {
       lines.push('', `## ${bot.name}${bot.main ? ' (main)' : ''}${bot.running ? ' · running' : ''}`)
-      if (bot.turns > 0) {
-        const failed = bot.errors > 0 ? `, ${bot.errors} failed (${percent(bot.errorRate)})` : ''
-        lines.push(`- ${bot.turns} turns${failed}`)
+      if (bot.counted > 0) {
+        // A share is printed only when it can be a share. With every counted turn a failed one the
+        // numbers cannot tell a turn of the window from a failed turn that began before it, and
+        // `1 failed (100%)` beside the window's single completed turn reads as its opposite.
+        const failed = bot.errors > 0 ? `, ${bot.errors} failed${bot.errorRate < 1 ? ` (${percent(bot.errorRate)})` : ''}` : ''
+        lines.push(`- ${bot.counted} ${turnWord(bot.counted)}${failed}`)
         lines.push(`- busy ${percent(bot.busyShare)} of the window`)
         lines.push(`- tokens: ${formatCount(bot.tokens.input)} in / ${formatCount(bot.tokens.output)} out / ${formatCount(bot.tokens.cacheRead)} cached`)
       } else {
@@ -120,13 +130,13 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
     }
   }
 
-  lines.push('', '## Team', `- ${team.turns} turns, ${team.errors} failed`)
+  lines.push('', '## Team', `- ${team.counted} ${turnWord(team.counted)}, ${team.errors} failed`)
   lines.push(`- tokens: ${formatCount(team.tokens.input)} in / ${formatCount(team.tokens.output)} out (${team.tokens.calls} calls)`)
   if (team.longestWait !== null) lines.push(`- longest wait: ${team.longestWait.from} → ${team.longestWait.to}, ${formatMs(team.longestWait.waitedMs)}`)
   if (team.unhealthy.length > 0) lines.push(`- needs a look: ${team.unhealthy.join(', ')}`)
 
-  const line = team.turns === 0
+  const line = team.counted === 0
     ? `No Bot activity in ${range}.`
-    : `${team.turns} turns, ${team.errors} failed, ${formatCount(team.tokens.input)} tokens in over ${range}.`
+    : `${team.counted} ${turnWord(team.counted)}, ${team.errors} failed, ${formatCount(team.tokens.input)} tokens in over ${range}.`
   return { title, range, live: window.live === true, bots, team, markdown: lines.join('\n'), line }
 }

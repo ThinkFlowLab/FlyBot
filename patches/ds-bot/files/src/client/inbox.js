@@ -229,6 +229,9 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
   for (const [key, entry] of lastEnded) {
     const bot = ownBot(roster, entry.botId)
     if (bot === undefined || entry.failed === undefined || !fresh(entry.at) || seen.has(key) || waitingAt.has(key)) continue
+    // A hidden Bot has no sidebar row, so this card's only action (Open) could not show the chat
+    // it names (#1566). Its failure in a group still lists: the group's own row opens there.
+    if (bot.hidden === true && entry.roomId === undefined) continue
     const chat = entry.roomId ?? bot.id
     const asked = sessions?.byId ? previewOf(sessions, partOf(roster, chat), [], [], botNames(roster)) : ''
     needs.push({

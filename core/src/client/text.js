@@ -115,6 +115,96 @@ export function stripTrace(text) {
   return text.slice(line.length).replace(/^\s+/, '')
 }
 
+// The copy export reads a stored turn the way the drawer's rows read one (#130, #1347): a
+// delegation trace or an untrusted fence is routing or format, never something a person copies.
+// Copy is read line by line, so the paragraph breaks a person typed stay paragraph breaks (#1406):
+// only a line that is nothing but a trace goes, and only the first line loses a leading trace.
+const COPY_FENCE = /untrusted-(?:message|file)\b/i
+const escapeName = name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const sortedNames = names => (Array.isArray(names) ? names : [])
+  .map(name => String(name ?? '').trim())
+  .filter(Boolean)
+  .sort((a, b) => b.length - a.length)
+// A whole line that is only a trace: every hop is a known Bot name, so `Chief → SelfB1` is routing
+// and goes, while `Chief → Product Hi there` stays a line whose leading `Chief → Product` is then
+// read as the trace it is. Without names no hop is known, so no whole line is dropped.
+const isTraceLine = (line, known) => {
+  if (known.length === 0 || /[.!?。！？:：,，]/.test(line.replace(/→/g, ''))) return false
+  const hop = `(?:${known.map(escapeName).join('|')})`
+  return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line)
+}
+// The flat trace: `Chief → Product` and the words on the same line. Only a first hop that is a
+// Bot's name — whole, exactly, longest name first so `Dev Lead` never matches as `Dev` — is
+// routing. `Settings → Models 页面` is a person naming a setting, so it stays as written.
+export function stripFlatTrace(text, names = []) {
+  const body = String(text ?? '')
+  const known = sortedNames(names)
+  if (known.length === 0) return body
+  const hop = `(?:${known.map(escapeName).join('|')})`
+  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})*[ \\t]*(?=\\S)`)
+  const found = trace.exec(body)
+  return found ? body.slice(found[0].length) : body
+}
+// `names` are the Bots a trace can start from: the roster's, longest first. Without them no first
+// hop can be proven to be a name, so nothing is stripped — a missing roster must never eat prose.
+export function copyBodyOf(text, names = []) {
+  let body = String(text ?? '')
+  for (let previous; previous !== body;) {
+    previous = body
+    body = stripHeader(body)
+  }
+  const lines = []
+  const known = sortedNames(names)
+  let first = true
+  for (const raw of body.split('\n')) {
+    // Only the fence marker itself goes through the fence reader (a marker is a wrap, not words);
+    // what it empties was never a paragraph, so it is dropped rather than kept as a blank line.
+    if (COPY_FENCE.test(raw)) {
+      const words = visibleText(raw)
+      if (words !== '') {
+        lines.push(first ? stripFlatTrace(words, known) : words)
+        first = false
+      }
+      continue
+    }
+    const line = raw.trim()
+    if (line === '') {
+      lines.push('')
+      continue
+    }
+    if (isTraceLine(line, known)) continue
+    // The first line of the reply is the one a delegation trace can stand on.
+    lines.push(first ? stripFlatTrace(line, known) : line)
+    first = false
+  }
+  return lines.join('\n').trim()
+}
+
+// The names a flat trace may start from: every Bot the drawer already knows, longest first, so a
+// name that contains a shorter one is one alternative and never two ("Dev Lead" before "Dev").
+export function copyNames(roster) {
+  const names = []
+  const records = [...Object.values(roster?.byId ?? {}), ...(Array.isArray(roster?.bots) ? roster.bots : [])]
+  for (const bot of records) {
+    const name = typeof bot?.name === 'string' ? bot.name.trim() : ''
+    if (name && !names.includes(name)) names.push(name)
+  }
+  return names.sort((a, b) => b.length - a.length)
+}
+// The conversation copy export: one `**Name:**` line per turn, the owner's own lines kept as they
+// were, and every stored marker read away. `list` is the session list the drawer already holds.
+export function transcriptOf(list, id, name, hiddenTurns = [], names = []) {
+  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
+  if (!Array.isArray(outline)) return ''
+  const lines = []
+  for (const entry of outline) {
+    if (hiddenTurns.includes(entry.turn)) continue
+    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t('You')}:** ${entry.prompt.trim()}`)
+    if (entry.response) lines.push(`**${name}:** ${copyBodyOf(entry.response, names)}`)
+  }
+  return lines.join('\n\n')
+}
+
 // Of the Bots in a conversation, the one whose memory changed last, by the host's
 // clock: changes reaching one window in the same poll share a `seen` time.
 export function latestMemoryChange(news, ids) {
@@ -331,6 +421,18 @@ function dropKnownTrace(line, names) {
 // A chat whose roster is not loaded still reads its text, just never as a trace.
 export const botNames = roster => [...(roster?.bots ?? []), ...(roster?.remoteBots ?? []), ...(roster?.agents ?? [])]
   .map(entry => entry?.name).filter(name => typeof name === 'string' && name !== '')
+
+// What voice mode reads aloud: a reply's words, read the one way a row reads a stored line — header,
+// fence and a known-name delegation trace dropped (#1395, #1408) — and then with the Markdown a speech
+// synthesiser would otherwise say out loud (a code fence, a link's target, emphasis marks).
+export function speechOf(text, names = []) {
+  return readableLine(text, names)
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`#>|~-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 const formatTokens = count => (count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count))
 

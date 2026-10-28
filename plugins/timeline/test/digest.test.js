@@ -151,3 +151,68 @@ test('#582: the endpoint is registered read-only and removed on dispose', () => 
   }
   assert.equal(adapter.endpoints.has(DIGEST_ENDPOINT), false, 'dispose removes the endpoint')
 })
+
+// #1578: `utilization.turns` counts turns that began in the window while `errors` counts every
+// turn that overlapped it, so a failed turn that began before the window lands in one count and not
+// the other. The report divided `errors` by `turns` and could print `1 turns, 3 failed (300%)` —
+// exactly the reading `docs/subsystems/timeline.md` invariant 5 says can never happen, and the
+// reading `health.js` already avoids with `Math.max(turns, errors)`. The report counts against the
+// same larger population, so the failure count can never be above the count it is compared against.
+test('#1578: three failed turns that began before the window never read as 300% of one turn', () => {
+  const digest = buildDigest(make({ utilization: [{ lane: 'a', windowMs: 100_000, busyMs: 3_000, turns: 1, errors: 3, running: false }] }), { now: 100_000 })
+  // The raw window field keeps its documented meaning; only the report's comparison changes.
+  assert.equal(digest.bots[0].turns, 1)
+  assert.equal(digest.bots[0].counted, 3)
+  assert.equal(digest.bots[0].errorRate, 1)
+  assert.doesNotMatch(digest.markdown, /300%/)
+  assert.doesNotMatch(digest.markdown, /1 turn, 3 failed/)
+  assert.match(digest.markdown, /## Chief \(main\)\n- 3 turns, 3 failed\n/)
+  assert.match(digest.markdown, /## Team\n- 3 turns, 3 failed\n/)
+  assert.match(digest.line, /^3 turns, 3 failed, /)
+  assert.doesNotMatch(digest.line, /1 turn/)
+})
+
+// The mild shape of the same confusion: one failed turn that began before the window plus one
+// completed turn that began inside it. The one turn the window holds is the completed one, so a
+// `(100%)` next to it tells the reader the opposite of what happened. Counts only, no share, when
+// every counted turn is a failed one — the numbers cannot say whose turn failed.
+test('#1578: a failed turn that began before the window is not read as the window\'s own turn failing', () => {
+  const digest = buildDigest(make({ utilization: [{ lane: 'a', windowMs: 100_000, busyMs: 5_000, turns: 1, errors: 1, running: false }] }), { now: 100_000 })
+  assert.equal(digest.bots[0].counted, 1)
+  assert.doesNotMatch(digest.markdown, /1 failed \(100%\)/)
+  assert.match(digest.markdown, /## Chief \(main\)\n- 1 turn, 1 failed\n/)
+  assert.match(digest.markdown, /## Team\n- 1 turn, 1 failed\n/)
+  assert.match(digest.line, /^1 turn, 1 failed, /)
+})
+
+// No denominator change when `errors <= turns`: a clean window must read byte for byte as it did.
+test('#1578: a clean window is byte-identical to the report before the change', () => {
+  const digest = buildDigest(make({ utilization: [{ lane: 'a', windowMs: 100_000, busyMs: 62_000, turns: 3, errors: 0, running: false }] }), { now: 100_000 })
+  assert.equal(digest.markdown, [
+    '# Team report',
+    'Window: 08:00–08:01 · live',
+    '',
+    '## Chief (main)',
+    '- 3 turns',
+    '- busy 62% of the window',
+    '- tokens: 12.3k in / 1.2k out / 8.0k cached',
+    '- tools: web_search ×6 (1 failed), read ×2',
+    '',
+    '## Team',
+    '- 3 turns, 0 failed',
+    '- tokens: 12.3k in / 1.2k out (4 calls)',
+    '- longest wait: b → a, 12m',
+  ].join('\n'))
+  assert.equal(digest.line, '3 turns, 0 failed, 12.3k tokens in over 08:00–08:01.')
+})
+
+// `1 turns` reads as a typo in a report pasted into a standup: the per-Bot line, the Team line and
+// the one-line summary all follow the number.
+test('#1578: a single turn reads as one turn in all three places', () => {
+  const digest = buildDigest(make({ utilization: [{ lane: 'a', windowMs: 100_000, busyMs: 1_000, turns: 1, errors: 0, running: false }] }), { now: 100_000 })
+  assert.match(digest.markdown, /## Chief \(main\)\n- 1 turn\n/)
+  assert.match(digest.markdown, /## Team\n- 1 turn, 0 failed\n/)
+  assert.match(digest.line, /^1 turn, 0 failed, /)
+  assert.doesNotMatch(digest.markdown, /1 turns/)
+  assert.doesNotMatch(digest.line, /1 turns/)
+})

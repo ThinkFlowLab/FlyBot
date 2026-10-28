@@ -1,5 +1,5 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { stripHeader } from './text.js'
+import { botNames, speechOf } from './text.js'
 import { MicIcon, CloseIcon } from './icons.js'
 import { BotMark, RoomAvatar } from './mark.js'
 import { speechApi, useDictation } from './composer.js'
@@ -12,7 +12,6 @@ import { openCapture, speechCatalog, transcribeWave, turnDetector } from './spee
 // again. With DSH's Voice Input plugin on, its recognizer hears the user: one
 // recording ends after a pause and is transcribed whole. Otherwise the browser's
 // own speech recognition does. The browser's speech synthesis reads the answer.
-const plainSpeech = text => stripHeader(text).replace(/```[\s\S]*?```/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|~-]+/g, ' ').replace(/\s+/g, ' ').trim()
 const VOICE_LABELS = {
   listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', paused: 'Paused',
   setup: 'Voice input needs its speech model', unsupported: 'Voice chat is not available in this browser',
@@ -184,7 +183,7 @@ export function VoiceMode({ sessionId, roster, actions, useSessions, useSessionS
     const [count, text] = [lastReply.slice(0, lastReply.indexOf('|')), lastReply.slice(lastReply.indexOf('|') + 1)]
     if (count === waiting.current || !text.trim()) return
     waiting.current = null
-    const spoken = plainSpeech(text)
+    const spoken = speechOf(text, botNames(roster))
     setSaid(spoken)
     setHeard('')
     if (!window.speechSynthesis || !spoken) { setPhase('listening'); return }

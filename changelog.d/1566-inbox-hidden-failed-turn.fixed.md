@@ -1,0 +1,1 @@
+A failed turn in a hidden Bot's own chat no longer leaves a card in the Inbox that cannot be opened or dismissed; a failure in a group is still listed, because the group's row opens there, and *In progress* is unchanged. ([#1566](https://github.com/ThinkFlowLab/FlyBot/issues/1566))

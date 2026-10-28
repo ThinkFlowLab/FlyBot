@@ -572,3 +572,40 @@ test('a run Bot gets a connector only when its step tools name it', async (t) =>
   assert.deepEqual(sorted(hiddenFrom('bare')), sorted([...COMPOSIO, ...GITHUB]), 'no stepTools fails closed')
   assert.match(guard(GITHUB[0], 'bare'), /not granted to this run/)
 })
+
+// #1544: a Workflow node names the connectors it may call, and since #1535 that names enough to reach
+// them. That must not become a way around a switch: a connector turned off for the Bot that started
+// the run (or that saved the graph) stays off for the run Bot, and the tool is masked out of its list
+// (denied()/restrict()), not only refused when it is called.
+test('a run Bot does not reopen a connector the Bot that started the run switched off', async (t) => {
+  const state = team()
+  state.bots.writer.connectors = { github: false }
+  const runBot = (id, { createdBy, cappedBy, stepTools = ['github'] } = {}) => {
+    state.bots[id] = {
+      id, sessionId: id, name: id, role: 'Run', instructions: '', createdAt: 4,
+      hidden: true, ephemeral: { plugin: 'flybot-workflow' }, stepTools,
+      ...(createdBy === undefined ? {} : { createdBy }),
+      ...(cappedBy === undefined ? {} : { cappedBy }),
+    }
+  }
+  runBot('caller-off', { createdBy: 'writer' })
+  runBot('caller-on', { createdBy: 'chief' })
+  runBot('caller-gone', { createdBy: 'removed-bot' })
+  runBot('author-off', { cappedBy: ['writer'] })
+  runBot('both-on', { createdBy: 'chief', cappedBy: ['chief'] })
+  const { agentFor, hiddenFrom, guard, stop } = await setup({ state })
+  t.after(stop)
+  await Promise.all(['caller-off', 'caller-on', 'caller-gone', 'author-off', 'both-on'].map(id => agentFor(id)))
+
+  assert.match(guard(GITHUB[0], 'caller-off'), /turned off for Writer; the step's tools list cannot turn it back on/, 'the switch is the reason, not the step list')
+  assert.deepEqual(sorted(hiddenFrom('caller-off')), sorted([...COMPOSIO, ...GITHUB]), 'and the tool is out of the run Bot\'s list too')
+  assert.equal(guard(GITHUB[0], 'caller-on'), undefined, 'a caller that still has github keeps the #1535 answer')
+  assert.deepEqual(sorted(hiddenFrom('caller-on')), sorted(COMPOSIO))
+  // A run nobody's tool call started (the board, the canvas, the API) has no caller; the Bot that
+  // saved the graph is the ceiling then.
+  assert.match(guard(GITHUB[0], 'author-off'), /turned off for Writer; the step's tools list cannot turn it back on/)
+  assert.deepEqual(sorted(hiddenFrom('author-off')), sorted([...COMPOSIO, ...GITHUB]))
+  assert.equal(guard(GITHUB[0], 'both-on'), undefined)
+  // A Bot that no longer exists has no switch list to read: the answer stays what it was.
+  assert.equal(guard(GITHUB[0], 'caller-gone'), undefined)
+})

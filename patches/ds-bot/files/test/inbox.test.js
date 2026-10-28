@@ -311,6 +311,31 @@ test('a failure no longer needs me once the Bot works or waits there again', () 
   assert.equal(freed.needs.find(card => card.id === 'turn:e3').place, 'in Ops')
 })
 
+// #1566: a hidden Bot has no sidebar row, so the failed-turn card's only action (Open) could
+// never reveal the chat it names. Its failure in its own chat is left out; one in a group still
+// lists, because the group's row opens it. Progress keeps counting a hidden Bot's running turn.
+const hiddenRoster = { ...roster, bots: roster.bots.map(bot => (bot.id === 'b2' ? { ...bot, hidden: true } : bot)) }
+hiddenRoster.byId = Object.fromEntries(hiddenRoster.bots.map(bot => [bot.id, bot]))
+
+test("a failed turn in a hidden Bot's own chat is not a Needs you card (#1566)", () => {
+  const hidden = inboxModel({ roster: hiddenRoster, work: endedWork, tasks, sessions: endedSessions, now: NOW })
+  assert.ok(!ids(hidden.needs).includes('turn:e2'))
+  // The count badge drops it with the card, and it is not reclassified into Done.
+  assert.equal(needsCount(hiddenRoster, endedWork, tasks, NOW), model.needs.length)
+  assert.ok(!ids(hidden.done).includes('chat:b2'))
+  // The same snapshot with a visible Bot still lists it: the card itself is not the defect.
+  assert.ok(ids(endedModel.needs).includes('turn:e2'))
+  // A hidden Bot failing in a group still needs me: that chat is opened from the group's row.
+  const inGroup = { ...endedWork, ended: [...endedWork.ended, { id: 'e9', botId: 'b2', roomId: 'r1', at: NOW - 30_000, failed: 'quota' }] }
+  const groupModel = inboxModel({ roster: hiddenRoster, work: inGroup, tasks, sessions: endedSessions, now: NOW })
+  const groupCard = groupModel.needs.find(card => card.id === 'turn:e9')
+  assert.ok(groupCard, 'a hidden Bot failing in a group is still listed')
+  assert.equal(groupCard.chat, 'r1')
+  // In progress keeps counting a hidden Bot's running turn; this fix only reads Needs you.
+  const running = inboxModel({ roster: hiddenRoster, work: { ...endedWork, bots: { ...endedWork.bots, b2: { since: NOW - 1000, tool: 'pwsh' } } }, tasks, sessions: endedSessions, now: NOW })
+  assert.ok(ids(running.progress).includes('run:b2|'))
+})
+
 test('each card has a one-line latest activity that never repeats its title or reason', () => {
   const byId = Object.fromEntries([...endedModel.needs, ...endedModel.progress, ...endedModel.done].map(card => [card.id, card]))
   // An approval and a running turn in Ops show that chat's last line.

@@ -53,7 +53,24 @@ export function install(rt) {
     const tools = bot?.stepTools ?? []
     return tools.includes(id) || tools.includes('*') || tools.some(name => name === id || String(name).startsWith(`mcp__${id}__`))
   }
-  const allowed = (bot, id) => bot.remote === undefined && !turnedOff(bot, id) && (bot.ephemeral === undefined || stepGrants(bot, id))
+  // #1544: a run Bot must not reopen a connector a Bot switched off. The record names the Bots whose
+  // switches cap it — the caller that started the run (createdBy), and the Bot that saved the graph
+  // (cappedBy), which is the ceiling when the board, the canvas or the API started the run. A Bot that
+  // no longer exists, and a record with neither field (an older run), leave the answer as it was:
+  // there is no switch list to intersect with.
+  const capsOf = (bot) => {
+    const ids = [bot?.createdBy, ...(Array.isArray(bot?.cappedBy) ? bot.cappedBy : [])]
+      .filter(id => typeof id === 'string' && id !== '')
+    const caps = []
+    for (const id of ids) {
+      const cap = rt.botOf(id)
+      if (cap !== undefined && !caps.includes(cap)) caps.push(cap)
+    }
+    return caps
+  }
+  const capOff = (bot, id) => capsOf(bot).find(cap => turnedOff(cap, id))
+  const allowed = (bot, id) => bot.remote === undefined && !turnedOff(bot, id)
+    && (bot.ephemeral === undefined || (stepGrants(bot, id) && capOff(bot, id) === undefined))
 
   // The Bot an Agent works for: its own chat, a group Session and an earlier part resolve through
   // selfOf; a sub-agent Session is followed up to its parent. The answer has three shapes, and only
@@ -126,7 +143,13 @@ export function install(rt) {
     const { bot } = who
     if (allowed(bot, id)) return undefined
     if (bot.remote !== undefined) return `The ${id} connector is not available to a friend's Bot.`
-    if (bot.ephemeral !== undefined) return `The ${id} connector is not granted to this run. The step's tools list is what allows it.`
+    if (bot.ephemeral !== undefined) {
+      // #1544: the step did name it — a Bot's switch is what refuses it, and naming it again in the
+      // graph cannot turn it back on.
+      const cap = capOff(bot, id)
+      if (cap !== undefined) return `The ${id} connector is turned off for ${cap.name}; the step's tools list cannot turn it back on.`
+      return `The ${id} connector is not granted to this run. The step's tools list is what allows it.`
+    }
     return `The ${id} connector is turned off for ${bot.name}. Its owner can turn it on in this Bot's settings.`
   })
 

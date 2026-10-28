@@ -32,12 +32,25 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
   }
 }
 
-export async function spawnAll(nodes, roster, spawn, workflowModel = '') {
+// #1544: a connector a Bot switched off is not reopened by a Workflow. The run carries the Bots whose
+// switches cap it — the Bot that started the run (a tool call), and the Bot that saved the graph, which
+// is the ceiling when the board, the canvas or the API started it. The host intersects the node's
+// `tools` with them; the graph cannot raise its own ceiling.
+export function runCaps(callerBotId, authorBotId) {
+  const ids = [callerBotId, authorBotId].filter(id => typeof id === 'string' && id !== '')
+  return [...new Set(ids)]
+}
+
+export async function spawnAll(nodes, roster, spawn, workflowModel = '', caps = {}) {
   const made = []
+  const capping = runCaps(caps.callerBotId, caps.authorBotId)
+  const caller = typeof caps.callerBotId === 'string' && caps.callerBotId !== '' ? caps.callerBotId : undefined
   try {
     const ephemeral = {}
     for (const node of nodes) {
       const spec = nodeConfig(node, roster, workflowModel)
+      if (caller !== undefined) spec.createdBy = caller
+      if (capping.length > 0) spec.cappedBy = capping
       const id = await spawn(spec)
       if (typeof id !== 'string' || id === '') throw new Error('The run could not start a Bot')
       made.push(id)

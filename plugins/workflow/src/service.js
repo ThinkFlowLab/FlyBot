@@ -20,6 +20,27 @@ const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
+// A live step waits for its Bot's reply, and nothing else bounds that wait
+// (#1530). These are the only two numbers a stuck run depends on: how long one
+// step may stay unanswered, and how long a hand-off that did not land waits
+// before it is tried again. Both are cleared with the step they belong to.
+// Ten minutes was shorter than the work a node is asked to do — implementing or
+// reviewing a change takes twenty to forty — so every step that did real work
+// was killed mid-flight (#1580). The default covers one such step now, and a
+// workflow may set its own within these bounds.
+export const DEFAULT_STEP_TIMEOUT_MINUTES = 45
+export const MIN_STEP_TIMEOUT_MINUTES = 1
+export const MAX_STEP_TIMEOUT_MINUTES = 120
+export const STEP_DEADLINE_MS = DEFAULT_STEP_TIMEOUT_MINUTES * 60 * 1000
+export const HANDOFF_RETRY_DELAYS_MS = [1000, 2000]
+
+function stepTimeoutValue(raw) {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) {
+    throw new Error(`stepTimeoutMinutes is an integer from ${MIN_STEP_TIMEOUT_MINUTES} to ${MAX_STEP_TIMEOUT_MINUTES}`)
+  }
+  return value
+}
 
 function idOf(prefix) {
   return `${prefix}-${randomBytes(4).toString('hex')}`
@@ -104,7 +125,10 @@ function blankRun(workflow, task, now, history = []) {
   }
 }
 
-export function createWorkflowService({ dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, spawn, release, dispatch } = {}) {
+export function createWorkflowService({
+  dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, tasksWired = false, spawn, release, dispatch,
+  setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = handle => clearTimeout(handle),
+} = {}) {
   const file = dir ? join(dir, FILE) : null
   let state = load(file, warn) ?? seed()
   state.routes ??= {}
@@ -119,6 +143,99 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const run = hostTail.then(() => fn())
     hostTail = run.then(() => {}, () => {})
     return run
+  }
+
+  // Every wait a live step can sit in is bounded (#1530): one timer per step
+  // for its deadline, one per hand-off that is being retried. The key carries
+  // the run and the node so a step that moves, a run that ends, and dispose()
+  // clear exactly their own timers.
+  const timers = new Map()
+  const warned = new Set()
+  const handOffTries = new Map()
+
+  function warnOnce(key, message) {
+    if (warned.has(key)) return
+    warned.add(key)
+    warn(message)
+  }
+
+  function clearTimerAt(key) {
+    const entry = timers.get(key)
+    if (!entry) return
+    timers.delete(key)
+    clearTimer(entry.handle)
+  }
+
+  function clearRunTimers(runId) {
+    for (const [key, entry] of [...timers]) {
+      if (entry.runId === runId) clearTimerAt(key)
+    }
+    for (const key of [...warned]) {
+      if (key.endsWith(`:${runId}`)) warned.delete(key)
+    }
+    for (const key of [...handOffTries.keys()]) {
+      if (key.startsWith(`${runId}:`)) handOffTries.delete(key)
+    }
+  }
+
+  function setTimerAt(kind, runId, nodeId, delay, fn) {
+    const key = `${kind}:${runId}:${nodeId}`
+    clearTimerAt(key)
+    const handle = setTimer(() => {
+      timers.delete(key)
+      return fn()
+    }, delay)
+    // A deadline must never hold the host process open by itself.
+    handle?.unref?.()
+    timers.set(key, { runId, nodeId, handle })
+  }
+
+  function armDeadline(item, run, nodeId) {
+    if (timers.has(`deadline:${run.id}:${nodeId}`)) return
+    setTimerAt('deadline', run.id, nodeId, stepTimeoutMsOf(item), () => expireStep(item.id, run.id, nodeId))
+  }
+
+  // Give every running step the deadline it started with and drop the timers of
+  // steps that moved. A hand-off retry does not push a deadline out: the wait
+  // the owner saw is the wait the deadline measures.
+  function syncTimers(item, run) {
+    // Arm deadlines for every live running step. Ephemeral maps are usual on
+    // production runs, but a host that cannot spawn still walks the graph via
+    // advance(); without this the step could sit unanswered forever (#1530).
+    if (run?.live !== true) return
+    const running = new Set(orderedIds(item, run.nodeStatus, 'running'))
+    for (const [key, entry] of [...timers]) {
+      if (entry.runId !== run.id) continue
+      if (run.status !== 'running' || run.paused === true || !running.has(entry.nodeId)) clearTimerAt(key)
+    }
+    if (run.status !== 'running' || run.paused === true) return
+    for (const nodeId of running) armDeadline(item, run, nodeId)
+  }
+
+  // A step nobody answers is not progress. Fail the run, free its Bots and say
+  // which step timed out, so a dead Bot cannot hold a lane slot forever.
+  function expireStep(workflowId, runId, nodeId) {
+    return hostSerial(async () => {
+      const item = workflow(workflowId)
+      const minutes = stepTimeoutMinutesOf(item)
+      const lane = laneOf(workflowId)
+      const run = lane.active.find(candidate => candidate.id === runId)
+      if (!item || !run || run.status !== 'running' || run.paused === true) return
+      if (run.nodeStatus?.[nodeId] !== 'running') return
+      const node = nodeById(item, nodeId)
+      warn(`flybot-workflow: step ${nodeId} timed out after ${minutes} minutes`)
+      push(workflowId, [{
+        kind: 'system',
+        tone: 'bad',
+        key: '{node} timed out: no reply for {minutes} minutes, the run was marked failed.',
+        params: { node: node?.name ?? nodeId, minutes },
+        text: `${node?.name ?? nodeId} 超时：${minutes} 分钟没有回包，run 已标记失败。`,
+      }], now())
+      endRun(item, run, { code: 'step-failed', nodeName: node?.name, text: `no reply for ${minutes} minutes` })
+      await releaseRun(workflowId, run)
+      await drainAll()
+      return present()
+    }).catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
   }
 
   function write() {
@@ -163,6 +280,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     return {
       ok: true,
       version: 1,
+      tasksWired,
       templates: templateCatalog(),
       workflows: state.workflows.map(raw => {
         const item = readyWorkflow(raw)
@@ -179,6 +297,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         triggers: [...(item.triggers ?? [])],
         chain: chainLabel(item),
         maxConcurrent: maxOf(item),
+        stepTimeoutMinutes: stepTimeoutMinutesOf(item),
         activeCount: runningOf(laneOf(item.id)).length,
         queueDepth: (laneOf(item.id).queue ?? []).length,
         queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
@@ -220,6 +339,19 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const value = Number(item?.maxConcurrent)
     if (!Number.isInteger(value) || value < 1) return DEFAULT_CONCURRENT
     return Math.min(MAX_CONCURRENT, value)
+  }
+
+  // How long this workflow lets one live step stay unanswered (#1580). A stored
+  // value outside the bounds can only come from a file edited by hand, so it
+  // falls back to the default instead of ending the run early.
+  function stepTimeoutMinutesOf(item) {
+    const value = Number(item?.stepTimeoutMinutes)
+    if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) return DEFAULT_STEP_TIMEOUT_MINUTES
+    return value
+  }
+
+  function stepTimeoutMsOf(item) {
+    return stepTimeoutMinutesOf(item) * 60_000
   }
 
   function displayRun(id) {
@@ -301,6 +433,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     })
     else if (op.type === 'fail') result = failNode(item, working.nodeStatus, op.nodeId, {
       failAttempts: working.failAttempts ?? {},
+      outputs: op.outputs ?? working.produced?.[op.nodeId] ?? {},
+      text: op.text ?? '',
     })
     else if (op.type === 'retry') result = retryNode(item, working.nodeStatus, op.nodeId)
     else throw new Error(`Unknown step ${op.type}`)
@@ -309,8 +443,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const failedOnce = { ...working.failedOnce }
     if (op.type === 'fail') failedOnce[op.nodeId] = true
     const blocked = gated.blocked.length > 0
-    // Early end takes precedence over normal finish - when needs-human or already-claimed
-    // is detected, the run should end even if not all nodes are done (#1537, #1538)
+    // Early end takes precedence over normal finish — needs-human, already-claimed,
+    // tip-unchanged, or open-pr end the run even if not all nodes are done (#1537, #1538).
     const earlyEnded = result.earlyEnd != null
     const finished = earlyEnded || (result.finished === true && !blocked)
     // A node marked failOnce is retried. Any other failure stops the run,
@@ -364,7 +498,14 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     })
     for (const hole of gated.blocked) {
       const node = nodeById(item, hole.id)
-      lines.push({ kind: 'system', tone: 'bad', text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${hole.missing.join(', ')}。` })
+      const missing = hole.missing.join(', ')
+      lines.push({
+        kind: 'system',
+        tone: 'bad',
+        key: '{node} cannot start: missing input {missing}.',
+        params: { node: node?.name ?? hole.id, missing },
+        text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${missing}。`,
+      })
     }
     return { run: next, lines }
   }
@@ -386,9 +527,10 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     }
   }
 
-  // A dispatch that does not land is not "handed". Say so in the chat and
-  // leave the node open: the next hand-off tries again. No second send in
-  // this call — a 429 must not be hammered.
+  // A dispatch that does not land is not "handed". A small backoff retries it a
+  // bounded number of times; when it still does not land the step is not
+  // progress, so the run fails and the chat says why (#1530). A 429 is never
+  // hammered: the retries are spaced, not immediate.
   async function handOff(item, run) {
     if (typeof dispatch !== 'function' || !run?.ephemeral || run.paused === true) return run
     let current = run
@@ -408,18 +550,50 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       }
       if (!sentOk(result)) {
         const code = result?.code || result?.action || 'dispatch-failed'
+        const key = `${current.id}:${nodeId}`
+        const tries = (handOffTries.get(key) ?? 0) + 1
+        handOffTries.set(key, tries)
         warn(`flybot-workflow: step ${nodeId} was not handed over: ${code}`)
-        push(item.id, [{ kind: 'system', tone: 'bad', text: `${node.name} 没有接到这一步（${code}）。` }], now())
-        continue
+        if (tries <= HANDOFF_RETRY_DELAYS_MS.length) {
+          const delay = HANDOFF_RETRY_DELAYS_MS[tries - 1]
+          const seconds = delay / 1000
+          push(item.id, [{
+            kind: 'system',
+            tone: 'bad',
+            key: '{node} did not take this step ({code}); retrying in {seconds}s ({tries}/{total}).',
+            params: { node: node.name, code, seconds, tries, total: HANDOFF_RETRY_DELAYS_MS.length },
+            text: `${node.name} 没有接到这一步（${code}），${seconds} 秒后重试（${tries}/${HANDOFF_RETRY_DELAYS_MS.length}）。`,
+          }], now())
+          setTimerAt('retry', current.id, nodeId, delay, () => hostSerial(() => afterStep(item.id, current.id))
+            .catch(error => warn(`flybot-workflow: the retry for step ${nodeId} failed: ${error?.message ?? error}`)))
+          continue
+        }
+        push(item.id, [{
+          kind: 'system',
+          tone: 'bad',
+          key: '{node} did not take this step ({code}); {total} retries did not land, the run failed.',
+          params: { node: node.name, code, total: HANDOFF_RETRY_DELAYS_MS.length },
+          text: `${node.name} 没有接到这一步（${code}），重试 ${HANDOFF_RETRY_DELAYS_MS.length} 次仍未落地，run 已标记失败。`,
+        }], now())
+        // The run cannot finish without this step: end it the way every other
+        // abandoned run ends (#1424), then let the caller release the Bots.
+        endRun(item, current, { code: 'dispatch-failed' })
+        storeRun(item.id, current)
+        break
       }
+      handOffTries.delete(`${current.id}:${nodeId}`)
       current = { ...current, handed: { ...current.handed, [nodeId]: true }, inputs: { ...(current.inputs ?? {}), [nodeId]: body.inputs } }
       storeRun(item.id, current)
     }
+    syncTimers(item, current)
     write()
     return current
   }
 
   async function releaseRun(workflowId, run) {
+    // A released run answers to nothing: its deadline and its pending retries go
+    // with the Bots, or a timer fires into a run that no longer exists.
+    clearRunTimers(run.id)
     const ids = Object.values(run.ephemeral ?? {})
     delete run.ephemeral
     delete run.handed
@@ -459,8 +633,22 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   // already write their own line, these are the endings that wrote none (#1493).
   function failureLine(run) {
     const label = summarizeTask(run.task)
-    const detail = run.failure?.text ? ` · ${run.failure.text}` : ''
-    return { kind: 'system', tone: 'bad', text: `✕ 失败 · ${label}${detail}` }
+    if (run.failure?.text) {
+      return {
+        kind: 'system',
+        tone: 'bad',
+        key: '✕ Failed · {task} · {detail}',
+        params: { task: label, detail: run.failure.text },
+        text: `✕ 失败 · ${label} · ${run.failure.text}`,
+      }
+    }
+    return {
+      kind: 'system',
+      tone: 'bad',
+      key: '✕ Failed · {task}',
+      params: { task: label },
+      text: `✕ 失败 · ${label}`,
+    }
   }
 
   function archiveCutoffRun(workflowId, run) {
@@ -496,7 +684,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     }
     if (!best) return null
     const task = laneOf(best.item.id).queue.shift()
-    return { item: best.item, task: { id: task.id, title: task.title } }
+    return { item: best.item, task: { id: task.id, title: task.title, ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}) } }
   }
 
   function noteUnstarted(item, error) {
@@ -566,14 +754,21 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     let run = { ...blankRun(item, task, now(), []), live: true }
     if (ephemeral) run.ephemeral = ephemeral
     const at = now()
+    const taskLabel = summarizeTask(task)
     push(item.id, [
-      { kind: 'time', text: '刚刚' },
-      { kind: 'system', text: `任务已分配 · ${summarizeTask(task)} → ${item.name}` },
+      { kind: 'time' },
+      {
+        kind: 'system',
+        key: 'Task assigned · {task} → {workflow}',
+        params: { task: taskLabel, workflow: item.name },
+        text: `任务已分配 · ${taskLabel} → ${item.name}`,
+      },
     ], at)
     const stepped = applyOp(item, run, { type: 'start' })
     run = stepped.run
     laneOf(item.id).active.push(run)
     push(item.id, stepped.lines, at)
+    syncTimers(item, run)
     write()
     return { ok: true, run }
   }
@@ -584,7 +779,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const holes = missingProviders(item)
       if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
       try {
-        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '')
+        // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
+        // this run may use; the host intersects them with each node's `tools`.
+        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
+          callerBotId: task.callerBotId,
+          authorBotId: item.authoredBy,
+        })
       } catch (error) {
         await releaseAll(error.spawned ?? [], release, warn)
         return refuse(error)
@@ -612,8 +812,21 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   function park(item, task) {
     const lane = laneOf(item.id)
     state.queueSeq = (state.queueSeq ?? 0) + 1
-    lane.queue.push({ id: task.id, title: task.title, enqueuedAt: now(), queueSeq: state.queueSeq })
-    push(item.id, [{ kind: 'system', text: `排队 · ${summarizeTask(task)}（前面 ${lane.queue.length - 1} 个）` }], now())
+    lane.queue.push({
+      id: task.id,
+      title: task.title,
+      enqueuedAt: now(),
+      queueSeq: state.queueSeq,
+      // #1544: a parked run starts later without its caller in hand; keep it, or the ceiling is lost.
+      ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
+    })
+    const ahead = lane.queue.length - 1
+    push(item.id, [{
+      kind: 'system',
+      key: 'Queued · {task} ({ahead} ahead)',
+      params: { task: summarizeTask(task), ahead },
+      text: `排队 · ${summarizeTask(task)}（前面 ${ahead} 个）`,
+    }], now())
     write()
   }
 
@@ -670,6 +883,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       }
       storeRun(workflowId, stepped.run)
       push(workflowId, stepped.lines, now())
+      syncTimers(item, stepped.run)
       write()
       return { ok: true, runId: stepped.run.id }
     } catch (error) {
@@ -683,6 +897,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     const run = lane.active.find(itemRun => itemRun.id === runId)
     if (item && run && run.status === 'running' && typeof spawn === 'function') await handOff(item, run)
     const latest = lane.active.find(itemRun => itemRun.id === runId)
+    if (item && latest) syncTimers(item, latest)
     if (latest && (latest.status === 'done' || latest.status === 'failed')) {
       await releaseRun(workflowId, latest)
       await drainAll()
@@ -725,6 +940,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
       const lane = laneOf(workflowId)
+      for (const run of lane.active ?? []) clearRunTimers(run.id)
       const releasing = (lane.active ?? []).flatMap(run => Object.values(run.ephemeral ?? {}))
       const finish = () => {
         state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
@@ -784,11 +1000,23 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           ...(Array.isArray(body.edges) ? { edges: body.edges } : { layers: body.layers }),
         })
         if (!item.name) throw new Error('A workflow needs a name')
+        // #1544: the Bot that wrote the graph caps the connectors a run may reach from it.
+        const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
+        if (authoredBy) item.authoredBy = authoredBy
         const cap = Number(body.maxConcurrent)
         if (Number.isInteger(cap) && cap >= 1 && cap <= MAX_CONCURRENT) item.maxConcurrent = cap
+        if (body.stepTimeoutMinutes !== undefined && body.stepTimeoutMinutes !== null && body.stepTimeoutMinutes !== '') {
+          item.stepTimeoutMinutes = stepTimeoutValue(body.stepTimeoutMinutes)
+        }
         state.workflows.push(item)
         const memberNames = item.nodes.map(node => node.name).join('、')
-        push(item.id, [{ kind: 'system', text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}` }], now())
+        const members = item.nodes.map(node => node.name).join(', ')
+        push(item.id, [{
+          kind: 'system',
+          key: 'Workflow "{name}" created · members {members}',
+          params: { name: item.name, members },
+          text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}`,
+        }], now())
         write()
         return present()
       } catch (error) {
@@ -806,6 +1034,10 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       if (!item) return { ok: false, error: 'No such workflow' }
       const task = { id: cleanLine(body.taskId ?? body.id, 80), title: cleanLine(body.title, 300) }
       if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
+      // #1544: the Bot whose tool call started this run, when a Bot started it. The board, the canvas
+      // and the API pass none, and the graph's author is the ceiling there.
+      const callerBotId = cleanLine(body.callerBotId, 80)
+      if (callerBotId) task.callerBotId = callerBotId
       if (typeof spawn !== 'function') return enqueue(item, task)
       return hostSerial(() => enqueue(item, task))
     },
@@ -825,6 +1057,15 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         await drainAll()
         return present()
       })
+    },
+    setStepTimeout(body = {}) {
+      const workflowId = String(body.workflowId ?? '')
+      const raw = body.stepTimeoutMinutes
+      const saved = mutate(workflowId, (item) => {
+        if (raw === null || raw === '') delete item.stepTimeoutMinutes
+        else item.stepTimeoutMinutes = stepTimeoutValue(raw)
+      })
+      return saved
     },
     setModel(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
@@ -847,9 +1088,10 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         const lane = laneOf(workflowId)
         const run = lane.active.find(item => item.id === saved.runId)
         if (run && (run.status === 'done' || run.status === 'failed')) {
+          clearRunTimers(run.id)
           lane.active = lane.active.filter(item => item.id !== run.id)
           lane.last = run
-          lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+          lane.history = [...lane.history, historyRow(run)].slice(-20)
           drainSync()
           write()
         }
@@ -864,13 +1106,28 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     // The Bot's reply is the step result. A node that is no longer running
     // has already moved; a second report does not move it again.
     stepResult(body = {}) {
-      const found = findEphemeral(String(body.botId ?? ''))
-      if (!found) return present()
-      if (found.run.nodeStatus?.[found.nodeId] !== 'running') return present()
+      const botId = String(body.botId ?? '')
+      const found = findEphemeral(botId)
+      if (!found) {
+        // A Bot that replies after its run ended (a deadline, a Stop) has nobody
+        // listening any more: say so once instead of dropping the reply silently.
+        warnOnce(`orphan:${botId}`, `flybot-workflow: a reply from ${botId || 'an unknown Bot'} matches no running step`)
+        return present()
+      }
+      if (found.run.nodeStatus?.[found.nodeId] !== 'running') {
+        warnOnce(`moved:${botId}:${found.run.id}`, `flybot-workflow: a reply from ${botId} reached step ${found.nodeId}, which is no longer running`)
+        return present()
+      }
       const node = nodeById(found.item, found.nodeId)
       const parsed = readStepResult(body.text ?? '', node)
       const text = parsed.text || cleanLine(body.text, 2000)
-      return this.advance({
+      const note = (value) => {
+        if (value?.ok === false) {
+          warnOnce(`advance:${found.run.id}:${found.nodeId}`, `flybot-workflow: the reply for step ${found.nodeId} did not advance the run: ${value?.error ?? 'unknown'}`)
+        }
+        return value
+      }
+      const saved = this.advance({
         workflowId: found.item.id,
         runId: found.run.id,
         nodeId: found.nodeId,
@@ -878,6 +1135,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         text,
         outputs: parsed.outputs,
       })
+      if (saved && typeof saved.then === 'function') return saved.then(note)
+      return note(saved)
     },
     ownsBot(botId) {
       return findEphemeral(botId) !== null
@@ -894,7 +1153,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       if (run.paused === true) return present()
       run = { ...run, paused: true, updatedAt: now() }
       storeRun(workflowId, run)
-      push(workflowId, [{ kind: 'system', text: `⏸ 已暂停 · ${summarizeTask(run.task)}` }], now())
+      syncTimers(item, run)
+      push(workflowId, [{
+        kind: 'system',
+        key: '⏸ Paused · {task}',
+        params: { task: summarizeTask(run.task) },
+        text: `⏸ 已暂停 · ${summarizeTask(run.task)}`,
+      }], now())
       write()
       return present()
     },
@@ -910,7 +1175,13 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       if (run.paused !== true) return present()
       run = { ...run, paused: false, updatedAt: now() }
       storeRun(workflowId, run)
-      push(workflowId, [{ kind: 'system', text: `▶ 已继续 · ${summarizeTask(run.task)}` }], now())
+      syncTimers(item, run)
+      push(workflowId, [{
+        kind: 'system',
+        key: '▶ Resumed · {task}',
+        params: { task: summarizeTask(run.task) },
+        text: `▶ 已继续 · ${summarizeTask(run.task)}`,
+      }], now())
       write()
       if (typeof spawn !== 'function') return present()
       return hostSerial(async () => {
@@ -932,13 +1203,20 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           const ids = Object.values(run.ephemeral ?? {})
           // Stopping one run ends it the same way a reap does: the node map settles
           // with the run, or the strip keeps painting the node it was on (#1424).
+          clearRunTimers(run.id)
           const ended = { ...endRun(item, run, { code: 'stopped' }) }
           delete ended.ephemeral
           delete ended.handed
           lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
           lane.last = ended
           lane.history = [...lane.history, historyRow(ended)].slice(-20)
-          push(workflowId, [{ kind: 'system', tone: 'bad', text: `■ 已停止 · ${summarizeTask(run.task)}` }], now())
+          push(workflowId, [{
+            kind: 'system',
+            tone: 'bad',
+            key: '■ Stopped · {task}',
+            params: { task: summarizeTask(run.task) },
+            text: `■ 已停止 · ${summarizeTask(run.task)}`,
+          }], now())
           write()
           return { ok: true, ids }
         }
@@ -962,6 +1240,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         const lane = laneOf(workflowId)
         const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         const live = lane.active[0] ?? (lane.last?.live === true ? lane.last : null)
+        for (const run of lane.active) clearRunTimers(run.id)
         lane.active = []
         lane.queue = []
         if (!live?.task) return { ok: false, error: 'This workflow has no task' }
@@ -987,6 +1266,11 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     // persist; a node that remains keeps its run status, a new one waits.
     saveGraph(body = {}) {
       return mutate(String(body.workflowId ?? ''), (item) => {
+        // #1544: a save from a Bot records it as the graph's author; a save with no Bot behind it (the
+        // canvas, the API, a template copy) is the owner's own edit and lifts the ceiling again.
+        const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
+        if (authoredBy) item.authoredBy = authoredBy
+        else delete item.authoredBy
         const seated = seat(body.nodes, bots() ?? [])
         const seenBots = new Set()
         for (const node of seated) {
@@ -1012,14 +1296,18 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           const nextRun = { ...run, nodeStatus, updatedAt: now() }
           if (lane.active.some(itemRun => itemRun.id === run.id)) storeRun(item.id, nextRun)
           else if (lane.last?.id === run.id) lane.last = nextRun
+          syncTimers(item, nextRun)
         }
       })
     },
     // A Bot (or the owner) writes a graph. A name that already exists is replaced.
     define(body = {}) {
+      // #1544: the graph remembers the Bot that wrote it, so a run nobody's tool call started is still
+      // capped by the switches of the Bot that chose the node's `tools`.
+      const authoredBy = cleanLine(body.callerBotId, 80) || undefined
       const existing = body.workflow ? findWorkflow(body.workflow) : undefined
       if (existing) {
-        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [] })
+        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [], ...(authoredBy ? { authoredBy } : {}) })
         if (saved.ok === false) return saved
         const name = cleanLine(body.name, 80)
         if (name) {
@@ -1028,7 +1316,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         }
         return present()
       }
-      return this.create({ name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description })
+      return this.create({ name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description, ...(authoredBy ? { authoredBy } : {}) })
     },
     // Start a named workflow. `brief` is the task title; `task` is its id.
     runNamed(body = {}) {
@@ -1037,7 +1325,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       const title = cleanLine(body.brief || body.title, 300)
       if (!title) return { ok: false, error: 'A run needs a brief' }
       const taskId = cleanLine(body.task || body.taskId, 80) || `task-${now().toString(36)}`
-      return this.assign({ workflowId: item.id, taskId, title })
+      return this.assign({ workflowId: item.id, taskId, title, ...(body.callerBotId ? { callerBotId: body.callerBotId } : {}) })
     },
     // Auto-assign an open board task. A miss leaves the task untouched.
     ingest(task = {}) {
@@ -1097,6 +1385,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
             continue
           }
           if (hasEphemeral) {
+            clearRunTimers(run.id)
             stale.push(...Object.values(run.ephemeral))
             delete run.ephemeral
             delete run.handed
@@ -1106,6 +1395,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       }
       for (const { workflowId, run } of abandoned) {
         try {
+          clearRunTimers(run.id)
           if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
           endRun(workflow(workflowId), run, { code: 'host-ended' })
           push(workflowId, [failureLine(run)], now())
@@ -1125,6 +1415,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       return releaseAll(stale, release, warn).then(() => { write() })
     },
     dispose() {
+      for (const key of [...timers.keys()]) clearTimerAt(key)
       const ids = []
       const runs = []
       let endedLive = false

@@ -3,6 +3,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { cleanTools } from '../src/graph.js'
+
+import { allThemes } from '../../../core/src/client/themes.js'
 
 // `rectWidth` is what a host element reports from getBoundingClientRect, so a
 // component that measures its own container can be driven from a plain object.
@@ -225,17 +228,18 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   button(view.tree, 'Edit').props.onClick()
   const coder = findAll(view.tree, node => node.props?.['data-node'] === 'coder')[0]
   coder.props.onPointerDown({ clientX: 10, clientY: 20, target: { dataset: {} } })
-  let canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  let canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerMove({ clientX: 58, clientY: 44 })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ clientX: 58, clientY: 44, target: { dataset: {} } })
+  const fit = client.fitPlane(graph.nodes, client.DRAWER_FLOW_W)
   const moved = calls.find(item => item.name === 'workflow/graph')
-  assert.equal(moved.body.nodes.find(node => node.id === 'coder').x, 248)
-  assert.equal(moved.body.nodes.find(node => node.id === 'coder').y, 284)
+  assert.equal(moved.body.nodes.find(node => node.id === 'coder').x, Math.round(200 + 48 / fit.scale))
+  assert.equal(moved.body.nodes.find(node => node.id === 'coder').y, 260 + 24)
 
   const port = findAll(view.tree, node => node.props?.['data-port'] === 'out' && node.props['aria-label'] === 'Writer')[0]
   port.props.onPointerDown({ preventDefault() {}, stopPropagation() {}, target: { dataset: { port: 'out' } } })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ target: { dataset: { node: 'tester' }, closest() { return null } } })
   const wired = calls.filter(item => item.name === 'workflow/graph').at(-1)
   assert.ok(wired.body.edges.some(edge => edge.from === 'writer' && edge.to === 'tester'))
@@ -244,19 +248,111 @@ test('the sidebar opens the flowchart, and a drag, a wire and a dropped Bot are 
   assert.ok(docs)
   assert.equal(findAll(view.tree, node => node.props?.['data-bot'] === 'bot-friend').length, 0)
   docs.props.onPointerDown({ preventDefault() {}, target: { dataset: { bot: 'bot-docs' } } })
-  canvas = findAll(view.tree, node => node.props?.className === 'wf-canvas')[0]
+  canvas = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
   canvas.props.onPointerUp({ target: { dataset: { plane: '1' } }, offsetX: 30, offsetY: 40 })
   const added = calls.filter(item => item.name === 'workflow/graph').at(-1)
   const seat = added.body.nodes.find(node => node.botId === 'bot-docs')
   assert.equal(seat.name, 'Docs')
-  assert.equal(seat.x, 30)
-  assert.equal(seat.y, 40)
+  assert.equal(seat.x, Math.round((30 - fit.offsetX) / fit.scale))
+  assert.equal(seat.y, Math.round(40 - fit.offsetY))
 
   button(view.tree, 'New').props.onClick()
   const template = findAll(view.tree, node => node.type === 'button' && node.props.className === 'wf-btn' && textOf(node) === '发布交付流水线')[0]
   template.props.onClick()
   await settle()
   assert.ok(calls.some(item => item.name === 'workflow/create' && item.body.template === 'delivery'))
+  view.unmount()
+})
+
+// A drawer-sized graph: span 344 in the 364px plane is scale 0.5 exactly, so a
+// 40px pointer move is 80 world units and the rounding stays out of the numbers.
+function drawerGraph(id, name, nodes) {
+  return { ...delivery(), id, name, layers: [], nodes, edges: [] }
+}
+
+async function openDrawer(graph) {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  button(view.tree, 'Edit').props.onClick()
+  const nodeAt = id => findAll(view.tree, node => node.props?.['data-node'] === id)[0]
+  const canvas = () => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
+  return { view, calls, nodeAt, canvas }
+}
+
+test('dragging the rightmost node moves it on screen inside the frame the drag started with (#1575)', async () => {
+  const nodes = [
+    { id: 'left', name: 'Left', role: '', x: 0, y: 100 },
+    { id: 'middle', name: 'Middle', role: '', x: 172, y: 100 },
+    { id: 'right', name: 'Right', role: '', x: 344, y: 100 },
+  ]
+  const { view, calls, nodeAt, canvas } = await openDrawer(drawerGraph('wide', 'Wide graph', nodes))
+  const fit = client.fitPlane(nodes, client.DRAWER_FLOW_W)
+  assert.equal(fit.scale, 0.5, 'the fixture spans wider than the drawer room')
+  const before = Object.fromEntries(nodes.map(node => [node.id, { ...nodeAt(node.id).props.style }]))
+
+  nodeAt('right').props.onPointerDown({ clientX: 300, clientY: 100, target: { dataset: {} } })
+  canvas().props.onPointerMove({ clientX: 320, clientY: 100 })
+  canvas().props.onPointerMove({ clientX: 340, clientY: 100 })
+  assert.equal(nodeAt('right').props.style.left, before.right.left + 40, 'the rightmost node follows the pointer 1:1')
+  assert.equal(nodeAt('middle').props.style.left, before.middle.left, 'the fit did not re-centre another node')
+  assert.equal(nodeAt('left').props.style.left, before.left.left, 'the fit did not re-centre another node')
+
+  canvas().props.onPointerUp({ clientX: 340, clientY: 100, target: { dataset: {} } })
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.equal(saved.body.nodes.find(node => node.id === 'right').x, 344 + 80, 'the commit uses the start frame, not an intermediate one')
+  view.unmount()
+})
+
+test('dragging the topmost node up moves it on screen inside the frame the drag started with (#1575)', async () => {
+  const nodes = [
+    { id: 'top', name: 'Top', role: '', x: 172, y: 0 },
+    { id: 'middle', name: 'Middle', role: '', x: 172, y: 200 },
+    { id: 'bottom', name: 'Bottom', role: '', x: 172, y: 400 },
+  ]
+  const { view, calls, nodeAt, canvas } = await openDrawer(drawerGraph('tall', 'Tall graph', nodes))
+  const fit = client.fitPlane(nodes, client.DRAWER_FLOW_W)
+  assert.equal(fit.scale, 1, 'a vertical chain is not scaled')
+  const before = Object.fromEntries(nodes.map(node => [node.id, { ...nodeAt(node.id).props.style }]))
+
+  nodeAt('top').props.onPointerDown({ clientX: 100, clientY: 100, target: { dataset: {} } })
+  canvas().props.onPointerMove({ clientX: 100, clientY: 70 })
+  canvas().props.onPointerMove({ clientX: 100, clientY: 60 })
+  assert.equal(nodeAt('top').props.style.top, before.top.top - 40, 'the topmost node follows the pointer 1:1')
+  assert.equal(nodeAt('middle').props.style.top, before.middle.top, 'the fit did not push another node around')
+  assert.equal(nodeAt('bottom').props.style.top, before.bottom.top, 'the fit did not push another node around')
+
+  canvas().props.onPointerUp({ clientX: 100, clientY: 60, target: { dataset: {} } })
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.equal(saved.body.nodes.find(node => node.id === 'top').y, -40, 'the commit keeps the start frame')
+  view.unmount()
+})
+
+test('a middle-node drag keeps the frame it started with (#1575)', async () => {
+  const nodes = [
+    { id: 'left', name: 'Left', role: '', x: 0, y: 100 },
+    { id: 'middle', name: 'Middle', role: '', x: 172, y: 100 },
+    { id: 'right', name: 'Right', role: '', x: 344, y: 100 },
+  ]
+  const { view, calls, nodeAt, canvas } = await openDrawer(drawerGraph('middle', 'Middle graph', nodes))
+  const before = Object.fromEntries(nodes.map(node => [node.id, { ...nodeAt(node.id).props.style }]))
+
+  nodeAt('middle').props.onPointerDown({ clientX: 300, clientY: 100, target: { dataset: {} } })
+  canvas().props.onPointerMove({ clientX: 340, clientY: 100 })
+  assert.equal(nodeAt('middle').props.style.left, before.middle.left + 40, 'a middle node still follows the pointer')
+  assert.equal(nodeAt('left').props.style.left, before.left.left)
+  assert.equal(nodeAt('right').props.style.left, before.right.left)
+
+  canvas().props.onPointerUp({ clientX: 340, clientY: 100, target: { dataset: {} } })
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.equal(saved.body.nodes.find(node => node.id === 'middle').x, 172 + 80)
   view.unmount()
 })
 
@@ -894,6 +990,88 @@ test('parallel branch frames wrap node bounds without hard-coded width', () => {
   assert.equal(frame.left, 80 - client.NODE_W / 2 - 10)
 })
 
+test('the drawer fits every node and edge inside a 400px panel', () => {
+  const graph = delivery()
+  const panel = client.DRAWER_FLOW_W
+  assert.equal(panel, 364, 'the drawer Flow content box is 400px minus two 18px paddings')
+  const plane = client.fitPlane(graph.nodes, panel)
+  assert.equal(plane.width, panel)
+  assert.ok(plane.scale > 0 && plane.scale <= 1, 'the fit never enlarges the graph')
+  for (const node of plane.nodes) {
+    const left = node.x - client.NODE_W / 2
+    const right = node.x + client.NODE_W / 2
+    assert.ok(left >= 0 && right <= panel, `${node.id} box ${left}..${right} is outside 0..${panel}`)
+  }
+  for (const layer of graph.layers.filter(layer => layer.length > 1)) {
+    const members = layer.map(id => plane.nodes.find(node => node.id === id))
+    const frame = client.parallelFrameStyle(members)
+    assert.ok(frame.left >= 0 && frame.left + frame.width <= panel, `${layer.join('+')} frame ${frame.left}..${frame.left + frame.width} is outside 0..${panel}`)
+  }
+  assert.ok(plane.scale < 1, 'GAP_X=188 parallel columns cannot fit a 364px panel at scale 1')
+  for (const edge of graph.edges) {
+    const from = plane.nodes.find(node => node.id === edge.from)
+    const to = plane.nodes.find(node => node.id === edge.to)
+    for (const point of [{ x: from.x, y: from.y + client.NODE_WIRE_OUT }, { x: to.x, y: to.y }]) {
+      assert.ok(point.x >= 0 && point.x <= panel, `${edge.from}>${edge.to} leaves the plane at x=${point.x}`)
+      assert.ok(point.y >= 0 && point.y <= plane.height)
+    }
+  }
+})
+
+test('fitted wire endpoints land on the node anchors and stay inside the plane', () => {
+  const graph = delivery()
+  const plane = client.fitPlane(graph.nodes, client.DRAWER_FLOW_W)
+  const at = id => plane.nodes.find(node => node.id === id)
+  const edges = graph.edges.concat([{ from: 'deployer', to: 'planner', loop: true, max: 2 }])
+  for (const edge of edges) {
+    const from = at(edge.from)
+    const to = at(edge.to)
+    const d = client.wirePath(from, to, 0)
+    assert.ok(d.startsWith(`M ${from.x} ${from.y + client.NODE_WIRE_OUT} `), `${edge.from}>${edge.to} did not leave the source bottom anchor: ${d}`)
+    const numbers = d.match(/-?\d+(?:\.\d+)?/g).map(Number)
+    assert.equal(numbers.at(-2), to.x, `${edge.from}>${edge.to} did not land on the target x anchor`)
+    assert.equal(numbers.at(-1), to.y, `${edge.from}>${edge.to} did not land on the target y anchor`)
+    assert.ok(numbers.filter((_, i) => i % 2 === 0).every(x => x >= 0 && x <= plane.width), `${edge.from}>${edge.to} leaves the fitted width`)
+    assert.ok(numbers.filter((_, i) => i % 2 === 1).every(y => y >= 0 && y <= plane.height), `${edge.from}>${edge.to} leaves the fitted height`)
+  }
+})
+
+test('the drawer canvas does not scroll sideways and its labels wrap', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(source, /\.wf-canvas\[data-fit="drawer"\]\{[^}]*overflow:hidden/, 'the fitted drawer canvas still scrolls')
+  assert.match(source, /\.wf-dr-body\{[^}]*overflow:auto/, 'the drawer body lost its single vertical scroll')
+  const label = source.match(/\.wf-plabel\{[^}]*\}/)[0]
+  assert.equal(label.includes('white-space:nowrap'), false, 'the parallel label is still clipped at the panel edge')
+  assert.match(label, /white-space:normal/)
+  const term = source.match(/\.wf-canvas\[data-fit="drawer"\] \.wf-term\{[^}]*\}/)[0]
+  assert.match(term, /white-space:normal/)
+  assert.equal(term.includes('text-overflow:ellipsis'), false)
+})
+
+test('the drawer Flow mounts the fitted narrow canvas and Settings keeps the scrolling one', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const section = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(section.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  button(section.tree, 'Flow').props.onClick()
+  const narrow = findAll(section.tree, node => node.props?.['data-fit'] === 'drawer')
+  assert.equal(narrow.length, 1, 'the drawer Flow canvas is not the fitted variant')
+  assert.equal(narrow[0].props['data-fit'], 'drawer')
+  const plane = findAll(section.tree, node => node.props?.['data-plane'] === '1')[0]
+  assert.ok(plane.props.style.width > 0 && plane.props.style.width <= client.DRAWER_FLOW_W)
+  section.unmount()
+
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  assert.equal(findAll(settings.tree, node => node.props?.['data-fit'] === 'drawer').length, 0)
+  assert.equal(findAll(settings.tree, node => node.props?.className === 'wf-canvas-view').length, 1)
+  settings.unmount()
+})
+
 test('the workflow stage mounts no message composer', async () => {
   const graph = delivery()
   const prevFlybot = globalThis.__flybot__
@@ -942,6 +1120,59 @@ test('palette chips distinguish duplicate Bot names and expose drag affordance',
   view.unmount()
 })
 
+const workflowCss = () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  return source.slice(source.indexOf('const CSS = `') + 'const CSS = `'.length)
+}
+const ruleBody = (name, css = workflowCss()) => new RegExp(`\\.${name}\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+const hexRgb = (hex) => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16))
+const linear = (value) => {
+  const v = value / 255
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+}
+const luminanceOf = ([r, g, b]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+const contrastOf = (a, b) => {
+  const first = luminanceOf(a)
+  const second = luminanceOf(b)
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+}
+const declaredInk = (declared, text) => {
+  const token = /var\(--bt-ink-([23])/.exec(declared)
+  if (token) return { rgb: hexRgb(text), alpha: token[1] === '2' ? 0.6 : 0.36 }
+  const literal = /rgba?\(([^)]+)\)/.exec(declared)
+  if (!literal) throw new Error(`the .wf-rl colour cannot be resolved: ${declared}`)
+  const parts = literal[1].split(',').map(value => Number(value.trim()))
+  return { rgb: parts.slice(0, 3), alpha: parts[3] ?? 1 }
+}
+const compositeOver = ({ rgb, alpha }, background) => rgb.map((value, index) => alpha * value + (1 - alpha) * background[index])
+
+test('the flowchart node role sub-label colour is a theme token, never a bare grey', () => {
+  const body = ruleBody('wf-rl')
+  assert.match(body, /color:var\(--bt-ink-2,/, '.wf-rl must take its colour from a theme token')
+  assert.doesNotMatch(body, /color:(rgba?\(|#)/, '.wf-rl must not hardcode its colour')
+})
+
+test('the node role sub-label keeps 4.4:1 in light and 4.5:1 in every dark theme', () => {
+  const declared = /color:([^;]+)/.exec(ruleBody('wf-rl'))?.[1] ?? ''
+  const modes = []
+  for (const [id, theme] of Object.entries(allThemes())) {
+    modes.push({ id, mode: 'light', palette: theme.light })
+    modes.push({ id, mode: 'dark', palette: theme.dark })
+  }
+  assert.ok(modes.length >= 8, 'every shipped theme has a light and a dark mode')
+  for (const { id, mode, palette } of modes) {
+    const ink = declaredInk(declared, palette.text)
+    const card = hexRgb(palette.card)
+    const ratio = contrastOf(compositeOver(ink, card), card)
+    // Every dark card is dark (#1f1f1f / #1c1c1c / #2a2925 / #141c33), so 4.5:1 is the bar there.
+    // In light, --bt-ink-2 (0.6 alpha) gives 4.81 on DeepSeek's #141414 text; Paper's text is
+    // #1f1e1b, which composites to 4.42 — the token itself cannot reach 4.5 without a core token
+    // change, so light is held at 4.4:1 and never below the 4.07:1 the hardcoded grey gave.
+    const floor = mode === 'dark' ? 4.5 : 4.4
+    assert.ok(ratio >= floor, `${id} ${mode}: ${declared.trim()} on ${palette.card} is ${ratio.toFixed(2)}:1, below ${floor}:1`)
+  }
+})
+
 test('running flow nodes use a breathing border animation only while running', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /@keyframes wf-node-live/)
@@ -959,6 +1190,7 @@ test('Chinese labels follow the host Tasks translation', () => {
   try {
     assert.equal(client.tr('Edit'), '编辑')
     assert.equal(client.tr('Hand a task to a Workflow'), '把任务交给 Workflow')
+    assert.equal(client.tr('Pick a node'), '选择一个节点')
     assert.equal(client.columnOf({ status: 'working' }), 'in-progress')
     assert.equal(client.shortId('task-abcdef123456'), '#123456')
   } finally {
@@ -1063,9 +1295,329 @@ test('a failed resume from the run strip is reported', async (t) => {
   })
 })
 
+// #1520: the Tools field selects connectors, and nothing on screen said so. The
+// note is read in one render in both languages, so the explanation never depends
+// on the host's locale detection.
+const toolsField = view => findAll(view.tree, node => node.type === 'label' && textOf(node.children?.[0] ?? '') === 'Tools')[0]
+const toolsInput = view => toolsField(view)?.children?.find(child => child?.type === 'input')
+
+test('the Tools field says it names connectors and that file and shell access is always full', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  findAll(settings.tree, node => node.props?.['data-node'] === 'coder')[0].props.onClick()
+  await settle()
+
+  const field = toolsField(settings)
+  assert.ok(field, 'the inspector renders a Tools field')
+  const note = field.children.find(child => child?.props?.['data-flybot'] === 'node-tools-note')
+  assert.ok(note, 'the Tools field explains what it names')
+  const noteIndex = field.children.indexOf(note)
+  const inputIndex = field.children.findIndex(child => child?.type === 'input')
+  assert.ok(noteIndex > inputIndex, 'the note sits under the input, not above it')
+  const text = textOf(note)
+  assert.match(text, /Names the connectors this run Bot may use/)
+  assert.match(text, /github grants mcp__github__\*/)
+  assert.match(text, /composio grants the Composio connector/)
+  assert.match(text, /File and shell access is always full, like a normal Bot/)
+  assert.match(text, /a node that names no connector gets none/)
+  assert.match(text, /连接器/, 'the note reads in Chinese as well as English')
+  assert.match(text, /普通 Bot/)
+
+  const input = field.children[inputIndex]
+  assert.equal(input.props.placeholder, 'github, composio', 'the placeholder names two connectors and nothing else')
+  settings.unmount()
+})
+
+// #1520: the value was rebuilt from the saved list on every keystroke, and the host
+// drops a trailing empty token, so a separator typed between two names did not
+// survive the round trip: "github, composio" typed one character at a time saved as
+// ["githubcomposio"] and the connector was silently refused. The field keeps a local
+// draft and commits it on blur, or after a short pause.
+async function toolsInspector() {
+  const graph = delivery()
+  graph.nodes = graph.nodes.map(node => node.id === 'coder' ? { ...node, tools: [] } : node)
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    if (name === 'workflow/graph') {
+      // The host normalizes the list on every save, exactly as src/graph.js does.
+      graph.nodes = body.nodes.map(node => ({ ...node, tools: cleanTools(node.tools) }))
+      return { ok: true, workflows: [graph] }
+    }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(view.tree, 'Edit').props.onClick()
+  await settle()
+  findAll(view.tree, node => node.props?.['data-node'] === 'coder')[0].props.onClick()
+  await settle()
+  const saved = () => calls.filter(item => item.name === 'workflow/graph').at(-1)
+    ?.body.nodes.find(node => node.id === 'coder')?.tools
+  return { view, calls, field: () => toolsInput(view), saved }
+}
+
+test('the Tools field takes a second connector typed one character at a time', async () => {
+  const typedView = await toolsInspector()
+  assert.ok(typedView.field(), 'the inspector renders the Tools input')
+  let text = ''
+  for (const char of 'github, composio') {
+    text += char
+    typedView.field().props.onChange({ target: { value: text } })
+    await settle()
+    assert.equal(typedView.field().props.value, text, 'the draft keeps every character just typed')
+  }
+  assert.equal(typedView.calls.some(item => item.name === 'workflow/graph'), false, 'no save round trip while the user types')
+  typedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(typedView.saved(), ['github', 'composio'], 'typing one character at a time keeps both connectors')
+  assert.equal(typedView.field().props.value, 'github, composio', 'the field shows the saved list after the commit')
+  typedView.view.unmount()
+
+  const pastedView = await toolsInspector()
+  pastedView.field().props.onChange({ target: { value: 'github, composio' } })
+  await settle()
+  pastedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(pastedView.saved(), ['github', 'composio'], 'pasting the whole string saves the same list')
+  pastedView.view.unmount()
+
+  const pausedView = await toolsInspector()
+  pausedView.field().props.onChange({ target: { value: 'github, ' } })
+  await settle()
+  assert.equal(pausedView.saved(), undefined, 'the field has not saved yet')
+  await new Promise(resolve => setTimeout(resolve, 800))
+  await settle()
+  assert.deepEqual(pausedView.saved(), ['github'], 'a short pause commits the list without a blur')
+  pausedView.field().props.onChange({ target: { value: 'github, composio' } })
+  await settle()
+  pausedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(pausedView.saved(), ['github', 'composio'], 'a pause in the middle does not eat the separator')
+  pausedView.view.unmount()
+})
+
 test('a stage control that never answers settles as an error', async () => {
   const value = await client.settledCall(async () => new Promise(() => {}), 'workflow/pause', { workflowId: 'delivery' }, 'The run did not answer', 5)
   assert.deepEqual(value, { ok: false, error: 'The run did not answer' })
+})
+
+// A host that never hands board writes over looks manual-only unless the panel says so (#1462).
+test('a host without the board wiring says so on the panel, and a wired host says nothing', async () => {
+  const graph = delivery()
+  const mountWith = async (tasksWired) => {
+    const call = async name => (name === 'workflow/state'
+      ? { ok: true, workflows: [graph], templates: [], tasksWired }
+      : { ok: true, workflows: [graph] })
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    return view
+  }
+  const unwired = await mountWith(false)
+  const lines = findAll(unwired.tree, node => node.props?.className === 'wf-wiring').map(textOf)
+  assert.equal(lines.length, 1)
+  assert.match(lines[0], /does not pass task writes/)
+  unwired.unmount()
+
+  const wired = await mountWith(true)
+  assert.equal(findAll(wired.tree, node => node.props?.className === 'wf-wiring').length, 0)
+  wired.unmount()
+})
+
+const cssRule = (source, selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`${escaped}\\{([^}]*)\\}`).exec(source)
+  assert.ok(match, `missing CSS rule ${selector}`)
+  return match[1]
+}
+const pixel = (declaration, rule) => {
+  const match = new RegExp(`${declaration}:(\\d+(?:\\.\\d+)?)px`).exec(rule)
+  assert.ok(match, `missing ${declaration} in ${rule}`)
+  return Number(match[1])
+}
+
+test('the settings Add link panel uses the dialog form, a Pick a node placeholder and a disabled submit', async () => {
+  const calls = []
+  const graph = delivery()
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  const form = findAll(settings.tree, node => node.props?.className === 'wf-edge-form')[0]
+  assert.ok(form, 'the Add link panel carries wf-edge-form')
+  assert.equal(textOf(findAll(form, node => node.type === 'h3')[0]), 'Add link')
+  const pick = label => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
+  for (const label of ['From node', 'To node']) {
+    const options = findAll(pick(label), node => node.type === 'option')
+    assert.equal(options[0].props.value, '')
+    assert.equal(textOf(options[0]), 'Pick a node', `${label} starts on a placeholder, not a blank option`)
+  }
+  assert.equal(button(settings.tree, 'Add link').props.className, 'wf-btn wf-pri')
+  assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'the submit waits for both ends')
+  pick('From node').props.onChange({ target: { value: 'coder' } })
+  await settle()
+  assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'one end alone does not enable the submit')
+  pick('To node').props.onChange({ target: { value: 'planner' } })
+  await settle()
+  assert.equal(button(settings.tree, 'Add link').props.disabled, false)
+  button(settings.tree, 'Add link').props.onClick()
+  const linked = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.ok(linked.body.edges.some(edge => edge.from === 'coder' && edge.to === 'planner'))
+  settings.unmount()
+})
+
+test('graph handles are small, off the wire and lit only on hover or while dragging a wire', async () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  assert.equal(findAll(settings.tree, node => node.props?.['data-port'] === 'out').length, 0, 'no handles outside Edit mode')
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  const ports = findAll(settings.tree, node => node.props?.['data-port'] === 'out')
+  assert.equal(ports.length, graph.nodes.length)
+  assert.match(ports[0].props.className, /\bwf-port out\b/)
+  assert.equal(ports.some(node => node.props.className.includes('wiring')), false)
+  ports[0].props.onPointerDown({ preventDefault() {}, stopPropagation() {} })
+  await settle()
+  const lit = findAll(settings.tree, node => node.props?.['data-port'] === 'out' && node.props.className.includes('wiring'))
+  assert.equal(lit.length, 1, 'an active wire gesture lights one handle')
+  settings.unmount()
+
+  const port = cssRule(source, '.wf-port')
+  assert.ok(pixel('width', port) <= 10, `the handle is ${pixel('width', port)}px wide`)
+  assert.ok(pixel('height', port) <= 10)
+  assert.ok(pixel('border', port) <= 1.5)
+  assert.match(port, /right:-5px/, 'the handle sits beside the connection line, not on it')
+  assert.match(source, /\.wf-port:hover[^{]*\{[^}]*opacity:1/)
+  assert.match(source, /\.wf-port:focus-visible[^{]*\{[^}]*opacity:1/)
+  assert.match(source, /\.wf-port\.wiring\{[^}]*opacity:1/)
+  const form = cssRule(source, '.wf-edge-form')
+  assert.match(form, /padding:16px/)
+  assert.match(cssRule(source, '.wf-edge-form h3'), /font-size:14px/)
+  assert.ok(pixel('font-size', cssRule(source, '.wf-edge-form h3')) <= 14)
+  assert.match(cssRule(source, '.wf-edge-form .wf-edge-fields'), /display:grid/)
+  assert.match(cssRule(source, '.wf-edge-form .wf-field'), /margin-top:0/)
+})
+
+test('the settings page injects the workflow stylesheet without the sidebar section', async () => {
+  const prev = globalThis.document
+  const stub = (existing) => {
+    const appended = []
+    return {
+      appended,
+      getElementById: id => (existing && id === 'flybot-workflow-css' ? existing : null),
+      createElement: () => ({ id: '', textContent: '' }),
+      head: { appendChild(element) { appended.push(element) } },
+      querySelector() { return null },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+  }
+  try {
+    const doc = stub(null)
+    globalThis.document = doc
+    const view = mount(client.WorkflowSettings, { call: async () => ({ workflows: [], templates: [] }), roster: { bots: [] } })
+    await settle()
+    const style = doc.appended.find(element => element.id === 'flybot-workflow-css')
+    assert.ok(style, 'WorkflowSettings appended #flybot-workflow-css')
+    assert.match(style.textContent, /\.wf-port\{/)
+    assert.match(style.textContent, /\.wf-edge-form\{/)
+    view.unmount()
+
+    const again = stub({ id: 'flybot-workflow-css' })
+    globalThis.document = again
+    const second = mount(client.WorkflowSettings, { call: async () => ({ workflows: [], templates: [] }), roster: { bots: [] } })
+    await settle()
+    assert.equal(again.appended.length, 0, 'an existing stylesheet is not appended twice')
+    second.unmount()
+  } finally {
+    globalThis.document = prev
+  }
+})
+
+// The workflow stage polls the store while a run is live, and a read that fails must
+// not be painted as "no workflows" (#1564).
+test('an active run polls the store once per tick, not twice', async (t) => {
+  const graph = delivery()
+  graph.activeCount = 1
+  const reads = []
+  const call = async (name) => {
+    if (name === 'workflow/state') { reads.push(Date.now()); return { workflows: [graph] } }
+    return { ok: true, workflows: [graph] }
+  }
+  const timers = []
+  const realSet = globalThis.setInterval
+  const realClear = globalThis.clearInterval
+  globalThis.setInterval = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
+  globalThis.clearInterval = () => {}
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    t.after(() => view.unmount())
+    await settle()
+    assert.equal(reads.length, 1, 'the first paint reads the store once')
+    assert.equal(timers.length, 1, `exactly one poll is armed for one live run, saw ${timers.length}`)
+    assert.equal(timers[0].ms, 2000)
+    timers[0].fn()
+    await settle()
+    assert.equal(reads.length, 2, 'one tick is one read')
+  } finally {
+    globalThis.setInterval = realSet
+    globalThis.clearInterval = realClear
+  }
+})
+
+test('a failed store read is reported and retried, not painted as no workflows', async (t) => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    let reads = 0
+    const call = async (name) => {
+      if (name === 'workflow/state') {
+        reads += 1
+        if (reads === 1) throw new Error('The workflow store is unreachable')
+        return { workflows: [graph] }
+      }
+      return { ok: true, workflows: [graph] }
+    }
+    const timers = []
+    const realSet = globalThis.setInterval
+    const realClear = globalThis.clearInterval
+    globalThis.setInterval = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
+    globalThis.clearInterval = () => {}
+    try {
+      const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+      t.after(() => view.unmount())
+      await settle()
+      assert.deepEqual(unhandled, [], 'a refused read is not an unhandled rejection')
+      assert.deepEqual(alertsOf(view), ['The workflow store is unreachable'], 'the failure is on screen')
+      assert.equal(htmlOf(view.tree).includes('No workflows yet.'), false, 'a failure is not an empty shelf')
+      assert.equal(timers.length, 1, 'the failed read arms a retry')
+      timers[0].fn()
+      await settle()
+      assert.deepEqual(alertsOf(view), [], 'the retry that succeeds clears the alert')
+      assert.equal(textOf(view.tree).includes('发布交付流水线'), true, 'the workflows are on screen')
+    } finally {
+      globalThis.setInterval = realSet
+      globalThis.clearInterval = realClear
+    }
+  })
 })
 
 // #1493: the header lists the runs that are still the room's business, so a

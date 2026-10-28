@@ -2382,6 +2382,72 @@ function stripTrace(text) {
   if (!line2 || /[.!?。！？:：,，]/.test(line2.replace(/[^\S\n]*\n+$/, "").replace(/→/g, ""))) return text;
   return text.slice(line2.length).replace(/^\s+/, "");
 }
+var COPY_FENCE = /untrusted-(?:message|file)\b/i;
+var escapeName = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var sortedNames = (names) => (Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter(Boolean).sort((a, b) => b.length - a.length);
+var isTraceLine = (line2, known) => {
+  if (known.length === 0 || /[.!?。！？:：,，]/.test(line2.replace(/→/g, ""))) return false;
+  const hop = `(?:${known.map(escapeName).join("|")})`;
+  return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line2);
+};
+function stripFlatTrace(text, names = []) {
+  const body = String(text ?? "");
+  const known = sortedNames(names);
+  if (known.length === 0) return body;
+  const hop = `(?:${known.map(escapeName).join("|")})`;
+  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})*[ \\t]*(?=\\S)`);
+  const found = trace.exec(body);
+  return found ? body.slice(found[0].length) : body;
+}
+function copyBodyOf(text, names = []) {
+  let body = String(text ?? "");
+  for (let previous; previous !== body; ) {
+    previous = body;
+    body = stripHeader(body);
+  }
+  const lines = [];
+  const known = sortedNames(names);
+  let first = true;
+  for (const raw of body.split("\n")) {
+    if (COPY_FENCE.test(raw)) {
+      const words = visibleText(raw);
+      if (words !== "") {
+        lines.push(first ? stripFlatTrace(words, known) : words);
+        first = false;
+      }
+      continue;
+    }
+    const line2 = raw.trim();
+    if (line2 === "") {
+      lines.push("");
+      continue;
+    }
+    if (isTraceLine(line2, known)) continue;
+    lines.push(first ? stripFlatTrace(line2, known) : line2);
+    first = false;
+  }
+  return lines.join("\n").trim();
+}
+function copyNames(roster) {
+  const names = [];
+  const records = [...Object.values(roster?.byId ?? {}), ...Array.isArray(roster?.bots) ? roster.bots : []];
+  for (const bot of records) {
+    const name = typeof bot?.name === "string" ? bot.name.trim() : "";
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names.sort((a, b) => b.length - a.length);
+}
+function transcriptOf(list, id, name, hiddenTurns = [], names = []) {
+  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+  if (!Array.isArray(outline)) return "";
+  const lines = [];
+  for (const entry of outline) {
+    if (hiddenTurns.includes(entry.turn)) continue;
+    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t("You")}:** ${entry.prompt.trim()}`);
+    if (entry.response) lines.push(`**${name}:** ${copyBodyOf(entry.response, names)}`);
+  }
+  return lines.join("\n\n");
+}
 function latestMemoryChange(news, ids) {
   const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
   return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
@@ -2532,6 +2598,9 @@ function dropKnownTrace(line2, names) {
   return /^[\s,，.。:：]*$/.test(rest) ? "" : rest;
 }
 var botNames = (roster) => [...roster?.bots ?? [], ...roster?.remoteBots ?? [], ...roster?.agents ?? []].map((entry) => entry?.name).filter((name) => typeof name === "string" && name !== "");
+function speechOf(text, names = []) {
+  return readableLine(text, names).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
+}
 var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
 function usageOf(list, ids) {
   let input = 0;
@@ -7778,6 +7847,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   for (const [key, entry] of lastEnded) {
     const bot = ownBot(roster, entry.botId);
     if (bot === void 0 || entry.failed === void 0 || !fresh(entry.at) || seen.has(key) || waitingAt.has(key)) continue;
+    if (bot.hidden === true && entry.roomId === void 0) continue;
     const chat = entry.roomId ?? bot.id;
     const asked = sessions?.byId ? previewOf(sessions, partOf(roster, chat), [], [], botNames(roster)) : "";
     needs.push({
@@ -14144,7 +14214,6 @@ function ExchangeDialog({ pair, roster, actions }) {
 
 // src/client/voice.js
 var import_react33 = require("react");
-var plainSpeech = (text) => stripHeader(text).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
 var VOICE_LABELS = {
   listening: "Listening",
   thinking: "Thinking",
@@ -14333,7 +14402,7 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
     const [count, text] = [lastReply.slice(0, lastReply.indexOf("|")), lastReply.slice(lastReply.indexOf("|") + 1)];
     if (count === waiting.current || !text.trim()) return;
     waiting.current = null;
-    const spoken = plainSpeech(text);
+    const spoken = speechOf(text, botNames(roster));
     setSaid(spoken);
     setHeard("");
     if (!window.speechSynthesis || !spoken) {
@@ -17185,17 +17254,6 @@ function migrateStorage(storage = globalThis.localStorage) {
 
 // src/client/details-drawer.js
 var import_react41 = require("react");
-function transcriptOf(list, id, name, hiddenTurns = []) {
-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-  if (!Array.isArray(outline)) return "";
-  const lines = [];
-  for (const entry of outline) {
-    if (hiddenTurns.includes(entry.turn)) continue;
-    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t("You")}:** ${entry.prompt.trim()}`);
-    if (entry.response) lines.push(`**${name}:** ${stripHeader(entry.response).trim()}`);
-  }
-  return lines.join("\n\n");
-}
 var TAB_LABELS = { details: "Details", browser: "Browser" };
 var hostOf = (url) => {
   try {
@@ -17485,7 +17543,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
   const bot = owner;
   const running = useSessionStatus((map) => map.get(part)?.running === true);
   const doing = useActivity((map) => map[bot?.id ?? sessionId]);
-  const transcript = useSessions((list) => transcriptOf(list, part, bot?.name ?? room2?.name ?? t("Bot"), roster.exchangeTurns[part]));
+  const transcript = useSessions((list) => transcriptOf(list, part, bot?.name ?? room2?.name ?? t("Bot"), roster.exchangeTurns[part], copyNames(roster)));
   const usage = useSessions((list) => usageOf(list, [part, ...bot?.parts ?? room2?.parts ?? []]));
   const run = (promise) => Promise.resolve(promise).then(() => {
     setError("");

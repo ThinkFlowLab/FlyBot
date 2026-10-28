@@ -52,6 +52,10 @@ export function apply(ctx, config = {}) {
             ephemeral: true,
             permission: permissionFor(),
             tools: spec.tools,
+            // #1544: who started the run and whose switches cap its connectors; the host reads both
+            // and refuses a connector a Bot switched off however the node names it.
+            ...(spec.createdBy ? { createdBy: spec.createdBy } : {}),
+            ...(spec.cappedBy ? { cappedBy: spec.cappedBy } : {}),
             fields: { nodeId: spec.nodeId, tools: spec.tools ?? null },
           })
           liveNames.set(name, id)
@@ -84,12 +88,15 @@ export function apply(ctx, config = {}) {
       return fb.bot.send({ from, to: step.botId, text: lines.join('\n'), role: 'request' })
     },
   } : {}
+  // A host that does not hand board writes over cannot start a run from a card (#1462).
+  const tasksWired = typeof fb.tasks?.onWrite === 'function'
   const service = createWorkflowService({
     dir: persist ? (config.dir ?? join(dshHome, 'bot', 'flybot-workflow')) : undefined,
     persist,
     bots: () => fb.bot?.list?.() ?? [],
     readOnly: () => fb.readOnly?.() === true,
     warn: (...args) => fb.warn?.(...args),
+    tasksWired,
     ...lifecycle,
   })
   void service.reap?.().catch(error => fb.warn?.('flybot-workflow: reap failed: %s', error))
@@ -100,6 +107,7 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/delete', body => service.delete(body)),
     fb.api.handle('workflow/assign', body => service.assign(body)),
     fb.api.handle('workflow/concurrency', body => service.setConcurrency(body)),
+    fb.api.handle('workflow/step-timeout', body => service.setStepTimeout(body)),
     fb.api.handle('workflow/set-model', body => service.setModel(body)),
     fb.api.handle('workflow/advance', body => service.advance(body)),
     fb.api.handle('workflow/reset', body => service.reset(body)),
@@ -118,7 +126,8 @@ export function apply(ctx, config = {}) {
         brief: { type: 'string', required: true, description: 'What the run should do' },
         task: { type: 'string', description: 'Task id, such as #1280. Omitted ids are generated.' },
       },
-      execute: args => service.runNamed(args ?? {}),
+      // fb.tools.register hands the calling Bot to execute() as the second argument's botId (#1544).
+      execute: (args, ctx) => service.runNamed({ ...(args ?? {}), ...(ctx?.botId ? { callerBotId: ctx.botId } : {}) }),
     }))
     offs.push(fb.tools.register({
       name: 'define_workflow',
@@ -129,7 +138,7 @@ export function apply(ctx, config = {}) {
         nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools (the connectors it may call: github, composio), inputs, outputs, and an optional local botId. Real work uses an ephemeral Bot per run, not a seated botId.' },
         edges: { type: 'array', required: true, description: 'Hand-offs { from, to }. A fork is two edges out; a join is two edges in. A condition is when: { output, eq } or { else: true }. A loop is loop: true with max (1–8, default 3) and optional until: { output, eq }.' },
       },
-      execute: args => service.define(args ?? {}),
+      execute: (args, ctx) => service.define({ ...(args ?? {}), ...(ctx?.botId ? { callerBotId: ctx.botId } : {}) }),
     }))
   }
   if (typeof fb.bot?.send?.use === 'function') {
@@ -157,7 +166,7 @@ export function apply(ctx, config = {}) {
   } else {
     fb.warn?.('flybot-workflow: send middleware not available; ephemeral bot replies may leak')
   }
-  if (typeof fb.tasks?.onWrite === 'function') {
+  if (tasksWired) {
     offs.push(fb.tasks.onWrite(task => {
       const result = service.ingest(task ?? {})
       if (result?.matched === true && result.already !== true && result.decision?.kind === 'bot') {
@@ -165,6 +174,8 @@ export function apply(ctx, config = {}) {
       }
       return null
     }))
+  } else {
+    fb.warn?.('flybot-workflow: tasks.onWrite is not available, so a board card cannot start a run')
   }
   // The hooks come off at once; the Bot release is behind a promise, so hand it
   // back instead of dropping it (#1387).
