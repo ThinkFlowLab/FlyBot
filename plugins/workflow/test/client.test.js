@@ -1067,3 +1067,77 @@ test('a stage control that never answers settles as an error', async () => {
   const value = await client.settledCall(async () => new Promise(() => {}), 'workflow/pause', { workflowId: 'delivery' }, 'The run did not answer', 5)
   assert.deepEqual(value, { ok: false, error: 'The run did not answer' })
 })
+
+// #1493: the header lists the runs that are still the room's business, so a
+// sibling that failed is on the stage beside the one that is running — and the
+// Runs tab says when it ended and why. The sibling is not listed twice: the
+// failed run is both a live-stage row and a history row.
+test('#1493: a failed sibling run stays on the stage, and its row carries time and reason', async () => {
+  const graph = delivery()
+  const running = graph.run
+  running.id = 'run-1445'
+  running.task = { id: '#1445', title: 'issue #1445: a Workflow run keeps the team task' }
+  running.taskSummary = '#1445 · issue #1445: a Workflow run keeps the team task'
+  running.updatedAt = 1_700_000_000_000
+  const failed = {
+    id: 'run-1460',
+    live: true,
+    status: 'failed',
+    task: { id: '#1460', title: 'issue #1460: every stage chat line is capped' },
+    taskSummary: '#1460 · issue #1460: every stage chat line is capped',
+    nodeStatus: { planner: 'done', writer: 'failed' },
+    running: [],
+    doneCount: 1,
+    nodeCount: 6,
+    marks: ['done', 'failed', 'queued', 'queued', 'queued'],
+    steps: 2,
+    stepBudget: 10,
+    startedAt: 1_699_999_996_000,
+    updatedAt: 1_700_000_000_000,
+    failure: { code: 'step-failed', nodeName: 'Writer', text: 'the reply came back empty' },
+  }
+  graph.runs = [running, failed]
+  graph.history = [
+    { id: 'run-1460', task: failed.task, status: 'failed', at: failed.updatedAt, failure: failed.failure },
+    { task: { id: '#1395', title: 'an older finished run' }, status: 'done', at: 1_699_999_000_000 },
+  ]
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const focused = []
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+
+  const strips = findAll(view.tree, node => typeof node.props?.['data-run-id'] === 'string')
+  assert.deepEqual(strips.map(node => node.props['data-run-id']), ['run-1445', 'run-1460'])
+  const failedStrip = strips[1]
+  assert.equal(textOf(failedStrip).includes('Failed'), true, 'the sibling strip does not say Failed')
+  assert.equal(textOf(failedStrip).includes('Writer failed · the reply came back empty'), true, 'the sibling strip does not say why it failed')
+  assert.equal(textOf(failedStrip).includes('Waiting for a task'), false)
+
+  // Focusing the failed sibling is how the drawer shows its flow, so its row must be clickable.
+  failedStrip.props.onClick()
+  await settle()
+  assert.equal(findAll(view.tree, node => node.props?.['data-run-id'] === 'run-1460' && node.props.className.includes('wf-strip-focus')).length, 1)
+
+  // The strip's own Progress button is the door to its Runs row.
+  const progress = findAll(failedStrip, node => node.type === 'button' && textOf(node) === 'Progress')[0]
+  assert.ok(progress, 'the failed strip has no way into its Runs row')
+  progress.props.onClick()
+  await settle()
+
+  const rows = findAll(view.tree, node => node.props?.className === 'wf-hist')
+  assert.equal(rows.length, 3, `the Runs tab listed ${rows.length} rows for two live rows and two history rows, one of which is the failed run itself`)
+  const row = rows.find(node => textOf(node).includes('#1460'))
+  assert.ok(row, 'the failed run has no Runs row')
+  assert.equal(textOf(row).includes('Failed'), true)
+  assert.match(textOf(row), /\d{2}-\d{2} \d{2}:\d{2}/, 'the Runs row has no time')
+  assert.equal(textOf(row).includes('Writer failed · the reply came back empty'), true, 'the Runs row has no reason')
+  const older = rows.find(node => textOf(node).includes('#1395'))
+  assert.ok(older, 'a history row was dropped')
+  assert.equal(textOf(older).includes('Done'), true)
+  view.unmount()
+})

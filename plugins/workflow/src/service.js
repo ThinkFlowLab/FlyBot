@@ -81,6 +81,7 @@ function publicRun(workflow, run) {
     updatedAt: run.updatedAt,
     ...(run.live === true ? { live: true } : {}),
     ...(run.paused === true ? { paused: true } : {}),
+    ...(run.failure ? { failure: { ...run.failure } } : {}),
     ...(run.earlyEnd ? { earlyEnd: run.earlyEnd } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
   }
@@ -182,7 +183,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
         queueDepth: (laneOf(item.id).queue ?? []).length,
         queue: (laneOf(item.id).queue ?? []).map(task => ({ id: task.id, title: task.title })),
         history: [...(laneOf(item.id).history ?? [])],
-        runs: runningOf(laneOf(item.id)).map(run => publicRun(item, run)),
+        runs: [...runningOf(laneOf(item.id)), ...failedSiblings(laneOf(item.id))].map(run => publicRun(item, run)),
         preview: rowPreview(item, previewRun(item.id)),
         run: publicRun(item, displayRun(item.id)),
         messages: state.logs[item.id] ?? [],
@@ -201,6 +202,18 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
 
   function runningOf(lane) {
     return (lane?.active ?? []).filter(run => run && run.live === true && run.status === 'running')
+  }
+
+  // A failed run is still the room's business: the stage and the Runs tab show it
+  // beside whatever is running now, naming what ended it (#1493). A failure of the
+  // task that is live again is a retry, not a sibling, so the live run keeps the
+  // row and the older attempt stays in history (#1507).
+  function failedSiblings(lane) {
+    const failed = lane?.last
+    if (failed?.live !== true || failed.status !== 'failed' || !failed.task) return []
+    const running = runningOf(lane)
+    if (running.some(run => run.task?.id && run.task.id === failed.task.id)) return []
+    return [failed]
   }
 
   function maxOf(item) {
@@ -324,6 +337,19 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       ...(earlyEnded ? { earlyEnd: result.earlyEnd } : {}),
     }
     if (Object.keys(handed).length === 0) delete next.handed
+    if (next.status === 'failed') {
+      const hole = blocked ? gated.blocked[0] : null
+      const node = nodeById(item, hole ? hole.id : op.nodeId)
+      const text = hole
+        ? `Missing input ${hole.missing.join(', ')}`
+        : String(op.text ?? '').replace(/\s+/g, ' ').trim()
+      next.failure = {
+        code: 'step-failed',
+        at: next.updatedAt,
+        ...(node ? { nodeName: node.name } : {}),
+        ...(text ? { text: text.length > 200 ? `${text.slice(0, 197)}…` : text } : {}),
+      }
+    }
     const lines = linesFor(item, working.task, {
       type: op.type,
       nodeId: op.nodeId,
@@ -401,7 +427,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     lane.active = lane.active.filter(item => item.id !== run.id)
     lane.last = run
     if (run.status === 'done' || run.status === 'failed') {
-      lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+      lane.history = [...lane.history, historyRow(run)].slice(-20)
     }
     await releaseAll(ids, release, warn)
     write()
@@ -412,8 +438,9 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   // dispose(), the catch around a step that threw, and reset() stopping one run —
   // so run.status and run.nodeStatus cannot drift apart and a client stops painting
   // "Running now" (#1424). A run that already ended keeps its own ending (#1388);
-  // ephemeral ids stay on the record until release strips them.
-  function endRun(item, run) {
+  // ephemeral ids stay on the record until release strips them. `failure` names the
+  // ending so the stage and the Runs tab can say why, not only Failed (#1493).
+  function endRun(item, run, failure = { code: 'host-ended' }) {
     if (run.status === 'done' || run.status === 'failed') return run
     for (const nodeId of item ? orderedIds(item, run.nodeStatus, 'running') : []) {
       try {
@@ -424,14 +451,35 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     }
     run.status = 'failed'
     run.updatedAt = now()
+    run.failure = { ...failure, at: run.updatedAt }
     return run
+  }
+
+  // A run that ended failed says so once in the stage log: the step-failure paths
+  // already write their own line, these are the endings that wrote none (#1493).
+  function failureLine(run) {
+    const label = summarizeTask(run.task)
+    const detail = run.failure?.text ? ` · ${run.failure.text}` : ''
+    return { kind: 'system', tone: 'bad', text: `✕ 失败 · ${label}${detail}` }
   }
 
   function archiveCutoffRun(workflowId, run) {
     const lane = laneOf(workflowId)
     lane.active = lane.active.filter(item => item.id !== run.id)
     lane.last = run
-    lane.history = [...lane.history, { task: run.task, status: run.status, at: run.updatedAt }].slice(-20)
+    lane.history = [...lane.history, historyRow(run)].slice(-20)
+  }
+
+  // The Runs tab reads this: a finished run, when it ended, and — for a failure —
+  // the reason, so the row says more than "Failed" (#1493).
+  function historyRow(run) {
+    return {
+      id: run.id,
+      task: run.task,
+      status: run.status,
+      at: run.updatedAt,
+      ...(run.failure ? { failure: { ...run.failure } } : {}),
+    }
   }
 
   // The oldest queued task whose own workflow still has a slot, or null.
@@ -552,7 +600,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       try {
         run = await handOff(item, run)
       } catch (error) {
-        endRun(item, run)
+        endRun(item, run, { code: 'dispatch-failed', text: String(error?.message ?? error).slice(0, 200) })
         await releaseRun(item.id, run)
         return refuse(error)
       }
@@ -884,12 +932,12 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           const ids = Object.values(run.ephemeral ?? {})
           // Stopping one run ends it the same way a reap does: the node map settles
           // with the run, or the strip keeps painting the node it was on (#1424).
-          const ended = { ...endRun(item, run) }
+          const ended = { ...endRun(item, run, { code: 'stopped' }) }
           delete ended.ephemeral
           delete ended.handed
           lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
           lane.last = ended
-          lane.history = [...lane.history, { task: ended.task, status: ended.status, at: ended.updatedAt }].slice(-20)
+          lane.history = [...lane.history, historyRow(ended)].slice(-20)
           push(workflowId, [{ kind: 'system', tone: 'bad', text: `■ 已停止 · ${summarizeTask(run.task)}` }], now())
           write()
           return { ok: true, ids }
@@ -1059,7 +1107,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       for (const { workflowId, run } of abandoned) {
         try {
           if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
-          endRun(workflow(workflowId), run)
+          endRun(workflow(workflowId), run, { code: 'host-ended' })
+          push(workflowId, [failureLine(run)], now())
           delete run.ephemeral
           delete run.handed
           archiveCutoffRun(workflowId, run)
@@ -1082,7 +1131,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
         for (const run of [...(lane.active ?? [])]) {
           if (run?.live === true && run.status === 'running') {
-            endRun(workflow(workflowId), run)
+            endRun(workflow(workflowId), run, { code: 'host-ended' })
             archiveCutoffRun(workflowId, run)
             endedLive = true
           }

@@ -55,6 +55,11 @@ window.__ModuleLoader__.load({
       'Local Bots': '本机 Bot',
       'No workflows yet.': '还没有 Workflow。',
       'Waiting for a task': '等待任务',
+      'A step failed': '有一步失败',
+      '{node} failed': '{node} 失败',
+      Stopped: '已停止',
+      'The hand-off failed': '交接失败',
+      'The host ended this run': '宿主中断了这次运行',
       'Message the workflow': '发消息',
       Trigger: '触发方式',
       Manual: '手动，从任务看板分配',
@@ -168,6 +173,34 @@ window.__ModuleLoader__.load({
     }
 
     const STATUS_KEY = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', idle: 'Idle' }
+    // Why a run failed, from the record the host keeps (#1493). A failure it did not
+    // name still reads Failed: the reason is added information, never a requirement.
+    const FAILURE_KEY = {
+      stopped: 'Stopped',
+      'dispatch-failed': 'The hand-off failed',
+      'host-ended': 'The host ended this run',
+    }
+    function failureText(run) {
+      const failure = run?.failure
+      if (!failure) return tr('Failed')
+      if (failure.code === 'step-failed') {
+        const head = failure.nodeName ? tr('{node} failed', { node: failure.nodeName }) : tr('A step failed')
+        return failure.text ? `${head} · ${failure.text}` : head
+      }
+      return tr(FAILURE_KEY[failure.code] ?? 'Failed')
+    }
+    // A row without a time (an older history entry) stays a row; it just shows none.
+    function runTime(at) {
+      const ms = Number(at)
+      if (!Number.isFinite(ms) || ms <= 0) return ''
+      const when = new Date(ms)
+      if (Number.isNaN(when.getTime())) return ''
+      const pad = (value) => String(value).padStart(2, '0')
+      const clock = `${pad(when.getHours())}:${pad(when.getMinutes())}`
+      const today = new Date()
+      const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
+      return sameDay ? clock : `${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${clock}`
+    }
     const COLUMN_KEY = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' }
     const COLUMN_OF = { open: 'not-started', claimed: 'not-started', working: 'in-progress', blocked: 'in-progress', 'result-ready': 'in-progress', accepted: 'done', cancelled: 'done', failed: 'done' }
     const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6', '研究员': '#a78bfa', '数据分析师': '#ec4899' }
@@ -388,7 +421,9 @@ window.__ModuleLoader__.load({
       const running = (run.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
       const chipClass = run.status === 'done' ? 'done' : (run.status === 'failed' ? 'failed' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued')))
       const chipLabel = run.status === 'done' ? tr('Done') : (run.status === 'failed' ? tr('Failed') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued'))))
-      const meta = run.paused
+      const meta = run.status === 'failed'
+        ? failureText(run)
+        : run.paused
         ? `${tr('Pause')} · ${running.map(node => node.name).join(' ‖ ') || '—'} · ${run.doneCount}/${run.nodeCount}`
         : (running[0]
           ? `${tr('Running')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
@@ -551,12 +586,20 @@ window.__ModuleLoader__.load({
       const liveRuns = liveStageRuns(workflow)
       if (liveRuns.length === 0 && history.length === 0 && queued.length === 0) return null
       const rows = liveRuns.map(run => ({
+        id: run.id,
         task: run.task,
-        status: 'running',
+        status: run.status,
+        at: run.updatedAt,
+        failure: run.failure,
         current: workflow.run?.id === run.id,
       }))
       for (const task of queued) rows.push({ task, status: 'queued', current: false })
-      for (const item of history) rows.push({ ...item, current: false })
+      const seen = new Set(rows.map(row => row.id ?? `${row.task?.id ?? ''}|${row.at ?? ''}`))
+      for (const item of history) {
+        const key = item.id ?? `${item.task?.id ?? ''}|${item.at ?? ''}`
+        if (seen.has(key)) continue
+        rows.push({ ...item, current: false })
+      }
       return rows
     }
 
@@ -726,8 +769,13 @@ window.__ModuleLoader__.load({
       const rows = runHistoryRows(workflow)
       if (!rows) return h('div', { className: 'wf-muted' }, tr('No runs yet.'))
       return h('div', null, rows.map((item, index) => h('div', { key: index, className: 'wf-hist' },
-        h('span', { title: item.task?.title ?? '' }, taskSummary(item.task, item)),
-        h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(item.status === 'done' ? 'Done' : item.status === 'running' ? 'Running' : item.status === 'failed' ? 'Failed' : 'Queued')))))
+        h('span', { className: 'wf-hist-task', title: item.task?.title ?? '' }, taskSummary(item.task, item)),
+        h('span', { className: 'wf-hist-meta' },
+          item.at ? h('span', { className: 'wf-hist-time' }, runTime(item.at)) : null,
+          item.status === 'failed'
+            ? h('span', { className: 'wf-hist-reason', title: failureText(item) }, failureText(item))
+            : null),
+        h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(STATUS_KEY[item.status] ?? 'Queued')))))
     }
 
     function RenameModal({ workflow, onClose, onConfirm }) {
@@ -1558,6 +1606,10 @@ window.__ModuleLoader__.load({
 .wf-kv{display:flex;justify-content:space-between;gap:16px;padding:8px 0;font-size:12px}
 .wf-kv span:first-child{color:var(--bt-ink-2,rgba(20,20,20,.6))}
 .wf-hist{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--bt-line,rgba(20,20,20,.08));font-size:12px}
+.wf-hist-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-hist-meta{display:flex;align-items:center;gap:8px;min-width:0;margin-left:auto}
+.wf-hist-time{color:var(--bt-ink-3,#9a9a9a);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wf-hist-reason{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e5484d}
 .wf-ctl{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .wf-mask{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
 .wf-modal{width:560px;max-width:100%;max-height:calc(100vh - 32px);background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414);border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;overflow:hidden}
