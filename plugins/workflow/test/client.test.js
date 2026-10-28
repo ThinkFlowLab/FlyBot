@@ -878,9 +878,131 @@ test('Chinese labels follow the host Tasks translation', () => {
   try {
     assert.equal(client.tr('Edit'), '编辑')
     assert.equal(client.tr('Hand a task to a Workflow'), '把任务交给 Workflow')
+    assert.equal(client.tr('Pick a node'), '选择一个节点')
     assert.equal(client.columnOf({ status: 'working' }), 'in-progress')
     assert.equal(client.shortId('task-abcdef123456'), '#123456')
   } finally {
     globalThis.__flybot__ = prev
+  }
+})
+
+const cssRule = (source, selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`${escaped}\\{([^}]*)\\}`).exec(source)
+  assert.ok(match, `missing CSS rule ${selector}`)
+  return match[1]
+}
+const pixel = (declaration, rule) => {
+  const match = new RegExp(`${declaration}:(\\d+(?:\\.\\d+)?)px`).exec(rule)
+  assert.ok(match, `missing ${declaration} in ${rule}`)
+  return Number(match[1])
+}
+
+test('the settings Add link panel uses the dialog form, a Pick a node placeholder and a disabled submit', async () => {
+  const calls = []
+  const graph = delivery()
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  const form = findAll(settings.tree, node => node.props?.className === 'wf-edge-form')[0]
+  assert.ok(form, 'the Add link panel carries wf-edge-form')
+  assert.equal(textOf(findAll(form, node => node.type === 'h3')[0]), 'Add link')
+  const pick = label => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
+  for (const label of ['From node', 'To node']) {
+    const options = findAll(pick(label), node => node.type === 'option')
+    assert.equal(options[0].props.value, '')
+    assert.equal(textOf(options[0]), 'Pick a node', `${label} starts on a placeholder, not a blank option`)
+  }
+  assert.equal(button(settings.tree, 'Add link').props.className, 'wf-btn wf-pri')
+  assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'the submit waits for both ends')
+  pick('From node').props.onChange({ target: { value: 'coder' } })
+  await settle()
+  assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'one end alone does not enable the submit')
+  pick('To node').props.onChange({ target: { value: 'planner' } })
+  await settle()
+  assert.equal(button(settings.tree, 'Add link').props.disabled, false)
+  button(settings.tree, 'Add link').props.onClick()
+  const linked = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.ok(linked.body.edges.some(edge => edge.from === 'coder' && edge.to === 'planner'))
+  settings.unmount()
+})
+
+test('graph handles are small, off the wire and lit only on hover or while dragging a wire', async () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  assert.equal(findAll(settings.tree, node => node.props?.['data-port'] === 'out').length, 0, 'no handles outside Edit mode')
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  const ports = findAll(settings.tree, node => node.props?.['data-port'] === 'out')
+  assert.equal(ports.length, graph.nodes.length)
+  assert.match(ports[0].props.className, /\bwf-port out\b/)
+  assert.equal(ports.some(node => node.props.className.includes('wiring')), false)
+  ports[0].props.onPointerDown({ preventDefault() {}, stopPropagation() {} })
+  await settle()
+  const lit = findAll(settings.tree, node => node.props?.['data-port'] === 'out' && node.props.className.includes('wiring'))
+  assert.equal(lit.length, 1, 'an active wire gesture lights one handle')
+  settings.unmount()
+
+  const port = cssRule(source, '.wf-port')
+  assert.ok(pixel('width', port) <= 10, `the handle is ${pixel('width', port)}px wide`)
+  assert.ok(pixel('height', port) <= 10)
+  assert.ok(pixel('border', port) <= 1.5)
+  assert.match(port, /right:-5px/, 'the handle sits beside the connection line, not on it')
+  assert.match(source, /\.wf-port:hover[^{]*\{[^}]*opacity:1/)
+  assert.match(source, /\.wf-port:focus-visible[^{]*\{[^}]*opacity:1/)
+  assert.match(source, /\.wf-port\.wiring\{[^}]*opacity:1/)
+  const form = cssRule(source, '.wf-edge-form')
+  assert.match(form, /padding:16px/)
+  assert.match(cssRule(source, '.wf-edge-form h3'), /font-size:14px/)
+  assert.ok(pixel('font-size', cssRule(source, '.wf-edge-form h3')) <= 14)
+  assert.match(cssRule(source, '.wf-edge-form .wf-edge-fields'), /display:grid/)
+  assert.match(cssRule(source, '.wf-edge-form .wf-field'), /margin-top:0/)
+})
+
+test('the settings page injects the workflow stylesheet without the sidebar section', async () => {
+  const prev = globalThis.document
+  const stub = (existing) => {
+    const appended = []
+    return {
+      appended,
+      getElementById: id => (existing && id === 'flybot-workflow-css' ? existing : null),
+      createElement: () => ({ id: '', textContent: '' }),
+      head: { appendChild(element) { appended.push(element) } },
+      querySelector() { return null },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+  }
+  try {
+    const doc = stub(null)
+    globalThis.document = doc
+    const view = mount(client.WorkflowSettings, { call: async () => ({ workflows: [], templates: [] }), roster: { bots: [] } })
+    await settle()
+    const style = doc.appended.find(element => element.id === 'flybot-workflow-css')
+    assert.ok(style, 'WorkflowSettings appended #flybot-workflow-css')
+    assert.match(style.textContent, /\.wf-port\{/)
+    assert.match(style.textContent, /\.wf-edge-form\{/)
+    view.unmount()
+
+    const again = stub({ id: 'flybot-workflow-css' })
+    globalThis.document = again
+    const second = mount(client.WorkflowSettings, { call: async () => ({ workflows: [], templates: [] }), roster: { bots: [] } })
+    await settle()
+    assert.equal(again.appended.length, 0, 'an existing stylesheet is not appended twice')
+    second.unmount()
+  } finally {
+    globalThis.document = prev
   }
 })

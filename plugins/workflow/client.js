@@ -82,6 +82,7 @@ window.__ModuleLoader__.load({
       'Add link': '添加连线',
       'From node': '起点',
       'To node': '终点',
+      'Pick a node': '选择一个节点',
       Link: '连线',
       Condition: '条件',
       Loop: '循环',
@@ -632,7 +633,7 @@ window.__ModuleLoader__.load({
             onMouseLeave: editing ? () => onTip?.(null) : null,
           },
             editing ? h('button', {
-              type: 'button', className: 'wf-port out', 'data-port': 'out', 'aria-label': node.name,
+              type: 'button', className: `wf-port out${gesture?.kind === 'wire' && gesture.from === node.id ? ' wiring' : ''}`, 'data-port': 'out', 'aria-label': node.name,
               onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); setGesture({ kind: 'wire', from: node.id }) },
             }) : null,
             editing ? h('button', {
@@ -838,6 +839,11 @@ window.__ModuleLoader__.load({
         return () => { gone = true }
       }, [])
       
+      useEffect(() => {
+        ensureCss()
+        return undefined
+      }, [])
+
       const workflows = pack?.workflows ?? []
       const current = workflows.find(item => item.id === workflowId) ?? workflows[0]
       const nodes = current?.nodes ?? []
@@ -967,14 +973,14 @@ window.__ModuleLoader__.load({
                   'aria-label': tr('From node'),
                   value: edgeForm.from,
                   onChange: (event) => setEdgeForm({ ...edgeForm, from: event.target.value }),
-                }, h('option', { value: '' }), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+                }, h('option', { value: '' }, tr('Pick a node')), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
               h('label', { className: 'wf-field' },
                 h('span', null, tr('To node')),
                 h('select', {
                   'aria-label': tr('To node'),
                   value: edgeForm.to,
                   onChange: (event) => setEdgeForm({ ...edgeForm, to: event.target.value }),
-                }, h('option', { value: '' }), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+                }, h('option', { value: '' }, tr('Pick a node')), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
               edgeForm.kind === 'loop' ? h('label', { className: 'wf-field' },
                 h('span', null, tr('Max iterations')),
                 h('input', {
@@ -997,7 +1003,7 @@ window.__ModuleLoader__.load({
                   value: edgeForm.until.eq,
                   onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, eq: event.target.value } }),
                 })) : null,
-              h('button', { type: 'button', onClick: addEdge }, tr('Add link')))) : null) : null)
+              h('button', { type: 'button', className: 'wf-btn wf-pri', disabled: !edgeForm.from || !edgeForm.to, onClick: addEdge }, tr('Add link')))) : null) : null)
     }
 
     function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit, roster }) {
@@ -1056,7 +1062,7 @@ window.__ModuleLoader__.load({
             },
           },
             editing ? h('button', {
-              type: 'button', className: 'wf-port out', 'data-port': 'out',
+              type: 'button', className: `wf-port out${gesture?.kind === 'wire' && gesture.from === node.id ? ' wiring' : ''}`, 'data-port': 'out',
               onPointerDown: (event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -1071,6 +1077,15 @@ window.__ModuleLoader__.load({
       const side = document.querySelector?.('.bt-side')
       const right = side?.getBoundingClientRect?.().right
       return right > 40 ? right : 0
+    }
+
+    function ensureCss() {
+      if (typeof document === 'undefined') return
+      if (document.getElementById('flybot-workflow-css')) return
+      const style = document.createElement('style')
+      style.id = 'flybot-workflow-css'
+      style.textContent = CSS
+      document.head.appendChild(style)
     }
 
     function Section({ roster, call, actions }) {
@@ -1098,12 +1113,7 @@ window.__ModuleLoader__.load({
       }
       
       useEffect(() => {
-        if (typeof document === 'undefined') return undefined
-        if (document.getElementById('flybot-workflow-css')) return undefined
-        const style = document.createElement('style')
-        style.id = 'flybot-workflow-css'
-        style.textContent = CSS
-        document.head.appendChild(style)
+        ensureCss()
         return undefined
       }, [])
       
@@ -1463,7 +1473,8 @@ window.__ModuleLoader__.load({
 .wf-wires path{fill:none;stroke:var(--bt-line,rgba(20,20,20,.5));stroke-width:2}
 .wf-wires .wf-end{pointer-events:auto;fill:var(--bt-card,#fff);stroke:var(--bt-accent,#4d6bfe);cursor:crosshair}
 .wf-abs{position:absolute}
-.wf-port{position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;border:2px solid var(--bt-accent,#4d6bfe);background:var(--bt-card,#fff);padding:0;cursor:crosshair}
+.wf-port{position:absolute;right:-5px;bottom:-5px;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--bt-accent,#4d6bfe);background:var(--bt-card,#fff);padding:0;cursor:crosshair;opacity:.55;z-index:2;transition:opacity .15s,box-shadow .15s}
+.wf-port:hover,.wf-port:focus-visible,.wf-port.wiring{opacity:1;box-shadow:0 0 0 3px rgba(77,107,254,.22)}
 .wf-mini{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:50%;border:1px solid var(--bt-line,rgba(20,20,20,.16));background:var(--bt-card,#fff);cursor:pointer;line-height:16px;padding:0}
 .wf-node{width:168px;border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px;position:relative}
 @keyframes wf-node-live{0%,100%{border-color:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px rgba(77,107,254,.18),0 0 0 0 rgba(77,107,254,.2)}50%{border-color:rgba(77,107,254,.85);box-shadow:0 0 0 3px rgba(77,107,254,.35),0 0 14px 2px rgba(77,107,254,.22)}}
@@ -1527,6 +1538,12 @@ window.__ModuleLoader__.load({
 .wf-inspector-content{display:flex;flex-direction:column;gap:12px}
 .wf-inspector-empty{display:flex;align-items:center;justify-content:center}
 .wf-inspector-empty p{color:var(--bt-ink-3,#9a9a9a);text-align:center}
+.wf-edge-form{border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;padding:16px;background:var(--bt-card,#fff)}
+.wf-edge-form h3{font-size:14px;margin:0 0 12px}
+.wf-edge-form .wf-edge-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.wf-edge-form .wf-field{margin-top:0}
+.wf-edge-form .wf-btn{align-self:end;justify-self:start}
+.wf-btn:disabled{opacity:.5;cursor:not-allowed}
 .wf-par-toggle{display:flex;align-items:center;gap:6px;font-size:12px}
 `
 
