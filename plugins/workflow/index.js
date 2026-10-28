@@ -31,10 +31,15 @@ export function apply(ctx, config = {}) {
   const liveNames = new Map()
   const lifecycle = typeof fb.bot?.create === 'function' ? {
     async spawn(spec) {
-      const tools = Array.isArray(spec.tools) ? spec.tools : []
+      // spec.tools is undefined when no explicit list is set, letting the Bot inherit all
+      // available tools (limited only by EPHEMERAL_DENIED_TOOLS at the guard layer).
+      // An explicit list restricts to those tools.
+      const tools = spec.tools
       const notes = []
-      if (tools.length > 0) notes.push(`You can use these tools: ${tools.join(', ')}.`)
-      if (tools.includes('github')) notes.push('GitHub (mcp__github__*) is granted for this step: issues, pull requests, reviews and comments.')
+      if (Array.isArray(tools) && tools.length > 0) {
+        notes.push(`You can use these tools: ${tools.join(', ')}.`)
+        if (tools.includes('github')) notes.push('GitHub (mcp__github__*) is granted for this step: issues, pull requests, reviews and comments.')
+      }
       const prompt = [spec.prompt, ...notes].filter(Boolean).join('\n\n')
       let last
       for (let n = 0; n < 4; n += 1) {
@@ -49,9 +54,9 @@ export function apply(ctx, config = {}) {
             ...(spec.model ? { model: spec.model } : {}),
             hidden: true,
             ephemeral: true,
-            tools,
-            permission: permissionFor(tools),
-            fields: { nodeId: spec.nodeId, tools },
+            ...(Array.isArray(tools) ? { tools } : {}),
+            permission: permissionFor(tools ?? []),
+            fields: { nodeId: spec.nodeId, tools: tools ?? null },
           })
           liveNames.set(name, id)
           return id

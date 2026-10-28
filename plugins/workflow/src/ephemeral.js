@@ -5,20 +5,12 @@ import { cleanLine, cleanPrompt, cleanTools } from './graph.js'
 
 const SHELL = new Set(['bash', 'shell', 'danger-full-access'])
 
-// When a node has no explicit tools list, it gets the baseline: file operations,
-// shell and connectors. An explicit empty list also gets the baseline, because
-// EPHEMERAL_DENIED_TOOLS at the guard/approval layer already narrows what a run
-// Bot may reach (#1466), so tools: [] naming nothing reachable is not useful.
-// A step that names a shell (or gets it from the baseline) runs with full access.
-const BASELINE_TOOLS = ['read', 'edit', 'bash', 'github']
-
-export function defaultedTools(tools) {
-  const explicit = cleanTools(tools)
-  return explicit.length > 0 ? explicit : BASELINE_TOOLS
-}
-
+// A node with no explicit tools list inherits the full tool grant a normal Bot gets,
+// limited only by EPHEMERAL_DENIED_TOOLS at the guard/approval layer (#1466). An
+// explicit list restricts to those tools. Permission is 'danger-full-access' when the
+// node names a shell, otherwise 'workspace-write'.
 export function permissionFor(tools) {
-  const names = defaultedTools(tools)
+  const names = cleanTools(tools)
   if (names.some(name => SHELL.has(name))) return 'danger-full-access'
   return 'workspace-write'
 }
@@ -30,13 +22,16 @@ export function nodeConfig(node, roster = [], workflowModel = '') {
   const prompt = cleanPrompt(node?.prompt)
     || cleanPrompt(seated?.systemPrompt || seated?.instructions || '')
     || cleanPrompt(node?.instructions)
+  // An explicit tools list is kept; no list (or an empty one) is returned as undefined
+  // so the spawn inherits all tools a normal Bot gets, limited by EPHEMERAL_DENIED_TOOLS.
+  const explicit = cleanTools(node.tools)
   return {
     nodeId: node.id,
     name: node.name,
     role: cleanLine(node.role || seated?.role, 80),
     prompt,
     model: cleanLine(workflowModel || node.model || seated?.model, 80),
-    tools: defaultedTools(node.tools),
+    tools: explicit.length > 0 ? explicit : undefined,
     hidden: true,
     ephemeral: true,
   }

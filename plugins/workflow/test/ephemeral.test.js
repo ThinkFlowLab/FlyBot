@@ -185,7 +185,7 @@ test('a spawn that fails halfway removes the instances it already made and does 
   assert.equal(svc.state().workflows.find(item => item.id === made.id).run, null)
 })
 
-test('a node with no tools gets baseline tools (read, edit, bash, github) and full access permission', async () => {
+test('a node with no tools inherits all available tools; explicit tools restrict', async () => {
   const created = []
   const fb = {
     bot: {
@@ -205,19 +205,18 @@ test('a node with no tools gets baseline tools (read, edit, bash, github) and fu
   }
   const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
   
-  // Node with no tools field gets baseline
+  // Node with no tools field: tools is omitted from fb.bot.create, inherits all available
   const noTools = await started.service.define({
     name: 'NoTools',
     nodes: [{ id: 'worker', name: 'Worker', prompt: 'Do the work.' }],
     edges: [],
   })
-  await started.service.runNamed({ workflow: 'NoTools', brief: 'Test baseline' })
-  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
-  assert.equal(created[0].permission, 'danger-full-access')
-  assert.match(created[0].systemPrompt, /You can use these tools: read, edit, bash, github\./)
-  assert.match(created[0].systemPrompt, /GitHub \(mcp__github__\*\) is granted/)
+  await started.service.runNamed({ workflow: 'NoTools', brief: 'Test inherit' })
+  assert.equal('tools' in created[0], false, 'tools field is omitted when node has no explicit list')
+  assert.equal(created[0].permission, 'workspace-write', 'no explicit shell tool means workspace-write')
+  assert.doesNotMatch(created[0].systemPrompt, /You can use these tools:/, 'no tool-specific notes when tools undefined')
   
-  // Node with explicit empty tools list also gets baseline (no use case for truly empty)
+  // Node with explicit empty tools list: same as no tools (undefined)
   created.length = 0
   const emptyTools = await started.service.define({
     name: 'EmptyTools',
@@ -225,10 +224,10 @@ test('a node with no tools gets baseline tools (read, edit, bash, github) and fu
     edges: [],
   })
   await started.service.runNamed({ workflow: 'EmptyTools', brief: 'Test empty' })
-  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
-  assert.equal(created[0].permission, 'danger-full-access')
+  assert.equal('tools' in created[0], false, 'explicit empty list also omits tools field')
+  assert.equal(created[0].permission, 'workspace-write')
   
-  // Node with explicit tools uses those tools
+  // Node with explicit tools uses only those tools
   created.length = 0
   const customTools = await started.service.define({
     name: 'CustomTools',
@@ -236,10 +235,21 @@ test('a node with no tools gets baseline tools (read, edit, bash, github) and fu
     edges: [],
   })
   await started.service.runNamed({ workflow: 'CustomTools', brief: 'Test custom' })
-  assert.deepEqual(created[0].tools, ['read'])
+  assert.deepEqual(created[0].tools, ['read'], 'explicit tools are passed through')
   assert.equal(created[0].permission, 'workspace-write')
   assert.match(created[0].systemPrompt, /You can use these tools: read\./)
   assert.doesNotMatch(created[0].systemPrompt, /GitHub/)
+  
+  // Node with explicit bash gets danger-full-access
+  created.length = 0
+  const shellTools = await started.service.define({
+    name: 'ShellTools',
+    nodes: [{ id: 'worker', name: 'Worker', prompt: 'Run commands.', tools: ['bash', 'read'] }],
+    edges: [],
+  })
+  await started.service.runNamed({ workflow: 'ShellTools', brief: 'Test shell' })
+  assert.deepEqual(created[0].tools, ['bash', 'read'])
+  assert.equal(created[0].permission, 'danger-full-access', 'explicit bash grants full access')
 })
 
 test('apply wires spawn to a hidden ephemeral create and removes those Bots when the run ends', async () => {
@@ -274,12 +284,12 @@ test('apply wires spawn to a hidden ephemeral create and removes those Bots when
   assert.equal(created.length, 1)
   assert.equal(created[0].ephemeral, true)
   assert.equal(created[0].hidden, true)
-  // A node with no tools gets the baseline: read, edit, bash, github. bash gives full access.
-  assert.equal(created[0].permission, 'danger-full-access')
-  assert.deepEqual(created[0].tools, ['read', 'edit', 'bash', 'github'])
+  // A node with no tools omits the tools field, inheriting all available tools (limited by
+  // EPHEMERAL_DENIED_TOOLS at the guard layer). No explicit shell = workspace-write permission.
+  assert.equal(created[0].permission, 'workspace-write')
+  assert.equal('tools' in created[0], false, 'tools field omitted when node has no explicit list')
   assert.match(created[0].systemPrompt, /Write the plan\./)
-  assert.match(created[0].systemPrompt, /You can use these tools: read, edit, bash, github\./)
-  assert.match(created[0].systemPrompt, /GitHub \(mcp__github__\*\) is granted/)
+  assert.doesNotMatch(created[0].systemPrompt, /You can use these tools:/, 'no tool notes when tools undefined')
   assert.equal(created[0].name.startsWith('Planner '), true)
   assert.notEqual(created[0].name, 'Planner')
   assert.equal(sent.length, 1)
