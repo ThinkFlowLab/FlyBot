@@ -39,10 +39,10 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 | `core/scripts/local-ci.sh` | Local run of CI's steps, including each plugin's suite. |
 | `core/scripts/replay.mjs` | Dev-only state-journal replay (#511): rebuilds `state.json` up to an entry from `<home>/journal/state.jsonl`; no network or process calls, output is a new 0600 file or stdout, a bad journal is refused whole. See [core-host](core-host.md). |
 | `Dockerfile` | Packs `core` and the plugins (social, tree, workflow, timeline) with `check-pack.mjs` (the release tarballs), then a runtime with DSH (pinned like the README), pnpm and tini, as user `node`, one volume `/data`. |
-| `compose.yaml` | One instance: port on the host's `127.0.0.1`, volume `data`, `DEEPSEEK_API_KEY` passed through only when set. |
-| `docker/entrypoint.mjs`, `docker/profile.mjs` | Each start links the image's packages into `/data/profiles/web` (other plugins and `cordis.patch.yml` kept), `pnpm install`, then `dsh web` in `/data/workspace`. |
-| `docker/web.patch.yml` | Container-only overlay: `webserver.host: 0.0.0.0` (the CLI refuses `--host 0.0.0.0`; inside the container it reaches only the container's network). |
-| `docker/healthcheck.mjs` | Healthy when `GET /` answers (401 without the cookie). |
+| `compose.yaml` | One instance: host networking (`network_mode: host`), so the server's bind on the host's `127.0.0.1` is the same loopback-only exposure a published port gave before; volume `data`, `FLYBOT_PORT` and `DEEPSEEK_API_KEY` passed through only when set. |
+| `docker/entrypoint.mjs`, `docker/profile.mjs` | Each start links the image's packages into `/data/profiles/web` (other plugins and `cordis.patch.yml` kept), `pnpm install`, then `dsh web` in `/data/workspace` on `FLYBOT_PORT` (default 3080). |
+| `docker/web.patch.yml` | Container-only overlay: `webserver.host: 127.0.0.1`. DSH 0.2.1 refuses a wildcard host — `host "0.0.0.0" is an unspecified (wildcard) address, which is not supported` — so the container shares the host network instead; the CLI refuses `--host 0.0.0.0` for the same reason. |
+| `docker/healthcheck.mjs` | Healthy when `GET /` answers on the host loopback (401 without the cookie), following `FLYBOT_PORT`. |
 
 ## Entry points
 

@@ -2,7 +2,7 @@
 
 [English](docker.md)
 
-每人在一台一直开着的 Linux 机器上运行一个 FlyBot，合上笔记本后 Bot 和定时任务照常工作。容器里运行 `dsh web`（DSH 0.2.0-rc.2，与 README 相同），带上你构建所用代码里的 FlyBot 核心以及 social、tree、workflow、timeline 插件。实例之间只通过 [Bot Social](https://github.com/Birfy/bot-social) 通信；Bot Social 不在镜像里，需要你自己部署。
+每人在一台一直开着的 Linux 机器上运行一个 FlyBot，合上笔记本后 Bot 和定时任务照常工作。容器里运行 `dsh web`（DSH 0.2.1-rc.2，与 README 相同），带上你构建所用代码里的 FlyBot 核心以及 social、tree、workflow、timeline 插件。实例之间只通过 [Bot Social](https://github.com/Birfy/bot-social) 通信；Bot Social 不在镜像里，需要你自己部署。
 
 镜像由你自己构建，FlyBot 不发布镜像。
 
@@ -11,12 +11,12 @@
 - **一个数据卷** `/data`：DSH 目录（Bot、会话、设置、凭据）、Bot 的工作目录 `/data/workspace` 和 pnpm 缓存。
 - **普通用户运行**，不是 root（uid 1000）。
 - **镜像里没有密钥。** DeepSeek Key 在运行时提供。
-- **端口只绑定 `127.0.0.1`。** 从别的机器访问请用你自己的 HTTPS 反向代理或 SSH 隧道。不要把端口暴露到公网：拿到登录链接的人就能控制你的 Bot，而 Bot 能执行命令。
+- **端口只绑定 `127.0.0.1`。** 容器使用宿主机的网络（`network_mode: host`），Web 服务自己绑定这个回环地址，因为 DSH 0.2.1 拒绝通配地址。从别的机器访问请用你自己的 HTTPS 反向代理或 SSH 隧道。不要把端口暴露到公网：拿到登录链接的人就能控制你的 Bot，而 Bot 能执行命令。
 - **健康检查**：Web 服务能响应后，`docker compose ps` 显示 `healthy`。
 
 ## 启动
 
-需要 Docker（带 compose 插件）和本仓库的代码。
+需要 Linux 上的 Docker（带 compose 插件）——macOS 和 Windows 的 Docker Desktop 不转发 host 网络，`network_mode: host` 在那里到不了你的机器——以及本仓库的代码。
 
 ```sh
 git clone https://github.com/ThinkFlowLab/FlyBot && cd FlyBot

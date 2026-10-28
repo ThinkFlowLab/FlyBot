@@ -904,3 +904,336 @@ test('#1544: the workflow tools hand the calling Bot on to the run they start', 
   assert.equal(spawnedSpec.createdBy, 'bot-planner')
   assert.deepEqual(spawnedSpec.cappedBy, ['bot-planner', 'main'])
 })
+
+// #1476: Stop and Reset persist the run's end before its Bots are released, so
+// a release that fails leaves a live Bot whose only id has already been written
+// away. Both paths release first and keep the failed id named, so the next Stop,
+// Reset, dispose() or reload can retry it.
+function resettable(dir, log) {
+  let seq = 0
+  return createWorkflowService({
+    dir,
+    persist: true,
+    now: () => 1_700_000_000_000,
+    bots: () => roster,
+    spawn: async (spec) => `eph-${spec.nodeId}-${++seq}`,
+    release: async (id) => {
+      log.attempted.push(id)
+      if (log.fail.has(id)) {
+        log.fail.delete(id)
+        throw new Error('bot remove failed')
+      }
+      log.done.push(id)
+    },
+    warn: (line) => { log.warned.push(line) },
+    dispatch: async (step) => {
+      log.dispatched?.push(`${step.nodeId}:${step.botId}`)
+      return { ok: true }
+    },
+  })
+}
+
+function twoNodes(svc, name = 'Lane') {
+  return svc.define({
+    name,
+    nodes: [
+      { id: 'plan', name: 'Planner', role: 'plan', prompt: 'Write the plan.' },
+      { id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' },
+    ],
+    edges: [{ from: 'plan', to: 'code' }],
+  }).workflows.find(item => item.name === name)
+}
+
+test('a release that fails during Stop keeps the id, and a second Stop retries it (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-stop-'))
+  const log = { attempted: [], done: [], warned: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    svc.setConcurrency({ workflowId: made.id, maxConcurrent: 2 })
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'First' })
+    const both = await svc.assign({ workflowId: made.id, taskId: '#b', title: 'Second' })
+    const lane = both.workflows.find(item => item.id === made.id)
+    const victim = lane.runs.find(run => run.task.id === '#a')
+    const survivor = lane.runs.find(run => run.task.id === '#b')
+    const victimIds = Object.values(victim.ephemeral)
+
+    const stopped = await svc.reset({ workflowId: made.id, runId: victim.id })
+    assert.equal(stopped.ok, true)
+    assert.match(log.warned.join('\n'), /could not remove eph-plan-1/)
+    // The release failed, so the run is still live and the record still names it.
+    const during = readStore(dir)
+    assert.equal(JSON.stringify(during).includes('eph-plan-1'), true, 'a failed release erased the only id')
+    const kept = (during.lanes[made.id].active ?? []).find(run => run.id === victim.id)
+    assert.ok(kept, 'Stop ended the run although its Bot could not be released')
+    assert.equal(kept.status, 'running')
+    assert.deepEqual(kept.ephemeral, { plan: 'eph-plan-1' })
+    // The run is halted on purpose, and the marker says why: resuming it would
+    // move the graph to a node whose Bot is already gone (#1476).
+    assert.equal(kept.paused, true)
+    assert.equal(kept.releasePending, true)
+    // The id whose release did go is forgotten, so no retry asks for it again.
+    assert.equal(JSON.stringify(during).includes('eph-code-2'), false)
+    assert.equal(stopped.workflows.find(item => item.id === made.id).runs.some(run => run.id === victim.id), true)
+
+    // A second Stop retries the one id that is still there and then ends the run.
+    const retried = await svc.reset({ workflowId: made.id, runId: victim.id })
+    assert.equal(retried.ok, true)
+    assert.equal(log.warned.length, 1)
+    assert.deepEqual([...new Set(log.done)].sort(), [...victimIds].sort())
+    assert.equal(log.attempted.filter(id => id === 'eph-plan-1').length, 2)
+    assert.equal(log.attempted.includes('eph-code-2'), true)
+    assert.equal(log.attempted.filter(id => id === 'eph-code-2').length, 1)
+    const after = readStore(dir)
+    assert.deepEqual((after.lanes[made.id].active ?? []).map(run => run.id), [survivor.id])
+    assert.equal(after.lanes[made.id].last.id, victim.id)
+    assert.equal(after.lanes[made.id].last.status, 'failed')
+    assert.equal(after.lanes[made.id].last.ephemeral, undefined)
+    assert.equal(after.lanes[made.id].last.paused, undefined)
+    assert.equal(after.lanes[made.id].last.releasePending, undefined)
+    const text = readFileSync(join(dir, 'workflows.json'), 'utf8')
+    for (const id of victimIds) assert.equal(text.includes(id), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a failed Stop freezes the run as Paused, so nothing more is handed and the queue waits (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-freeze-'))
+  const log = { attempted: [], done: [], warned: [], dispatched: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    svc.setConcurrency({ workflowId: made.id, maxConcurrent: 2 })
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'First' })
+    const both = await svc.assign({ workflowId: made.id, taskId: '#b', title: 'Second' })
+    const lane = both.workflows.find(item => item.id === made.id)
+    const victim = lane.runs.find(run => run.task.id === '#a')
+    const survivor = lane.runs.find(run => run.task.id === '#b')
+    const handedBefore = [...log.dispatched]
+
+    const stopped = await svc.reset({ workflowId: made.id, runId: victim.id })
+    assert.equal(stopped.ok, true)
+    const during = readStore(dir)
+    const kept = during.lanes[made.id].active.find(run => run.id === victim.id)
+    assert.equal(kept.status, 'running')
+    assert.equal(kept.paused, true)
+    assert.equal(kept.releasePending, true)
+    const shown = stopped.workflows.find(item => item.id === made.id).runs.find(run => run.id === victim.id)
+    assert.equal(shown.paused, true, 'the UI must show the run as Paused')
+    const note = stopped.workflows.find(item => item.id === made.id).messages.at(-1)
+    assert.equal(note.tone, 'bad')
+    assert.match(note.text, /停止失败：还有 1 个 Bot 没释放，再点一次停止/)
+
+    // The last reply still moves the graph, but the next node has no Bot id and
+    // handOff() must send nothing: before the freeze it stayed running forever.
+    await svc.stepResult({ botId: 'eph-plan-1', text: 'plan done' })
+    assert.deepEqual(log.dispatched, handedBefore)
+    assert.equal(log.dispatched.some(line => line.startsWith('code:')), false)
+
+    // The wedged run holds its slot, so a queued task is not drained into it.
+    const third = await svc.assign({ workflowId: made.id, taskId: '#c', title: 'Third' })
+    assert.deepEqual(readStore(dir).lanes[made.id].queue.map(task => task.id), ['#c'])
+    assert.deepEqual(third.workflows.find(item => item.id === made.id).runs.map(run => run.id).sort(), [victim.id, survivor.id].sort())
+    assert.deepEqual(log.dispatched, handedBefore)
+
+    // A person's own Pause and Resume on a healthy run are unchanged.
+    assert.equal(svc.pause({ workflowId: made.id, runId: survivor.id }).ok, true)
+    assert.equal((await svc.resume({ workflowId: made.id, runId: survivor.id })).ok, true)
+    assert.equal(readStore(dir).lanes[made.id].active.find(run => run.id === survivor.id).paused, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('resume refuses a run whose failed Stop still waits to release a Bot (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-resume-'))
+  const log = { attempted: [], done: [], warned: [], dispatched: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'Only' })
+    const run = svc.state().workflows.find(item => item.id === made.id).run
+    await svc.reset({ workflowId: made.id, runId: run.id })
+    const before = readStore(dir)
+    const frozen = before.lanes[made.id].active.find(item => item.id === run.id)
+    assert.equal(frozen.paused, true)
+    assert.equal(frozen.releasePending, true)
+    const messagesBefore = (before.logs?.[made.id] ?? []).length
+
+    const refused = await svc.resume({ workflowId: made.id, runId: run.id })
+    assert.equal(refused.ok, false)
+    assert.match(refused.error, /release|stop/i)
+    // Nothing moved: not a flag, not a timestamp, not a log line.
+    const after = readStore(dir)
+    assert.deepEqual(after.lanes[made.id].active.find(item => item.id === run.id), frozen)
+    assert.equal((after.logs?.[made.id] ?? []).length, messagesBefore)
+    assert.equal(after.logs?.[made.id]?.at(-1)?.text?.includes('已继续') ?? false, false)
+    // The name-less form the UI may send is refused the same way.
+    assert.equal((await svc.resume({ workflowId: made.id })).ok, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a reload reaps a run a failed Stop froze, and the markers go with it (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-reap-'))
+  const log = { attempted: [], done: [], warned: [], dispatched: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'Only' })
+    const run = svc.state().workflows.find(item => item.id === made.id).run
+    await svc.reset({ workflowId: made.id, runId: run.id })
+    assert.equal(readStore(dir).lanes[made.id].active[0].releasePending, true)
+
+    log.attempted.length = 0
+    log.done.length = 0
+    const reloaded = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => 1_700_000_001_000,
+      bots: () => roster,
+      spawn: async (spec) => `eph-${spec.nodeId}-reload`,
+      release: async (id) => { log.attempted.push(id); log.done.push(id) },
+      warn: (line) => { log.warned.push(line) },
+    })
+    await reloaded.reap()
+    const after = readStore(dir)
+    assert.equal((after.lanes[made.id].active ?? []).length, 0)
+    assert.equal(after.lanes[made.id].last.status, 'failed')
+    assert.equal(after.lanes[made.id].last.ephemeral, undefined)
+    assert.equal(after.lanes[made.id].last.paused, undefined)
+    assert.equal(after.lanes[made.id].last.releasePending, undefined)
+    assert.deepEqual(log.done, ['eph-plan-1'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a release that fails during Stop leaves the id for a following dispose() to retry (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-dispose-'))
+  const log = { attempted: [], done: [], warned: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'Only' })
+    const run = svc.state().workflows.find(item => item.id === made.id).run
+    const ids = Object.values(run.ephemeral)
+
+    const stopped = await svc.reset({ workflowId: made.id, runId: run.id })
+    assert.equal(stopped.ok, true)
+    assert.match(log.warned.join('\n'), /could not remove eph-plan-1/)
+    const during = readStore(dir)
+    assert.equal((during.lanes[made.id].active ?? []).length, 1)
+    assert.deepEqual(during.lanes[made.id].active[0].ephemeral, { plan: 'eph-plan-1' })
+
+    // dispose() is the next path that reaches the retained id, and it releases it.
+    await svc.dispose()
+    assert.deepEqual([...new Set(log.done)].sort(), [...ids].sort())
+    assert.equal(log.attempted.filter(id => id === 'eph-plan-1').length, 2)
+    const after = readStore(dir)
+    assert.equal((after.lanes[made.id].active ?? []).length, 0)
+    assert.equal(after.lanes[made.id].last.ephemeral, undefined)
+    // The run ended, so the frozen markers are gone with it.
+    assert.equal(after.lanes[made.id].last.paused, undefined)
+    assert.equal(after.lanes[made.id].last.releasePending, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a release that fails during a whole-workflow Reset keeps that id, and a second Reset retries it (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-reset-'))
+  const log = { attempted: [], done: [], warned: [], fail: new Set(['eph-plan-1']) }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    svc.setConcurrency({ workflowId: made.id, maxConcurrent: 2 })
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'First' })
+    const both = await svc.assign({ workflowId: made.id, taskId: '#b', title: 'Second' })
+    const lane = both.workflows.find(item => item.id === made.id)
+    const allIds = lane.runs.flatMap(run => Object.values(run.ephemeral))
+
+    const reset = await svc.reset({ workflowId: made.id })
+    assert.equal(reset.ok, true)
+    assert.match(log.warned.join('\n'), /could not remove eph-plan-1/)
+    // Nothing was reset: the lanes are still live, and the failed id still has a name.
+    const during = readStore(dir)
+    assert.equal((during.lanes[made.id].active ?? []).length, 2)
+    assert.equal(JSON.stringify(during).includes('eph-plan-1'), true)
+    // Every live run lost the ids that did go, so every one of them is frozen.
+    for (const run of during.lanes[made.id].active) {
+      assert.equal(run.paused, true)
+      assert.equal(run.releasePending, true)
+    }
+    for (const id of allIds.filter(id => id !== 'eph-plan-1')) {
+      assert.equal(JSON.stringify(during).includes(id), false)
+    }
+    assert.equal((during.lanes[made.id].queue ?? []).length, 0)
+
+    // The next Reset is the retry: the same endpoint releases and then resets.
+    const retried = await svc.reset({ workflowId: made.id })
+    assert.equal(retried.ok, true)
+    assert.deepEqual([...new Set(log.done)].sort(), [...new Set(allIds)].sort())
+    const after = readStore(dir)
+    assert.equal((after.lanes[made.id].active ?? []).length, 0)
+    assert.equal(after.lanes[made.id].last.ephemeral, undefined)
+    assert.equal(after.lanes[made.id].last.paused, undefined)
+    assert.equal(after.lanes[made.id].last.releasePending, undefined)
+    const text = readFileSync(join(dir, 'workflows.json'), 'utf8')
+    for (const id of allIds) assert.equal(text.includes(id), false)
+    assert.equal(log.warned.length, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Stop and Reset still forget every id and archive the run when no release fails (#1476)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-1476-ok-'))
+  const log = { attempted: [], done: [], warned: [], fail: new Set() }
+  try {
+    const svc = resettable(dir, log)
+    const made = twoNodes(svc)
+    svc.setConcurrency({ workflowId: made.id, maxConcurrent: 2 })
+    await svc.assign({ workflowId: made.id, taskId: '#a', title: 'First' })
+    const both = await svc.assign({ workflowId: made.id, taskId: '#b', title: 'Second' })
+    const lane = both.workflows.find(item => item.id === made.id)
+    const victim = lane.runs.find(run => run.task.id === '#a')
+    const survivor = lane.runs.find(run => run.task.id === '#b')
+    const victimIds = Object.values(victim.ephemeral)
+
+    const stopped = await svc.reset({ workflowId: made.id, runId: victim.id })
+    assert.equal(stopped.ok, true)
+    assert.deepEqual(log.warned, [])
+    const afterStop = readStore(dir)
+    const archived = afterStop.lanes[made.id].last
+    assert.equal(archived.id, victim.id)
+    assert.equal(archived.status, 'failed')
+    assert.equal(archived.ephemeral, undefined)
+    assert.equal('handed' in archived, false)
+    assert.deepEqual((afterStop.lanes[made.id].active ?? []).map(run => run.id), [survivor.id])
+    const text = readFileSync(join(dir, 'workflows.json'), 'utf8')
+    for (const id of victimIds) assert.equal(text.includes(id), false)
+    const presented = stopped.workflows.find(item => item.id === made.id)
+    assert.equal(presented.history.at(-1).status, 'failed')
+    assert.match(presented.messages.at(-1).text, /已停止/)
+
+    // The whole-workflow Reset still blanks the lane and keeps the record clean.
+    const reset = await svc.reset({ workflowId: made.id })
+    assert.equal(reset.ok, true)
+    const afterReset = readStore(dir)
+    assert.equal((afterReset.lanes[made.id].active ?? []).length, 0)
+    assert.equal((afterReset.lanes[made.id].queue ?? []).length, 0)
+    assert.equal(afterReset.lanes[made.id].last.ephemeral, undefined)
+    assert.equal(afterReset.lanes[made.id].last.status, 'idle')
+    assert.match(reset.workflows.find(item => item.id === made.id).messages.at(-1).text, /重置|reset/i)
+    const finalText = readFileSync(join(dir, 'workflows.json'), 'utf8')
+    for (const id of Object.values(survivor.ephemeral)) assert.equal(finalText.includes(id), false)
+    assert.deepEqual([...new Set(log.done)].sort(), [...new Set([...victimIds, ...Object.values(survivor.ephemeral)])].sort())
+    assert.equal(log.warned.length, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+

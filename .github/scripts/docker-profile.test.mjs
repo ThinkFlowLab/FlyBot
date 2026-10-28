@@ -74,7 +74,9 @@ test('prepareProfile writes package.json and pnpm-workspace.yaml and keeps your 
 
 test('secure defaults: loopback port, non-root user, no secret in the image, no registry push', () => {
   const compose = read('compose.yaml')
-  assert.match(compose, /^ {6}- "127\.0\.0\.1:\$\{FLYBOT_PORT:-3080\}:3080"$/m, 'the port is published on the host loopback only')
+  assert.match(compose, /^ {4}network_mode: host$/m, 'host networking: the server binds the host loopback itself')
+  assert.doesNotMatch(compose, /^\s*ports:/m, 'nothing is published — with host networking a published port would sit on every interface')
+  assert.match(compose, /^ {6}- FLYBOT_PORT$/m, 'the port is passed to the entry point instead of published')
   assert.match(compose, /^ {6}- data:\/data$/m, 'one data volume')
   assert.match(compose, /^ {6}- DEEPSEEK_API_KEY$/m, 'the key is passed through, never written into the file')
   const dockerfile = read('Dockerfile')
@@ -88,5 +90,17 @@ test('secure defaults: loopback port, non-root user, no secret in the image, no 
   for (const entry of ['**/.env', '**/.credentials.yaml', '**/.dsh*', '.git']) assert.ok(ignore.split('\n').includes(entry), `.dockerignore lists ${entry}`)
   const workflow = read('.github/workflows/docker.yml')
   assert.doesNotMatch(workflow, /docker (push|login)|docker\/(login|build-push)-action|packages: write/, 'CI builds and checks only')
-  assert.match(read('docker/web.patch.yml'), /^ {4}host: 0\.0\.0\.0$/m)
+  assert.match(read('docker/web.patch.yml'), /^ {4}host: 127\.0\.0\.1$/m, 'the server binds the host loopback')
+})
+
+test('no container config binds a wildcard host: DSH 0.2.1 refuses one', () => {
+  // 0.2.1-rc.2 answers `host "0.0.0.0" is an unspecified (wildcard) address, which is not supported`
+  // and the container never turns healthy, so the wildcard is a guard, not a taste.
+  const wildcard = /(^|[\s"'=[])(0\.0\.0\.0|\[::\]|::)(?=[\s"'\],;]|$)/m
+  for (const file of ['compose.yaml', 'docker/web.patch.yml', 'docker/entrypoint.mjs', 'docker/healthcheck.mjs', 'Dockerfile']) {
+    assert.doesNotMatch(read(file), wildcard, `${file} names one concrete address, never a wildcard`)
+  }
+  assert.match(read('docker/web.patch.yml'), /^ {4}host: 127\.0\.0\.1$/m, 'the web server binds the host loopback')
+  assert.match(read('compose.yaml'), /^ {4}network_mode: host$/m, 'host networking is what makes that loopback bind reachable')
+  assert.match(read('docker/healthcheck.mjs'), /127\.0\.0\.1:\$\{port\}/, 'the health check follows the configured port')
 })

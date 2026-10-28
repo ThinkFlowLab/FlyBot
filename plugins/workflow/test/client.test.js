@@ -1853,3 +1853,104 @@ test('the drawer details name the permission every node Bot actually runs with',
   }
   view.unmount()
 })
+
+// A failed call must end on the page's own alert, not on a spinner and not on a
+// claim that something was saved: the three call sites of work/state, graph and
+// set-model each report, recover, and leave no rejection behind.
+test('a failed workflow/state read ends on the alert with a retry, not on "Reading workflows…"', async () => {
+  await withUnhandled(async (unhandled) => {
+    const calls = []
+    let down = true
+    const call = async (name) => {
+      calls.push(name)
+      if (name === 'workflow/state') {
+        if (down) throw new Error('The workflow host did not answer')
+        return { workflows: [delivery()], templates: [] }
+      }
+      return { ok: true, workflows: [delivery()] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    assert.deepEqual(calls, ['workflow/state'])
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The workflow host did not answer'])
+    assert.equal(textOf(view.tree).includes('Reading workflows…'), false)
+    assert.deepEqual(unhandled, [])
+
+    down = false
+    button(view.tree, 'Try again').props.onClick()
+    await settle()
+    assert.deepEqual(calls, ['workflow/state', 'workflow/state'])
+    assert.equal(findAll(view.tree, node => node.props?.role === 'alert').length, 0)
+    assert.ok(textOf(view.tree).includes('发布交付流水线'))
+    view.unmount()
+  })
+})
+
+test('a failed graph save shows the alert and stops claiming changes are saved automatically', async () => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    let failure = new Error('The workflow store refused the write')
+    const calls = []
+    const call = async (name) => {
+      calls.push(name)
+      if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+      if (name === 'workflow/graph') {
+        if (failure) throw failure
+        return { ok: true, workflows: [graph] }
+      }
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    button(view.tree, 'Edit').props.onClick()
+    await settle()
+    assert.ok(textOf(view.tree).includes('Changes are saved automatically'))
+    const pick = (label) => findAll(view.tree, node => node.props?.['aria-label'] === label)[0]
+    pick('From node').props.onChange({ target: { value: 'coder' } })
+    pick('To node').props.onChange({ target: { value: 'planner' } })
+    button(view.tree, 'Add link').props.onClick()
+    await settle()
+    assert.ok(calls.includes('workflow/graph'))
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The workflow store refused the write'])
+    assert.equal(textOf(view.tree).includes('Changes are saved automatically'), false)
+    assert.deepEqual(unhandled, [])
+
+    failure = null
+    pick('From node').props.onChange({ target: { value: 'coder' } })
+    pick('To node').props.onChange({ target: { value: 'planner' } })
+    button(view.tree, 'Add link').props.onClick()
+    await settle()
+    assert.equal(findAll(view.tree, node => node.props?.role === 'alert').length, 0)
+    assert.ok(textOf(view.tree).includes('Changes are saved automatically'))
+    view.unmount()
+  })
+})
+
+test('a failed model change is reported, not silently taken as saved', async () => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    const call = async (name, body) => {
+      if (name === 'workflow/state') {
+        return { workflows: [graph], roster: { models: [{ ref: 'deepseek/pro', name: 'Pro', provider: 'deepseek' }] } }
+      }
+      if (name === 'workflow/set-model') throw new Error('The model switch failed')
+      void body
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    findAll(view.tree, node => node.props?.['aria-label'] === 'Model')[0].props.onChange({ target: { value: 'deepseek/pro' } })
+    await settle()
+    const alerts = findAll(view.tree, node => node.props?.role === 'alert')
+    assert.deepEqual(alerts.map(textOf), ['The model switch failed'])
+    assert.deepEqual(unhandled, [])
+    view.unmount()
+  })
+})
+
+test('a workflow host call that never answers settles as an error', async () => {
+  const value = await client.settledCall(async () => new Promise(() => {}), 'workflow/state', undefined, 'The workflow host did not answer', 5)
+  assert.deepEqual(value, { ok: false, error: 'The workflow host did not answer' })
+})

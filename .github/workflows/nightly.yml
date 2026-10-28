@@ -1,6 +1,6 @@
 # Compatibility matrix behind the slim PR gate (#31): the PR gate ships one job,
-# ubuntu · Node 24 · DSH 0.2.0-rc.2. This workflow restores Windows · Node 24 ·
-# DSH 0.2.0-rc.2, ubuntu · Node 22 · DSH 0.2.0-rc.2 and ubuntu · Node 24 ·
+# ubuntu · Node 24 · DSH 0.2.1-rc.2. This workflow restores Windows · Node 24 ·
+# DSH 0.2.1-rc.2, ubuntu · Node 22 · DSH 0.2.1-rc.2 and ubuntu · Node 24 ·
 # DSH 0.2.1-alpha.1 on schedule and dispatch, and supersedes the matrix/compat
 # parts of #29. A window in which main had no commits is skipped; a schedule only
 # fires on the default branch. macOS runs locally on a Mac with `npm run ci:local`
@@ -74,7 +74,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, node: 22, dsh: 0.2.0-rc.2 }
+          - { os: ubuntu-latest, node: 22, dsh: 0.2.1-rc.2 }
           - { os: ubuntu-latest, node: 24, dsh: 0.2.1-alpha.1 }
     defaults:
       run:
@@ -137,7 +137,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, node: 24, dsh: 0.2.0-rc.2 }
+          - { os: windows-latest, node: 24, dsh: 0.2.1-rc.2 }
     defaults:
       run:
         shell: bash

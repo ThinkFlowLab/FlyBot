@@ -168,6 +168,7 @@ test('a node Bot still keeps full file/shell rights and the team tools stay refu
   ctx.emit('tools/change')
   await new Promise(resolve => setImmediate(resolve))
   await new Promise(resolve => setImmediate(resolve))
-  assert.match(guardFor(id, GITHUB[0]), /not granted to this run/)
+  assert.match(guardFor(id, GITHUB[0]), /The github connector is turned off for Runner ab\./)
+  assert.match(guardFor(id, GITHUB[0]), /cannot turn a connector back on/)
   assert.deepEqual(listedNow(), [], 'both connectors are hidden once the Bot switch is off')
 })

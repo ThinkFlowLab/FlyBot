@@ -15,9 +15,10 @@ execFileSync('pnpm', ['install', '--prefer-offline', '--silent'], { cwd: profile
 const workspace = join(dshHome, 'workspace')
 mkdirSync(workspace, { recursive: true })
 
-// The web server listens on all interfaces of the container only (web.patch.yml); compose
-// publishes that port on the host's 127.0.0.1. The sign-in link is DSH's own ?token= link.
-const args = ['--profile', 'web', '--patch', join(import.meta.dirname, 'web.patch.yml'), '--no-open', '--port', '3080', ...process.argv.slice(2)]
+// The web server binds the host's 127.0.0.1 only (web.patch.yml) and compose runs the container
+// with host networking, so the port is never published. The sign-in link is DSH's own ?token= link.
+const port = process.env.FLYBOT_PORT || '3080'
+const args = ['--profile', 'web', '--patch', join(import.meta.dirname, 'web.patch.yml'), '--no-open', '--port', port, ...process.argv.slice(2)]
 const child = spawn('dsh', args, { cwd: workspace, stdio: 'inherit' })
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
 child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)))

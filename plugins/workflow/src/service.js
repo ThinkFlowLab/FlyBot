@@ -597,6 +597,8 @@ export function createWorkflowService({
     const ids = Object.values(run.ephemeral ?? {})
     delete run.ephemeral
     delete run.handed
+    delete run.paused
+    delete run.releasePending
     const lane = laneOf(workflowId)
     lane.active = lane.active.filter(item => item.id !== run.id)
     lane.last = run
@@ -626,6 +628,8 @@ export function createWorkflowService({
     run.status = 'failed'
     run.updatedAt = now()
     run.failure = { ...failure, at: run.updatedAt }
+    delete run.paused
+    delete run.releasePending
     return run
   }
 
@@ -1173,6 +1177,10 @@ export function createWorkflowService({
       const runId = body.runId ? String(body.runId) : ''
       let run = runId ? lane.active.find(itemRun => itemRun.id === runId) : lane.active.find(itemRun => itemRun.live === true && itemRun.status === 'running')
       if (!run || run.live !== true) return { ok: false, error: 'No live run to resume' }
+      // A failed release leaves the run paused on purpose: its next node has no
+      // Bot to hand the step to, so resuming would only move the graph into a
+      // silent skip. Stop again is the retry (#1476).
+      if (run.releasePending === true) return { ok: false, error: 'This run is still waiting to release a Bot; stop it again to retry' }
       if (run.paused !== true) return present()
       run = { ...run, paused: false, updatedAt: now() }
       storeRun(workflowId, run)
@@ -1195,6 +1203,21 @@ export function createWorkflowService({
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const runId = body.runId ? String(body.runId) : ''
+      // Release first, then forget the ids (#1476, #1387). A failed release is
+      // reported through `warn` rather than rejected, so a transition written
+      // before the release would erase the only name of a Bot that is still
+      // alive. Only the failed ids stay named; the ones that did go are dropped
+      // because a retry must not ask the host to remove an id it already deleted
+      // (that throws), and the next Stop, Reset, dispose() or reload retries.
+      const forgetReleased = (runs, released) => {
+        const gone = new Set(released)
+        for (const run of runs) {
+          for (const [nodeId, id] of Object.entries(run?.ephemeral ?? {})) {
+            if (!gone.has(id)) continue
+            delete run.ephemeral[nodeId]
+          }
+        }
+      }
       if (runId) {
         const stopOne = () => {
           const item = workflow(workflowId)
@@ -1203,35 +1226,56 @@ export function createWorkflowService({
           const run = lane.active.find(itemRun => itemRun.id === runId)
           if (!run || run.live !== true || run.status !== 'running') return { ok: false, error: 'No live run to stop' }
           const ids = Object.values(run.ephemeral ?? {})
-          // Stopping one run ends it the same way a reap does: the node map settles
-          // with the run, or the strip keeps painting the node it was on (#1424).
-          clearRunTimers(run.id)
-          const ended = { ...endRun(item, run, { code: 'stopped' }) }
-          delete ended.ephemeral
-          delete ended.handed
-          lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
-          lane.last = ended
-          lane.history = [...lane.history, historyRow(ended)].slice(-20)
-          push(workflowId, [{
-            kind: 'system',
-            tone: 'bad',
-            key: '■ Stopped · {task}',
-            params: { task: summarizeTask(run.task) },
-            text: `■ 已停止 · ${summarizeTask(run.task)}`,
-          }], now())
-          write()
-          return { ok: true, ids }
+          const stop = () => {
+            clearRunTimers(run.id)
+            // Stopping one run ends it the same way a reap does: the node map settles
+            // with the run, or the strip keeps painting the node it was on (#1424).
+            const ended = { ...endRun(item, run, { code: 'stopped' }) }
+            delete ended.ephemeral
+            delete ended.handed
+            delete ended.paused
+            delete ended.releasePending
+            lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
+            lane.last = ended
+            lane.history = [...lane.history, historyRow(ended)].slice(-20)
+            push(workflowId, [{
+              kind: 'system',
+              tone: 'bad',
+              key: '■ Stopped · {task}',
+              params: { task: summarizeTask(run.task) },
+              text: `■ 已停止 · ${summarizeTask(run.task)}`,
+            }], now())
+            write()
+          }
+          // The run stays live with only the failed ids named, and it is paused
+          // so handOff() dispatches nothing. Without releasePending a Resume
+          // would move the graph to a node that has no Bot and wait forever.
+          const hold = (failed) => {
+            forgetReleased([run], ids.filter(id => !failed.includes(id)))
+            run.paused = true
+            run.releasePending = true
+            run.updatedAt = now()
+            push(workflowId, [{ kind: 'system', tone: 'bad', text: `停止失败：还有 ${failed.length} 个 Bot 没释放，再点一次停止。` }], now())
+            write()
+          }
+          return { ok: true, ids, stop, hold }
         }
         if (typeof spawn !== 'function') {
           const saved = stopOne()
           if (saved.ok === false) return saved
+          saved.stop()
           drainSync()
           return present()
         }
         return hostSerial(async () => {
           const saved = stopOne()
           if (saved.ok === false) return saved
-          await releaseAll(saved.ids, release, warn)
+          const failed = await releaseAll(saved.ids, release, warn)
+          if (failed.length > 0) {
+            saved.hold(failed)
+            return present()
+          }
+          saved.stop()
           await drainAll()
           return present()
         })
@@ -1247,22 +1291,42 @@ export function createWorkflowService({
         if (!live?.task) return { ok: false, error: 'This workflow has no task' }
         const ids = lane.active.flatMap(run => Object.values(run.ephemeral ?? {}))
         for (const run of lane.active) clearRunTimers(run.id)
-        lane.active = []
-        lane.queue = []
-        const kept = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
-        lane.last = kept
-        push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
-        write()
-        return { ok: true, ids }
+        const resetLane = () => {
+          lane.active = []
+          lane.queue = []
+          lane.last = { ...blankRun(item, live.task, now(), lane.history), id: live.id, startedAt: live.startedAt }
+          push(item.id, linesFor(item, live.task, { type: 'reset' }), now())
+          write()
+        }
+        // Every live run is left without the Bots that did go, so every one of
+        // them is frozen, not just the run that named a failed id (#1476).
+        const hold = (failed) => {
+          forgetReleased(lane.active, ids.filter(id => !failed.includes(id)))
+          for (const run of lane.active) {
+            run.paused = true
+            run.releasePending = true
+            run.updatedAt = now()
+          }
+          push(item.id, [{ kind: 'system', tone: 'bad', text: `重置失败：还有 ${failed.length} 个 Bot 没释放，再点一次重置。` }], now())
+          write()
+        }
+        return { ok: true, ids, resetLane, hold }
       }
       if (typeof spawn !== 'function') {
         const saved = take()
-        return saved.ok === false ? saved : present()
+        if (saved.ok === false) return saved
+        saved.resetLane()
+        return present()
       }
       return hostSerial(async () => {
         const saved = take()
         if (saved.ok === false) return saved
-        await releaseAll(saved.ids, release, warn)
+        const failed = await releaseAll(saved.ids, release, warn)
+        if (failed.length > 0) {
+          saved.hold(failed)
+          return present()
+        }
+        saved.resetLane()
         await drainAll()
         return present()
       })

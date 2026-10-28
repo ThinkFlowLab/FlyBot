@@ -38,7 +38,7 @@ jobs:
       - uses: ./.github/actions/flybot-tests
         with:
           node: '24'
-          dsh: 0.2.0-rc.2
+          dsh: 0.2.1-rc.2
           coverage: 'true'
           plugins: 'false'
 
@@ -68,7 +68,7 @@ jobs:
       - name: Install DSH
         working-directory: core
         env:
-          DSH: 0.2.0-rc.2
+          DSH: 0.2.1-rc.2
         run: npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
       - name: Lint
         run: node scripts/lint-plugins.mjs "$PLUGIN"
