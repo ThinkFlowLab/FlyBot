@@ -66,6 +66,8 @@ export function apply(ctx, config = {}) {
       // allocator treats every name this process ever handed out as taken.
       for (const [name, owner] of liveNames) if (owner === id) liveNames.delete(name)
       if (typeof fb.bot.remove !== 'function') return undefined
+      // Tombstone before removal so late replies still deny (#1524)
+      if (typeof ctx.runtime?.tombstoneEphemeral === 'function') ctx.runtime.tombstoneEphemeral(id)
       return fb.bot.remove(id)
     },
     async dispatch(step) {

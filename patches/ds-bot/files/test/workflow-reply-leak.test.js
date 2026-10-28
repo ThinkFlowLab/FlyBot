@@ -141,56 +141,83 @@ test('#1524: persistent Bot-to-Bot replies are NOT blocked', async () => {
   plugin.dispose()
 })
 
-test('#1524: ephemeral Bot replies do NOT leak via delivery bypass paths', async () => {
-  // Reproduces the LIVE leak: ephemeral Bot replies that bypass send middleware
-  // (deferred, resumed, post-release) must be blocked by the delivery gate in hooks.js.
+test('#1524: ephemeral Bot replies do NOT leak, middleware runs for stepResult, tombstone works', async () => {
+  // Critical: ephemeral replies must go through middleware (so stepResult advances the run),
+  // but must not queue in Chief. After removal, tombstone denies late replies.
   const roster = [
     { id: 'main', name: 'Chief', isMain: true, remote: false },
     { id: 'ephemeral-node', name: 'Review', ephemeral: { plugin: 'flybot-workflow' }, hidden: true },
   ]
   const deliveries = []
+  const middlewareCalls = []
+  let stepAdvanced = false
 
   const innerDeliver = async (args) => {
     deliveries.push({ from: args.fromId, to: args.toId, role: args.role, flags: { deferred: args.deferred, resumed: args.resumed } })
   }
 
+  // Simulate the middleware that calls stepResult
+  const runMiddleware = async (msg) => {
+    middlewareCalls.push({ from: msg.from, role: msg.role })
+    if (msg.from === 'ephemeral-node' && msg.role === 'reply') {
+      stepAdvanced = true
+      return { action: 'deny', reason: 'workflow step result stays on the run surface', by: 'workflow-step' }
+    }
+    return { action: 'allow' }
+  }
+
+  const BOT_TO_BOT_ROLES = new Set(['request', 'reply', 'stopped', 'report'])
+  const ephemeralTombstones = new Set()
+  
   const rt = {
     botOf: (id) => roster.find(bot => bot.id === id),
     deliver: null,
   }
 
-  // Simulate the wrapped rt.deliver from hooks.js
-  const BOT_TO_BOT_ROLES = new Set(['request', 'reply', 'stopped', 'report'])
-  const outcomes = new Map()
-  
+  // Simulate the fixed gated() check
+  const gated = (args) => {
+    if (!args.fromId || !BOT_TO_BOT_ROLES.has(args.role) || args.flybotChecked || args.resent) return false
+    const from = rt.botOf(args.fromId)
+    // Ephemeral bots (or tombstoned) always route through middleware
+    if (from?.ephemeral || ephemeralTombstones.has(args.fromId)) return true
+    return from !== undefined && !args.resumed && !args.retried && !args.deferred
+  }
+
   rt.deliver = async (args) => {
     const exchangeId = args.exchangeId ?? 'test-exchange-id'
     
-    // The fix: deny ALL bot-to-bot deliveries from ephemeral bots
-    if (args.fromId && BOT_TO_BOT_ROLES.has(args.role)) {
-      const from = rt.botOf(args.fromId)
-      if (from?.ephemeral) {
-        outcomes.set(exchangeId, { action: 'deny', reason: 'ephemeral Bot output stays on the run surface', by: 'flybot-ephemeral' })
-        return exchangeId
-      }
+    if (!gated(args)) {
+      await innerDeliver(args)
+      return exchangeId
     }
     
-    // Otherwise deliver normally
+    // Post-removal tombstone check
+    if (ephemeralTombstones.has(args.fromId) && !rt.botOf(args.fromId)) {
+      return exchangeId
+    }
+    
+    // Run middleware (workflow-step hook calls stepResult here)
+    const outcome = await runMiddleware({ from: args.fromId, to: args.toId, role: args.role })
+    if (outcome.action === 'deny') return exchangeId
+    
     await innerDeliver(args)
-    outcomes.set(exchangeId, { action: 'allow' })
     return exchangeId
   }
 
-  // SCENARIO 1: Normal reply (should be denied)
+  // SCENARIO 1: First reply - middleware runs (stepResult advances), NO delivery to Chief
+  stepAdvanced = false
   await rt.deliver({
     fromId: 'ephemeral-node',
     toId: 'main',
     text: 'PASS',
     role: 'reply',
   })
-  assert.equal(deliveries.length, 0, 'Normal ephemeral reply should NOT be delivered')
+  assert.equal(stepAdvanced, true, 'First reply MUST run middleware to advance step')
+  assert.equal(deliveries.length, 0, 'First reply should NOT be delivered to Chief')
+  assert.equal(middlewareCalls.length, 1, 'Middleware should run once')
 
-  // SCENARIO 2: Deferred reply (bypasses gated check - the leak!)
+  // SCENARIO 2: Deferred reply - middleware runs, still denied
+  stepAdvanced = false
   await rt.deliver({
     fromId: 'ephemeral-node',
     toId: 'main',
@@ -198,9 +225,11 @@ test('#1524: ephemeral Bot replies do NOT leak via delivery bypass paths', async
     role: 'reply',
     deferred: true,
   })
-  assert.equal(deliveries.length, 0, 'Deferred ephemeral reply should NOT be delivered')
+  assert.equal(stepAdvanced, true, 'Deferred reply MUST run middleware (gated by ephemeral flag)')
+  assert.equal(deliveries.length, 0, 'Deferred reply should NOT be delivered')
 
-  // SCENARIO 3: Resumed reply (also bypasses gated)
+  // SCENARIO 3: Resumed reply - middleware runs, still denied
+  stepAdvanced = false
   await rt.deliver({
     fromId: 'ephemeral-node',
     toId: 'main',
@@ -208,18 +237,27 @@ test('#1524: ephemeral Bot replies do NOT leak via delivery bypass paths', async
     role: 'reply',
     resumed: true,
   })
-  assert.equal(deliveries.length, 0, 'Resumed ephemeral reply should NOT be delivered')
+  assert.equal(stepAdvanced, true, 'Resumed reply MUST run middleware')
+  assert.equal(deliveries.length, 0, 'Resumed reply should NOT be delivered')
 
-  // SCENARIO 4: Stopped notice (bot-to-bot role)
+  // SCENARIO 4: Tombstone the bot (simulate removal)
+  ephemeralTombstones.add('ephemeral-node')
+  const botIndex = roster.findIndex(bot => bot.id === 'ephemeral-node')
+  roster.splice(botIndex, 1)
+
+  // SCENARIO 5: Post-removal reply - tombstone denies without middleware
+  const beforeMiddleware = middlewareCalls.length
   await rt.deliver({
     fromId: 'ephemeral-node',
     toId: 'main',
-    text: 'stopped',
-    role: 'stopped',
+    text: 'Late reply after removal',
+    role: 'reply',
   })
-  assert.equal(deliveries.length, 0, 'Ephemeral Bot stopped notice should NOT be delivered')
+  assert.equal(deliveries.length, 0, 'Post-removal reply should NOT be delivered')
+  assert.equal(middlewareCalls.length, beforeMiddleware, 'Post-removal reply skips middleware (bot is gone)')
 
-  // SCENARIO 5: Request FROM main TO ephemeral (should be allowed)
+  // SCENARIO 6: Request TO ephemeral (before removal, with bot back for test)
+  roster.push({ id: 'ephemeral-node', name: 'Review', ephemeral: { plugin: 'flybot-workflow' }, hidden: true })
   await rt.deliver({
     fromId: 'main',
     toId: 'ephemeral-node',

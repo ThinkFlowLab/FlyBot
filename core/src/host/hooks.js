@@ -727,23 +727,24 @@ export function install(rt) {
   send.list = () => chain.map(m => ({ name: m.name, priority: priorityOf(m), before: m.before ?? [], after: m.after ?? [] }))
   send.priority = SEND_PRIORITY
 
+  // Tombstone removed ephemeral bots: a late reply after bot.remove must not leak.
+  const ephemeralTombstones = new Set()
+  const tombstoneEphemeral = (id) => ephemeralTombstones.add(id)
+  const wasEphemeral = (id) => ephemeralTombstones.has(id)
+
   // The gate around ds-bot's own rt.deliver. Approved and re-sent messages pass through.
-  const gated = args => args.fromId !== undefined && rt.botOf(args.fromId) !== undefined && BOT_TO_BOT_ROLES.has(args.role)
-    && !args.flybotChecked && !args.resent && !args.resumed && !args.retried && !args.deferred
+  // CRITICAL FIX (#1524): Ephemeral Bot replies must ALWAYS go through middleware (which calls
+  // stepResult) even when deferred/resumed/retried, so gated() returns true for ephemeral senders.
+  const gated = args => {
+    if (!args.fromId || !BOT_TO_BOT_ROLES.has(args.role) || args.flybotChecked || args.resent) return false
+    const from = rt.botOf(args.fromId)
+    // Ephemeral bots (or tombstoned removed bots) always route through middleware, even when deferred/resumed/retried
+    if (from?.ephemeral || wasEphemeral(args.fromId)) return true
+    // Normal bots skip middleware when deferred/resumed/retried
+    return from !== undefined && !args.resumed && !args.retried && !args.deferred
+  }
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
-    // CRITICAL FIX (#1524): Ephemeral workflow node Bot replies must not land in persistent Bot
-    // chats as queued `[Reply from …]` messages. The workflow send hook only catches gated
-    // deliveries; replies that bypass gating (deferred, resumed, post-release) would leak.
-    // Deny ALL Bot-to-Bot deliveries from ephemeral bots, regardless of gating or workflow ownership.
-    if (args.fromId && BOT_TO_BOT_ROLES.has(args.role)) {
-      const from = rt.botOf(args.fromId)
-      if (from?.ephemeral) {
-        const exchangeId = args.exchangeId ?? randomUUID()
-        noteOutcome(exchangeId, { action: 'deny', reason: 'ephemeral Bot output stays on the run surface', by: 'flybot-ephemeral' })
-        return exchangeId
-      }
-    }
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
     // deferred and re-sent deliveries (and notices) are judged by the owner policy
     // now, since the Bot they name may have had its grant revoked, replaced or removed since.
@@ -758,10 +759,17 @@ export function install(rt) {
     }
     if (!gated(args)) return innerDeliver(args)
     const exchangeId = args.exchangeId ?? randomUUID()
+    // Post-removal tombstone check: deny late replies from removed ephemeral bots
+    if (wasEphemeral(args.fromId) && !rt.botOf(args.fromId)) {
+      noteOutcome(exchangeId, { action: 'deny', reason: 'ephemeral Bot was removed', by: 'flybot-ephemeral' })
+      return exchangeId
+    }
     const msg = { from: args.fromId, to: args.toId, target: targetOf(args.toId), text: args.text, role: args.role, hop: args.hop ?? 0, via: 'ds-bot', exchangeId, deliverArgs: { ...args, exchangeId } }
     noteOutcome(exchangeId, await run(msg))
     return exchangeId
   }
+  // Expose tombstone for workflow plugin to call on bot.remove
+  rt.tombstoneEphemeral = tombstoneEphemeral
 
   // ---------------------------------------------------------------- tools
   const callerOf = exec => rt.botOf(rt.selfOf(exec?.agent?.id))
