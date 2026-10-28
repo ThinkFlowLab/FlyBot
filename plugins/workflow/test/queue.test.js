@@ -326,51 +326,32 @@ test('an old store drops scripted runs and keeps only live abandoned runs', () =
   }
 })
 
-test('a task parked at the host cap starts when any run finishes, ahead of a newer assign', async () => {
-  let calls = 0
-  let release
-  const gate = new Promise(resolve => { release = resolve })
-  const { svc } = harness({
-    blockSpawn: () => {
-      calls += 1
-      if (calls === 6) return gate
-      return undefined
-    },
-  })
-  const ids = []
-  for (let n = 0; n < 7; n += 1) {
-    const made = svc.define({
-      name: `Cap ${n}`,
-      nodes: [{ id: 'only', name: 'Only', outputs: [{ name: 'out', type: 'text' }] }],
-      edges: [],
-    }).workflows.find(item => item.name === `Cap ${n}`)
-    ids.push(made.id)
-  }
-  for (let n = 0; n < 5; n += 1) {
-    const started = await svc.assign({ workflowId: ids[n], taskId: `#run${n}`, title: `Run ${n}` })
-    assert.equal(started.workflows.find(item => item.id === ids[n]).activeCount, 1)
-  }
-  const sixth = svc.assign({ workflowId: ids[5], taskId: '#six', title: 'Six' })
-  await new Promise(resolve => setImmediate(resolve))
-  const parked = svc.assign({ workflowId: ids[6], taskId: '#parked', title: 'Parked' })
-  release()
-  await sixth
-  const held = await parked
-  assert.equal(held.workflows.find(item => item.id === ids[5]).activeCount, 1)
-  const waiting = held.workflows.find(item => item.id === ids[6])
-  assert.equal(waiting.activeCount, 0)
-  assert.deepEqual(waiting.queue.map(task => task.id), ['#parked'])
+test('a queued task starts when its workflow finishes a run, ahead of a newer assign', async () => {
+  const { svc } = harness()
+  const made = svc.define({
+    name: 'Serial',
+    nodes: [{ id: 'only', name: 'Only', outputs: [{ name: 'out', type: 'text' }] }],
+    edges: [],
+  }).workflows.find(item => item.name === 'Serial')
+  svc.setConcurrency({ workflowId: made.id, maxConcurrent: 1 })
 
-  const newer = await svc.assign({ workflowId: ids[6], taskId: '#newer', title: 'Newer' })
-  const both = newer.workflows.find(item => item.id === ids[6])
-  assert.equal(both.activeCount, 0)
+  const first = await svc.assign({ workflowId: made.id, taskId: '#first', title: 'First' })
+  assert.equal(first.workflows.find(item => item.id === made.id).activeCount, 1)
+
+  const second = await svc.assign({ workflowId: made.id, taskId: '#parked', title: 'Parked' })
+  const held = second.workflows.find(item => item.id === made.id)
+  assert.equal(held.activeCount, 1)
+  assert.deepEqual(held.queue.map(task => task.id), ['#parked'])
+
+  const third = await svc.assign({ workflowId: made.id, taskId: '#newer', title: 'Newer' })
+  const both = third.workflows.find(item => item.id === made.id)
+  assert.equal(both.activeCount, 1)
   assert.deepEqual(both.queue.map(task => task.id), ['#parked', '#newer'])
 
-  const victim = newer.workflows.find(item => item.id === ids[0]).run
+  const victim = third.workflows.find(item => item.id === made.id).run
   const finished = await svc.stepResult({ botId: victim.ephemeral.only, ok: true, text: 'OUTPUT out: done' })
-  assert.equal(finished.workflows.find(item => item.id === ids[0]).activeCount, 0)
-  const woke = finished.workflows.find(item => item.id === ids[6])
-  assert.equal(woke.activeCount, 1)
+  assert.equal(finished.workflows.find(item => item.id === made.id).activeCount, 1)
+  const woke = finished.workflows.find(item => item.id === made.id)
   assert.equal(woke.run.task.id, '#parked')
   assert.deepEqual(woke.queue.map(task => task.id), ['#newer'])
 })

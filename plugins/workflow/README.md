@@ -24,7 +24,7 @@ Assigning a task, `run_workflow`, or a Workflow match starts a live run. One hid
 
 A second task does not replace a run that is already going, and it does not release that run's Bots. It waits in a FIFO queue. The stage shows a chip when more than one run is active or the queue is not empty, and it refreshes `workflow/state` while a live run exists. That refresh does not advance the graph. The product UI does not offer a canned demo replay; only live runs advance the graph.
 
-Each workflow allows `maxConcurrent` live runs at once. The default is 2. The value is an integer from 1 to 8, set on create (`maxConcurrent`) or with `workflow/concurrency` (`{ workflowId, maxConcurrent }`). The stage lists the current value under Details. The host runs at most 6 live runs across every workflow. A task that does not fit is queued. When any run finishes, the oldest queued task whose workflow still has room starts, whichever workflow it belongs to. A new assign waits behind a task already queued there. Lowering the cap does not stop a run that has already started. History keeps finished and failed runs only.
+Each workflow allows `maxConcurrent` live runs at once. The default is 2. The value is an integer from 1 to 8, set on create (`maxConcurrent`), with `workflow/concurrency` (`{ workflowId, maxConcurrent }`), or in Settings → Workflow graphs. A task that does not fit is queued. When any run finishes, the oldest queued task whose workflow still has room starts, whichever workflow it belongs to. A new assign waits behind a task already queued there. Lowering the cap does not stop a run that has already started. History keeps finished and failed runs only.
 
 ## Inputs and outputs
 
@@ -81,7 +81,7 @@ Workflow 是一组本地 Bot 的群聊式运行。侧栏打开同一次运行：
 
 一次真实运行会为每个节点创建一个隐藏的临时 Bot，用完即删。节点不必绑定侧栏里的永久 Bot。`tools` 决定这个 Bot 能用什么：`github` 授予 GitHub 连接器（拉取请求、评审、评论），`bash` 授予完整权限的 shell，其余步骤至少可以写工作区。节点一直处于运行中，直到该 Bot 回复。回复写入 Workflow 聊天，下一节点才沿边开始。正在进行的运行不会被新任务替换，也不会因此释放它的 Bot。历史里只留下已完成或已失败的运行。
 
-每个 Workflow 同时运行的上限是 `maxConcurrent`，默认 2，取 1 到 8 的整数，在创建时传入，或调用 `workflow/concurrency`。全部 Workflow 加在一起最多 6 个正在运行的任务。某个运行结束后，所有 Workflow 里最早排队、且自己还有空位的任务会开始。新的分配排在已经排队的任务后面。降低上限不会停掉已经开始的运行。舞台在详情里显示当前上限；有排队或同时多于一个运行时显示队列条。有真实运行时，页面只刷新状态。产品界面不提供预置演示重放，只有真实运行会推进图。
+每个 Workflow 同时运行的上限是 `maxConcurrent`，默认 2，取 1 到 8 的整数，在创建时传入、调用 `workflow/concurrency` 或在设置 → Workflow graphs 里调整。某个运行结束后，所有 Workflow 里最早排队、且自己还有空位的任务会开始。新的分配排在已经排队的任务后面。降低上限不会停掉已经开始的运行。舞台在详情里显示当前上限；有排队或同时多于一个运行时显示队列条。有真实运行时，页面只刷新状态。产品界面不提供预置演示重放，只有真实运行会推进图。
 
 每个节点最多声明 8 个输入和 8 个输出，名字为小写字母开头的短名。必填输入必须由上游同名输出提供；根节点可以用 `task`、`title` 或 `brief`。没有提供者时，运行拒绝开始。Bot 用 `OUTPUT 名字: 值` 交回输出；只声明一个输出时，回复正文即可。
 

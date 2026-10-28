@@ -899,6 +899,23 @@ window.__ModuleLoader__.load({
               },
                 h('option', { value: '' }, tr('Each Bot\'s own model')),
                 (pack?.roster?.models ?? []).map(model => h('option', { key: model.ref, value: model.ref }, `${model.name} (${model.provider})`)))),
+            h('label', { className: 'wf-field' },
+              h('span', null, tr('Concurrent runs')),
+              h('input', {
+                type: 'number',
+                'aria-label': tr('Concurrent runs'),
+                min: 1,
+                max: 8,
+                value: current.maxConcurrent ?? 2,
+                onChange: (event) => {
+                  const maxConcurrent = Number(event.target.value)
+                  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) return
+                  void Promise.resolve(call('workflow/concurrency', { workflowId: current.id, maxConcurrent })).then(value => {
+                    if (value?.ok === false) { setError(value.error ?? ''); return }
+                    if (value?.workflows) setPack(value)
+                  })
+                },
+              })),
             h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
               editing ? tr('Finish editing') : tr('Edit')),
             editing ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),

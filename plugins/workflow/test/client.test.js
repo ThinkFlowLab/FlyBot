@@ -367,6 +367,35 @@ test('apply registers the sidebar section and the settings page', () => {
   off()
 })
 
+test('settings can change the workflow concurrency limit', async () => {
+  const calls = []
+  const graph = delivery()
+  graph.maxConcurrent = 2
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    if (name === 'workflow/concurrency') {
+      graph.maxConcurrent = body.maxConcurrent
+      return { ok: true, workflows: [graph] }
+    }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  const concurrentInput = findAll(settings.tree, node => node.props?.['aria-label'] === 'Concurrent runs')[0]
+  assert.ok(concurrentInput, 'concurrent runs input should exist')
+  assert.equal(concurrentInput.props.value, 2)
+  assert.equal(concurrentInput.props.min, 1)
+  assert.equal(concurrentInput.props.max, 8)
+
+  concurrentInput.props.onChange({ target: { value: '4' } })
+  await settle()
+  const changed = calls.filter(item => item.name === 'workflow/concurrency').at(-1)
+  assert.equal(changed.body.workflowId, 'delivery')
+  assert.equal(changed.body.maxConcurrent, 4)
+  settings.unmount()
+})
+
 test('settings can add a loop edge and a condition edge', async () => {
   const calls = []
   const graph = delivery()

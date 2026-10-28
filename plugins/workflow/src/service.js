@@ -20,7 +20,6 @@ const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
-const HOST_CAP = 6
 
 function idOf(prefix) {
   return `${prefix}-${randomBytes(4).toString('hex')}`
@@ -109,8 +108,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   if (!state.laneFormat) migrateRuns(state)
   purgeDemos(state)
   let seq = state.seq ?? 1
-  // One lock for every start and release. The host cap is read and updated
-  // only while this is held, so two workflows cannot both pass it.
+  // One lock for every start and release to serialize drain operations.
   let hostTail = Promise.resolve()
   function hostSerial(fn) {
     const run = hostTail.then(() => fn())
@@ -199,12 +197,6 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
 
   function runningOf(lane) {
     return (lane?.active ?? []).filter(run => run && run.live === true && run.status === 'running')
-  }
-
-  function globalRunning() {
-    let count = 0
-    for (const lane of Object.values(state.lanes)) count += runningOf(lane).length
-    return count
   }
 
   function maxOf(item) {
@@ -450,10 +442,10 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   }
 
   // After a slot frees, start the oldest parked task on any workflow that
-  // still has room, and stop at the host cap.
+  // still has room.
   function drainSync() {
     let guard = 0
-    while (globalRunning() < HOST_CAP && guard < 48) {
+    while (guard < 48) {
       guard += 1
       const next = takeNext()
       if (!next) return
@@ -471,7 +463,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       return
     }
     let guard = 0
-    while (globalRunning() < HOST_CAP && guard < 48) {
+    while (guard < 48) {
       guard += 1
       const next = takeNext()
       if (!next) return
@@ -563,7 +555,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
   }
 
   function hasRoom(item) {
-    return runningOf(laneOf(item.id)).length < maxOf(item) && globalRunning() < HOST_CAP
+    return runningOf(laneOf(item.id)).length < maxOf(item)
   }
 
   // A non-empty queue is joined at the tail, then the oldest task starts.

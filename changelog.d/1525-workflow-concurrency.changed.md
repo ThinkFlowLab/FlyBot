@@ -1,0 +1,1 @@
+Workflow concurrency is now configurable per Workflow in Settings → Workflow graphs. The host-wide 6-run cap is removed; each Workflow's own `maxConcurrent` limit (1–8, default 2) is the only gate. [#1525](https://github.com/ThinkFlowLab/FlyBot/issues/1525)
