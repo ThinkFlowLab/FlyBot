@@ -297,3 +297,33 @@ test('edit mode sets a node system prompt and the commit keeps the edges', () =>
   assert.deepEqual(commits[0].edges, own.edges)
   assert.equal(DICTIONARY.zh['System prompt'], '系统提示词')
 })
+
+// #1396: opening a factory preset that already has a live copy stores the factory id in
+// `fromFactory` (a string), so the copy entry must stay on that graph. Before the fix the
+// guard compared it with `true` and the button never rendered.
+const labelsOfGraph = (opened) => all(renderView({ phase: 'ready', pack, opened, error: '', editing: false }))
+  .filter((entry) => entry.type === 'button')
+  .map((entry) => text(entry))
+
+test('a factory preset with a live copy keeps the Use this entry (#1396)', () => {
+  assert.deepEqual(labelsOfGraph({ source: 'own', id: 'delivery', fromFactory: 'delivery' }), ['Back', 'Use this', 'Edit'])
+})
+
+test('Use this on a preset with a live copy hands the factory id to onUse (#1396)', () => {
+  const used = []
+  const tree = renderView({
+    phase: 'ready', pack, opened: { source: 'own', id: 'delivery', fromFactory: 'delivery' }, error: '', editing: false,
+    onUse: (id) => used.push(id),
+  })
+  const button = all(tree).find((entry) => entry.type === 'button' && text(entry) === 'Use this')
+  assert.ok(button, 'the Use this button renders')
+  button.props.onClick()
+  assert.deepEqual(used, ['delivery'])
+})
+
+// The other side of the same contract: a factory preset without a live copy still copies, and
+// your own workflow is not a template at all.
+test('only a factory-backed graph offers Use this (#1396)', () => {
+  assert.deepEqual(labelsOfGraph({ source: 'factory', id: 'delivery' }), ['Back', 'Use this'])
+  assert.deepEqual(labelsOfGraph({ source: 'own', id: 'wf-mine' }), ['Back', 'Edit'])
+})

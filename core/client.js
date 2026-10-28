@@ -14689,7 +14689,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
   const templates = pack?.templates ?? [];
   const templateIds = new Set(templates.map((item) => item.id));
   const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id));
-  const showUse = opened?.source === "factory" || opened?.fromFactory === true;
+  const showUse = opened?.source === "factory" || opened?.fromFactory !== void 0;
   return (0, import_react34.createElement)(
     "div",
     { className: "bt-wf-page" },

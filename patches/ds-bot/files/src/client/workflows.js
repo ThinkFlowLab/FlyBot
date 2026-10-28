@@ -264,7 +264,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
   const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id))
-  const showUse = opened?.source === 'factory' || opened?.fromFactory === true
+  const showUse = opened?.source === 'factory' || opened?.fromFactory !== undefined
   return h('div', { className: 'bt-wf-page' },
     h('p', { className: 'bt-wf-hint' }, t('A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.')),
     error ? h('div', { className: 'bt-error', role: 'alert' }, alertCopy(error),

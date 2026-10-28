@@ -16774,7 +16774,7 @@ diff --git a/client.js b/client.js
 +  const templates = pack?.templates ?? [];
 +  const templateIds = new Set(templates.map((item) => item.id));
 +  const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id));
-+  const showUse = opened?.source === "factory" || opened?.fromFactory === true;
++  const showUse = opened?.source === "factory" || opened?.fromFactory !== void 0;
 +  return (0, import_react34.createElement)(
 +    "div",
 +    { className: "bt-wf-page" },
