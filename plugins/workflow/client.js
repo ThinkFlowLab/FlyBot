@@ -182,6 +182,11 @@ window.__ModuleLoader__.load({
     // plane; only the drawer fits every node and edge to the panel width (#1513).
     const DRAWER_FLOW_W = 364
     const FIT_PAD = 12
+    // The Tools field saves a list, and the host normalizes that list on every save
+    // (cleanTools drops a trailing empty token). Committing per keystroke therefore
+    // ate the separator the next name needed, so the field keeps its text while the
+    // user types and commits it on blur, or after this pause (#1520).
+    const TOOLS_COMMIT_MS = 600
 
     function workflowNodeIds(workflow) {
       return new Set((workflow?.nodes ?? []).map(node => node.id))
@@ -935,6 +940,7 @@ window.__ModuleLoader__.load({
       const nodes = current?.nodes ?? []
       const edges = current?.edges ?? []
       const selected = nodes.find(node => node.id === selectedNode)
+      const toolsKey = current && selected ? `${current.id}:${selected.id}` : ''
       
       const save = (nodes, edges) => {
         if (!current) return
@@ -949,6 +955,27 @@ window.__ModuleLoader__.load({
       }
       
       const [edgeForm, setEdgeForm] = useState({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+      const [toolsDraft, setToolsDraft] = useState(null)
+      const toolsTimer = useRef(null)
+      const toolsCommit = useRef(null)
+      
+      useEffect(() => () => {
+        if (toolsTimer.current) clearTimeout(toolsTimer.current)
+      }, [])
+      
+      const commitTools = (nodeId, text) => {
+        const next = text.split(',').map(item => item.trim()).filter(Boolean)
+        const saved = nodes.find(node => node.id === nodeId)?.tools ?? []
+        if (next.length === saved.length && next.every((item, index) => item === saved[index])) return
+        updateNode(nodeId, { tools: next })
+      }
+      
+      const flushTools = () => {
+        if (toolsTimer.current) { clearTimeout(toolsTimer.current); toolsTimer.current = null }
+        const pending = toolsCommit.current
+        toolsCommit.current = null
+        if (pending) pending()
+      }
       
       const addEdge = () => {
         if (!edgeForm.from || !edgeForm.to) return
@@ -1036,13 +1063,29 @@ window.__ModuleLoader__.load({
                   value: selected.role || '',
                   onChange: (event) => updateNode(selected.id, { role: event.target.value }),
                 })),
-              h('label', { className: 'wf-field' },
+              h('label', { className: 'wf-field', 'data-flybot': 'node-tools' },
                 h('span', null, tr('Tools')),
                 h('input', {
-                  value: (selected.tools ?? []).join(', '),
-                  placeholder: 'github, bash, read, edit...',
-                  onChange: (event) => updateNode(selected.id, { tools: event.target.value.split(',').map(s => s.trim()).filter(Boolean) }),
-                })))) : null,
+                  'aria-label': tr('Tools'),
+                  value: toolsDraft && toolsDraft.key === toolsKey ? toolsDraft.text : (selected.tools ?? []).join(', '),
+                  placeholder: 'github, composio',
+                  onChange: (event) => {
+                    const text = event.target.value
+                    setToolsDraft({ key: toolsKey, text })
+                    toolsCommit.current = () => commitTools(selected.id, text)
+                    if (toolsTimer.current) clearTimeout(toolsTimer.current)
+                    toolsTimer.current = setTimeout(() => {
+                      toolsTimer.current = null
+                      const pending = toolsCommit.current
+                      toolsCommit.current = null
+                      pending?.()
+                    }, TOOLS_COMMIT_MS)
+                  },
+                  onBlur: () => { flushTools(); setToolsDraft(draft => (draft && draft.key === toolsKey ? null : draft)) },
+                }),
+                h('div', { className: 'wf-tools-help', 'data-flybot': 'node-tools-note' },
+                  h('span', null, 'Names the connectors this run Bot may use: github grants mcp__github__*, composio grants the Composio connector. File and shell access is always full, like a normal Bot, and a node that names no connector gets none.'),
+                  h('span', { lang: 'zh-CN' }, '这里填这个节点 Bot 能用的连接器：github 对应 mcp__github__*，composio 对应 Composio 连接器。文件与 shell 权限始终与普通 Bot 相同（完全放开）；不填连接器时这个节点一个都拿不到。'))))) : null,
           editing && nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
             h('h3', null, tr('Add link')),
             h('div', { className: 'wf-edge-fields' },
@@ -1629,6 +1672,7 @@ window.__ModuleLoader__.load({
 .wf-modal-body{flex:1;overflow-y:auto;padding:12px 20px;min-height:0}
 .wf-modal-footer{padding:12px 20px;border-top:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;justify-content:flex-end;gap:8px;flex:none;background:var(--bt-main,#fcfcfc)}
 .wf-hint{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));margin:0}
+.wf-tools-help{display:flex;flex-direction:column;gap:2px;font-size:11px;line-height:1.45;color:var(--bt-ink-3,#9a9a9a)}
 .wf-step-h{font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));margin:14px 0 8px;display:flex;gap:6px;align-items:center}
 .wf-step-h b{width:18px;height:18px;border-radius:50%;background:var(--bt-user,#070707);color:var(--bt-user-ink,#fcfcfc);display:grid;place-items:center;font-size:11px}
 .wf-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}

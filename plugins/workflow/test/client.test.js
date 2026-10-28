@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { cleanTools } from '../src/graph.js'
 
 // `rectWidth` is what a host element reports from getBoundingClientRect, so a
 // component that measures its own container can be driven from a plain object.
@@ -1145,6 +1146,116 @@ test('a failed resume from the run strip is reported', async (t) => {
     assert.deepEqual(alertsOf(view), ['The resume was refused'])
     assert.deepEqual(unhandled, [])
   })
+})
+
+// #1520: the Tools field selects connectors, and nothing on screen said so. The
+// note is read in one render in both languages, so the explanation never depends
+// on the host's locale detection.
+const toolsField = view => findAll(view.tree, node => node.type === 'label' && textOf(node.children?.[0] ?? '') === 'Tools')[0]
+const toolsInput = view => toolsField(view)?.children?.find(child => child?.type === 'input')
+
+test('the Tools field says it names connectors and that file and shell access is always full', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph] }
+    return { ok: true, workflows: [graph] }
+  }
+  const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  findAll(settings.tree, node => node.props?.['data-node'] === 'coder')[0].props.onClick()
+  await settle()
+
+  const field = toolsField(settings)
+  assert.ok(field, 'the inspector renders a Tools field')
+  const note = field.children.find(child => child?.props?.['data-flybot'] === 'node-tools-note')
+  assert.ok(note, 'the Tools field explains what it names')
+  const noteIndex = field.children.indexOf(note)
+  const inputIndex = field.children.findIndex(child => child?.type === 'input')
+  assert.ok(noteIndex > inputIndex, 'the note sits under the input, not above it')
+  const text = textOf(note)
+  assert.match(text, /Names the connectors this run Bot may use/)
+  assert.match(text, /github grants mcp__github__\*/)
+  assert.match(text, /composio grants the Composio connector/)
+  assert.match(text, /File and shell access is always full, like a normal Bot/)
+  assert.match(text, /a node that names no connector gets none/)
+  assert.match(text, /连接器/, 'the note reads in Chinese as well as English')
+  assert.match(text, /普通 Bot/)
+
+  const input = field.children[inputIndex]
+  assert.equal(input.props.placeholder, 'github, composio', 'the placeholder names two connectors and nothing else')
+  settings.unmount()
+})
+
+// #1520: the value was rebuilt from the saved list on every keystroke, and the host
+// drops a trailing empty token, so a separator typed between two names did not
+// survive the round trip: "github, composio" typed one character at a time saved as
+// ["githubcomposio"] and the connector was silently refused. The field keeps a local
+// draft and commits it on blur, or after a short pause.
+async function toolsInspector() {
+  const graph = delivery()
+  graph.nodes = graph.nodes.map(node => node.id === 'coder' ? { ...node, tools: [] } : node)
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    if (name === 'workflow/graph') {
+      // The host normalizes the list on every save, exactly as src/graph.js does.
+      graph.nodes = body.nodes.map(node => ({ ...node, tools: cleanTools(node.tools) }))
+      return { ok: true, workflows: [graph] }
+    }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+  await settle()
+  button(view.tree, 'Edit').props.onClick()
+  await settle()
+  findAll(view.tree, node => node.props?.['data-node'] === 'coder')[0].props.onClick()
+  await settle()
+  const saved = () => calls.filter(item => item.name === 'workflow/graph').at(-1)
+    ?.body.nodes.find(node => node.id === 'coder')?.tools
+  return { view, calls, field: () => toolsInput(view), saved }
+}
+
+test('the Tools field takes a second connector typed one character at a time', async () => {
+  const typedView = await toolsInspector()
+  assert.ok(typedView.field(), 'the inspector renders the Tools input')
+  let text = ''
+  for (const char of 'github, composio') {
+    text += char
+    typedView.field().props.onChange({ target: { value: text } })
+    await settle()
+    assert.equal(typedView.field().props.value, text, 'the draft keeps every character just typed')
+  }
+  assert.equal(typedView.calls.some(item => item.name === 'workflow/graph'), false, 'no save round trip while the user types')
+  typedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(typedView.saved(), ['github', 'composio'], 'typing one character at a time keeps both connectors')
+  assert.equal(typedView.field().props.value, 'github, composio', 'the field shows the saved list after the commit')
+  typedView.view.unmount()
+
+  const pastedView = await toolsInspector()
+  pastedView.field().props.onChange({ target: { value: 'github, composio' } })
+  await settle()
+  pastedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(pastedView.saved(), ['github', 'composio'], 'pasting the whole string saves the same list')
+  pastedView.view.unmount()
+
+  const pausedView = await toolsInspector()
+  pausedView.field().props.onChange({ target: { value: 'github, ' } })
+  await settle()
+  assert.equal(pausedView.saved(), undefined, 'the field has not saved yet')
+  await new Promise(resolve => setTimeout(resolve, 800))
+  await settle()
+  assert.deepEqual(pausedView.saved(), ['github'], 'a short pause commits the list without a blur')
+  pausedView.field().props.onChange({ target: { value: 'github, composio' } })
+  await settle()
+  pausedView.field().props.onBlur()
+  await settle()
+  assert.deepEqual(pausedView.saved(), ['github', 'composio'], 'a pause in the middle does not eat the separator')
+  pausedView.view.unmount()
 })
 
 test('a stage control that never answers settles as an error', async () => {
