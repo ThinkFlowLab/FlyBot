@@ -2649,14 +2649,17 @@ diff --git a/src/host/agents.js b/src/host/agents.js
 diff --git a/src/host/approvals.js b/src/host/approvals.js
 --- a/src/host/approvals.js
 +++ b/src/host/approvals.js
-@@ -6,6 +6,43 @@
+@@ -3,8 +3,45 @@
+ // the group chat. A Bot's own chat keeps DSH's card; its requests are only noted, so
+ // the team view can say who is waiting.
+ import { randomUUID } from 'node:crypto'
 +import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 +import { OWNER, settled } from './turn-origin.js'
  
 -const OUTCOMES = { allow: 'allowed-once', reject: 'rejected' }
 +const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
 +const RUN_DENIED = new Set(EPHEMERAL_DENIED_TOOLS)
- 
++
 +// DSH has no standing grant (its outcomes are one-shot, #540), so the owner's "Always
 +// allow" lives here: on the Bot or on the group, keyed by the kind of permission asked.
 +// A sandbox escalation names its mode in DSH's reason; any other ask is keyed by tool.
@@ -2690,11 +2693,13 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +  const mode = /^escalate sandbox to ([\w-]+):/.exec(String(reason ?? ''))?.[1]
 +  return mode ? `${tool} · ${mode}` : String(tool)
 +}
-+
+ 
  export function install(rt) {
    const { ctx } = rt
-   /** @type {Map<string, {id:string, sessionId:string, botId:string, roomId?:string, tool:string, reason:string, detail:{text?:string, code?:string}, at:number, answer?:(outcome:string)=>void}>} */
-@@ -19,4 +19,15 @@
+@@ -16,7 +16,18 @@ export function install(rt) {
+     const sessionId = request.agent?.session?.id ?? request.agent?.id
+     const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
+     const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
 -    if (botId === undefined) return next()
 +    // A subagent child Session started by a run Bot is in neither index. Follow the parent chain
 +    // (the same `rt.whoseAgent` secrets.js and connector-access.js use) and adopt the run Bot's
@@ -2711,7 +2716,10 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
      const id = randomUUID()
      const entry = {
        id,
-@@ -50,11 +50,79 @@
+@@ -47,14 +47,82 @@ export function install(rt) {
+     })
+   }, { prepend: true })
+ 
 +  // A group grant covers the owner's Bots working in that group: the Bot it was granted
 +  // from and any other Bot of the same owner. Before anyone signs in there is one person,
 +  // and a Bot made then carries no owner, so every local Bot is theirs.
@@ -2792,7 +2800,10 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
      entry.answer(outcome)
    }
  
-@@ -68,2 +68,2 @@
+@@ -65,5 +65,5 @@ export function install(rt) {
+     }
+   }
+ 
 -  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals })
 +  Object.assign(rt, { approvalsView, waitsForApproval, answerApproval, cancelApprovals, removeStandingApproval })
  }

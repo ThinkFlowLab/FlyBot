@@ -1,0 +1,1 @@
+Workflow ephemeral node Bot replies no longer leak into Chief / persistent Bot chat as queued `[Reply from …]` messages. Node I/O now stays in the run/graph only, as required. The workflow plugin's send middleware intercepts ephemeral bot replies at ROUTING priority and prevents delivery to persistent Bot conversations.

@@ -136,7 +136,10 @@ export function apply(ctx, config = {}) {
       priority: fb.bot.send.priority?.ROUTING,
       async handle(msg) {
         const from = typeof msg.from === 'string' ? msg.from : ''
-        if (msg.role !== 'reply' || !from || service.ownsBot(from) !== true) return undefined
+        if (msg.role !== 'reply' || !from) return undefined
+        // Check if this bot is owned by a workflow run
+        const owned = service.ownsBot(from)
+        if (owned !== true) return undefined
         const text = String(msg.text ?? '')
         const failed = /could not answer your message|model call failed/i.test(text)
         // The reply advances the run only. It must not land in a persistent Bot chat (e.g. Chief).
@@ -149,6 +152,8 @@ export function apply(ctx, config = {}) {
       },
     })
     if (typeof off === 'function') offs.push(off)
+  } else {
+    fb.warn?.('flybot-workflow: send middleware not available; ephemeral bot replies may leak')
   }
   if (typeof fb.tasks?.onWrite === 'function') {
     offs.push(fb.tasks.onWrite(task => {
