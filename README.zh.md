@@ -92,9 +92,9 @@ FlyBot 是一个直接跑起来的应用，建在 DeepSeek Harness 之上。
 **2. 把 FlyBot 加到 DeepSeek Harness**
 
 ```sh
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/core"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/social"
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab/FlyBot#main&path:/plugins/tree"
 ```
 
 第一行是 FlyBot 核心（包名 `ds-bot`），后两行才把它变成一支团队。想要工作流或时间线，照样再加
@@ -102,13 +102,13 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add "github:ThinkFlowLab
 
 桌面版：**插件 → 添加插件**，一次粘一个 `github:` 地址，然后**安装**并**立即启用**。
 
-`0.2.0-rc.2` 是 FlyBot 构建与测试所用的 DeepSeek Harness 版本，也正是 `core/dev/harness` 钉住、CI 在跑的那一版，
+`0.2.1-rc.2` 是 FlyBot 构建与测试所用的 DeepSeek Harness 版本，也正是 `core/dev/harness` 钉住、CI 在跑的那一版，
 四条命令保持一致。
 
 **3. 跑起来**
 
 ```sh
-npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
+npx -y @deepseek-ai/dsh@0.2.1-rc.2 web --port 3080
 ```
 
 打开打印出的 `http://127.0.0.1:3080/?token=…`，第一次先选一个模型，然后跟 Chief 打个招呼。想让它在一台一直开着
@@ -148,7 +148,7 @@ npx -y @deepseek-ai/dsh@0.2.0-rc.2 web --port 3080
 
 FlyBot 是上游 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) 的核心，保持字节一致并钉在 `ds-bot.pin.json`
 里，加上一组简短的补丁（`patches/` → `core/`）和 `plugins/` 下的插件。开发和测试针对 DeepSeek Harness
-`0.2.0-rc.2`，也就是上面命令钉住的版本。npm 包名沿用上游的 `ds-bot`，而你在界面里看到的都是 FlyBot。
+`0.2.1-rc.2`，也就是上面命令钉住的版本。npm 包名沿用上游的 `ds-bot`，而你在界面里看到的都是 FlyBot。
 
 ## 许可
 

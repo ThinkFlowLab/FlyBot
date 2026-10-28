@@ -52,7 +52,7 @@ const page = (update) => {
     links: nodes.filter(node => node.type === 'a').map(node => node.props.href),
   }
 }
-const base = { current: '0.1.5-flybot.1', repoUrl: REPO, notesUrl: `${REPO}/releases`, enabled: true, phase: 'idle', source: 'git', checkedAt: 0, dsh: { current: '0.2.0-rc.2', available: false, phase: 'idle' } }
+const base = { current: '0.1.5-flybot.1', repoUrl: REPO, notesUrl: `${REPO}/releases`, enabled: true, phase: 'idle', source: 'git', checkedAt: 0, dsh: { current: '0.2.1-rc.2', available: false, phase: 'idle' } }
 const MAINTAINER = 'Updates come from the maintainer: reinstall FlyBot to get them.'
 
 test('the page points at FlyBot: star, source code, release notes and the underlying harness', () => {
@@ -60,7 +60,7 @@ test('the page points at FlyBot: star, source code, release notes and the underl
   assert.equal(view.star.props.href, REPO)
   assert.deepEqual(view.links.filter(href => href.includes('github.com')), [REPO, REPO, `${REPO}/releases`])
   assert.equal(view.row('Source code').props['data-hint'], 'github.com/ThinkFlowLab/FlyBot')
-  assert.equal(view.row('DeepSeek Harness (underlying)').props['data-hint'], 'Version 0.2.0-rc.2')
+  assert.equal(view.row('DeepSeek Harness (underlying)').props['data-hint'], 'Version 0.2.1-rc.2')
   assert.equal(view.row('DeepSeek Harness'), undefined)
   assert.doesNotMatch(JSON.stringify(view.links), /Fei2411/)
 })
@@ -109,7 +109,7 @@ test('the new About wording has zh copy', () => {
   try {
     const view = page({ ...base, build: { branch: 'main', commit: '082563a' }, behind: 3, checkedAt: Date.now() })
     assert.match(view.hint(DICTIONARY.zh['FlyBot core']), /^落后 main 3 个提交。更新由维护者发布：重新安装 FlyBot 即可升级。 · /)
-    assert.equal(view.row('DeepSeek Harness（底层）').props['data-hint'], '版本 0.2.0-rc.2')
+    assert.equal(view.row('DeepSeek Harness（底层）').props['data-hint'], '版本 0.2.1-rc.2')
   } finally {
     off()
   }

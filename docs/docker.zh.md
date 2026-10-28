@@ -2,7 +2,7 @@
 
 [English](docker.md)
 
-每人在一台一直开着的 Linux 机器上运行一个 FlyBot，合上笔记本后 Bot 和定时任务照常工作。容器里运行 `dsh web`（DSH 0.2.0-rc.2，与 README 相同），带上你构建所用代码里的 FlyBot 核心以及 social、tree、workflow、timeline 插件。实例之间只通过 [Bot Social](https://github.com/Birfy/bot-social) 通信；Bot Social 不在镜像里，需要你自己部署。
+每人在一台一直开着的 Linux 机器上运行一个 FlyBot，合上笔记本后 Bot 和定时任务照常工作。容器里运行 `dsh web`（DSH 0.2.1-rc.2，与 README 相同），带上你构建所用代码里的 FlyBot 核心以及 social、tree、workflow、timeline 插件。实例之间只通过 [Bot Social](https://github.com/Birfy/bot-social) 通信；Bot Social 不在镜像里，需要你自己部署。
 
 镜像由你自己构建，FlyBot 不发布镜像。
 

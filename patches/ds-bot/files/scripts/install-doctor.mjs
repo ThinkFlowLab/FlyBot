@@ -73,7 +73,7 @@ export function buildInstallCommands({
   repo = 'ThinkFlowLab/FlyBot',
   ref = 'main',
   profile = 'web',
-  dshPackage = '@deepseek-ai/dsh@0.2.0-rc.2',
+  dshPackage = '@deepseek-ai/dsh@0.2.1-rc.2',
   timeline = false, // @flybot/timeline is opt-in (#281): its install command is printed only on request
 } = {}) {
   return ['/core', '/plugins/social', '/plugins/tree', '/plugins/workflow', ...(timeline ? ['/plugins/timeline'] : [])]

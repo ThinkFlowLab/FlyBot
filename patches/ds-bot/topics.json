@@ -105,7 +105,8 @@
     "scripts/lint.mjs",
     "package-lock.json",
     "test/diagnostics.test.js",
-    "dev/smoke.mjs"
+    "dev/smoke.mjs",
+    "dev/harness/package.json"
   ],
   "0008-client-bundle": [
     "client.js"

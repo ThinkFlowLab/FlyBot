@@ -1,0 +1,1 @@
+FlyBot now builds, tests and installs on DeepSeek Harness `0.2.1-rc.2`, the current npm `latest`; the README commands, the CI workflows and the install help all pin that version ([#1384](https://github.com/ThinkFlowLab/FlyBot/issues/1384)).

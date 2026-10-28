@@ -100,7 +100,7 @@ test('checkPluginPackage: a numeric dsh.bundle.patch fails without throwing', ()
 test('buildInstallCommands: core, social, tree and workflow; timeline only on request (#281)', () => {
   const commands = buildInstallCommands()
   assert.equal(commands.length, 4)
-  assert.ok(commands.every(command => command.includes('0.2.0-rc.2')))
+  assert.ok(commands.every(command => command.includes('0.2.1-rc.2')))
   assert.ok(commands[0].includes('path:/core'))
   assert.ok(commands[1].includes('path:/plugins/social'))
   assert.ok(commands[2].includes('path:/plugins/tree'))

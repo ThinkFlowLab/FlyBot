@@ -2,7 +2,7 @@
 
 [中文](docker.zh.md)
 
-One person runs one FlyBot on a Linux machine that stays on, so Bots and schedules keep working with the laptop closed. The container runs `dsh web` (DSH 0.2.0-rc.2, as in the README) with the FlyBot core and the social, tree, workflow and timeline plugins of the checkout you build from. Instances talk to each other only through [Bot Social](https://github.com/Birfy/bot-social), which is not in the image; host it yourself.
+One person runs one FlyBot on a Linux machine that stays on, so Bots and schedules keep working with the laptop closed. The container runs `dsh web` (DSH 0.2.1-rc.2, as in the README) with the FlyBot core and the social, tree, workflow and timeline plugins of the checkout you build from. Instances talk to each other only through [Bot Social](https://github.com/Birfy/bot-social), which is not in the image; host it yourself.
 
 You build the image yourself. FlyBot does not publish an image.
 
