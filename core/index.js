@@ -14,6 +14,7 @@ import * as taskDrive from './src/host/task-drive.js'
 import * as models from './src/host/models.js'
 import * as permissions from './src/host/permissions.js'
 import * as turns from './src/host/turns.js'
+import * as busyAck from './src/host/busy-ack.js'
 import * as delivery from './src/host/delivery.js'
 import * as roster from './src/host/roster.js'
 import * as folders from './src/host/folders.js'
@@ -53,7 +54,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

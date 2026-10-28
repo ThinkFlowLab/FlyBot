@@ -1408,6 +1408,15 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
+@@ -90,6 +90,8 @@ export function apply(ctx) {
+     return () => window.removeEventListener('pagehide', onPageHide)
+   }, 'ds-bot: remember visits on page hide')
+   const activity = createSource({})
++  const busyAcks = createSource({})
++  let busyAcksKey = '{}'
+   // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
+   const work = createSource({ bots: {}, approvals: [] })
+   let workKey = ''
 @@ -125,6 +125,17 @@ export function apply(ctx) {
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
@@ -1426,7 +1435,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
-@@ -132,7 +132,8 @@ export function apply(ctx) {
+@@ -132,11 +132,14 @@ export function apply(ctx) {
    const pull = async () => {
      const order = ++pulls
      const known = roster.getSnapshot()
@@ -1436,6 +1445,12 @@ diff --git a/src/client/index.js b/src/client/index.js
      if (order < applied) return
      applied = order
      const nextActivity = JSON.stringify(value.activity ?? {})
+     if (nextActivity !== activityKey) { activityKey = nextActivity; activity.set(value.activity ?? {}) }
++    const nextBusyAcks = JSON.stringify(value.busyAcks ?? {})
++    if (nextBusyAcks !== busyAcksKey) { busyAcksKey = nextBusyAcks; busyAcks.set(value.busyAcks ?? {}) }
+     const nextWork = JSON.stringify(value.work ?? null)
+     if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
+     noteMemoryNews(value.memoryNews ?? {})
 @@ -145,11 +145,14 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
@@ -1628,10 +1643,12 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.noteTurnTime = (sessionId, turn, key, time) => {
      if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
      turnClock.set((state) => {
-@@ -690,6 +690,17 @@ export function apply(ctx) {
+@@ -689,7 +689,18 @@ export function apply(ctx) {
+   })
    const browserPages = browsers?.pages ?? createSource({})
    const browserTabs = browsers?.tabs ?? createSource({})
-   const face = () => ({ actions, hooks: { roster, ui, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
+-  const face = () => ({ actions, hooks: { roster, ui, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
++  const face = () => ({ actions, hooks: { roster, ui, activity, busyAcks, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
 +  // What the pill does to the page follows the Session being looked at, not the seat the
 +  // pill is painted in: the shell hides `.utilities` on a blank Session, so a Side effect
 +  // parked in the pill stops there. Nothing is claimed for them either — `.corner`, the one
@@ -3055,8 +3072,13 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
-@@ -831,6 +831,9 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -829,8 +829,14 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ [data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
+ [data-chat-running]>span:not([role=status]){display:none!important}
  [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
++.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
++.bt-busy-ack .bt-astack{align-items:flex-start}
++.bt-busy-ack .bt-bubble{opacity:.92}
  .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
  .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 +.bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}

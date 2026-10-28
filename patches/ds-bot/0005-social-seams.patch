@@ -457,7 +457,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,49 @@ export function install(rt) {
+@@ -65,22 +65,50 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -483,6 +483,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +  const live = actor => {
 +    const full = {
 +      activity: rt.activityView(),
++      busyAcks: rt.busyAcksView?.() ?? {},
 +      work: { bots: rt.workView(), rooms: rt.roomWorkView(), approvals: rt.approvalsView(), ended: rt.endedView?.() ?? [] },
 +      memoryNews: rt.memoryNews(),
 +      memoryReviews: rt.memoryReviews(),

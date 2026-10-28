@@ -117,6 +117,8 @@ export function apply(ctx) {
     return () => window.removeEventListener('pagehide', onPageHide)
   }, 'ds-bot: remember visits on page hide')
   const activity = createSource({})
+  const busyAcks = createSource({})
+  let busyAcksKey = '{}'
   // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
   const work = createSource({ bots: {}, approvals: [] })
   let workKey = ''
@@ -176,6 +178,8 @@ export function apply(ctx) {
     applied = order
     const nextActivity = JSON.stringify(value.activity ?? {})
     if (nextActivity !== activityKey) { activityKey = nextActivity; activity.set(value.activity ?? {}) }
+    const nextBusyAcks = JSON.stringify(value.busyAcks ?? {})
+    if (nextBusyAcks !== busyAcksKey) { busyAcksKey = nextBusyAcks; busyAcks.set(value.busyAcks ?? {}) }
     const nextWork = JSON.stringify(value.work ?? null)
     if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
     noteMemoryNews(value.memoryNews ?? {})
@@ -771,7 +775,7 @@ export function apply(ctx) {
   })
   const browserPages = browsers?.pages ?? createSource({})
   const browserTabs = browsers?.tabs ?? createSource({})
-  const face = () => ({ actions, hooks: { roster, ui, activity, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
+  const face = () => ({ actions, hooks: { roster, ui, activity, busyAcks, work, memoryNews, registry, turnClock, live, cards, browserPages, browserTabs, surface, update } })
   // What the pill does to the page follows the Session being looked at, not the seat the
   // pill is painted in: the shell hides `.utilities` on a blank Session, so a Side effect
   // parked in the pill stops there. Nothing is claimed for them either — `.corner`, the one
