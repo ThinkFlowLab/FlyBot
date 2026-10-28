@@ -1,1 +1,0 @@
-Dragging the leftmost, rightmost or topmost node in the workflow drawer moves the node under the pointer instead of leaving it pinned while the fit re-centres and rescales the rest of the graph; the fit is now fixed for the whole gesture, so a drag commits the coordinates the user saw. ([#1575](https://github.com/ThinkFlowLab/FlyBot/issues/1575))

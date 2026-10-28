@@ -1,1 +1,0 @@
-Workflow stage no longer offers Replay demo, Run demo, or stepped canned playback ([#1443](https://github.com/ThinkFlowLab/FlyBot/issues/1443)). Assign and live runs still spawn ephemeral Bots per node; `workflow/demo-step` remains for tests only.

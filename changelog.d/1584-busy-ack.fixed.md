@@ -1,1 +1,0 @@
-A human message accepted while a Bot is busy (queue or steer, including long background job waits) now gets a short spoken acknowledgment in the chat promptly, instead of silence until the job finishes ([#1584](https://github.com/ThinkFlowLab/FlyBot/issues/1584)).

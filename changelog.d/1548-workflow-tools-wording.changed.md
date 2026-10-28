@@ -1,1 +1,0 @@
-Workflow Settings says the run's full access is a normal Bot's instead of a per-Bot permission choice, and the delivery template lists only connectors a node really calls (`github`). The README says plainly that naming `bash` grants nothing.

@@ -1,1 +1,0 @@
-Settings → Workflows lists the factory pipelines and the workflows saved on this machine, and opens the flowchart so a node can be dragged. A list that cannot be read shows an error with Retry instead of staying on “Reading workflows…”, and the page no longer leads with the `workflows/<id>.json` note (#1364).

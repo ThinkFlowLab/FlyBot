@@ -1,1 +1,0 @@
-With no run active and the last attempt failed, the workflow **Runs** tab listed that same attempt twice: a phantom row for the live run plus its own history row. It now lists one row per attempt — the failed attempt appears once, marked `Failed` — while a real retry still shows the earlier attempt and the current one ([#1583](https://github.com/ThinkFlowLab/FlyBot/issues/1583)).

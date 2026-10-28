@@ -1,1 +1,0 @@
-The workflow stage reads `workflow/state` once per 2-second tick while a run is live instead of twice — two effects were polling the same condition. A read the host refuses now shows its error on the stage and retries, instead of ending as an unhandled rejection and painting the stage as "No workflows yet.". ([#1564](https://github.com/ThinkFlowLab/FlyBot/issues/1564))
