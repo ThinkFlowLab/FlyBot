@@ -324,20 +324,21 @@ window.__ModuleLoader__.load({
       if (text.startsWith('task-')) return `#${text.slice(-6)}`
       return text
     }
+    // The row clips itself with CSS (single line + ellipsis) and the full title
+    // rides in a tooltip, so never cut the string: a UTF-16 offset can land
+    // inside a surrogate pair and render an emoji/CJK Ext-B title as �.
     function taskSummary(task, run) {
       if (run?.taskSummary) return run.taskSummary
       const id = shortId(task?.id ?? '')
       const title = String(task?.title ?? '').replace(/\s+/g, ' ').trim()
       if (!id && !title) return ''
       if (!title) return id
-      if (!id) return title.length > 72 ? `${title.slice(0, 69)}…` : title
+      if (!id) return title
       // Remove issue number prefix from title if it duplicates the id
       let cleanTitle = title
       const issueMatch = title.match(/^issue\s+#?\d+\s*[:\-–—]\s*/i)
       if (issueMatch && id) cleanTitle = title.slice(issueMatch[0].length)
-      const room = Math.max(24, 72 - id.length - 3)
-      const short = cleanTitle.length > room ? `${cleanTitle.slice(0, room - 1)}…` : cleanTitle
-      return `${id} · ${short}`
+      return `${id} · ${cleanTitle}`
     }
     function sidebarPreview(item) {
       const busy = (item.activeCount ?? 0) > 0 && item.run?.live === true

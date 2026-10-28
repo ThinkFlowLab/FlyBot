@@ -754,6 +754,21 @@ function longLine(kind) {
   return line
 }
 
+// A lone surrogate is what a UTF-16 cut leaves behind; it renders as \u{FFFD}.
+function hasLoneSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true
+      i += 1
+      continue
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true
+  }
+  return false
+}
+
 function assertFull(text, line) {
   assert.equal(text.includes(line), true, `the stage chat dropped part of a ${line.length}-character line`)
   assert.equal(text.includes(`${line.slice(0, 239)}…`), false, 'the stage chat still clipped a line at 240 characters')
@@ -778,9 +793,11 @@ test('a long roster Bot line in the stage chat renders in full', async () => {
   assertFull(text, long)
 })
 
-test('the stage strip still clips a long task title as a summary', async () => {
+test('a long emoji/CJK Ext-B task title renders whole, never cut mid-character', async () => {
   const graph = delivery()
-  const longTitle = '让发布说明覆盖四个小节并保留每条验收命令的原文'.repeat(12)
+  // 60 UTF-16 units then an astral pair: the old 61st-unit cut landed inside the
+  // surrogate pair and left a lone surrogate (rendered as \u{FFFD}).
+  const longTitle = `${'发布说明'.repeat(15)}🚀𠀋${'验收命令'.repeat(12)}`
   graph.run.task = { id: '#1460', title: longTitle }
   delete graph.run.taskSummary
   const call = async (name) => {
@@ -791,11 +808,24 @@ test('the stage strip still clips a long task title as a summary', async () => {
   await settle()
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
   await settle()
-  const text = textOf(view.tree)
   const summary = client.taskSummary({ id: '#1460', title: longTitle })
-  assert.equal(text.includes(summary), true, 'the stage strip lost its task summary')
-  assert.equal(text.includes(longTitle), false, 'the stage strip rendered a full task title instead of a summary')
-  assert.equal(summary.endsWith('…'), true)
+  assert.equal(summary, `#1460 · ${longTitle}`, 'the task summary is not the whole id and title')
+  assert.equal(hasLoneSurrogate(summary), false, 'the task summary ends in a lone surrogate')
+  assert.equal(textOf(view.tree).includes(longTitle), true, 'the stage strip dropped part of the task title')
+
+  // The tooltip keeps the whole title, and the row clips itself in CSS instead.
+  const label = findAll(view.tree, node => node.props?.className === 'wf-tk')[0]
+  assert.equal(label.props.title, longTitle, 'the row tooltip lost the whole title')
+  const css = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const rule = css.split('\n').find(line => line.startsWith('.wf-tk{'))
+  assert.match(rule, /white-space:nowrap/, 'the task row is no longer single-line')
+  assert.match(rule, /text-overflow:ellipsis/, 'the task row no longer ellipsizes')
+
+  // An id-less title takes the other branch, which used to cut at 69 units.
+  const bareTitle = `${'验收命令'.repeat(17)}🚀`
+  const bare = client.taskSummary({ title: bareTitle })
+  assert.equal(bare, bareTitle, 'the id-less task summary is not the whole title')
+  assert.equal(hasLoneSurrogate(bare), false, 'the id-less task summary ends in a lone surrogate')
   view.unmount()
 })
 

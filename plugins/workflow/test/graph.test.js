@@ -1,13 +1,27 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  addNode, chainLabel, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
+  addNode, chainLabel, cleanLine, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
   moveNode, nextDemoOp, normalizeGraph, reconnectEdge, removeEdge, removeNode, retryNode,
   rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
 import { deliveryWorkflow, weeklyWorkflow } from '../src/template.js'
 
 const delivery = deliveryWorkflow()
+
+function hasLoneSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true
+      i += 1
+      continue
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true
+  }
+  return false
+}
 
 function runToCoder() {
   let status = freshStatus(delivery)
@@ -156,5 +170,21 @@ test('the sidebar line names a live running Bot, never a demo script', () => {
   assert.equal(rowPreview(delivery, paused), '已暂停 · Coder · #1280')
   assert.equal(rowPreview(weeklyWorkflow(), { status: 'done', live: true, nodeStatus: {}, task: { id: 'W42' } }), '下次运行：周五 17:00')
   assert.equal(rowPreview(delivery, null), '等待任务')
-  assert.equal(summarizeTask({ id: '#9', title: 'a'.repeat(120) }).length <= 80, true)
+  assert.equal(summarizeTask({ id: '#9', title: 'a'.repeat(120) }).length <= 80, false)
+})
+
+test('a long task label keeps its whole title and never ends in a lone surrogate', () => {
+  const plain = 'a'.repeat(120)
+  assert.equal(summarizeTask({ id: '#9', title: plain }), `#9 · ${plain}`)
+
+  // 71 units then an astral pair: the old 72-unit cap split the pair in half.
+  const astralTitle = `${'发布说明'.repeat(17)}验收命🚀`
+  const astral = summarizeTask({ id: '#9', title: astralTitle })
+  assert.equal(astral, `#9 · ${astralTitle}`)
+  assert.equal(astral.includes('\uFFFD'), false)
+  assert.equal(hasLoneSurrogate(astral), false, 'summarizeTask left a lone surrogate in the label')
+
+  // cleanLine still cuts when it must, but on code points.
+  assert.equal(cleanLine('🚀'.repeat(10), 7), '🚀'.repeat(7))
+  assert.equal(hasLoneSurrogate(cleanLine('🚀'.repeat(10), 7)), false)
 })
