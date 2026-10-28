@@ -400,10 +400,14 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     write()
   }
 
-  // A live run the host cut off: fail in-flight nodes and mark the run failed (#1414,
-  // #1424). Ephemeral ids are left on the record until release strips them.
-  function failCutoffRun(item, run) {
-    if (run.status === 'done' || run.status === 'failed') return
+  // End a run the host gave up on: fail the nodes still in flight, then mark the
+  // run failed. Every path that abandons a run comes through here — reap() at load,
+  // dispose(), the catch around a step that threw, and reset() stopping one run —
+  // so run.status and run.nodeStatus cannot drift apart and a client stops painting
+  // "Running now" (#1424). A run that already ended keeps its own ending (#1388);
+  // ephemeral ids stay on the record until release strips them.
+  function endRun(item, run) {
+    if (run.status === 'done' || run.status === 'failed') return run
     for (const nodeId of item ? orderedIds(item, run.nodeStatus, 'running') : []) {
       try {
         run.nodeStatus = failNode(item, run.nodeStatus, nodeId).status
@@ -413,6 +417,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
     }
     run.status = 'failed'
     run.updatedAt = now()
+    return run
   }
 
   function archiveCutoffRun(workflowId, run) {
@@ -540,7 +545,8 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       try {
         run = await handOff(item, run)
       } catch (error) {
-        await releaseRun(item.id, { ...run, status: 'failed', updatedAt: now() })
+        endRun(item, run)
+        await releaseRun(item.id, run)
         return refuse(error)
       }
     }
@@ -869,7 +875,9 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
           const run = lane.active.find(itemRun => itemRun.id === runId)
           if (!run || run.live !== true || run.status !== 'running') return { ok: false, error: 'No live run to stop' }
           const ids = Object.values(run.ephemeral ?? {})
-          const ended = { ...run, status: 'failed', updatedAt: now() }
+          // Stopping one run ends it the same way a reap does: the node map settles
+          // with the run, or the strip keeps painting the node it was on (#1424).
+          const ended = { ...endRun(item, run) }
           delete ended.ephemeral
           delete ended.handed
           lane.active = lane.active.filter(itemRun => itemRun.id !== runId)
@@ -1059,7 +1067,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       for (const { workflowId, run } of abandoned) {
         try {
           if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
-          failCutoffRun(workflow(workflowId), run)
+          endRun(workflow(workflowId), run)
           delete run.ephemeral
           delete run.handed
           archiveCutoffRun(workflowId, run)
@@ -1082,7 +1090,7 @@ export function createWorkflowService({ dir, persist = true, now = () => Date.no
       for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
         for (const run of [...(lane.active ?? [])]) {
           if (run?.live === true && run.status === 'running') {
-            failCutoffRun(workflow(workflowId), run)
+            endRun(workflow(workflowId), run)
             archiveCutoffRun(workflowId, run)
             endedLive = true
           }
