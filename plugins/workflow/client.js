@@ -693,7 +693,11 @@ window.__ModuleLoader__.load({
         current: workflow.run?.id === run.id,
       }))
       for (const task of queued) rows.push({ task, status: 'queued', current: false })
-      const seen = new Set(rows.map(row => row.id ?? `${row.task?.id ?? ''}|${row.at ?? ''}`))
+      const seen = new Set()
+      for (const row of rows) {
+        if (row.id) seen.add(row.id)
+        seen.add(`${row.task?.id ?? ''}|${row.at ?? ''}`)
+      }
       for (const item of history) {
         const key = item.id ?? `${item.task?.id ?? ''}|${item.at ?? ''}`
         if (seen.has(key)) continue

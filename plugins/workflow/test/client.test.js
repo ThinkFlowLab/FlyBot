@@ -931,6 +931,36 @@ test('run history does not invent a second running row when only one live run ex
   assert.equal(rows.filter(row => row.status === 'running').length, 1)
 })
 
+test('a failed live attempt is listed once, as failed, not as its own history row (#1583)', () => {
+  const task = { id: '#1422', title: 'PR 1422' }
+  const workflow = {
+    activeCount: 0,
+    queue: [],
+    runs: [{ id: 'run-a', live: true, status: 'failed', task, updatedAt: 1_700_000_000_000 }],
+    run: { id: 'run-a', live: true, status: 'failed', task, updatedAt: 1_700_000_000_000 },
+    history: [{ task, status: 'failed', at: 1_700_000_000_000 }],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].status, 'failed')
+  assert.equal(rows.filter(row => row.status === 'running').length, 0)
+})
+
+test('a genuine retry still shows the failed attempt and the current one (#1583)', () => {
+  const task = { id: '#1422', title: 'PR 1422' }
+  const workflow = {
+    activeCount: 1,
+    queue: [],
+    runs: [{ id: 'run-b', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 }],
+    run: { id: 'run-b', live: true, status: 'running', task, updatedAt: 1_700_000_100_000 },
+    history: [{ task, status: 'failed', at: 1_700_000_000_000 }],
+  }
+  const rows = client.runHistoryRows(workflow)
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.status), ['running', 'failed'])
+  assert.deepEqual(rows.map(row => row.current), [true, false])
+})
+
 test('the runs tab shows one running row per concurrent live run', async () => {
   const graph = delivery()
   graph.activeCount = 2
