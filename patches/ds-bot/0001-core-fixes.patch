@@ -8967,6 +8967,15 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
+@@ -37,6 +37,8 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+     'effect ds-bot: state lock',
+     'on llm/adapters-updated',
+     'on session/event',
++    'on session/event',
++    'on agent/status',
+     'effect ds-bot: agent tool restrict retry',
+     'on agent/created',
+     'effect ds-bot: identity section',
 @@ -60,11 +60,16 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
@@ -9342,6 +9351,15 @@ diff --git a/test/memory.test.js b/test/memory.test.js
      if ((await call('state', {})).value.memoryReviews === 0) return
    }
    throw new Error('the memory review did not finish')
+@@ -994,7 +994,7 @@ test('a turn whose Session moves to a fresh part before its review is still revi
+ test('config.memoryReview false leaves memory to the Bots\' own remember calls', async (t) => {
+   const { ctx, call, section, requests, stop } = start({ config: { memoryReview: false, memoryReviewDelayMs: 0 } })
+   t.after(() => stop())
+-  assert.equal(ctx.calls.filter(entry => entry === 'on agent/status').length, 2)
++  assert.equal(ctx.calls.filter(entry => entry === 'on agent/status').length, 3)
+   await call('state', {})
+   assert.match(section('b2'), /Call it in that same turn, before you reply/)
+   ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
 @@ -1010,7 +1010,7 @@ test('config.memory false leaves the tools, the section, and the panel out', asy
    assert.equal((await call('state', {})).value.memory, false)
    assert.equal((await call('memory-view', { botId: 'b2' })).error.message, 'Memory is turned off on this host')
