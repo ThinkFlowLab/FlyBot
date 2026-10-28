@@ -609,3 +609,32 @@ test('a run Bot does not reopen a connector the Bot that started the run switche
   // A Bot that no longer exists has no switch list to read: the answer stays what it was.
   assert.equal(guard(GITHUB[0], 'caller-gone'), undefined)
 })
+
+// #1555: `run_workflow` / `define_workflow` have no `visibleTo`, so a friend's Bot can call them. A run
+// Bot then names that remote Bot as the one that started it, and a remote Bot has no switch table of ours
+// to intersect with — so the caller reads as "every connector switched off", and the step list cannot hand
+// the run Bot anything. Nothing changes for a team Bot: its own switch and the node's `tools` still decide.
+test('a run Bot started by a friend\'s Bot reaches no connector', async (t) => {
+  const state = team()
+  state.bots.friend = { id: 'friend', sessionId: 'friend', name: 'Bob', role: 'Bot', instructions: '', createdAt: 5, remote: { handle: '@bob.home' } }
+  const run = (id, { createdBy, stepTools = ['github'] } = {}) => {
+    state.bots[id] = {
+      id, sessionId: id, name: id, role: 'Run', instructions: '', createdAt: 6,
+      hidden: true, ephemeral: { plugin: 'flybot-workflow' }, stepTools,
+      ...(createdBy === undefined ? {} : { createdBy }),
+    }
+  }
+  run('remote-run', { createdBy: 'friend' })
+  run('team-run', { createdBy: 'chief' })
+  const { agentFor, hiddenFrom, guard, stop } = await setup({ state })
+  t.after(stop)
+  await Promise.all(['remote-run', 'team-run'].map(id => agentFor(id)))
+
+  // Red before this change: the node names github, so the step list alone let the run Bot through.
+  assert.match(guard(GITHUB[0], 'remote-run'), /started by a friend's Bot/, 'the caller is the reason, not the step list')
+  assert.deepEqual(sorted(hiddenFrom('remote-run')), sorted([...COMPOSIO, ...GITHUB]), 'and both connectors are out of its list too')
+  assert.match(guard(COMPOSIO[0], 'remote-run'), /started by a friend's Bot/)
+  // The no-over-refusal case: a team Bot started this run, its switch is on, the node names github.
+  assert.equal(guard(GITHUB[0], 'team-run'), undefined, 'a team caller keeps what the node names')
+  assert.deepEqual(sorted(hiddenFrom('team-run')), sorted(COMPOSIO), 'only the connector the node did not name stays out')
+})
