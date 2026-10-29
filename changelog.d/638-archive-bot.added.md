@@ -1,1 +1,0 @@
-A Main Bot can retire a Bot with `archive_bot`: it leaves the tree (freeing a `maxChildren` slot) and the default Bot list, while its chats, memory and history stay readable and it can be restored. Deleting a Bot stays the owner's own action in the UI ([#638](https://github.com/ThinkFlowLab/FlyBot/issues/638)).

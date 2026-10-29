@@ -1,1 +1,0 @@
-Retrying a Workflow task no longer leaves two indistinguishable run rows: every attempt keeps its row, the older finished attempt is marked `superseded by <run>` and the newer one `retry of <run>`, and the room opens on the newest attempt for that task. Two live attempts for one task are both shown unmarked. ([#1507](https://github.com/ThinkFlowLab/FlyBot/issues/1507))

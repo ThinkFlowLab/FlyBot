@@ -1,1 +1,0 @@
-A run Bot the host could not remove after a Workflow run ended, was stopped, or the app closed is no longer forgotten: its id stays on the run record, so the next load retries the removal instead of leaving a hidden Bot that no screen can find again. ([#1616](https://github.com/ThinkFlowLab/FlyBot/issues/1616))

@@ -1,1 +1,0 @@
-The busy ack now quotes your own message exactly: typing `{d}` or `{t}` in a line no longer makes the ack swap in the running tool's words (or drop it) ([#1634](https://github.com/ThinkFlowLab/FlyBot/issues/1634)).

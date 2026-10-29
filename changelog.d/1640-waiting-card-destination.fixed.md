@@ -1,1 +1,0 @@
-The "Waiting for the owner's approval" card in a group chat now says where the room's approval is decided: in a Bot's chat, with one button that opens it, or on the reply bubble above it, which is already on screen. When the dock cannot place the card it says only what it said before ([#1640](https://github.com/ThinkFlowLab/FlyBot/issues/1640)).

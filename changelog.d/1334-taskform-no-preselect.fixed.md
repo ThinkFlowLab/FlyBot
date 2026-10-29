@@ -1,1 +1,0 @@
-The new-task form in Scheduled tasks no longer opens with the first Bot already chosen: the **Send to** picker starts on "Pick a Bot or group chat", and **Create task** stays disabled until a Bot or group chat is picked, so a task can no longer be created for whoever sorts first on one click ([#1334](https://github.com/ThinkFlowLab/FlyBot/issues/1334)).

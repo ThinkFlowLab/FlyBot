@@ -1,1 +1,0 @@
-The workflow stage drawer now looks like the rest of FlyBot: the Bot details drawer's title, role line and pill tabs, soft pill buttons, chat-bubble node cards and run card, the system font stack, and accent tints mixed from the theme's `--bt-accent` instead of a fixed blue, so every theme recolours it ([#1654](https://github.com/ThinkFlowLab/FlyBot/issues/1654)).

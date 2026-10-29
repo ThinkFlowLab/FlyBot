@@ -1,1 +1,0 @@
-The chat no longer acknowledges the message that starts a turn as if it had arrived while the Bot was busy: an idle conversation now answers with no generated "on it" line and no extra model call, while a line that really lands during a running turn keeps its one acknowledgment ([#1698](https://github.com/ThinkFlowLab/FlyBot/issues/1698)).

@@ -1,1 +1,0 @@
-Workflow room Runs tab keeps the HH:MM clock in its own column with a gap before the status chip, and a Failed row without a host reason shows the Failed chip once instead of also painting a clipped red F.

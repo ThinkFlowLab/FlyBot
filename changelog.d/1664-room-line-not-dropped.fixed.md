@@ -1,1 +1,0 @@
-A line a person sends to a group room while a member is being let go is no longer dropped: it stays queued for the room, nothing is steered into the stopping member, and the round answers it exactly once ([#1664](https://github.com/ThinkFlowLab/FlyBot/issues/1664)).
