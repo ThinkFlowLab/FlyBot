@@ -923,6 +923,41 @@ test('the hand-a-task modal lists live Tasks board rows only', async () => {
   view.unmount()
 })
 
+test('#1647: the stage lists the tasks a workflow holds, each with one re-match action through ingest', async () => {
+  let workflows = [{ ...delivery(), id: 'alpha', name: 'Alpha', heldTasks: ['task-9'], heldTaskCount: 1 }]
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows, templates: [] }
+    if (name === 'workflow/ingest' && body?.rematch === true) workflows = [{ ...workflows[0], heldTasks: [], heldTaskCount: 0 }]
+    return { ok: true, workflows }
+  }
+  const prevHost = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel === 'tasks' ? [{ id: 'task-9', title: 'Move me', status: 'open' }] : []),
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes('Alpha'))[0].props.onClick()
+    await settle()
+
+    assert.ok(textOf(view.tree).includes('task-9'), 'the workflow stage names the task it holds')
+    const rematch = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Re-match')
+    assert.equal(rematch.length, 1, 'one re-match action for the one held task')
+    rematch[0].props.onClick()
+    await settle()
+
+    const ingest = calls.filter(item => item.name === 'workflow/ingest' && item.body?.rematch === true)
+    assert.equal(ingest.length, 1, 'the action goes through the existing ingest call')
+    assert.deepEqual(ingest[0].body, { id: 'task-9', title: 'Move me', status: 'open', rematch: true }, 'the board row is passed with the explicit flag')
+    assert.equal(textOf(view.tree).includes('task-9'), false, 'the stage repaints from the store after the action')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prevHost
+  }
+})
+
 test('the room flowchart canvas scrolls in its panel, and the settings canvas leaves one scroll to the page', () => {
   const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(source, /\.wf-canvas\{[^}]*overflow:auto/)
