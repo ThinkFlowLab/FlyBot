@@ -2397,6 +2397,103 @@ for (const width of [400, 364]) {
   })
 }
 
+// A layer that wraps onto two lines still has one band for the whole layer, and
+// a straight wire from the bus below it — or straight down from a card on the
+// first line — cuts through a card in the other line, so the picture reads as
+// "the fork feeds only r1, r1 → r3" (#1659). Every wire must go around the cards.
+function segmentsOf(d) {
+  return d.split(/(?=M )/).flatMap(part => {
+    const points = pointsOf(part)
+    const segments = []
+    for (let i = 1; i < points.length; i++) segments.push([points[i - 1], points[i]])
+    return segments
+  })
+}
+function cutsInto([a, b], box) {
+  const edge = 0.5
+  const left = box.left + edge
+  const right = box.left + box.w - edge
+  const top = box.top + edge
+  const bottom = box.top + box.h - edge
+  if (a.x === b.x) {
+    const lo = Math.min(a.y, b.y)
+    const hi = Math.max(a.y, b.y)
+    return a.x > left && a.x < right && Math.max(lo, top) < Math.min(hi, bottom)
+  }
+  if (a.y === b.y) {
+    const lo = Math.min(a.x, b.x)
+    const hi = Math.max(a.x, b.x)
+    return a.y > top && a.y < bottom && Math.max(lo, left) < Math.min(hi, right)
+  }
+  return false
+}
+function cardCuts(layout) {
+  const boxes = [...layout.boxes.values()]
+  return layout.wires.flatMap(wire => segmentsOf(wire.d).flatMap(segment =>
+    boxes.filter(box => cutsInto(segment, box))
+      .map(box => `${wire.key}: ${segment[0].x},${segment[0].y}→${segment[1].x},${segment[1].y} runs through ${box.id}`)))
+}
+
+// Five branches wrap 3+2 at 400px; the skip edge stays inside the layer it leaves.
+function wideFive() {
+  const branches = ['r1', 'r2', 'r3', 'r4', 'r5']
+  return {
+    ...delivery(), id: 'wide-five', name: 'Wide five',
+    layers: [['fork'], branches, ['join']],
+    nodes: [
+      { id: 'fork', name: 'Fork', role: '分叉' },
+      ...branches.map(id => ({ id, name: id.toUpperCase(), role: '分支' })),
+      { id: 'join', name: 'Join', role: '汇合' },
+    ],
+    edges: [
+      ...branches.map(id => ({ from: 'fork', to: id })),
+      ...branches.map(id => ({ from: id, to: 'join' })),
+      { from: 'r1', to: 'r5' },
+    ],
+  }
+}
+
+for (const width of [400, 368, 364]) {
+  for (const [label, build] of [['four branches 2+2', wideFork], ['five branches 3+2', wideFive]]) {
+    test(`a wrapped drawer layer at ${width}px (${label}) routes every wire around the cards (#1659)`, () => {
+      const layout = client.flowLayout(build(), width)
+      const wrapped = [...layout.boxes.values()].filter(box => box.row === 1)
+      assert.equal(new Set(wrapped.map(box => box.top)).size, 2, 'the branch layer wraps onto two lines')
+      assert.deepEqual(cardCuts(layout), [], 'a wire runs through a card')
+    })
+  }
+}
+
+// The rerouting above only applies to a layer that wraps: a two- and a
+// three-branch layer that fit one line keep their exact wire strings (#1659).
+test('a drawer layer that fits one line keeps its exact wire routing (#1659)', () => {
+  const graph = ids => ({
+    ...delivery(), id: 'single-line', name: 'Single line',
+    layers: [['fork'], ids, ['join']],
+    nodes: [
+      { id: 'fork', name: 'Fork', role: '分叉' },
+      ...ids.map(id => ({ id, name: id.toUpperCase(), role: '分支' })),
+      { id: 'join', name: 'Join', role: '汇合' },
+    ],
+    edges: [...ids.map(id => ({ from: 'fork', to: id })), ...ids.map(id => ({ from: id, to: 'join' }))],
+  })
+  assert.deepEqual(client.flowLayout(graph(['r1', 'r2']), 400).wires.map(wire => wire.d), [
+    'M 200 84 L 200 102 M 110 102 L 290 102',
+    'M 110 102 L 110 148',
+    'M 290 102 L 290 148',
+    'M 110 220 L 110 248 M 290 220 L 290 248 M 110 248 L 290 248',
+    'M 200 248 L 200 266',
+  ])
+  assert.deepEqual(client.flowLayout(graph(['r1', 'r2', 'r3']), 400).wires.map(wire => wire.d), [
+    'M 200 84 L 200 102 M 78 102 L 322 102',
+    'M 78 102 L 78 148',
+    'M 200 102 L 200 148',
+    'M 322 102 L 322 148',
+    'M 78 220 L 78 248 M 200 220 L 200 248 M 322 220 L 322 248 M 78 248 L 322 248',
+    'M 200 248 L 200 266',
+  ])
+})
+
 test('the drawer flowchart draws the step layout, not the stored editor coordinates, and clamps a long run summary', async () => {
   const graph = quickLane()
   const long = 'p1641-r3 · #1641（Fixes #1640 social waiting-for-approval 卡不写目的地、没有跳转）在实时 head 重审并出 PASS 后入队。上一轮 run-d477062e 在 review 节点被 DSH 重启打断'

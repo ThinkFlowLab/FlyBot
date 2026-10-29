@@ -740,6 +740,7 @@ window.__ModuleLoader__.load({
         let cursor = top
         let leftEdge = width
         let rightEdge = 0
+        const linesOfBand = []
         lines.forEach((line, lineIndex) => {
           const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (line.length - 1)) / line.length)))
           const total = w * line.length + FLOW_GAP_X * (line.length - 1)
@@ -749,8 +750,9 @@ window.__ModuleLoader__.load({
             const hgt = Math.max(24, Number(heights?.[id]) || NODE_H)
             lineH = Math.max(lineH, hgt)
             const left = start + column * (w + FLOW_GAP_X)
-            boxes.set(id, { id, row: index, left, top: cursor, w, h: hgt, x: left + w / 2 })
+            boxes.set(id, { id, row: index, line: lineIndex, left, top: cursor, w, h: hgt, x: left + w / 2 })
           })
+          linesOfBand.push({ top: cursor, bottom: cursor + lineH })
           leftEdge = Math.min(leftEdge, start)
           rightEdge = Math.max(rightEdge, start + total)
           cursor += lineH + (lineIndex < lines.length - 1 ? FLOW_WRAP_GAP : 0)
@@ -761,7 +763,7 @@ window.__ModuleLoader__.load({
         // between the two drops so no wire runs through it.
         const labelMax = lines.length === 1 && row.length === 2 ? span + FLOW_GAP_X - 16 : span
         if (par) frames.push({ key: row.join('+'), left: leftEdge - FLOW_PAR_PAD, top: y, width: span + FLOW_PAR_PAD * 2, height: bottom - y, labelMax })
-        bands.push({ top: y, bottom })
+        bands.push({ top: y, bottom, lines: linesOfBand, left: leftEdge, right: rightEdge })
         y = bottom + FLOW_ROW_GAP
       })
       const height = rows.length ? y - FLOW_ROW_GAP + FIT_PAD : 0
@@ -771,10 +773,19 @@ window.__ModuleLoader__.load({
     // source drops to the bus, every target rises from it, so a fork leaves one
     // point and a join meets in one point. Skip and loop edges run in the right
     // gutter. Every point is a box anchor or lies on the segment between two.
+    // A layer wider than the panel wraps onto more lines inside one band (#1658),
+    // and one band for all its lines means a straight run across the band would
+    // cut through the cards of the other line (#1659): a card that is not on the
+    // band's last or first line leaves through the wrap seam and runs down the
+    // column gap at the band's left edge, which no card reaches.
     function flowWires(edges, boxes, bands, width) {
       const wires = []
       const gaps = new Map()
       const skips = []
+      const pathOf = marks => marks.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point[0]} ${point[1]}`).join(' ')
+      const lastLine = band => (band.lines?.length ?? 1) - 1
+      const seamY = (band, line) => Math.round(band.lines[line].bottom + FLOW_WRAP_GAP / 2)
+      const channelX = band => Math.round(band.left - FLOW_WRAP_GAP / 2)
       for (const edge of edges) {
         const from = boxes.get(edge?.from)
         const to = boxes.get(edge?.to)
@@ -804,38 +815,81 @@ window.__ModuleLoader__.load({
           group.edges.push(item.edge)
           groups.set(key, group)
         }
-        const gapTop = bands[row].bottom
-        const gapBottom = bands[row + 1].top
+        const fromBand = bands[row]
+        const toBand = bands[row + 1]
+        const fromLast = lastLine(fromBand)
+        const downX = channelX(fromBand)
+        const upX = channelX(toBand)
+        const gapTop = fromBand.bottom
+        const gapBottom = toBand.top
         const ordered = [...groups.values()]
         ordered.forEach((group, k) => {
           const busY = Math.round(gapTop + (gapBottom - gapTop) * (k + 1) / (ordered.length + 1))
           const sources = [...group.sources.values()]
           const targets = [...group.targets.values()]
           const key = group.edges.map(edge => `${edge.from}>${edge.to}`).join(',')
+          const sourceMarks = box => {
+            const bottom = box.top + box.h
+            const line = box.line ?? 0
+            if (line >= fromLast) return [[box.x, bottom], [box.x, busY]]
+            const seam = seamY(fromBand, line)
+            return [[box.x, bottom], [box.x, seam], [downX, seam], [downX, busY]]
+          }
+          const targetMarks = box => {
+            const line = box.line ?? 0
+            if (line <= 0) return [[box.x, busY], [box.x, box.top]]
+            const seam = seamY(toBand, line - 1)
+            return [[box.x, busY], [upX, busY], [upX, seam], [box.x, seam], [box.x, box.top]]
+          }
           if (sources.length === 1 && targets.length === 1 && Math.abs(sources[0].x - targets[0].x) < 0.5) {
-            const x = sources[0].x
-            wires.push({ key, kind: 'step', d: `M ${x} ${sources[0].top + sources[0].h} L ${x} ${targets[0].top}`, arrow: true })
+            const source = sources[0]
+            const target = targets[0]
+            const x = source.x
+            if ((source.line ?? 0) >= fromLast && (target.line ?? 0) <= 0) {
+              wires.push({ key, kind: 'step', d: `M ${x} ${source.top + source.h} L ${x} ${target.top}`, arrow: true })
+              return
+            }
+            const marks = sourceMarks(source)
+            const rise = targetMarks(target)
+            if (marks.at(-1)[0] !== rise[0][0]) marks.push([rise[0][0], busY])
+            marks.push(...rise.slice(1))
+            wires.push({ key, kind: 'step', d: pathOf(marks), arrow: true })
             return
           }
           const xs = sources.concat(targets).map(box => box.x)
-          const minX = Math.min(...xs)
+          let minX = Math.min(...xs)
           const maxX = Math.max(...xs)
-          const parts = sources.map(box => `M ${box.x} ${box.top + box.h} L ${box.x} ${busY}`)
+          if (sources.some(box => (box.line ?? 0) < fromLast)) minX = Math.min(minX, downX)
+          const parts = sources.map(box => pathOf(sourceMarks(box)))
           if (maxX - minX >= 0.5) parts.push(`M ${minX} ${busY} L ${maxX} ${busY}`)
           wires.push({ key: `${key}|bus`, kind: sources.length > 1 ? 'join' : 'fork', d: parts.join(' '), arrow: false })
-          for (const box of targets) wires.push({ key: `${key}|${box.id}`, kind: 'drop', d: `M ${box.x} ${busY} L ${box.x} ${box.top}`, arrow: true })
+          for (const box of targets) wires.push({ key: `${key}|${box.id}`, kind: 'drop', d: pathOf(targetMarks(box)), arrow: true })
         })
       }
       skips.forEach(({ edge, from, to }, k) => {
         const gutter = Math.round(width - 4 - k * 5)
-        const outY = Math.round(bands[from.row].bottom + Math.min(10, FLOW_ROW_GAP / 3))
-        const inY = Math.round(bands[to.row].top - Math.min(10, FLOW_ROW_GAP / 3))
-        const sx = from.x
-        const tx = to.x
+        const fromBand = bands[from.row]
+        const toBand = bands[to.row]
+        const outY = Math.round(fromBand.bottom + Math.min(10, FLOW_ROW_GAP / 3))
+        const inY = Math.round(toBand.top - Math.min(10, FLOW_ROW_GAP / 3))
+        const marks = [[from.x, from.top + from.h]]
+        const fromLine = from.line ?? 0
+        if (fromLine < lastLine(fromBand)) {
+          const seam = seamY(fromBand, fromLine)
+          const channel = channelX(fromBand)
+          marks.push([from.x, seam], [channel, seam], [channel, outY])
+        } else marks.push([from.x, outY])
+        marks.push([gutter, outY], [gutter, inY])
+        const toLine = to.line ?? 0
+        if (toLine > 0) {
+          const seam = seamY(toBand, toLine - 1)
+          const channel = channelX(toBand)
+          marks.push([channel, inY], [channel, seam], [to.x, seam], [to.x, to.top])
+        } else marks.push([to.x, inY], [to.x, to.top])
         wires.push({
           key: `${edge.from}>${edge.to}|${edge.loop ? 'loop' : 'skip'}`,
           kind: edge.loop || to.row <= from.row ? 'loop' : 'skip',
-          d: `M ${sx} ${from.top + from.h} L ${sx} ${outY} L ${gutter} ${outY} L ${gutter} ${inY} L ${tx} ${inY} L ${tx} ${to.top}`,
+          d: pathOf(marks),
           arrow: true,
         })
       })
