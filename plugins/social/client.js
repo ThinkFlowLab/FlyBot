@@ -2071,13 +2071,25 @@ window.__ModuleLoader__.load({
       const words = (Array.isArray(reasons) ? reasons : []).filter(name => Object.hasOwn(HOLD_REASON_WORDS, name)).map(name => tr(HOLD_REASON_WORDS[name]))
       return words.length ? tr('Held for your approval: contains {reasons}', { reasons: words.join(tr(', ')) }) : ''
     }
-    function ChatApproval({ item, canDecide = true, busy, onDecide, t } = {}) {
+    function ChatApproval({ item, canDecide = true, busy, onDecide, t, onOpen } = {}) {
       const [open, setOpen] = useState(false)
       // A decided card goes at once, no "Approved" / "Rejected" stub (#456): the chat itself shows the outcome.
       if (!item || item.status === 'approved' || item.status === 'rejected') return null
       if (canDecide !== true) {
+        // #1640: name where this card is decided, and open it when that is a chat. Nothing to name keeps
+        // the neutral sentence, and a destination already on screen gets no button.
+        const tr = (text, params) => (typeof t === 'function'
+          ? t(text, params)
+          : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        const place = item.place
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
-          h('div', { className: 'fs-name' }, WAITING_OTHERS))
+          h('div', { className: 'fs-name' }, WAITING_OTHERS),
+          place?.bubble ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr('Decide on the reply bubble above.')) : null,
+          place?.chatId ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr("Decide in {name}'s chat.", { name: place.name })) : null,
+          place?.chatId && typeof onOpen === 'function'
+            ? h('div', { className: 'fs-actions fs-chat-actions' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'chat-approval-open-chat', onClick: () => onOpen(place.chatId) }, tr("Open {name}'s chat", { name: place.name })))
+            : null)
       }
       if (item.status === 'failed') {
         // A failed send cannot be approved or rejected: say it did not go and offer Retry, like
@@ -2477,9 +2489,32 @@ window.__ModuleLoader__.load({
       const approveAll = async () => {
         for (const item of mine.filter(waiting)) await decide(item, 'approve')
       }
+      // #1640: this card is drawn exactly when the room's own card is decided somewhere this chat does
+      // not draw. A held reply is decided on its own bubble here (#418); a Bot's hold is decided in a
+      // chat this person can open (#254). A card we cannot place keeps the neutral sentence: the dock
+      // never invents a destination.
+      const waitingPlace = () => {
+        // A room-tagged card belongs to the room that held it (#188): the same scoping the room's own
+        // list is read with (#1639), applied here to the two polls that know the destination.
+        const roomIds = new Set([room?.id, room?.face?.roomId].filter(Boolean))
+        const shown = new Set(mine.map(card => card.id))
+        const away = [...held, ...local.filter(item => item.inline)]
+          .filter(item => !shown.has(item.id) && (!item.roomId || roomIds.has(item.roomId)))
+        if (away.some(item => item.inline)) return { bubble: true }
+        for (const item of away) {
+          const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
+          const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
+          const chat = friend ?? own
+          if (chat?.id) return { chatId: chat.id, name: chat.name ?? chat.title ?? '' }
+        }
+        return undefined
+      }
       if (waitingOthers) {
         return h('div', { 'data-flybot': 'chat-approvals' },
-          h(ChatApproval, { item: { id: 'waiting' }, canDecide: false }))
+          h(ChatApproval, {
+            item: { id: 'waiting', place: waitingPlace() }, canDecide: false, t,
+            onOpen: chatId => actions?.openSession?.(chatId),
+          }))
       }
       return h('div', { 'data-flybot': 'chat-approvals' },
         mine.length > 1 && mine.some(waiting)

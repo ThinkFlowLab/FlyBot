@@ -213,6 +213,8 @@ const ZH = {
   'no longer shared': '已不再共享',
   'Messages waiting for your approval': '等你批准的消息',
   'Waiting for approval': '等待批准',
+  'Decide on the reply bubble above.': '在上面的回复气泡里批准。',
+  "Decide in {name}'s chat.": '在 {name} 的聊天里批准。',
   'Not sent': '未发出',
   '{name} · Not sent': '{name} · 未发出',
   'Sent to {to}': '已发给 {to}',

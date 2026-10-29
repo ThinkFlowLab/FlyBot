@@ -224,8 +224,9 @@ const inlineHold = () => ({ id: 'a3', status: 'pending', senderName: 'SelfTest A
 // The button an approval card offers, found the way the rest of this file walks the tree.
 const button = (node, id) => {
   if (Array.isArray(node)) return node.map(child => button(child, id)).find(Boolean)
-  if (!node || typeof node !== 'object' || typeof node.type === 'function') return undefined
+  if (!node || typeof node !== 'object') return undefined
   if (node.props?.['data-flybot'] === id) return node
+  if (typeof node.type === 'function') return button(mount(node), id)
   return button(node.children, id)
 }
 async function settle(hold) {
@@ -242,7 +243,7 @@ async function settle(hold) {
 }
 
 test("#1640: a hold written by a local Bot names that Bot's chat and opens it", async () => {
-  const { inst, opened, tree } = await settle([botHold()])
+  const { opened, tree } = await settle([botHold()])
   try {
     const text = drawn(tree)
     assert.match(text, /Waiting for the owner's approval/, 'the waiting card still says it is a card we cannot decide here')
