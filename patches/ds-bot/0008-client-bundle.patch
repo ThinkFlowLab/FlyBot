@@ -3533,12 +3533,13 @@ diff --git a/client.js b/client.js
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
  .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
-@@ -2599,6 +2599,14 @@ var CONVERSATION_CSS = `
+@@ -2599,6 +2599,15 @@ var CONVERSATION_CSS = `
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
 +.bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 +.bt-think[open] .bt-think-caret{transform:rotate(90deg)}
++.bt-think-peek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
 +.bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
 +.bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 +.bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
@@ -3665,46 +3666,61 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2855,1925 +2855,4018 @@ function installCompiledStyles(text, tag) {
-   };
- }
- 
--// src/client/mark.js
--var import_react2 = require("react");
--var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
--var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
--var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
--function useGaze(ref, enabled) {
--  (0, import_react2.useEffect)(() => {
--    if (!enabled) return void 0;
--    let frame = 0;
--    let point = null;
--    const place = () => {
--      frame = 0;
--      const node = ref.current;
--      if (!node || !point) return;
--      const box = node.getBoundingClientRect();
--      const clamp = (value) => Math.max(-1, Math.min(1, value));
--      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
--      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
--    };
--    const onMove = (event) => {
--      point = { x: event.clientX, y: event.clientY };
--      if (!frame) frame = requestAnimationFrame(place);
--    };
--    const onLeave = () => {
--      point = null;
--      ref.current?.style.setProperty("--bt-gx", "0");
--      ref.current?.style.setProperty("--bt-gy", "0");
--    };
--    window.addEventListener("pointermove", onMove, { passive: true });
--    document.documentElement.addEventListener("pointerleave", onLeave);
--    return () => {
--      cancelAnimationFrame(frame);
--      window.removeEventListener("pointermove", onMove);
--      document.documentElement.removeEventListener("pointerleave", onLeave);
--    };
--  }, [enabled]);
+@@ -2805,1975 +2805,4080 @@ function sheetClassNames(sheet) {
+     visit(sheet.cssRules);
+   } catch {
+   }
+-  return names;
++  return names;
++}
++function compileFragmentSelectors(text, names) {
++  const compiled = /* @__PURE__ */ new Map();
++  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
++    if (!compiled.has(fragment)) {
++      const exact = [];
++      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
++      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
++    }
++    return compiled.get(fragment);
++  });
++}
++function installCompiledStyles(text, tag) {
++  const style = installStyles("", tag);
++  const cache = /* @__PURE__ */ new WeakMap();
++  const render = () => {
++    const names = /* @__PURE__ */ new Set();
++    for (const sheet of document.styleSheets) {
++      if (sheet.ownerNode?.dataset?.dshBot) continue;
++      let list = cache.get(sheet);
++      if (!list) {
++        list = sheetClassNames(sheet);
++        cache.set(sheet, list);
++      }
++      for (const name of list) names.add(name);
++    }
++    const next = compileFragmentSelectors(text, names);
++    if (style.textContent !== next) style.textContent = next;
++  };
++  render();
++  let timer;
++  const schedule = () => {
++    clearTimeout(timer);
++    timer = setTimeout(render, 120);
++  };
++  const onLoad = (event) => {
++    if (event.target instanceof HTMLLinkElement) schedule();
++  };
++  const observer = new MutationObserver(schedule);
++  observer.observe(document.head, { childList: true });
++  document.addEventListener("load", onLoad, true);
++  return () => {
++    observer.disconnect();
++    document.removeEventListener("load", onLoad, true);
++    clearTimeout(timer);
++    style.remove();
++  };
++}
++
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -3735,32 +3751,7 @@ diff --git a/client.js b/client.js
 +  }
 +  rows.sort((a, b) => a.sort.localeCompare(b.sort));
 +  return rows.slice(0, 3).map((row) => row.owner);
- }
--var FIDGETS = ["hop", "sway", "stretch", "look"];
--function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
--  const look = given ?? lookOf(bot);
--  const ref = (0, import_react2.useRef)(null);
--  const maskId = (0, import_react2.useRef)("");
--  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
--  const [poked, setPoked] = (0, import_react2.useState)(false);
--  useGaze(ref, gaze);
--  const common = {
--    ref,
--    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
--    "data-shape": look.image ? "image" : shapeId(look.shape),
--    "data-state": STATES.includes(state) ? state : "idle",
--    "data-live": live ? "" : void 0,
--    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
--    "data-gaze": gaze ? "" : void 0,
--    "data-poke": pokeable ? "" : void 0,
--    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
--    role: label ? "img" : void 0,
--    "aria-label": label,
--    "aria-hidden": label ? void 0 : true,
--    onClick: pokeable ? () => setPoked(true) : void 0,
--    onAnimationEnd: poked ? (event) => {
--      if (/^bt-poke/.test(event.animationName)) setPoked(false);
--    } : void 0
++}
 +function uniqueOwners(owners) {
 +  const seen = /* @__PURE__ */ new Set();
 +  const out = [];
@@ -3838,13 +3829,8 @@ diff --git a/client.js b/client.js
 +  return () => {
 +    offSessions?.();
 +    offRoster?.();
-   };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
- }
--function StarIcon({ size = 8 }) {
--  return (0, import_react2.createElement)(
++  };
++}
 +function installBrandChrome() {
 +  if (typeof document === "undefined") return () => {
 +  };
@@ -3953,9 +3939,7 @@ diff --git a/client.js b/client.js
 +var PinIcon = lineIcon(["M12.5 3l4.5 4.5-3 1.5-2.5 2.5.5 3.5-1.5 1.5L7 13 3.5 16.5", "M7 13l-3.5-3.5L5 8l3.5.5L11 6l1.5-3"]);
 +function PinMarkIcon() {
 +  return (0, import_react5.createElement)(
-     "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
++    "svg",
 +    { width: 12, height: 12, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
 +    (0, import_react5.createElement)(
 +      "g",
@@ -3963,13 +3947,8 @@ diff --git a/client.js b/client.js
 +      (0, import_react5.createElement)("path", { d: "M8 2.5h4a.9.9 0 0 1 0 1.8h-.4v4.1c0 1.4 1.1 2.6 2.6 3.1l.7.3v1.5H5.1v-1.5l.7-.3c1.5-.5 2.6-1.7 2.6-3.1V4.3H8a.9.9 0 0 1 0-1.8z" }),
 +      (0, import_react5.createElement)("path", { d: "M9.35 13.3h1.3v3.6L10 18l-.65-1.1z" })
 +    )
-   );
- }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
--}
--function MainStar() {
--  return (0, import_react2.createElement)(
++  );
++}
 +var UnreadIcon = lineIcon(["M10 3.5a4.5 4.5 0 0 0-4.5 4.5v3L4 13.5h12L14.5 11V8", "M8.3 16a1.8 1.8 0 0 0 3.4 0", "M15.5 3.2a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"]);
 +var PencilIcon = lineIcon(["M9 4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3", "M14.3 3.7a1.6 1.6 0 0 1 2.3 2.3L10.5 12l-3 .8.8-3z"]);
 +var InfoIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M10 9.25v4", "M10 6.6h.01"]);
@@ -3989,9 +3968,7 @@ diff --git a/client.js b/client.js
 +var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
 +function FlyBotMark({ size = 24 }) {
 +  return (0, import_react5.createElement)(
-     "svg",
--    { viewBox: "0 0 20 20", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
++    "svg",
 +    { className: "bt-flybot-mark", width: size, height: size, viewBox: "0 0 512 512", "aria-hidden": true },
 +    (0, import_react5.createElement)(
 +      "g",
@@ -4010,38 +3987,8 @@ diff --git a/client.js b/client.js
 +    (0, import_react5.createElement)("rect", { className: "bt-flybot-eye", x: 282, y: 222, width: 34, height: 58, rx: 17 }),
 +    (0, import_react5.createElement)("circle", { className: "bt-flybot-body", cx: 256, cy: 100, r: 22 }),
 +    (0, import_react5.createElement)("rect", { className: "bt-flybot-body", x: 248, y: 104, width: 16, height: 34 })
-   );
- }
--function useSettled(state) {
--  const prev = (0, import_react2.useRef)(state);
--  const [settled, setSettled] = (0, import_react2.useState)(false);
--  (0, import_react2.useEffect)(() => {
--    const was = prev.current;
--    prev.current = state;
--    if (state !== "idle") {
--      setSettled(false);
--      return void 0;
--    }
--    if (was === "idle" || was === "alert") return void 0;
--    setSettled(true);
--    const timer = setTimeout(() => setSettled(false), 1800);
--    return () => clearTimeout(timer);
--  }, [state]);
--  return settled;
--}
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
++  );
++}
 +
 +// src/client/questions.js
 +var import_react6 = require("react");
@@ -4069,14 +4016,7 @@ diff --git a/client.js b/client.js
 +    document.addEventListener("keydown", onKey, true);
 +    return () => document.removeEventListener("keydown", onKey, true);
 +  }, [count, ownRef]);
- }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
++}
 +function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
 +  const [own, setOwn] = (0, import_react6.useState)("");
 +  const [picked, setPicked] = (0, import_react6.useState)([]);
@@ -4145,21 +4085,7 @@ diff --git a/client.js b/client.js
 +      ownLetter ? (0, import_react6.createElement)("span", { className: "bt-key", "aria-hidden": true }, ownLetter) : null,
 +      (0, import_react6.createElement)("span", { className: "bt-q-body" }, field)
 +    ));
-   }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
--}
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
++  }
 +  let foot = null;
 +  if (raised && multi) {
 +    foot = (0, import_react6.createElement)(
@@ -4167,23 +4093,10 @@ diff --git a/client.js b/client.js
 +      { className: "bt-q-foot" },
 +      (0, import_react6.createElement)("button", { type: "button", className: "bt-q-btn", onClick: onDismiss }, t("Skip")),
 +      (0, import_react6.createElement)("button", { type: "submit", className: "bt-q-submit", disabled: !canSubmit }, t("Submit"))
-     );
++    );
 +  } else if ((raised || multi) && canSubmit) {
 +    foot = (0, import_react6.createElement)("div", { className: "bt-q-foot" }, (0, import_react6.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")));
-   }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
++  }
 +  return (0, import_react6.createElement)(
 +    "form",
 +    {
@@ -4192,10 +4105,7 @@ diff --git a/client.js b/client.js
 +      onSubmit: (event) => {
 +        event.preventDefault();
 +        submit();
-       }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
++      }
 +    },
 +    (0, import_react6.createElement)(
 +      "div",
@@ -4217,8 +4127,18 @@ diff --git a/client.js b/client.js
 +      !multi && canSubmit ? (0, import_react6.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")) : null
 +    ) : null,
 +    foot
-   );
++  );
  }
+-function compileFragmentSelectors(text, names) {
+-  const compiled = /* @__PURE__ */ new Map();
+-  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
+-    if (!compiled.has(fragment)) {
+-      const exact = [];
+-      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
+-      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
+-    }
+-    return compiled.get(fragment);
+-  });
 +function SettledQuestion({ question, answer }) {
 +  const options = optionsOf(question);
 +  const prompt = question?.question ?? "";
@@ -4250,7 +4170,20 @@ diff --git a/client.js b/client.js
 +      );
 +    }))
 +  );
-+}
+ }
+-function installCompiledStyles(text, tag) {
+-  const style = installStyles("", tag);
+-  const cache = /* @__PURE__ */ new WeakMap();
+-  const render = () => {
+-    const names = /* @__PURE__ */ new Set();
+-    for (const sheet of document.styleSheets) {
+-      if (sheet.ownerNode?.dataset?.dshBot) continue;
+-      let list = cache.get(sheet);
+-      if (!list) {
+-        list = sheetClassNames(sheet);
+-        cache.set(sheet, list);
+-      }
+-      for (const name of list) names.add(name);
 +function QuestionCard({ matched }) {
 +  const pending = matched;
 +  const questions = pending.questions ?? [];
@@ -4264,18 +4197,110 @@ diff --git a/client.js b/client.js
 +      setAnswers(next);
 +      setIndex(index + 1);
 +      return;
-+    }
+     }
+-    const next = compileFragmentSelectors(text, names);
+-    if (style.textContent !== next) style.textContent = next;
+-  };
+-  render();
+-  let timer;
+-  const schedule = () => {
+-    clearTimeout(timer);
+-    timer = setTimeout(render, 120);
+-  };
+-  const onLoad = (event) => {
+-    if (event.target instanceof HTMLLinkElement) schedule();
+-  };
+-  const observer = new MutationObserver(schedule);
+-  observer.observe(document.head, { childList: true });
+-  document.addEventListener("load", onLoad, true);
+-  return () => {
+-    observer.disconnect();
+-    document.removeEventListener("load", onLoad, true);
+-    clearTimeout(timer);
+-    style.remove();
 +    pending.answer({ answers: next });
-+  };
+   };
 +  return (0, import_react6.createElement)(QuestionView, { key: index, question, onAnswer, onDismiss: () => pending.dismiss(), ownAnswer: true, raised: true });
-+}
+ }
+-
+-// src/client/mark.js
+-var import_react2 = require("react");
+-var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
+-var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
+-var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
+-function useGaze(ref, enabled) {
+-  (0, import_react2.useEffect)(() => {
+-    if (!enabled) return void 0;
+-    let frame = 0;
+-    let point = null;
+-    const place = () => {
+-      frame = 0;
+-      const node = ref.current;
+-      if (!node || !point) return;
+-      const box = node.getBoundingClientRect();
+-      const clamp = (value) => Math.max(-1, Math.min(1, value));
+-      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
+-      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
+-    };
+-    const onMove = (event) => {
+-      point = { x: event.clientX, y: event.clientY };
+-      if (!frame) frame = requestAnimationFrame(place);
+-    };
+-    const onLeave = () => {
+-      point = null;
+-      ref.current?.style.setProperty("--bt-gx", "0");
+-      ref.current?.style.setProperty("--bt-gy", "0");
+-    };
+-    window.addEventListener("pointermove", onMove, { passive: true });
+-    document.documentElement.addEventListener("pointerleave", onLeave);
+-    return () => {
+-      cancelAnimationFrame(frame);
+-      window.removeEventListener("pointermove", onMove);
+-      document.documentElement.removeEventListener("pointerleave", onLeave);
+-    };
+-  }, [enabled]);
+-}
+-var FIDGETS = ["hop", "sway", "stretch", "look"];
+-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot);
+-  const ref = (0, import_react2.useRef)(null);
+-  const maskId = (0, import_react2.useRef)("");
+-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+-  const [poked, setPoked] = (0, import_react2.useState)(false);
+-  useGaze(ref, gaze);
+-  const common = {
+-    ref,
+-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+-    "data-shape": look.image ? "image" : shapeId(look.shape),
+-    "data-state": STATES.includes(state) ? state : "idle",
+-    "data-live": live ? "" : void 0,
+-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+-    "data-gaze": gaze ? "" : void 0,
+-    "data-poke": pokeable ? "" : void 0,
+-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+-    role: label ? "img" : void 0,
+-    "aria-label": label,
+-    "aria-hidden": label ? void 0 : true,
+-    onClick: pokeable ? () => setPoked(true) : void 0,
+-    onAnimationEnd: poked ? (event) => {
+-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+-    } : void 0
 +function PendingQuestion({ sessionId, question, actions, inline }) {
 +  const [answered, setAnswered] = (0, import_react6.useState)(null);
 +  if (answered === question.id) return null;
 +  const onAnswer = (answer) => {
 +    setAnswered(question.id);
 +    void actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? "" }).catch(() => setAnswered(null));
-+  };
+   };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
+-}
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
 +  const onDismiss = () => {
 +    setAnswered(question.id);
 +    void actions.dismissQuestion(sessionId);
@@ -4284,15 +4309,23 @@ diff --git a/client.js b/client.js
 +    "div",
 +    { className: inline ? "bt-q-inline" : "bt-q-dock" },
 +    (0, import_react6.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline })
-+  );
-+}
+   );
+ }
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
 +function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
 +  const question = useRoster((value) => value.questions?.[sessionId]);
 +  const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
 +  const loading = useSession?.(historyLoading) === true;
 +  if (question === void 0 || question.callId && (drawn || loading)) return null;
 +  return (0, import_react6.createElement)(PendingQuestion, { sessionId, question, actions, inline: false });
-+}
+ }
+-function MainStar() {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { viewBox: "0 0 20 20", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
+-  );
 +function AnsweredCell({ node }) {
 +  const data = node.data ?? {};
 +  const questions = Array.isArray(data.questions) ? data.questions : [];
@@ -4305,15 +4338,17 @@ diff --git a/client.js b/client.js
 +    question,
 +    answer: answers.find((answer) => answer.id === question.id) ?? { selected: [] }
 +  })));
-+}
- 
--// src/client/icons.js
--var import_react3 = require("react");
--function PlusIcon() {
--  return (0, import_react3.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
--}
--function SearchIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react3.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
+ }
+-function useSettled(state) {
+-  const prev = (0, import_react2.useRef)(state);
+-  const [settled, setSettled] = (0, import_react2.useState)(false);
+-  (0, import_react2.useEffect)(() => {
+-    const was = prev.current;
+-    prev.current = state;
+-    if (state !== "idle") {
+-      setSettled(false);
+-      return void 0;
++
 +// src/client/secret-card.js
 +var import_react7 = require("react");
 +var MIN_VALUE = 4;
@@ -4366,16 +4401,27 @@ diff --git a/client.js b/client.js
 +      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
 +      event.preventDefault();
 +      onEnter?.();
-+    }
+     }
+-    if (was === "idle" || was === "alert") return void 0;
+-    setSettled(true);
+-    const timer = setTimeout(() => setSettled(false), 1800);
+-    return () => clearTimeout(timer);
+-  }, [state]);
+-  return settled;
 +  });
  }
--function PeopleIcon() {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
--    (0, import_react3.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
--    (0, import_react3.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
 +function ScopeSwitch({ value, onChange, bot }) {
 +  const options = [["all", t("All my Bots")], ["bot", t("Only {name}", { name: bot.name })]];
 +  return (0, import_react7.createElement)(
@@ -4392,15 +4438,47 @@ diff --git a/client.js b/client.js
 +    }, text))
    );
  }
--function ArrowUpIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 16V4M5 9l5-5 5 5", stroke: "currentColor", strokeWidth: 1.8, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }));
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-  }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 -}
--function MicIcon({ size = 16 }) {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("rect", { x: 7, y: 2.5, width: 6, height: 10, rx: 3, fill: "currentColor", stroke: "none" }),
--    (0, import_react3.createElement)("path", { d: "M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" })
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
+-  }
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
 +function SecretHead({ bot, title, detail, name, onClose }) {
 +  return (0, import_react7.createElement)(
 +    "div",
@@ -4415,11 +4493,22 @@ diff --git a/client.js b/client.js
 +    onClose ? (0, import_react7.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react7.createElement)(CloseIcon)) : null
    );
  }
--function WaveIcon({ size = 16 }) {
+-
+-// src/client/icons.js
+-var import_react3 = require("react");
+-function PlusIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
+-}
+-function SearchIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react3.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
+-}
+-function PeopleIcon() {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: size, height: size, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
--    [[3, 7.5, 5], [6.5, 4.5, 11], [10, 2.5, 15], [13.5, 5.5, 9], [17, 8, 4]].map(([x, y, height]) => (0, import_react3.createElement)("rect", { key: x, x: x - 1, y, width: 2, height, rx: 1 }))
+-    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
+-    (0, import_react3.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
+-    (0, import_react3.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
 +function SecretCard({ bot, request, roster, actions }) {
 +  const [value, setValue] = (0, import_react7.useState)("");
 +  const [scope, setScope] = (0, import_react7.useState)("all");
@@ -4479,11 +4568,15 @@ diff --git a/client.js b/client.js
 +    )
    );
  }
--function ShareIcon() {
+-function ArrowUpIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 16V4M5 9l5-5 5 5", stroke: "currentColor", strokeWidth: 1.8, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }));
+-}
+-function MicIcon({ size = 16 }) {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("path", { d: "M10 12.5V3M6.5 6.5L10 3l3.5 3.5M4 11v4.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V11" })
+-    { width: size, height: size, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("rect", { x: 7, y: 2.5, width: 6, height: 10, rx: 3, fill: "currentColor", stroke: "none" }),
+-    (0, import_react3.createElement)("path", { d: "M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" })
 +function SettledSecret({ bot, request, roster }) {
 +  const canceled = request.status === "canceled";
 +  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
@@ -4504,27 +4597,20 @@ diff --git a/client.js b/client.js
 +    )
    );
  }
--function CloseIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M5 5l10 10M15 5L5 15", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
+-function WaveIcon({ size = 16 }) {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
+-    [[3, 7.5, 5], [6.5, 4.5, 11], [10, 2.5, 15], [13.5, 5.5, 9], [17, 8, 4]].map(([x, y, height]) => (0, import_react3.createElement)("rect", { key: x, x: x - 1, y, width: 2, height, rx: 1 }))
+-  );
 +function RequestView({ bot, request, roster, actions }) {
 +  return request.status === "pending" ? (0, import_react7.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react7.createElement)(SettledSecret, { bot, request, roster });
  }
--var ChevronLeftIcon = () => (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M12.5 4.5L7 10l5.5 5.5" }));
--var ChevronRightIcon = () => (0, import_react3.createElement)("svg", { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M7.5 4.5L13 10l-5.5 5.5" }));
--var lineIcon = (paths) => function LineIcon() {
+-function ShareIcon() {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    paths.map((d, index) => (0, import_react3.createElement)("path", { key: index, d }))
--  );
--};
--var CLOUD = "M6.5 15.25H5.75a3.25 3.25 0 0 1-.55-6.45 4.75 4.75 0 0 1 9.2-1.1 3.75 3.75 0 0 1 .1 7.55H13.5";
--function CloudDownloadIcon({ done = false }) {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("path", { d: CLOUD }),
--    done ? (0, import_react3.createElement)("path", { d: "M7.75 13.25l1.75 1.75 3-3.25" }) : (0, import_react3.createElement)("g", { className: "bt-cloud-arrow" }, (0, import_react3.createElement)("path", { d: "M10 9.75v7" }), (0, import_react3.createElement)("path", { d: "M7.75 14.5L10 16.75l2.25-2.25" }))
+-    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("path", { d: "M10 12.5V3M6.5 6.5L10 3l3.5 3.5M4 11v4.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V11" })
 -  );
 +function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
 +  const bot = roster.byId[sessionId];
@@ -4536,32 +4622,8 @@ diff --git a/client.js b/client.js
 +  }
 +  return null;
  }
--var SmileIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M7.3 11.6a3.4 3.4 0 0 0 5.4 0", "M7.75 8.25h.01M12.25 8.25h.01"]);
--var ReplyIcon = lineIcon(["M8 5L4 9l4 4", "M4 9h7.5a4.5 4.5 0 0 1 4.5 4.5V15"]);
--var DotsIcon = lineIcon(["M5 10h.01M10 10h.01M15 10h.01"]);
--var CheckIcon = lineIcon(["M4.5 10.5l3.5 3.5 7.5-8"]);
--var ArrowDownIcon = lineIcon(["M10 4v12", "M5 11l5 5 5-5"]);
--var DownloadIcon = lineIcon(["M10 3.5v9", "M6.5 9.5L10 13l3.5-3.5", "M4 16h12"]);
--var GaugeIcon = lineIcon(["M3.5 13.5a6.5 6.5 0 1 1 13 0", "M10 13.5l3-4", "M10 13.5h.01"]);
--var PlugIcon = lineIcon(["M7 3v4M13 3v4", "M5 7h10v2.5a5 5 0 0 1-10 0z", "M10 14.5V17"]);
--var CalendarIcon = lineIcon(["M5.5 5h9A1.5 1.5 0 0 1 16 6.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5z", "M4 8.75h12", "M7.25 3.5v3M12.75 3.5v3"]);
--var ConnectorIcon = lineIcon(["M7 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z", "M18 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z", "M7 10h6"]);
--var SwitchIcon = lineIcon(["M4 7h9.5M10.5 3.5L14 7l-3.5 3.5", "M16 13H6.5M9.5 9.5L6 13l3.5 3.5"]);
--var PaperclipIcon = lineIcon(["M15.5 9.5l-5.6 5.6a3.4 3.4 0 0 1-4.8-4.8l6.1-6.1a2.25 2.25 0 0 1 3.2 3.2l-6 6a1.1 1.1 0 0 1-1.6-1.6l5.5-5.5"]);
--var ClockIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M10 6.5V10l2.5 1.5"]);
--var GearIcon = lineIcon(["M10 7.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z", "M7.85 4.4l.29-1.87a7.7 7.7 0 0 1 3.72 0l.29 1.87a6 6 0 0 1 1.63.94l1.76-.69a7.7 7.7 0 0 1 1.86 3.23l-1.47 1.18a6 6 0 0 1 0 1.88l1.47 1.18a7.7 7.7 0 0 1-1.86 3.23l-1.76-.69a6 6 0 0 1-1.63.94l-.29 1.87a7.7 7.7 0 0 1-3.72 0l-.29-1.87a6 6 0 0 1-1.63-.94l-1.76.69a7.7 7.7 0 0 1-1.86-3.23l1.47-1.18a6 6 0 0 1 0-1.88L2.6 7.88a7.7 7.7 0 0 1 1.86-3.23l1.76.69a6 6 0 0 1 1.63-.94z"]);
--var PinIcon = lineIcon(["M12.5 3l4.5 4.5-3 1.5-2.5 2.5.5 3.5-1.5 1.5L7 13 3.5 16.5", "M7 13l-3.5-3.5L5 8l3.5.5L11 6l1.5-3"]);
--function PinMarkIcon() {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: 12, height: 12, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
--    (0, import_react3.createElement)(
--      "g",
--      { transform: "rotate(45 10 10)" },
--      (0, import_react3.createElement)("path", { d: "M8 2.5h4a.9.9 0 0 1 0 1.8h-.4v4.1c0 1.4 1.1 2.6 2.6 3.1l.7.3v1.5H5.1v-1.5l.7-.3c1.5-.5 2.6-1.7 2.6-3.1V4.3H8a.9.9 0 0 1 0-1.8z" }),
--      (0, import_react3.createElement)("path", { d: "M9.35 13.3h1.3v3.6L10 18l-.65-1.1z" })
--    )
--  );
+-function CloseIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M5 5l10 10M15 5L5 15", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
 +function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
 +  const roster = useRoster((value) => value);
 +  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
@@ -4573,46 +4635,13 @@ diff --git a/client.js b/client.js
 +  if (waiting.length === 0) return null;
 +  return (0, import_react7.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react7.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
  }
--var UnreadIcon = lineIcon(["M10 3.5a4.5 4.5 0 0 0-4.5 4.5v3L4 13.5h12L14.5 11V8", "M8.3 16a1.8 1.8 0 0 0 3.4 0", "M15.5 3.2a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"]);
--var PencilIcon = lineIcon(["M9 4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3", "M14.3 3.7a1.6 1.6 0 0 1 2.3 2.3L10.5 12l-3 .8.8-3z"]);
--var InfoIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M10 9.25v4", "M10 6.6h.01"]);
--var StarLineIcon = lineIcon(["M10 3l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.8 5.8 16l.8-4.7L3.2 8l4.7-.7z"]);
--var CopyIcon = lineIcon(["M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 7 14.5v-6A1.5 1.5 0 0 1 8.5 7z", "M4 12.5V5.5A1.5 1.5 0 0 1 5.5 4H13"]);
--var HideIcon = lineIcon(["M3 3l14 14", "M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4", "M8.5 8.5a2 2 0 0 0 3 3"]);
--var TrashIcon = lineIcon(["M3.5 5.5h13", "M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5", "M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10", "M8.5 9v4.5M11.5 9v4.5"]);
--var DuplicateIcon = lineIcon(["M7 7h8.5v9.5H7z", "M4.5 13V3.5H13", "M11.25 9.5v4.5M9 11.75h4.5"]);
--var SlidersIcon = lineIcon(["M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16", "M10.5 4.5v4M9.5 11.5v4"]);
--var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z", "M5.5 3.5v13", "M8.5 7.5h3.5M8.5 10.5h2.5", "M12 3.5v4l1-.8 1 .8"]);
--var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
--var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
--var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
--
--// src/client/questions.js
--var import_react4 = require("react");
--var keyLetter = (index) => String.fromCharCode(65 + index);
--var optionsOf = (question) => (question?.options ?? []).map((option) => typeof option === "string" ? { label: option } : option);
--var isTypingTarget = (node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement || node instanceof HTMLElement && node.isContentEditable;
--function useOptionKeys(count, onPick, ownRef) {
--  const pick2 = (0, import_react4.useRef)(onPick);
--  pick2.current = onPick;
--  (0, import_react4.useEffect)(() => {
--    if (count === 0) return void 0;
--    const onKey = (event) => {
--      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.length !== 1) return;
--      if (isTypingTarget(event.target) || isTypingTarget(document.activeElement)) return;
--      if (document.querySelector('[role="dialog"], [aria-modal="true"]') !== null) return;
--      const index = event.key.toUpperCase().charCodeAt(0) - 65;
--      if (index >= 0 && index < count) {
--        event.preventDefault();
--        pick2.current(index);
--      } else if (index === count && ownRef.current) {
--        event.preventDefault();
--        ownRef.current.focus();
--      }
--    };
--    document.addEventListener("keydown", onKey, true);
--    return () => document.removeEventListener("keydown", onKey, true);
--  }, [count, ownRef]);
+-var ChevronLeftIcon = () => (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M12.5 4.5L7 10l5.5 5.5" }));
+-var ChevronRightIcon = () => (0, import_react3.createElement)("svg", { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M7.5 4.5L13 10l-5.5 5.5" }));
+-var lineIcon = (paths) => function LineIcon() {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    paths.map((d, index) => (0, import_react3.createElement)("path", { key: index, d }))
 +var scopeMode = (scope) => scope === "all" ? "all" : scope.length === 0 ? "none" : "some";
 +function ScopeEditor({ secret, roster, onSave }) {
 +  const [mode, setMode] = (0, import_react7.useState)(scopeMode(secret.scope));
@@ -4646,23 +4675,16 @@ diff --git a/client.js b/client.js
 +      { className: "bt-secret-row-actions" },
 +      (0, import_react7.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same2, onClick: () => onSave(next) }, t("Save access"))
 +    )
-+  );
- }
--function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
--  const [own, setOwn] = (0, import_react4.useState)("");
--  const [picked, setPicked] = (0, import_react4.useState)([]);
--  const ownRef = (0, import_react4.useRef)(null);
--  const titleId = (0, import_react4.useId)();
--  const options = optionsOf(question);
--  const multi = question.multiSelect === true;
--  const custom = own.trim();
--  const canSubmit = multi ? picked.length > 0 || custom !== "" : custom !== "";
--  const choose = (label) => {
--    if (multi) {
--      setPicked((current) => current.includes(label) ? current.filter((item) => item !== label) : [...current, label]);
--      return;
--    }
--    onAnswer({ selected: [label] });
+   );
+-};
+-var CLOUD = "M6.5 15.25H5.75a3.25 3.25 0 0 1-.55-6.45 4.75 4.75 0 0 1 9.2-1.1 3.75 3.75 0 0 1 .1 7.55H13.5";
+-function CloudDownloadIcon({ done = false }) {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("path", { d: CLOUD }),
+-    done ? (0, import_react3.createElement)("path", { d: "M7.75 13.25l1.75 1.75 3-3.25" }) : (0, import_react3.createElement)("g", { className: "bt-cloud-arrow" }, (0, import_react3.createElement)("path", { d: "M10 9.75v7" }), (0, import_react3.createElement)("path", { d: "M7.75 14.5L10 16.75l2.25-2.25" }))
++}
 +function ValueEditor({ secret, onSave }) {
 +  const [value, setValue] = (0, import_react7.useState)("");
 +  const [replaced, setReplaced] = (0, import_react7.useState)(false);
@@ -4675,36 +4697,11 @@ diff --git a/client.js b/client.js
 +        setReplaced(true);
 +      }
 +    });
-   };
--  const submit = () => {
--    if (!canSubmit) return;
--    onAnswer({ selected: multi ? picked : [], ...custom ? { custom } : {} });
++  };
 +  const edit = (next) => {
 +    setValue(next);
 +    setReplaced(false);
-   };
--  useOptionKeys(options.length, (index) => choose(options[index].label), ownRef);
--  const ownLetter = options.length > 0 ? keyLetter(options.length) : void 0;
--  const field = ownAnswer ? (0, import_react4.createElement)("textarea", {
--    ref: ownRef,
--    rows: 1,
--    value: own,
--    autoComplete: "off",
--    spellCheck: false,
--    className: "bt-q-input",
--    "aria-label": t("Your own answer"),
--    placeholder: t("Type your own answer"),
--    "aria-keyshortcuts": ownLetter?.toLowerCase(),
--    onChange: (event) => setOwn(event.target.value),
--    onKeyDown: (event) => {
--      if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
--      event.preventDefault();
--      submit();
--    }
--  }) : null;
--  const rows = options.map((option, optionIndex) => {
--    const selected = multi && picked.includes(option.label);
--    return (0, import_react4.createElement)(
++  };
 +  return (0, import_react7.createElement)(
 +    "div",
 +    { className: "bt-secret-edit-block" },
@@ -4716,8 +4713,32 @@ diff --git a/client.js b/client.js
 +      (0, import_react7.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
 +    ),
 +    value !== "" && !long ? (0, import_react7.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react7.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react7.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
-+  );
-+}
+   );
+ }
+-var SmileIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M7.3 11.6a3.4 3.4 0 0 0 5.4 0", "M7.75 8.25h.01M12.25 8.25h.01"]);
+-var ReplyIcon = lineIcon(["M8 5L4 9l4 4", "M4 9h7.5a4.5 4.5 0 0 1 4.5 4.5V15"]);
+-var DotsIcon = lineIcon(["M5 10h.01M10 10h.01M15 10h.01"]);
+-var CheckIcon = lineIcon(["M4.5 10.5l3.5 3.5 7.5-8"]);
+-var ArrowDownIcon = lineIcon(["M10 4v12", "M5 11l5 5 5-5"]);
+-var DownloadIcon = lineIcon(["M10 3.5v9", "M6.5 9.5L10 13l3.5-3.5", "M4 16h12"]);
+-var GaugeIcon = lineIcon(["M3.5 13.5a6.5 6.5 0 1 1 13 0", "M10 13.5l3-4", "M10 13.5h.01"]);
+-var PlugIcon = lineIcon(["M7 3v4M13 3v4", "M5 7h10v2.5a5 5 0 0 1-10 0z", "M10 14.5V17"]);
+-var CalendarIcon = lineIcon(["M5.5 5h9A1.5 1.5 0 0 1 16 6.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5z", "M4 8.75h12", "M7.25 3.5v3M12.75 3.5v3"]);
+-var ConnectorIcon = lineIcon(["M7 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z", "M18 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z", "M7 10h6"]);
+-var SwitchIcon = lineIcon(["M4 7h9.5M10.5 3.5L14 7l-3.5 3.5", "M16 13H6.5M9.5 9.5L6 13l3.5 3.5"]);
+-var PaperclipIcon = lineIcon(["M15.5 9.5l-5.6 5.6a3.4 3.4 0 0 1-4.8-4.8l6.1-6.1a2.25 2.25 0 0 1 3.2 3.2l-6 6a1.1 1.1 0 0 1-1.6-1.6l5.5-5.5"]);
+-var ClockIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M10 6.5V10l2.5 1.5"]);
+-var GearIcon = lineIcon(["M10 7.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2z", "M7.85 4.4l.29-1.87a7.7 7.7 0 0 1 3.72 0l.29 1.87a6 6 0 0 1 1.63.94l1.76-.69a7.7 7.7 0 0 1 1.86 3.23l-1.47 1.18a6 6 0 0 1 0 1.88l1.47 1.18a7.7 7.7 0 0 1-1.86 3.23l-1.76-.69a6 6 0 0 1-1.63.94l-.29 1.87a7.7 7.7 0 0 1-3.72 0l-.29-1.87a6 6 0 0 1-1.63-.94l-1.76.69a7.7 7.7 0 0 1-1.86-3.23l1.47-1.18a6 6 0 0 1 0-1.88L2.6 7.88a7.7 7.7 0 0 1 1.86-3.23l1.76.69a6 6 0 0 1 1.63-.94z"]);
+-var PinIcon = lineIcon(["M12.5 3l4.5 4.5-3 1.5-2.5 2.5.5 3.5-1.5 1.5L7 13 3.5 16.5", "M7 13l-3.5-3.5L5 8l3.5.5L11 6l1.5-3"]);
+-function PinMarkIcon() {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: 12, height: 12, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
+-    (0, import_react3.createElement)(
+-      "g",
+-      { transform: "rotate(45 10 10)" },
+-      (0, import_react3.createElement)("path", { d: "M8 2.5h4a.9.9 0 0 1 0 1.8h-.4v4.1c0 1.4 1.1 2.6 2.6 3.1l.7.3v1.5H5.1v-1.5l.7-.3c1.5-.5 2.6-1.7 2.6-3.1V4.3H8a.9.9 0 0 1 0-1.8z" }),
+-      (0, import_react3.createElement)("path", { d: "M9.35 13.3h1.3v3.6L10 18l-.65-1.1z" })
 +function SecretRow({ secret, roster, actions, run, open, onToggle }) {
 +  const [confirm, setConfirm] = (0, import_react7.useState)(false);
 +  (0, import_react7.useEffect)(() => {
@@ -4730,85 +4751,22 @@ diff --git a/client.js b/client.js
 +    "div",
 +    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
 +    (0, import_react7.createElement)(
-       "button",
--      {
--        key: option.label,
--        type: "button",
--        className: "bt-q-opt",
--        "aria-pressed": multi ? selected : void 0,
--        "aria-keyshortcuts": keyLetter(optionIndex).toLowerCase(),
--        onClick: () => choose(option.label)
--      },
--      (0, import_react4.createElement)("span", { className: "bt-key", "aria-hidden": true }, keyLetter(optionIndex)),
--      (0, import_react4.createElement)(
++      "button",
 +      { type: "button", className: "bt-set-row bt-secret-summary", "aria-expanded": open, onClick: onToggle },
 +      (0, import_react7.createElement)(
-         "span",
--        { className: "bt-q-body" },
--        (0, import_react4.createElement)("span", { className: "bt-q-label" }, option.label),
--        option.description ? (0, import_react4.createElement)("span", { className: "bt-q-desc" }, option.description) : null
--      ),
--      selected && !raised ? (0, import_react4.createElement)("span", { className: "bt-q-check", title: t("Selected") }, (0, import_react4.createElement)(CheckIcon)) : null
--    );
--  });
--  if (raised && field) {
--    rows.push((0, import_react4.createElement)(
--      "label",
--      { key: "own", className: "bt-q-opt bt-q-ownrow", "data-filled": custom !== "" ? "" : void 0 },
--      ownLetter ? (0, import_react4.createElement)("span", { className: "bt-key", "aria-hidden": true }, ownLetter) : null,
--      (0, import_react4.createElement)("span", { className: "bt-q-body" }, field)
--    ));
--  }
--  let foot = null;
--  if (raised && multi) {
--    foot = (0, import_react4.createElement)(
--      "div",
--      { className: "bt-q-foot" },
--      (0, import_react4.createElement)("button", { type: "button", className: "bt-q-btn", onClick: onDismiss }, t("Skip")),
--      (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit", disabled: !canSubmit }, t("Submit"))
--    );
--  } else if ((raised || multi) && canSubmit) {
--    foot = (0, import_react4.createElement)("div", { className: "bt-q-foot" }, (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")));
--  }
--  return (0, import_react4.createElement)(
--    "form",
--    {
--      className: raised ? "bt-q bt-q-raised" : "bt-q",
--      "aria-labelledby": titleId,
--      onSubmit: (event) => {
--        event.preventDefault();
--        submit();
--      }
--    },
--    (0, import_react4.createElement)(
--      "div",
--      { className: "bt-q-head" },
--      (0, import_react4.createElement)(
--        "div",
--        { className: "bt-q-text" },
--        (0, import_react4.createElement)("p", { className: "bt-q-title", id: titleId }, question.header ? `${question.header} · ` : "", question.question),
--        question.detail ? (0, import_react4.createElement)("div", { className: "bt-q-detail" }, question.detail) : null,
--        raised && multi ? (0, import_react4.createElement)("div", { className: "bt-q-detail" }, t("Choose all that apply")) : null
++        "span",
 +        { className: "bt-set-copy" },
 +        (0, import_react7.createElement)("span", { className: "bt-secret-title" }, (0, import_react7.createElement)(KeyIcon), (0, import_react7.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react7.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
 +        (0, import_react7.createElement)("span", { className: "bt-set-hint" }, meta)
-       ),
--      (0, import_react4.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Dismiss question"), title: t("Dismiss"), onClick: onDismiss }, (0, import_react4.createElement)(CloseIcon))
++      ),
 +      (0, import_react7.createElement)(
 +        "span",
 +        { className: "bt-set-control" },
 +        secret.scope === "all" ? (0, import_react7.createElement)("span", { className: "bt-tag" }, t("All my Bots")) : allowed.length === 0 ? (0, import_react7.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react7.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react7.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
 +      )
-     ),
--    rows.length > 0 ? (0, import_react4.createElement)("div", { className: "bt-q-list", role: "group" }, rows) : null,
--    field && !raised ? (0, import_react4.createElement)(
++    ),
 +    open ? (0, import_react7.createElement)(
-       "div",
--      { className: "bt-q-custom" },
--      (0, import_react4.createElement)("label", { className: "bt-q-field" }, field),
--      !multi && canSubmit ? (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")) : null
--    ) : null,
--    foot
++      "div",
 +      { className: "bt-secret-edit" },
 +      (0, import_react7.createElement)(ScopeEditor, { key: JSON.stringify(secret.scope), secret, roster, onSave: (scope) => run(actions.secretUpdate(secret.name, scope)) }),
 +      (0, import_react7.createElement)(ValueEditor, { secret, onSave: (value) => run(actions.secretSet({ name: secret.name, value })) }),
@@ -4822,14 +4780,8 @@ diff --git a/client.js b/client.js
 +        ] : (0, import_react7.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => setConfirm(true) }, (0, import_react7.createElement)(TrashIcon), t("Delete"))
 +      )
 +    ) : null
-   );
- }
--function SettledQuestion({ question, answer }) {
--  const options = optionsOf(question);
--  const prompt = question?.question ?? "";
--  const chosen = [...answer.selected ?? [], ...answer.custom ? [answer.custom] : []];
--  if (chosen.length === 0) {
--    return (0, import_react4.createElement)(
++  );
++}
 +function AddSecret({ actions, run, onDone }) {
 +  const [name, setName] = (0, import_react7.useState)("");
 +  const [purpose, setPurpose] = (0, import_react7.useState)("");
@@ -4851,21 +4803,27 @@ diff --git a/client.js b/client.js
 +    (0, import_react7.createElement)("input", { className: "bt-input", "aria-label": t("What it is for"), placeholder: t("What it is for"), value: purpose, autoComplete: "off", onChange: (event) => setPurpose(event.target.value) }),
 +    (0, import_react7.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react7.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value") })),
 +    (0, import_react7.createElement)(
-       "div",
--      { className: "bt-q bt-q-settled bt-q-dismissed", role: "group", "aria-label": prompt },
--      (0, import_react4.createElement)(
--        "div",
--        { className: "bt-q-head" },
--        (0, import_react4.createElement)("div", { className: "bt-q-text" }, (0, import_react4.createElement)("p", { className: "bt-q-title" }, prompt)),
--        (0, import_react4.createElement)("span", { className: "bt-q-badge" }, t("Dismissed"))
--      )
++      "div",
 +      { className: "bt-secret-row-actions" },
 +      (0, import_react7.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all your Bots; change who may use it afterwards.")),
 +      (0, import_react7.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
 +      (0, import_react7.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
-+    )
-+  );
-+}
+     )
+   );
+ }
+-var UnreadIcon = lineIcon(["M10 3.5a4.5 4.5 0 0 0-4.5 4.5v3L4 13.5h12L14.5 11V8", "M8.3 16a1.8 1.8 0 0 0 3.4 0", "M15.5 3.2a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"]);
+-var PencilIcon = lineIcon(["M9 4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3", "M14.3 3.7a1.6 1.6 0 0 1 2.3 2.3L10.5 12l-3 .8.8-3z"]);
+-var InfoIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M10 9.25v4", "M10 6.6h.01"]);
+-var StarLineIcon = lineIcon(["M10 3l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.8 5.8 16l.8-4.7L3.2 8l4.7-.7z"]);
+-var CopyIcon = lineIcon(["M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 7 14.5v-6A1.5 1.5 0 0 1 8.5 7z", "M4 12.5V5.5A1.5 1.5 0 0 1 5.5 4H13"]);
+-var HideIcon = lineIcon(["M3 3l14 14", "M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4", "M8.5 8.5a2 2 0 0 0 3 3"]);
+-var TrashIcon = lineIcon(["M3.5 5.5h13", "M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5", "M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10", "M8.5 9v4.5M11.5 9v4.5"]);
+-var DuplicateIcon = lineIcon(["M7 7h8.5v9.5H7z", "M4.5 13V3.5H13", "M11.25 9.5v4.5M9 11.75h4.5"]);
+-var SlidersIcon = lineIcon(["M4 6.5h5M12.5 6.5H16M4 13.5h4M11.5 13.5H16", "M10.5 4.5v4M9.5 11.5v4"]);
+-var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1.5h-8z", "M5.5 3.5v13", "M8.5 7.5h3.5M8.5 10.5h2.5", "M12 3.5v4l1-.8 1 .8"]);
+-var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
+-var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
+-var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
 +function SecretsPage({ roster, actions, run, Section }) {
 +  const [open, setOpen] = (0, import_react7.useState)(null);
 +  const [adding, setAdding] = (0, import_react7.useState)(false);
@@ -4953,7 +4911,29 @@ diff --git a/client.js b/client.js
 +.bt-secret-add .bt-input{height:34px}
 +@media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
 +`;
-+
+ 
+-// src/client/questions.js
+-var import_react4 = require("react");
+-var keyLetter = (index) => String.fromCharCode(65 + index);
+-var optionsOf = (question) => (question?.options ?? []).map((option) => typeof option === "string" ? { label: option } : option);
+-var isTypingTarget = (node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement || node instanceof HTMLElement && node.isContentEditable;
+-function useOptionKeys(count, onPick, ownRef) {
+-  const pick2 = (0, import_react4.useRef)(onPick);
+-  pick2.current = onPick;
+-  (0, import_react4.useEffect)(() => {
+-    if (count === 0) return void 0;
+-    const onKey = (event) => {
+-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.length !== 1) return;
+-      if (isTypingTarget(event.target) || isTypingTarget(document.activeElement)) return;
+-      if (document.querySelector('[role="dialog"], [aria-modal="true"]') !== null) return;
+-      const index = event.key.toUpperCase().charCodeAt(0) - 65;
+-      if (index >= 0 && index < count) {
+-        event.preventDefault();
+-        pick2.current(index);
+-      } else if (index === count && ownRef.current) {
+-        event.preventDefault();
+-        ownRef.current.focus();
+-      }
 +// src/client/face-seats.js
 +function faceSeats(room2, roster, { left = false } = {}) {
 +  const records = (room2.presentedParticipants ?? room2.participants ?? []).filter((p) => p.kind !== "human");
@@ -4966,8 +4946,48 @@ diff --git a/client.js b/client.js
 +      person: local ? seatOwnerName(p.ownerName, p.handle) || cleanPeerName(roster.self?.displayName, "") : ownerNameOf(p),
 +      bot: local ? local.name : remoteBotName(p, "Bot"),
 +      mine: Boolean(local)
-+    };
-+  };
+     };
+-    document.addEventListener("keydown", onKey, true);
+-    return () => document.removeEventListener("keydown", onKey, true);
+-  }, [count, ownRef]);
+-}
+-function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
+-  const [own, setOwn] = (0, import_react4.useState)("");
+-  const [picked, setPicked] = (0, import_react4.useState)([]);
+-  const ownRef = (0, import_react4.useRef)(null);
+-  const titleId = (0, import_react4.useId)();
+-  const options = optionsOf(question);
+-  const multi = question.multiSelect === true;
+-  const custom = own.trim();
+-  const canSubmit = multi ? picked.length > 0 || custom !== "" : custom !== "";
+-  const choose = (label) => {
+-    if (multi) {
+-      setPicked((current) => current.includes(label) ? current.filter((item) => item !== label) : [...current, label]);
+-      return;
+-    }
+-    onAnswer({ selected: [label] });
+-  };
+-  const submit = () => {
+-    if (!canSubmit) return;
+-    onAnswer({ selected: multi ? picked : [], ...custom ? { custom } : {} });
+   };
+-  useOptionKeys(options.length, (index) => choose(options[index].label), ownRef);
+-  const ownLetter = options.length > 0 ? keyLetter(options.length) : void 0;
+-  const field = ownAnswer ? (0, import_react4.createElement)("textarea", {
+-    ref: ownRef,
+-    rows: 1,
+-    value: own,
+-    autoComplete: "off",
+-    spellCheck: false,
+-    className: "bt-q-input",
+-    "aria-label": t("Your own answer"),
+-    placeholder: t("Type your own answer"),
+-    "aria-keyshortcuts": ownLetter?.toLowerCase(),
+-    onChange: (event) => setOwn(event.target.value),
+-    onKeyDown: (event) => {
+-      if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+-      event.preventDefault();
+-      submit();
 +  const seats = records.filter((p) => p.leftSeq === void 0).map(seat);
 +  for (const id of room2.members ?? []) {
 +    const bot = roster.byId[id];
@@ -5004,9 +5024,42 @@ diff --git a/client.js b/client.js
 +    if (known) {
 +      known.seats.push(seat);
 +      continue;
-+    }
+     }
+-  }) : null;
+-  const rows = options.map((option, optionIndex) => {
+-    const selected = multi && picked.includes(option.label);
+-    return (0, import_react4.createElement)(
+-      "button",
+-      {
+-        key: option.label,
+-        type: "button",
+-        className: "bt-q-opt",
+-        "aria-pressed": multi ? selected : void 0,
+-        "aria-keyshortcuts": keyLetter(optionIndex).toLowerCase(),
+-        onClick: () => choose(option.label)
+-      },
+-      (0, import_react4.createElement)("span", { className: "bt-key", "aria-hidden": true }, keyLetter(optionIndex)),
+-      (0, import_react4.createElement)(
+-        "span",
+-        { className: "bt-q-body" },
+-        (0, import_react4.createElement)("span", { className: "bt-q-label" }, option.label),
+-        option.description ? (0, import_react4.createElement)("span", { className: "bt-q-desc" }, option.description) : null
+-      ),
+-      selected && !raised ? (0, import_react4.createElement)("span", { className: "bt-q-check", title: t("Selected") }, (0, import_react4.createElement)(CheckIcon)) : null
+-    );
+-  });
+-  if (raised && field) {
+-    rows.push((0, import_react4.createElement)(
+-      "label",
+-      { key: "own", className: "bt-q-opt bt-q-ownrow", "data-filled": custom !== "" ? "" : void 0 },
+-      ownLetter ? (0, import_react4.createElement)("span", { className: "bt-key", "aria-hidden": true }, ownLetter) : null,
+-      (0, import_react4.createElement)("span", { className: "bt-q-body" }, field)
+-    ));
 +    people2.push({ key, name: seat.person || (seat.mine ? cleanPeerName(roster.self?.displayName, "") : "") || t("Someone"), mine: seat.mine, seats: [seat] });
-+  }
+   }
+-  let foot = null;
+-  if (raised && multi) {
+-    foot = (0, import_react4.createElement)(
 +  return [...people2.filter((person) => person.mine), ...people2.filter((person) => !person.mine)];
 +}
 +function facePersonLabel(person) {
@@ -5063,7 +5116,10 @@ diff --git a/client.js b/client.js
 +  if (!waiting) {
 +    const failed = held.status === "failed";
 +    return (0, import_react8.createElement)(
-+      "div",
+       "div",
+-      { className: "bt-q-foot" },
+-      (0, import_react4.createElement)("button", { type: "button", className: "bt-q-btn", onClick: onDismiss }, t("Skip")),
+-      (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit", disabled: !canSubmit }, t("Submit"))
 +      { className: "bt-held-note", "data-state": held.status, title: failed && held.error ? held.error : void 0 },
 +      (0, import_react8.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : held.status === "auto" ? t("Auto-sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
 +      // #968: the terminal answer comes from one predicate, not from `status === 'failed'` here and a
@@ -5071,26 +5127,50 @@ diff --git a/client.js b/client.js
 +      failed && canRetry(held) ? (0, import_react8.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
 +      error ? (0, import_react8.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
      );
+-  } else if ((raised || multi) && canSubmit) {
+-    foot = (0, import_react4.createElement)("div", { className: "bt-q-foot" }, (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")));
    }
 -  return (0, import_react4.createElement)(
+-    "form",
+-    {
+-      className: raised ? "bt-q bt-q-raised" : "bt-q",
+-      "aria-labelledby": titleId,
+-      onSubmit: (event) => {
+-        event.preventDefault();
+-        submit();
+-      }
+-    },
+-    (0, import_react4.createElement)(
 +  const plain = (0, import_react8.createElement)(
-     "div",
--    { className: "bt-q bt-q-settled", role: "group", "aria-label": prompt },
--    prompt ? (0, import_react4.createElement)("div", { className: "bt-q-head" }, (0, import_react4.createElement)("div", { className: "bt-q-text" }, (0, import_react4.createElement)("p", { className: "bt-q-title" }, prompt))) : null,
--    (0, import_react4.createElement)("div", { className: "bt-q-list", role: "group", "aria-label": t("Your answer") }, chosen.map((label, index) => {
--      const optionIndex = options.findIndex((option) => option.label === label);
--      return (0, import_react4.createElement)(
++    "div",
 +    { className: "bt-held-card", role: "region", "aria-label": t("Waiting for your approval") },
 +    (0, import_react8.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval")),
 +    (0, import_react8.createElement)("div", { className: "bt-flybot-approval-origin" }, t("{from} → {to}", { from: held.from ?? t("A Bot"), to: held.toName })),
 +    (0, import_react8.createElement)(
-+      "div",
+       "div",
+-      { className: "bt-q-head" },
+-      (0, import_react4.createElement)(
+-        "div",
+-        { className: "bt-q-text" },
+-        (0, import_react4.createElement)("p", { className: "bt-q-title", id: titleId }, question.header ? `${question.header} · ` : "", question.question),
+-        question.detail ? (0, import_react4.createElement)("div", { className: "bt-q-detail" }, question.detail) : null,
+-        raised && multi ? (0, import_react4.createElement)("div", { className: "bt-q-detail" }, t("Choose all that apply")) : null
+-      ),
+-      (0, import_react4.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Dismiss question"), title: t("Dismiss"), onClick: onDismiss }, (0, import_react4.createElement)(CloseIcon))
 +      { className: "bt-flybot-approval-actions" },
 +      (0, import_react8.createElement)("button", { type: "button", disabled: busy, onClick: () => decide("reject") }, t("Reject")),
 +      (0, import_react8.createElement)("button", { type: "button", className: "bt-flybot-approve", disabled: busy, onClick: () => decide("approve") }, t("Approve"))
-+    ),
+     ),
+-    rows.length > 0 ? (0, import_react4.createElement)("div", { className: "bt-q-list", role: "group" }, rows) : null,
+-    field && !raised ? (0, import_react4.createElement)(
+-      "div",
+-      { className: "bt-q-custom" },
+-      (0, import_react4.createElement)("label", { className: "bt-q-field" }, field),
+-      !multi && canSubmit ? (0, import_react4.createElement)("button", { type: "submit", className: "bt-q-submit" }, t("Submit")) : null
+-    ) : null,
+-    foot
 +    error ? (0, import_react8.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
-+  );
+   );
 +  return (0, import_react8.createElement)(
 +    "div",
 +    { className: "bt-held-actions", "data-flybot": "held-reply-actions" },
@@ -5103,7 +5183,24 @@ diff --git a/client.js b/client.js
 +  const members = steps.length ? steps : [current];
 +  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
 +  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
-+}
+ }
+-function SettledQuestion({ question, answer }) {
+-  const options = optionsOf(question);
+-  const prompt = question?.question ?? "";
+-  const chosen = [...answer.selected ?? [], ...answer.custom ? [answer.custom] : []];
+-  if (chosen.length === 0) {
+-    return (0, import_react4.createElement)(
+-      "div",
+-      { className: "bt-q bt-q-settled bt-q-dismissed", role: "group", "aria-label": prompt },
+-      (0, import_react4.createElement)(
+-        "div",
+-        { className: "bt-q-head" },
+-        (0, import_react4.createElement)("div", { className: "bt-q-text" }, (0, import_react4.createElement)("p", { className: "bt-q-title" }, prompt)),
+-        (0, import_react4.createElement)("span", { className: "bt-q-badge" }, t("Dismissed"))
+-      )
+-    );
+-  }
+-  return (0, import_react4.createElement)(
 +var texts = (step) => step.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "");
 +var thinkingLive = (step) => step.status === "running" && texts(step).length === 0 && step.blocks.some((block) => block.kind === "reasoning");
 +var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
@@ -5123,7 +5220,12 @@ diff --git a/client.js b/client.js
 +  };
 +  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
 +  return (0, import_react9.createElement)(
-+    "div",
+     "div",
+-    { className: "bt-q bt-q-settled", role: "group", "aria-label": prompt },
+-    prompt ? (0, import_react4.createElement)("div", { className: "bt-q-head" }, (0, import_react4.createElement)("div", { className: "bt-q-text" }, (0, import_react4.createElement)("p", { className: "bt-q-title" }, prompt))) : null,
+-    (0, import_react4.createElement)("div", { className: "bt-q-list", role: "group", "aria-label": t("Your answer") }, chosen.map((label, index) => {
+-      const optionIndex = options.findIndex((option) => option.label === label);
+-      return (0, import_react4.createElement)(
 +    { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
 +    texts2.map((text, index) => {
 +      const key = msgKey ? `${msgKey}:${index}` : void 0;
@@ -5284,12 +5386,24 @@ diff --git a/client.js b/client.js
 -  const loading = useSession?.(historyLoading) === true;
 -  if (question === void 0 || question.callId && (drawn || loading)) return null;
 -  return (0, import_react4.createElement)(PendingQuestion, { sessionId, question, actions, inline: false });
++var PEEK_MAX = 160;
++var peekLine = (text) => {
++  const line2 = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).find((part) => part !== "");
++  return line2 === void 0 ? "" : line2.slice(0, PEEK_MAX);
++};
 +function ThinkingRow({ text }) {
 +  if (typeof text !== "string" || text.trim() === "") return null;
++  const peek = peekLine(text);
 +  return (0, import_react9.createElement)(
 +    "details",
 +    { className: "bt-think" },
-+    (0, import_react9.createElement)("summary", null, (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"), t("Thought it through")),
++    (0, import_react9.createElement)(
++      "summary",
++      null,
++      (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"),
++      t("Thought it through"),
++      peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
++    ),
 +    (0, import_react9.createElement)("div", { className: "bt-think-text" }, text)
 +  );
  }

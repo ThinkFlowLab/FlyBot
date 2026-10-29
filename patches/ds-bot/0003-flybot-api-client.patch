@@ -529,15 +529,26 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // Closes a popover on a press outside the given elements or on Escape.
  function useDismiss(open, close, refs) {
    useEffect(() => {
-@@ -101,8 +101,10 @@ function MessageTools({ text, name, sessionId, react, actions }) {
+@@ -100,9 +100,21 @@ function MessageTools({ text, name, sessionId, react, actions }) {
+       item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
  }
  
++// The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so
++// the row never reads as an empty frame while the text it names sits behind the caret (#1624).
++const PEEK_MAX = 160
++const peekLine = (text) => {
++  const line = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).find((part) => part !== '')
++  return line === undefined ? '' : line.slice(0, PEEK_MAX)
++}
++
  function ThinkingRow({ text }) {
 +  // Folded by default; the caret shows there is something inside. Nothing to show, no row.
 +  if (typeof text !== 'string' || text.trim() === '') return null
++  const peek = peekLine(text)
    return h('details', { className: 'bt-think' },
 -    h('summary', null, t('Thought it through')),
-+    h('summary', null, h('span', { className: 'bt-think-caret', 'aria-hidden': true }, '›'), t('Thought it through')),
++    h('summary', null, h('span', { className: 'bt-think-caret', 'aria-hidden': true }, '›'), t('Thought it through'),
++      peek ? h('span', { className: 'bt-think-peek' }, peek) : null),
      h('div', { className: 'bt-think-text' }, text))
  }
  
@@ -2993,12 +3004,13 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
  .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
-@@ -782,6 +782,14 @@ export const CONVERSATION_CSS = `
+@@ -782,6 +782,15 @@ export const CONVERSATION_CSS = `
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
 +.bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 +.bt-think[open] .bt-think-caret{transform:rotate(90deg)}
++.bt-think-peek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
 +.bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
 +.bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 +.bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}

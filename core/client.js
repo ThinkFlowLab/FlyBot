@@ -4672,6 +4672,7 @@ var CONVERSATION_CSS = `
 .bt-think summary::-webkit-details-marker{display:none}
 .bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 .bt-think[open] .bt-think-caret{transform:rotate(90deg)}
+.bt-think-peek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
 .bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
 .bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 .bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
@@ -6167,12 +6168,24 @@ function MessageTools({ text, name, sessionId, react, actions }) {
     ), document.body) : null
   );
 }
+var PEEK_MAX = 160;
+var peekLine = (text) => {
+  const line2 = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).find((part) => part !== "");
+  return line2 === void 0 ? "" : line2.slice(0, PEEK_MAX);
+};
 function ThinkingRow({ text }) {
   if (typeof text !== "string" || text.trim() === "") return null;
+  const peek = peekLine(text);
   return (0, import_react9.createElement)(
     "details",
     { className: "bt-think" },
-    (0, import_react9.createElement)("summary", null, (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"), t("Thought it through")),
+    (0, import_react9.createElement)(
+      "summary",
+      null,
+      (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"),
+      t("Thought it through"),
+      peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
+    ),
     (0, import_react9.createElement)("div", { className: "bt-think-text" }, text)
   );
 }
