@@ -5,6 +5,7 @@
 // This is not team mode: it is the sign-in surface the gates in docs/subsystems/team.md
 // need, and nothing more.
 import { createHash, randomBytes } from 'node:crypto'
+import { ownEntry } from './store.js'
 
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -63,7 +64,7 @@ export function install(rt) {
 
   rt.revokeInvitation = async function revokeInvitation(invitationId) {
     return withAuthLock(async () => {
-      const inv = state.invitations[invitationId]
+      const inv = ownEntry(state.invitations, invitationId)
       if (!inv) return { ok: false, error: 'not_found' }
       if (inv.redeemedAt) return { ok: false, error: 'already_redeemed' }
       if (inv.revokedAt) return { ok: false, error: 'already_revoked' }
@@ -162,7 +163,7 @@ export function install(rt) {
   rt.removeMember = async function removeMember(memberId) {
     return withAuthLock(async () => {
       const members = rt.state.members || {}
-      const member = members[memberId]
+      const member = ownEntry(members, memberId)
       if (!member) return { ok: false, error: 'not_found' }
       if (lastOwner(members)) return { ok: false, error: 'last_owner' }
       const bots = Object.values(rt.state.bots || {})

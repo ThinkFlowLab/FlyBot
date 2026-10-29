@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
+import { ownEntry } from './store.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
 // result-ready still waits for the requester: prune must not evict it with terminals (#111).
@@ -174,7 +175,7 @@ export function install(rt) {
     return () => { projectProviders.delete(fn) }
   }
   rt.projectRunRefs = ({ hasTask } = {}) => {
-    const exists = typeof hasTask === 'function' ? hasTask : taskId => store()[String(taskId ?? '')] !== undefined
+    const exists = typeof hasTask === 'function' ? hasTask : taskId => ownEntry(store(), String(taskId ?? '')) !== undefined
     const refs = []
     const seen = new Set()
     for (const fn of [...projectProviders]) {
@@ -203,7 +204,7 @@ export function install(rt) {
     if (!rt.authzEnforced?.()) return true
     return actor !== null && actor !== undefined && task.requesterId === actor.memberId
   }
-  const find = id => store()[String(id ?? '')]
+  const find = id => ownEntry(store(), String(id ?? ''))
   // Only the record's own requesters may move their tasks; the responsible Bot is
   // checked at create time (owner, grant, or shared-room membership).
   const requireRequester = (task, actor) => {

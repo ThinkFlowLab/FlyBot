@@ -18,13 +18,12 @@ const STATE_VERSION = 2
 // The immutable id of the one owner a fresh or legacy team starts with.
 const OWNER_ID = 'owner-1'
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-// Ids arrive from the wire and the saved tables are plain objects, so `table[id]` answers
-// `Object.prototype` for `__proto__` (and `isRecord` accepts it): one own-key read for every
-// id lookup in this file, and a write can never reach a prototype either (#1704).
-const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
-// `table['__proto__'] = value` is swallowed by the prototype setter, so a binding written that
-// way would answer `ok: true` and store nothing: a write defines an own entry instead.
-const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
+// Ids and names arrive from the wire, and the saved tables are plain objects, so `table[id]`
+// answers `Object.prototype` for `__proto__` (and `isRecord` accepts it): every id lookup in
+// the host reads its table through this one own-key check, and a write defines an own entry so
+// the prototype setter never swallows it (#1704, #1711).
+export const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
+export const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
 
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt
@@ -656,8 +655,8 @@ export function install(rt) {
     return writing.finally(() => lock.release())
   }, 'ds-bot: state lock')
 
-  const botOf = id => (id === undefined ? undefined : state.bots[id])
-  const roomOf = id => (id === undefined ? undefined : state.rooms[id])
+  const botOf = id => (id === undefined ? undefined : ownEntry(state.bots, id))
+  const roomOf = id => (id === undefined ? undefined : ownEntry(state.rooms, id))
   const isMain = id => id !== undefined && state.mainBotIds.includes(id)
 
   // Group Sessions. A member speaks in each group from a hidden Session of its own,

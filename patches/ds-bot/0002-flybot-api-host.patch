@@ -137,15 +137,16 @@ diff --git a/src/host/home-lock.js b/src/host/home-lock.js
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
-@@ -5,6 +5,7 @@ import { join } from 'node:path'
+@@ -5,6 +5,8 @@
  import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
  import { currentColor, isColor, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
 +import { cleanExternal } from './room-participant-external.js'
++import { ownEntry } from './store.js'
  
  export function install(rt) {
    const { ctx, config, home, defaults, state } = rt
-@@ -15,7 +15,7 @@ export function install(rt) {
+@@ -15,7 +15,7 @@
      if (state.workspaceId && ctx.workspaceRegistry.get(state.workspaceId)) return state.workspaceId
      const path = config.workspace ?? join(home, 'workspace')
      await mkdir(path, { recursive: true })
@@ -154,7 +155,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -56,18 +56,49 @@ export function install(rt) {
+@@ -56,18 +56,49 @@
      return `${stem} ${index}`
    }
  
@@ -212,7 +213,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const id = await createSession(cleanName, { dir })
      try {
        state.bots[id] = {
-@@ -80,45 +80,48 @@ export function install(rt) {
+@@ -80,45 +80,48 @@
          ...(modelRef ? { model: modelRef } : {}),
          ...(effortId ? { effort: effortId } : {}),
          ...(dir ? { workDir: dir } : {}),
@@ -285,7 +286,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        // A save that another change queued meanwhile still carries this Bot; a later
        // one writes the team without it.
        void rt.save().catch(() => {})
-@@ -128,24 +128,12 @@ export function install(rt) {
+@@ -128,24 +128,12 @@
      }
    }
  
@@ -312,7 +313,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        name: freshName(`${bot.name} copy`),
        role: bot.role,
        instructions: bot.instructions,
-@@ -155,7 +155,6 @@ export function install(rt) {
+@@ -155,7 +155,6 @@
        effort: served ? bot.effort : undefined,
        // A folder that went away since leaves the copy in the team workspace.
        workDir: bot.workDir !== undefined && await rt.isFolder(bot.workDir) ? bot.workDir : undefined,
@@ -320,7 +321,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      })
    }
  
-@@ -189,6 +189,8 @@ export function install(rt) {
+@@ -189,6 +189,8 @@
        if (avatar) bot.avatar = avatar
        else delete bot.avatar
      }
@@ -329,7 +330,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.model !== undefined) {
        if (patch.model === null || patch.model === '') delete bot.model
        else bot.model = await rt.resolveModel(patch.model)
-@@ -212,12 +212,6 @@ export function install(rt) {
+@@ -212,17 +212,11 @@
      await rt.save()
      if (modelChanged) await rt.applyModel(bot, { force: true })
      if (moved) void rt.followFolder(bot.id)
@@ -342,7 +343,13 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      return bot
    }
  
-@@ -235,7 +235,14 @@ export function install(rt) {
+   async function setFlags(id, { pinned, hidden }) {
+-    const entry = rt.botOf(id) ?? rt.roomOf(id) ?? state.agents[id]
++    const entry = rt.botOf(id) ?? rt.roomOf(id) ?? ownEntry(state.agents, id)
+     if (entry === undefined) throw new Error('Unknown conversation')
+     if (typeof pinned === 'boolean') entry.pinned = pinned
+     if (typeof hidden === 'boolean') entry.hidden = hidden
+@@ -235,7 +235,14 @@
    // admin may change its own group but not delete it. Only a member can be admin.
  
    const roomBusy = id => [...rt.roomProgress.values()].some(round => round.roomId === id)
@@ -358,7 +365,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
  
    function cleanRoomName(text, selfId) {
-@@ -257,7 +257,7 @@ export function install(rt) {
+@@ -257,7 +257,7 @@
    async function followMemberNames(rooms = Object.values(state.rooms)) {
      for (const room of rooms) {
        if (room.named) continue
@@ -367,7 +374,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        if (next === room.name) continue
        room.name = next
        await retitleRoom(room)
-@@ -269,9 +269,24 @@ export function install(rt) {
+@@ -269,9 +269,24 @@
      if (members.length > ROOM_MAX_MEMBERS) throw new Error(`A group chat holds at most ${ROOM_MAX_MEMBERS} Bots`)
    }
  
@@ -395,7 +402,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const custom = cleanRoomName(roomName ?? '')
      // A Main Bot leads the groups it makes; a group the user makes is led by a Main
      // Bot member when it has one.
-@@ -294,7 +294,19 @@ export function install(rt) {
+@@ -294,7 +294,19 @@
          createdAt: Date.now(),
          createdBy: createdBy ?? null,
        }
@@ -415,7 +422,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        return state.rooms[id]
      } catch (error) {
        // The group's Session was already made: archive it instead of leaving an orphan.
-@@ -306,13 +306,19 @@ export function install(rt) {
+@@ -306,13 +306,19 @@
      }
    }
  
@@ -438,7 +445,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      let members = Array.isArray(patch.members) ? [...new Set(patch.members)] : [...room.members]
      for (const member of patch.add ?? []) if (!members.includes(member)) members.push(member)
      members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))
-@@ -328,6 +328,14 @@ export function install(rt) {
+@@ -328,6 +328,14 @@
        admin = null
      }
      if (patch.mode !== undefined && !ROOM_MODES.includes(patch.mode)) throw new Error(`Reply mode must be one of ${ROOM_MODES.join(', ')}`)
@@ -453,7 +460,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const name = patch.name === undefined ? undefined : cleanRoomName(patch.name, room.id)
      const notice = patch.notice === undefined ? undefined : cleanNotice(patch.notice)
      const moving = patch.workDir !== undefined
-@@ -340,14 +340,24 @@ export function install(rt) {
+@@ -340,14 +340,24 @@
      const removed = room.members.filter(member => !members.includes(member))
      if (added.length > 0) changes.push(`added ${names(added)}`)
      if (removed.length > 0) changes.push(`removed ${names(removed)}`)
@@ -483,7 +490,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.mode !== undefined && patch.mode !== room.mode) {
        room.mode = patch.mode
        changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
-@@ -371,7 +371,13 @@ export function install(rt) {
+@@ -371,7 +371,13 @@
          delete room.named
        }
      }
@@ -498,7 +505,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (room.name !== before) {
        changes.push(`renamed it "${room.name}"`)
        await retitleRoom(room)
-@@ -383,8 +383,11 @@ export function install(rt) {
+@@ -383,8 +383,11 @@
    async function deleteRoom(id) {
      const room = rt.roomOf(id)
      if (room === undefined) throw new Error('Unknown group chat')
@@ -510,7 +517,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      rt.roomInbox.delete(id)
      const failed = await saveForDelete()
      // Armed scheduled tasks refuse a plain archive and would keep delivering into
-@@ -409,6 +409,10 @@ export function install(rt) {
+@@ -409,6 +409,10 @@
      } else if (replace !== undefined && replace !== id) {
        const at = others.indexOf(replace)
        if (at === -1) throw new Error('Only a Main Bot can be replaced')
@@ -521,7 +528,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,12 +417,30 @@ export function install(rt) {
+@@ -417,12 +417,30 @@
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -556,7 +563,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    }
  
    async function deleteBot(id) {
-@@ -434,22 +434,42 @@ export function install(rt) {
+@@ -434,22 +434,42 @@
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
      const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
@@ -599,7 +606,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const failed = await saveForDelete()
      // Same as deleteRoom: stopActivity removes the Session's armed scheduled tasks.
      // Past parts are archived too: a part move can leave tasks on the old Session,
-@@ -481,7 +481,9 @@ export function install(rt) {
+@@ -481,7 +481,9 @@
      if (state.mainBotIds.some(id => rt.botOf(id))) return
      // Only the team's first Main Bot is stored as the DeepSeek whale; other Bots get a
      // look from their id, and a Bot made Main Bot later keeps its own.
@@ -610,7 +617,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        .finally(() => { bootstrapping = null })
      await bootstrapping
    }
-@@ -489,6 +489,6 @@ export function install(rt) {
+@@ -489,6 +489,6 @@
    Object.assign(rt, {
      ensureWorkspace, createSession, createBot, duplicateBot, updateBot, setFlags,
      roomBusy, autoRoomName, retitleRoom, createRoom, updateRoom, deleteRoom,
@@ -621,7 +628,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,46 @@
+@@ -1,21 +1,45 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
@@ -643,13 +650,12 @@ diff --git a/src/host/store.js b/src/host/store.js
 +// The immutable id of the one owner a fresh or legacy team starts with.
 +const OWNER_ID = 'owner-1'
 +const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-+// Ids arrive from the wire and the saved tables are plain objects, so `table[id]` answers
-+// `Object.prototype` for `__proto__` (and `isRecord` accepts it): one own-key read for every
-+// id lookup in this file, and a write can never reach a prototype either (#1704).
-+const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
-+// `table['__proto__'] = value` is swallowed by the prototype setter, so a binding written that
-+// way would answer `ok: true` and store nothing: a write defines an own entry instead.
-+const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
++// Ids and names arrive from the wire, and the saved tables are plain objects, so `table[id]`
++// answers `Object.prototype` for `__proto__` (and `isRecord` accepts it): every id lookup in
++// the host reads its table through this one own-key check, and a write defines an own entry so
++// the prototype setter never swallows it (#1704, #1711).
++export const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
++export const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
 +
  export function install(rt) {
 -  const { ctx, home, statePath } = rt
@@ -1101,7 +1107,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
-@@ -273,6 +273,30 @@
+@@ -273,13 +273,37 @@
      })
    }
  
@@ -1132,6 +1138,15 @@ diff --git a/src/host/store.js b/src/host/store.js
    ctx.effect(() => () => {
      stopped = true
      return writing.finally(() => lock.release())
+   }, 'ds-bot: state lock')
+ 
+-  const botOf = id => (id === undefined ? undefined : state.bots[id])
+-  const roomOf = id => (id === undefined ? undefined : state.rooms[id])
++  const botOf = id => (id === undefined ? undefined : ownEntry(state.bots, id))
++  const roomOf = id => (id === undefined ? undefined : ownEntry(state.rooms, id))
+   const isMain = id => id !== undefined && state.mainBotIds.includes(id)
+ 
+   // Group Sessions. A member speaks in each group from a hidden Session of its own,
 @@ -313,6 +313,13 @@
        }
        for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })

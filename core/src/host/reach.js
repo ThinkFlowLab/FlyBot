@@ -1,3 +1,5 @@
+import { ownEntry } from './store.js'
+
 // Reach policy (#90): who may be reached from outside their owner. One owner- and
 // grant-aware check that sits OUTSIDE the plugin send chain, so a middleware's
 // `allow` or `bypass` verdict can never skip it. hooks.js runs it before bot.send's
@@ -73,7 +75,8 @@ function peerKeys(peer) {
 }
 
 export function grantsOf(state, botId) {
-  const list = state?.grants?.[botId]
+  const table = state?.grants
+  const list = table ? ownEntry(table, botId) : undefined
   return Array.isArray(list) ? list : []
 }
 
@@ -389,7 +392,7 @@ export function install(rt) {
   rt.ticketPeers = () => ticketPeers(state)
 
   rt.setGrants = async (botId, list) => {
-    const bot = state.bots?.[botId]
+    const bot = ownEntry(state.bots ?? {}, botId)
     if (bot === undefined || bot.remote !== undefined) throw Object.assign(new Error('Unknown Bot'), { code: 'bot/not-found' })
     if (!Array.isArray(list)) throw Object.assign(new Error('grants must be an array'), { code: 'bot/invalid' })
     const next = list.map((grant, i) => {

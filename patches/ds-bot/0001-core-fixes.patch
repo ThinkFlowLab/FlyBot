@@ -2987,13 +2987,14 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  import { createHash } from 'node:crypto'
 +import { RESERVED_NAMES } from './connectors.js'
++import { ownEntry } from './store.js'
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-@@ -7,8 +7,8 @@ const ENSURE_TIMEOUT_MS = 15_000
+@@ -7,8 +7,8 @@
  
  export function validateCapabilityName(value) {
    const name = String(value ?? '').trim()
@@ -3004,7 +3005,25 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
-@@ -264,7 +264,7 @@ export function install(rt) {
+@@ -139,7 +139,7 @@
+     await rt.load()
+     writeCheck()
+     const items = ensureLibrary()
+-    const item = items[String(name ?? '')]
++    const item = ownEntry(items, String(name ?? ''))
+     if (!item) throw new Error(`No capability named ${name}.`)
+     if (!ui) editCheck(item, botId, 'delete')
+     delete items[item.name]
+@@ -156,7 +156,7 @@
+     const target = targetRef ? rt.findBot(targetRef) : caller
+     if (!target) throw new Error(`No Bot named ${targetRef}.`)
+     if (target.id !== caller.id && !rt.isMain(callerId)) throw new Error('Only a Main Bot can change another Bot’s capabilities.')
+-    const item = ensureLibrary()[String(name ?? '')]
++    const item = ownEntry(ensureLibrary(), String(name ?? ''))
+     if (!item) throw new Error(`No capability named ${name}.`)
+     await setAttached(target, item.name, endpoint === 'attach')
+     return { bot: target.name, attached: endpoint === 'attach' }
+@@ -264,7 +264,7 @@
      return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
    }
    const disposeMount = async mount => {
@@ -3013,6 +3032,24 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    const mountOne = async (agent, bot, agentMounts, name) => {
      const sessionId = agent.session.id
+@@ -454,7 +454,7 @@
+     if (endpoint === 'capability-approve') {
+       await rt.load()
+       writeCheck()
+-      const item = library()[String(body.name ?? '')]
++      const item = ownEntry(library(), String(body.name ?? ''))
+       if (!item || item.kind !== 'mcp' || item.transport !== 'stdio') throw new Error(`No unapproved stdio MCP named ${body.name}.`)
+       item.approved = true
+       item.updatedAt = Date.now()
+@@ -467,7 +467,7 @@
+       const bot = rt.botOf(String(body.botId ?? ''))
+       if (!bot) throw new Error('Unknown Bot')
+       const name = String(body.name ?? '')
+-      if (!library()[name]) throw new Error(`No capability named ${name}.`)
++      if (!ownEntry(library(), name)) throw new Error(`No capability named ${name}.`)
+       return setAttached(bot, name, body.attached === true)
+     }
+     throw new Error('Unknown capability operation.')
 diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 --- a/src/host/chat-index.js
 +++ b/src/host/chat-index.js

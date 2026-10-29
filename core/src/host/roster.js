@@ -6,6 +6,7 @@ import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOT
 import { currentColor, isColor, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
+import { ownEntry } from './store.js'
 
 export function install(rt) {
   const { ctx, config, home, defaults, state } = rt
@@ -240,7 +241,7 @@ export function install(rt) {
   }
 
   async function setFlags(id, { pinned, hidden }) {
-    const entry = rt.botOf(id) ?? rt.roomOf(id) ?? state.agents[id]
+    const entry = rt.botOf(id) ?? rt.roomOf(id) ?? ownEntry(state.agents, id)
     if (entry === undefined) throw new Error('Unknown conversation')
     if (typeof pinned === 'boolean') entry.pinned = pinned
     if (typeof hidden === 'boolean') entry.hidden = hidden

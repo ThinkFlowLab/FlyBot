@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { RESERVED_NAMES } from './connectors.js'
+import { ownEntry } from './store.js'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -140,7 +141,7 @@ export function install(rt) {
     await rt.load()
     writeCheck()
     const items = ensureLibrary()
-    const item = items[String(name ?? '')]
+    const item = ownEntry(items, String(name ?? ''))
     if (!item) throw new Error(`No capability named ${name}.`)
     if (!ui) editCheck(item, botId, 'delete')
     delete items[item.name]
@@ -157,7 +158,7 @@ export function install(rt) {
     const target = targetRef ? rt.findBot(targetRef) : caller
     if (!target) throw new Error(`No Bot named ${targetRef}.`)
     if (target.id !== caller.id && !rt.isMain(callerId)) throw new Error('Only a Main Bot can change another Bot’s capabilities.')
-    const item = ensureLibrary()[String(name ?? '')]
+    const item = ownEntry(ensureLibrary(), String(name ?? ''))
     if (!item) throw new Error(`No capability named ${name}.`)
     await setAttached(target, item.name, endpoint === 'attach')
     return { bot: target.name, attached: endpoint === 'attach' }
@@ -455,7 +456,7 @@ export function install(rt) {
     if (endpoint === 'capability-approve') {
       await rt.load()
       writeCheck()
-      const item = library()[String(body.name ?? '')]
+      const item = ownEntry(library(), String(body.name ?? ''))
       if (!item || item.kind !== 'mcp' || item.transport !== 'stdio') throw new Error(`No unapproved stdio MCP named ${body.name}.`)
       item.approved = true
       item.updatedAt = Date.now()
@@ -468,7 +469,7 @@ export function install(rt) {
       const bot = rt.botOf(String(body.botId ?? ''))
       if (!bot) throw new Error('Unknown Bot')
       const name = String(body.name ?? '')
-      if (!library()[name]) throw new Error(`No capability named ${name}.`)
+      if (!ownEntry(library(), name)) throw new Error(`No capability named ${name}.`)
       return setAttached(bot, name, body.attached === true)
     }
     throw new Error('Unknown capability operation.')
