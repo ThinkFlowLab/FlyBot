@@ -1870,7 +1870,7 @@ test('#1618: Runs keeps time apart from the status chip and paints Failed once',
   const done = rows.find(node => textOf(node).includes('#1577'))
   assert.ok(done, 'Done row missing')
   const doneTime = findAll(done, node => node.props?.className === 'wf-hist-time')[0]
-  const doneChip = findAll(done, node => typeof node.props?.className === 'string' && node.props.className.includes('wf-hist-status'))[0]
+  const doneChip = findAll(done, node => node.props?.className === 'wf-chip done')[0]
   assert.ok(doneTime, 'Done row has no dedicated time column')
   assert.ok(doneChip, 'Done row has no status chip column')
   assert.match(textOf(doneTime), /\d{2}:\d{2}/)
@@ -1903,7 +1903,7 @@ test('#1618: Runs keeps time apart from the status chip and paints Failed once',
   assert.match(css, /\.wf-hist-task\{flex:1;min-width:0/)
   assert.match(css, /\.wf-hist-meta\{[^}]*flex:none/)
   assert.match(css, /\.wf-hist-time\{flex:none/)
-  assert.match(css, /\.wf-hist-status\{flex:none\}/)
+  assert.match(css, /\.wf-hist>\.wf-chip\{flex:none\}/)
   assert.doesNotMatch(css, /\.wf-hist-meta\{[^}]*min-width:0/)
 
   view.unmount()

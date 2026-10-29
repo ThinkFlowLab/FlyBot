@@ -967,7 +967,7 @@ window.__ModuleLoader__.load({
             item.supersededBy ? h('span', { className: 'wf-hist-retry', title: item.supersededBy }, `superseded by ${item.supersededBy}`) : null,
             item.retryOf ? h('span', { className: 'wf-hist-retry', title: item.retryOf }, `retry of ${item.retryOf}`) : null,
             showReason ? h('span', { className: 'wf-hist-reason', title: reason }, reason) : null),
-          h('span', { className: `wf-chip wf-hist-status ${chipClass}` }, chipLabel))
+          h('span', { className: `wf-chip ${chipClass}` }, chipLabel))
       }))
     }
 
@@ -1886,7 +1886,7 @@ window.__ModuleLoader__.load({
 .wf-hist-meta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}
 .wf-hist-time{flex:none;color:var(--bt-ink-3,#9a9a9a);font-variant-numeric:tabular-nums;white-space:nowrap}
 .wf-hist-reason{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e5484d}
-.wf-hist-status{flex:none}
+.wf-hist>.wf-chip{flex:none}
 .wf-ctl{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .wf-mask{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
 .wf-modal{width:560px;max-width:100%;max-height:calc(100vh - 32px);background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414);border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;overflow:hidden}
