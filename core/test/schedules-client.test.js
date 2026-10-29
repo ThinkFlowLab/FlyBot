@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 // where the switch is; the Harness settings dialog has none.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart } from './src/client/schedules.js'",
+    contents: "export { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart, timingText } from './src/client/schedules.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -31,7 +31,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart } = module.exports
+const { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart, timingText } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -134,6 +134,51 @@ test('the form starts from the edited task: repeat interval, one time, cron kept
   assert.deepEqual([once.kind, once.at], ['at', '2030-01-02T07:05'])
   assert.equal(formStart({ kind: 'cron', expression: '0 9 * * 1', timeZone: 'UTC' }).kind, 'cron')
   assert.deepEqual([formStart(undefined).kind, formStart(undefined).title, formStart(undefined).time], ['daily', '', '09:00'])
+})
+
+// #1651 (P-132): an interval that is not a whole number of minutes was shown rounded and
+// then saved rounded, so editing only the title rewrote it. Seconds are stated as seconds.
+const EVERY = (seconds, extra = {}) => ({ id: `e${seconds}`, sessionId: 'chat-b1', botId: 'b1', title: `Task ${seconds}`, prompt: 'Ping', kind: 'every', everySeconds: seconds, scheduledAt: '2030-01-01T01:00:00.000Z', status: 'active', ...extra })
+
+test('a repeat that is not a whole number of minutes reads as seconds, not rounded (#1651 a, c)', () => {
+  seeded.push({ available: true, tasks: [90, 100, 61, 3601].map(seconds => EVERY(seconds)) }, null)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: spy() }))
+  const lines = text(card)
+  for (const [seconds, want] of [[90, 'Every 90 seconds'], [100, 'Every 100 seconds'], [61, 'Every 61 seconds'], [3601, 'Every 3601 seconds']]) {
+    assert.ok(lines.includes(want), `${seconds}s: ${lines.join(' | ')}`)
+  }
+  assert.ok(!lines.includes('Every 1 minutes'), lines.join(' | '))
+})
+
+test('whole-minute and whole-hour repeats keep the words they had (#1651 d)', () => {
+  for (const [seconds, want] of [[60, 'Every 1 minutes'], [5400, 'Every 90 minutes'], [3600, 'Every hour'], [7200, 'Every 2 hours'], [86400, 'Every day'], [172800, 'Every 2 days']]) {
+    assert.equal(timingText(EVERY(seconds)), want, `${seconds}s`)
+  }
+})
+
+test('the edit form holds a non-whole-minute interval exactly (#1651 a)', () => {
+  for (const seconds of [90, 100, 61, 3601]) {
+    const start = formStart(EVERY(seconds))
+    assert.deepEqual([start.kind, start.count, start.unit], ['every', seconds, 'seconds'], `${seconds}s`)
+  }
+  assert.deepEqual([formStart(EVERY(5400)).count, formStart(EVERY(5400)).unit], [90, 'minutes'])
+})
+
+test('editing only the title sends the stored repeat back unchanged (#1651 a, b)', async () => {
+  const sent = []
+  const actions = { ...spy(), scheduleUpdate: async (task) => { sent.push(task); return OFF } }
+  const task = EVERY(90, { title: 'Ping' })
+  seeded.push({ available: true, tasks: [task] }, task)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  const form = all(card).find(node => node.type === 'form')
+  assert.ok(form, 'the edited row is a form')
+  const count = all(form).find(node => node.type === 'input' && node.props['aria-label'] === 'How many')
+  assert.equal(count.props.value, 90)
+  const unit = all(form).find(node => node.type === 'select' && node.props['aria-label'] === 'Unit')
+  assert.equal(unit.props.value, 'seconds')
+  form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ sessionId: 'chat-b1', id: 'e90', target: 'b1', title: 'Ping', prompt: 'Ping', when: { kind: 'every', seconds: 90 } }])
 })
 
 test('a row says how its last run went; only a failed run offers Retry, which runs the task now (#473)', async () => {

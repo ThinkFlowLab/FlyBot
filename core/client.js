@@ -1256,6 +1256,7 @@ var ZH = {
   "Every hour": "每小时",
   "Every {count} hours": "每 {count} 小时",
   "Every {count} minutes": "每 {count} 分钟",
+  "Every {count} seconds": "每 {count} 秒",
   "Once, {time}": "一次，{time}",
   "Every day at {time}": "每天 {time}",
   "Every {days} at {time}": "每{days} {time}",
@@ -1287,6 +1288,7 @@ var ZH = {
   minutes: "分钟",
   hours: "小时",
   days: "天",
+  seconds: "秒",
   "Morning briefing": "早间简报",
   "What to do": "要做什么",
   "Sum up what changed since yesterday and what needs me today.": "总结一下昨天以来的变化，以及今天需要我处理的事。",
@@ -11532,7 +11534,8 @@ function weekdayNames(days) {
 function everyText(seconds) {
   if (seconds % 86400 === 0) return seconds === 86400 ? t("Every day") : t("Every {count} days", { count: seconds / 86400 });
   if (seconds % 3600 === 0) return seconds === 3600 ? t("Every hour") : t("Every {count} hours", { count: seconds / 3600 });
-  return t("Every {count} minutes", { count: Math.round(seconds / 60) });
+  if (seconds % 60 === 0) return t("Every {count} minutes", { count: seconds / 60 });
+  return t("Every {count} seconds", { count: seconds });
 }
 function timingText(task) {
   const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : "";
@@ -11646,14 +11649,14 @@ function inAnHour() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
 }
 var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
-var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
+var UNITS = [["seconds", 1, "seconds"], ["minutes", 60, "minutes"], ["hours", 3600, "hours"], ["days", 86400, "days"]];
 function localInput(ms) {
   const date = new Date(ms);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 function formStart(task) {
   const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
-  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : ["minutes", 60];
+  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : seconds % 60 === 0 ? ["minutes", 60] : ["seconds", 1];
   const once = task?.kind === "at" || task?.kind === "after";
   return {
     title: task?.title ?? "",
@@ -11683,7 +11686,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const timing = () => {
     if (kind === "cron") return { kind: "keep" };
     if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
-    if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
+    if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
     return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
   };
   const submit = (event) => {

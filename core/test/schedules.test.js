@@ -161,6 +161,39 @@ test('tasks are created on the Bot’s current part, listed by Bot, and deleted'
   assert.match((await call('schedule-delete', { sessionId: 'outside', id: 'schedule-3' })).error.message, /No such task/)
 })
 
+// #1651 (P-132): DSH takes any interval of 60s or more, and the client now sends seconds,
+// so a repeat of 90s survives a save that changed only the title.
+test('a repeat keeps its seconds, and the every selector is the only one that changed (#1651 a, b, e)', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+
+  for (const seconds of [90, 61, 100, 3601]) {
+    const made = await call('schedule-create', { target: 'm1', title: `S${seconds}`, prompt: 'Ping', when: { kind: 'every', seconds } })
+    assert.equal(made.ok, true, JSON.stringify(made))
+    assert.equal(made.value.tasks.find(task => task.title === `S${seconds}`).everySeconds, seconds, `${seconds}s reaches the host`)
+    assert.equal(schedule.created.at(-1).request.every_seconds, seconds, `${seconds}s is what DSH is asked for`)
+  }
+
+  // Only the title changes: the same whole interval comes back, so DSH gets no timing change.
+  const [id] = schedule.tasks.keys()
+  const renamed = await call('schedule-update', { sessionId: 'm1', id, target: 'm1', title: 'Renamed', prompt: 'Ping', when: { kind: 'every', seconds: 90 } })
+  assert.equal(renamed.ok, true, JSON.stringify(renamed))
+  assert.equal(schedule.updates.at(-1).change, undefined, 'no timing change reaches DSH')
+  assert.equal(schedule.tasks.get(id).record.everySeconds, 90)
+
+  // Whole minutes still travel as minutes.
+  const half = await call('schedule-create', { target: 'm1', title: 'Half hour', prompt: 'Ping', when: { kind: 'every', minutes: 30 } })
+  assert.equal(half.ok, true, JSON.stringify(half))
+  assert.equal(schedule.created.at(-1).request.every_seconds, 1800)
+
+  for (const seconds of [59, 604801]) {
+    const refused = await call('schedule-create', { target: 'm1', title: 'x', prompt: 'y', when: { kind: 'every', seconds } })
+    assert.equal(refused.ok, false, `${seconds}s is refused`)
+    assert.match(refused.error.message, /Repeat every 1 minute to 7 days/)
+  }
+})
+
 test('a group chat task lives on the group Session and lists under the group', async (t) => {
   const schedule = scheduleService()
   const { ctx, home, call } = setup({ schedule })

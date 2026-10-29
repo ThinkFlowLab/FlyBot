@@ -1317,7 +1317,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,6 +771,14 @@ const ZH = {
+@@ -771,12 +771,21 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1332,6 +1332,13 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Scheduled tasks': '定时任务',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
+   'Every hour': '每小时',
+   'Every {count} hours': '每 {count} 小时',
+   'Every {count} minutes': '每 {count} 分钟',
++  'Every {count} seconds': '每 {count} 秒',
+   'Once, {time}': '一次，{time}',
+   'Every day at {time}': '每天 {time}',
+   'Every {days} at {time}': '每{days} {time}',
 @@ -784,7 +784,21 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
@@ -1354,6 +1361,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
+@@ -794,6 +794,7 @@ const ZH = {
+   minutes: '分钟',
+   hours: '小时',
+   days: '天',
++  seconds: '秒',
+   'Morning briefing': '早间简报',
+   'What to do': '要做什么',
+   'Sum up what changed since yesterday and what needs me today.': '总结一下昨天以来的变化，以及今天需要我处理的事。',
 @@ -806,9 +806,20 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
@@ -1895,6 +1910,16 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
+@@ -47,7 +47,8 @@ function weekdayNames(days) {
+ function everyText(seconds) {
+   if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
+   if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
+-  return t('Every {count} minutes', { count: Math.round(seconds / 60) })
++  if (seconds % 60 === 0) return t('Every {count} minutes', { count: seconds / 60 })
++  return t('Every {count} seconds', { count: seconds })
+ }
+ 
+ // How often a task runs, in the user's words.
 @@ -70,9 +70,22 @@ export function timingText(task) {
      default: return ''
    }
@@ -1957,9 +1982,12 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
-@@ -108,23 +108,52 @@ function inAnHour() {
+@@ -106,25 +106,56 @@ function inAnHour() {
+   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
+ }
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
- const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
+-const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
++const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
  
 -function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
@@ -1971,7 +1999,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +// A cron rule has no control here, so it is kept unless another kind is picked.
 +export function formStart(task) {
 +  const seconds = task?.kind === 'every' ? Number(task.everySeconds) : 3600
-+  const [unit, size] = seconds % 86400 === 0 ? ['days', 86400] : seconds % 3600 === 0 ? ['hours', 3600] : ['minutes', 60]
++  const [unit, size] = seconds % 86400 === 0 ? ['days', 86400] : seconds % 3600 === 0 ? ['hours', 3600] : seconds % 60 === 0 ? ['minutes', 60] : ['seconds', 1]
 +  const once = task?.kind === 'at' || task?.kind === 'after'
 +  return {
 +    title: task?.title ?? '',
@@ -2011,12 +2039,15 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const [error, setError] = useState('')
    const timing = () => {
 -    if (kind === 'at') return { kind, at: new Date(at).toISOString() }
+-    if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
+-    return { kind, time, timeZone: localZone(), ...(kind === 'weekly' ? { weekdays } : {}) }
 +    if (kind === 'cron') return { kind: 'keep' }
 +    // A once task is an instant; the host reads its wall clock in this zone when quiet
 +    // hours are on (#1166). The others carry their zone with the time itself.
 +    if (kind === 'at') return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone }
-     if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
--    return { kind, time, timeZone: localZone(), ...(kind === 'weekly' ? { weekdays } : {}) }
++    // Seconds, not minutes: DSH takes any interval of 60s or more, so a 90s repeat must
++    // survive the form instead of being rounded to two minutes (#1651).
++    if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
 +    // An edited task keeps its own time zone; a new one takes this browser's.
 +    return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
    }
@@ -5131,6 +5162,21 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
+@@ -59,9 +59,11 @@ function selectorOf(when) {
+       return { weekly: { time: `${when.time}:00`, time_zone: zone, weekdays } }
+     }
+     case 'every': {
+-      const minutes = Number(when.minutes)
+-      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60) throw invalid('Repeat every 1 minute to 7 days')
+-      return { every_seconds: minutes * 60 }
++      // `seconds` is the precise form the settings form sends; `minutes` stays accepted for
++      // callers that name a whole number of minutes. DSH takes any interval from 60s to 7 days.
++      const seconds = when.seconds !== undefined ? Number(when.seconds) : Number(when.minutes) * 60
++      if (!Number.isInteger(seconds) || seconds < 60 || seconds > 7 * 24 * 60 * 60) throw invalid('Repeat every 1 minute to 7 days')
++      return { every_seconds: seconds }
+     }
+     default:
+       throw invalid('Pick when it runs')
 @@ -89,63 +89,502 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
@@ -9967,6 +10013,46 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
    const refused = await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } })
    assert.equal(refused.ok, false)
    assert.match(refused.error.message, /Automation tasks are off/)
+@@ -103,6 +103,39 @@ test('tasks are created on the Bot’s current part, listed by Bot, and deleted'
+   assert.match((await call('schedule-delete', { sessionId: 'outside', id: 'schedule-3' })).error.message, /No such task/)
+ })
+ 
++// #1651 (P-132): DSH takes any interval of 60s or more, and the client now sends seconds,
++// so a repeat of 90s survives a save that changed only the title.
++test('a repeat keeps its seconds, and the every selector is the only one that changed (#1651 a, b, e)', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++
++  for (const seconds of [90, 61, 100, 3601]) {
++    const made = await call('schedule-create', { target: 'm1', title: `S${seconds}`, prompt: 'Ping', when: { kind: 'every', seconds } })
++    assert.equal(made.ok, true, JSON.stringify(made))
++    assert.equal(made.value.tasks.find(task => task.title === `S${seconds}`).everySeconds, seconds, `${seconds}s reaches the host`)
++    assert.equal(schedule.created.at(-1).request.every_seconds, seconds, `${seconds}s is what DSH is asked for`)
++  }
++
++  // Only the title changes: the same whole interval comes back, so DSH gets no timing change.
++  const [id] = schedule.tasks.keys()
++  const renamed = await call('schedule-update', { sessionId: 'm1', id, target: 'm1', title: 'Renamed', prompt: 'Ping', when: { kind: 'every', seconds: 90 } })
++  assert.equal(renamed.ok, true, JSON.stringify(renamed))
++  assert.equal(schedule.updates.at(-1).change, undefined, 'no timing change reaches DSH')
++  assert.equal(schedule.tasks.get(id).record.everySeconds, 90)
++
++  // Whole minutes still travel as minutes.
++  const half = await call('schedule-create', { target: 'm1', title: 'Half hour', prompt: 'Ping', when: { kind: 'every', minutes: 30 } })
++  assert.equal(half.ok, true, JSON.stringify(half))
++  assert.equal(schedule.created.at(-1).request.every_seconds, 1800)
++
++  for (const seconds of [59, 604801]) {
++    const refused = await call('schedule-create', { target: 'm1', title: 'x', prompt: 'y', when: { kind: 'every', seconds } })
++    assert.equal(refused.ok, false, `${seconds}s is refused`)
++    assert.match(refused.error.message, /Repeat every 1 minute to 7 days/)
++  }
++})
++
+ test('a group chat task lives on the group Session and lists under the group', async (t) => {
+   const schedule = scheduleService()
+   const { ctx, home, call } = setup({ schedule })
 @@ -121,3 +121,712 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')

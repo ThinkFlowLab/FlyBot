@@ -137,9 +137,11 @@ function selectorOf(when) {
       return { weekly: { time: `${when.time}:00`, time_zone: zone, weekdays } }
     }
     case 'every': {
-      const minutes = Number(when.minutes)
-      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60) throw invalid('Repeat every 1 minute to 7 days')
-      return { every_seconds: minutes * 60 }
+      // `seconds` is the precise form the settings form sends; `minutes` stays accepted for
+      // callers that name a whole number of minutes. DSH takes any interval from 60s to 7 days.
+      const seconds = when.seconds !== undefined ? Number(when.seconds) : Number(when.minutes) * 60
+      if (!Number.isInteger(seconds) || seconds < 60 || seconds > 7 * 24 * 60 * 60) throw invalid('Repeat every 1 minute to 7 days')
+      return { every_seconds: seconds }
     }
     default:
       throw invalid('Pick when it runs')

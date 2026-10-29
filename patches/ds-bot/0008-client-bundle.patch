@@ -736,7 +736,7 @@ diff --git a/client.js b/client.js
    "Model call": "模型调用",
    "This window": "这个窗口",
    "Error log": "错误日志",
-@@ -821,6 +821,14 @@ var ZH = {
+@@ -821,12 +821,21 @@ var ZH = {
    "Add at least one more Bot": "再至少添加一个 Bot",
    Members: "成员",
    // Connectors and scheduled tasks
@@ -751,6 +751,13 @@ diff --git a/client.js b/client.js
    "Scheduled tasks": "定时任务",
    "Every day": "每天",
    "Every {count} days": "每 {count} 天",
+   "Every hour": "每小时",
+   "Every {count} hours": "每 {count} 小时",
+   "Every {count} minutes": "每 {count} 分钟",
++  "Every {count} seconds": "每 {count} 秒",
+   "Once, {time}": "一次，{time}",
+   "Every day at {time}": "每天 {time}",
+   "Every {days} at {time}": "每{days} {time}",
 @@ -834,7 +834,21 @@ var ZH = {
    "Every weekend at {time}": "每个周末 {time}",
    "On the schedule {expression}": "按计划 {expression}",
@@ -773,6 +780,14 @@ diff --git a/client.js b/client.js
    "in {name}": "在 {name}",
    "Click again to delete": "再点一次删除",
    "Delete task": "删除任务",
+@@ -844,6 +844,7 @@ var ZH = {
+   minutes: "分钟",
+   hours: "小时",
+   days: "天",
++  seconds: "秒",
+   "Morning briefing": "早间简报",
+   "What to do": "要做什么",
+   "Sum up what changed since yesterday and what needs me today.": "总结一下昨天以来的变化，以及今天需要我处理的事。",
 @@ -856,9 +856,20 @@ var ZH = {
    Unit: "单位",
    "Create task": "创建任务",
@@ -11943,6 +11958,16 @@ diff --git a/client.js b/client.js
      });
      load();
      return () => {
+@@ -6873,7 +6873,8 @@ function weekdayNames(days) {
+ function everyText(seconds) {
+   if (seconds % 86400 === 0) return seconds === 86400 ? t("Every day") : t("Every {count} days", { count: seconds / 86400 });
+   if (seconds % 3600 === 0) return seconds === 3600 ? t("Every hour") : t("Every {count} hours", { count: seconds / 3600 });
+-  return t("Every {count} minutes", { count: Math.round(seconds / 60) });
++  if (seconds % 60 === 0) return t("Every {count} minutes", { count: seconds / 60 });
++  return t("Every {count} seconds", { count: seconds });
+ }
+ function timingText(task) {
+   const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : "";
 @@ -6896,11 +6896,25 @@ function timingText(task) {
        return "";
    }
@@ -12042,10 +12067,11 @@ diff --git a/client.js b/client.js
    );
  }
  var pad = (number) => String(number).padStart(2, "0");
-@@ -6945,22 +6945,44 @@ function inAnHour() {
+@@ -6944,23 +6944,45 @@ function inAnHour() {
+   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
  }
  var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
- var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
+-var UNITS = [["minutes", 1, "minutes"], ["hours", 60, "hours"], ["days", 1440, "days"]];
 -function TaskForm({ roster, actions, start, onDone, onCancel }) {
 -  const [target, setTarget] = (0, import_react15.useState)(start ?? roster.bots[0]?.id ?? "");
 -  const [title, setTitle] = (0, import_react15.useState)("");
@@ -12058,13 +12084,14 @@ diff --git a/client.js b/client.js
 -  const [unit, setUnit] = (0, import_react15.useState)("hours");
 -  const [busy, setBusy] = (0, import_react15.useState)(false);
 -  const [error, setError] = (0, import_react15.useState)("");
++var UNITS = [["seconds", 1, "seconds"], ["minutes", 60, "minutes"], ["hours", 3600, "hours"], ["days", 86400, "days"]];
 +function localInput(ms) {
 +  const date = new Date(ms);
 +  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 +}
 +function formStart(task) {
 +  const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
-+  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : ["minutes", 60];
++  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : seconds % 60 === 0 ? ["minutes", 60] : ["seconds", 1];
 +  const once = task?.kind === "at" || task?.kind === "after";
 +  return {
 +    title: task?.title ?? "",
@@ -12093,10 +12120,11 @@ diff --git a/client.js b/client.js
 +  const [error, setError] = (0, import_react23.useState)("");
    const timing = () => {
 -    if (kind === "at") return { kind, at: new Date(at).toISOString() };
+-    if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
+-    return { kind, time, timeZone: localZone(), ...kind === "weekly" ? { weekdays } : {} };
 +    if (kind === "cron") return { kind: "keep" };
 +    if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
-     if (kind === "every") return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
--    return { kind, time, timeZone: localZone(), ...kind === "weekly" ? { weekdays } : {} };
++    if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
 +    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
    };
    const submit = (event) => {

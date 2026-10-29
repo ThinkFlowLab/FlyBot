@@ -50,7 +50,8 @@ function weekdayNames(days) {
 function everyText(seconds) {
   if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
   if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
-  return t('Every {count} minutes', { count: Math.round(seconds / 60) })
+  if (seconds % 60 === 0) return t('Every {count} minutes', { count: seconds / 60 })
+  return t('Every {count} seconds', { count: seconds })
 }
 
 // How often a task runs, in the user's words.
@@ -142,7 +143,7 @@ function inAnHour() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
 }
 const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
-const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
+const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
 
 // A stored instant as the value of a datetime-local input, in this browser's zone.
 function localInput(ms) {
@@ -153,7 +154,7 @@ function localInput(ms) {
 // A cron rule has no control here, so it is kept unless another kind is picked.
 export function formStart(task) {
   const seconds = task?.kind === 'every' ? Number(task.everySeconds) : 3600
-  const [unit, size] = seconds % 86400 === 0 ? ['days', 86400] : seconds % 3600 === 0 ? ['hours', 3600] : ['minutes', 60]
+  const [unit, size] = seconds % 86400 === 0 ? ['days', 86400] : seconds % 3600 === 0 ? ['hours', 3600] : seconds % 60 === 0 ? ['minutes', 60] : ['seconds', 1]
   const once = task?.kind === 'at' || task?.kind === 'after'
   return {
     title: task?.title ?? '',
@@ -187,7 +188,9 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
     // A once task is an instant; the host reads its wall clock in this zone when quiet
     // hours are on (#1166). The others carry their zone with the time itself.
     if (kind === 'at') return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone }
-    if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
+    // Seconds, not minutes: DSH takes any interval of 60s or more, so a 90s repeat must
+    // survive the form instead of being rounded to two minutes (#1651).
+    if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
     // An edited task keeps its own time zone; a new one takes this browser's.
     return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
   }
