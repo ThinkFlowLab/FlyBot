@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
-import { buildDigest, dayIn } from '../src/host/project-assistant.js'
+import { MAX_ACTIONABLE, actionableFor, buildDigest, dayIn } from '../src/host/project-assistant.js'
 
 const seed = () => ({
   version: 2,
@@ -168,25 +168,30 @@ test('a day with no change is one line and the second build adds nothing', async
   }
 })
 
-test('identity refuses with no connector and on a multi-member host that is not the owner', async () => {
+// The 2.5 identity refusal stays on the GitHub write; it is not a delivery gate (#1733). A digest
+// still reaches the owner's own Session, and the refusal is recorded on the digest's evidence.
+test('the digest still reaches the owner in-app while the GitHub write refuses', async () => {
   const { rt, delivered, stop } = await start({ github: null })
   try {
     const project = await created(rt, { name: 'No Identity', ownerUserId: 'owner-1' })
-    const refused = await rt.projectAssistant.digest(project.id, { at: Date.parse('2026-10-29T01:00:00Z') })
-    assert.equal(refused.ok, false)
-    assert.equal(refused.escalated, true)
-    assert.match(refused.reason, /no GitHub connector is signed in/)
-    assert.equal(delivered.length, 0, 'a refused identity posts nothing')
-    assert.equal(rt.projectMemoryOf(project.id)?.digest ?? null, null, 'and leaves no note behind')
+    rt.projectBoard = () => []
+    const result = await rt.projectAssistant.digest(project.id, { at: Date.parse('2026-10-29T01:00:00Z') })
+    assert.equal(result.ok, true)
+    assert.equal(result.identity.ok, false)
+    assert.equal(result.identity.escalated, true)
+    assert.match(result.identity.reason, /no GitHub connector is signed in/)
+    assert.equal(result.delivered, 1, 'in-app delivery does not depend on the GitHub identity')
+    assert.equal(delivered.length, 1)
+    assert.doesNotMatch(delivered[0].text, /^Written-by:/, 'no GitHub attribution without an identity')
+    assert.match(rt.projectMemoryFor(project.id, 'owner-1').digest.error, /GitHub write refused: no GitHub connector/)
 
     rt.connectorsView = () => [{ id: 'github', name: 'GitHub', state: 'ready', account: 'Birfy' }]
     rt.state.members['owner-2'] = { id: 'owner-2', createdAt: 2 }
     const other = await created(rt, { name: 'Somebody Else', ownerUserId: 'owner-2' })
-    const refusedToo = await rt.projectAssistant.digest(other.id, { at: Date.parse('2026-10-29T01:00:00Z') })
-    assert.equal(refusedToo.ok, false)
-    assert.equal(refusedToo.escalated, true)
-    assert.match(refusedToo.reason, /no per-user GitHub linkage/)
-    assert.equal(delivered.length, 0)
+    const second = await rt.projectAssistant.digest(other.id, { at: Date.parse('2026-10-29T01:00:00Z') })
+    assert.equal(second.identity.ok, false)
+    assert.match(second.identity.reason, /no per-user GitHub linkage/)
+    assert.equal(second.delivered, 1, 'and the owner it cannot post for still gets their own digest')
   } finally {
     await stop()
   }
@@ -231,4 +236,182 @@ test('buildDigest is pure: the same rows answer the same four sections', () => {
   const quiet = buildDigest({ project, rows: [], since: 30, at: Date.parse('2026-10-29T01:00:00Z') })
   assert.equal(quiet.changed, false)
   assert.match(quiet.text, /no change since the previous digest\.$/)
+})
+
+// --- #1733: per-owner digests, quiet windows that hold, opt-out and one owner's failure -------
+
+// A second owner on the same host, with their own Session (a second chief Bot).
+function secondOwner(rt) {
+  rt.state.members['owner-2'] = { id: 'owner-2', createdAt: 2, designatedChiefId: 'b' }
+  rt.state.bots.b = { id: 'b', name: 'Second Chief', role: 'Boss', sessionId: 'b', createdAt: 2, ownerId: 'owner-2' }
+}
+
+const AT = Date.parse('2026-10-29T01:00:00Z')
+
+test('two owners of one Project get two digests from one read, with no memory bleed either way', async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Shared', ownerUserId: 'owner-1', ownerUserIds: ['owner-2'] })
+    secondOwner(rt)
+    await rt.projectEndpoint('project-memory-write', { id: project.id, kind: 'decision', text: 'Owner one keeps the deploy key', ownerId: 'owner-1' })
+    await rt.projectEndpoint('project-memory-write', { id: project.id, kind: 'decision', text: 'Owner two picks the release date', ownerId: 'owner-2' })
+    let reads = 0
+    rt.projectBoard = () => {
+      reads += 1
+      return [
+        { id: 't-1', source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: 1 },
+        { id: 't-2', source: 'bot', column: 'in-progress', assignee: 'owner-2', updatedAt: 2 },
+        { id: 't-3', source: 'bot', column: 'done', assignee: null, updatedAt: 3 },
+      ]
+    }
+    const result = await rt.projectAssistant.digest(project.id, { at: AT })
+    assert.equal(reads, 1, 'one board read serves every owner')
+    assert.equal(result.owners.length, 2)
+    assert.equal(result.delivered, 2)
+    const [one, two] = result.owners
+    assert.equal(one.owner, 'owner-1')
+    assert.equal(two.owner, 'owner-2')
+    assert.match(one.text, /Needs owner-1's decision:\n- t-1 /)
+    assert.match(two.text, /Needs owner-2's decision:\n- t-2 /)
+    assert.doesNotMatch(one.text, /Needs owner-1's decision:[\s\S]*t-2/, "one owner's decisions never list the other's card")
+    assert.doesNotMatch(two.text, /Needs owner-2's decision:[\s\S]*t-1/)
+    for (const digest of [one.text, two.text]) {
+      assert.match(digest, /t-3 \(bot\)/, 'the shared facts are the same for both')
+      assert.ok(digest.startsWith('Project Assistant (Shared)'), 'each digest names the Project its facts came from')
+      assert.match(digest, /2026-10-29/)
+    }
+    assert.doesNotMatch(one.text, /release date/, "no line of the other owner's memory")
+    assert.doesNotMatch(two.text, /deploy key/)
+    assert.deepEqual(delivered.map(message => message.toId), ['a', 'b'], 'one message to each owner Session')
+    assert.deepEqual(rt.projectMemoryFor(project.id, 'owner-1').decisions.map(entry => entry.text), ['Owner one keeps the deploy key'])
+    assert.deepEqual(rt.projectMemoryFor(project.id, 'owner-2').decisions.map(entry => entry.text), ['Owner two picks the release date'])
+  } finally {
+    await stop()
+  }
+})
+
+test('a cross-owner memory read is refused and names the boundary', async () => {
+  const { rt, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Fenced', ownerUserId: 'owner-1', ownerUserIds: ['owner-2'] })
+    secondOwner(rt)
+    assert.throws(() => rt.projectAssistant.read(project.id, 'owner-3'), error => error.code === 'bot/refused' && /belongs only to owner-1, owner-2/.test(error.message) && /owner-3 is outside that boundary/.test(error.message))
+    await assert.rejects(() => rt.projectAssistant.digest(project.id, { at: AT, ownerId: 'owner-3' }), /outside that boundary/)
+    const mine = rt.projectAssistant.read(project.id, 'owner-2')
+    assert.deepEqual(mine.memory.decisions, [])
+  } finally {
+    await stop()
+  }
+})
+
+test('a quiet window holds the digest and delivers it once, labelled, when it ends', async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Held', ownerUserId: 'owner-1' })
+    rt.projectBoard = () => [{ id: 't-hold', source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: 1 }]
+    await rt.projectAssistant.setOwner(project.id, 'owner-1', { quiet: { on: true, from: '07:00', to: '08:30' }, zone: 'Asia/Shanghai' })
+    const inside = Date.parse('2026-10-29T00:00:00Z') // 08:00 Asia/Shanghai
+    const after = Date.parse('2026-10-29T00:45:00Z') // 08:45 Asia/Shanghai
+    const held = await rt.projectAssistant.digest(project.id, { at: inside })
+    assert.equal(held.skipped, false)
+    assert.equal(held.delivered, 0)
+    assert.equal(held.owners[0].held, true)
+    assert.match(held.owners[0].reason, /held, and delivered once when they end/)
+    assert.equal(delivered.length, 0, 'nothing is delivered inside the window')
+    assert.match(rt.projectMemoryFor(project.id, 'owner-1').digest.text, /t-hold/, 'generation still happened')
+
+    const once = await rt.projectAssistant.digest(project.id, { at: after })
+    assert.equal(once.delivered, 1)
+    assert.match(delivered[0].text, /held from 09:00 to 08:45 by quiet hours 07:00\u201308:30/)
+    const twice = await rt.projectAssistant.digest(project.id, { at: after + 60_000 })
+    assert.equal(twice.delivered, 0, 'delivered once, not again')
+    assert.equal(delivered.length, 1)
+  } finally {
+    await stop()
+  }
+})
+
+test('a quiet window that covers 09:00 delivers nothing, and that is the expected outcome', async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Covered', ownerUserId: 'owner-1' })
+    rt.projectBoard = () => []
+    await rt.projectAssistant.setOwner(project.id, 'owner-1', { quiet: { on: true, from: '09:00', to: '11:00' }, zone: 'Asia/Shanghai' })
+    const result = await rt.projectAssistant.digest(project.id, { at: AT })
+    assert.equal(result.delivered, 0)
+    assert.equal(result.owners[0].held, true)
+    assert.equal(result.owners[0].dropped, true)
+    assert.match(result.owners[0].reason, /cover 09:00, so nothing is delivered — the expected outcome/)
+    assert.equal(delivered.length, 0)
+    assert.match(rt.projectMemoryFor(project.id, 'owner-1').digest.text, /no change/, 'the digest was still built')
+  } finally {
+    await stop()
+  }
+})
+
+test('opting out stops generation and pauses the 09:00 task, and re-enabling restores both', async () => {
+  const { rt, service, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Off', ownerUserId: 'owner-1' })
+    assert.equal(service.tasks.size, 1)
+    const off = await rt.projectAssistant.setOwner(project.id, 'owner-1', { off: true })
+    assert.equal(off.off, true)
+    assert.equal(off.changed, true)
+    assert.equal(off.schedule, 'paused')
+    assert.equal(service.tasks.size, 0, 'the 09:00 task no longer wakes the assistant')
+    const silent = await rt.projectAssistant.digest(project.id, { at: AT })
+    assert.equal(silent.owners[0].optedOut, true)
+    assert.equal(silent.delivered, 0)
+    assert.equal(delivered.length, 0)
+    assert.equal(rt.projectMemoryFor(project.id, 'owner-1').digest, null, 'no generation while off')
+
+    const on = await rt.projectAssistant.setOwner(project.id, 'owner-1', { off: false })
+    assert.equal(on.off, false)
+    assert.equal(service.tasks.size, 1, 'the task is back')
+    const back = await rt.projectAssistant.digest(project.id, { at: AT })
+    assert.equal(back.delivered, 1)
+    assert.equal(delivered.length, 1)
+  } finally {
+    await stop()
+  }
+})
+
+test("one owner's render failing is recorded while the other owner's digest still goes out", async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Isolated', ownerUserId: 'owner-1', ownerUserIds: ['owner-2'] })
+    secondOwner(rt)
+    rt.projectBoard = () => [{ id: 't-9', source: 'bot', column: 'in-progress', assignee: null, updatedAt: 1 }]
+    const realFor = rt.projectMemoryFor
+    rt.projectMemoryFor = (id, owner) => {
+      if (owner === 'owner-1') throw new Error('owner-1 memory is unreadable')
+      return realFor(id, owner)
+    }
+    const result = await rt.projectAssistant.digest(project.id, { at: AT })
+    const [one, two] = result.owners
+    assert.equal(one.ok, false)
+    assert.equal(one.recorded, true)
+    assert.match(one.error, /owner-1 memory is unreadable/)
+    assert.equal(two.ok, true)
+    assert.equal(two.delivered, true, "B's digest still goes out")
+    assert.equal(delivered.length, 1)
+    rt.projectMemoryFor = realFor
+    assert.match(rt.projectMemoryFor(project.id, 'owner-1').digest.text, /digest failed: owner-1 memory is unreadable/)
+  } finally {
+    await stop()
+  }
+})
+
+test('actionable items are capped and only the owner\'s own cards appear', () => {
+  const rows = Array.from({ length: MAX_ACTIONABLE + 3 }, (_, index) => ({ id: `t-${index}`, source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: index, title: `card ${index}` }))
+  rows.push({ id: 'theirs', source: 'bot', column: 'in-progress', assignee: 'owner-2', updatedAt: 99, title: 'not yours' })
+  const items = actionableFor(rows, 'owner-1')
+  assert.equal(items.length, MAX_ACTIONABLE + 3, 'the helper keeps them all…')
+  assert.ok(items.every(item => item.id !== 'theirs'), '…but never another owner\'s card')
+  const built = buildDigest({ project: { id: 'p', name: 'Cap' }, rows, owner: 'owner-1', actionable: items, at: AT })
+  const personal = built.text.slice(built.text.indexOf("Needs owner-1's decision:"))
+  const listed = personal.split('\n').filter(line2 => line2.startsWith('- t-'))
+  assert.equal(listed.length, MAX_ACTIONABLE, 'the digest lists at most MAX_ACTIONABLE')
+  assert.match(built.text, /- t-0 — decide what happens next — card 0 \(still in-progress\)/)
+  assert.doesNotMatch(built.text, /not yours/)
 })

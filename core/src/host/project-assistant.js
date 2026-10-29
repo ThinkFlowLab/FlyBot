@@ -17,6 +17,7 @@
 import { defineTool } from './tool-schema.js'
 import { listProjectState } from './project-state.js'
 import { output } from './tools.js'
+import { inQuietHours, clockIn, quietHoursOf, readQuietHours } from '../shared/quiet-hours.js'
 
 export const ASSISTANT_ROLE = 'Project Assistant'
 export const DIGEST_ZONE = 'Asia/Shanghai'
@@ -25,6 +26,9 @@ export const DIGEST_TITLE = '09:00 Project digest'
 export const DIGEST_PROMPT = 'Build today\'s Project digest: call project_digest once. It answers whether today already has one.'
 export const MAX_ENTRY = 600
 export const MEMORY_KINDS = ['decision', 'question']
+// At most this many cards that need one owner's decision in one digest (#1733): a digest is a
+// short list of things to decide, not the board. One constant, not a setting.
+export const MAX_ACTIONABLE = 5
 
 export const assistantName = project => `${ASSISTANT_ROLE} (${project.name})`
 
@@ -54,7 +58,7 @@ const stamp = at => new Date(at).toISOString().slice(0, 10)
 // still in progress and the assignee each one waits on — it never calls one blocked without that
 // evidence. The next slice is the oldest card that has not started. Nothing is counted that is
 // not a row, and a Project with no rows answers with no line at all.
-export function buildDigest({ project, rows = [], since = null, files = [], at = Date.now() }) {
+export function buildDigest({ project, rows = [], since = null, files = [], at = Date.now(), owner = null, actionable = [] }) {
   const changed = row => since === null || (row?.updatedAt ?? 0) > since
   const finished = rows.filter(row => row.column === 'done' && changed(row))
   const merged = finished.filter(row => row.source === 'workflow')
@@ -64,11 +68,16 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
     .filter(row => row.column === 'not-started')
     .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0) || String(a.id).localeCompare(String(b.id)))[0]
   const line = (head, entries) => [head, ...entries.map(entry => `- ${entry}`)]
+  // The personal block comes last: the same rows answer the same four sections for every owner,
+  // and only this one names the cards that wait on the person reading it.
+  const asks = owner === null ? [] : actionable.slice(0, MAX_ACTIONABLE).map(item => `${item.id} — ${item.ask}`)
+  const personal = asks.length === 0 ? [] : line(`Needs ${owner}'s decision:`, asks)
   const sections = [
     ...(merged.length === 0 ? [] : line('Merged since the previous digest:', merged.map(row => `${row.id} (${row.source})`))),
     ...(closed.length === 0 ? [] : line('Closed:', closed.map(row => `${row.id} (${row.source})`))),
     ...(blocked.length === 0 ? [] : line('In progress, waiting on:', blocked.map(row => `${row.id} — ${text(row.assignee)}`))),
     ...(next === undefined ? [] : line('Next slice:', [`${next.id} (${next.source})`])),
+    ...personal,
   ]
   const head = `${assistantName(project)} — ${stamp(at)}`
   if (sections.length === 0) return { changed: false, day: dayIn(at), text: `${head}: no change since the previous digest.` }
@@ -76,6 +85,26 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
     ? 'Project State: no Project State files read.'
     : `Project State: ${files.map(file => file.path).join(', ')}`
   return { changed: true, day: dayIn(at), text: [head, stateLine, ...sections].join('\n') }
+}
+
+// The cards that need *this* owner's decision: still open, and assigned to that owner. A card
+// somebody else owns is their decision, and never appears in this owner's digest.
+export function actionableFor(rows, ownerId) {
+  const owner = text(ownerId)
+  if (owner === '') return []
+  return (rows ?? [])
+    .filter(row => row?.column !== 'done' && text(row.assignee) === owner)
+    .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0) || String(a.id).localeCompare(String(b.id)))
+    .map(row => ({ id: String(row.id), ask: askOf(row) }))
+}
+
+// One line, because the block is a list of decisions and a card description may be long.
+const askOf = (row) => {
+  const title = text(row.title).replace(/\s+/g, ' ')
+  const where = text(row.column) === '' ? 'open' : `still ${text(row.column)}`
+  if (title === '') return `decide what happens next — ${where}`
+  const short = title.length > 80 ? `${title.slice(0, 77)}…` : title
+  return `decide what happens next — ${short} (${where})`
 }
 
 // A write is attributed by text, because one shared GitHub login makes it impossible to tell
@@ -97,8 +126,17 @@ export function install(rt) {
     return typeof botId === 'string' && rt.botOf(botId) !== undefined ? project.assistant : null
   }
 
-  const memoryOf = (project) => {
-    const memory = rt.projectMemoryOf?.(project.id)
+  // The owners of one Project (#1733): its primary owner plus every owner listed on the record.
+  // This list is the boundary a memory read is checked against.
+  const ownersOf = (project) => {
+    const primary = text(project.ownerUserId)
+    const listed = Array.isArray(project.ownerUserIds) ? project.ownerUserIds.map(id => text(id)).filter(id => id !== '') : []
+    return [...new Set([...(primary === '' ? [] : [primary]), ...listed])]
+  }
+
+  const memoryOf = (project, ownerId) => {
+    const owner = text(ownerId) || ownersOf(project)[0] || ''
+    const memory = rt.projectMemoryFor?.(project.id, owner) ?? null
     return {
       decisions: Array.isArray(memory?.decisions) ? memory.decisions : [],
       questions: Array.isArray(memory?.questions) ? memory.questions : [],
@@ -106,7 +144,18 @@ export function install(rt) {
     }
   }
 
-  const read = (projectId) => ({ project: activeProject(projectId), memory: memoryOf(activeProject(projectId)) })
+  // The refusal names the boundary instead of pretending the Project has no memory (#1733): one
+  // owner asking for another owner's entries learns whose they are, and nothing else.
+  const outsideBoundary = (project, ownerId) => {
+    const owners = ownersOf(project)
+    return refusal(`Project ${project.name} memory belongs only to ${owners.join(', ') || '(no owner)'}; ${text(ownerId) || '(none)'} is outside that boundary and cannot read it`, 'bot/refused')
+  }
+
+  const read = (projectId, ownerId = '') => {
+    const project = activeProject(projectId)
+    if (text(ownerId) !== '' && !ownersOf(project).includes(text(ownerId))) throw outsideBoundary(project, ownerId)
+    return { project, memory: memoryOf(project, ownerId) }
+  }
 
   const write = (projectId, body = {}) => {
     const project = activeProject(projectId)
@@ -115,8 +164,10 @@ export function install(rt) {
     const entry = text(body.text)
     if (entry === '') throw refusal('A Project memory entry needs text')
     if (entry.length > MAX_ENTRY) throw refusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
-    rt.appendProjectMemory?.(project.id, kind, { text: entry, at: Date.now(), ...(text(body.by) === '' ? {} : { by: text(body.by) }) })
-    return { project, memory: memoryOf(project) }
+    const ownerId = text(body.ownerId) || ownersOf(project)[0] || ''
+    if (text(body.ownerId) !== '' && !ownersOf(project).includes(text(body.ownerId))) throw outsideBoundary(project, body.ownerId)
+    rt.appendProjectMemory?.(project.id, kind, { text: entry, at: Date.now(), ownerId, ...(text(body.by) === '' ? {} : { by: text(body.by) }) })
+    return { project, memory: memoryOf(project, ownerId) }
   }
 
   // The one identity this slice accepts: the connector account, which on a single-person install
@@ -205,39 +256,158 @@ export function install(rt) {
     return assistant
   }
 
-  // One stored Project note and one delivered message, at most once per calendar day. The second
-  // build in a day answers `skipped` and writes nothing; it still resolves identity first, because
-  // a refused identity must not leave a note behind.
-  const digest = async (projectId, { at = Date.now(), force = false } = {}) => {
-    const who = identity(projectId)
-    if (!who.ok) return { ok: false, escalated: who.escalate === true, reason: who.reason }
-    const { project, login } = who
-    const memory = memoryOf(project)
-    const day = dayIn(at)
-    if (!force && memory.digest?.day === day) {
-      return { ok: true, skipped: true, day, reason: 'today already has a digest', project }
-    }
-    const rows = rt.projectBoard?.(project.id) ?? []
-    const listed = project.workDir === undefined ? null : await listProjectState(project.workDir).catch(() => null)
-    const files = listed?.ok === true ? listed.files : []
-    const built = buildDigest({ project, rows, since: memory.digest?.at ?? null, files, at })
-    const body = [attribution(project, login), built.text].join('\n\n')
-    const note = { day: built.day, at, text: built.text }
-    rt.setProjectDigest?.(project.id, note)
-    const toId = text(project.ownerUserId) === '' ? rt.state?.mainBotIds?.[0] : (rt.state?.members?.[project.ownerUserId]?.designatedChiefId ?? rt.state?.mainBotIds?.[0])
-    if (typeof toId === 'string' && toId !== '') {
-      await rt.deliver?.({
-        fromId: project.assistant?.botId ?? toId,
-        toId,
-        sessionId: rt.chatOf?.(toId) ?? toId,
-        text: body,
-        role: ASSISTANT_ROLE,
-      })
-    }
-    return { ok: true, skipped: false, day: built.day, changed: built.changed, text: body, project }
+  // Per-owner controls (#1733) live on the Project's assistant record, never in the host-wide
+  // prefs: a quiet window read in the owner's own zone, and the digest opt-out.
+  const assistantOwners = (assistant) => {
+    if (typeof assistant.owners !== 'object' || assistant.owners === null || Array.isArray(assistant.owners)) assistant.owners = {}
+    return assistant.owners
+  }
+  const ownerRecord = (assistant, ownerId) => {
+    const rows = assistantOwners(assistant)
+    const key = text(ownerId)
+    const kept = rows[key]
+    if (typeof kept !== 'object' || kept === null || Array.isArray(kept)) rows[key] = {}
+    return rows[key]
+  }
+  const quietOf = (assistant, ownerId) => {
+    const record = text(ownerId) === '' ? null : (assistant?.owners?.[text(ownerId)] ?? null)
+    return { ...quietHoursOf({ quietHours: record?.quiet ?? null }), zone: text(record?.zone) || DIGEST_ZONE }
   }
 
-  rt.projectAssistant = { create, remove, read, write, identity, digest, buildDigest }
+  // The opt-out and the quiet window of one owner. The 09:00 task is paused only when every owner
+  // is off, because it is the one task every owner's digest is built by; turning one owner back on
+  // resumes it. Nothing here touches GitHub: these are the user's own controls.
+  const setOwner = async (projectId, ownerId, settings = {}) => {
+    const project = activeProject(projectId)
+    const owner = text(ownerId)
+    if (!ownersOf(project).includes(owner)) throw outsideBoundary(project, ownerId)
+    const assistant = assistantOf(project)
+    if (assistant === null) throw refusal(`Project ${project.name} has no assistant yet`, 'bot/refused')
+    const record = ownerRecord(assistant, owner)
+    const wasOff = record.off === true
+    if (settings.quiet !== undefined) {
+      const next = readQuietHours(settings.quiet ?? null, record.quiet ?? null)
+      if (next === undefined) delete record.quiet
+      else record.quiet = next
+    }
+    if (settings.zone !== undefined) {
+      if (text(settings.zone) === '') delete record.zone
+      else record.zone = text(settings.zone)
+    }
+    if (settings.off !== undefined) record.off = settings.off === true
+    let schedule = null
+    if (settings.off !== undefined && typeof rt.scheduleEndpoint === 'function' && typeof assistant.scheduleId === 'string') {
+      const allOff = ownersOf(project).every(id => assistant.owners?.[id]?.off === true)
+      try {
+        const view = await rt.scheduleEndpoint(allOff ? 'schedule-pause' : 'schedule-resume', { sessionId: assistant.sessionId, id: assistant.scheduleId })
+        schedule = (view?.tasks ?? []).find(task => task.id === assistant.scheduleId)?.status ?? (allOff ? 'paused' : 'active')
+      } catch (error) {
+        record.scheduleError = error?.message ?? String(error)
+      }
+    }
+    await rt.save?.()
+    return { owner, off: record.off === true, quiet: quietOf(assistant, owner), schedule, changed: wasOff !== (record.off === true) }
+  }
+
+  // In-app delivery goes to the owner's own Session and never through the GitHub identity: the 2.5
+  // refusal stays where a GitHub write happens, not on the way to a person's own chat (#1733).
+  const deliverTo = async (project, ownerId, body) => {
+    const member = rt.state?.members?.[text(ownerId)]
+    const toId = text(member?.designatedChiefId) || text(rt.state?.mainBotIds?.[0])
+    if (toId === '') return { delivered: false, reason: `owner ${text(ownerId) || '(none)'} has no Session to deliver to` }
+    await rt.deliver?.({
+      fromId: project.assistant?.botId ?? toId,
+      toId,
+      sessionId: rt.chatOf?.(toId) ?? toId,
+      text: body,
+      role: ASSISTANT_ROLE,
+    })
+    return { delivered: true, toId }
+  }
+
+  const bodyFor = (project, built, who) => (who.ok === true ? [attribution(project, who.login), built.text].join('\n\n') : built.text)
+
+  // One owner's digest. Generation may proceed while a quiet window holds delivery; a window that
+  // covers 09:00 delivers nothing that day at all, and that is the expected outcome, not a failure.
+  const digestForOwner = async ({ project, owner, rows, files, at, force, who }) => {
+    const assistant = assistantOf(project) ?? project.assistant ?? null
+    const record = assistant === null ? { } : ownerRecord(assistant, owner)
+    const quiet = quietOf(assistant, owner)
+    const clock = clockIn(quiet.zone, at)
+    const coversDue = inQuietHours(quiet, DIGEST_TIME)
+    const memory = memoryOf(project, owner)
+    const day = dayIn(at)
+    if (record.off === true) {
+      return { owner, ok: true, skipped: true, optedOut: true, delivered: false, day, reason: 'this owner turned the digest off, so nothing is generated' }
+    }
+    // A digest held earlier today goes out once, when the window ends, labelled as held.
+    const held = typeof record.held === 'object' && record.held !== null ? record.held : null
+    if (held !== null && held.day === day && coversDue === false && inQuietHours(quiet, clock) === false) {
+      delete record.held
+      const label = `held from ${DIGEST_TIME} to ${clock} by quiet hours ${quiet.from}–${quiet.to}`
+      const body = [bodyFor(project, { text: text(held.text) }, who), `(${label})`].join('\n')
+      const sent = await deliverTo(project, owner, body)
+      await rt.save?.()
+      return { owner, ok: true, skipped: false, held: true, delivered: sent.delivered === true, day, changed: true, text: body, label, reason: label }
+    }
+    if (!force && memory.digest?.day === day) {
+      return { owner, ok: true, skipped: true, delivered: false, day, reason: 'today already has a digest' }
+    }
+    const built = buildDigest({ project, rows, since: memory.digest?.at ?? null, files, at, owner, actionable: actionableFor(rows, owner) })
+    const note = { day: built.day, at, text: built.text, ...(who.ok === true ? {} : { error: `GitHub write refused: ${who.reason}` }) }
+    rt.setProjectDigest?.(project.id, note, owner)
+    if (coversDue) {
+      return { owner, ok: true, skipped: false, delivered: false, held: true, dropped: true, day: built.day, changed: built.changed, text: built.text, reason: `quiet hours ${quiet.from}–${quiet.to} cover ${DIGEST_TIME}, so nothing is delivered — the expected outcome` }
+    }
+    if (inQuietHours(quiet, clock)) {
+      record.held = { day: built.day, at, text: built.text, from: quiet.from, to: quiet.to }
+      await rt.save?.()
+      return { owner, ok: true, skipped: false, delivered: false, held: true, day: built.day, changed: built.changed, text: built.text, reason: `quiet hours ${quiet.from}–${quiet.to}: held, and delivered once when they end` }
+    }
+    const body = bodyFor(project, built, who)
+    const sent = await deliverTo(project, owner, body)
+    return { owner, ok: true, skipped: false, delivered: sent.delivered === true, day: built.day, changed: built.changed, text: body }
+  }
+
+  // One read of the board and one of Project State, then one render per owner (#1733): the facts
+  // are shared, the personalisation is not, and neither side sees the other's memory. A render
+  // that throws is that owner's failure, recorded on their own note; the other owners still go out.
+  const digest = async (projectId, { at = Date.now(), force = false, ownerId = '' } = {}) => {
+    const project = activeProject(projectId)
+    if (text(ownerId) !== '' && !ownersOf(project).includes(text(ownerId))) throw outsideBoundary(project, ownerId)
+    const listed = text(ownerId) === '' ? ownersOf(project) : [text(ownerId)]
+    const owners = listed.length === 0 ? [''] : listed
+    const who = identity(project.id)
+    const rows = rt.projectBoard?.(project.id) ?? []
+    const state = project.workDir === undefined ? null : await listProjectState(project.workDir).catch(() => null)
+    const files = state?.ok === true ? state.files : []
+    const results = []
+    for (const owner of owners) {
+      try {
+        results.push(await digestForOwner({ project, owner, rows, files, at, force, who }))
+      } catch (error) {
+        const failure = error?.message ?? String(error)
+        rt.setProjectDigest?.(project.id, { day: dayIn(at), at, text: `digest failed: ${failure}`, error: failure }, owner)
+        rt.warn?.('ds-bot: the digest of %s for %s failed: %s', project.name, owner, failure)
+        results.push({ owner, ok: false, skipped: false, delivered: false, day: dayIn(at), error: failure, recorded: true })
+      }
+    }
+    const first = results[0] ?? {}
+    return {
+      ok: true,
+      day: first.day,
+      skipped: first.skipped === true,
+      changed: first.changed,
+      reason: first.reason,
+      text: first.text ?? '',
+      project,
+      owners: results,
+      delivered: results.filter(row => row.delivered === true).length,
+      identity: who.ok === true ? { ok: true, login: who.login } : { ok: false, escalated: who.escalate === true, reason: who.reason },
+    }
+  }
+
+  rt.projectAssistant = { create, remove, read, write, identity, digest, buildDigest, setOwner, ownersOf, actionableFor, MAX_ACTIONABLE }
 
   // The assistant's own Session calls this. The Project comes from the Session's bound Bot, never
   // from the arguments, so one Project's assistant cannot reach another Project's memory.

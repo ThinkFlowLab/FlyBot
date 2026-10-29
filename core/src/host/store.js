@@ -411,6 +411,9 @@ export function install(rt) {
       repository: repository === '' ? null : repository,
       defaultBranch: projectText(body.defaultBranch, 120) || 'main',
       ownerUserId: projectText(body.ownerUserId, 120) || null,
+      // Further owners of the same Project (#1733): each has their own memory and their own digest,
+      // built from the same board read. An empty list is a single-owner Project.
+      ownerUserIds: Array.isArray(body.ownerUserIds) ? [...new Set(body.ownerUserIds.map(id => projectText(id, 120)).filter(id => id !== ''))] : [],
       createdAt: now,
       updatedAt: now,
       status,
@@ -420,26 +423,54 @@ export function install(rt) {
   }
   const readProject = id => projectOfId(id)
   const listProjects = () => Object.values(state.projects).filter(isRecord)
-  // A Project Assistant's memory (#1712): decisions, open questions and the last digest, stored
-  // per Project id. A Project with no entries answers empty lists, never another Project's.
+  // A Project Assistant's memory (#1712, per owner since #1733): decisions, open questions and
+  // the last digest, stored per (Project, owner). The row keyed by the Project id keeps one record
+  // per owner under `owners`; its own three fields mirror the Project's primary owner, so a
+  // single-owner Project reads exactly as it did before the owner dimension existed.
   const projectMemoryOf = (id) => {
     const kept = ownEntry(state.projectMemory, String(id ?? ''))
     return isRecord(kept) ? kept : null
   }
+  const primaryOwner = project => projectText(project?.ownerUserId, 120)
+  const ownerRow = (table, ownerId) => {
+    if (!isRecord(table.owners)) table.owners = {}
+    const kept = ownEntry(table.owners, String(ownerId ?? ''))
+    if (isRecord(kept)) return kept
+    const fresh = { decisions: [], questions: [], digest: null }
+    setEntry(table.owners, String(ownerId ?? ''), fresh)
+    return fresh
+  }
+  const ownerView = record => ({
+    decisions: Array.isArray(record?.decisions) ? record.decisions : [],
+    questions: Array.isArray(record?.questions) ? record.questions : [],
+    digest: isRecord(record?.digest) ? record.digest : null,
+  })
+  // Mirrors an owner's record onto the Project row when that owner is the primary one, which is
+  // the whole row on a single-owner Project.
+  const mirrorOwner = (table, project, ownerId, record) => {
+    if (String(ownerId ?? '') !== primaryOwner(project)) return
+    table.decisions = record.decisions
+    table.questions = record.questions
+    table.digest = record.digest
+  }
   const projectMemory = (id) => {
     const project = projectOfId(id)
     if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
+    return ownerView(projectMemoryOf(project.id))
+  }
+  // One owner's view. A Project with no entries for that owner answers empty lists, never another
+  // owner's or another Project's.
+  const projectMemoryFor = (id, ownerId) => {
+    const project = projectOfId(id)
+    if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
     const kept = projectMemoryOf(project.id)
-    return {
-      decisions: Array.isArray(kept?.decisions) ? kept.decisions : [],
-      questions: Array.isArray(kept?.questions) ? kept.questions : [],
-      digest: isRecord(kept?.digest) ? kept.digest : null,
-    }
+    const row = isRecord(kept?.owners) ? ownEntry(kept.owners, String(ownerId ?? '')) : null
+    return ownerView(row)
   }
   const memoryTable = (project) => {
     const kept = projectMemoryOf(project.id)
     if (kept !== null) return kept
-    const fresh = { decisions: [], questions: [], digest: null }
+    const fresh = { decisions: [], questions: [], digest: null, owners: {} }
     setEntry(state.projectMemory, project.id, fresh)
     return fresh
   }
@@ -447,18 +478,25 @@ export function install(rt) {
     const project = requireProject(id)
     if (kind !== 'decision' && kind !== 'question') throw projectRefusal(`Unknown Project memory kind ${String(kind ?? '')}`)
     const table = memoryTable(project)
-    const list = kind === 'decision' ? table.decisions : table.questions
+    const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
+    const record = ownerRow(table, ownerId)
+    const list = kind === 'decision' ? record.decisions : record.questions
     list.push({ text: projectText(entry.text, 600), at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
+    mirrorOwner(table, project, ownerId, record)
     project.updatedAt = Math.max(project.updatedAt, Date.now())
-    return projectMemory(project.id)
+    return ownerView(record)
   }
-  // The last digest is one note per Project, replaced only by a later day's build; the assistant
-  // refuses a second build in the same day before it gets here.
-  const setProjectDigest = (id, note = {}) => {
+  // The last digest is one note per (Project, owner), replaced only by a later day's build; the
+  // assistant refuses a second build in the same day before it gets here.
+  const setProjectDigest = (id, note = {}, ownerId) => {
     const project = requireProject(id)
-    memoryTable(project).digest = { day: projectText(note.day, 20), at: Number(note.at) || Date.now(), text: projectText(note.text, 4000) }
+    const table = memoryTable(project)
+    const owner = projectText(ownerId, 120) || primaryOwner(project)
+    const record = ownerRow(table, owner)
+    record.digest = { day: projectText(note.day, 20), at: Number(note.at) || Date.now(), text: projectText(note.text, 4000), ...(projectText(note.error, 300) === '' ? {} : { error: projectText(note.error, 300) }) }
+    mirrorOwner(table, project, owner, record)
     project.updatedAt = Math.max(project.updatedAt, Date.now())
-    return projectMemory(project.id)
+    return ownerView(record)
   }
   // Deleting a Project takes its bindings and its memory with it (#1712): an unbound member
   // resolves `null` again, and no orphan memory keyed by a dead id can be read.
@@ -552,6 +590,14 @@ export function install(rt) {
         const project = bindProject(body)
         await save()
         return { project }
+      }
+      // The assistant's per-owner controls (#1733): a quiet window and the digest opt-out live on
+      // the Project's own assistant record, not in the host-wide prefs.
+      case 'project-assistant-owner': {
+        const project = requireProject(projectText(body.id, 200))
+        const result = await rt.projectAssistant?.setOwner?.(project.id, projectText(body.ownerId, 120), body.settings ?? {})
+        await save()
+        return { project: readProject(project.id), ...(result ?? {}) }
       }
       case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
       // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
@@ -852,6 +898,6 @@ export function install(rt) {
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
     initialOwnerId, syncDesignatedChief,
     projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember,
-    projectMemory, projectMemoryOf, appendProjectMemory, setProjectDigest, deleteProject,
+    projectMemory, projectMemoryOf, projectMemoryFor, appendProjectMemory, setProjectDigest, deleteProject,
   })
 }
