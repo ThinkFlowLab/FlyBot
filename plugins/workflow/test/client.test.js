@@ -2517,3 +2517,128 @@ test('the drawer flowchart draws the step layout, not the stored editor coordina
   assert.ok(button(view.tree, 'Show less'))
   view.unmount()
 })
+
+// #1677: a workflow the service lays out with no stored coordinates — fork -> r1..rN ->
+// join at graph.js's own seat (GAP_X 188, GAP_Y 108).
+function parallelGraph(n) {
+  const ids = Array.from({ length: n }, (_, i) => `r${i + 1}`)
+  return {
+    ...delivery(), id: `fork-${n}`, name: `Fork ${n}`,
+    layers: [['fork'], ids, ['join']],
+    nodes: [
+      { id: 'fork', name: 'Fork', role: '分叉', x: 0, y: 0 },
+      ...ids.map((id, i) => ({ id, name: id.toUpperCase(), role: '分支', x: Math.round((i - (n - 1) / 2) * 188), y: 108 })),
+      { id: 'join', name: 'Join', role: '汇合', x: 0, y: 216 },
+    ],
+    edges: [...ids.map(id => ({ from: 'fork', to: id })), ...ids.map(id => ({ from: id, to: 'join' }))],
+  }
+}
+
+// What the Edit plane draws: a card is NODE_W wide and one NODE_H tall, `.wf-port` is a
+// 10px dot on the card's bottom-right corner, and `.wf-mini` an 18px button whose box
+// starts 8px above and 10px left of that corner (#1677).
+function drawnCards(nodeAt, workflow) {
+  return workflow.nodes.map(node => {
+    const style = nodeAt(node.id).props.style
+    const width = style.width ?? client.NODE_W
+    const left = style.left
+    const top = style.top
+    return {
+      id: node.id, left, top, right: left + width, bottom: top + client.NODE_H,
+      port: { x: left + width, y: top + client.NODE_H },
+      mini: { x: left + width - 1, y: top + 1 },
+    }
+  })
+}
+// A click lands on the dot and the button, not only on their centres: the dot is 10px
+// square on the corner, the button 18px square whose box starts 8px above it, so what
+// has to stay clear is the whole area those two cover.
+const portArea = card => ({ left: card.right - 5, right: card.right + 5, top: card.bottom - 5, bottom: card.bottom + 5 })
+const miniArea = card => ({ left: card.right - 10, right: card.right + 8, top: card.top - 8, bottom: card.top + 10 })
+const hits = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top)
+// Closed intervals: a corner that lies exactly on another card's edge is still that
+// card in DOM order, because the card comes later and its border covers the pixel.
+const covers = (card, point) => point.x >= card.left && point.x <= card.right && point.y >= card.top && point.y <= card.bottom
+
+for (const way of [3, 4, 6]) {
+  test(`the drawer's Edit plane keeps a ${way}-way parallel step's cards apart (#1677)`, async () => {
+    const graph = parallelGraph(way)
+    const { view, nodeAt } = await openDrawer(graph)
+    const cards = drawnCards(nodeAt, graph)
+    const overlaps = []
+    for (let i = 0; i < cards.length; i += 1) {
+      for (let j = i + 1; j < cards.length; j += 1) {
+        const a = cards[i]
+        const b = cards[j]
+        const x = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+        const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+        if (x > 0 && y > 0) overlaps.push(`${a.id}/${b.id}=${Math.round(x)}x${Math.round(y)}`)
+      }
+    }
+    assert.deepEqual(overlaps, [], 'two cards in the Edit plane are drawn on top of each other')
+    for (const card of cards) {
+      for (const other of cards) {
+        if (other.id === card.id) continue
+        assert.equal(covers(other, card.port), false, `${other.id} covers ${card.id}'s out-port centre`)
+        assert.equal(covers(other, card.mini), false, `${other.id} covers ${card.id}'s remove button centre`)
+        assert.equal(hits(portArea(card), other), false, `${other.id} is drawn over ${card.id}'s out-port, so the click lands on it`)
+        assert.equal(hits(miniArea(card), other), false, `${other.id} is drawn over ${card.id}'s remove button`)
+      }
+    }
+    view.unmount()
+  })
+}
+
+test("a 3-way branch's out-port starts its own wire instead of the card on top of it (#1677)", async () => {
+  const graph = parallelGraph(3)
+  const { view, calls, nodeAt, canvas } = await openDrawer(graph)
+  const cards = drawnCards(nodeAt, graph)
+  const r1 = cards.find(card => card.id === 'r1')
+  const over = cards.filter(card => card.id !== 'r1' && covers(card, r1.port)).map(card => card.id)
+  assert.deepEqual(over, [], "another card is drawn over r1's out-port, so the click lands on it")
+  const port = findAll(view.tree, node => node.props?.['data-port'] === 'out' && node.props['aria-label'] === 'R1')[0]
+  port.props.onPointerDown({ preventDefault() {}, stopPropagation() {}, target: { dataset: { port: 'out' } } })
+  canvas().props.onPointerUp({ clientX: r1.port.x, clientY: r1.port.y, target: { dataset: { node: 'join' }, closest() { return null } } })
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.ok(saved.body.edges.some(edge => edge.from === 'r1' && edge.to === 'join'), 'the wire did not start from r1')
+  view.unmount()
+})
+
+// The planes the fix must not move, captured byte for byte from 1db1037a, the base
+// this branch builds on: the Read-only plane at 368 and the two-branch Edit plane.
+const BASE_PLANES = {
+  'edit:delivery@364': "{\"boxes\":[[\"planner\",98,12,168,72],[\"writer\",98,128,168,72],[\"coder\",98,248,168,72],[\"reviewer\",12,368,168,72],[\"tester\",184,368,168,72],[\"deployer\",98,508,168,72]],\"wires\":[[\"planner>writer\",\"M 182 68 C 182 98, 182 98, 182 128\"],[\"writer>coder\",\"M 182 184 C 182 216, 182 216, 182 248\"],[\"coder>reviewer\",\"M 182 304 L 182 336 L 96 336 L 96 368\"],[\"coder>tester\",\"M 182 304 L 182 336 L 268 336 L 268 368\"],[\"reviewer>deployer\",\"M 96 424 L 96 466 L 182 466 L 182 508\"],[\"tester>deployer\",\"M 268 424 L 268 466 L 182 466 L 182 508\"]]}",
+  'edit:fork2@364': "{\"boxes\":[[\"fork\",98,12,168,72],[\"r1\",12,120,168,72],[\"r2\",184,120,168,72],[\"join\",98,228,168,72]],\"wires\":[[\"fork>r1\",\"M 182 68 L 182 94 L 96 94 L 96 120\"],[\"fork>r2\",\"M 182 68 L 182 94 L 268 94 L 268 120\"],[\"r1>join\",\"M 96 176 L 96 202 L 182 202 L 182 228\"],[\"r2>join\",\"M 268 176 L 268 202 L 182 202 L 182 228\"]]}",
+  'read:delivery@368': "{\"boxes\":[[\"planner\",100,12,168,72],[\"writer\",100,120,168,72],[\"coder\",100,228,168,72],[\"reviewer\",22,364,156,72],[\"tester\",190,364,156,72],[\"deployer\",100,482,168,72]],\"wires\":[[\"planner>writer\",\"M 184 84 L 184 120\"],[\"writer>coder\",\"M 184 192 L 184 228\"],[\"coder>reviewer,coder>tester|bus\",\"M 184 300 L 184 318 M 100 318 L 268 318\"],[\"coder>reviewer,coder>tester|reviewer\",\"M 100 318 L 100 364\"],[\"coder>reviewer,coder>tester|tester\",\"M 268 318 L 268 364\"],[\"reviewer>deployer,tester>deployer|bus\",\"M 100 436 L 100 464 M 268 436 L 268 464 M 100 464 L 268 464\"],[\"reviewer>deployer,tester>deployer|deployer\",\"M 184 464 L 184 482\"]]}",
+  'read:fork3@368': "{\"boxes\":[[\"fork\",100,12,168,72],[\"r1\",22,148,100,72],[\"r2\",134,148,100,72],[\"r3\",246,148,100,72],[\"join\",100,266,168,72]],\"wires\":[[\"fork>r1,fork>r2,fork>r3|bus\",\"M 184 84 L 184 102 M 72 102 L 296 102\"],[\"fork>r1,fork>r2,fork>r3|r1\",\"M 72 102 L 72 148\"],[\"fork>r1,fork>r2,fork>r3|r2\",\"M 184 102 L 184 148\"],[\"fork>r1,fork>r2,fork>r3|r3\",\"M 296 102 L 296 148\"],[\"r1>join,r2>join,r3>join|bus\",\"M 72 220 L 72 248 M 184 220 L 184 248 M 296 220 L 296 248 M 72 248 L 296 248\"],[\"r1>join,r2>join,r3>join|join\",\"M 184 248 L 184 266\"]]}",
+  'read:fork4@368': "{\"boxes\":[[\"fork\",100,12,168,72],[\"r1\",22,148,156,72],[\"r2\",190,148,156,72],[\"r3\",22,232,156,72],[\"r4\",190,232,156,72],[\"join\",100,350,168,72]],\"wires\":[[\"fork>r1,fork>r2,fork>r3,fork>r4|bus\",\"M 184 84 L 184 102 M 100 102 L 268 102\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r1\",\"M 100 102 L 100 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r2\",\"M 268 102 L 268 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r3\",\"M 100 102 L 16 102 L 16 226 L 100 226 L 100 232\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r4\",\"M 268 102 L 16 102 L 16 226 L 268 226 L 268 232\"],[\"r1>join,r2>join,r3>join,r4>join|bus\",\"M 100 220 L 100 226 L 16 226 L 16 332 M 268 220 L 268 226 L 16 226 L 16 332 M 100 304 L 100 332 M 268 304 L 268 332 M 16 332 L 268 332\"],[\"r1>join,r2>join,r3>join,r4>join|join\",\"M 184 332 L 184 350\"]]}",
+  'read:fork6@368': "{\"boxes\":[[\"fork\",100,12,168,72],[\"r1\",22,148,100,72],[\"r2\",134,148,100,72],[\"r3\",246,148,100,72],[\"r4\",22,232,100,72],[\"r5\",134,232,100,72],[\"r6\",246,232,100,72],[\"join\",100,350,168,72]],\"wires\":[[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|bus\",\"M 184 84 L 184 102 M 72 102 L 296 102\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r1\",\"M 72 102 L 72 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r2\",\"M 184 102 L 184 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r3\",\"M 296 102 L 296 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r4\",\"M 72 102 L 16 102 L 16 226 L 72 226 L 72 232\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r5\",\"M 184 102 L 16 102 L 16 226 L 184 226 L 184 232\"],[\"fork>r1,fork>r2,fork>r3,fork>r4,fork>r5,fork>r6|r6\",\"M 296 102 L 16 102 L 16 226 L 296 226 L 296 232\"],[\"r1>join,r2>join,r3>join,r4>join,r5>join,r6>join|bus\",\"M 72 220 L 72 226 L 16 226 L 16 332 M 184 220 L 184 226 L 16 226 L 16 332 M 296 220 L 296 226 L 16 226 L 16 332 M 72 304 L 72 332 M 184 304 L 184 332 M 296 304 L 296 332 M 16 332 L 296 332\"],[\"r1>join,r2>join,r3>join,r4>join,r5>join,r6>join|join\",\"M 184 332 L 184 350\"]]}",
+}
+
+function editPlaneString(workflow, width) {
+  const plane = client.editPlane(workflow, width)
+  const at = new Map(plane.nodes.map(node => [node.id, node]))
+  return JSON.stringify({
+    boxes: plane.nodes.map(node => [node.id, node.x - (node.w ?? client.NODE_W) / 2, node.y, node.w ?? client.NODE_W, client.NODE_H]),
+    wires: (workflow.edges ?? []).map(edge => [`${edge.from}>${edge.to}`, client.wirePath(at.get(edge.from), at.get(edge.to), 0)]),
+  })
+}
+function readOnlyString(workflow, width) {
+  const layout = client.flowLayout(workflow, width)
+  return JSON.stringify({
+    boxes: [...layout.boxes.values()].map(box => [box.id, box.left, box.top, box.w, box.h]),
+    wires: layout.wires.map(wire => [wire.key, wire.d]),
+  })
+}
+
+test('the Read-only plane and the 2-way Edit plane stay byte-identical to the base (#1677)', () => {
+  const now = {
+    'edit:delivery@364': editPlaneString(delivery(), 364),
+    'edit:fork2@364': editPlaneString(parallelGraph(2), 364),
+    'read:delivery@368': readOnlyString(delivery(), 368),
+    'read:fork3@368': readOnlyString(parallelGraph(3), 368),
+    'read:fork4@368': readOnlyString(parallelGraph(4), 368),
+    'read:fork6@368': readOnlyString(parallelGraph(6), 368),
+  }
+  for (const [key, value] of Object.entries(now)) assert.equal(value, BASE_PLANES[key], `${key} moved`)
+})

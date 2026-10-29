@@ -769,6 +769,50 @@ window.__ModuleLoader__.load({
       const height = rows.length ? y - FLOW_ROW_GAP + FIT_PAD : 0
       return { width, height, rows, boxes, frames, bands, wires: flowWires(workflow?.edges ?? [], boxes, bands, width) }
     }
+    // The drawer's Edit plane. `fitPlane` scales only the node centres (#1513), so the
+    // cards keep their 168px width: three or more branches of one parallel step land
+    // on top of each other in a 364px drawer, the later card takes the click, and the
+    // branch's out-port cannot start a wire (#1677). While a parallel step's cards do
+    // stay apart the fitted plane is used unchanged, so a two-branch Edit plane draws
+    // exactly what it drew before; when they cannot, the rows come from `layers` with
+    // the Read-only plane's column width and wrap, and the drawn coordinates are the
+    // panel's own, which makes a drag a plain pointer delta.
+    function editPlane(workflow, panelWidth = DRAWER_FLOW_W, heights = {}) {
+      const width = Math.max(Number(panelWidth) || DRAWER_FLOW_W, NODE_W + FIT_PAD * 2)
+      const fit = fitPlane(workflow?.nodes, width)
+      const at = new Map(fit.nodes.map(node => [node.id, node]))
+      const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE_W && Math.abs(a.y - b.y) < NODE_H
+      const crowded = (workflow?.layers ?? []).some(layer => {
+        const members = (layer ?? []).map(id => at.get(id)).filter(Boolean)
+        return members.some((a, i) => members.some((b, j) => j > i && overlaps(a, b)))
+      })
+      if (!crowded) return { width, scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, height: fit.height, wrapped: false, nodes: fit.nodes }
+      const stored = new Map((workflow?.nodes ?? []).map(node => [node.id, node]))
+      const drawn = []
+      let y = FIT_PAD
+      for (const row of flowRows(workflow)) {
+        const par = row.length > 1
+        const inner = width - FIT_PAD * 2 - (par ? FLOW_PAR_PAD * 2 : 0)
+        const columns = Math.max(1, Math.min(row.length, Math.floor((inner + FLOW_GAP_X) / (FLOW_NODE_MIN_W + FLOW_GAP_X))))
+        const perLine = Math.ceil(row.length / Math.ceil(row.length / columns))
+        let cursor = y + (par ? FLOW_PAR_LABEL : 0)
+        for (let at = 0; at < row.length; at += perLine) {
+          const line = row.slice(at, at + perLine)
+          const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (line.length - 1)) / line.length)))
+          const total = w * line.length + FLOW_GAP_X * (line.length - 1)
+          const start = Math.round(width / 2 - total / 2)
+          let lineH = 0
+          line.forEach((id, column) => {
+            const h = Math.max(24, Number(heights?.[id]) || NODE_H)
+            lineH = Math.max(lineH, h)
+            drawn.push({ ...stored.get(id), id, x: start + column * (w + FLOW_GAP_X) + w / 2, y: cursor, w, h })
+          })
+          cursor += lineH + FLOW_WRAP_GAP
+        }
+        y = cursor - FLOW_WRAP_GAP + (par ? FLOW_PAR_PAD : 0) + FLOW_ROW_GAP
+      }
+      return { width, scale: 1, offsetX: 0, offsetY: 0, height: Math.max(420, y - FLOW_ROW_GAP + FIT_PAD), wrapped: true, nodes: drawn }
+    }
     // One bus per connected group of edges between two adjacent rows: every
     // source drops to the bus, every target rises from it, so a fork leaves one
     // point and a join meets in one point. Skip and loop edges run in the right
@@ -1004,13 +1048,15 @@ window.__ModuleLoader__.load({
       const canvasRef = useRef(null)
       const status = run?.nodeStatus ?? {}
       // Read the drawn panel width and node heights after every paint and on
-      // resize, so the wires follow the boxes the browser actually laid out.
+      // resize, so the wires follow the boxes the browser actually laid out. Both
+      // planes are measured: the Read-only one puts its heights into `flowLayout`,
+      // and a laid-out Edit plane needs them for its row heights (#1677).
       useEffect(() => {
         const el = canvasRef.current
         const read = () => {
           const width = Math.round(el?.getBoundingClientRect?.().width || 0)
           const heights = {}
-          for (const item of el?.querySelectorAll?.('.wf-flow-view [data-node]') ?? []) {
+          for (const item of el?.querySelectorAll?.('[data-node]') ?? []) {
             const value = Math.round(item.offsetHeight || 0)
             if (value > 0) heights[item.dataset?.node] = value
           }
@@ -1028,10 +1074,11 @@ window.__ModuleLoader__.load({
       })
       const nodes = workflow.nodes
       const edges = workflow.edges ?? []
-      // The drawer paints a fitted copy of the world graph (#1513). The fit is a
-      // fixed frame for the whole gesture: folding the ghost back into it re-centred
+      // The drawer paints the world graph: fitted while its cards stay apart (#1513),
+      // laid out in rows once a parallel step's cards cannot (#1677). Either plane is
+      // a fixed frame for the whole gesture: folding the ghost back into it re-centred
       // and rescaled the graph under the pointer and pinned an extreme node (#1575).
-      const plane = fitPlane(nodes, DRAWER_FLOW_W)
+      const plane = editPlane(workflow, DRAWER_FLOW_W, measure.heights)
       const scale = plane.scale || 1
       const fitted = new Map(plane.nodes.map(node => [node.id, node]))
       const drawn = new Map(fitted)
@@ -1134,11 +1181,14 @@ window.__ModuleLoader__.load({
               key: node.id,
               'data-node': node.id,
               className: `wf-node wf-abs ${status[node.id] ?? 'queued'} ${selectedNode === node.id ? 'selected' : ''}`,
-              style: { left: spot.x - NODE_W / 2, top: spot.y },
+              style: plane.wrapped ? { left: spot.x - spot.w / 2, top: spot.y, width: spot.w } : { left: spot.x - NODE_W / 2, top: spot.y },
               onClick: () => editing ? setSelectedNode(node.id) : null,
               onPointerDown: (event) => {
                 if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
-                setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x, y: node.y, scale })
+                // The drag starts in the frame that is drawn: the fitted plane divides the
+                // pointer delta by its scale, and a laid-out plane is 1:1, so the move is a
+                // plain delta there (#1677).
+                setGesture({ kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: plane.wrapped ? spot.x : node.x, y: plane.wrapped ? spot.y : node.y, scale })
               },
               onMouseEnter: editing ? (event) => onTip?.({ x: event.clientX, y: event.clientY, node }) : null,
               onMouseLeave: editing ? () => onTip?.(null) : null,
@@ -2288,7 +2338,7 @@ window.__ModuleLoader__.load({
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
       runHistoryRows, liveStageRuns, resolveFocusedRun, newestAttempt, parallelFrameStyle, fitPlane,
-      flowLayout, flowRows,
+      editPlane, flowLayout, flowRows,
       DRAWER_FLOW_W, NODE_W, NODE_H,
       botPaletteSubtitle, botTint, settledCall,
     }
