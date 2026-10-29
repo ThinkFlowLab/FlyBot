@@ -39,6 +39,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'on session/event',
     'on session/event',
     'on agent/status',
+    'on session/event',
     'effect ds-bot: agent tool restrict retry',
     'on agent/created',
     'effect ds-bot: identity section',

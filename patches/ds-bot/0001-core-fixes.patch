@@ -8967,12 +8967,13 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -37,6 +37,8 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -37,6 +37,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'effect ds-bot: state lock',
      'on llm/adapters-updated',
      'on session/event',
 +    'on session/event',
 +    'on agent/status',
++    'on session/event',
      'effect ds-bot: agent tool restrict retry',
      'on agent/created',
      'effect ds-bot: identity section',
