@@ -124,3 +124,30 @@ test('consecutive acks in one chat differ, and clear on turn/end and agent idle'
   emit('agent/status', { agent: { session: { id: 'a' } }, status: 'idle' })
   assert.deepEqual(rt.busyAcksView(), {})
 })
+
+// The quoted topic is the person's own text: a `{d}` / `{t}` they typed is not template
+// markup and must be echoed unchanged. Messages stay short on purpose — topicOf() clips
+// at TOPIC_MAX, and a long sentence would hide the rewrite behind the ellipsis.
+test('a {d} typed in the message is quoted back verbatim, with and without a running tool', () => {
+  for (const message of ['改 {d} 这行', 'fix "{d}" here']) {
+    for (const tool of ['bash', undefined]) {
+      for (let seed = 0; seed < 6; seed += 1) {
+        const text = composeBusyAck({ message, tool, seed, uiLanguage: 'zh-CN' })
+        assert.ok(text.includes('{d}'), `${message} / ${tool ?? 'no tool'} / seed ${seed}: ${text}`)
+        assert.ok(text.includes(topicOf(message, ackLanguage(message, 'zh-CN'))), `${message} / seed ${seed}: ${text}`)
+      }
+    }
+  }
+})
+
+test('a {t} typed in the message is quoted back verbatim, with and without a running tool', () => {
+  for (const message of ['改 {t} 这行', 'fix "{t}" here']) {
+    for (const tool of ['bash', undefined]) {
+      for (let seed = 0; seed < 6; seed += 1) {
+        const text = composeBusyAck({ message, tool, seed, uiLanguage: 'zh-CN' })
+        assert.ok(text.includes('{t}'), `${message} / ${tool ?? 'no tool'} / seed ${seed}: ${text}`)
+        assert.ok(text.includes(topicOf(message, ackLanguage(message, 'zh-CN'))), `${message} / seed ${seed}: ${text}`)
+      }
+    }
+  }
+})
