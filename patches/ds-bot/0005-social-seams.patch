@@ -961,6 +961,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 diff --git a/src/host/delivery.js b/src/host/delivery.js
 --- a/src/host/delivery.js
 +++ b/src/host/delivery.js
+--- a/src/host/delivery.js
++++ b/src/host/delivery.js
 @@ -2,6 +2,61 @@
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -1023,7 +1025,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
  
  export function install(rt) {
    const { ctx, state } = rt
-@@ -10,10 +10,13 @@ export function install(rt) {
+@@ -10,27 +65,98 @@
      const resolved = await ctx.sessionController.resolveAgent(sessionId)
      if ('error' in resolved) throw new Error(resolved.error?.message ?? 'Session unavailable')
      rt.hideBlockingQuestion(resolved.agent)
@@ -1033,12 +1035,14 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
    }
  
 -  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false } = {}) => {
-+  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false, answeredIn } = {}) => {
++  const headerFor = (role, fromName, roomName, audience, note = 'new message', deferred = false, { resumed = false, retried = false, rateLimited = false, answeredIn } = {}) => {
 +    if (answeredIn !== undefined) return `[The user answered your question card in the group "${answeredIn}" · your reply goes back to ${fromName} there]`
      if (deferred) return `[Message from ${fromName} · you read it during your last task; answer it now]`
      if (retried && role !== 'room') return '[Your last reply wrote a tool call as text, so nothing ran]'
++    if (rateLimited && role !== 'room') return '[Your last turn was cut off by the provider\'s rate limit · the same request again]'
      if (resumed && role === 'resume') return '[DeepSeek Harness restarted while you were working]'
-@@ -22,15 +22,82 @@ export function install(rt) {
+     if (resumed && role !== 'room') return `[Message from ${fromName} · DeepSeek Harness restarted while you were working on it]`
+     if (role === 'reply') return `[Reply from ${fromName}]`
      if (role === 'stopped') return `[Stopped by ${fromName}]`
      if (role === 'room') return `[Group chat "${roomName}" · ${note}]`
      if (role === 'report') return `[Group chat "${roomName}" · replies to your post]`
@@ -1122,7 +1126,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
    // `sessionId` defaults to the recipient's own chat; group turns name its group Session.
    // `deferred`: a request the Bot already read mid-turn, handed back to answer in a
    // turn of its own; its exchange was recorded when it first arrived. `resumed` and
-@@ -38,13 +38,25 @@ export function install(rt) {
+@@ -38,13 +164,25 @@
    // text (resume.js, turns.js), and `resent` is a message a shutdown cancelled; their
    // exchange is recorded already too. `askedBy` is the member whose @mention called a
    // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
@@ -1130,7 +1134,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 -  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId }) {
 +  // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
 +  // answered the Bot's question card about work handed over from there (tools.js, #550).
-+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false }) {
++  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, rateLimited = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false }) {
      const from = rt.botOf(fromId)
      const to = rt.botOf(toId)
      if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -1142,16 +1146,16 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +    const targetSessionId = sessionId ?? rt.chatOf(toId)
 +    // Only a fresh Bot-to-Bot line is judged: deferred / resumed / retried / resent carry on a
 +    // message this Session already has, so dropping one would lose it instead of a duplicate.
-+    if (fromId !== undefined && !remote?.handle && !deferred && !resumed && !retried && !resent && duplicateDelivery(fromId, targetSessionId, text)) {
++    if (fromId !== undefined && !remote?.handle && !deferred && !resumed && !retried && !rateLimited && !resent && duplicateDelivery(fromId, targetSessionId, text)) {
 +      rt.warn?.('ds-bot: delivery: dedupe %s -> %s', fromId, targetSessionId)
 +      return exchangeId
 +    }
 +    const origin = originOf({ from, to, fromId, remote, given: givenOrigin })
-+    const firstContact = remote?.handle && !deferred && !resumed && !retried && !resent ? await noteFriendLine(to, sessionId, roomId, remote.handle) : false
++    const firstContact = remote?.handle && !deferred && !resumed && !retried && !rateLimited && !resent ? await noteFriendLine(to, sessionId, roomId, remote.handle) : false
      // Session events reject `undefined` members, so optional fields are omitted instead.
      const source = {
        kind: SOURCE_KIND,
-@@ -53,6 +53,8 @@ export function install(rt) {
+@@ -53,6 +191,8 @@
        exchangeId,
        senderName: fromName,
        hop,
@@ -1160,9 +1164,11 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
        ...(fromId ? { senderSessionId: fromId } : {}),
        ...(replyTo ? { replyTo } : {}),
        ...(roomId ? { roomId } : {}),
-@@ -61,19 +61,27 @@ export function install(rt) {
+@@ -60,20 +200,29 @@
+       ...(deferred ? { deferred: true } : {}),
        ...(resumed ? { resumed: true } : {}),
        ...(retried ? { retried: true } : {}),
++      ...(rateLimited ? { rateLimited: true } : {}),
        ...(askedBy ? { askedBy } : {}),
 +      // A board wake delivered as a room turn (#1182). A round's own room turn does not set this.
 +      ...(taskDrive ? { taskDrive: true } : {}),
@@ -1174,9 +1180,10 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +      // A remote member's files, as references the chat shows as chips (fetched on demand).
 +      ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
      }
-     if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !resent) {
+-    if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !resent) {
 -      state.exchanges.push({ id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) })
 -      void rt.save().catch(() => {})
++    if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !rateLimited && !resent) {
 +      const exchange = { id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) }
 +      await recordOrWarn(`the ${role} exchange`, () => rt.mutate(() => { state.exchanges.push(exchange) }))
      }
@@ -1188,7 +1195,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +    const body = fromId ? stripSessionChips(text) : text
      const message = createUserMessage({
 -      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${text}` }],
-+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
++      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, rateLimited, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
        source,
      })
      if (steer) agent.steer(message)

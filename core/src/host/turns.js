@@ -101,6 +101,53 @@ export function install(rt) {
     })
   }
 
+  // A provider rate limit that clears on its own — the requests-per-window 429 (#1308) — is
+  // asked again instead of spending the turn: the wait grows with each attempt and the
+  // provider's truncated `reset` is never parsed. A budget or quota refusal is not this:
+  // the same key gets the same refusal. A limit that outlasts every attempt ends the turn
+  // once, in the visible failure line `noteEnded` already records (#1044).
+  const RATE_LIMIT_TEXT = 'The provider rate limited the last call (requests per window), so it did not run. Do the same work again now.'
+  const RATE_LIMIT_BACKOFF_MS = Array.isArray(rt.config?.rateLimitBackoffMs) ? rt.config.rateLimitBackoffMs : [2_000, 8_000, 30_000]
+  const RATE_LIMIT_CODES = new Set(['RATE_LIMIT', 'rate_limited', 'throttling_error'])
+  const QUOTA_TEXT = /\bbudget\b|\bquota\b|budget_exceeded|insufficient_?quota/i
+  const rateLimitFailure = (error) => {
+    const code = String(error?.code ?? '')
+    const status = Number(error?.status ?? error?.statusCode)
+    const message = String(error?.message ?? '')
+    if (status === 402 || code === 'QUOTA' || code === 'ACCOUNT_QUOTA' || QUOTA_TEXT.test(message)) return false
+    return status === 429 || RATE_LIMIT_CODES.has(code)
+  }
+  // Attempts already spent on the turn running now, per Session. A turn that ends without a
+  // rate limit clears it.
+  const rateLimitRetries = new Map()
+  const forgetRateLimit = (id) => {
+    const state = rateLimitRetries.get(id)
+    if (state?.timer !== undefined) clearTimeout(state.timer)
+    rateLimitRetries.delete(id)
+  }
+  // The same trigger, asked again: a group round keeps its waiter, a sender keeps its
+  // exchange, and anything else is a nudge in the Bot's own chat, as the written-tool-call
+  // retry does.
+  const retryRateLimited = (id, info, origin) => {
+    const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
+    return rt.deliver({
+      origin,
+      ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
+      toId: rt.selfOf(id),
+      sessionId: id,
+      role: keeps ? info.role : 'retry',
+      ...(keeps && info.roomId ? { roomId: info.roomId } : {}),
+      hop: keeps ? info.hop ?? 0 : 0,
+      ...(keeps && info.exchangeId ? { exchangeId: info.exchangeId } : {}),
+      ...(keeps && info.audience ? { audience: info.audience } : {}),
+      ...(keeps && info.askedBy ? { askedBy: info.askedBy } : {}),
+      ...(keeps && info.senderRoomId ? { fromRoomId: info.senderRoomId } : {}),
+      note: 'the provider rate limited the last call, so it is repeated',
+      rateLimited: true,
+      text: RATE_LIMIT_TEXT,
+    })
+  }
+
   /** @type {Map<string, {turn?:number, pending?:any, info?:any, origin?:string, next?:string, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
   const live = new Map()
   /** @type {Map<string, {sessionId:string, resolve:(text:string|null)=>void, fail:(failure:any)=>void, touch:()=>void, approval:()=>void}>} member turn waiters keyed by exchange id */
@@ -332,7 +379,7 @@ export function install(rt) {
   // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
   // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
   // same place: one blip and a provider that has been refusing for hours read differently.
-  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0) => {
+  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0, rateLimited = undefined) => {
     if (failure === undefined && reason?.kind !== 'completed') return
     const owner = rt.groupOwners.get(id)
     const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -352,6 +399,7 @@ export function install(rt) {
       at,
       ...(calls > 0 ? { calls } : {}),
       ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
+      ...(rateLimited !== undefined ? { rateLimited } : {}),
       ...(silent ? { silent: true, streak } : {}),
     }], at)
   }
@@ -565,8 +613,32 @@ export function install(rt) {
         const reason = event.data?.reason
         const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
         if (failure !== undefined) noteTurnFailure(id, failure)
-        rt.scheduleRunEnded?.(id, { failed: failure === undefined ? undefined : failureLine(failure), aborted: reason?.kind === 'aborted' })
         if (switched) break
+        // A rate limit the provider lifts on its own is not this turn's answer (#1308): the same
+        // trigger is asked again after a backoff, and only an attempt that outlasts them ends the
+        // turn. A stopped round turn is not asked again.
+        const spent = rateLimitRetries.get(id)?.spent ?? 0
+        const rateLimited = failure !== undefined && rateLimitFailure(reason.error)
+          && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
+        if (!rateLimited) forgetRateLimit(id)
+        if (rateLimited && spent < RATE_LIMIT_BACKOFF_MS.length) {
+          const wait = RATE_LIMIT_BACKOFF_MS[spent]
+          rt.warn('ds-bot: the provider rate limited %s (attempt %d of %d), asking again in %d ms: %s', id, spent + 1, RATE_LIMIT_BACKOFF_MS.length + 1, wait, failureLine(failure).slice(0, 200))
+          const timer = setTimeout(() => {
+            rateLimitRetries.set(id, { spent: spent + 1 })
+            retryRateLimited(id, info, origin).catch((error) => {
+              rt.warn('ds-bot: the rate-limited turn for %s could not be asked again: %s', id, error)
+              forgetRateLimit(id)
+              noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length, spent + 1)
+            })
+          }, wait)
+          timer.unref?.()
+          rateLimitRetries.set(id, { spent, timer })
+          break
+        }
+        const exhausted = rateLimited ? spent + 1 : undefined
+        if (exhausted !== undefined) forgetRateLimit(id)
+        rt.scheduleRunEnded?.(id, { failed: failure === undefined ? undefined : failureLine(failure), aborted: reason?.kind === 'aborted' })
         // A model that writes its tool call as text ends the turn as if it were done,
         // though nothing ran. It gets one more turn on the same trigger, so a waiting
         // round or sender gets the real answer; a second time, the text goes on without
@@ -574,7 +646,7 @@ export function install(rt) {
         const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
         const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
         if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length)
+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length, exhausted)
         const replyText = () => {
           const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
           return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply

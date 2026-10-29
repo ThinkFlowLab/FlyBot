@@ -5752,6 +5752,8 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
+--- a/src/host/turns.js
++++ b/src/host/turns.js
 @@ -3,8 +3,31 @@
  //
  // Turn tracking: which turns were triggered by another Bot, and what they said.
@@ -5784,7 +5786,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
+@@ -24,7 +47,7 @@
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -5793,7 +5795,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
+@@ -48,12 +71,20 @@
  
  export function install(rt) {
    const { ctx, state } = rt
@@ -5815,11 +5817,58 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +70,13 @@ export function install(rt) {
+@@ -70,13 +101,60 @@
      })
    }
  
 -  /** @type {Map<string, {turn?:number, pending?:any, info?:any, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
++  // A provider rate limit that clears on its own — the requests-per-window 429 (#1308) — is
++  // asked again instead of spending the turn: the wait grows with each attempt and the
++  // provider's truncated `reset` is never parsed. A budget or quota refusal is not this:
++  // the same key gets the same refusal. A limit that outlasts every attempt ends the turn
++  // once, in the visible failure line `noteEnded` already records (#1044).
++  const RATE_LIMIT_TEXT = 'The provider rate limited the last call (requests per window), so it did not run. Do the same work again now.'
++  const RATE_LIMIT_BACKOFF_MS = Array.isArray(rt.config?.rateLimitBackoffMs) ? rt.config.rateLimitBackoffMs : [2_000, 8_000, 30_000]
++  const RATE_LIMIT_CODES = new Set(['RATE_LIMIT', 'rate_limited', 'throttling_error'])
++  const QUOTA_TEXT = /\bbudget\b|\bquota\b|budget_exceeded|insufficient_?quota/i
++  const rateLimitFailure = (error) => {
++    const code = String(error?.code ?? '')
++    const status = Number(error?.status ?? error?.statusCode)
++    const message = String(error?.message ?? '')
++    if (status === 402 || code === 'QUOTA' || code === 'ACCOUNT_QUOTA' || QUOTA_TEXT.test(message)) return false
++    return status === 429 || RATE_LIMIT_CODES.has(code)
++  }
++  // Attempts already spent on the turn running now, per Session. A turn that ends without a
++  // rate limit clears it.
++  const rateLimitRetries = new Map()
++  const forgetRateLimit = (id) => {
++    const state = rateLimitRetries.get(id)
++    if (state?.timer !== undefined) clearTimeout(state.timer)
++    rateLimitRetries.delete(id)
++  }
++  // The same trigger, asked again: a group round keeps its waiter, a sender keeps its
++  // exchange, and anything else is a nudge in the Bot's own chat, as the written-tool-call
++  // retry does.
++  const retryRateLimited = (id, info, origin) => {
++    const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
++    return rt.deliver({
++      origin,
++      ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
++      toId: rt.selfOf(id),
++      sessionId: id,
++      role: keeps ? info.role : 'retry',
++      ...(keeps && info.roomId ? { roomId: info.roomId } : {}),
++      hop: keeps ? info.hop ?? 0 : 0,
++      ...(keeps && info.exchangeId ? { exchangeId: info.exchangeId } : {}),
++      ...(keeps && info.audience ? { audience: info.audience } : {}),
++      ...(keeps && info.askedBy ? { askedBy: info.askedBy } : {}),
++      ...(keeps && info.senderRoomId ? { fromRoomId: info.senderRoomId } : {}),
++      note: 'the provider rate limited the last call, so it is repeated',
++      rateLimited: true,
++      text: RATE_LIMIT_TEXT,
++    })
++  }
++
 +  /** @type {Map<string, {turn?:number, pending?:any, info?:any, origin?:string, next?:string, texts:string[], opened?:boolean, joined?:{info:any, from:number}[]}>} */
    const live = new Map()
    /** @type {Map<string, {sessionId:string, resolve:(text:string|null)=>void, fail:(failure:any)=>void, touch:()=>void, approval:()=>void}>} member turn waiters keyed by exchange id */
@@ -5831,7 +5880,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +162,31 @@ export function install(rt) {
+@@ -162,17 +240,31 @@
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -5864,7 +5913,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +196,33 @@ export function install(rt) {
+@@ -196,7 +288,33 @@
      return merged
    }
  
@@ -5899,7 +5948,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +204,9 @@ export function install(rt) {
+@@ -204,7 +322,9 @@
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
@@ -5910,7 +5959,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
      return bots
    }
-@@ -221,6 +221,7 @@ export function install(rt) {
+@@ -221,6 +341,7 @@
          botId: owner.botId,
          since: entry.since,
          ...(entry.tool ? { tool: entry.tool } : {}),
@@ -5918,7 +5967,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +238,53 @@ export function install(rt) {
+@@ -238,6 +359,54 @@
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -5942,7 +5991,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +  // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
 +  // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
 +  // same place: one blip and a provider that has been refusing for hours read differently.
-+  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0) => {
++  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0, rateLimited = undefined) => {
 +    if (failure === undefined && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
 +    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
@@ -5962,6 +6011,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      at,
 +      ...(calls > 0 ? { calls } : {}),
 +      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
++      ...(rateLimited !== undefined ? { rateLimited } : {}),
 +      ...(silent ? { silent: true, streak } : {}),
 +    }], at)
 +  }
@@ -5972,7 +6022,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -266,6 +266,7 @@ export function install(rt) {
+@@ -266,6 +435,7 @@
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
          startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
@@ -5980,7 +6030,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
-@@ -280,7 +280,9 @@ export function install(rt) {
+@@ -280,7 +450,9 @@
          endCall(id, entry, event.data?.subCallId)
          break
        case 'tool/result':
@@ -5991,7 +6041,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          break
        case 'turn/start':
          setActivity(id, 'thinking')
-@@ -288,11 +288,17 @@ export function install(rt) {
+@@ -288,11 +460,17 @@
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
@@ -6009,7 +6059,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +300,14 @@ export function install(rt) {
+@@ -300,6 +478,14 @@
          break
        case 'user/message': {
          const source = event.data?.source
@@ -6024,7 +6074,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,15 +331,27 @@ export function install(rt) {
+@@ -331,15 +517,27 @@
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -6054,7 +6104,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
            else if (expectsReply(source) && !answersUser(source)
-@@ -363,12 +363,15 @@ export function install(rt) {
+@@ -363,12 +561,15 @@
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -6075,7 +6125,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +386,17 @@ export function install(rt) {
+@@ -386,11 +587,17 @@
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -6093,7 +6143,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -399,11 +399,14 @@ export function install(rt) {
+@@ -399,19 +606,47 @@
          entry.since = undefined
          entry.tool = undefined
          entry.calls = undefined
@@ -6104,21 +6154,45 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const reason = event.data?.reason
          const failure = reason?.kind === 'error' && !switched ? turnFailure(reason.error) : undefined
          if (failure !== undefined) noteTurnFailure(id, failure)
-+        rt.scheduleRunEnded?.(id, { failed: failure === undefined ? undefined : failureLine(failure), aborted: reason?.kind === 'aborted' })
          if (switched) break
++        // A rate limit the provider lifts on its own is not this turn's answer (#1308): the same
++        // trigger is asked again after a backoff, and only an attempt that outlasts them ends the
++        // turn. A stopped round turn is not asked again.
++        const spent = rateLimitRetries.get(id)?.spent ?? 0
++        const rateLimited = failure !== undefined && rateLimitFailure(reason.error)
++          && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
++        if (!rateLimited) forgetRateLimit(id)
++        if (rateLimited && spent < RATE_LIMIT_BACKOFF_MS.length) {
++          const wait = RATE_LIMIT_BACKOFF_MS[spent]
++          rt.warn('ds-bot: the provider rate limited %s (attempt %d of %d), asking again in %d ms: %s', id, spent + 1, RATE_LIMIT_BACKOFF_MS.length + 1, wait, failureLine(failure).slice(0, 200))
++          const timer = setTimeout(() => {
++            rateLimitRetries.set(id, { spent: spent + 1 })
++            retryRateLimited(id, info, origin).catch((error) => {
++              rt.warn('ds-bot: the rate-limited turn for %s could not be asked again: %s', id, error)
++              forgetRateLimit(id)
++              noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length, spent + 1)
++            })
++          }, wait)
++          timer.unref?.()
++          rateLimitRetries.set(id, { spent, timer })
++          break
++        }
++        const exhausted = rateLimited ? spent + 1 : undefined
++        if (exhausted !== undefined) forgetRateLimit(id)
++        rt.scheduleRunEnded?.(id, { failed: failure === undefined ? undefined : failureLine(failure), aborted: reason?.kind === 'aborted' })
          // A model that writes its tool call as text ends the turn as if it were done,
          // though nothing ran. It gets one more turn on the same trigger, so a waiting
-@@ -411,7 +411,8 @@ export function install(rt) {
+         // round or sender gets the real answer; a second time, the text goes on without
          // the call.
          const wroteCall = failure === undefined && reason?.kind === 'completed' && lastCalled !== true && writesToolCall(lastText)
          const retry = wroteCall && info?.retried !== true && !(info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId))
 -        if (retry) void retryWrittenCall(id, info).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
 +        if (retry) void retryWrittenCall(id, info, origin).catch(error => rt.warn('ds-bot: asking %s to run its written tool call failed: %s', id, error))
-+        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length)
++        if (!retry) noteEnded(id, answeredTurn, info, reason, failure, toolCalls, texts.length, exhausted)
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +419,24 @@ export function install(rt) {
+@@ -419,6 +654,24 @@
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
@@ -6143,7 +6217,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +434,7 @@ export function install(rt) {
+@@ -434,6 +687,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6151,7 +6225,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +446,7 @@ export function install(rt) {
+@@ -446,6 +700,7 @@
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6159,7 +6233,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +460,14 @@ export function install(rt) {
+@@ -460,14 +715,14 @@
            } else if (!stopped && reason?.kind !== 'aborted') {
              // The round moved on without this member; how its turn ends still reaches the group.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
@@ -6176,7 +6250,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,13 +488,27 @@ export function install(rt) {
+@@ -488,13 +743,27 @@
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
