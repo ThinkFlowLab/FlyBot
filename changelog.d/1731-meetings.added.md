@@ -1,0 +1,1 @@
+Meetings are now recorded in FlyBot: a meeting moves `open → deliberating → decided | blocked`, requires a position from every invited participant and a named decision owner, archives one `decisions/<date>-<slug>.md` on `decided` (and nothing on `blocked`), and creates the follow-up tasks with that file as evidence ([#1731](https://github.com/ThinkFlowLab/FlyBot/issues/1731)).

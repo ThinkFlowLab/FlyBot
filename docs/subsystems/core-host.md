@@ -596,3 +596,35 @@ Stage 3.2 of the task pool. One queue per role, one worker per claim, one owner 
 
 **Audit projection (#1730).** `rt.taskAudit(id)` renders one text block from the typed fields already on the card — `handoff` from→to/reason/at, each `evidence` entry (sha, pr, check, at), the `reworkOf` chain oldest→newest, and the current lease holder with its `takenAt`→`expiresAt` window. It is a read: nothing is written, minted or cached, so the same rows render the same text twice. A record stored before the slice carries none of the fields and answers the empty string, not a throw. The Project board puts the same text on its row as `audit` (only when non-empty) and the client shows it inside the existing card detail — no new endpoint and no new page. Tests: `core/test/task-audit.test.js`.
 - Tests: `core/test/task-queue-lease.test.js` — the cap refusal names role and cap, a re-offer keeps its id, two concurrent claims share no worker state, two expired reads requeue once and record the holder, a live lease refuses a claim naming the holder, a restart with a live lease changes nothing, and the counters read from the rows.
+
+### Meetings: a decision with a lifecycle (#1731)
+
+Stage 4.1 gives an unresolved conflict a record instead of a chat. `core/src/host/meetings.js`
+keeps meetings in the existing store (`state.meetings`) and registers one `meeting` tool; there is
+no second store, no UI-only path and no cron.
+
+- **Lifecycle.** `open → deliberating → decided | blocked`, bound to one question and, when there is
+  one, the issue and Project that triggered it. Recording the first position moves `open` to
+  `deliberating`. At most one meeting per question may be open or deliberating: a second one is
+  refused `duplicate`, comparing the question with casing and whitespace flattened.
+- **Positions.** An invited participant records `agree`, `dissent` or `abstain` with a line of text.
+  A name that was not invited is refused `not-invited`; a dissent with text is also kept as the
+  meeting's standing dissent, owned by the participant who recorded it. A participant who never
+  answers and is not recorded `silent` keeps the meeting from closing.
+- **The governance check is code.** `governanceRefusal(meeting)` is the one refusal `decide` runs
+  before it writes anything: every invited participant has a position or is recorded silent, the
+  decision names an `owner`, a dissent carries its own `owner`, and the decision states what was
+  decided. It answers the reason, or `undefined` when the meeting may close. `blocked` needs one
+  one-sentence blocking question, writes no decision file and produces no task.
+- **Archived decision.** `decided` writes exactly one `decisions/<YYYY-MM-DD>-<slug>.md` (Stage 1
+  shape: Date, Decision, Class, Evidence, Participants, Dissent, Status, Links, `Written-by:`), in
+  the Session's working folder, and refuses `exists` rather than rewriting an earlier conclusion.
+  The meeting keeps the file path and its sha256; every evidence `sha`/`pr`/`check` and every
+  participant name is in the file's text.
+- **Linked tasks.** Follow-up cards go through `rt.taskEndpoint('task-create', …)` — the one task
+  write path — as `taskClass: 'work'`, each carrying the decision file path in its `evidence`. A
+  meeting never keeps tasks of its own.
+- **Who may close.** A Project Assistant (`role: 'Project Assistant'`) may be invited and record a
+  position under its own name; it may not write the decision file or close the meeting, which is
+  refused `forbidden`.
+- Tests: `core/test/meetings.test.js`.

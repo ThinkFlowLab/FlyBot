@@ -115,8 +115,8 @@ Stated plainly so nobody plans against a mechanism that does not exist:
 - The Owner and the human **Maintainer** seats exist (see [PROJECT.md](../PROJECT.md)). There is no
   Maintainer console, no Member role and no Project Assistant; the multi-human authority contract in
   [subsystems/team.md](subsystems/team.md) is **planned, not shipped**.
-- Classification is currently written in issue and pull request comments. There is no engine that
-  classifies, convenes or records automatically.
+- Classification is still written in issue and pull request comments; there is no engine that
+  classifies. Meetings are convened and recorded through the host `meeting` tool (§8, Stage 4.1).
 - **One reclassification case is recorded**, in
   [decisions/2026-10-29-stage-1-dogfood.md](../decisions/2026-10-29-stage-1-dogfood.md): Triage
   classified [#1550](https://github.com/ThinkFlowLab/FlyBot/issues/1550) `needs-human` on
@@ -126,3 +126,16 @@ Stated plainly so nobody plans against a mechanism that does not exist:
 - Every Bot writes as one shared `Birfy` identity, so a `Written-by:` line is a claim that the gates
   check for presence and name. Per-workstation signatures were declined by the owner on 2026-10-25;
   the residual risk is stated in [AGENTS.md](../AGENTS.md), not solved here.
+
+## 8. Meetings (Stage 4.1)
+
+A meeting is how an unresolved architecture conflict gets a record before it gets code. It runs
+`open → deliberating → decided | blocked` and is refused a second open meeting on the same question.
+A `decided` meeting passes the governance check in `core/src/host/meetings.js` as code — every invited
+participant recorded a position (or is recorded as not answering), the decision names its owner, and
+a dissent that still stands carries its own owner — and only then writes one
+`decisions/<date>-<slug>.md` in the shape [`decisions/README.md`](../decisions/README.md) requires and
+produces follow-up tasks carrying that file as evidence. `blocked` states the blocking question in one
+sentence and writes nothing. A Project Assistant may take a position but never closes the meeting or
+writes the decision; the Chief or the owner does. The meeting record itself stays in the existing
+store, and the file it archives is the durable part.
