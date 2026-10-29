@@ -18,5 +18,5 @@ test('busyAckVisible prefers host or pending ack and hides once spoken text stre
   assert.equal(busyAckVisible({ hostAck: { text: '收到' }, pendingBusy: false, streamingText: false }), true)
   assert.equal(busyAckVisible({ hostAck: null, pendingBusy: true, streamingText: false }), true)
   assert.equal(busyAckVisible({ hostAck: { text: '收到' }, pendingBusy: true, streamingText: true }), false)
-  assert.equal(BUSY_ACK_KEY.includes('Got it'), true)
+  assert.equal(BUSY_ACK_KEY.includes('answer properly once I finish'), false)
 })

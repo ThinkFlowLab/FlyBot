@@ -127,11 +127,21 @@ function MessageTools({ text, name, sessionId, react, actions }) {
       item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
 }
 
+// The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so
+// the row never reads as an empty frame while the text it names sits behind the caret (#1624).
+const PEEK_MAX = 160
+const peekLine = (text) => {
+  const line = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).find((part) => part !== '')
+  return line === undefined ? '' : line.slice(0, PEEK_MAX)
+}
+
 function ThinkingRow({ text }) {
   // Folded by default; the caret shows there is something inside. Nothing to show, no row.
   if (typeof text !== 'string' || text.trim() === '') return null
+  const peek = peekLine(text)
   return h('details', { className: 'bt-think' },
-    h('summary', null, h('span', { className: 'bt-think-caret', 'aria-hidden': true }, '›'), t('Thought it through')),
+    h('summary', null, h('span', { className: 'bt-think-caret', 'aria-hidden': true }, '›'), t('Thought it through'),
+      peek ? h('span', { className: 'bt-think-peek' }, peek) : null),
     h('div', { className: 'bt-think-text' }, text))
 }
 

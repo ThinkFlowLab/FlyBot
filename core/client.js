@@ -838,7 +838,7 @@ var ZH = {
   "Message actions": "消息操作",
   Download: "下载",
   "Thought it through": "思考过程",
-  "Got it — I’ll answer properly once I finish what’s in progress.": "收到，我先记着，手头忙完再详细回你。",
+  "Seen — I’ll get to this right after the current step.": "看到了，这步做完就接着处理你这条。",
   "Earlier messages": "更早的消息",
   "Loading earlier messages…": "正在加载更早的消息…",
   "Couldn’t load earlier messages · Retry": "更早的消息没加载出来 · 重试",
@@ -4672,6 +4672,7 @@ var CONVERSATION_CSS = `
 .bt-think summary::-webkit-details-marker{display:none}
 .bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 .bt-think[open] .bt-think-caret{transform:rotate(90deg)}
+.bt-think-peek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
 .bt-person-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-ink-5,rgba(20,20,20,.08));color:var(--bt-ink-3,rgba(20,20,20,.45))}
 .bt-person-initial{color:#fff;font-weight:600;line-height:1;user-select:none}
 .bt-person-msg .bt-group-name{color:var(--bt-ink-2,rgba(20,20,20,.7))}
@@ -6167,12 +6168,24 @@ function MessageTools({ text, name, sessionId, react, actions }) {
     ), document.body) : null
   );
 }
+var PEEK_MAX = 160;
+var peekLine = (text) => {
+  const line2 = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).find((part) => part !== "");
+  return line2 === void 0 ? "" : line2.slice(0, PEEK_MAX);
+};
 function ThinkingRow({ text }) {
   if (typeof text !== "string" || text.trim() === "") return null;
+  const peek = peekLine(text);
   return (0, import_react9.createElement)(
     "details",
     { className: "bt-think" },
-    (0, import_react9.createElement)("summary", null, (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"), t("Thought it through")),
+    (0, import_react9.createElement)(
+      "summary",
+      null,
+      (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"),
+      t("Thought it through"),
+      peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
+    ),
     (0, import_react9.createElement)("div", { className: "bt-think-text" }, text)
   );
 }
@@ -7115,6 +7128,16 @@ function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
   return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
 }
 
+// src/client/activity-row-host.js
+var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
+var TAIL_HOST = "tail";
+function findRunningHostIn(root) {
+  if (!root || typeof root.querySelector !== "function") return null;
+  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
+  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
+  return root.querySelector(RUNNING_HOST);
+}
+
 // src/client/activity-row.js
 var import_react10 = require("react");
 var import_react_dom2 = require("react-dom");
@@ -7126,8 +7149,6 @@ function elapsedLabel(ms) {
   const hours = Math.floor(minutes / 60);
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }
-var RUNNING_HOST = "[data-chat-flow] > [data-chat-running]";
-var TAIL_HOST = "tail";
 var REMOTE_GRACE_MS = 1500;
 function useAwaitingReply(roster, sessionId) {
   const at = roster?.remoteAwaiting?.[sessionId];
@@ -7141,10 +7162,10 @@ function useAwaitingReply(roster, sessionId) {
   return shown;
 }
 function findHost(where) {
-  if (where !== TAIL_HOST) return document.querySelector(where);
+  if (where !== TAIL_HOST) return findRunningHostIn(document);
   const flow = document.querySelector("[data-conversation-scroll] [data-chat-flow]") ?? document.querySelector("[data-chat-flow]");
   if (!flow) return null;
-  const running = flow.querySelector(":scope > [data-chat-running]");
+  const running = findRunningHostIn(flow);
   if (running) return running;
   const tails = flow.querySelectorAll(":scope > * [data-turn-tail], :scope > [data-turn-tail]");
   return tails.length ? tails[tails.length - 1] : null;
@@ -9807,7 +9828,7 @@ var SIDEBAR_CSS = `
 `;
 
 // src/client/busy-ack-logic.js
-var BUSY_ACK_KEY = "Got it — I’ll answer properly once I finish what’s in progress.";
+var BUSY_ACK_KEY = "Seen — I’ll get to this right after the current step.";
 function pendingBusyPlacement(submissions) {
   if (!Array.isArray(submissions)) return false;
   return submissions.some((item) => item?.placement === "queued" || item?.placement === "steering");

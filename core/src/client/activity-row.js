@@ -6,6 +6,9 @@ import { reducedMotion } from './motion.js'
 import { t } from './i18n.js'
 import { AWAIT_REPLY_MS, awaitingReply } from './awaiting.js'
 import { remoteApprovalPhrase } from './remote-approval-wait.js'
+import { RUNNING_HOST, TAIL_HOST, findRunningHostIn } from './activity-row-host.js'
+
+export { RUNNING_HOST, TAIL_HOST, findRunningHostIn } from './activity-row-host.js'
 
 // -------------------------------------------------------------------------
 // The activity row: the Bot's mark and a shimmering phrase at the transcript
@@ -24,8 +27,6 @@ export { reducedMotion }
 
 // Where the row draws: the shell's running status while a turn runs; between turns of a
 // friend's chat (#443), the tail of the transcript's last turn, so it stays below the last message.
-export const RUNNING_HOST = '[data-chat-flow] > [data-chat-running]'
-export const TAIL_HOST = 'tail'
 const REMOTE_GRACE_MS = 1500
 function useAwaitingReply(roster, sessionId) {
   const at = roster?.remoteAwaiting?.[sessionId]
@@ -39,10 +40,10 @@ function useAwaitingReply(roster, sessionId) {
   return shown
 }
 function findHost(where) {
-  if (where !== TAIL_HOST) return document.querySelector(where)
+  if (where !== TAIL_HOST) return findRunningHostIn(document)
   const flow = document.querySelector('[data-conversation-scroll] [data-chat-flow]') ?? document.querySelector('[data-chat-flow]')
   if (!flow) return null
-  const running = flow.querySelector(':scope > [data-chat-running]')
+  const running = findRunningHostIn(flow)
   if (running) return running
   const tails = flow.querySelectorAll(':scope > * [data-turn-tail], :scope > [data-turn-tail]')
   return tails.length ? tails[tails.length - 1] : null

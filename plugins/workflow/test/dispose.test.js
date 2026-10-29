@@ -3,7 +3,7 @@
 // while its Bot is still alive leaves a hidden Bot nobody can see or remove.
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -390,6 +390,179 @@ test('#1616: an id whose release failed stays in the record and the next load re
     await after.reap()
     assert.deepEqual(retried, ['eph-code'])
     assert.equal(storedRun(readStore(dir), made.id, run.id).ephemeral, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// #1621: the same shape as #1616, on the two sites it did not reach. A run that
+// ends because its graph changed, or because the owner deleted the workflow that
+// named it, dropped the Bot ids *before* the release that can fail. The record
+// that named the Bot was gone, so a failed release stranded it for good: hidden,
+// still occupying its name in findBot, with no state left to find it by.
+test('#1621: a graph edit that ended a run keeps the id its release could not remove', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-p118-save-'))
+  const warned = []
+  try {
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      spawn: async (spec) => `eph-${spec.nodeId}`,
+      release: async (id) => { if (id === 'eph-code') throw new Error('host call failed') },
+      warn: (line) => warned.push(line),
+      dispatch: async () => ({ ok: true }),
+    })
+    const made = pair('Edit', svc)
+    assert.equal((await svc.runNamed({ workflow: 'Edit', brief: 'Ship it' })).ok, true)
+    // plan is the node the run is on; the edit drops it, so the run ends (#1549).
+    const saved = await svc.saveGraph({
+      workflowId: made.id,
+      nodes: [{ id: 'code', name: 'Coder', role: 'code', prompt: 'Implement it.' }],
+      edges: [],
+    })
+    assert.equal(saved.ok, true)
+    const ended = readStore(dir).lanes[made.id].last
+    assert.equal(ended.status, 'failed')
+    // Only the id the host really removed leaves the record; the one it did not
+    // is still named, so the next load's reap() can find that Bot (#1616).
+    assert.deepEqual(ended.ephemeral, { code: 'eph-code' })
+    assert.equal(ended.handed, undefined)
+    assert.ok(warned.includes('flybot-workflow: could not remove eph-code: host call failed'), warned.join('; '))
+
+    const retried = []
+    const after = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK + 60_000,
+      bots: () => roster,
+      spawn: async (spec) => `eph2-${spec.nodeId}`,
+      release: async (id) => { retried.push(id) },
+      dispatch: async () => ({ ok: true }),
+    })
+    await after.reap()
+    assert.deepEqual(retried, ['eph-code'])
+    assert.equal(readStore(dir).lanes[made.id].last.ephemeral, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1621: deleting a workflow whose Bot will not go still deletes it, and the next load retries the Bot', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-p118-delete-'))
+  try {
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      spawn: async (spec) => `eph-${spec.nodeId}`,
+      release: async (id) => { if (id === 'eph-code') throw new Error('host call failed') },
+      dispatch: async () => ({ ok: true }),
+    })
+    const made = pair('Doomed', svc)
+    assert.equal((await svc.runNamed({ workflow: 'Doomed', brief: 'Ship it' })).ok, true)
+    // Deleting a workflow is the owner's action; one Bot refusing to go must not
+    // keep the workflow. The id it names moves to the store's own orphan list,
+    // because the lane that named it is about to be erased.
+    const deleted = await svc.delete({ workflowId: made.id })
+    assert.equal(deleted.ok, true)
+    assert.equal(svc.state().workflows.some(item => item.id === made.id), false)
+    const store = readStore(dir)
+    assert.equal(store.lanes[made.id], undefined)
+    assert.deepEqual(store.orphans, ['eph-code'])
+
+    const retried = []
+    const after = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK + 60_000,
+      bots: () => roster,
+      spawn: async (spec) => `eph2-${spec.nodeId}`,
+      release: async (id) => { retried.push(id) },
+      dispatch: async () => ({ ok: true }),
+    })
+    await after.reap()
+    assert.deepEqual(retried, ['eph-code'])
+    assert.equal(readStore(dir).orphans, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1621: deleting a workflow also retries the ids its last run kept', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-p118-last-'))
+  const attempts = []
+  try {
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      spawn: async () => 'eph-only',
+      release: async (id) => { attempts.push(id); throw new Error('host call failed') },
+      dispatch: async () => ({ ok: true }),
+    })
+    const one = svc.define({
+      name: 'Old',
+      nodes: [{ id: 'only', name: 'Planner', prompt: 'Say it once.' }],
+      edges: [],
+    }).workflows.find(item => item.name === 'Old')
+    assert.equal((await svc.runNamed({ workflow: 'Old', brief: 'One step' })).ok, true)
+    await svc.advance({ workflowId: one.id, nodeId: 'only', outcome: 'done' })
+    // #1616 kept this failed id on the run it archived as `lane.last`. delete()
+    // only collected `lane.active`, so that Bot was never even tried before the
+    // record naming it was erased.
+    assert.deepEqual(readStore(dir).lanes[one.id].last.ephemeral, { only: 'eph-only' })
+    assert.equal((await svc.delete({ workflowId: one.id })).ok, true)
+    assert.deepEqual(attempts, ['eph-only', 'eph-only'])
+    assert.deepEqual(readStore(dir).orphans, ['eph-only'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1621: an older store keeps its orphan list, deduped and capped, across the upgrade', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-p118-migrate-'))
+  const ids = Array.from({ length: 60 }, (_, index) => `eph-${index}`)
+  try {
+    // A store written before laneFormat: the same id twice, and more ids than the
+    // list keeps. migrateRuns() must carry them across the upgrade, or a reload
+    // after an upgrade would have nothing to retry.
+    writeFileSync(join(dir, 'workflows.json'), JSON.stringify({
+      version: 1,
+      workflows: [],
+      runs: {},
+      orphans: [...ids, 'eph-0'],
+    }))
+    const failed = []
+    const svc = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK,
+      bots: () => roster,
+      release: async (id) => { failed.push(id); throw new Error('host call failed') },
+      dispatch: async () => ({ ok: true }),
+    })
+    await svc.reap()
+    // Each id once, the oldest dropped at the cap, and a failed retry keeps its
+    // entry: the list is bounded, not append-only.
+    assert.deepEqual(failed, ids.slice(10))
+    assert.deepEqual(readStore(dir).orphans, ids.slice(10))
+
+    const retried = []
+    const after = createWorkflowService({
+      dir,
+      persist: true,
+      now: () => CLOCK + 60_000,
+      bots: () => roster,
+      release: async (id) => { retried.push(id) },
+      dispatch: async () => ({ ok: true }),
+    })
+    await after.reap()
+    assert.deepEqual(retried, ids.slice(10))
+    assert.equal(readStore(dir).orphans, undefined)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

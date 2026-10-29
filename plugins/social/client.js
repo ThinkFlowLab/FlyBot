@@ -2386,14 +2386,20 @@ window.__ModuleLoader__.load({
       useStyles()
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
+      // #1607: the two lists poll on their own, so an empty `mine` is "not loaded yet" as often as it is
+      // "somebody else's card". The card below only speaks once both have answered.
+      const [statusLoaded, setStatusLoaded] = useState(false)
+      const [listLoaded, setListLoaded] = useState(false)
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
       const load = () => {
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
+          setStatusLoaded(true)
         }, () => {})
         call('approvals', { status: ['pending', 'failed'] }).then(list => {
           setLocal((Array.isArray(list) ? list : []).map(localHoldView).filter(Boolean))
+          setListLoaded(true)
         }, () => {})
       }
       useEffect(() => {
@@ -2411,10 +2417,11 @@ window.__ModuleLoader__.load({
         return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
       })
       // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
-      const mine = [
-        ...approvalsForOpenChat(named(items), session),
-        ...approvalsForOpenChat(named(local.filter(item => !item.inline)), session),
+      const held = [
+        ...named(items),
+        ...named(local.filter(item => !item.inline)),
       ]
+      const mine = approvalsForOpenChat(held, session)
       // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
       const shownIds = mine.map(item => item.id).join(',')
       useEffect(() => {
@@ -2422,7 +2429,12 @@ window.__ModuleLoader__.load({
         claim(shownIds ? shownIds.split(',') : [])
         return () => claim([])
       }, [shownIds, sessionId])
-      const waitingOthers = mine.length === 0 && (room?.pendingCount ?? 0) > 0
+      // A card for this room that this chat does not draw is still ours: it is decided on its own bubble
+      // (#418) or in the Bot's chat. "Waiting for the owner's approval" therefore needs both lists answered
+      // and neither holding one for this room (#1607); until then the dock stays quiet, never guesses.
+      const roomIds = new Set([room?.id, room?.face?.roomId].filter(Boolean))
+      const thisRoomHeld = held.some(item => item.roomId && roomIds.has(item.roomId))
+      const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && !thisRoomHeld && (room?.pendingCount ?? 0) > 0
       if (!mine.length && !waitingOthers) return null
       const decide = async (item, decision) => {
         setBusy(item.id)

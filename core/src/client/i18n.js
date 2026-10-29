@@ -785,7 +785,7 @@ const ZH = {
   'Message actions': '消息操作',
   Download: '下载',
   'Thought it through': '思考过程',
-  'Got it — I’ll answer properly once I finish what’s in progress.': '收到，我先记着，手头忙完再详细回你。',
+  'Seen — I’ll get to this right after the current step.': '看到了，这步做完就接着处理你这条。',
   'Earlier messages': '更早的消息',
   'Loading earlier messages…': '正在加载更早的消息…',
   'Couldn’t load earlier messages · Retry': '更早的消息没加载出来 · 重试',
