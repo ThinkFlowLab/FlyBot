@@ -1,0 +1,1 @@
+A folded thinking row stays inside the message column: a long reasoning line without a break is clipped at the row with an ellipsis instead of widening it past its column, and the opened row wraps that line instead of scrolling sideways ([#1718](https://github.com/ThinkFlowLab/FlyBot/issues/1718)).

@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
@@ -175,4 +177,87 @@ test('#1642: reasoning that is only markup gets a neutral summary, never a bare 
   const peek = classed(details, 'bt-think-peek')
   assert.ok(peek, 'the folded row never reads as an empty frame')
   assert.equal(text(peek), '2 lines of reasoning')
+})
+
+// #1718: the folded row must stay inside the column it sits in. jsdom lays no boxes out (every
+// element is 0×0), so the unit suite cannot read scrollWidth/clientWidth here; what it can read is
+// the cascade the app ships, mounted around this row. The pixel evidence, taken from the same
+// render in headless Chromium at 900 px and 400 px, is in the pull request: before the fix the
+// summary was 1308 px wide inside a 560 px / 312 px box.
+const { JSDOM } = createRequire(join(process.env.DSH_HARNESS, 'package.json'))('jsdom')
+const mountRow = (row, width) => {
+  const { window } = new JSDOM(`<!doctype html><html><head><style>${CONVERSATION_CSS}</style></head><body><div class="column" style="width:${width}px"></div></body></html>`)
+  const doc = window.document
+  const build = (node) => {
+    if (node === null || node === undefined || typeof node === 'boolean') return null
+    if (Array.isArray(node)) return node.map(build)
+    if (typeof node !== 'object') return doc.createTextNode(String(node))
+    if (node.type === Fragment) return build(node.props?.children)
+    const element = doc.createElement(node.type)
+    for (const [name, value] of Object.entries(node.props ?? {})) {
+      if (name === 'children' || name === 'key') continue
+      if (typeof value === 'string' || typeof value === 'number') element.setAttribute(name === 'className' ? 'class' : name, value)
+    }
+    for (const child of [build(node.props?.children ?? [])].flat(Infinity)) if (child) element.append(child)
+    return element
+  }
+  const rowEl = build(row)
+  doc.querySelector('.column').append(rowEl)
+  return { window, doc, style: (selector, property) => window.getComputedStyle(doc.querySelector(selector))[property] }
+}
+const LONG = 'x'.repeat(2000)
+const longRow = () => {
+  const blocks = [think(LONG)]
+  return thinkingRow(render(step(1, blocks), [step(1, blocks)]))
+}
+
+test('#1718: a 2000-character line cannot widen the folded row past its box (900 px and 400 px)', () => {
+  const row = longRow()
+  assert.ok(row, 'the row renders for the long reasoning')
+  for (const width of [900, 400]) {
+    const { doc, style } = mountRow(row, width)
+    // The ceiling is still the details box, not the whole column.
+    assert.equal(style('.bt-think', 'maxWidth'), 'min(560px,78%)')
+    // An inline-flex box sizes to its content unless it is bounded; the bound is its own box.
+    assert.equal(style('.bt-think summary', 'maxWidth'), '100%', `summary is bounded by its box at ${width}px`)
+    assert.equal(style('.bt-think summary', 'minWidth'), '0px')
+    // One line: the label inside the summary must not wrap when the preview is squeezed.
+    assert.equal(style('.bt-think summary', 'whiteSpace'), 'nowrap', `the row stays one line at ${width}px`)
+    // The preview fills what is left and clips with an ellipsis, so the line cannot run wide.
+    assert.equal(style('.bt-think-peek', 'maxWidth'), '100%')
+    assert.equal(style('.bt-think-peek', 'minWidth'), '0px')
+    assert.equal(style('.bt-think-peek', 'overflow'), 'hidden')
+    assert.equal(style('.bt-think-peek', 'textOverflow'), 'ellipsis')
+    assert.equal(style('.bt-think-peek', 'whiteSpace'), 'nowrap')
+    // Opened, the same unbroken token wraps instead of running past the column.
+    assert.equal(style('.bt-think-text', 'overflowWrap'), 'anywhere')
+    assert.equal(style('.bt-think-text', 'whiteSpace'), 'pre-wrap')
+    // Folded, with the caret and the label it always showed.
+    const details = doc.querySelector('.bt-think')
+    assert.equal(details.open, false)
+    assert.equal(doc.querySelector('.bt-think-caret').textContent, '›')
+    assert.match(doc.querySelector('summary').textContent, /Thought it through/)
+  }
+})
+
+test('#1718: the fold stays the design — one line, no block summary, no hidden caret', () => {
+  const rules = [...CONVERSATION_CSS.matchAll(/\.bt-think[^{]*\{[^}]*\}/g)].map(match => match[0])
+  const summary = rules.find(rule => /^\.bt-think summary\{/.test(rule))
+  assert.ok(summary, 'the row has its summary rule')
+  assert.match(summary, /display:inline-flex/, 'the summary stays a one-line inline flex row')
+  assert.match(summary, /white-space:nowrap/, 'the label cannot wrap into a stacked block')
+  assert.doesNotMatch(summary, /display:(?:block|flex)/, 'the fold is not turned into a stacked block')
+  assert.doesNotMatch(summary, /overflow:hidden/, 'nothing clips the caret away')
+  // Opened, the body carries the whole 2000-character line and the preview steps aside (#1636).
+  const { doc } = mountRow(longRow(), 900)
+  doc.querySelector('details').open = true
+  assert.equal(doc.querySelector('.bt-think-text').textContent, LONG)
+  assert.equal(doc.querySelector('.bt-think-caret').textContent, '›')
+})
+
+test('#1718: the bundle the app loads carries the same containment rules', () => {
+  const bundle = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.ok(bundle.includes('.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;white-space:nowrap}'), 'summary bounded in client.js')
+  assert.ok(bundle.includes('.bt-think-peek{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'), 'peek bounded in client.js')
+  assert.ok(bundle.includes('.bt-think-text{white-space:pre-wrap;overflow-wrap:anywhere;'), 'body wraps in client.js')
 })
