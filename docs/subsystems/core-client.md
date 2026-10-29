@@ -277,7 +277,7 @@ by `source` (`bot` | `group` | `workflow`, empty sources left out), carries `col
 `runId`/`nodeId` a workflow row came from, and keeps `row.id` equal to the underlying task id, so a row
 never copies a row. The `tasks` list is the ordinary task read joined by `id` (a `Map`, one pass): a row
 takes its `title`, falls back to `note`, and only then to `@assignee` / `—`, plus its `priority`, so three
-cards held by the same person no longer read the same. An empty Project renders the empty state, not an
+cards held by the same person no longer read the same. A row that carries the host's audit text (#1730) shows it inside the card detail as `bt-project-audit`, read from that same row with no second fetch; a row without it renders exactly as before. An empty Project renders the empty state, not an
 error. `canManage` comes from `project-read` and only decides whether the management affordances are
 drawn; the refusal itself is the host's.
 
