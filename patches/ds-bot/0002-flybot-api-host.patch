@@ -23,11 +23,12 @@ diff --git a/index.js b/index.js
  import * as delivery from './src/host/delivery.js'
  import * as roster from './src/host/roster.js'
  import * as folders from './src/host/folders.js'
-@@ -14,6 +14,7 @@ import * as agents from './src/host/agents.js'
+@@ -14,6 +14,8 @@ import * as agents from './src/host/agents.js'
  import * as prompt from './src/host/prompt.js'
  import * as timeContext from './src/host/time-context.js'
  import * as tools from './src/host/tools.js'
 +import * as decisions from './src/host/decisions.js'
++import * as projectState from './src/host/project-state.js'
  import * as chatIndex from './src/host/chat-index.js'
  import * as groups from './src/host/groups.js'
  import * as approvals from './src/host/approvals.js'
@@ -53,7 +54,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
++const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
  
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -91,7 +92,7 @@ diff --git a/src/host/constants.js b/src/host/constants.js
 -  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
 -  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user',
 +  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
-+  'bot_schedules',
++  'bot_schedules', 'project_state',
 +  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
    'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
    'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
@@ -1211,7 +1212,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +// EPHEMERAL_DENIED_TOOLS equal this list; a new tool is classified here or in the denied constant.
 +export const EPHEMERAL_ALLOWED_TOOLS = Object.freeze([
 +  'list_bots', 'list_models', 'list_capabilities', 'bot_schedules', 'schedule_list',
-+  'read_own_chat', 'read_group_chat', 'remember', 'forget',
++  'read_own_chat', 'read_group_chat', 'remember', 'forget', 'project_state',
 +])
 +// One sentence that names the reason and no substitute route: the run Bot cannot become a team
 +// member by finding another tool that does the same thing.
