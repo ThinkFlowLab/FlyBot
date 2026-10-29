@@ -949,16 +949,26 @@ window.__ModuleLoader__.load({
     function Runs({ workflow }) {
       const rows = runHistoryRows(workflow)
       if (!rows) return h('div', { className: 'wf-muted' }, tr('No runs yet.'))
-      return h('div', null, rows.map((item, index) => h('div', { key: index, className: 'wf-hist' },
-        h('span', { className: 'wf-hist-task', title: item.task?.title ?? '' }, taskSummary(item.task, item)),
-        h('span', { className: 'wf-hist-meta' },
-          item.at ? h('span', { className: 'wf-hist-time' }, runTime(item.at)) : null,
-          item.supersededBy ? h('span', { className: 'wf-hist-retry', title: item.supersededBy }, `superseded by ${item.supersededBy}`) : null,
-          item.retryOf ? h('span', { className: 'wf-hist-retry', title: item.retryOf }, `retry of ${item.retryOf}`) : null,
-          item.status === 'failed'
-            ? h('span', { className: 'wf-hist-reason', title: failureText(item) }, failureText(item))
-            : null),
-        h('span', { className: `wf-chip ${item.status === 'done' ? 'done' : item.status === 'running' ? 'running' : item.status === 'failed' ? 'failed' : 'queued'}` }, tr(STATUS_KEY[item.status] ?? 'Queued')))))
+      return h('div', null, rows.map((item, index) => {
+        // #1618: keep HH:MM in its own non-shrinking column with a gap before the
+        // status chip, and paint Failed once — skip wf-hist-reason when it only
+        // repeats the chip label (generic Failed with no host detail).
+        const chipLabel = tr(STATUS_KEY[item.status] ?? 'Queued')
+        const reason = item.status === 'failed' ? failureText(item) : ''
+        const showReason = Boolean(reason) && reason !== chipLabel
+        const chipClass = item.status === 'done' ? 'done'
+          : item.status === 'running' ? 'running'
+          : item.status === 'failed' ? 'failed'
+          : 'queued'
+        return h('div', { key: index, className: 'wf-hist' },
+          h('span', { className: 'wf-hist-task', title: item.task?.title ?? '' }, taskSummary(item.task, item)),
+          h('span', { className: 'wf-hist-meta' },
+            item.at ? h('span', { className: 'wf-hist-time' }, runTime(item.at)) : null,
+            item.supersededBy ? h('span', { className: 'wf-hist-retry', title: item.supersededBy }, `superseded by ${item.supersededBy}`) : null,
+            item.retryOf ? h('span', { className: 'wf-hist-retry', title: item.retryOf }, `retry of ${item.retryOf}`) : null,
+            showReason ? h('span', { className: 'wf-hist-reason', title: reason }, reason) : null),
+          h('span', { className: `wf-chip wf-hist-status ${chipClass}` }, chipLabel))
+      }))
     }
 
     function RenameModal({ workflow, onClose, onConfirm }) {
@@ -1871,11 +1881,12 @@ window.__ModuleLoader__.load({
 .wf-box{border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);padding:10px 12px}
 .wf-kv{display:flex;justify-content:space-between;gap:16px;padding:8px 0;font-size:12px}
 .wf-kv span:first-child{color:var(--bt-ink-2,rgba(20,20,20,.6))}
-.wf-hist{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--bt-line,rgba(20,20,20,.08));font-size:12px}
-.wf-hist-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wf-hist-meta{display:flex;align-items:center;gap:8px;min-width:0;margin-left:auto}
-.wf-hist-time{color:var(--bt-ink-3,#9a9a9a);font-variant-numeric:tabular-nums;white-space:nowrap}
-.wf-hist-reason{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e5484d}
+.wf-hist{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bt-line,rgba(20,20,20,.08));font-size:12px}
+.wf-hist-task{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-hist-meta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}
+.wf-hist-time{flex:none;color:var(--bt-ink-3,#9a9a9a);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wf-hist-reason{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e5484d}
+.wf-hist-status{flex:none}
 .wf-ctl{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .wf-mask{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
 .wf-modal{width:560px;max-width:100%;max-height:calc(100vh - 32px);background:var(--bt-main,#fcfcfc);color:var(--bt-ink,#141414);border-radius:16px;border:1px solid var(--bt-line,rgba(20,20,20,.08));display:flex;flex-direction:column;overflow:hidden}

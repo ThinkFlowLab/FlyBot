@@ -1820,6 +1820,95 @@ test('#1493: a failed sibling run stays on the stage, and its row carries time a
   view.unmount()
 })
 
+// #1618: Runs status column — duration must not jam into the Done chip, and a
+// Failed row without host detail must not double-paint "Failed" as reason + chip.
+test('#1618: Runs keeps time apart from the status chip and paints Failed once', async () => {
+  const graph = delivery()
+  graph.run = null
+  graph.runs = []
+  graph.history = [
+    {
+      id: 'rvrj1c',
+      task: { id: '#1577', title: 'issue1577-fix: a long title that would crush the status column if meta shrank' },
+      status: 'done',
+      at: Date.UTC(2099, 0, 15, 2, 27),
+    },
+    {
+      id: 'rvrj1x',
+      task: { id: '#1472', title: 'issue1472-fix: bare failure without host detail' },
+      status: 'failed',
+      at: Date.UTC(2099, 0, 15, 2, 23),
+      // no failure: failureText falls back to the same label as the chip
+    },
+    {
+      id: 'rvrj27',
+      task: { id: '#1531', title: 'issue1531-fix: step failure with a real reason' },
+      status: 'failed',
+      at: Date.UTC(2099, 0, 15, 2, 23),
+      failure: { code: 'step-failed', nodeName: 'Writer', text: 'the reply came back empty' },
+    },
+  ]
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [{ id: 'delivery', name: '发布交付流水线' }] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  // No live strip without a run: the stage pill toggles the drawer (Runs is a drawer tab).
+  const pill = findAll(view.tree, node => node.type === 'button' && node.props?.className === 'wf-pill')[0]
+  assert.ok(pill, 'stage pill missing')
+  pill.props.onClick()
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Runs')[0].props.onClick()
+  await settle()
+
+  const rows = findAll(view.tree, node => node.props?.className === 'wf-hist')
+  assert.equal(rows.length, 3)
+
+  const done = rows.find(node => textOf(node).includes('#1577'))
+  assert.ok(done, 'Done row missing')
+  const doneTime = findAll(done, node => node.props?.className === 'wf-hist-time')[0]
+  const doneChip = findAll(done, node => typeof node.props?.className === 'string' && node.props.className.includes('wf-hist-status'))[0]
+  assert.ok(doneTime, 'Done row has no dedicated time column')
+  assert.ok(doneChip, 'Done row has no status chip column')
+  assert.match(textOf(doneTime), /\d{2}:\d{2}/)
+  assert.equal(textOf(doneChip), 'Done')
+  assert.equal(findAll(done, node => node.props?.className === 'wf-hist-reason').length, 0)
+  // Markup keeps time and chip as siblings under wf-hist (gap comes from CSS).
+  assert.equal(done.children.includes(doneTime) || findAll(done, n => n === doneTime).length === 1, true)
+  const meta = findAll(done, node => node.props?.className === 'wf-hist-meta')[0]
+  assert.ok(meta)
+  assert.equal(meta.children.includes(doneTime), true, 'time lives in meta, not inside the chip')
+  assert.equal(done.children.includes(doneChip), true, 'chip is a hist sibling of meta, not nested under time')
+
+  const bareFailed = rows.find(node => textOf(node).includes('#1472'))
+  assert.ok(bareFailed, 'bare Failed row missing')
+  assert.equal(findAll(bareFailed, node => node.props?.className === 'wf-hist-reason').length, 0, 'generic Failed must not double-draw as wf-hist-reason')
+  const bareChip = findAll(bareFailed, node => typeof node.props?.className === 'string' && node.props.className.includes('wf-chip'))[0]
+  assert.equal(textOf(bareChip), 'Failed')
+  assert.equal(textOf(bareFailed).split('Failed').length - 1, 1, `bare Failed row text painted Failed more than once: ${textOf(bareFailed)}`)
+
+  const detailed = rows.find(node => textOf(node).includes('#1531'))
+  assert.ok(detailed, 'detailed Failed row missing')
+  const reason = findAll(detailed, node => node.props?.className === 'wf-hist-reason')[0]
+  assert.ok(reason, 'step failure must still show wf-hist-reason')
+  assert.equal(textOf(reason).includes('Writer failed · the reply came back empty'), true)
+  assert.equal(textOf(findAll(detailed, node => typeof node.props?.className === 'string' && node.props.className.includes('wf-chip'))[0]), 'Failed')
+
+  // CSS contract: meta and status chip do not shrink; time stays nowrap; hist uses a gap.
+  const css = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(css, /\.wf-hist\{[^}]*gap:10px/)
+  assert.match(css, /\.wf-hist-task\{flex:1;min-width:0/)
+  assert.match(css, /\.wf-hist-meta\{[^}]*flex:none/)
+  assert.match(css, /\.wf-hist-time\{flex:none/)
+  assert.match(css, /\.wf-hist-status\{flex:none\}/)
+  assert.doesNotMatch(css, /\.wf-hist-meta\{[^}]*min-width:0/)
+
+  view.unmount()
+})
+
 test('the drawer details name the permission every node Bot actually runs with', async () => {
   // #1535 made every node Bot danger-full-access, so a row claiming each Bot follows
   // its own permission was stale (#1548): the details must say the run's full access
