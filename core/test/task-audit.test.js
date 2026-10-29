@@ -14,8 +14,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { install as installProjectBoard } from '../src/host/project-board.js'
-import { formatRoomBoard } from '../src/host/room-context.js'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -98,14 +96,6 @@ async function start(t, seed = team()) {
   return app
 }
 
-// A restart is the same home and a fresh runtime: the state on disk is what the new process reads.
-async function restart(app) {
-  await app.ctx.dispose()
-  return boot(app.home)
-}
-
-const childrenOf = (app, originalId) => Object.values(app.rt.state.tasks).filter(task => task.reworkOf === originalId)
-const byActor = (task, why) => (task.actors ?? []).filter(entry => entry.by === why)
 
 test('the audit renders one identical text block from the same rows (#1730)', async (t) => {
   const app = await start(t)
