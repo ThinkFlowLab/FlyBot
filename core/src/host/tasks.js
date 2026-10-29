@@ -521,7 +521,14 @@ export function install(rt) {
     const runs = {}
     const wanted = oneLine(query?.role ?? '', ROLE_MAX)
     const wantedRun = query?.run === undefined || query?.run === null ? '' : String(query.run)
-    for (const task of Object.values(store())) {
+    const all = Object.values(store())
+    // A rework chain is one accepted delivery (#1730): an accepted parent and the `rework` child
+    // that resolved it are two records of the same delivery. The child still counts in
+    // `accepted`; `deliveries` counts the chain once, at its accepted parent. A child whose
+    // parent never landed is a delivery of its own — there is no chain to fold it into.
+    const acceptedIds = new Set(all.filter(task => task?.status === 'accepted').map(task => task.id))
+    const countsAsDelivery = task => task.taskClass !== 'rework' || !acceptedIds.has(task.reworkOf)
+    for (const task of all) {
       const role = roleOf(task)
       const run = String(task?.origin?.runId ?? task?.runId ?? '')
       if (wanted !== '' && role !== wanted) continue
@@ -530,17 +537,60 @@ export function install(rt) {
       const row = bucket(roles, role || 'unassigned')
       if (row[task.status] !== undefined) row[task.status] += 1
       if (task.status === 'accepted') {
-        row.deliveries += 1
+        if (countsAsDelivery(task)) row.deliveries += 1
         const lease = leaseOf(task)
         if (lease !== undefined && Number.isFinite(lease.takenAt)) row.workerSeconds += Math.max(0, Math.round((task.updatedAt - lease.takenAt) / 1000))
       }
       if (run !== '') {
         const runRow = bucket(runs, run)
         if (runRow[task.status] !== undefined) runRow[task.status] += 1
-        if (task.status === 'accepted') runRow.deliveries += 1
+        if (task.status === 'accepted' && countsAsDelivery(task)) runRow.deliveries += 1
       }
     }
     return { roles, runs }
+  }
+  // One audit block from the typed rows (#1730). A projection, not a store: every line is read
+  // from fields the write path already validated, so rendering the same rows twice is the same
+  // text. A record stored before the slice carries none of the fields and answers the empty
+  // string — an audit of nothing is not an error.
+  const isoStamp = at => (Number.isFinite(at) ? new Date(at).toISOString() : '')
+  const auditLine = (task) => {
+    const lines = []
+    const handoff = task.handoff !== null && typeof task.handoff === 'object' ? task.handoff : undefined
+    if (handoff !== undefined && handoff.from && handoff.to) {
+      const reason = typeof handoff.reason === 'string' && handoff.reason !== '' ? `: ${handoff.reason}` : ''
+      lines.push(`handoff ${handoff.from} -> ${handoff.to}${reason} @ ${isoStamp(handoff.at)}`)
+    }
+    if (Array.isArray(task.evidence)) {
+      for (const entry of task.evidence) {
+        if (entry === null || typeof entry !== 'object') continue
+        const parts = []
+        if (entry.sha) parts.push(String(entry.sha))
+        if (typeof entry.pr === 'number') parts.push(`pr #${entry.pr}`)
+        if (entry.check) parts.push(String(entry.check))
+        const at = isoStamp(entry.at)
+        if (at !== '') parts.push(`@ ${at}`)
+        if (parts.length > 0) lines.push(`evidence ${parts.join(' ')}`)
+      }
+    }
+    const chain = []
+    const seen = new Set()
+    let cursor = task
+    while (cursor !== undefined && cursor !== null && !seen.has(cursor.id)) {
+      seen.add(cursor.id)
+      chain.push(cursor.id)
+      cursor = typeof cursor.reworkOf === 'string' && cursor.reworkOf !== '' ? find(cursor.reworkOf) : undefined
+    }
+    if (chain.length > 1) lines.push(`rework chain ${chain.reverse().join(' -> ')}`)
+    const lease = leaseOf(task)
+    if (lease !== undefined) {
+      lines.push(`lease ${holderName(lease.holder)} @ ${isoStamp(lease.takenAt)} -> ${isoStamp(lease.expiresAt)}`)
+    }
+    return lines
+  }
+  rt.taskAudit = function taskAudit(id) {
+    const task = find(String(id ?? ''))
+    return task === undefined ? '' : auditLine(task).join('\n')
   }
   // The workflow plugin reads a card's lease through the host (#1729), never a copy of its own.
   rt.taskLease = function taskLease(id) {

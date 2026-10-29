@@ -54,6 +54,7 @@ export function install(rt) {
         : runProject?.id === id ? 'workflow' : null
       if (source === null) continue
       const fromRun = ref !== undefined && (runProject === null || runProject.id === id)
+      const audit = typeof rt.taskAudit === 'function' ? rt.taskAudit(task.id) : ''
       rows.push({
         id: task.id,
         source,
@@ -68,6 +69,10 @@ export function install(rt) {
         ...(task.handoff && typeof task.handoff === 'object' ? { handoff: task.handoff } : {}),
         ...(Array.isArray(task.evidence) ? { evidence: task.evidence } : {}),
         ...(task.lease && typeof task.lease === 'object' ? { lease: task.lease } : {}),
+        // The same projection the task store renders (#1730): one text block a card detail can
+        // show, with nothing written back. A pre-slice card answers the empty string and the row
+        // carries no `audit` key at all.
+        ...(audit !== '' ? { audit } : {}),
         ...(fromRun ? { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) } : {}),
       })
     }

@@ -11,6 +11,8 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-group h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
 .bt-project-row{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));margin:0 0 6px;cursor:default}
 .bt-project-row[data-column="done"]{opacity:.7}
+.bt-project-title-wrap{display:flex;flex-direction:column;gap:2px;min-width:0}
+.bt-project-audit{font-size:11px;line-height:1.45;white-space:pre-wrap;opacity:.65;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-row .bt-project-ref{margin-left:auto;font-size:11px;opacity:.6}
 .bt-project-empty{padding:22px 4px;opacity:.7}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
@@ -64,6 +66,7 @@ export function projectBoardView({ project, rows, canManage, tasks } = {}) {
             nodeId: text(row.nodeId) || null,
             title: text(task?.title) || text(task?.note) || null,
             priority: text(task?.priority) || null,
+            audit: text(row.audit) || null,
             board: boardOfRow(row, task),
           }
         }),
@@ -99,7 +102,11 @@ function ProjectBoardRows({ view, onOpen }) {
         onKeyDown: open === undefined ? undefined : event => { if (event.key === 'Enter' || event.key === ' ') open() },
       },
       h('span', { className: 'bt-project-column' }, t(row.column)),
-      h('span', { className: 'bt-project-title' }, row.title ?? (row.assignee ? `@${row.assignee}` : '—')),
+      h('span', { className: 'bt-project-title-wrap' },
+        h('span', { className: 'bt-project-title' }, row.title ?? (row.assignee ? `@${row.assignee}` : '—')),
+        // The audit text the row already carries (#1730): shown inside the card detail, never a
+        // second read. A row without one renders exactly as before.
+        row.audit === null ? null : h('span', { className: 'bt-project-audit' }, row.audit)),
       row.priority === null ? null : h('span', { className: 'bt-project-priority' }, row.priority),
       row.runId === null ? null : h('span', { className: 'bt-project-ref' }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`))
     })))
