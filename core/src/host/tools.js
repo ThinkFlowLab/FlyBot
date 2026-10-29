@@ -209,10 +209,12 @@ export function install(rt) {
   // A run Bot keeps its name (findBot still sees it) but no team tool can address it (#1373).
   const teamBot = bot => bot !== undefined && bot.remote === undefined && bot.ephemeral === undefined
   // Retired (#638): the tree no longer counts it and the default Bot list leaves it out.
+  // Retirement is terminal, so no team tool addresses it either (#1700): every tool that takes
+  // a Bot name resolves through findTeamBot, which is where the rule belongs.
   const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
   const findTeamBot = (name) => {
     const bot = rt.findBot(name)
-    return teamBot(bot) ? bot : undefined
+    return teamBot(bot) && !retiredBot(bot) ? bot : undefined
   }
 
   ctx.tools.register(defineTool({
