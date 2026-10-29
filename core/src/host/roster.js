@@ -529,8 +529,11 @@ export function install(rt) {
       bot.fields['flybot-tree'].retired = true
     }
     bot.hidden = true
+    // Retiring disarms its own chat Session (#1709): `schedules` installs after `roster`, and a
+    // host without the module (a test that mounts only the roster) simply has nothing to pause.
+    const freed = typeof rt.pauseBotSchedules === 'function' ? await rt.pauseBotSchedules(id) : undefined
     await rt.save()
-    return bot
+    return { bot, freed }
   }
 
   async function deleteBot(id) {

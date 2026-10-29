@@ -32,6 +32,7 @@ import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
 import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
 import { workDispatch } from './work-dispatch.js'
+import { retiredBot } from './store.js'
 
 // #1253: how long an identical claim line keeps a card quiet after it was posted. A claim is a
 // beacon, not a heartbeat; a re-claim inside this window says nothing new to the room.
@@ -439,6 +440,11 @@ export function install(rt) {
   })
   const minutesSince = at => Math.max(1, Math.round((Date.now() - at) / 60000))
 
+  // Retirement is final for every round path (#1709): a retired Bot is not a member a line can
+  // call, an @all can sweep in, or whose own line can call others. Its chat and history stay
+  // readable; only the turn is gone, so nothing is delivered and no Session starts.
+  const roomBots = room => room.members.map(rt.botOf).filter(bot => bot !== undefined && !retiredBot(bot))
+
   // A called member moves up if it is still waiting, or gets one more turn if it
   // already spoke; either way it goes right after slot `index`. `cap` is the caller's
   // per-member turn bound for the round; `by` is the calling member, if a member called.
@@ -484,7 +490,7 @@ export function install(rt) {
     const lines = waitingLines(agent).filter(line => agent.inbox.remove(line.id))
     if (lines.length === 0) return 0
     const before = round.slots.length
-    const members = room.members.map(rt.botOf).filter(Boolean)
+    const members = roomBots(room)
     // The owner's own typed line reaches a face round through the Session inbox, not as the round's opener (the opener
     // is the quiet "name: text" notice), so it is routed here (#299). A line added to a round that already routes
     // is answered by the rule for its own opening, so that round stops routing.
@@ -776,7 +782,7 @@ export function install(rt) {
       void rt.save().catch(() => {})
       // Only the admin's "@all" calls everyone, so a member cannot set off a storm.
       const leads = rt.isAdminOf(room, member.id)
-      const everyone = room.members.map(rt.botOf).filter(Boolean)
+      const everyone = roomBots(room)
       const others = everyone.filter(other => other.id !== member.id)
       const { all, found: named } = mentionsIn(reply, everyone)
       const found = named.filter(other => other.id !== member.id)
@@ -824,7 +830,7 @@ export function install(rt) {
       const references = posts.flatMap(post => post.references ?? [])
       // The members the opening line names: a Bot's post calls them to work for that Bot, a person's
       // line addresses them. The report keeps that apart from a plain pass (#913).
-      const said = mentionsIn(opener.text ?? '', room.members.map(rt.botOf).filter(Boolean), opener.references ?? [])
+      const said = mentionsIn(opener.text ?? '', roomBots(room), opener.references ?? [])
       const named = said.found
       // A task lead's @ dispatch is a card, not a turn (#1254): the member is woken in its own chat
       // and its place in this round is empty.
@@ -1065,7 +1071,7 @@ export function install(rt) {
   function openingSpeakers(room, opener) {
     // A line already in the log, posted so the pane can draw it. `@` in it is not a new call.
     if (opener.displayOnly === true) return []
-    const everyone = room.members.map(rt.botOf).filter(Boolean)
+    const everyone = roomBots(room)
     const members = everyone.filter(bot => bot.id !== opener.botId)
     const admin = members.find(bot => rt.isAdminOf(room, bot.id))
     // A friend's own typed line that @-calls Bots here (#287): only those Bots answer. The caller
@@ -1168,7 +1174,7 @@ export function install(rt) {
     // left them uncalled until the held post opened a round after the report. `called` keeps the re-delivery
     // of the held post from calling them a second time. A task lead's dispatch is the board's instead
     // (#1254): it is written here so the round does not call the member it assigned.
-    const everyone = room.members.map(rt.botOf).filter(Boolean)
+    const everyone = roomBots(room)
     const said = mentionsIn(text, everyone)
     const callees = said.found.filter(bot => bot.id !== sender.id)
     if (callees.length > 0) {

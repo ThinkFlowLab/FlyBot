@@ -17,6 +17,7 @@
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
+import { retiredBot } from './store.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
@@ -448,7 +449,7 @@ export function install(rt) {
   const memberBot = (room, name) => {
     const wanted = String(name).trim()
     const ids = liveParticipants(room).filter(person => person.kind === 'bot' && !person.remote).map(person => person.id)
-    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && candidate.name === wanted)
+    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && !retiredBot(candidate) && candidate.name === wanted)
     if (matches.length !== 1) throw invalid(`No single Bot named "${wanted.slice(0, 80)}" in this group`)
     return matches[0]
   }

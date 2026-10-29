@@ -3004,7 +3004,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 @@ -1,4 +1,6 @@
  import { createHash } from 'node:crypto'
 +import { RESERVED_NAMES } from './connectors.js'
-+import { ownEntry } from './store.js'
++import { ownEntry, retiredBot } from './store.js'
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -3028,9 +3028,13 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
      if (!item) throw new Error(`No capability named ${name}.`)
      if (!ui) editCheck(item, botId, 'delete')
      delete items[item.name]
-@@ -156,7 +156,7 @@
+@@ -154,9 +154,10 @@
+     const caller = rt.botOf(callerId)
+     if (!caller) throw new Error('Only Bots on the team can change capabilities.')
      const target = targetRef ? rt.findBot(targetRef) : caller
-     if (!target) throw new Error(`No Bot named ${targetRef}.`)
+-    if (!target) throw new Error(`No Bot named ${targetRef}.`)
++    // A retired Bot is not addressable (#1709): it resolves exactly like an unknown name.
++    if (!target || (targetRef && retiredBot(target))) throw new Error(`No Bot named ${targetRef}.`)
      if (target.id !== caller.id && !rt.isMain(callerId)) throw new Error('Only a Main Bot can change another Bot’s capabilities.')
 -    const item = ensureLibrary()[String(name ?? '')]
 +    const item = ownEntry(ensureLibrary(), String(name ?? ''))
@@ -4391,7 +4395,7 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,9 +25,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
+@@ -25,9 +25,12 @@
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
@@ -4400,11 +4404,12 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +import { defineTool } from './tool-schema.js'
  import { splitRef, unquote } from './text.js'
  import { output } from './tools.js'
++import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
  
  // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
  // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
-@@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
+@@ -312,7 +312,7 @@
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
  
@@ -4413,7 +4418,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  const summaryRequest = ({ name, own, team, language }) => [
    `Here is everything ${name} remembers: its own memory, then the team memory that every Bot shares. Each line is one entry; [[name]] is a topic.`,
-@@ -327,7 +327,7 @@ const summaryRequest = ({ name, own, team, language }) => [
+@@ -327,7 +327,7 @@
  ].join('\n')
  
  const ASK_SYSTEM = [
@@ -4422,7 +4427,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"reply": "…", "changes": […]}',
    '- reply: one to three short sentences to the user. Say what you changed, or answer the question; when the entries do not say, say so. The user does not see the entry numbers, so never mention them.',
    '- changes: empty unless the user asks to add, correct, or remove something. Each change is one of',
-@@ -338,7 +338,7 @@ const ASK_SYSTEM = [
+@@ -338,7 +338,7 @@
  ].join('\n')
  
  const reviewSystem = teamWrites => [
@@ -4431,7 +4436,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
-@@ -486,7 +486,24 @@ export function install(rt) {
+@@ -486,7 +486,24 @@
    // Main Bots and the admins of a group also write the team's; Main Bots read and
    // write every Bot's. The user may do everything from the memory panel.
  
@@ -4457,7 +4462,16 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
-@@ -632,7 +632,7 @@ export function install(rt) {
+@@ -495,7 +495,7 @@
+     if (/^(own|me|mine|self|yours?|自己|我)$/i.test(value)) return { scope: ownScope(botId) }
+     if (/^(team|团队|共享)$/i.test(value)) return { scope: TEAM }
+     const bot = rt.findBot(value)
+-    if (bot === undefined) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
++    if (bot === undefined || retiredBot(bot)) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
+     return { scope: ownScope(bot.id) }
+   }
+   function writeDenied(scope, botId) {
+@@ -632,7 +632,7 @@
      news.delete(botId)
      return queued(async () => {
        if (rt.readOnly() !== undefined) return
@@ -4466,7 +4480,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const dir = dirOf(ownScope(botId))
        if (!existsSync(dir)) return
        const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-@@ -837,11 +837,13 @@ export function install(rt) {
+@@ -837,11 +837,13 @@
  
    ctx.tools.register(defineTool({
      name: 'recall',
@@ -4481,7 +4495,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -861,6 +861,20 @@ export function install(rt) {
+@@ -861,6 +861,20 @@
          const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
          return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
        }
@@ -4502,7 +4516,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
        const query = String(args.query ?? '').trim().slice(0, 120)
        if (query === '') {
-@@ -872,6 +872,21 @@ export function install(rt) {
+@@ -872,6 +872,21 @@
            ].join('\n')
          }).join('\n\n')
        }
@@ -4524,7 +4538,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
        const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {
          const hay = squash(`${entry.text} ${entry.file.topic ?? ''}`)
-@@ -941,6 +941,8 @@ export function install(rt) {
+@@ -941,6 +941,8 @@
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
    async function botShot(bot, system, text, tag) {
@@ -4533,7 +4547,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
-@@ -1004,7 +1004,7 @@ export function install(rt) {
+@@ -1004,7 +1004,7 @@
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -4542,7 +4556,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
-@@ -1123,17 +1123,28 @@ export function install(rt) {
+@@ -1123,17 +1123,28 @@
  
    // What is new in a group, from its log: the member's Session holds the same
    // messages wrapped in turn prompts.
@@ -4573,7 +4587,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
      }
      return {
-@@ -1158,7 +1158,7 @@ export function install(rt) {
+@@ -1158,7 +1158,7 @@
      return { texts: kept, count: kept.length }
    }
  
@@ -4582,7 +4596,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const actor = { id: bot.id, name: bot.name, session: sessionId, auto: true }
      const done = []
      let failed
-@@ -1166,7 +1166,7 @@ export function install(rt) {
+@@ -1166,7 +1166,7 @@
        // A Bot deleted mid-review keeps no more changes, its team ones included.
        if (rt.botOf(bot.id) === undefined) return 0
        // Its role may change mid-review too, so each change asks again.
@@ -4591,7 +4605,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const op = String(change?.op ?? '')
        const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
        const target = numbered[Number(change?.entry) - 1]
-@@ -1272,7 +1272,7 @@ export function install(rt) {
+@@ -1272,7 +1272,7 @@
        const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
        if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
        if (rt.botOf(bot.id) === undefined) return
@@ -4600,7 +4614,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
-@@ -1378,8 +1378,29 @@ export function install(rt) {
+@@ -1378,8 +1378,29 @@
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
  
@@ -5128,7 +5142,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
-@@ -5,8 +5,42 @@
+@@ -5,8 +5,43 @@
  // them. A group chat's task lives on the group's own Session, so the reminder reaches
  // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
  // the service is optional and every endpoint reports whether it is there.
@@ -5160,6 +5174,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +import { defineTool } from './tool-schema.js'
 +import { textOf } from './text.js'
 +import { output } from './tools.js'
++import { retiredBot } from './store.js'
  
  const MAX_TITLE = 120
 +// How long a due task may stay undelivered while the app runs before it counts as failed.
@@ -5171,7 +5186,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-@@ -28,6 +28,28 @@ export function reminderText(text) {
+@@ -28,6 +28,28 @@
    return lines.length === 0 ? text : lines.map(prompt => `[Scheduled task] ${prompt}`).join('\n')
  }
  
@@ -5200,7 +5215,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The create request that gives a stored record its timing again, for a move.
  function requestOf(record) {
    const base = { title: record.title, prompt: record.prompt }
-@@ -39,6 +39,28 @@ function requestOf(record) {
+@@ -39,6 +39,28 @@
    return null
  }
  
@@ -5229,7 +5244,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -59,9 +59,11 @@ function selectorOf(when) {
+@@ -59,9 +59,11 @@
        return { weekly: { time: `${when.time}:00`, time_zone: zone, weekdays } }
      }
      case 'every': {
@@ -5244,7 +5259,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
      }
      default:
        throw invalid('Pick when it runs')
-@@ -89,63 +89,502 @@ export function install(rt) {
+@@ -89,63 +89,540 @@
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5399,7 +5414,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  function contentOf(body) {
 +    const bot = state.bots[body.target]
 +    const room = state.rooms[body.target]
++    // A retired Bot answers as an unknown target (#1709): its chat Session is still alive, so a
++    // row armed here would wake it on a timer.
 +    if (bot === undefined && room === undefined) throw invalid('No such Bot or group chat')
++    if (retiredBot(bot)) throw invalid('No such Bot or group chat')
 +    const title = String(body.title ?? '').trim()
 +    const prompt = String(body.prompt ?? '').trim()
 +    if (title === '') throw invalid('Give the task a name')
@@ -5430,6 +5448,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const targetBot = state.bots[body.target]
 +    const targetRoom = state.rooms[body.target]
 +    if (targetBot === undefined && targetRoom === undefined) throw invalid('No such Bot or group chat')
++    if (retiredBot(targetBot)) throw invalid('No such Bot or group chat')
 +    const same = owner.botId !== undefined ? targetBot?.id === owner.botId : targetRoom?.id === owner.roomId
 +    if (same) throw invalid('Pick a different Bot or group chat to copy it to')
 +    const request = requestOf(source)
@@ -5554,6 +5573,39 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      throw error
 +    }
 +    return schedulesView()
++  }
++
++  // Retiring a Bot disarms what its own chat Session already holds (#1709), with the same
++  // semantics as pausing one task: the record is saved in state.pausedSchedules before DSH
++  // drops the row, so a refusing delete loses nothing and is counted as still armed.
++  async function pauseBotSchedules(botId) {
++    const sessionId = rt.chatOf(botId)
++    if (service === null || sessionId === undefined) return { paused: 0, armed: 0, available: false }
++    const rows = (await service.catalog()).filter(entry => entry.sessionId === sessionId && entry.status === 'active')
++    const held = []
++    for (const row of rows) {
++      const request = requestOf(row)
++      if (request === null) continue
++      paused()[row.id] = { id: row.id, sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
++      held.push(row)
++    }
++    // The records are saved before DSH lets the rows go, exactly as pausing one task does.
++    if (held.length > 0) await rt.save()
++    let pausedCount = 0
++    let armed = rows.length - held.length
++    for (const row of held) {
++      try {
++        const result = await service.delete({ sessionId, id: row.id })
++        if (result?.deleted === false) throw invalid('No such task')
++        pausedCount += 1
++      } catch {
++        delete paused()[row.id]
++        armed += 1
++      }
++    }
++    // A row DSH refused to drop is not paused either, so the saved state says so.
++    if (armed > 0) await rt.save()
++    return { paused: pausedCount, armed, available: true }
 +  }
 +
 +  // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
@@ -5771,6 +5823,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -  Object.assign(rt, { scheduleEndpoint: (endpoint, body) => endpoints[endpoint](body ?? {}), moveSchedules })
 +  Object.assign(rt, {
 +    scheduleEndpoint: (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor),
++    pauseBotSchedules,
 +    moveSchedules,
 +    scheduleRunStarted: runStarted,
 +    scheduleRunEnded: runEnded,
