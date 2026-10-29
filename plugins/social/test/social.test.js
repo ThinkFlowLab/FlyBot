@@ -4498,7 +4498,9 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
   assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Hsliu')))
   assert.equal(tree.some(n => String(n.children ?? '').includes('@hsliu.bot')), false)
   assert.ok(tree.some(n => String(n.props.className ?? '').includes('fs-hold')))
-  const waiting = walk(plugin.ChatApprovalDock({ room: { pendingCount: 2 } }))
+  // #1607: the "another owner" line is only honest once both lists have answered (`statusLoaded`,
+  // `listLoaded` are hook slots 2 and 3), so this dock is built with them true and both lists empty.
+  const waiting = walk(pluginOf([[], [], true, true]).ChatApprovalDock({ room: { pendingCount: 2 } }))
   assert.ok(waiting.some(n => n.props['data-role'] === 'other'))
   assert.ok(waiting.some(n => n.children?.includes?.(WAITING_OTHERS) || (Array.isArray(n.children) && n.children.includes(WAITING_OTHERS))))
 
