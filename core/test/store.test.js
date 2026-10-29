@@ -302,3 +302,21 @@ test('a member that loses its seat closes its external process (#198)', async (t
 function ctxRegistry(rt) {
   rt.ctx.workspaceRegistry = { archiveSession: async () => {} }
 }
+
+// #1704: a roster id that is not an own key of its table is not a member either.
+test('a roster id that is not an own key finds no Bot and no group (#1704)', async (t) => {
+  const { rt } = runtime(t, {
+    version: 2,
+    revision: 1,
+    mainBotIds: ['a'],
+    members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
+    bots: { a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1, ownerId: 'owner-1' } },
+    rooms: { r1: { id: 'r1', name: 'Ops', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {} } },
+    agents: {}, exchanges: [],
+  })
+  await rt.load()
+  assert.equal(rt.findBot('__proto__'), undefined, 'findBot(__proto__) answered Object.prototype')
+  assert.deepEqual(rt.findRooms('__proto__'), [], 'findRooms(__proto__) answered Object.prototype')
+  assert.equal(rt.findBot('a').name, 'Chief')
+  assert.equal(rt.findRooms('Ops')[0].id, 'r1')
+})
