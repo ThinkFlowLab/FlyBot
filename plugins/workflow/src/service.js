@@ -1495,28 +1495,39 @@ export function createWorkflowService({
     },
     // Auto-assign an open board task. A miss leaves the task untouched.
     // A stored claim is not a life sentence (#1647): when the card itself now
-    // names another live target, the claim and its route go and the task is
-    // matched again. A trigger, or a card that names nothing, keeps it. Passing
-    // `rematch: true` drops that one claim first — the panel's per-task action.
+    // names another live target, the task is matched again and the claim its route
+    // travel to the new target together. A trigger, or a card that names nothing,
+    // keeps it; a card that names a target it cannot match (it has left `open`)
+    // keeps it too, and nothing is written. Passing `rematch: true` drops that one
+    // claim first — the panel's per-task action.
     ingest(task = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const taskId = cleanLine(task.id, 80)
       if (!taskId) return { ok: false, error: 'A task needs an id' }
       if (task.rematch === true && forgetClaim(taskId)) write()
       const claimed = state.claims[taskId]
-      if (claimed?.kind === 'bot' || claimed?.kind === 'workflow') {
+      const held = claimed?.kind === 'bot' || claimed?.kind === 'workflow' ? claimed : undefined
+      let decision = held
+      if (held !== undefined) {
         const named = namedTarget(task, { workflows: state.workflows, bots: bots() ?? [] })
-        if (!named || (named.kind === claimed.kind && named.id === claimed.id)) {
-          return { ok: true, matched: true, already: true, decision: claimed }
+        if (!named || (named.kind === held.kind && named.id === held.id)) {
+          return { ok: true, matched: true, already: true, decision: held }
         }
-        forgetClaim(taskId)
-        write()
+        // The card names another target. Match it before touching the stored claim:
+        // a card that has left `open` matches nothing, and must keep the claim and
+        // route it has rather than lose both with no new holder (#1647). The write
+        // that attaches the new target replaces the pair in one go.
+        const next = matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
+        if (!next) return { ok: true, matched: false }
+        decision = next
       }
-      const decision = matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
-      if (!decision) {
-        // A rematch on a task that now names nothing leaves it unassigned, and
-        // says so; the claim it dropped is already on disk.
-        return { ok: true, matched: false }
+      if (decision === undefined) {
+        decision = matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
+        if (!decision) {
+          // A rematch on a task that now names nothing leaves it unassigned, and
+          // says so; the claim it dropped is already on disk.
+          return { ok: true, matched: false }
+        }
       }
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
