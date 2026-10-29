@@ -94,7 +94,7 @@ diff --git a/src/host/constants.js b/src/host/constants.js
 -  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
 -  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user',
 +  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
-+  'bot_schedules', 'project_state', 'project_digest',
++  'bot_schedules', 'project_state', 'project_digest', 'meeting',
 +  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
    'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
    'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
@@ -1350,7 +1350,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +  'send_message', 'schedule_create', 'schedule_update', 'schedule_delete',
 +  'message_friend_bot', 'get_friend_file', 'list_friend_bots',
 +  'define_workflow', 'run_workflow',
-+  'read_browser', 'recall', 'create_child_bot', 'project_digest',
++  'read_browser', 'recall', 'create_child_bot', 'project_digest', 'meeting',
 +])
 +// The team-facing names a run Bot keeps: read-only, and each reads only what the run Bot itself
 +// may see. `remember`/`forget` are the only writes, and `writeDenied` keeps them inside the run

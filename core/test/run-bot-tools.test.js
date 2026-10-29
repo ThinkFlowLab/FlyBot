@@ -111,8 +111,8 @@ test('the constant refuses every name at the guard and the approval seam, with n
   const { fb, home, callAsDsh, ask, refusalOf, received, saved, stop } = await start()
   t.after(stop)
   const id = await runBot(fb, [])
-  assert.equal(EPHEMERAL_DENIED_TOOLS.length, 31)
-  assert.equal(new Set(EPHEMERAL_DENIED_TOOLS).size, 31, 'no duplicate name')
+  assert.equal(EPHEMERAL_DENIED_TOOLS.length, 32)
+  assert.equal(new Set(EPHEMERAL_DENIED_TOOLS).size, 32, 'no duplicate name')
   assert.equal(new Set(EPHEMERAL_ALLOWED_TOOLS).size, EPHEMERAL_ALLOWED_TOOLS.length)
   assert.deepEqual(EPHEMERAL_DENIED_TOOLS.filter(name => ALLOWED.has(name)), [], 'a name is in one list only')
 
