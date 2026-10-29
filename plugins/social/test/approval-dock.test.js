@@ -215,3 +215,65 @@ test('#1638: a room with no pending card and a zero count draws no card', () => 
     assert.equal(tree, '', 'a quiet room draws no card')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #1640: the waiting card said nothing about where the room's card is. A held reply is decided on
+// its own bubble in this chat (#418); a local Bot's hold is decided in that Bot's chat (#254).
+const coder = { id: 'bot1', name: 'Coder', color: 'blue' }
+const botHold = () => ({ id: 'a2', status: 'pending', senderName: 'SelfTest A2', request: { text: 'hi', from: 'bot1', to: { handle: '@friend.home' }, via: 'auto' } })
+const inlineHold = () => ({ id: 'a3', status: 'pending', senderName: 'SelfTest A2', request: { text: 'hi', from: 'bot1', to: { handle: '@friend.home' }, via: 'auto-reply', meta: { replyIn: { sessionId: 's1' } } } })
+// The button an approval card offers, found the way the rest of this file walks the tree.
+const button = (node, id) => {
+  if (Array.isArray(node)) return node.map(child => button(child, id)).find(Boolean)
+  if (!node || typeof node !== 'object' || typeof node.type === 'function') return undefined
+  if (node.props?.['data-flybot'] === id) return node
+  return button(node.children, id)
+}
+async function settle(hold) {
+  const app = loadDock()
+  const { state, inst } = harness()
+  const opened = []
+  inst.props.roster = { bots: [coder], byId: { bot1: coder }, roomsById: {} }
+  inst.props.actions = { openSession: id => opened.push(id) }
+  render(app.ChatApprovalDock, inst)
+  runEffects(inst)
+  state.resolveApprovals(hold)
+  await tick()
+  return { app, inst, opened, tree: render(app.ChatApprovalDock, inst) }
+}
+
+test("#1640: a hold written by a local Bot names that Bot's chat and opens it", async () => {
+  const { inst, opened, tree } = await settle([botHold()])
+  try {
+    const text = drawn(tree)
+    assert.match(text, /Waiting for the owner's approval/, 'the waiting card still says it is a card we cannot decide here')
+    assert.match(text, /Decide in Coder's chat\./, 'the card names the Bot chat the card is decided in')
+    const open = button(tree, 'chat-approval-open-chat')
+    assert.ok(open, 'the card offers the way there')
+    assert.equal(open.props.type, 'button')
+    assert.equal(drawn(open), "Open Coder's chat")
+    open.props.onClick()
+    assert.deepEqual(opened, ['bot1'], 'one click opens that Bot chat')
+    assert.doesNotMatch(text, /Approve/, 'the waiting card never offers a decision here')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#1640: a held reply names the reply bubble above and offers no jump, because it is on screen', async () => {
+  const { tree } = await settle([inlineHold()])
+  try {
+    const text = drawn(tree)
+    assert.match(text, /Waiting for the owner's approval/)
+    assert.match(text, /Decide on the reply bubble above\./, 'the card names the reply bubble it is decided on')
+    assert.equal(button(tree, 'chat-approval-open-chat'), undefined, 'nothing to jump to: the bubble is here')
+    assert.doesNotMatch(text, /Opens? .* chat/, 'no destination is invented')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#1640: a room count this dock cannot place keeps the neutral sentence and no button', async () => {
+  const { tree } = await settle([])
+  try {
+    const text = drawn(tree)
+    assert.match(text, /Waiting for the owner's approval/, 'the neutral sentence stays')
+    assert.equal(button(tree, 'chat-approval-open-chat'), undefined, 'an unknown destination draws no jump')
+    assert.doesNotMatch(text, /Decide in |Decide on the reply bubble/, 'no destination is invented')
+  } finally { delete globalThis.__flybot__ }
+})
