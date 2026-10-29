@@ -209,7 +209,10 @@ test('a room line steered into a running member\'s Session notes one ack for tha
   const host = await roomHost(t)
   host.rt.live.set('gb', { turn: 1, tool: 'bash' })
   host.emit('gb', 'turn/start', { turn: 1 })
-  host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
+  // groups.js relays a mid-line as a steer, so the line reaches the running member as a
+  // `next-step` splice: the arrival is the ack, and the claim at the next step adds nothing (#1698).
+  const line = { ...roomSay('帮我把周报再改一下').data, id: 'm-1' }
+  host.emit('gb', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [line] })
   const acks = host.rt.busyAcksView()
   assert.deepEqual(Object.keys(acks), ['gb'])
   assert.equal(acks.gb.text, '')
@@ -217,15 +220,20 @@ test('a room line steered into a running member\'s Session notes one ack for tha
   assert.doesNotMatch(host.llm.calls[0].messages[0].content[0].text, /Group chat/)
   // Coalesced: a second line inside the window keeps the one ack.
   const at = acks.gb.at
-  host.emit('gb', 'user/message', roomSay('again').data)
+  host.emit('gb', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ ...roomSay('again').data, id: 'm-2' }] })
   assert.deepEqual(Object.keys(host.rt.busyAcksView()), ['gb'])
   assert.equal(host.rt.busyAcksView().gb.text, 'ACK:帮我把周报再改一下')
   assert.ok(host.rt.busyAcksView().gb.at >= at)
+  assert.equal(host.llm.calls.length, 1, 'two lines inside the window keep one call')
+  // The claim of the line that opened the turn is not a second line.
+  host.emit('gb', 'user/message', line)
+  await settleAck(host.rt, 'gb')
+  assert.equal(host.llm.calls.length, 1, 'the claim of an acked line adds no call')
   // No ack survives the turn.
   host.emit('gb', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
   assert.deepEqual(host.rt.busyAcksView(), {})
   host.rt.live.set('gb', { turn: 2 })
-  host.emit('gb', 'user/message', roomSay('还在吗').data)
+  host.emit('gb', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ ...roomSay('还在吗').data, id: 'm-3' }] })
   assert.ok(host.rt.busyAcksView().gb)
   host.fire('agent/status', { agent: { session: { id: 'gb' } }, status: 'idle' })
   assert.deepEqual(host.rt.busyAcksView(), {})
@@ -251,7 +259,7 @@ test('the room view names a running member before its line lands, then carries t
   // The member's turn is already running while the person's line is still being composed:
   // an empty text, which the client draws as the pending blinking indicator, no sentence.
   assert.deepEqual(host.rt.roomBusyAcksView({ b: 'gb' }), { b: { text: '', at: 0 } })
-  host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
+  host.emit('gb', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ ...roomSay('帮我把周报再改一下').data, id: 'm-1' }] })
   await settleAck(host.rt, 'gb')
   assert.equal(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, 'ACK:帮我把周报再改一下')
   // No running turn, no entry; an empty member map stays empty.
@@ -262,15 +270,17 @@ test('the room view names a running member before its line lands, then carries t
 
 test('the own-chat ack is unchanged beside the room path (#1646)', async (t) => {
   const host = await roomHost(t)
+  // A line that lands while the turn runs, at its arrival as DSH queues it (#1678).
   host.rt.live.set('b', { turn: 1, tool: 'bash' })
   host.emit('b', 'turn/start', { turn: 1 })
-  host.emit('b', 'user/message', say('check the logs').data)
+  host.emit('b', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ ...say('check the logs').data, id: 'm-own' }] })
   const acks = host.rt.busyAcksView()
   assert.deepEqual(Object.keys(acks), ['b'])
   assert.equal(await settleAck(host.rt, 'b'), 'ACK:check the logs')
   // The same Session id space: a room line in the member's group Session is its own key.
   host.rt.live.set('gb', { turn: 1 })
   host.emit('gb', 'turn/start', { turn: 1 })
-  host.emit('gb', 'user/message', roomSay('帮我看日志').data)
+  host.emit('gb', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ ...roomSay('帮我看日志').data, id: 'm-room' }] })
+  await settleAck(host.rt, 'gb')
   assert.deepEqual(Object.keys(host.rt.busyAcksView()).sort(), ['b', 'gb'])
 })

@@ -128,6 +128,12 @@ export function install(rt) {
   // (#1684), so the memory has to outlive it.
   /** @type {Map<string, { exact: Set<string>, bits: Uint32Array, folded: number, rebuilds: number }>} */
   const ledgers = new Map()
+  // Sessions whose newest turn has not claimed its first user line yet. DSH appends `turn/start`
+  // before the step's `user/message` (agent-loop `index.js:943` and `:1061`), so the line that
+  // opens a turn is claimed while `turnRunning` is already true and looks exactly like a line that
+  // landed on a busy Bot. The first claim after `turn/start` is that opening line, never a busy
+  // arrival, so it creates no ack (#1698).
+  const openingLine = new Set()
   let counter = 0
 
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
@@ -274,6 +280,10 @@ export function install(rt) {
   ctx.on('session/event', (session, event) => {
     const id = session?.id
     if (id === undefined || event?.type === undefined) return
+    if (event.type === 'turn/start') {
+      openingLine.add(id)
+      return
+    }
     // DSH queues a person's line as `agent/inbox/spliced` the moment it arrives; its
     // `user/message` follows at the next step start, when the line is claimed. The splice is
     // the arrival, so the ack starts here and the claim below finds it already made (#1678).
@@ -300,6 +310,9 @@ export function install(rt) {
       return
     }
     if (event.type === 'user/message') {
+      // The claim of the line that opened this turn: it is not a line that landed on a busy Bot,
+      // even though `turnRunning` is already true here (#1698).
+      if (openingLine.delete(id)) return
       const source = event.data?.source
       const room = roomLine(id, source)
       const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
@@ -314,13 +327,18 @@ export function install(rt) {
       if (textOf(event.data?.message?.content).trim() !== '') clear(id)
       return
     }
-    if (event.type === 'turn/end') clear(id)
+    if (event.type === 'turn/end') {
+      openingLine.delete(id)
+      clear(id)
+    }
   })
 
   ctx.on('agent/status', ({ agent, status }) => {
     if (status !== 'idle') return
     const id = agent?.session?.id ?? agent?.id
-    if (typeof id === 'string') clear(id)
+    if (typeof id !== 'string') return
+    openingLine.delete(id)
+    clear(id)
   })
 
   Object.assign(rt, {
