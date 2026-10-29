@@ -87,13 +87,15 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
   return { changed: true, day: dayIn(at), text: [head, stateLine, ...sections].join('\n') }
 }
 
-// The cards that need *this* owner's decision: still open, and assigned to that owner. A card
-// somebody else owns is their decision, and never appears in this owner's digest.
-export function actionableFor(rows, ownerId) {
+// The cards that need *this* owner's decision: still open, and owned by that owner. A card
+// somebody else owns is their decision, and never appears in this owner's digest. The board's
+// `assignee` is a Bot name or null, never a member id (#1733), so the owner comes from `ownerOf`:
+// the host resolves it from the card's own Bot, and a hand-built row may carry `ownerId` itself.
+export function actionableFor(rows, ownerId, ownerOf = row => text(row?.ownerId)) {
   const owner = text(ownerId)
   if (owner === '') return []
   return (rows ?? [])
-    .filter(row => row?.column !== 'done' && text(row.assignee) === owner)
+    .filter(row => row?.column !== 'done' && ownerOf(row) === owner)
     .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0) || String(a.id).localeCompare(String(b.id)))
     .map(row => ({ id: String(row.id), ask: askOf(row) }))
 }
@@ -309,12 +311,38 @@ export function install(rt) {
     return { owner, off: record.off === true, quiet: quietOf(assistant, owner), schedule, changed: wasOff !== (record.off === true) }
   }
 
+  // A board row carries the card's identity and its column, not its title; the ask line needs a
+  // subject, so the card's own record supplies it.
+  const withTitles = rows => rows.map((row) => {
+    const title = text(rt.state?.tasks?.[String(row?.id ?? '')]?.title)
+    return title === '' ? row : { ...row, title }
+  })
+
+  // A card's owner is the owner of the Bot that owns the card: the board names the Bot, and the
+  // Bot names its owner. `assignee` is only a Bot name, and a hand-built row may carry `ownerId`.
+  const cardOwner = (row) => {
+    const botId = text(rt.state?.tasks?.[String(row?.id ?? '')]?.ownerBotId)
+    const bot = botId === '' ? undefined : rt.botOf?.(botId)
+    if (bot !== undefined && bot !== null && text(bot.ownerId) !== '') return text(bot.ownerId)
+    const named = text(row?.assignee)
+    if (named !== '') {
+      for (const candidate of Object.values(rt.state?.bots ?? {})) {
+        if (text(candidate?.name) === named) return text(candidate.ownerId)
+      }
+    }
+    return text(row?.ownerId)
+  }
+
   // In-app delivery goes to the owner's own Session and never through the GitHub identity: the 2.5
   // refusal stays where a GitHub write happens, not on the way to a person's own chat (#1733).
+  // Only the primary owner may fall back to the host's main Bot: a second owner's digest quotes
+  // that owner's private memory, so another owner's Session is never a delivery address for it.
   const deliverTo = async (project, ownerId, body) => {
-    const member = rt.state?.members?.[text(ownerId)]
-    const toId = text(member?.designatedChiefId) || text(rt.state?.mainBotIds?.[0])
-    if (toId === '') return { delivered: false, reason: `owner ${text(ownerId) || '(none)'} has no Session to deliver to` }
+    const owner = text(ownerId)
+    const member = owner === '' ? undefined : rt.state?.members?.[owner]
+    const primary = owner === '' || owner === text(project?.ownerUserId)
+    const toId = text(member?.designatedChiefId) || (primary ? text(rt.state?.mainBotIds?.[0]) : '')
+    if (toId === '') return { delivered: false, reason: `owner ${owner || '(none)'} has no Session of their own to deliver to` }
     await rt.deliver?.({
       fromId: project.assistant?.botId ?? toId,
       toId,
@@ -329,7 +357,7 @@ export function install(rt) {
 
   // One owner's digest. Generation may proceed while a quiet window holds delivery; a window that
   // covers 09:00 delivers nothing that day at all, and that is the expected outcome, not a failure.
-  const digestForOwner = async ({ project, owner, rows, files, at, force, who }) => {
+  const digestForOwner = async ({ project, owner, rows, cards, files, at, force, who }) => {
     const assistant = assistantOf(project) ?? project.assistant ?? null
     const record = assistant === null ? { } : ownerRecord(assistant, owner)
     const quiet = quietOf(assistant, owner)
@@ -353,7 +381,7 @@ export function install(rt) {
     if (!force && memory.digest?.day === day) {
       return { owner, ok: true, skipped: true, delivered: false, day, reason: 'today already has a digest' }
     }
-    const built = buildDigest({ project, rows, since: memory.digest?.at ?? null, files, at, owner, actionable: actionableFor(rows, owner) })
+    const built = buildDigest({ project, rows, since: memory.digest?.at ?? null, files, at, owner, actionable: actionableFor(cards ?? rows, owner, cardOwner) })
     const note = { day: built.day, at, text: built.text, ...(who.ok === true ? {} : { error: `GitHub write refused: ${who.reason}` }) }
     rt.setProjectDigest?.(project.id, note, owner)
     if (coversDue) {
@@ -366,7 +394,8 @@ export function install(rt) {
     }
     const body = bodyFor(project, built, who)
     const sent = await deliverTo(project, owner, body)
-    return { owner, ok: true, skipped: false, delivered: sent.delivered === true, day: built.day, changed: built.changed, text: body }
+    if (sent.delivered !== true) rt.setProjectDigest?.(project.id, { ...note, error: sent.reason }, owner)
+    return { owner, ok: true, skipped: false, delivered: sent.delivered === true, day: built.day, changed: built.changed, text: body, ...(sent.delivered === true ? {} : { reason: sent.reason }) }
   }
 
   // One read of the board and one of Project State, then one render per owner (#1733): the facts
@@ -384,7 +413,7 @@ export function install(rt) {
     const results = []
     for (const owner of owners) {
       try {
-        results.push(await digestForOwner({ project, owner, rows, files, at, force, who }))
+        results.push(await digestForOwner({ project, owner, rows, cards: withTitles(rows), files, at, force, who }))
       } catch (error) {
         const failure = error?.message ?? String(error)
         rt.setProjectDigest?.(project.id, { day: dayIn(at), at, text: `digest failed: ${failure}`, error: failure }, owner)

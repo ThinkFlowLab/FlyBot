@@ -432,8 +432,16 @@ export function install(rt) {
     return isRecord(kept) ? kept : null
   }
   const primaryOwner = project => projectText(project?.ownerUserId, 120)
-  const ownerRow = (table, ownerId) => {
-    if (!isRecord(table.owners)) table.owners = {}
+  const ownerRow = (table, ownerId, project) => {
+    if (!isRecord(table.owners)) {
+      // A record written before the owner dimension existed keeps its three fields on the row
+      // itself (#1712). The first write after the upgrade moves them onto the primary owner
+      // instead of replacing them with a fresh empty row.
+      table.owners = {}
+      const primary = primaryOwner(project)
+      const legacy = ownerView(table)
+      if (primary !== '' && (legacy.decisions.length > 0 || legacy.questions.length > 0 || legacy.digest !== null)) setEntry(table.owners, primary, legacy)
+    }
     const kept = ownEntry(table.owners, String(ownerId ?? ''))
     if (isRecord(kept)) return kept
     const fresh = { decisions: [], questions: [], digest: null }
@@ -464,8 +472,12 @@ export function install(rt) {
     const project = projectOfId(id)
     if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
     const kept = projectMemoryOf(project.id)
-    const row = isRecord(kept?.owners) ? ownEntry(kept.owners, String(ownerId ?? '')) : null
-    return ownerView(row)
+    if (kept === null) return ownerView(null)
+    const row = isRecord(kept.owners) ? ownEntry(kept.owners, String(ownerId ?? '')) : null
+    if (isRecord(row)) return ownerView(row)
+    // A pre-#1733 record has no `owners`, and its three fields belong to the primary owner.
+    if (!isRecord(kept.owners) && String(ownerId ?? '') === primaryOwner(project)) return ownerView(kept)
+    return ownerView(null)
   }
   const memoryTable = (project) => {
     const kept = projectMemoryOf(project.id)
@@ -479,7 +491,7 @@ export function install(rt) {
     if (kind !== 'decision' && kind !== 'question') throw projectRefusal(`Unknown Project memory kind ${String(kind ?? '')}`)
     const table = memoryTable(project)
     const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
-    const record = ownerRow(table, ownerId)
+    const record = ownerRow(table, ownerId, project)
     const list = kind === 'decision' ? record.decisions : record.questions
     list.push({ text: projectText(entry.text, 600), at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
     mirrorOwner(table, project, ownerId, record)
@@ -492,7 +504,7 @@ export function install(rt) {
     const project = requireProject(id)
     const table = memoryTable(project)
     const owner = projectText(ownerId, 120) || primaryOwner(project)
-    const record = ownerRow(table, owner)
+    const record = ownerRow(table, owner, project)
     record.digest = { day: projectText(note.day, 20), at: Number(note.at) || Date.now(), text: projectText(note.text, 4000), ...(projectText(note.error, 300) === '' ? {} : { error: projectText(note.error, 300) }) }
     mirrorOwner(table, project, owner, record)
     project.updatedAt = Math.max(project.updatedAt, Date.now())

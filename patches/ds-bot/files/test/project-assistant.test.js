@@ -259,8 +259,8 @@ test('two owners of one Project get two digests from one read, with no memory bl
     rt.projectBoard = () => {
       reads += 1
       return [
-        { id: 't-1', source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: 1 },
-        { id: 't-2', source: 'bot', column: 'in-progress', assignee: 'owner-2', updatedAt: 2 },
+        { id: 't-1', source: 'bot', column: 'in-progress', assignee: 'Owner One Bot', ownerId: 'owner-1', updatedAt: 1 },
+        { id: 't-2', source: 'bot', column: 'in-progress', assignee: 'Owner Two Bot', ownerId: 'owner-2', updatedAt: 2 },
         { id: 't-3', source: 'bot', column: 'done', assignee: null, updatedAt: 3 },
       ]
     }
@@ -308,7 +308,7 @@ test('a quiet window holds the digest and delivers it once, labelled, when it en
   const { rt, delivered, stop } = await start()
   try {
     const project = await created(rt, { name: 'Held', ownerUserId: 'owner-1' })
-    rt.projectBoard = () => [{ id: 't-hold', source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: 1 }]
+    rt.projectBoard = () => [{ id: 't-hold', source: 'bot', column: 'in-progress', assignee: 'Owner One Bot', ownerId: 'owner-1', updatedAt: 1 }]
     await rt.projectAssistant.setOwner(project.id, 'owner-1', { quiet: { on: true, from: '07:00', to: '08:30' }, zone: 'Asia/Shanghai' })
     const inside = Date.parse('2026-10-29T00:00:00Z') // 08:00 Asia/Shanghai
     const after = Date.parse('2026-10-29T00:45:00Z') // 08:45 Asia/Shanghai
@@ -403,8 +403,8 @@ test("one owner's render failing is recorded while the other owner's digest stil
 })
 
 test('actionable items are capped and only the owner\'s own cards appear', () => {
-  const rows = Array.from({ length: MAX_ACTIONABLE + 3 }, (_, index) => ({ id: `t-${index}`, source: 'bot', column: 'in-progress', assignee: 'owner-1', updatedAt: index, title: `card ${index}` }))
-  rows.push({ id: 'theirs', source: 'bot', column: 'in-progress', assignee: 'owner-2', updatedAt: 99, title: 'not yours' })
+  const rows = Array.from({ length: MAX_ACTIONABLE + 3 }, (_, index) => ({ id: `t-${index}`, source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: index, title: `card ${index}` }))
+  rows.push({ id: 'theirs', source: 'bot', column: 'in-progress', assignee: 'Theirs', ownerId: 'owner-2', updatedAt: 99, title: 'not yours' })
   const items = actionableFor(rows, 'owner-1')
   assert.equal(items.length, MAX_ACTIONABLE + 3, 'the helper keeps them all…')
   assert.ok(items.every(item => item.id !== 'theirs'), '…but never another owner\'s card')
@@ -414,4 +414,67 @@ test('actionable items are capped and only the owner\'s own cards appear', () =>
   assert.equal(listed.length, MAX_ACTIONABLE, 'the digest lists at most MAX_ACTIONABLE')
   assert.match(built.text, /- t-0 — decide what happens next — card 0 \(still in-progress\)/)
   assert.doesNotMatch(built.text, /not yours/)
+})
+
+test('a card lists for the owner of the Bot that owns it, through the real task and board path', async () => {
+  const { rt, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Boarded', ownerUserId: 'owner-1', ownerUserIds: ['owner-2'] })
+    secondOwner(rt)
+    rt.state.bots.worker = { id: 'worker', name: 'Worker', role: 'Dev', sessionId: 'w', createdAt: 3, ownerId: 'owner-2' }
+    await rt.projectEndpoint('project-bind', { kind: 'bot', id: 'a', projectId: project.id })
+    await rt.projectEndpoint('project-bind', { kind: 'bot', id: 'worker', projectId: project.id })
+    await rt.taskEndpoint('task-create', { botId: 'worker', title: 'Pick the release date' }, null)
+    await rt.taskEndpoint('task-create', { botId: 'a', title: 'Rotate the deploy key' }, null)
+    const rows = rt.projectBoard(project.id)
+    assert.equal(rows.length, 2)
+    assert.ok(rows.every(row => row.assignee === null), 'the board carries a Bot name or null, never a member id')
+    assert.equal(actionableFor(rows, 'owner-1').length, 0, 'the raw helper sees no owner without a resolver')
+    const result = await rt.projectAssistant.digest(project.id, { at: AT })
+    const [one, two] = result.owners
+    assert.match(one.text, /Rotate the deploy key/, 'the card of the primary owner\'s Bot is theirs')
+    assert.doesNotMatch(one.text, /Pick the release date/, 'another owner\'s card never appears in this digest')
+    assert.match(two.text, /Pick the release date/, 'the card of the second owner\'s Bot is theirs')
+    assert.doesNotMatch(two.text, /Rotate the deploy key/)
+  } finally {
+    await stop()
+  }
+})
+
+test('a memory record written before the owner dimension keeps its entries across the first write', async () => {
+  const { rt, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Legacy', ownerUserId: 'owner-1' })
+    rt.state.projectMemory[project.id] = {
+      decisions: [{ text: 'the old call', at: 1 }],
+      questions: [{ text: 'the old question', at: 1 }],
+      digest: { day: '2026-10-27', at: 1000, text: 'the old note' },
+    }
+    assert.deepEqual(rt.projectMemoryFor(project.id, 'owner-1').decisions.map(entry => entry.text), ['the old call'], 'the pre-slice record reads back for its primary owner')
+    assert.equal(rt.projectMemoryFor(project.id, 'owner-1').digest.text, 'the old note')
+    await rt.projectEndpoint('project-memory-write', { id: project.id, kind: 'decision', text: 'the new call', ownerId: 'owner-1' })
+    const view = rt.projectMemoryFor(project.id, 'owner-1')
+    assert.deepEqual(view.decisions.map(entry => entry.text), ['the old call', 'the new call'], 'the first write after the upgrade appends instead of replacing')
+    assert.deepEqual(view.questions.map(entry => entry.text), ['the old question'], 'the old questions survive')
+    assert.equal(view.digest.text, 'the old note', 'so does the last digest, so the next build is not re-based')
+  } finally {
+    await stop()
+  }
+})
+
+test('an owner without a Session never receives another owner\'s digest', async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Unseated', ownerUserId: 'owner-1', ownerUserIds: ['owner-2'] })
+    rt.state.members['owner-2'] = { id: 'owner-2', createdAt: 2 }
+    const result = await rt.projectAssistant.digest(project.id, { at: AT })
+    assert.equal(result.delivered, 1)
+    assert.deepEqual(delivered.map(message => message.toId), ['a'], 'only the primary owner has a Session of their own')
+    assert.equal(result.owners[1].owner, 'owner-2')
+    assert.equal(result.owners[1].delivered, false)
+    assert.match(result.owners[1].reason, /no Session of their own/)
+    assert.match(rt.projectMemoryFor(project.id, 'owner-2').digest.error, /no Session of their own/, 'the reason is recorded on that owner\'s own note')
+  } finally {
+    await stop()
+  }
 })
