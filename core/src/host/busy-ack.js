@@ -114,7 +114,9 @@ export function composeBusyAck({ message, tool, uiLanguage, seed = 0, previous }
   const doing = doingOf(tool, lang)
   const kind = topic && doing ? 'topicDoing' : topic ? 'topic' : doing ? 'doing' : 'bare'
   const pool = TEMPLATES[lang][kind]
-  const fill = index => pool[index % pool.length].replaceAll('{t}', topic).replaceAll('{d}', doing ?? '')
+  // One pass only: the topic is the person's own text, so a `{t}`/`{d}` they typed
+  // must not be rescanned as template markup after it is inserted (#1634).
+  const fill = index => pool[index % pool.length].replace(/\{(t|d)\}/g, (_, key) => (key === 't' ? topic : (doing ?? '')))
   const start = Math.abs(Math.trunc(seed)) % pool.length
   for (let step = 0; step < pool.length; step += 1) {
     const text = fill(start + step)
