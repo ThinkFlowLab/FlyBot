@@ -1,0 +1,1 @@
+A Bot that is busy now acknowledges a new message with one short, natural sentence written by a quick model call, in the message's language, instead of a templated line that quoted a truncated piece of the message; when the model does not answer within 3 seconds only the pending dots show ([#1665](https://github.com/ThinkFlowLab/FlyBot/issues/1665)).

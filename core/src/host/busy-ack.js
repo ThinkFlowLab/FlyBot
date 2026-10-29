@@ -1,128 +1,50 @@
 // Busy-ack (#1584): a human message that lands while a Bot turn is already running
-// gets a short spoken acknowledgment on the live payload immediately. Steer admits
-// to next-step, but a blocking job wait may never yield a step (#1509), so without
-// this the chat stays silent until the wait ends.
+// gets a short spoken acknowledgment on the live payload. Steer admits to next-step,
+// but a blocking job wait may never yield a step (#1509), so without this the chat
+// stays silent until the wait ends.
 //
-// The line is composed here, deterministically, from the message itself and what the
-// turn is doing right now (its running tool), not a fixed sentence (#1629). A model
-// call would wait behind the very turn that is busy, cost a call per message and need
-// a fallback anyway; a template is instant, free and cannot fail. Wording rotates and
-// never repeats the previous ack of the same chat; the language follows the message.
+// The line is written by one short model call (#1665), not a template: the templated
+// lines of #1629 quoted a clipped, truncated piece of the message back inside a fixed
+// phrase and read as canned. The ack is published at once with an empty text, which the
+// client draws as the avatar with blinking dots (#1656/#1657); the model's sentence fills
+// it in when it comes. The call is separate from the busy turn, uses the reasoning-off
+// setting when the model has one, a tiny output cap, and a hard ACK_TIMEOUT_MS; on a
+// timeout, an error or an empty answer no text is ever sent and the dots clear with the
+// turn as before. `config.flybot.modelFor['busy-ack']` names a cheaper model for it;
+// otherwise the chat's own model is used.
+import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+import { splitRef } from './text.js'
+
 export const COALESCE_MS = 3_000
-export const TOPIC_MAX = { zh: 16, en: 36 }
+export const ACK_TIMEOUT_MS = 3_000
+export const ACK_MAX_TOKENS = 80
+export const ACK_MAX_CHARS = 120
 
-const CJK = /[\u3400-\u9fff\uf900-\ufaff]/g
+export const ACK_SYSTEM = [
+  'You write the one-line acknowledgment a busy assistant sends when a new message arrives while it is still working.',
+  'Reply in the same language as the new message.',
+  'Write one natural, short sentence that shows you understood what the new message is about and says briefly what you are doing right now.',
+  'Do not quote or copy the message, do not use quotation marks, and do not use stock phrases such as "got it" or "noted"; vary your wording.',
+  'Output only that sentence.',
+].join(' ')
 
-/** 'zh' when the message is mostly Chinese, 'en' when mostly Latin, else the UI language. */
-export function ackLanguage(text, uiLanguage) {
-  const value = String(text ?? '')
-  const cjk = (value.match(CJK) ?? []).length
-  const latin = (value.match(/[A-Za-z]/g) ?? []).length
-  if (cjk > 0 && cjk * 2 >= latin) return 'zh'
-  if (latin > 0) return 'en'
-  return /chinese|简体|\bzh\b/i.test(String(uiLanguage ?? '')) ? 'zh' : 'en'
+/** The user prompt for the ack call: the new message and what the turn is doing. */
+export function ackPrompt({ message, tool, working }) {
+  const doing = typeof tool === 'string' && tool.trim() !== '' && tool !== 'ask_user' ? `running the tool \`${tool}\`` : 'working on the previous request'
+  const task = String(working ?? '').trim().slice(0, 600)
+  return [
+    `Currently: ${doing}.`,
+    ...(task === '' ? [] : [`The request being worked on: ${task}`]),
+    `New message: ${String(message ?? '').trim().slice(0, 1_500)}`,
+  ].join('\n')
 }
 
-/** A short topic out of the message: first line, trimmed, clipped; '' when too thin to echo. */
-export function topicOf(text, lang) {
+/** The model's answer as one clean line, or '' when unusable. */
+export function cleanAck(text) {
   const line = String(text ?? '').split(/\r?\n/).map(part => part.trim()).find(Boolean) ?? ''
-  const clean = line.replace(/\s+/g, ' ').replace(/^[@#]\S+\s*/, '').replace(/[。！？!?.,，、~～…]+$/u, '').trim()
-  if (clean === '' || /^(hi|hello|hey|ok|okay|嗯+|好的?|在吗|在不在|\?+|？+)$/i.test(clean)) return ''
-  const max = TOPIC_MAX[lang] ?? TOPIC_MAX.en
-  const chars = [...clean]
-  if (chars.length <= max) return clean
-  let cut = chars.slice(0, max - 1).join('')
-  if (lang === 'en' && cut.lastIndexOf(' ') > max / 2) cut = cut.slice(0, cut.lastIndexOf(' '))
-  return `${cut.trimEnd()}…`
-}
-
-const TOOL_WORDS = [
-  [/^(bash|shell|exec|run|command|terminal)$/i, { zh: '跑命令', en: 'running a command' }],
-  [/^(wait|job|poll|await)$/i, { zh: '等一个任务跑完', en: 'waiting on a job' }],
-  [/^(search|grep|glob|find)$/i, { zh: '查资料', en: 'searching' }],
-  [/^(fetch|browse|browser|web|http|url)$/i, { zh: '看网页', en: 'reading a page' }],
-  [/^(write|edit|patch|apply)$/i, { zh: '改文件', en: 'editing files' }],
-  [/^(read|cat|open|view|ls)$/i, { zh: '翻文件', en: 'reading files' }],
-  [/^(message|delegate|subagent|agent)$/i, { zh: '和别的 Bot 对接', en: 'checking with another Bot' }],
-  [/^(task|todo|plan)$/i, { zh: '整理任务', en: 'sorting out tasks' }],
-]
-
-/** What the running tool is, in a few words; undefined with no tool. */
-export function doingOf(tool, lang) {
-  if (typeof tool !== 'string' || tool.trim() === '' || tool === 'ask_user') return undefined
-  // Match whole name parts (`web_fetch` → web, fetch) so `frobnicate` is not "cat".
-  const parts = tool.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
-  const hit = TOOL_WORDS.find(([pattern]) => parts.some(part => pattern.test(part)) )
-  if (hit) return hit[1][lang]
-  return lang === 'zh' ? `用 ${tool}` : `using ${tool}`
-}
-
-const TEMPLATES = {
-  zh: {
-    topicDoing: [
-      '看到你说「{t}」了，我正在{d}，弄完马上接上。',
-      '「{t}」收到，手上在{d}，这步完了就来。',
-      '记下「{t}」了，{d}这边一结束就处理。',
-    ],
-    topic: [
-      '看到「{t}」了，当前这步一完就回你。',
-      '「{t}」记下了，马上接着处理。',
-      '好，「{t}」这个我排上了，稍等一下。',
-    ],
-    doing: [
-      '看到了，我正在{d}，弄完就回你。',
-      '收到新消息，手上在{d}，稍等片刻。',
-      '嗯，{d}这边一结束就回来。',
-    ],
-    bare: [
-      '看到了，这步做完就回你。',
-      '新消息收到，稍等我一下。',
-      '好的，马上接上你这条。',
-    ],
-  },
-  en: {
-    topicDoing: [
-      'Saw "{t}" — I’m {d} right now, back on it in a moment.',
-      'Noted "{t}" — still {d}, then it’s next.',
-      'Got "{t}" — I’ll get to it once I’m done {d}.',
-    ],
-    topic: [
-      'Saw "{t}" — I’ll pick it up right after this step.',
-      'Noted "{t}", coming to it shortly.',
-      '"{t}" is next on my list — one moment.',
-    ],
-    doing: [
-      'Seen — I’m {d}, back to you shortly.',
-      'New message noted; still {d}, one moment.',
-      'On it as soon as I’m done {d}.',
-    ],
-    bare: [
-      'Seen — back to you right after this step.',
-      'Noted, one moment.',
-      'Picking this up as soon as the current step ends.',
-    ],
-  },
-}
-
-/**
- * One short ack line for `message` while the turn is doing `tool`. `seed` picks the
- * variant; `previous` is never returned again (the next variant is taken instead).
- */
-export function composeBusyAck({ message, tool, uiLanguage, seed = 0, previous } = {}) {
-  const lang = ackLanguage(message, uiLanguage)
-  const topic = topicOf(message, lang)
-  const doing = doingOf(tool, lang)
-  const kind = topic && doing ? 'topicDoing' : topic ? 'topic' : doing ? 'doing' : 'bare'
-  const pool = TEMPLATES[lang][kind]
-  // One pass only: the topic is the person's own text, so a `{t}`/`{d}` they typed
-  // must not be rescanned as template markup after it is inserted (#1634).
-  const fill = index => pool[index % pool.length].replace(/\{(t|d)\}/g, (_, key) => (key === 't' ? topic : (doing ?? '')))
-  const start = Math.abs(Math.trunc(seed)) % pool.length
-  for (let step = 0; step < pool.length; step += 1) {
-    const text = fill(start + step)
-    if (text !== previous) return text
-  }
-  return fill(start)
+  const clean = line.replace(/^["'“”‘’「」『』]+|["'“”‘’「」『』]+$/gu, '').trim()
+  if (clean === '' || [...clean].length > ACK_MAX_CHARS) return ''
+  return clean
 }
 
 export function shouldNoteBusyAck({ sourceKind, turnRunning, ownChat }) {
@@ -139,7 +61,7 @@ export function isHumanRoomLine(source) {
     && source.remote === undefined
 }
 
-// The relay prefix delivery.js puts on the line; the ack quotes the person's text, not it.
+// The relay prefix delivery.js puts on the line; the ack reads the person's text, not it.
 const relayHeader = /^\[[^\]\n]*\]\r?\n/
 
 const textOf = (content) => {
@@ -149,11 +71,9 @@ const textOf = (content) => {
 }
 
 export function install(rt) {
-  const { ctx } = rt
-  /** @type {Map<string, { text: string, at: number }>} */
+  const { ctx, config } = rt
+  /** @type {Map<string, { text: string, at: number, id: number }>} */
   const acks = new Map()
-  /** Last ack text per chat, kept across clears so consecutive acks differ. */
-  const lastText = new Map()
   let counter = 0
 
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
@@ -162,7 +82,59 @@ export function install(rt) {
   /** A person's line into this member's running group Session (#1646), once only. */
   const roomLine = (sessionId, source) => groupSession(sessionId) && isHumanRoomLine(source)
 
-  const note = (sessionId, message) => {
+  // The route for the ack: a configured economy model first, else the chat's own.
+  const routeOf = (session) => {
+    const named = config?.flybot?.modelFor?.['busy-ack']
+    const own = typeof named === 'string' && named.trim() !== '' ? splitRef(named.trim()) : undefined
+    if (own?.provider && own?.model) return own
+    const header = session?.requestHeader?.()?.config
+    return header?.provider && header?.model ? { provider: header.provider, model: header.model } : undefined
+  }
+
+  // The latest earlier user request in the Session: what the busy turn is about.
+  const workingOf = (session, message) => {
+    try {
+      const messages = session?.deriveMessages?.() ?? []
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index]?.role !== 'user') continue
+        const text = textOf(messages[index].content).replace(relayHeader, '').trim()
+        if (text !== '' && text !== String(message ?? '').trim()) return text
+      }
+    } catch { /* no history is fine */ }
+    return ''
+  }
+
+  // One short call; resolves to the line or '' — never throws, never outlives the timeout.
+  async function write(session, sessionId, message) {
+    const route = routeOf(session)
+    if (route === undefined || typeof ctx.llm?.stream !== 'function') return ''
+    const signal = AbortSignal.timeout(ACK_TIMEOUT_MS)
+    const work = (async () => {
+      const info = await ctx.llm.resolveModelInfo?.(route.provider, route.model)?.catch?.(() => undefined)
+      const off = info?.reasoning?.efforts?.some(effort => effort.id === 'off')
+      const messages = [{ role: 'user', content: [{ type: 'text', text: ackPrompt({ message, tool: rt.live?.get(sessionId)?.tool, working: workingOf(session, message) }) }] }]
+      rt.tagUsage?.(messages, { sessionId, kind: 'other' })
+      const assembler = new BlockAssembler()
+      for await (const chunk of ctx.llm.stream({
+        provider: route.provider,
+        model: route.model,
+        ...(off ? { reasoningEffort: 'off' } : {}),
+        system: ACK_SYSTEM,
+        messages,
+        maxTokens: ACK_MAX_TOKENS,
+        purpose: 'other',
+        signal,
+      })) assembler.push(chunk)
+      const finish = assembler.finish
+      if (finish?.kind === 'error' || finish?.kind === 'aborted' || finish?.kind === 'max-tokens') return ''
+      return cleanAck(assembler.blocks().filter(block => block.type === 'text').map(block => block.text).join('\n'))
+    })().catch(() => '')
+    let timer
+    const late = new Promise(resolve => { timer = setTimeout(() => resolve(''), ACK_TIMEOUT_MS) })
+    try { return await Promise.race([work, late]) } finally { clearTimeout(timer) }
+  }
+
+  const note = (sessionId, message, session) => {
     const now = Date.now()
     const existing = acks.get(sessionId)
     if (existing && now - existing.at < COALESCE_MS) {
@@ -170,16 +142,13 @@ export function install(rt) {
       return existing
     }
     counter += 1
-    const text = composeBusyAck({
-      message,
-      tool: rt.live?.get(sessionId)?.tool,
-      uiLanguage: rt.uiLanguage?.(),
-      seed: counter + now,
-      previous: lastText.get(sessionId),
-    })
-    lastText.set(sessionId, text)
-    const entry = { text, at: now }
+    // Published at once with no text: the client draws the pending dots (#1657).
+    const entry = { text: '', at: now, id: counter }
     acks.set(sessionId, entry)
+    entry.ready = write(session, sessionId, message).then((text) => {
+      if (text !== '' && acks.get(sessionId) === entry) entry.text = text
+      return entry.text
+    })
     return entry
   }
 
@@ -194,7 +163,7 @@ export function install(rt) {
       const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
       if (!own && !(room && turnRunning(id))) return
       const text = textOf(event.data?.content ?? event.data?.message?.content)
-      note(id, room ? text.replace(relayHeader, '') : text)
+      note(id, room ? text.replace(relayHeader, '') : text, session)
       return
     }
     if (event.type === 'assistant/message') {
@@ -222,6 +191,8 @@ export function install(rt) {
       return [[botId, ack === undefined ? { text: '', at: 0 } : { text: ack.text, at: ack.at }]]
     })),
     noteBusyAck: note,
+    // The pending model answer for a Session's ack ('' when none); for tests and diagnostics.
+    busyAckReady: sessionId => acks.get(sessionId)?.ready ?? Promise.resolve(''),
     clearBusyAck: clear,
   })
 }

@@ -1,77 +1,46 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import {
-  ackLanguage, composeBusyAck, doingOf, install as installBusyAck, shouldNoteBusyAck, topicOf,
+  ACK_SYSTEM, ACK_TIMEOUT_MS, ackPrompt, cleanAck, install as installBusyAck, shouldNoteBusyAck,
 } from '../src/host/busy-ack.js'
 import { install as installStore } from '../src/host/store.js'
 
-// The pre-#1629 canned lines; an ack must never be either verbatim.
-const OLD_ZH = '收到，我先记着，手头忙完再详细回你。'
-const OLD_EN = 'Got it — I’ll answer properly once I finish what’s in progress.'
+// A mocked model (#1665): records every call and answers with `reply(prompt)`, after
+// `delay` ms; `fail` makes the stream end in an error, `hang` never ends until aborted.
+const mockLlm = ({ reply = () => '在跑命令，周报的图我改完就接着看。', delay = 0, fail = false, hang = false } = {}) => {
+  const calls = []
+  return {
+    calls,
+    async resolveModelInfo() { return { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } } },
+    async* stream(options) {
+      calls.push(options)
+      if (hang) await new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason)))
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      if (fail) { yield { type: 'finish', reason: { kind: 'error', failure: { message: 'boom' } } }; return }
+      yield { type: 'text-delta', index: 0, text: reply(options.messages[0].content[0].text) }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  }
+}
+const session = id => ({ id, requestHeader: () => ({ config: { provider: 'p', model: 'big' } }), deriveMessages: () => [] })
 
-const harness = (live, uiLanguage = 'English') => {
+const harness = (live, llm = mockLlm(), config) => {
   const listeners = new Map()
-  const rt = { live, chatOwners: new Map([...live.keys()].map(id => [id, id])), uiLanguage: () => uiLanguage }
-  const ctx = { on(name, fn) { (listeners.get(name) ?? listeners.set(name, []).get(name)).push(fn) } }
-  return { rt: Object.assign(rt, { ctx }), emit: (name, ...args) => { for (const fn of listeners.get(name) ?? []) fn(...args) } }
+  const rt = { live, config, chatOwners: new Map([...live.keys()].map(id => [id, id])) }
+  const ctx = { llm, on(name, fn) { (listeners.get(name) ?? listeners.set(name, []).get(name)).push(fn) } }
+  return { rt: Object.assign(rt, { ctx }), llm, emit: (name, ...args) => { for (const fn of listeners.get(name) ?? []) fn(...args) } }
 }
 const say = text => ({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } })
 
-test('the ack language follows the message, then the UI language', () => {
-  assert.equal(ackLanguage('帮我看下日志', 'English'), 'zh')
-  assert.equal(ackLanguage('check the logs please', 'Chinese (简体中文)'), 'en')
-  assert.equal(ackLanguage('👍', 'zh-CN'), 'zh')
-  assert.equal(ackLanguage('', 'English'), 'en')
+test('the template generator is gone: no quoted echo, no truncation helpers', () => {
+  const source = readFileSync(new URL('../src/host/busy-ack.js', import.meta.url), 'utf8')
+  for (const gone of ['TEMPLATES', 'topicOf', 'TOPIC_MAX', 'composeBusyAck', '记下了']) assert.ok(!source.includes(gone), gone)
 })
 
-test('topicOf clips the first line and drops filler', () => {
-  assert.equal(topicOf('帮我改周报\n第二行', 'zh'), '帮我改周报')
-  assert.equal(topicOf('在吗', 'zh'), '')
-  assert.equal(topicOf('hi', 'en'), '')
-  const long = topicOf('Can you also check the deploy logs for the staging cluster?', 'en')
-  assert.ok([...long].length <= 36 && long.endsWith('…'), long)
-})
-
-test('doingOf names the running tool in words', () => {
-  assert.equal(doingOf('bash', 'zh'), '跑命令')
-  assert.equal(doingOf('wait_job', 'en'), 'waiting on a job')
-  assert.equal(doingOf('ask_user', 'en'), undefined)
-  assert.equal(doingOf(undefined, 'en'), undefined)
-  assert.equal(doingOf('frobnicate', 'en'), 'using frobnicate')
-})
-
-test('composeBusyAck reflects the message and the tool, one line, never the canned sentence', () => {
-  const zh = composeBusyAck({ message: '帮我把周报的数据图再改一下', tool: 'bash' })
-  assert.match(zh, /周报/)
-  assert.match(zh, /跑命令/)
-  const en = composeBusyAck({ message: 'Can you check the deploy logs?', tool: 'wait_job' })
-  assert.match(en, /deploy logs/)
-  assert.match(en, /waiting on a job/)
-  for (const message of ['在吗', 'hello', '帮我查下天气', 'ship it', '']) {
-    for (const tool of [undefined, 'bash', 'web_fetch']) {
-      for (let seed = 0; seed < 6; seed += 1) {
-        const text = composeBusyAck({ message, tool, seed, uiLanguage: 'Chinese' })
-        assert.notEqual(text, OLD_ZH)
-        assert.notEqual(text, OLD_EN)
-        assert.ok(!text.includes('\n') && [...text].length <= 90, text)
-      }
-    }
-  }
-})
-
-test('composeBusyAck never repeats the previous ack', () => {
-  let previous
-  for (let seed = 0; seed < 10; seed += 1) {
-    const text = composeBusyAck({ message: '在吗', seed: 0, previous })
-    assert.notEqual(text, previous)
-    previous = text
-  }
-})
-
-test('shouldNoteBusyAck only for a human line in an own chat while a turn runs', () => {
+test('shouldNoteBusyAck only for user messages during an own-chat running turn', () => {
   assert.equal(shouldNoteBusyAck({ sourceKind: 'user', turnRunning: true, ownChat: true }), true)
   assert.equal(shouldNoteBusyAck({ sourceKind: 'user', turnRunning: false, ownChat: true }), false)
   assert.equal(shouldNoteBusyAck({ sourceKind: 'user', turnRunning: true, ownChat: false }), false)
@@ -79,82 +48,97 @@ test('shouldNoteBusyAck only for a human line in an own chat while a turn runs',
   assert.equal(shouldNoteBusyAck({ sourceKind: undefined, turnRunning: true, ownChat: true }), false)
 })
 
-test('install composes the ack from the message and the live tool, coalesces, clears on spoken text', async () => {
-  const { install } = await import('../src/host/busy-ack.js')
+test('the prompt asks for the user\'s language, the real content, no quoting, no stock phrases', () => {
+  assert.match(ACK_SYSTEM, /same language/)
+  assert.match(ACK_SYSTEM, /Do not quote/)
+  assert.match(ACK_SYSTEM, /stock phrases/)
+  const prompt = ackPrompt({ message: '那些 needs-human 的 issue 帮我过一遍', tool: 'bash', working: '修 CI' })
+  assert.match(prompt, /needs-human/)
+  assert.match(prompt, /`bash`/)
+  assert.match(prompt, /修 CI/)
+  assert.doesNotMatch(ackPrompt({ message: 'x', tool: 'ask_user' }), /ask_user/)
+})
+
+test('cleanAck keeps one line, strips wrapping quotes, drops empty or overlong answers', () => {
+  assert.equal(cleanAck('「好，我先把 CI 修完再看那些 issue。」\nextra'), '好，我先把 CI 修完再看那些 issue。')
+  assert.equal(cleanAck('   '), '')
+  assert.equal(cleanAck('x'.repeat(500)), '')
+})
+
+test('the ack is published pending at once, then filled by one short model call', async () => {
   const live = new Map([['a', { turn: 1, tool: 'bash' }]])
-  const { rt, emit } = harness(live, 'English')
-  install(rt)
+  const { rt, llm, emit } = harness(live)
+  installBusyAck(rt)
   assert.deepEqual(rt.busyAcksView(), {})
+  emit('session/event', session('a'), say('帮我把周报的数据图再改一下'))
+  assert.equal(rt.busyAcksView().a.text, '', 'pending: the client draws dots')
+  assert.equal(await settleAck(rt, 'a'), '在跑命令，周报的图我改完就接着看。')
+  assert.equal(rt.busyAcksView().a.text, '在跑命令，周报的图我改完就接着看。')
+  assert.equal(llm.calls.length, 1)
+  const call = llm.calls[0]
+  assert.equal(call.model, 'big')
+  assert.equal(call.reasoningEffort, 'off')
+  assert.equal(call.system, ACK_SYSTEM)
+  assert.ok(call.maxTokens <= 100)
+  assert.match(call.messages[0].content[0].text, /周报的数据图/)
+  assert.match(call.messages[0].content[0].text, /`bash`/)
 
-  emit('session/event', { id: 'a' }, say('帮我把周报再改一下'))
-  const acks = rt.busyAcksView()
-  assert.match(acks.a.text, /周报/)
-  assert.match(acks.a.text, /跑命令/)
-  assert.notEqual(acks.a.text, OLD_ZH)
-  assert.ok(typeof acks.a.at === 'number')
-
-  const at = acks.a.at
-  emit('session/event', { id: 'a' }, say('again'))
-  assert.equal(Object.keys(rt.busyAcksView()).length, 1)
-  assert.equal(rt.busyAcksView().a.text, acks.a.text)
+  // Coalesced: a second line inside the window keeps the one ack and makes no call.
+  const at = rt.busyAcksView().a.at
+  emit('session/event', session('a'), say('again'))
+  assert.equal(llm.calls.length, 1)
   assert.ok(rt.busyAcksView().a.at >= at)
 
-  live.delete('a')
-  emit('session/event', { id: 'a' }, say('idle'))
-  assert.ok(rt.busyAcksView().a)
-
-  live.set('a', { turn: 1 })
-  emit('session/event', { id: 'a' }, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '详细回复' }] } } })
+  emit('session/event', session('a'), { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '详细回复' }] } } })
   assert.deepEqual(rt.busyAcksView(), {})
 })
 
-test('consecutive acks in one chat differ, and clear on turn/end and agent idle', async () => {
-  const { install } = await import('../src/host/busy-ack.js')
-  const live = new Map([['a', { turn: 2 }]])
-  const { rt, emit } = harness(live, 'English')
-  install(rt)
-  const seen = []
-  for (let round = 0; round < 4; round += 1) {
-    emit('session/event', { id: 'a' }, { type: 'user/message', data: { source: { kind: 'user' } } })
-    const text = rt.busyAcksView().a.text
-    assert.notEqual(text, OLD_EN)
-    if (seen.length) assert.notEqual(text, seen.at(-1))
-    seen.push(text)
-    emit('session/event', { id: 'a' }, { type: 'turn/end', data: { turn: 2 } })
+test('a configured economy model is used for the ack', async () => {
+  const live = new Map([['a', { turn: 1 }]])
+  const { rt, llm, emit } = harness(live, mockLlm(), { flybot: { modelFor: { 'busy-ack': 'p/flash' } } })
+  installBusyAck(rt)
+  emit('session/event', session('a'), say('check the deploy logs'))
+  await settleAck(rt, 'a')
+  assert.equal(llm.calls[0].provider, 'p')
+  assert.equal(llm.calls[0].model, 'flash')
+})
+
+test('an error, a timeout or a too-slow model sends no text; the pending ack clears with the turn', async () => {
+  for (const llm of [mockLlm({ fail: true }), mockLlm({ hang: true }), mockLlm({ delay: ACK_TIMEOUT_MS + 500 })]) {
+    const live = new Map([['a', { turn: 1 }]])
+    const { rt, emit } = harness(live, llm)
+    installBusyAck(rt)
+    const started = Date.now()
+    emit('session/event', session('a'), say('还在吗，顺便看下日志'))
+    assert.equal(await settleAck(rt, 'a'), '')
+    assert.ok(Date.now() - started < ACK_TIMEOUT_MS + 400, 'bounded by the hard timeout')
+    assert.equal(rt.busyAcksView().a.text, '')
+    emit('session/event', session('a'), { type: 'turn/end', data: { turn: 1 } })
     assert.deepEqual(rt.busyAcksView(), {})
   }
-  emit('session/event', { id: 'a' }, say('one more'))
-  assert.ok(rt.busyAcksView().a)
+})
+
+test('a late answer never revives a cleared ack', async () => {
+  const live = new Map([['a', { turn: 2 }]])
+  const { rt, emit } = harness(live, mockLlm({ delay: 50 }))
+  installBusyAck(rt)
+  emit('session/event', session('a'), say('one more'))
+  const ready = rt.busyAckReady('a')
   emit('agent/status', { agent: { session: { id: 'a' } }, status: 'idle' })
+  await ready
   assert.deepEqual(rt.busyAcksView(), {})
 })
 
-// The quoted topic is the person's own text: a `{d}` / `{t}` they typed is not template
-// markup and must be echoed unchanged. Messages stay short on purpose — topicOf() clips
-// at TOPIC_MAX, and a long sentence would hide the rewrite behind the ellipsis.
-test('a {d} typed in the message is quoted back verbatim, with and without a running tool', () => {
-  for (const message of ['改 {d} 这行', 'fix "{d}" here']) {
-    for (const tool of ['bash', undefined]) {
-      for (let seed = 0; seed < 6; seed += 1) {
-        const text = composeBusyAck({ message, tool, seed, uiLanguage: 'zh-CN' })
-        assert.ok(text.includes('{d}'), `${message} / ${tool ?? 'no tool'} / seed ${seed}: ${text}`)
-        assert.ok(text.includes(topicOf(message, ackLanguage(message, 'zh-CN'))), `${message} / seed ${seed}: ${text}`)
-      }
-    }
-  }
+test('no model route means no call and no text', async () => {
+  const live = new Map([['a', { turn: 1 }]])
+  const { rt, llm, emit } = harness(live)
+  installBusyAck(rt)
+  emit('session/event', { id: 'a' }, say('hello there'))
+  assert.equal(await settleAck(rt, 'a'), '')
+  assert.equal(llm.calls.length, 0)
 })
 
-test('a {t} typed in the message is quoted back verbatim, with and without a running tool', () => {
-  for (const message of ['改 {t} 这行', 'fix "{t}" here']) {
-    for (const tool of ['bash', undefined]) {
-      for (let seed = 0; seed < 6; seed += 1) {
-        const text = composeBusyAck({ message, tool, seed, uiLanguage: 'zh-CN' })
-        assert.ok(text.includes('{t}'), `${message} / ${tool ?? 'no tool'} / seed ${seed}: ${text}`)
-        assert.ok(text.includes(topicOf(message, ackLanguage(message, 'zh-CN'))), `${message} / seed ${seed}: ${text}`)
-      }
-    }
-  }
-})
+const settleAck = async (rt, id) => (await rt.busyAckReady(id)) ?? ''
 
 // --- The room side (#1646) -------------------------------------------------
 // A group's member speaks from a hidden Session (`room.sessions[botId]`), and the person's line
@@ -185,6 +169,7 @@ const roomHost = async (t) => {
   const ctx = {
     logger: { warn() {}, info() {} },
     effect(execute) { const dispose = execute(); if (typeof dispose === 'function') disposers.push(dispose) },
+    llm: mockLlm({ reply: prompt => `ACK:${prompt.split('New message: ')[1]}` }),
     on(name, fn) { const list = listeners.get(name) ?? listeners.set(name, []).get(name); list.push(fn); return () => {} },
   }
   const rt = {
@@ -200,8 +185,8 @@ const roomHost = async (t) => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
   })
   const fire = (name, ...args) => { for (const fn of listeners.get(name) ?? []) fn(...args) }
-  const emit = (id, type, data) => fire('session/event', { id }, { type, seq: 1, data })
-  return { rt, emit, fire, chatOwners: rt.chatOwners, groupOwners: rt.groupOwners }
+  const emit = (id, type, data) => fire('session/event', session(id), { type, seq: 1, data })
+  return { rt, llm: ctx.llm, emit, fire, chatOwners: rt.chatOwners, groupOwners: rt.groupOwners }
 }
 
 // The relay a person's line takes into a member's group Session (delivery.js + groups.js).
@@ -227,14 +212,14 @@ test('a room line steered into a running member\'s Session notes one ack for tha
   host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
   const acks = host.rt.busyAcksView()
   assert.deepEqual(Object.keys(acks), ['gb'])
-  assert.match(acks.gb.text, /周报/)
-  assert.match(acks.gb.text, /跑命令/)
-  assert.doesNotMatch(acks.gb.text, /Group chat/)
+  assert.equal(acks.gb.text, '')
+  assert.equal(await settleAck(host.rt, 'gb'), 'ACK:帮我把周报再改一下')
+  assert.doesNotMatch(host.llm.calls[0].messages[0].content[0].text, /Group chat/)
   // Coalesced: a second line inside the window keeps the one ack.
   const at = acks.gb.at
   host.emit('gb', 'user/message', roomSay('again').data)
   assert.deepEqual(Object.keys(host.rt.busyAcksView()), ['gb'])
-  assert.equal(host.rt.busyAcksView().gb.text, acks.gb.text)
+  assert.equal(host.rt.busyAcksView().gb.text, 'ACK:帮我把周报再改一下')
   assert.ok(host.rt.busyAcksView().gb.at >= at)
   // No ack survives the turn.
   host.emit('gb', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -267,8 +252,8 @@ test('the room view names a running member before its line lands, then carries t
   // an empty text, which the client draws as the pending blinking indicator, no sentence.
   assert.deepEqual(host.rt.roomBusyAcksView({ b: 'gb' }), { b: { text: '', at: 0 } })
   host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
-  assert.match(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, /周报/)
-  assert.doesNotMatch(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, /Group chat/)
+  await settleAck(host.rt, 'gb')
+  assert.equal(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, 'ACK:帮我把周报再改一下')
   // No running turn, no entry; an empty member map stays empty.
   host.rt.live.delete('gb')
   assert.deepEqual(host.rt.roomBusyAcksView({ b: 'gb' }), {})
@@ -282,7 +267,7 @@ test('the own-chat ack is unchanged beside the room path (#1646)', async (t) => 
   host.emit('b', 'user/message', say('check the logs').data)
   const acks = host.rt.busyAcksView()
   assert.deepEqual(Object.keys(acks), ['b'])
-  assert.match(acks.b.text, /check the logs/)
+  assert.equal(await settleAck(host.rt, 'b'), 'ACK:check the logs')
   // The same Session id space: a room line in the member's group Session is its own key.
   host.rt.live.set('gb', { turn: 1 })
   host.emit('gb', 'turn/start', { turn: 1 })
