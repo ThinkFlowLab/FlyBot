@@ -92,6 +92,36 @@ export function install(rt) {
     void Promise.resolve(rt.stopRoomTurn?.(turn.sessionId, turn.exchangeId)).catch(() => {})
   }
 
+  // A person's line reaches a busy Session the moment DSH splices it into the inbox; its
+  // `user/message` only follows when the next step starts, after the blocking tool returned
+  // (#1666). Both arrivals run this judgement, and the let-go clears the wait, so the later one
+  // is never a second interruption.
+  const humanLine = (id, source) => {
+    if (rt.chatOwners?.has(id) === true) {
+      const waitStartedAt = startedAtOf(id)
+      if (!shouldInterruptOnHumanSend({
+        sourceKind: source?.kind,
+        turnRunning: turnRunning(id),
+        ownChat: true,
+        waitStartedAt,
+        now: now(),
+      })) return
+      interrupt(id)
+      return
+    }
+    const room = rt.roomOf?.(id)
+    if (room === undefined) return
+    const turn = awaitedRoomTurn(room.id)
+    if (turn === undefined) return
+    if (!shouldYieldRoomTurn({
+      sourceKind: source?.kind,
+      roomTurnRunning: turnRunning(turn.sessionId),
+      waitStartedAt: startedAtOf(turn.sessionId),
+      now: now(),
+    })) return
+    yieldRoomTurn(turn)
+  }
+
   ctx.on('session/event', (session, event) => {
     const id = session?.id
     if (id === undefined || event?.type === undefined) return
@@ -113,33 +143,18 @@ export function install(rt) {
       case 'turn/end':
         open.delete(id)
         return
-      case 'user/message': {
-        const source = event.data?.source
-        if (rt.chatOwners?.has(id) === true) {
-          const waitStartedAt = startedAtOf(id)
-          if (!shouldInterruptOnHumanSend({
-            sourceKind: source?.kind,
-            turnRunning: turnRunning(id),
-            ownChat: true,
-            waitStartedAt,
-            now: now(),
-          })) return
-          interrupt(id)
-          return
+      case 'agent/inbox/spliced': {
+        // Only what the inbox took in is an arrival; a splice that canceled messages (outcome) is
+        // a removal, and its inserted list can carry messages this branch already judged.
+        if (event.data?.outcome !== undefined) return
+        for (const message of event.data?.inserted ?? []) {
+          if (message?.source?.kind === 'user') humanLine(id, message.source)
         }
-        const room = rt.roomOf?.(id)
-        if (room === undefined) return
-        const turn = awaitedRoomTurn(room.id)
-        if (turn === undefined) return
-        if (!shouldYieldRoomTurn({
-          sourceKind: source?.kind,
-          roomTurnRunning: turnRunning(turn.sessionId),
-          waitStartedAt: startedAtOf(turn.sessionId),
-          now: now(),
-        })) return
-        yieldRoomTurn(turn)
         return
       }
+      case 'user/message':
+        humanLine(id, event.data?.source)
+        return
       default:
     }
   })

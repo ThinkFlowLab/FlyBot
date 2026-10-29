@@ -60,7 +60,21 @@ const toolCall = (callId, at) => ({ type: 'tool/call', time: at, data: { callId,
 // the message and never at the top level of `data` (DSH's `tool/result` event map).
 const toolResult = (callId, at) => ({ type: 'tool/result', time: at, data: { message: { role: 'tool', toolCallId: callId, isError: false, content: [] } } })
 const toolResultTopLevelId = (callId, at) => ({ type: 'tool/result', time: at, data: { callId } })
-const human = (at) => ({ type: 'user/message', time: at, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'steer' }] } })
+// A person's line reaches a busy Session the way DSH queues it: `agent/inbox/spliced` at the
+// moment it is spliced into the inbox, and `user/message` only when the next step starts (#1666).
+const splice = (at, { kind = 'user', outcome } = {}) => ({
+  type: 'agent/inbox/spliced',
+  time: at,
+  data: {
+    target: 'next-turn',
+    start: 0,
+    inserted: [{ id: `m-${at}-${kind}`, role: 'user', source: { kind }, content: [{ type: 'text', text: 'steer' }] }],
+    ...(outcome === undefined ? {} : { outcome }),
+  },
+})
+const human = at => splice(at, { kind: 'user' })
+// The same line once the step starts. It is the fallback path, and it must never double-fire.
+const humanMessage = (at) => ({ type: 'user/message', time: at, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'steer' }] } })
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
 // A member's group turn the room's round is waiting on (#1650): the member Session sits in
@@ -93,6 +107,67 @@ test('a human line past 60s aborts exactly once, keeping the inbox, and the mess
   assert.equal(b.cancels.length, 1)
   assert.deepEqual(b.cancels[0].options, { keepInbox: true })
   assert.equal(b.cancels[0].cause.kind, 'hook')
+})
+
+// The production order: the line is spliced while the tool is blocked, and only becomes a
+// `user/message` at the next step — after the tool already returned (#1666).
+test('a human line spliced into a running Session lets its long wait go (#1666)', async () => {
+  const b = bench()
+  b.emit('a', toolCall('c1', T0))
+  b.advance(61_000)
+  b.emit('a', human(T0 + 61_000))
+  await flush()
+  assert.equal(b.cancels.length, 1)
+  assert.deepEqual(b.cancels[0].options, { keepInbox: true })
+  assert.equal(b.cancels[0].cause.kind, 'hook')
+
+  // The queued line reaches the step as `user/message` only now: it is not a second let-go.
+  b.emit('a', toolResult('c1', T0 + 62_000))
+  b.emit('a', humanMessage(T0 + 62_000))
+  await flush()
+  assert.equal(b.cancels.length, 1, 'one line is one let-go')
+})
+
+test('a splice that is not a person\'s line on a long wait does nothing (#1666)', async () => {
+  const b = bench()
+  b.emit('a', toolCall('c1', T0))
+  b.advance(59_000)
+  b.emit('a', human(T0 + 59_000))
+  await flush()
+  assert.equal(b.cancels.length, 0, 'under 60s the turn keeps running')
+
+  // The tool returned before the line arrived: there is no open wait to let go.
+  b.emit('a', toolResult('c1', T0 + 60_000))
+  b.advance(61_000)
+  b.emit('a', human(T0 + 121_000))
+  await flush()
+  assert.equal(b.cancels.length, 0)
+
+  // A Bot's line, a schedule's line and a splice that canceled messages are not human arrivals.
+  b.emit('a', toolCall('c2', T0 + 121_000))
+  b.advance(61_000)
+  b.emit('a', splice(T0 + 182_000, { kind: 'bot' }))
+  b.emit('a', splice(T0 + 182_000, { kind: 'schedule' }))
+  b.emit('a', splice(T0 + 182_000, { kind: 'user', outcome: 'canceled' }))
+  await flush()
+  assert.equal(b.cancels.length, 0)
+})
+
+test('a room line is spliced into its Session, and only the member\'s wait is let go (#1666)', async () => {
+  const b = bench()
+  roomTurn(b)
+  b.emit('a', toolCall('c1', T0))
+  b.advance(61_000)
+  // The person typed in the room's own Session; the wait is the member's.
+  b.emit('r1', human(T0 + 61_000))
+  await flush()
+  assert.deepEqual(b.yields, [['a', 'x1']])
+  assert.equal(b.cancels.length, 0, 'no room id takes the own-chat reason')
+
+  // The same line reaching the step as `user/message` is still one let-go.
+  b.emit('r1', humanMessage(T0 + 61_100))
+  await flush()
+  assert.equal(b.yields.length, 1)
 })
 
 test('a finished wait and an idle Session never interrupt', async () => {
@@ -258,7 +333,7 @@ const settle = async (check) => {
 }
 const textOf = message => message.content.map(block => block.text ?? '').join('\n')
 
-test('a real room round lets the member\'s 60s wait go and answers the line next round (#1650)', async (t) => {
+test('a real room round lets the member\'s 60s wait go, and the round then answers the line (#1650, #1666)', async (t) => {
   const host = await roomHost(t)
   const line = 'What is the deploy status?'
 
@@ -268,30 +343,35 @@ test('a real room round lets the member\'s 60s wait go and answers the line next
 
   // The member is stuck in a foreground wait that has been open for over a minute.
   await host.emit('gb', { type: 'tool/call', time: Date.now() - 61_000, data: { callId: 'k1', name: 'bash', arguments: '{"command":"npm test"}' } })
-  // The person types into the room's own Session.
-  await host.emit('r1', { type: 'user/message', data: { source: { kind: 'user', authorKind: 'human', authorName: 'You' }, content: [{ type: 'text', text: line }] } })
+  // The person types into the room's own Session, as DSH queues it: the line is spliced into the
+  // room Session's inbox at once, and its own `user/message` only follows when the next step starts.
+  const roomSession = host.agentOf('r1')
+  const lineMessage = { id: 'm-deploy', source: { kind: 'user', authorKind: 'human', authorName: 'You' }, content: [{ type: 'text', text: line }] }
+  roomSession.followup(lineMessage)
+  await host.emit('r1', { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [lineMessage] } })
   await settle(() => host.agentOf('gb').cancelled.length === 1)
   assert.deepEqual(host.agentOf('gb').cancelled[0], { cause: { kind: 'hook', reason: 'ds-bot/stopped' }, options: undefined })
-  // The line waits in the room's own queue, not in the member's inbox.
-  assert.deepEqual(host.rt.roomInbox.get('r1')?.map(item => item.text), [line])
+  // The room's own Session is not the one being let go: its round hands the wait's turn over.
+  assert.equal(roomSession.cancelled.length, 0)
 
-  // The member's turn ends the way a Stop ends it; nothing it began reaches the room.
+  // What the stopped turn had already said stays out of the room.
+  await host.emit('gb', { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'half an answer' }] } } })
   await host.emit('gb', { type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'ds-bot/stopped' } } } })
-  const first = JSON.parse(await round.done)
-  assert.equal(first.replies.some(reply => reply.text), false)
-  assert.equal(host.agentOf('r1').calls.length, 0)
 
-  // The next round answers the line the person typed.
-  const next = host.relay('c2')
-  await settle(() => host.agentOf('gb').calls.length === 1 + 1)
-  await host.takeTurn('gb', 2, host.agentOf('gb').calls[1])
+  // The round the person typed into does not end with the stopped turn: it takes the line out of
+  // the Session's inbox and asks the member it again, with the line in the prompt.
+  await settle(() => host.agentOf('gb').calls.length === 2)
   assert.match(textOf(host.agentOf('gb').calls[1]), new RegExp(line))
+  assert.equal(roomSession.inbox.nextTurn.length, 0, 'the round took the line out of the Session inbox')
+  await host.takeTurn('gb', 2, host.agentOf('gb').calls[1])
   await host.emit('gb', { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Deployed at noon.' }] } } })
   await host.emit('gb', { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
-  const second = JSON.parse(await next.done)
-  assert.ok(second.replies.some(reply => reply.text === 'Deployed at noon.'), 'the next round answered the line')
-  // The room has the person's line in its log, and the member was asked with it in the prompt.
-  assert.ok(host.rt.state.rooms.r1.log.some(entry => entry.text === line))
+  const result = JSON.parse(await round.done)
+  assert.equal(result.replies.some(reply => reply.text === 'half an answer'), false, 'the stopped turn posted nothing')
+  assert.ok(result.replies.some(reply => reply.kind === 'user' && reply.text === line), 'the round reports the person\'s line')
+  assert.ok(result.replies.some(reply => reply.text === 'Deployed at noon.'), 'the member answered the line')
+  // The room has the person's line in its log once, and nothing is left queued for another round.
+  assert.equal(host.rt.state.rooms.r1.log.filter(entry => entry.text === line).length, 1)
   assert.equal(host.rt.roomInbox.get('r1'), undefined)
 })
 
