@@ -166,6 +166,11 @@ export function apply(ctx, config = {}) {
     fb.warn?.('flybot-workflow: send middleware not available; ephemeral bot replies may leak')
   }
   if (tasksWired) {
+    // #1696: the host's Project board asks for the run that holds a card. A host without the
+    // seam simply reads the core boards alone, so this stays quiet.
+    if (typeof fb.tasks.onProjectProvider === 'function') {
+      offs.push(fb.tasks.onProjectProvider(({ hasTask } = {}) => service.projectTasks({ hasTask })))
+    }
     offs.push(fb.tasks.onWrite(task => {
       const result = service.ingest(task ?? {})
       if (result?.matched === true && result.already !== true && result.decision?.kind === 'bot') {

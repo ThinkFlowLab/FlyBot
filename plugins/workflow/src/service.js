@@ -1554,6 +1554,27 @@ export function createWorkflowService({
       if (typeof assigned?.then === 'function') return assigned.then(finish)
       return finish(assigned)
     },
+    // #1696: the host's Project board reads the run behind a card through this method. A run
+    // names the core card it holds or consumed (`run.task.id`), never a second task; the host
+    // supplies `hasTask`, so this side never reads `state.tasks` and a run whose card is gone
+    // is dropped instead of becoming a row of its own.
+    projectTasks({ hasTask } = {}) {
+      const exists = typeof hasTask === 'function' ? hasTask : () => true
+      const rows = []
+      const seen = new Set()
+      for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
+        for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
+          const taskId = typeof run?.task?.id === 'string' ? run.task.id : ''
+          if (taskId === '' || seen.has(taskId) || !exists(taskId)) continue
+          seen.add(taskId)
+          const item = workflow(workflowId)
+          const running = item === undefined ? [] : orderedIds(item, run.nodeStatus, 'running')
+          const nodeId = running[0] ?? Object.keys(run.handed ?? {})[0]
+          rows.push({ taskId, runId: run.id, ...(nodeId === undefined ? {} : { nodeId }) })
+        }
+      }
+      return rows
+    },
     reap() {
       if (typeof release !== 'function') return Promise.resolve()
       const stale = []

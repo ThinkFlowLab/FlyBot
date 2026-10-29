@@ -832,7 +832,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            await rt.ensureCapabilities(sessionId)
            await ctx.sessionController.prompt({
              requestId: randomUUID(),
-@@ -319,32 +646,128 @@
+@@ -319,32 +646,129 @@
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -861,6 +861,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        case 'project-read':
 +        case 'project-bind':
 +        case 'project-of':
++        case 'project-board':
 +          await rt.load()
 +          return ok(await rt.projectEndpoint(endpoint, body))
 +        case 'share-brief':

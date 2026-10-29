@@ -163,6 +163,39 @@ export function install(rt) {
     state.tasks ??= {}
     return state.tasks
   }
+  // A workflow run names a board task, never a second one (#1696). Core never reads
+  // `workflows.json`, so the workflow plugin registers its run refs here and the host only
+  // reads them back as `{ taskId, runId, nodeId? }`, one per claimed card. `hasTask` lets the
+  // plugin drop a run whose card is gone without ever touching `state.tasks`.
+  const projectProviders = new Set()
+  rt.onProjectProvider = (fn) => {
+    if (typeof fn !== 'function') return () => {}
+    projectProviders.add(fn)
+    return () => { projectProviders.delete(fn) }
+  }
+  rt.projectRunRefs = ({ hasTask } = {}) => {
+    const exists = typeof hasTask === 'function' ? hasTask : taskId => store()[String(taskId ?? '')] !== undefined
+    const refs = []
+    const seen = new Set()
+    for (const fn of [...projectProviders]) {
+      let rows
+      try {
+        rows = fn({ hasTask: exists })
+      } catch (error) {
+        rt.warn?.('ds-bot: a project provider failed: %s', error)
+        continue
+      }
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const taskId = typeof row?.taskId === 'string' ? row.taskId.trim() : ''
+        const runId = typeof row?.runId === 'string' ? row.runId.trim() : ''
+        if (taskId === '' || runId === '' || seen.has(taskId)) continue
+        seen.add(taskId)
+        const nodeId = typeof row?.nodeId === 'string' && row.nodeId.trim() !== '' ? row.nodeId.trim() : undefined
+        refs.push({ taskId, runId, ...(nodeId === undefined ? {} : { nodeId }) })
+      }
+    }
+    return refs
+  }
   // The requester is the human whose task this is: the signed-in actor, or the one
   // owner of a host nobody has signed in on. Derived, never a body claim.
   const requesterOf = actor => actor?.memberId ?? Object.keys(state.members ?? {})[0] ?? null

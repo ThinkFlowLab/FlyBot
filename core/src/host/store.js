@@ -435,6 +435,9 @@ export function install(rt) {
         return { project }
       }
       case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
+      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
+      // project-board.js; it reads and returns, and writes nothing.
+      case 'project-board': return { tasks: rt.projectBoard?.(projectText(body.id, 200)) ?? [] }
       default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')
     }
   }

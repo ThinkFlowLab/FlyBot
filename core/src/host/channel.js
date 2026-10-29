@@ -671,6 +671,7 @@ export function install(rt) {
         case 'project-read':
         case 'project-bind':
         case 'project-of':
+        case 'project-board':
           await rt.load()
           return ok(await rt.projectEndpoint(endpoint, body))
         case 'share-brief':

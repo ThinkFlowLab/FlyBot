@@ -1331,6 +1331,11 @@ export function install(rt) {
           if (at >= 0) taskWriteListeners.splice(at, 1)
         }
       },
+      // #1696: the Project board reads a run's task refs through this seam. The provider is
+      // handed `hasTask(taskId)` and answers `{ taskId, runId, nodeId? }`.
+      onProjectProvider(fn) {
+        return rt.onProjectProvider?.(fn) ?? (() => {})
+      },
     },
     tools,
     api,
