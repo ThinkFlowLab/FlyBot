@@ -104,6 +104,8 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 - **Capped and safe.** Input and system length, output tokens and calls-per-minute are bounded (`MODEL_LIMITS`); the call streams through the host's own model selection and returns `{ ok: true, text }` or `{ ok: false, code }` — a short token, never provider text (a provider may echo a key). It refuses on a read-only host. It answers with text only: it creates or changes no Bot, room or memory, so a plugin's model call has no side effect the owner cannot see.
 - Tests: `core/test/plugin-model.test.js` (limits, allow-list, rate, error mapping, and the three-step model precedence of #579) and the `flybot.model` case in `core/test/flybot.test.js`.
 
+- **Host writes through the same field store (#638).** `rt.setBotField(botId, plugin, key, value)` is the host's own writer for a plugin's fields: it runs the same `fieldsFor(plugin).set` path and fires the same `change` event a plugin's `flybot.fields.set` does, so a subscriber (the tree, the sidebar) hears a host write exactly as it hears the plugin's own. Core's `archive_bot` marks a Bot retired through it.
+
 ### A plugin's memory access (#450 item 1)
 
 - `flybot.memory.read(botId)` returns a Bot's own saved entries (`{ text, meta }`, capped), and `flybot.memory.append(botId, text, meta?)` writes one through the ordinary memory path (secret-scanned, size-capped, journaled). It is the seam the tree uses to carry a merged Bot's memory into the one that keeps it.

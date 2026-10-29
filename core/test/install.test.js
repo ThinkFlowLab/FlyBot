@@ -50,6 +50,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'tool stop_bot',
     'tool create_bot',
     'tool update_bot',
+    'tool archive_bot',
     'tool list_models',
     'tool create_group',
     'tool update_group',

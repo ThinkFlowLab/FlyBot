@@ -20,7 +20,7 @@ import { cleanName } from './delivery.js'
 // plugins/workflow, plugins/tree); a tool added to any of them lands in neither list here and
 // fails `core/test/run-bot-tools.test.js` until someone classifies it.
 export const EPHEMERAL_DENIED_TOOLS = Object.freeze([
-  'message_bot', 'stop_bot', 'create_bot', 'update_bot',
+  'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot',
   'create_group', 'update_group', 'delete_group', 'post_to_group',
   'ask_user', 'save_capability', 'delete_capability', 'attach_capability', 'detach_capability',
   'track_tasks', 'group_relay',
@@ -145,6 +145,8 @@ export function install(rt) {
       // same owner, and Bots in the current room. Nobody browses others' Bots (#53).
       const listed = bot => {
         if (!teamBot(bot)) return false
+        // A retired Bot is not on the default team list; its chat is still read from the sidebar (#638).
+        if (retiredBot(bot)) return false
         if (!rt.authzEnforced?.()) return true
         if (inRoom.has(bot.id)) return true
         if (selfOwner && (rt.hasGrant?.(bot.id, selfOwner, fromRoomId) || rt.hasGrant?.(bot.id, selfOwner))) return true
@@ -206,6 +208,8 @@ export function install(rt) {
   const refuse = (message) => { throw new Error(message) }
   // A run Bot keeps its name (findBot still sees it) but no team tool can address it (#1373).
   const teamBot = bot => bot !== undefined && bot.remote === undefined && bot.ephemeral === undefined
+  // Retired (#638): the tree no longer counts it and the default Bot list leaves it out.
+  const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
   const findTeamBot = (name) => {
     const bot = rt.findBot(name)
     return teamBot(bot) ? bot : undefined
@@ -385,6 +389,30 @@ export function install(rt) {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'archive_bot',
+    description: 'Main Bot only. Retire another Bot: it leaves the tree (freeing a maxChildren slot) and the default Bot list, while its chats, history and memory stay readable. It is never deleted and no parent moves; deleting a Bot stays the owner\'s own click in the UI.',
+    parameters: {
+      bot: { type: 'string', required: true, description: 'Exact Bot name from list_bots' },
+      reason: { type: 'string', description: 'Why it is retired; kept on the Bot record for the history' },
+    },
+    output,
+    async execute(args, exec) {
+      await rt.load()
+      const sender = callerBot(exec)
+      if (sender === undefined || !rt.isMain(sender.id)) return 'Only a Main Bot can archive another Bot.'
+      const target = findTeamBot(args.bot)
+      if (target === undefined) return `No Bot named ${args.bot}. Team: ${teamNames()}`
+      if (target.id === sender.id) return 'You cannot archive yourself.'
+      try {
+        await rt.archiveBot(target.id, { reason: args.reason })
+      } catch (error) {
+        return `Could not archive the Bot: ${error.message}`
+      }
+      return `Archived ${target.name}. It is out of the tree and the default Bot list; its chats and history stay readable, and it is not deleted.`
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'list_models',
     description: 'List the models a Bot can run on, as provider/model refs for create_bot and update_bot.',
     parameters: {},
@@ -411,7 +439,7 @@ export function install(rt) {
     }
     return { bots, unknown }
   }
-  const teamNames = () => Object.values(state.bots).filter(teamBot).map(bot => bot.name).join(', ')
+  const teamNames = () => Object.values(state.bots).filter(bot => teamBot(bot) && !retiredBot(bot)).map(bot => bot.name).join(', ')
   const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
   const pickRoom = (ref, self) => {
     const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))

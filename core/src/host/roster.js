@@ -511,6 +511,27 @@ export function install(rt) {
     await rt.save()
   }
 
+  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
+  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
+  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
+  // tree's own archive does (#452); Search still finds it. Deletion stays the owner's click.
+  async function archiveBot(id, { reason = '' } = {}) {
+    const bot = rt.botOf(id)
+    if (bot === undefined) throw new Error('Unknown Bot')
+    if (rt.isMain(id)) throw new Error('A Main Bot cannot be archived; give up its Main Bot role first')
+    const why = String(reason ?? '').trim().slice(0, 200)
+    if (why !== '') bot.archivedReason = why
+    if (typeof rt.setBotField === 'function') rt.setBotField(id, 'flybot-tree', 'retired', true)
+    else {
+      bot.fields ??= {}
+      bot.fields['flybot-tree'] ??= {}
+      bot.fields['flybot-tree'].retired = true
+    }
+    bot.hidden = true
+    await rt.save()
+    return bot
+  }
+
   async function deleteBot(id) {
     const bot = rt.botOf(id)
     if (bot === undefined) throw new Error('Unknown Bot')
@@ -597,6 +618,6 @@ export function install(rt) {
   Object.assign(rt, {
     ensureWorkspace, createSession, createBot, duplicateBot, updateBot, setFlags,
     roomBusy, autoRoomName, retitleRoom, createRoom, updateRoom, deleteRoom,
-    setMain, deleteBot, bootstrap,
+    setMain, archiveBot, deleteBot, bootstrap,
   })
 }

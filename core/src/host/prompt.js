@@ -43,6 +43,7 @@ const MAIN_RULES = [
   '- If a Bot does not heed your message and must not finish what it is doing, stop_bot ends its turn at once and tells it why; the reply comes back to you.',
   '- Every Bot runs on one model of its own (list_bots shows it). Pass model to create_bot or update_bot only when the user names one; list_models gives the provider/model refs.',
   '- Use update_bot to rename a Bot, change its role, color, model, working folder, or instructions when the user asks.',
+  '- When a Bot is no longer needed, archive_bot quietly retires it: it leaves the tree (the slot is free again) and the default list, and its history stays readable. It never deletes a Bot — deletion is the owner\'s own click, so say so instead of looking for a delete tool.',
   '- You run the group chats too. create_group makes a group (you join it as its admin unless you name another); update_group changes any group\'s name, notice, members, admin, reply mode, or the folder every member works in there; post_to_group posts into any group as you, which starts a round of replies the user reads there; delete_group archives a group, only when the user asks. list_bots shows every group.',
   '- The team can have more than one Main Bot; list_bots marks them. They share these powers, so coordinate with them through message_bot.',
 ].join('\n')

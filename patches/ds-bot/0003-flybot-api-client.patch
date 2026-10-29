@@ -3,7 +3,7 @@ FlyBot patch 0003-flybot-api-client on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). G
 diff --git a/src/client/activity-row.js b/src/client/activity-row.js
 --- a/src/client/activity-row.js
 +++ b/src/client/activity-row.js
-@@ -4,6 +4,11 @@ import { BotMark, RoomAvatar } from './mark.js'
+@@ -4,6 +4,11 @@
  import { Shimmer, PHRASES } from './cells.js'
  import { reducedMotion } from './motion.js'
  import { t } from './i18n.js'
@@ -15,7 +15,7 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
  
  // -------------------------------------------------------------------------
  // The activity row: the Bot's mark and a shimmering phrase at the transcript
-@@ -20,21 +20,74 @@ export function elapsedLabel(ms) {
+@@ -20,21 +25,74 @@
  }
  export { reducedMotion }
  
@@ -93,7 +93,7 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
    return host
  }
  
-@@ -94,16 +94,38 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
+@@ -94,16 +152,38 @@
    const entries = useMemo(() => Object.values(JSON.parse(liveKey)), [liveKey])
    const streaming = entries.some(entry => entry.text)
    const tools = entries.filter(entry => !entry.text).sort((a, b) => a.at - b.at)
@@ -134,7 +134,7 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
      : inputAt > (tool?.at ?? 0)
        ? { key: `input:${inputAt}`, pool: PHRASES.thinking, state: 'thinking' }
        : tool ? { key: tool.label ? `tool:${tool.label}` : 'working', label: tool.label, pool: PHRASES.working, state: tool.state ?? 'working' }
-@@ -127,11 +127,16 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
+@@ -127,11 +207,16 @@
    leaving.current = phase !== null && !visible
    useEffect(() => {
      if (visible) { setPhase('in'); return undefined }
@@ -156,7 +156,7 @@ diff --git a/src/client/activity-row.js b/src/client/activity-row.js
      return () => clearTimeout(timer)
    }, [visible])
    // Removing the row at a pinned tail moves the transcript down; a tail
-@@ -157,10 +157,15 @@ export function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useL
+@@ -157,10 +242,15 @@
      const timer = setInterval(() => setNow(Date.now()), 10000)
      return () => clearInterval(timer)
    }, [phase])
@@ -189,7 +189,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  import { t } from './i18n.js'
  import { currentPart, relativeShort } from './text.js'
  
-@@ -25,18 +25,76 @@ const conversationOf = (roster, sessionId) => {
+@@ -25,18 +28,76 @@
  export function mentionRows(roster, sessionId, query = '') {
    const here = conversationOf(roster, sessionId)
    if (here === null) return null
@@ -271,7 +271,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
  // The chats a message here can reference: every other Bot's chat, then the latest
  // conversations outside the team. Group chats stay out: a group's Session holds only
  // the user's messages, so a snapshot of it would miss every Bot's reply.
-@@ -78,14 +78,33 @@ export function atSources({ roster, sessions, launched, iconFor }) {
+@@ -78,14 +139,33 @@
      order: -20,
      showGroupTitle: false,
      async candidates(session, { query }) {
@@ -312,7 +312,7 @@ diff --git a/src/client/at-menu.js b/src/client/at-menu.js
 diff --git a/src/client/bot-draft.js b/src/client/bot-draft.js
 --- a/src/client/bot-draft.js
 +++ b/src/client/bot-draft.js
-@@ -8,17 +8,39 @@ export function freshBotName(roster, base = 'New Bot') {
+@@ -8,17 +8,39 @@
    return `${base} ${index}`
  }
  
@@ -365,7 +365,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  import { createElement as h, Fragment, useCallback, useEffect, useRef, useState } from 'react'
  import { paintCss } from './inks.js'
  import { CHARACTERS, PICKER_SHAPES, PICKER_COLUMNS, CHARACTER_COLORS, SHAPES, hasShape, shapeOf, bodyOf, maskBox, holes, nextMarkSerial } from './characters.js'
-@@ -5,12 +5,15 @@ import { isMainOf } from './sources.js'
+@@ -5,12 +6,15 @@
  import { PencilIcon, ChevronRightIcon } from './icons.js'
  import { lookOf, BotMark } from './mark.js'
  import { ModelMenu, modelOf } from './model-menu.js'
@@ -381,7 +381,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  
  const capitalize = word => word[0].toUpperCase() + word.slice(1)
  
-@@ -77,9 +77,10 @@ export function Switch({ on, label, disabled, onChange }) {
+@@ -77,9 +81,10 @@
  }
  
  // A row with a switch. Not a label: a click on the copy must not flip it twice.
@@ -394,7 +394,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
      h(Switch, { on, label, disabled, onChange }))
  }
  
-@@ -199,6 +199,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -199,6 +204,7 @@
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
@@ -402,7 +402,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    const isMainBot = isMainOf(roster, bot.id)
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
    const isTile = roster.mainBotId === bot.id
-@@ -222,8 +222,9 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -222,8 +228,9 @@
        h(Row, { label: t('Label'), hint: t('Optional. Shown under the name.') }, h(InlineText, { label: t('Label'), value: bot.role, placeholder: t('Research, admin…'), maxLength: 24, onSave: role => save({ role }) }))),
      h(Card, { title: t('Model') },
        h('div', { className: 'bt-set-row bt-bs-row' },
@@ -414,7 +414,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
      h(Card, { title: t('Working folder') },
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
-@@ -231,22 +231,25 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -231,22 +238,25 @@
      h(Card, { title: t('Instructions') },
        h(Row, { label: t('What this Bot does'), hint: t('Its job on the team. Part of the Bot\'s system prompt.'), stack: true },
          h(InlineText, { label: t('Instructions'), value: bot.instructions, multiline: true, placeholder: t('What this Bot is responsible for…'), onSave: instructions => save({ instructions }) }))),
@@ -443,7 +443,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
        h('button', { type: 'button', className: 'bt-set-row bt-bs-row', onClick: duplicate },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Duplicate')), h('span', { className: 'bt-set-hint' }, t('A copy with the same job and model, and fresh memory.'))),
          h('span', { className: 'bt-chevron' }, h(ChevronRightIcon))),
-@@ -266,9 +266,17 @@ export const BOT_SETTINGS_CSS = `
+@@ -266,9 +276,17 @@
  .bt-bs .bt-avedit{left:0;transform:none}
  .bt-bs-row{min-height:48px}
  label.bt-bs-row{cursor:text}
@@ -462,7 +462,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  .bt-bs-input{flex:0 1 220px;width:0;min-width:96px;height:30px;box-sizing:border-box;margin:-4px -6px -4px 0;padding:0 8px;border:1px solid transparent;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:right;outline:none;transition:background-color .12s ease,border-color .12s ease}
  .bt-bs-input:hover{background:var(--bt-hover)}
  .bt-bs-input:focus{background:var(--bt-main);border-color:var(--bt-line-2);text-align:left}
-@@ -289,4 +289,12 @@ label.bt-bs-row{cursor:text}
+@@ -289,4 +307,12 @@
  .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
  .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
  @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
@@ -478,7 +478,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,20 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
+@@ -2,12 +2,20 @@
  import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
@@ -501,7 +501,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
  
-@@ -45,8 +45,27 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId,
+@@ -45,8 +53,27 @@
      }))
  }
  
@@ -529,7 +529,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // Closes a popover on a press outside the given elements or on Escape.
  function useDismiss(open, close, refs) {
    useEffect(() => {
-@@ -100,9 +100,45 @@ function MessageTools({ text, name, sessionId, react, actions }) {
+@@ -100,9 +127,45 @@
        item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
  }
  
@@ -576,7 +576,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      h('div', { className: 'bt-think-text' }, text))
  }
  
-@@ -119,14 +119,34 @@ function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
+@@ -119,14 +182,34 @@
    }, [fileMentions, openFile, seq, tail, turn])
  }
  
@@ -612,7 +612,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const running = data.status === 'running'
    // A streaming reply stands in for the activity row.
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
-@@ -138,6 +138,9 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
+@@ -138,6 +221,9 @@
    const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : []
    if (texts.length === 0 && !reasoning && relays.length === 0) return null
    const selfId = roster.byId[sessionId]?.id ?? sessionId
@@ -622,7 +622,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    return h(Fragment, null,
      relays.map(relay => {
        const source = relay.source
-@@ -151,7 +151,31 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
+@@ -151,7 +237,31 @@
        })
      }),
      reasoning ? h(ThinkingRow, { text: reasoning }) : null,
@@ -655,7 +655,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
-@@ -170,16 +170,183 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+@@ -170,16 +280,183 @@
    return h('div', { className: 'bt-event' }, parts)
  }
  
@@ -843,7 +843,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // A centered event line that names a group chat and opens it.
  function GroupEvent({ prefix, room, name, roster, actions }) {
    return h('div', { className: 'bt-event' },
-@@ -331,17 +331,31 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
+@@ -331,17 +608,31 @@
      : body
  
    function triggerBody() {
@@ -878,7 +878,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
          const room = roster.roomsById[sessionId]
          const poster = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t('a Bot'), color: 'gray' }
          return h(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi })
-@@ -411,6 +411,55 @@ export function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi
+@@ -411,6 +702,55 @@
  
  export function Nothing() { return null }
  
@@ -897,7 +897,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +// is listed here. track_links is the same notice on the other home of the report;
 +// this tree does not register that name.
 +const SILENT_REGISTRATION_TOOLS = new Set([
-+  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
++  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
 +  'bot_schedules',
 +  'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
 +  'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
@@ -934,7 +934,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // The time separator: "Today 1:12 AM", "Yesterday 9:03 PM", "Thu, Sep 3 4:20 PM".
  const SEPARATOR_GAP_MS = 30 * 60 * 1000
  export function clockLabel(time, now = Date.now()) {
-@@ -444,6 +444,19 @@ export function openingTurn(turns, firstTurns, hiddenTurns) {
+@@ -444,6 +784,19 @@
  }
  // Began after the user last left the conversation and before this visit opened it.
  export const unseenSince = (visit, time) => typeof visit?.seen === 'number' && time > visit.seen && time <= visit.entered
@@ -954,7 +954,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  
  // An entry in DSH's own turn tail, after what other plugins put there (the cards of
  // the files a turn delivered). The tail sits right before the next turn's first row,
-@@ -524,10 +524,16 @@ function toolActivity(name, arg, findBot, self) {
+@@ -524,10 +877,16 @@
    }
  }
  
@@ -973,7 +973,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  }
  
  // Transcript rows report what is in flight to the one activity row at the tail.
-@@ -540,8 +540,8 @@ function useLiveNote(actions, sessionId, id, entry) {
+@@ -540,8 +899,8 @@
    }, [sessionId, id, key])
  }
  
@@ -984,7 +984,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    useEffect(() => {
      if (done) return undefined
      let stop = false
-@@ -551,8 +551,8 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -551,8 +910,8 @@
        const result = await actions.roomProgress(sessionId)
        if (stop) return
        const entry = (result ?? []).find(item => item.callId === callId) ?? (result ?? [])[0]
@@ -995,7 +995,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
        timer = setTimeout(tick, document.hidden ? 5000 : 1000)
      }
      void tick()
-@@ -562,20 +562,31 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -562,20 +921,31 @@
    if (done) {
      try { replies = JSON.parse(contentText(content)).replies ?? [] } catch { replies = [] }
    }
@@ -1035,7 +1035,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
            t('{name} could not answer: {reason}', { name: bot.name, reason: failureLabel(reply.code, reply.text) }))
        }
        if (reply.kind === 'lookup') {
-@@ -599,14 +599,27 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
+@@ -599,14 +969,27 @@
        if (reply.kind === 'stopped') {
          return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
        }
@@ -1071,7 +1071,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      }))
  }
  
-@@ -643,7 +643,7 @@ function useShownCards(actions, sessionId, callIds) {
+@@ -643,7 +1026,7 @@
    }, [sessionId, key])
  }
  
@@ -1080,7 +1080,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const tool = toolName(call)
    const done = call.kind === 'tool-result'
    const { text: arg, value: argValue } = toolArgs(call)
-@@ -669,7 +669,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot
+@@ -669,7 +1052,7 @@
        return done && target ? h(EventLine, { prefix: t('Updated'), bots: [target], onOpen: bot => actions.openSession(bot.id) }) : null
      }
      case 'group_relay':
@@ -1089,7 +1089,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      case 'create_group':
      case 'update_group':
      case 'delete_group':
-@@ -719,12 +719,12 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot
+@@ -719,12 +1102,12 @@
    }
  }
  
@@ -1104,7 +1104,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const calls = hidden ? [] : callTree(root)
    const drawn = calls.filter(call => DRAWN.has(toolName(call)))
    // The newest call still running names the work, so a program reads as the tool it is in.
-@@ -734,6 +734,6 @@ export function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }
+@@ -734,6 +1117,6 @@
    useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note)
    useShownCards(actions, sessionId, drawn.filter(call => CARDS.has(toolName(call)) && call.callId).map(call => call.callId))
    if (drawn.length === 0) return null
@@ -1115,7 +1115,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 --- a/src/client/context-menu.js
 +++ b/src/client/context-menu.js
-@@ -4,6 +4,9 @@ import { currentPart } from './text.js'
+@@ -4,6 +4,9 @@
  import { GearIcon, PinIcon, UnreadIcon, PencilIcon, StarLineIcon, CopyIcon, HideIcon, TrashIcon, DuplicateIcon } from './icons.js'
  import { useEscape } from './overlay-hooks.js'
  import { t } from './i18n.js'
@@ -1125,7 +1125,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
  
  export function ContextMenu({ menu, roster, actions, leaving = false }) {
    useEscape(() => actions.closeMenu())
-@@ -12,6 +12,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -12,6 +15,7 @@
      window.addEventListener('mousedown', onDown)
      return () => window.removeEventListener('mousedown', onDown)
    }, [])
@@ -1133,7 +1133,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
    const ref = useRef(null)
    const [place, setPlace] = useState({ left: menu.x, top: menu.y })
    useLayoutEffect(() => {
-@@ -27,28 +27,41 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -27,28 +31,41 @@
    const isMainBot = isMainOf(roster, menu.id)
    const isTile = roster.mainBotId === menu.id
    const mainCount = (roster.mainBotIds ?? []).length
@@ -1196,7 +1196,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
        index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
        group.map(([label, Icon, run, danger]) => h('button', {
          key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,
-@@ -92,3 +92,4 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -92,3 +109,4 @@
          onClick: () => { actions.closeMenu(); void Promise.resolve(run()).catch(error => console.warn('[ds-bot]', error)) },
        }, h(Icon), label)))))
  }
@@ -1204,7 +1204,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 diff --git a/src/client/create-bot.js b/src/client/create-bot.js
 --- a/src/client/create-bot.js
 +++ b/src/client/create-bot.js
-@@ -18,7 +18,7 @@ const randomLook = (avoid = {}) => {
+@@ -18,7 +18,7 @@
  
  // The new-Bot form: look first, then name and model. Nothing exists until Create.
  // `inline` drops the pane's header for a form shown inside Settings.
@@ -1213,7 +1213,7 @@ diff --git a/src/client/create-bot.js b/src/client/create-bot.js
    const [look, setLook] = useState(() => randomLook())
    const [image, setImage] = useState(null)
    const [name, setName] = useState(start?.name ?? '')
-@@ -40,8 +40,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
+@@ -40,8 +40,8 @@
      setError('')
      setBusy(true)
      try {
@@ -1224,7 +1224,7 @@ diff --git a/src/client/create-bot.js b/src/client/create-bot.js
      } catch (failure) {
        setError(failure?.message ?? String(failure))
        setBusy(false)
-@@ -88,7 +88,8 @@ export function CreateBot({ roster, actions, start, brief = '', onBack, canGoBac
+@@ -88,7 +88,8 @@
          : t('Add a provider and a model in DeepSeek Harness first, or pick one in the Bot\'s chat later.'))),
      error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null,
      h('div', { className: 'bt-create-foot' },
@@ -1283,7 +1283,7 @@ diff --git a/src/client/exchange.js b/src/client/exchange.js
  export function ExchangeDialog({ pair, roster, actions }) {
    const [entries, setEntries] = useState(null)
    const [leaving, setLeaving] = useState(false)
-@@ -45,14 +45,11 @@ export function ExchangeDialog({ pair, roster, actions }) {
+@@ -45,14 +77,11 @@
          entries === null ? h('div', { className: 'bt-hint' }, t('Loading…'))
            : entries.length === 0 ? h('div', { className: 'bt-hint' }, t('No messages yet'))
              : entries.map((entry) => {
@@ -1308,7 +1308,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
  
  export function PlusIcon() {
    return h('svg', { width: 18, height: 18, viewBox: '0 0 20 20', 'aria-hidden': true }, h('path', { d: 'M10 3.5v13M3.5 10h13', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }))
-@@ -59,6 +59,8 @@ export const DownloadIcon = lineIcon(['M10 3.5v9', 'M6.5 9.5L10 13l3.5-3.5', 'M4
+@@ -59,6 +60,8 @@
  export const GaugeIcon = lineIcon(['M3.5 13.5a6.5 6.5 0 1 1 13 0', 'M10 13.5l3-4', 'M10 13.5h.01'])
  export const PlugIcon = lineIcon(['M7 3v4M13 3v4', 'M5 7h10v2.5a5 5 0 0 1-10 0z', 'M10 14.5V17'])
  export const CalendarIcon = lineIcon(['M5.5 5h9A1.5 1.5 0 0 1 16 6.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5z', 'M4 8.75h12', 'M7.25 3.5v3M12.75 3.5v3'])
@@ -1317,7 +1317,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
  export const ConnectorIcon = lineIcon(['M7 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z', 'M18 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z', 'M7 10h6'])
  export const SwitchIcon = lineIcon(['M4 7h9.5M10.5 3.5L14 7l-3.5 3.5', 'M16 13H6.5M9.5 9.5L6 13l3.5 3.5'])
  export const PaperclipIcon = lineIcon(['M15.5 9.5l-5.6 5.6a3.4 3.4 0 0 1-4.8-4.8l6.1-6.1a2.25 2.25 0 0 1 3.2 3.2l-6 6a1.1 1.1 0 0 1-1.6-1.6l5.5-5.5'])
-@@ -81,11 +81,31 @@ export const CopyIcon = lineIcon(['M8.5 7h6A1.5 1.5 0 0 1 16 8.5v6a1.5 1.5 0 0 1
+@@ -81,11 +84,31 @@
  export const HideIcon = lineIcon(['M3 3l14 14', 'M8.6 5.2A7.6 7.6 0 0 1 10 5c4.5 0 7 5 7 5a12.6 12.6 0 0 1-2 2.6M12.2 14.5A6.8 6.8 0 0 1 10 15c-4.5 0-7-5-7-5a12.4 12.4 0 0 1 3-3.4', 'M8.5 8.5a2 2 0 0 0 3 3'])
  export const TrashIcon = lineIcon(['M3.5 5.5h13', 'M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5', 'M5 5.5l.7 10A1.5 1.5 0 0 0 7.2 17h5.6a1.5 1.5 0 0 0 1.5-1.5l.7-10', 'M8.5 9v4.5M11.5 9v4.5'])
  export const DuplicateIcon = lineIcon(['M7 7h8.5v9.5H7z', 'M4.5 13V3.5H13', 'M11.25 9.5v4.5M9 11.75h4.5'])
@@ -1430,7 +1430,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
    let savedUnread = {}
-@@ -50,9 +50,12 @@ export function apply(ctx) {
+@@ -50,9 +74,12 @@
    const SEEN_KEY = STORAGE.seen
    let seenAt = {}
    try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
@@ -1444,7 +1444,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
-@@ -90,6 +90,8 @@ export function apply(ctx) {
+@@ -90,6 +117,8 @@
      return () => window.removeEventListener('pagehide', onPageHide)
    }, 'ds-bot: remember visits on page hide')
    const activity = createSource({})
@@ -1453,7 +1453,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
    const work = createSource({ bots: {}, approvals: [] })
    let workKey = ''
-@@ -125,6 +125,17 @@ export function apply(ctx) {
+@@ -125,6 +154,17 @@
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
    })
@@ -1471,7 +1471,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
-@@ -132,11 +132,14 @@ export function apply(ctx) {
+@@ -132,11 +172,14 @@
    const pull = async () => {
      const order = ++pulls
      const known = roster.getSnapshot()
@@ -1487,7 +1487,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      const nextWork = JSON.stringify(value.work ?? null)
      if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
      noteMemoryNews(value.memoryNews ?? {})
-@@ -145,11 +145,14 @@ export function apply(ctx) {
+@@ -145,11 +188,14 @@
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
      if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
@@ -1502,7 +1502,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      try {
        const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
-@@ -252,17 +252,7 @@ export function apply(ctx) {
+@@ -252,17 +298,7 @@
      const style = installStyles('', 'mentions')
      let last = ''
      const render = () => {
@@ -1521,7 +1521,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        if (next !== last) style.textContent = last = next
      }
      render()
-@@ -325,7 +325,7 @@ export function apply(ctx) {
+@@ -325,7 +361,7 @@
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
  
@@ -1530,7 +1530,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -342,6 +342,7 @@ export function apply(ctx) {
+@@ -342,6 +378,7 @@
      // or the click appears to do nothing.
      isAgentSession: id => isAgentSessionId(id),
      openSession: (id) => {
@@ -1538,7 +1538,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,11 +409,11 @@ export function apply(ctx) {
+@@ -409,11 +446,11 @@
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1554,7 +1554,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        expected = target
        ctx.uiWorkspace.openSession(target)
      },
-@@ -444,10 +444,22 @@ export function apply(ctx) {
+@@ -444,10 +481,22 @@
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
      // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
@@ -1579,7 +1579,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      openConnectors: () => { ui.set(state => ({ ...state, settings: { page: 'connectors', id: null }, menu: null, palette: null, newChat: null })) },
      // Agent mode hands the surface back to the shell; everything open on the Bot
      // surface closes first so nothing stale reopens on the way back.
-@@ -455,7 +455,7 @@ export function apply(ctx) {
+@@ -455,7 +504,7 @@
        if (mode !== 'bot' && mode !== 'agent') return
        if (surface.getSnapshot().mode === mode) return
        if (mode === 'agent') {
@@ -1588,7 +1588,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
-@@ -487,6 +487,12 @@ export function apply(ctx) {
+@@ -487,6 +536,12 @@
        const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null)
        ui.set(state => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }))
      },
@@ -1601,7 +1601,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -530,8 +530,14 @@ export function apply(ctx) {
+@@ -530,8 +585,14 @@
      updateRoom: (id, patch) => after(call('update-room', { id, ...patch })),
      send: (sessionId, text) => after(call('send', { sessionId: partFor(sessionId), text })),
      answerQuestion: (sessionId, questionId, answer) => after(call('answer-question', { sessionId: partFor(sessionId), questionId, answer })),
@@ -1616,7 +1616,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      stopMemberWork: (roomId, botId) => after(call('stop-member-work', { roomId, botId })),
      // Values go out in these requests and never come back in a response.
      secretSet: payload => after(call('secret-set', payload)),
-@@ -539,15 +539,33 @@ export function apply(ctx) {
+@@ -539,15 +600,33 @@
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1651,7 +1651,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
      exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
      roomProgress: roomId => call('room-progress', { roomId }).catch(() => []),
-@@ -566,6 +566,8 @@ export function apply(ctx) {
+@@ -566,6 +645,8 @@
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
      },
@@ -1660,7 +1660,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      dismissToast: token => ui.set(state => (state.toast && (token === undefined || state.toast.token === token) ? { ...state, toast: null } : state)),
    }
    // Without the Desktop bridge these stay undefined, and no browser control renders.
-@@ -610,6 +610,7 @@ export function apply(ctx) {
+@@ -610,6 +691,7 @@
    }
    actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
    // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
@@ -1668,7 +1668,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
-@@ -647,6 +647,10 @@ export function apply(ctx) {
+@@ -647,6 +729,10 @@
      wakeUpdate()
    }
    actions.repoStars = () => call('repo-stars')
@@ -1679,7 +1679,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.noteTurnTime = (sessionId, turn, key, time) => {
      if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
      turnClock.set((state) => {
-@@ -689,7 +689,18 @@ export function apply(ctx) {
+@@ -689,7 +775,18 @@
    })
    const browserPages = browsers?.pages ?? createSource({})
    const browserTabs = browsers?.tabs ?? createSource({})
@@ -1699,7 +1699,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ctx.effect(() => noticeApprovals({
      work,
      roster,
-@@ -715,10 +715,23 @@ export function apply(ctx) {
+@@ -715,10 +812,23 @@
    }
  
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
@@ -1723,7 +1723,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const installAtMenu = () => {
      const fiber = ctx.inject(['inputTriggers'], (scope) => {
        scope.effect(() => {
-@@ -730,7 +730,12 @@ export function apply(ctx) {
+@@ -730,7 +840,12 @@
          const launched = sessionId => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE
          const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map(source => triggers.registerSource(source))
          atMenu = { controllerOf }
@@ -1736,7 +1736,7 @@ diff --git a/src/client/index.js b/src/client/index.js
            atMenu = null
            for (const off of offs) off()
          }
-@@ -739,6 +739,14 @@ export function apply(ctx) {
+@@ -739,6 +854,14 @@
      return () => fiber.dispose()
    }
    actions.canReferenceChat = () => atMenu !== null
@@ -1751,7 +1751,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,46 @@ export function apply(ctx) {
+@@ -752,33 +875,46 @@
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1801,7 +1801,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
      shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
      shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
-@@ -790,15 +790,24 @@ export function apply(ctx) {
+@@ -790,15 +926,24 @@
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
@@ -1829,7 +1829,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),
      shadow('conversation.composer', {
        priority: -10,
-@@ -808,7 +808,14 @@ export function apply(ctx) {
+@@ -808,7 +953,14 @@
      shadow('conversation.input.dock', { id: 'bot-model', order: -110, inject: face }, ModelChoiceDock),
      shadow('conversation.input.dock', { id: 'bot-question', order: -100, inject: face }, QuestionDock),
      shadow('conversation.input.dock', { id: 'bot-secret', order: -90, inject: face }, SecretDock),
@@ -1882,7 +1882,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const [cursor, setCursor] = useState(0)
    // The Create Bot form, opened straight from 'create' mode or from the list.
    const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
-@@ -24,15 +24,56 @@ export function NewChat({ mode, roster, actions }) {
+@@ -24,15 +35,56 @@
    useEscape(close)
    const paneLeft = usePaneLeft()
    const wanted = query.trim().toLowerCase()
@@ -1942,7 +1942,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    }
    const pick = (bot) => {
      setPicked(current => [...current, bot.id])
-@@ -59,19 +59,25 @@ export function NewChat({ mode, roster, actions }) {
+@@ -59,19 +111,25 @@
      setError('')
      setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
    }
@@ -1972,7 +1972,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
-@@ -87,24 +87,51 @@ export function NewChat({ mode, roster, actions }) {
+@@ -87,24 +145,51 @@
        close()
        return
      }
@@ -2032,7 +2032,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const active = Math.min(cursor, Math.max(options.length - 1, 0))
    const listed = options.map(option => option.key).join('\n')
    const glide = useGlide(`${active}\n${listed}`, { axis: 'y', ...QUICK_EDGES })
-@@ -114,7 +114,7 @@ export function NewChat({ mode, roster, actions }) {
+@@ -114,7 +199,7 @@
    if (draft) {
      return h('div', { className: 'bt-pane', style: { left: paneLeft } },
        h(CreateBot, {
@@ -2041,7 +2041,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          onBack: draft.fromList ? () => { setDraft(null); setTimeout(() => inputRef.current?.focus()) } : close,
          onCreated: created,
        }))
-@@ -126,9 +126,16 @@ export function NewChat({ mode, roster, actions }) {
+@@ -126,9 +211,16 @@
      if (picked.length > 0) setPicked(current => current.slice(0, -1))
      else if (admin !== null) setAdmin(null)
    }
@@ -2061,7 +2061,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('span', { className: 'bt-to-label' }, t('To:')),
          adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
            h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),
-@@ -162,11 +162,28 @@ export function NewChat({ mode, roster, actions }) {
+@@ -162,11 +254,28 @@
                onMouseEnter: () => setCursor(index), onClick: option.run,
              },
              option.bot ? h(BotMark, { bot: option.bot, size: 22 }) : h('span', { className: 'bt-option-icon' }, option.icon),
@@ -2098,7 +2098,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 diff --git a/src/client/overlays.js b/src/client/overlays.js
 --- a/src/client/overlays.js
 +++ b/src/client/overlays.js
-@@ -8,6 +8,9 @@ import { SettingsDialog } from './settings.js'
+@@ -8,6 +8,9 @@
  import { ContextMenu } from './context-menu.js'
  import { PANEL_LINGER_MS, BotPanel } from './browser-pane.js'
  import { MemoryDialog } from './memory-panel.js'
@@ -2108,7 +2108,7 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
  import { useLinger } from './motion.js'
  
  // How long a closing dialog or menu stays for its exit (see their [data-leaving] CSS).
-@@ -36,8 +36,12 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+@@ -36,8 +39,12 @@
    }, [ui.details, ui.view, ui.renaming, ui.tab])
    const pane = open ?? kept
    const [settings, settingsLeaving] = useLinger(ui.settings, DIALOG_EXIT_MS)
@@ -2121,7 +2121,7 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
    return h(Fragment, null,
      pane ? createPortal(h(BotPanel, { pane, leaving: open === null, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }), document.body) : null,
      ui.newChat ? createPortal(h(NewChat, { key: ui.newChat, mode: ui.newChat, roster, actions }), document.body) : null,
-@@ -46,5 +46,8 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+@@ -46,5 +53,8 @@
      ui.voice ? createPortal(h(VoiceMode, { key: ui.voice, sessionId: ui.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
      menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
      settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
@@ -2157,7 +2157,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
  const PALETTE_EXIT_MS = 160
  export function CommandPalette({ start, token, roster, actions, useSessions }) {
    const [query, setQuery] = useState(start ?? '')
-@@ -24,6 +24,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -24,6 +28,7 @@
    }
    useEscape(close)
    const ids = [...roster.bots.map(currentPart), ...roster.rooms.map(item => item.id)]
@@ -2165,7 +2165,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
    const found = useSessions((list) => {
      if (wanted.length < 2) return '[]'
      const hits = []
-@@ -35,7 +35,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -35,7 +40,7 @@
          const entry = outline[index]
          if (hidden.includes(entry.turn)) continue
          for (const raw of [entry.response, entry.prompt]) {
@@ -2174,7 +2174,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
            const at = text.toLowerCase().indexOf(wanted)
            if (at < 0) continue
            const from = Math.max(0, at - 24)
-@@ -49,13 +49,13 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -49,13 +54,13 @@
    const matchesName = (...fields) => wanted === '' || fields.some(field => (field ?? '').toLowerCase().includes(wanted))
    const sections = []
    const people = [
@@ -2191,7 +2191,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
-@@ -81,7 +81,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -81,7 +86,7 @@
      { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
      { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
      { key: 'cmd:group', icon: h(PeopleIcon), title: t('Create group chat'), run: () => actions.openNewChat('group') },
@@ -2228,7 +2228,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  
  // -------------------------------------------------------------------------
  // Sidebar
-@@ -37,77 +37,151 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,77 +42,151 @@
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -2398,7 +2398,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
  }
  
-@@ -235,6 +235,31 @@ function useListGlide(listRef, layout, key) {
+@@ -235,6 +314,31 @@
    }, [layout, key])
  }
  
@@ -2430,7 +2430,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  export function TeamSidebar(props) {
    const { wide, useRoster, useUi, useSessions, actions } = props
    const listRef = useRef(null)
-@@ -249,14 +249,26 @@ export function TeamSidebar(props) {
+@@ -249,14 +353,26 @@
    const order = useMemo(() => {
      const stamps = JSON.parse(updated)
      const entries = [
@@ -2460,7 +2460,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
-@@ -277,13 +277,17 @@ export function TeamSidebar(props) {
+@@ -277,13 +393,17 @@
            h(UpdateButton, { useUpdate: props.useUpdate, actions }),
            h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
      wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
@@ -2481,7 +2481,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // The update button at the sidebar's top right: a cloud while a newer DS Bot —
-@@ -327,29 +327,29 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -327,29 +447,29 @@
      setDshError('')
      void actions.installDshUpdate().catch(failure => setDshError(hostText(failure?.message ?? String(failure))))
    }
@@ -2518,7 +2518,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
            : t('You have {version}.', { version: update.current })),
          message ? h('div', { className: 'bt-update-error', role: 'alert' }, t('The update did not finish: {reason}', { reason: message })) : null,
          h('div', { className: 'bt-update-actions' },
-@@ -372,36 +372,12 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -372,36 +492,12 @@
                  }, dshPhase === 'installing' ? t('Updating…') : dshPhase === 'failed' ? t('Try again') : t('Update')))) : null), document.body) : null)
  }
  
@@ -2559,7 +2559,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
-@@ -442,6 +442,26 @@ export function openHarnessOnboarding(id) {
+@@ -442,6 +538,26 @@
    })
  }
  
@@ -2586,7 +2586,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  function openThroughMenu(trigger) {
    const before = new Set(document.querySelectorAll('[role="menu"]'))
    trigger.click()
-@@ -466,8 +466,12 @@ function pressSettingsShortcut() {
+@@ -466,8 +582,12 @@
    }))
  }
  
@@ -2601,7 +2601,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // `seat` is the shell's settings.launcher seat: at priority -10 the whale wins it
  // over a shell account plugin's own launcher (the Desktop's "··· More"), which comes
  // back in Agent mode; FooterAccount stands in while no seat exists at all.
-@@ -511,9 +511,10 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -511,9 +631,10 @@
    const groups = [
      [
        [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
@@ -2615,7 +2615,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      ],
      [
        [t('Switch to classic Agent mode'), SwitchIcon, () => actions.setSurface('agent')],
-@@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -523,6 +644,7 @@
      h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
        h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
      open && box ? createPortal(h('div', { className: 'bt-menu bt-menu-up bt-account-menu', role: 'menu', 'aria-label': t('Account'), style: box },
@@ -2623,7 +2623,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
        groups.map((group, index) => h(Fragment, { key: index },
          index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
          group.map(([label, Icon, run, hint]) => h('button', {
-@@ -556,7 +556,10 @@ function useLandOnMainBot(roster, useSessions, actions) {
+@@ -556,7 +678,10 @@
        return undefined
      }
      const last = lastBot.current
@@ -2635,7 +2635,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      return () => clearTimeout(timer)
    }, [mainView, roster])
  }
-@@ -572,9 +572,9 @@ export function FooterAccount(props) {
+@@ -572,9 +697,9 @@
  export function BotReturn({ wide, useSurface, actions }) {
    const mode = useSurface(value => value.mode)
    if (mode !== 'agent') return null
@@ -2648,7 +2648,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Agent mode has none of the shell-group styles, so the return button carries its own.
-@@ -582,22 +582,22 @@ export const RETURN_CSS = `
+@@ -582,22 +707,22 @@
  .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
  .bt-return:hover{background:rgba(127,127,127,.14)}
  .bt-return:active{transform:scale(.96)}
@@ -2676,7 +2676,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // shell's footer classes are CSS-module names, so they match on their stems.
  export const SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -623,7 +623,7 @@ export const SIDEBAR_CSS = `
+@@ -623,7 +748,7 @@
  .bt-update[data-phase=installing] .bt-cloud-arrow{animation:bt-cloud-drop 1.1s cubic-bezier(.45,0,.55,1) infinite}
  @keyframes bt-cloud-drop{0%{transform:translateY(-3px);opacity:0}35%{opacity:1}70%{transform:translateY(1px);opacity:1}100%{transform:translateY(2px);opacity:0}}
  .bt-update-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 1.5px var(--bt-sidebar)}
@@ -2685,7 +2685,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
  .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
  .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
-@@ -658,4 +658,14 @@ export const SIDEBAR_CSS = `
+@@ -658,4 +783,14 @@
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
@@ -2703,7 +2703,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 diff --git a/src/client/storage.js b/src/client/storage.js
 --- a/src/client/storage.js
 +++ b/src/client/storage.js
-@@ -5,6 +5,7 @@ export const STORAGE = {
+@@ -5,6 +5,7 @@
    unread: 'ds-bot:unread',
    reactions: 'ds-bot:reactions',
    seen: 'ds-bot:seen',
@@ -2714,7 +2714,7 @@ diff --git a/src/client/storage.js b/src/client/storage.js
 diff --git a/src/client/styles.js b/src/client/styles.js
 --- a/src/client/styles.js
 +++ b/src/client/styles.js
-@@ -20,6 +20,7 @@ ${Object.entries(INKS).map(([name, [, dark]]) => `body[data-ds-dark-theme]{--bt-
+@@ -20,6 +20,7 @@
  .bt-mark{display:inline-block;flex:none;position:relative;line-height:0}
  .bt-mark svg{width:100%;height:100%;overflow:visible}
  .bt-mark-img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;box-shadow:inset 0 0 0 1px var(--bt-line)}
@@ -2722,7 +2722,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-mark .bt-b,.bt-mark .bt-eye,.bt-mark .bt-eyes,.bt-mark .bt-gaze{transform-box:fill-box}
  .bt-mark .bt-b{transform-origin:50% 100%}
  .bt-mark .bt-eye,.bt-mark .bt-eyes{transform-origin:center}
-@@ -38,6 +38,14 @@ body[data-bt-motion=lively] .bt-mark[data-live][data-state=idle][data-fidget=loo
+@@ -38,6 +39,14 @@
  @keyframes bt-fidget-look{0%,22%,100%{transform:none}3%,9%{transform:translateX(-14%)}12%,19%{transform:translateX(14%)}}
  body[data-bt-motion=lively] .bt-badge-alert{right:auto;bottom:auto;left:50%;top:calc(var(--bt-size,36px) * -.14);translate:-50% 0;animation:bt-q-ride 1.3s cubic-bezier(.3,.7,.4,1) infinite}
  body[data-bt-motion=lively] :is(.bt-row,.bt-tile)>.bt-mark:hover .bt-badge-alert{animation:none}
@@ -2737,7 +2737,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  @keyframes bt-q-ride{0%,55%,100%{transform:translateY(0)}20%{transform:translateY(calc(var(--bt-size,36px) * -.14))}40%{transform:translateY(0)}}
  /* Petting: with the pointer on a sidebar avatar or just around it (a ring a fifth of its
     size wide), a resting mark leans into the pointer and keeps nuzzling it, its eyes
-@@ -115,15 +115,23 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -115,15 +124,23 @@
  .bt-side{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;gap:2px;padding:0 12px 8px 0;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-side-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 5px 0 0}
  .bt-brand{display:inline-flex;align-items:center;gap:6px;margin-right:auto;padding:4px 8px 4px 4px;border:0;border-radius:8px;background:none;cursor:pointer;font-family:inherit;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:var(--bt-ink);white-space:nowrap}
@@ -2763,7 +2763,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
  .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
-@@ -132,27 +132,32 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -132,27 +149,32 @@
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2800,7 +2800,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
  .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
  .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
-@@ -174,6 +174,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -174,6 +196,7 @@
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
@@ -2808,7 +2808,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
-@@ -267,6 +267,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -267,6 +290,7 @@
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
  .bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
@@ -2816,7 +2816,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
  .bt-to-label{color:var(--bt-ink-2)}
  .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
-@@ -280,7 +280,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -280,7 +304,9 @@
  .bt-option[aria-selected=true]{background:var(--bt-active)}
  .bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
  .bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2827,7 +2827,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
  .bt-nc-spacer{flex:1}
-@@ -309,6 +309,10 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -309,6 +335,10 @@
  .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
  .bt-send:disabled{opacity:.35;cursor:default}
  .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
@@ -2838,7 +2838,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
-@@ -332,11 +332,11 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -332,11 +362,11 @@
  .bt-soft:hover{background:var(--bt-active)}
  .bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
  
@@ -2852,7 +2852,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-panel-grip{position:absolute;left:-5px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:3;touch-action:none}
  .bt-panel-grip:hover,.bt-panel[data-dragging] .bt-panel-grip{background:linear-gradient(to right,transparent 4px,var(--bt-line-2) 4px,var(--bt-line-2) 6px,transparent 6px)}
  .bt-drag-shield{position:fixed;inset:0;z-index:45;cursor:col-resize}
-@@ -345,6 +345,8 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -345,6 +375,8 @@
  .bt-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
  .bt-drawer-id>.bt-mark,.bt-drawer-id>.bt-cluster{margin-bottom:16px}
  .bt-drawer-name{font-size:17px;line-height:24px;font-weight:500;border:0;background:none;color:inherit;cursor:text;padding:0 6px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2861,7 +2861,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-drawer-name:hover{background:var(--bt-hover)}
  .bt-drawer-name-input{font-size:17px;line-height:24px;text-align:center;border:.5px solid var(--bt-line-2);border-radius:6px;padding:0 6px;background:var(--bt-main);color:var(--bt-ink);outline:none;font-weight:500}
  .bt-drawer-role{font-size:12px;line-height:16px;color:var(--bt-ink-3);margin-top:6px;text-align:center}
-@@ -379,7 +379,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -379,7 +411,7 @@
  .bt-avatar-anchor{position:relative}
  .bt-avatar-trigger{position:relative;width:64px;height:64px;border:0;border-radius:50%;background:none;cursor:pointer;padding:0}
  .bt-avatar-pencil{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;background:var(--bt-main);border:1px solid var(--bt-line-2);color:var(--bt-ink-2);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.12)}
@@ -2870,7 +2870,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-bs .bt-avedit{transform-origin:32px 0}
  .bt-avedit-top{display:flex;align-items:center;justify-content:space-between}
  .bt-avedit-tabs{position:relative;display:flex;gap:2px;background:var(--bt-hover);border-radius:999px;padding:2px}
-@@ -419,9 +419,23 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -419,9 +451,23 @@
  .bt-seg button.bt-perm-danger,.bt-seg button.bt-perm-danger[aria-pressed=true]{color:#e02135}
  
  /* Settings dialog: a 198px page list beside the page. */
@@ -2895,7 +2895,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-settings{--bt-set-w:min(800px,calc(100vw - 48px));--bt-set-h:min(620px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));position:relative;width:var(--bt-set-w);height:var(--bt-set-h);background:var(--bt-main);border-radius:16px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;overflow:hidden;color:var(--bt-ink);transition:${spring(SPRING_SHAPE, 'width', 'height')};animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-settings[data-wide]{--bt-set-w:min(1100px,calc(100vw - 48px));--bt-set-h:min(780px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))))}
  :is(.bt-settings-layer,.bt-mem-layer)[data-leaving]{pointer-events:none}
-@@ -437,6 +437,7 @@ body[data-ds-dark-theme] .bt-scrim{background:rgba(0,0,0,.5)}
+@@ -437,6 +483,7 @@
  .bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
  .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
  .bt-settings-shell{margin-top:auto}
@@ -2903,7 +2903,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
     its layout, and not rendered. */
  .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-@@ -470,13 +470,60 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -470,13 +517,60 @@
  .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
  .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
  .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
@@ -2964,7 +2964,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  /* Settings → Connectors. */
  .bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
-@@ -490,8 +490,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -490,8 +584,17 @@
  .bt-connector-actions{flex:none;display:flex;gap:6px}
  .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-connector-form-row{display:flex;align-items:center;gap:6px}
@@ -2982,7 +2982,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  
  /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
     shell offers them and CSS-module name suffixes elsewhere. */
-@@ -543,7 +543,7 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+@@ -543,7 +646,7 @@
  .bt-tool:hover,.bt-tool[aria-expanded=true]{background:var(--bt-hover);color:var(--bt-ink)}
  .bt-tool:active{background:var(--bt-active)}
  .bt-tool:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
@@ -2991,7 +2991,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-react-strip button{width:32px;height:32px;border:0;border-radius:50%;background:none;font-size:18px;line-height:1;cursor:pointer;transition:background-color .12s ease,${spring(SPRING_POP, 'transform')};animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
  .bt-react-strip button:nth-child(2){animation-delay:20ms}
  .bt-react-strip button:nth-child(3){animation-delay:40ms}
-@@ -562,7 +562,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+@@ -562,7 +665,7 @@
  .bt-you-wrap{display:inline-flex;padding:0}
  .bt-connect-foot{width:100%;height:36px}
  
@@ -3000,7 +3000,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-menu button{display:flex;align-items:center;gap:4px;width:100%;min-height:30px;text-align:left;border:0;background:none;border-radius:6px;padding:6px 8px;font:inherit;font-size:13px;line-height:18px;color:var(--bt-ink);cursor:pointer;box-sizing:border-box}
  .bt-menu button:hover{background:var(--bt-hover)}
  .bt-menu button svg{flex:none;width:16px;height:16px;margin:0 1px}
-@@ -572,7 +572,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+@@ -572,7 +675,7 @@
  .bt-menu[data-leaving]{pointer-events:none;animation:bt-pop-out .12s cubic-bezier(.4,0,1,1) forwards}
  .bt-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-menu-hint{flex:none;color:var(--bt-ink-3);font-size:12px;font-variant-numeric:tabular-nums}
@@ -3009,7 +3009,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46);animation:bt-fade .22s ease-out}
  .bt-palette{position:absolute;top:50%;left:50%;width:min(560px,92vw);transform:translate(-50%,-50%);display:flex;flex-direction:column;border-radius:12px;background:var(--bt-main);border:1px solid var(--bt-line-2);box-shadow:0 24px 48px -12px rgba(0,0,0,.25);overflow:hidden;color:var(--bt-ink);animation:bt-palette-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-palette-layer[data-leaving]{pointer-events:none}
-@@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+@@ -609,7 +712,8 @@
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
  @media (prefers-reduced-motion:reduce){.bt-palette{animation:bt-fade .1s ease-out}}
@@ -3019,7 +3019,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -676,7 +676,7 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -676,7 +780,7 @@
  .bt-mem-row>svg{flex:none;color:var(--bt-ink-2)}
  .bt-mem-row-copy{flex:1;text-align:left}
  .bt-mem-row-go{display:inline-flex;align-items:center;gap:2px;color:var(--bt-ink-3);font-size:12px}
@@ -3028,7 +3028,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
  .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
-@@ -782,6 +782,17 @@ export const CONVERSATION_CSS = `
+@@ -782,6 +886,17 @@
  .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
  .bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
  .bt-think summary::-webkit-details-marker{display:none}
@@ -3046,7 +3046,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
  .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
  .bt-event>span{padding:0 2px}
-@@ -795,7 +795,6 @@ export const CONVERSATION_CSS = `
+@@ -795,7 +910,6 @@
  .bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
  [class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
@@ -3054,7 +3054,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-group-replies{display:contents}
  /* A Bot chat is flat in every work-details mode, without changing the user's mode
     (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -805,21 +805,48 @@ export const CONVERSATION_CSS = `
+@@ -805,21 +919,48 @@
  [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
  :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
  [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
@@ -3111,7 +3111,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
-@@ -829,8 +829,19 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -829,8 +970,19 @@
  [data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
  [data-chat-running]>span:not([role=status]){display:none!important}
  [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
@@ -3131,7 +3131,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
  .bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
  .bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
-@@ -862,7 +862,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -862,7 +1014,8 @@
  @keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
  @keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
  [data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, 'border-radius')}!important}
@@ -3141,7 +3141,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
  [class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
  [class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
-@@ -874,6 +874,8 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -874,6 +1027,8 @@
  [data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
  [data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
  [data-composer-placeholder]{font-size:0!important;line-height:0!important}
@@ -3150,7 +3150,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
  /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
  [data-composer-card] button[class*="_add"]{display:none!important}
-@@ -905,7 +905,9 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -905,7 +1060,9 @@
  .bt-mic:active,.bt-voice:active{scale:.9}
  [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
  body[data-bt-room] .bt-voice{display:none!important}
@@ -3160,7 +3160,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
  [data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
  .bt-q{order:1}
-@@ -959,6 +959,7 @@ div:has(> nav [class*="_marks"]){display:none!important}
+@@ -959,6 +1116,7 @@
  .bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
  .bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
  .bt-urow{display:flex;justify-content:flex-end}
@@ -3184,7 +3184,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
-@@ -28,10 +28,85 @@ export function contentParts(content) {
+@@ -28,10 +30,85 @@
  }
  
  // In a group only its members are called; elsewhere a mention opens that Bot's chat.
@@ -3273,7 +3273,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  }
  
  // Runs of plain text and Bot mentions, in order.
-@@ -43,16 +43,25 @@ export function userTextParts(text, bots, referenceLabels = []) {
+@@ -43,16 +120,25 @@
      if (span.start > cursor) parts.push({ text: text.slice(cursor, span.start) })
      parts.push({ bot: span.bot, label: text.slice(span.start + 1, span.end) })
      cursor = span.end
@@ -3303,7 +3303,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  }
  
  function Attachments({ attachments, renderMessageImages }) {
-@@ -87,11 +87,34 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -87,11 +173,34 @@
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined
    const steering = node.kind === 'steering'
@@ -3340,7 +3340,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
          rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
        referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
      text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
-@@ -99,8 +99,15 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -99,8 +208,15 @@
  
  export const USER_MESSAGE_CSS = `
  .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
@@ -3407,7 +3407,7 @@ diff --git a/test/create-bot.test.js b/test/create-bot.test.js
  })
  
  test('the suggested name skips taken names', () => {
-@@ -27,3 +27,36 @@ test('the suggested name skips taken names', () => {
+@@ -27,3 +45,36 @@
    assert.equal(freshBotName(roster, 'Kimi'), 'Kimi 2')
    assert.equal(freshBotName(roster, 'Writer'), 'Writer')
  })
@@ -3456,7 +3456,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
  import { indexRoster } from '../src/client/sources.js'
  
  const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
-@@ -29,19 +29,135 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
+@@ -29,19 +29,135 @@
    assert.equal(photo.shape, defaultShape('chief'))
  })
  
@@ -3599,7 +3599,7 @@ diff --git a/test/looks.test.js b/test/looks.test.js
 diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 --- a/test/mention-rule.test.js
 +++ b/test/mention-rule.test.js
-@@ -83,9 +83,57 @@ test('the user bubble keeps the text around a mention, and a group only calls it
+@@ -83,9 +83,57 @@
    assert.equal(canDrawUserMessages(), false)
  })
  
@@ -3660,7 +3660,7 @@ diff --git a/test/mention-rule.test.js b/test/mention-rule.test.js
 diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
 --- a/test/turn-tail.test.js
 +++ b/test/turn-tail.test.js
-@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
+@@ -2,6 +2,7 @@
  import { test } from 'node:test'
  import { fileURLToPath } from 'node:url'
  import { runInNewContext } from 'node:vm'
@@ -3668,7 +3668,7 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
  import { build } from 'esbuild'
  
  const bundle = await build({
-@@ -28,7 +28,7 @@ runInNewContext(bundle.outputFiles[0].text, {
+@@ -28,7 +29,7 @@
      return platform[name]
    },
  })
@@ -3677,7 +3677,7 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
  
  // Renders the named components of an element tree, leaving the rest as elements.
  const expand = (node, names) => {
-@@ -101,3 +101,74 @@ test('the turn tail entry notes when the turn ended and shows the pause before t
+@@ -101,3 +102,74 @@
    assert.deepEqual(noted, [['b', 3, 'end', 2_000]])
    assert.equal(find(out, node => node.props?.className === 'bt-time-sep').length, 1)
  })
@@ -3755,7 +3755,7 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
 diff --git a/test/user-bubble.test.js b/test/user-bubble.test.js
 --- a/test/user-bubble.test.js
 +++ b/test/user-bubble.test.js
-@@ -110,3 +110,10 @@ test('the surface wins over the host bubble rule that reads the skin variable',
+@@ -110,3 +110,10 @@
    assert.equal(surface(body), 'var(--bt-user)!important')
    assert.equal(declared(body, 'color'), 'var(--bt-user-ink)!important')
  })

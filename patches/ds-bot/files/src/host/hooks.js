@@ -309,6 +309,9 @@ export function install(rt) {
       on,
     }
   }
+  // The host's own tools write a plugin field through the same path and event a plugin's
+  // `fields.set` uses, so subscribers (the tree, the sidebar) hear it (#638).
+  rt.setBotField = (botId, plugin, key, value) => fieldsFor(plugin).set(botId, key, value)
 
   // ---------------------------------------------------------------- send middleware
   let chain = []

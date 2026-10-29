@@ -717,7 +717,7 @@ const isConnectorTool = name => typeof name === 'string' && /^mcp__(github|compo
 // is listed here. track_links is the same notice on the other home of the report;
 // this tree does not register that name.
 const SILENT_REGISTRATION_TOOLS = new Set([
-  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'list_models',
+  'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
   'bot_schedules',
   'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
   'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',

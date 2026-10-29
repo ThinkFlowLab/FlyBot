@@ -6721,6 +6721,7 @@ var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
   "stop_bot",
   "create_bot",
   "update_bot",
+  "archive_bot",
   "list_models",
   "bot_schedules",
   "create_group",
