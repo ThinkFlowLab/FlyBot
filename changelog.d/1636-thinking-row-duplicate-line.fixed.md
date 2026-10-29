@@ -1,0 +1,1 @@
+An opened thinking row no longer prints its first line twice: the folded row still names a line of its reasoning next to 思考过程, and once you open it that preview steps aside so only the full text below shows the sentence ([#1636](https://github.com/ThinkFlowLab/FlyBot/issues/1636)).

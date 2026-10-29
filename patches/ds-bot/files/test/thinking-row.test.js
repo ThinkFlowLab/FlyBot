@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
@@ -8,7 +9,7 @@ import { build } from 'esbuild'
 // React whose components run as plain functions, as in tool-cells.test.js.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { AssistantCell } from './src/client/cells.js'",
+    contents: "export { AssistantCell } from './src/client/cells.js';\nexport { CONVERSATION_CSS } from './src/client/styles.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -36,7 +37,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { AssistantCell } = module.exports
+const { AssistantCell, CONVERSATION_CSS } = module.exports
 
 const expand = (node) => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
@@ -119,4 +120,19 @@ test('#1624: a step that is still thinking draws no row at all', () => {
 test('#1624: reasoning that is only whitespace draws no row at all', () => {
   const blocks = [think('  \n\t '), { kind: 'text', text: 'Answer' }]
   assert.equal(thinkingRow(render(step(1, blocks), [step(1, blocks)])), undefined)
+})
+
+test('#1636: an opened row hides its preview, so its first line is not printed twice', () => {
+  // The folded row names its reasoning inside the summary (#1624). Opened, the body prints that
+  // same line again, so the open state drops the preview instead of repeating it.
+  const openRules = [...CONVERSATION_CSS.matchAll(/\.bt-think\[open\][^{]*\{[^}]*\}/g)].map(match => match[0])
+  assert.ok(
+    openRules.some(rule => /\.bt-think-peek/.test(rule) && /display:\s*none/.test(rule)),
+    `the opened row hides .bt-think-peek; open-state rules: ${openRules.join(' ') || 'none'}`,
+  )
+  // The app loads the committed bundle, not this source, so the bundle carries the rule too.
+  assert.match(
+    readFileSync(new URL('../client.js', import.meta.url), 'utf8'),
+    /\.bt-think\[open\] \.bt-think-peek\{display:none\}/,
+  )
 })
