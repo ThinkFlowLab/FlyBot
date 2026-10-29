@@ -7707,6 +7707,56 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 @media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
 `;
 
+// src/shared/task-board.js
+var COLUMNS = ["not-started", "in-progress", "done"];
+var PRIORITIES = ["urgent", "high", "normal", "low"];
+var COLUMN_OF = {
+  open: "not-started",
+  claimed: "not-started",
+  working: "in-progress",
+  blocked: "in-progress",
+  "result-ready": "in-progress",
+  accepted: "done",
+  cancelled: "done",
+  failed: "done"
+};
+function columnOf(task) {
+  return COLUMN_OF[task?.status] ?? "not-started";
+}
+function priorityOf(task) {
+  return PRIORITIES.includes(task?.priority) ? task.priority : "normal";
+}
+var PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+function workBucket(task) {
+  if (task?.status === "open" || task?.status === "claimed" || task?.status === "working") return 0;
+  if (task?.status === "blocked" || task?.status === "result-ready") return 1;
+  return 2;
+}
+function compareForWork(a, b) {
+  const byBucket = workBucket(a) - workBucket(b);
+  if (byBucket !== 0) return byBucket;
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
+  if (byPriority !== 0) return byPriority;
+  const byWorking = (a?.status === "working" ? 0 : 1) - (b?.status === "working" ? 0 : 1);
+  if (byWorking !== 0) return byWorking;
+  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
+}
+function sameRole(a, b) {
+  const left = String(a ?? "").trim().toLowerCase();
+  const right = String(b ?? "").trim().toLowerCase();
+  return left !== "" && left === right;
+}
+function compareForQueue(a, b) {
+  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
+  if (byPriority !== 0) return byPriority;
+  return (a?.createdAt ?? 0) - (b?.createdAt ?? 0);
+}
+function progressOf(task) {
+  const value = task?.progress;
+  if (typeof value !== "number" || !Number.isFinite(value)) return columnOf(task) === "done" && task?.status !== "cancelled" && task?.status !== "failed" ? 100 : 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 // src/client/inbox.js
 var import_react13 = require("react");
 var KEEP_MS = 7 * 864e5;
@@ -7975,8 +8025,11 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], n
       if (fresh(task.updatedAt)) needs.push({ ...card, status: "failed", reason: lastWhy(task) });
     } else if (task.status === "result-ready") needs.push({ ...card, status: "result", reason: task.result?.summary ?? "" });
     else if (task.status === "blocked") needs.push({ ...card, status: task.waitingFor === "input" ? "input" : "approval", reason: task.inputRequest?.question ?? "" });
-    else if (task.status === "open" || task.status === "claimed" || task.status === "working") progress.push({ ...card, status: "task", since: task.createdAt });
-    else if ((task.status === "accepted" || task.status === "cancelled") && fresh(task.updatedAt)) done.push({ ...card, status: task.status === "accepted" ? "done" : "cancelled" });
+    else {
+      const column = columnOf(task);
+      if (column === "in-progress") progress.push({ ...card, status: "task", since: startedAtOf(task) });
+      else if (column === "done" && fresh(task.updatedAt)) done.push({ ...card, status: task.status === "cancelled" ? "cancelled" : "done" });
+    }
   }
   for (const graph of Array.isArray(workflows) ? workflows : []) {
     if (graph === null || typeof graph !== "object") continue;
@@ -8027,6 +8080,10 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], n
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
 var needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length;
+function startedAtOf(task) {
+  const started = (task.actors ?? []).filter((actor) => actor.status === "working" && typeof actor.at === "number");
+  return started.length ? started.at(-1).at : task.updatedAt;
+}
 function visibleNeeds(model, answered) {
   return { ...model, needs: model.needs.filter((card) => !answered?.[card.id]) };
 }
@@ -8405,56 +8462,6 @@ var INBOX_CSS = `
 .bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 .bt-inbox-actions .bt-send{height:28px;font-size:12px}
 `;
-
-// src/shared/task-board.js
-var COLUMNS = ["not-started", "in-progress", "done"];
-var PRIORITIES = ["urgent", "high", "normal", "low"];
-var COLUMN_OF = {
-  open: "not-started",
-  claimed: "not-started",
-  working: "in-progress",
-  blocked: "in-progress",
-  "result-ready": "in-progress",
-  accepted: "done",
-  cancelled: "done",
-  failed: "done"
-};
-function columnOf(task) {
-  return COLUMN_OF[task?.status] ?? "not-started";
-}
-function priorityOf(task) {
-  return PRIORITIES.includes(task?.priority) ? task.priority : "normal";
-}
-var PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
-function workBucket(task) {
-  if (task?.status === "open" || task?.status === "claimed" || task?.status === "working") return 0;
-  if (task?.status === "blocked" || task?.status === "result-ready") return 1;
-  return 2;
-}
-function compareForWork(a, b) {
-  const byBucket = workBucket(a) - workBucket(b);
-  if (byBucket !== 0) return byBucket;
-  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
-  if (byPriority !== 0) return byPriority;
-  const byWorking = (a?.status === "working" ? 0 : 1) - (b?.status === "working" ? 0 : 1);
-  if (byWorking !== 0) return byWorking;
-  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
-}
-function sameRole(a, b) {
-  const left = String(a ?? "").trim().toLowerCase();
-  const right = String(b ?? "").trim().toLowerCase();
-  return left !== "" && left === right;
-}
-function compareForQueue(a, b) {
-  const byPriority = (PRIORITY_RANK[priorityOf(a)] ?? 2) - (PRIORITY_RANK[priorityOf(b)] ?? 2);
-  if (byPriority !== 0) return byPriority;
-  return (a?.createdAt ?? 0) - (b?.createdAt ?? 0);
-}
-function progressOf(task) {
-  const value = task?.progress;
-  if (typeof value !== "number" || !Number.isFinite(value)) return columnOf(task) === "done" && task?.status !== "cancelled" && task?.status !== "failed" ? 100 : 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
 
 // src/shared/board-card.js
 function taskCardKey(id) {

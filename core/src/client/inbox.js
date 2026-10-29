@@ -17,6 +17,7 @@ import { alwaysChoices } from './member-status.js'
 import { botNames, currentPart, previewOf, relativeShort } from './text.js'
 import { hostText, t } from './i18n.js'
 import { failureSentence } from '../shared/failure-copy.js'
+import { columnOf } from '../shared/task-board.js'
 
 // Done (and a failed task) ages out after 7 days.
 export const KEEP_MS = 7 * 86_400_000
@@ -292,8 +293,13 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, workflows 
     if (task.status === 'failed') { if (fresh(task.updatedAt)) needs.push({ ...card, status: 'failed', reason: lastWhy(task) }) }
     else if (task.status === 'result-ready') needs.push({ ...card, status: 'result', reason: task.result?.summary ?? '' })
     else if (task.status === 'blocked') needs.push({ ...card, status: task.waitingFor === 'input' ? 'input' : 'approval', reason: task.inputRequest?.question ?? '' })
-    else if (task.status === 'open' || task.status === 'claimed' || task.status === 'working') progress.push({ ...card, status: 'task', since: task.createdAt })
-    else if ((task.status === 'accepted' || task.status === 'cancelled') && fresh(task.updatedAt)) done.push({ ...card, status: task.status === 'accepted' ? 'done' : 'cancelled' })
+    else {
+      // One mapping with the board (#1739): the column is the task row's own status, so the
+      // Inbox never gives a row a state the board does not give it.
+      const column = columnOf(task)
+      if (column === 'in-progress') progress.push({ ...card, status: 'task', since: startedAtOf(task) })
+      else if (column === 'done' && fresh(task.updatedAt)) done.push({ ...card, status: task.status === 'cancelled' ? 'cancelled' : 'done' })
+    }
   }
   // A workflow run that failed (#1706). The plugin keeps that failure in its own
   // state, so the Inbox reads it from the same pack the Workflows page gets. One
@@ -358,6 +364,13 @@ export const needsCount = (roster, work, tasks, now, workflows = []) => inboxMod
 
 // Cards the owner already answered leave the Needs you list. The dialog keeps that
 // set until the next roster poll drops the underlying record.
+// A task card's age is the row's own clock (#1739): the moment the row entered working,
+// never the wall clock and never its creation, so a row that never started carries no age.
+function startedAtOf(task) {
+  const started = (task.actors ?? []).filter(actor => actor.status === 'working' && typeof actor.at === 'number')
+  return started.length ? started.at(-1).at : task.updatedAt
+}
+
 export function visibleNeeds(model, answered) {
   return { ...model, needs: model.needs.filter(card => !answered?.[card.id]) }
 }
