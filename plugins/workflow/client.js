@@ -691,6 +691,7 @@ window.__ModuleLoader__.load({
     const FLOW_PAR_PAD = 10
     const FLOW_PAR_LABEL = 28
     const FLOW_NODE_MIN_W = 96
+    const FLOW_WRAP_GAP = 12
     function flowRows(workflow) {
       const nodes = (workflow?.nodes ?? []).filter(node => node && typeof node.id === 'string')
       const ids = new Set(nodes.map(node => node.id))
@@ -714,22 +715,39 @@ window.__ModuleLoader__.load({
       rows.forEach((row, index) => {
         const par = row.length > 1
         const inner = width - FIT_PAD * 2 - (par ? FLOW_PAR_PAD * 2 : 0)
-        const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (row.length - 1)) / row.length)))
-        const total = w * row.length + FLOW_GAP_X * (row.length - 1)
-        const start = Math.round(width / 2 - total / 2)
+        // A layer wider than the plane wraps onto more lines inside the same frame
+        // instead of running past the panel edge, where the clipped branches cannot
+        // be reached at all (#1658). The column count comes from the width, so a
+        // 3-branch layer in a 400px drawer keeps one line.
+        const columns = Math.max(1, Math.min(row.length, Math.floor((inner + FLOW_GAP_X) / (FLOW_NODE_MIN_W + FLOW_GAP_X))))
+        const perLine = Math.ceil(row.length / Math.ceil(row.length / columns))
+        const lines = []
+        for (let at = 0; at < row.length; at += perLine) lines.push(row.slice(at, at + perLine))
         const top = y + (par ? FLOW_PAR_LABEL : 0)
-        let rowH = 0
-        row.forEach((id, column) => {
-          const hgt = Math.max(24, Number(heights?.[id]) || NODE_H)
-          rowH = Math.max(rowH, hgt)
-          const left = start + column * (w + FLOW_GAP_X)
-          boxes.set(id, { id, row: index, left, top, w, h: hgt, x: left + w / 2 })
+        let cursor = top
+        let leftEdge = width
+        let rightEdge = 0
+        lines.forEach((line, lineIndex) => {
+          const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (line.length - 1)) / line.length)))
+          const total = w * line.length + FLOW_GAP_X * (line.length - 1)
+          const start = Math.round(width / 2 - total / 2)
+          let lineH = 0
+          line.forEach((id, column) => {
+            const hgt = Math.max(24, Number(heights?.[id]) || NODE_H)
+            lineH = Math.max(lineH, hgt)
+            const left = start + column * (w + FLOW_GAP_X)
+            boxes.set(id, { id, row: index, left, top: cursor, w, h: hgt, x: left + w / 2 })
+          })
+          leftEdge = Math.min(leftEdge, start)
+          rightEdge = Math.max(rightEdge, start + total)
+          cursor += lineH + (lineIndex < lines.length - 1 ? FLOW_WRAP_GAP : 0)
         })
-        const bottom = top + rowH + (par ? FLOW_PAR_PAD : 0)
-        // The label rides the frame's top border; with two branches it fits between
-        // the two drops so no wire runs through it.
-        const labelMax = row.length === 2 ? w + FLOW_GAP_X - 16 : total
-        if (par) frames.push({ key: row.join('+'), left: start - FLOW_PAR_PAD, top: y, width: total + FLOW_PAR_PAD * 2, height: bottom - y, labelMax })
+        const bottom = cursor + (par ? FLOW_PAR_PAD : 0)
+        const span = rightEdge - leftEdge
+        // The label rides the frame's top border; with two branches one line, it fits
+        // between the two drops so no wire runs through it.
+        const labelMax = lines.length === 1 && row.length === 2 ? span + FLOW_GAP_X - 16 : span
+        if (par) frames.push({ key: row.join('+'), left: leftEdge - FLOW_PAR_PAD, top: y, width: span + FLOW_PAR_PAD * 2, height: bottom - y, labelMax })
         bands.push({ top: y, bottom })
         y = bottom + FLOW_ROW_GAP
       })
