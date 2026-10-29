@@ -961,8 +961,11 @@ export function createWorkflowService({
         Object.keys(state.routes).forEach(taskId => {
           if (state.routes[taskId]?.id === workflowId) delete state.routes[taskId]
         })
+        // #1632: a claim is judged on its own record. The routes above are gone
+        // by now, and a claim and a route do not hold the same keys anyway.
         Object.keys(state.claims ?? {}).forEach(taskId => {
-          if (state.routes[taskId]?.id === workflowId) delete state.claims[taskId]
+          const claim = state.claims[taskId]
+          if (claim?.kind === 'workflow' && claim.id === workflowId) delete state.claims[taskId]
         })
         write()
         return present()
@@ -1711,6 +1714,13 @@ function migrateRuns(state) {
   // the store's only record of those Bots, so an upgrade keeps them (deduped and
   // capped) and reap() retries them afterwards.
   noteOrphans(state, [])
+  // #1632: a store written while delete() left its claims behind holds claims
+  // for workflows that no longer exist, and ingest() would trust them forever.
+  for (const [taskId, claim] of Object.entries(state.claims)) {
+    if (claim?.kind === 'workflow' && !(state.workflows ?? []).some(item => item?.id === claim.id)) {
+      delete state.claims[taskId]
+    }
+  }
   if (state.laneFormat === true) return
   for (const [id, run] of Object.entries(state.runs ?? {})) {
     if (!run || typeof run !== 'object' || state.lanes[id]) continue
