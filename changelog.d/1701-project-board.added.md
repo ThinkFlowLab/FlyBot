@@ -1,0 +1,1 @@
+A read-only **Project** view on the task board: one row per active Project in the rail, over the Project record and its Bot/group bindings, with **In flight**, **Waiting on you** and **Delivered today** columns drawn from the same task records the per-Bot board already reads ([#1701](https://github.com/ThinkFlowLab/FlyBot/issues/1701)).

@@ -1,6 +1,7 @@
 // Per-Bot task board (#1058). The records are the task list in src/host/tasks.js.
 // This is not the Agent inbox's board (#471): Inbox stays a list of what needs the
-// owner. Tasks opens one Bot's board, a child of that Bot, or a group an admin can see.
+// owner. Tasks opens one Bot's board, a child of that Bot, a group an admin can see,
+// or a read-only Project board (#1701) over that same task read.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { columnOf, priorityOf, progressOf } from '../shared/task-board.js'
 import { taskCard } from '../shared/board-card.js'
@@ -39,6 +40,43 @@ export function boardColumns(tasks) {
   for (const task of tasks ?? []) {
     const column = columnOf(task)
     ;(columns[column] ?? columns['not-started']).push(task)
+  }
+  for (const list of Object.values(columns)) list.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  return columns
+}
+
+// Project scope, slice 1 (#1701). The identity is the durable Project record (#1695): a Bot or a
+// group names a project on its own record and the roster already carries `projectId`, so the board
+// only narrows the one task read — no second store, no new endpoint, no second identity. This is the
+// single place that turns a project id into the members it holds.
+export function projectScope(projectId, roster) {
+  const botIds = new Set()
+  const roomIds = new Set()
+  if (!projectId) return { botIds, roomIds }
+  for (const bot of roster?.bots ?? []) if (bot?.projectId === projectId) botIds.add(bot.id)
+  for (const room of roster?.rooms ?? []) if (room?.projectId === projectId) roomIds.add(room.id)
+  return { botIds, roomIds }
+}
+
+function inProject(task, scope) {
+  if (!scope) return false
+  if (task?.ownerBotId && scope.botIds.has(task.ownerBotId)) return true
+  const roomId = task?.origin?.roomId
+  return Boolean(roomId && scope.roomIds.has(roomId))
+}
+
+// The window "Delivered today" reads. A finished card older than this is history, not today.
+export const DELIVERED_MS = 24 * 60 * 60 * 1000
+
+// The Project board's three columns are the task lifecycle, not the per-Bot board's drop targets,
+// and they are disjoint: one card lands in exactly one of them, or in none (done, older than a day).
+export function projectColumns(tasks, now = Date.now()) {
+  const columns = { inFlight: [], waiting: [], delivered: [] }
+  for (const task of tasks ?? []) {
+    const status = task?.status
+    if (status === 'open' || status === 'claimed' || status === 'working') columns.inFlight.push(task)
+    else if (status === 'result-ready' || (status === 'blocked' && task.waitingFor === 'input')) columns.waiting.push(task)
+    else if (status === 'accepted' && typeof task.updatedAt === 'number' && now - task.updatedAt <= DELIVERED_MS) columns.delivered.push(task)
   }
   for (const list of Object.values(columns)) list.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   return columns
@@ -163,11 +201,12 @@ function lanesOf(tasks, roster) {
 const upsert = (list, task) => (list.some(item => item.id === task.id) ? list.map(item => item.id === task.id ? task : item) : [...list, task])
 const without = (list, id) => list.filter(item => item.id !== id)
 
-export function useBoardTasks(actions, scope) {
+export function useBoardTasks(actions, scope, roster) {
   const [own, setOwn] = useState([])
   const [groupTasks, setGroupTasks] = useState([])
   const [archive, setArchive] = useState([])
-  const key = scope?.kind === 'group' ? `group:${scope.roomId}` : 'own'
+  const [projects, setProjects] = useState([])
+  const key = scope?.kind === 'group' ? `group:${scope.roomId}` : scope?.kind === 'project' ? `project:${scope.projectId}` : 'own'
   useEffect(() => {
     let stopped = false
     const load = () => {
@@ -191,12 +230,32 @@ export function useBoardTasks(actions, scope) {
         if (stopped || !Array.isArray(list)) return
         setArchive(list.filter(task => columnOf(task) === 'done'))
       }).catch(() => undefined)
+      // The Project record itself is the only extra read (#1701); a host without the endpoint keeps
+      // the last list, so a Bot board never depends on it.
+      void Promise.resolve(actions?.projects?.()).then((value) => {
+        if (stopped) return
+        const list = Array.isArray(value?.projects) ? value.projects : Array.isArray(value) ? value : []
+        setProjects(list)
+      }).catch(() => undefined)
     }
     load()
     const timer = setInterval(load, POLL_MS)
     return () => { stopped = true; clearInterval(timer) }
   }, [key])
-  const tasks = scope?.kind === 'group' ? groupTasks : own.filter(task => !scope?.botId || task.ownerBotId === scope.botId)
+  // The rail rows: an active Project that holds at least one bound Bot or group. A Project with no
+  // member is not offered, and an unbound install shows no Project row at all (#1701 fallback).
+  const projectRows = (projects ?? []).flatMap((project) => {
+    if (!project || (project.status !== undefined && project.status !== 'active')) return []
+    const members = projectScope(project.id, roster)
+    const memberCount = members.botIds.size + members.roomIds.size
+    return memberCount > 0 ? [{ kind: 'project', id: project.id, name: project.name ?? project.id, memberCount }] : []
+  })
+  const projectSet = scope?.kind === 'project' ? projectScope(scope.projectId, roster) : null
+  const tasks = scope?.kind === 'group'
+    ? groupTasks
+    : scope?.kind === 'project'
+      ? own.filter(task => inProject(task, projectSet))
+      : own.filter(task => !scope?.botId || task.ownerBotId === scope.botId)
   // A finished card moves off the active list into the archive immediately, before the next poll.
   const replace = (task) => {
     const done = columnOf(task) === 'done'
@@ -204,8 +263,12 @@ export function useBoardTasks(actions, scope) {
     else setOwn(list => done ? without(list, task.id) : upsert(list, task))
     setArchive(list => done ? [task, ...without(list, task.id)] : without(list, task.id))
   }
-  const done = scope?.kind === 'group' ? archive : archive.filter(task => !scope?.botId || task.ownerBotId === scope.botId)
-  return { own, tasks, archive: done, replace }
+  const done = scope?.kind === 'group'
+    ? archive
+    : scope?.kind === 'project'
+      ? archive.filter(task => inProject(task, projectSet))
+      : archive.filter(task => !scope?.botId || task.ownerBotId === scope.botId)
+  return { own, tasks, archive: done, replace, projects: projectRows }
 }
 
 function RailButton({ row, selected, meta, onSelect }) {
@@ -217,7 +280,11 @@ function RailButton({ row, selected, meta, onSelect }) {
     'data-selected': selected || undefined,
     'aria-current': selected ? 'true' : undefined,
     style: row.depth ? { paddingLeft: `${10 + row.depth * 14}px` } : undefined,
-    onClick: () => onSelect(row.kind === 'group' ? { kind: 'group', roomId: row.id } : { kind: 'bot', botId: row.id }),
+    onClick: () => onSelect(row.kind === 'group'
+      ? { kind: 'group', roomId: row.id }
+      : row.kind === 'project'
+        ? { kind: 'project', projectId: row.id }
+        : { kind: 'bot', botId: row.id }),
   },
   h('span', { className: 'bt-board-rail-name' }, row.name),
   meta ? h('span', { className: 'bt-board-rail-meta' }, meta) : null)
@@ -274,8 +341,29 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   })
 }
 
-function cardProps(task, roster, onMove, onDrag, partOf) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf }
+function cardProps(task, roster, onMove, onDrag, partOf, readOnly = false) {
+  return {
+    task,
+    roster,
+    movable: readOnly ? false : canMoveTask(roster, task),
+    onMove: readOnly ? undefined : onMove,
+    onDrag: readOnly ? undefined : onDrag,
+    partOf,
+  }
+}
+
+// A Project column (#1701): the same card, no drop target and no move action — slice 1 is a read.
+function ProjectColumn({ column, title, tasks, roster }) {
+  return h('section', {
+    className: 'bt-board-column',
+    'data-project-column': column,
+    'aria-label': title,
+  },
+  h('h3', { className: 'bt-board-column-head' },
+    h('span', null, title),
+    h('span', { className: 'bt-board-count' }, String(tasks.length))),
+  tasks.length === 0 ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.')) : null,
+  tasks.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, undefined, undefined, '', true) })))
 }
 
 function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
@@ -312,12 +400,19 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
 }
 
 export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const columns = boardColumns(tasks)
+  const project = scope?.kind === 'project' ? scope.projectId : ''
+  const columns = project ? projectColumns(tasks) : boardColumns(tasks)
   const lanes = scope?.kind === 'group'
   const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
   const selectedRoom = scope?.kind === 'group' ? scope.roomId : ''
+  const projectRows = rail.projects ?? []
   return h('div', { className: 'bt-board-body' },
     h('aside', { className: 'bt-board-rail', 'aria-label': t('Task board') },
+      projectRows.length > 0 ? h('h3', { className: 'bt-board-rail-head' }, t('Project')) : null,
+      projectRows.map(row => h(RailButton, {
+        key: row.id, row, selected: row.id === project, onSelect,
+        meta: t('{count} members', { count: row.memberCount }),
+      })),
       h('h3', { className: 'bt-board-rail-head' }, t('Your Bots')),
       rail.bots.length === 0 ? h('p', { className: 'bt-board-empty' }, t('No tasks yet.')) : rail.bots.map(row => {
         const count = counts?.[row.id] ?? { done: 0, total: 0 }
@@ -335,9 +430,13 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
         h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
       h('div', { className: 'bt-board-columns' },
-        ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
-          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag,
-        })))))
+        project
+          ? [['inFlight', t('In flight')], ['waiting', t('Waiting on you')], ['delivered', t('Delivered today')]].map(([column, title]) => h(ProjectColumn, {
+            key: column, column, title, tasks: columns[column], roster,
+          }))
+          : ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
+            key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag,
+          })))))
 }
 
 export function KanbanRow({ wide, useUi, actions }) {
@@ -351,20 +450,22 @@ export function KanbanRow({ wide, useUi, actions }) {
   wide ? h('span', { className: 'bt-board-label' }, label) : null)
 }
 
-function scopeName(roster, scope) {
+function scopeName(roster, scope, projects) {
   if (scope?.kind === 'group') return roster.roomsById?.[scope.roomId]?.name || t('Group')
   if (scope?.kind === 'bot') return roster.byId?.[scope.botId]?.name || ''
+  if (scope?.kind === 'project') return (projects ?? []).find(row => row.id === scope.projectId)?.name ?? ''
   return ''
 }
 
 export function KanbanDialog({ roster, actions, leaving = false }) {
   // Per-Bot task board. The GitHub metrics panel is not part of this dialog (#1363).
-  const rail = boardRail(roster)
-  const [scope, setScope] = useState(() => (rail.bots[0] ? { kind: 'bot', botId: rail.bots[0].id } : rail.groups[0] ? { kind: 'group', roomId: rail.groups[0].id } : null))
+  const baseRail = boardRail(roster)
+  const [scope, setScope] = useState(() => (baseRail.bots[0] ? { kind: 'bot', botId: baseRail.bots[0].id } : baseRail.groups[0] ? { kind: 'group', roomId: baseRail.groups[0].id } : null))
   const [dragging, setDragging] = useState(null)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
-  const { own, tasks, archive, replace } = useBoardTasks(actions, scope)
+  const { own, tasks, archive, replace, projects: projectRows } = useBoardTasks(actions, scope, roster)
+  const rail = { ...baseRail, projects: projectRows }
   const boardTasks = boardTasksFor(tasks, archive)
   const close = useCallback(() => actions.closeBoard(), [])
   useEscape(close)
@@ -377,6 +478,8 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     if (columnOf(task) === 'done') bucket.done += 1
   }
   const move = async (id, column) => {
+    // A Project board is read-only in slice 1 (#1701): no column move, no drag.
+    if (scope?.kind === 'project') return
     const task = tasks.find(item => item.id === id) ?? own.find(item => item.id === id)
     if (!task || !canMoveTask(roster, task) || columnOf(task) === column) return
     setError('')
@@ -397,7 +500,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
       setError(failure?.message ?? String(failure))
     }
   }
-  const name = scopeName(roster, scope)
+  const name = scopeName(roster, scope, rail.projects)
   return h('div', { className: 'bt-mem-layer bt-board-layer', 'data-leaving': leaving || undefined },
     h('div', { className: 'bt-scrim', onClick: close }),
     h('div', { className: 'bt-mem bt-board', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'bt-board-heading' },

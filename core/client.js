@@ -751,6 +751,11 @@ var ZH = {
   "Inbox, {count} need you": "收件箱，{count} 项需要你",
   "Close inbox": "关闭收件箱",
   "Your Bots": "你的 Bot",
+  // Project board (#1701)
+  Project: "项目",
+  "In flight": "进行中",
+  "Waiting on you": "等你处理",
+  "Delivered today": "今日交付",
   "Needs you": "需要你",
   "In progress": "进行中",
   "Nothing needs you right now.": "现在没有需要你处理的事。",
@@ -8556,6 +8561,32 @@ function boardColumns(tasks) {
   for (const list of Object.values(columns)) list.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   return columns;
 }
+function projectScope(projectId, roster) {
+  const botIds = /* @__PURE__ */ new Set();
+  const roomIds = /* @__PURE__ */ new Set();
+  if (!projectId) return { botIds, roomIds };
+  for (const bot of roster?.bots ?? []) if (bot?.projectId === projectId) botIds.add(bot.id);
+  for (const room2 of roster?.rooms ?? []) if (room2?.projectId === projectId) roomIds.add(room2.id);
+  return { botIds, roomIds };
+}
+function inProject(task, scope) {
+  if (!scope) return false;
+  if (task?.ownerBotId && scope.botIds.has(task.ownerBotId)) return true;
+  const roomId = task?.origin?.roomId;
+  return Boolean(roomId && scope.roomIds.has(roomId));
+}
+var DELIVERED_MS = 24 * 60 * 60 * 1e3;
+function projectColumns(tasks, now = Date.now()) {
+  const columns = { inFlight: [], waiting: [], delivered: [] };
+  for (const task of tasks ?? []) {
+    const status = task?.status;
+    if (status === "open" || status === "claimed" || status === "working") columns.inFlight.push(task);
+    else if (status === "result-ready" || status === "blocked" && task.waitingFor === "input") columns.waiting.push(task);
+    else if (status === "accepted" && typeof task.updatedAt === "number" && now - task.updatedAt <= DELIVERED_MS) columns.delivered.push(task);
+  }
+  for (const list of Object.values(columns)) list.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  return columns;
+}
 function columnTree(tasks) {
   const ids = new Set((tasks ?? []).map((task) => task.id));
   const childrenOf = /* @__PURE__ */ new Map();
@@ -8669,11 +8700,12 @@ function lanesOf(tasks, roster) {
 }
 var upsert = (list, task) => list.some((item) => item.id === task.id) ? list.map((item) => item.id === task.id ? task : item) : [...list, task];
 var without = (list, id) => list.filter((item) => item.id !== id);
-function useBoardTasks(actions, scope) {
+function useBoardTasks(actions, scope, roster) {
   const [own, setOwn] = (0, import_react15.useState)([]);
   const [groupTasks, setGroupTasks] = (0, import_react15.useState)([]);
   const [archive, setArchive] = (0, import_react15.useState)([]);
-  const key = scope?.kind === "group" ? `group:${scope.roomId}` : "own";
+  const [projects, setProjects] = (0, import_react15.useState)([]);
+  const key = scope?.kind === "group" ? `group:${scope.roomId}` : scope?.kind === "project" ? `project:${scope.projectId}` : "own";
   (0, import_react15.useEffect)(() => {
     let stopped = false;
     const load = () => {
@@ -8689,6 +8721,11 @@ function useBoardTasks(actions, scope) {
         if (stopped || !Array.isArray(list)) return;
         setArchive(list.filter((task) => columnOf(task) === "done"));
       }).catch(() => void 0);
+      void Promise.resolve(actions?.projects?.()).then((value) => {
+        if (stopped) return;
+        const list = Array.isArray(value?.projects) ? value.projects : Array.isArray(value) ? value : [];
+        setProjects(list);
+      }).catch(() => void 0);
     };
     load();
     const timer = setInterval(load, POLL_MS3);
@@ -8697,15 +8734,22 @@ function useBoardTasks(actions, scope) {
       clearInterval(timer);
     };
   }, [key]);
-  const tasks = scope?.kind === "group" ? groupTasks : own.filter((task) => !scope?.botId || task.ownerBotId === scope.botId);
+  const projectRows = (projects ?? []).flatMap((project) => {
+    if (!project || project.status !== void 0 && project.status !== "active") return [];
+    const members = projectScope(project.id, roster);
+    const memberCount2 = members.botIds.size + members.roomIds.size;
+    return memberCount2 > 0 ? [{ kind: "project", id: project.id, name: project.name ?? project.id, memberCount: memberCount2 }] : [];
+  });
+  const projectSet = scope?.kind === "project" ? projectScope(scope.projectId, roster) : null;
+  const tasks = scope?.kind === "group" ? groupTasks : scope?.kind === "project" ? own.filter((task) => inProject(task, projectSet)) : own.filter((task) => !scope?.botId || task.ownerBotId === scope.botId);
   const replace = (task) => {
     const done2 = columnOf(task) === "done";
     if (scope?.kind === "group") setGroupTasks((list) => done2 ? without(list, task.id) : upsert(list, task));
     else setOwn((list) => done2 ? without(list, task.id) : upsert(list, task));
     setArchive((list) => done2 ? [task, ...without(list, task.id)] : without(list, task.id));
   };
-  const done = scope?.kind === "group" ? archive : archive.filter((task) => !scope?.botId || task.ownerBotId === scope.botId);
-  return { own, tasks, archive: done, replace };
+  const done = scope?.kind === "group" ? archive : scope?.kind === "project" ? archive.filter((task) => inProject(task, projectSet)) : archive.filter((task) => !scope?.botId || task.ownerBotId === scope.botId);
+  return { own, tasks, archive: done, replace, projects: projectRows };
 }
 function RailButton({ row, selected, meta, onSelect }) {
   return (0, import_react15.createElement)(
@@ -8718,7 +8762,7 @@ function RailButton({ row, selected, meta, onSelect }) {
       "data-selected": selected || void 0,
       "aria-current": selected ? "true" : void 0,
       style: row.depth ? { paddingLeft: `${10 + row.depth * 14}px` } : void 0,
-      onClick: () => onSelect(row.kind === "group" ? { kind: "group", roomId: row.id } : { kind: "bot", botId: row.id })
+      onClick: () => onSelect(row.kind === "group" ? { kind: "group", roomId: row.id } : row.kind === "project" ? { kind: "project", projectId: row.id } : { kind: "bot", botId: row.id })
     },
     (0, import_react15.createElement)("span", { className: "bt-board-rail-name" }, row.name),
     meta ? (0, import_react15.createElement)("span", { className: "bt-board-rail-meta" }, meta) : null
@@ -8777,8 +8821,33 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
     onDragEnd: () => onDrag?.(null)
   });
 }
-function cardProps(task, roster, onMove, onDrag, partOf2) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
+function cardProps(task, roster, onMove, onDrag, partOf2, readOnly = false) {
+  return {
+    task,
+    roster,
+    movable: readOnly ? false : canMoveTask(roster, task),
+    onMove: readOnly ? void 0 : onMove,
+    onDrag: readOnly ? void 0 : onDrag,
+    partOf: partOf2
+  };
+}
+function ProjectColumn({ column, title, tasks, roster }) {
+  return (0, import_react15.createElement)(
+    "section",
+    {
+      className: "bt-board-column",
+      "data-project-column": column,
+      "aria-label": title
+    },
+    (0, import_react15.createElement)(
+      "h3",
+      { className: "bt-board-column-head" },
+      (0, import_react15.createElement)("span", null, title),
+      (0, import_react15.createElement)("span", { className: "bt-board-count" }, String(tasks.length))
+    ),
+    tasks.length === 0 ? (0, import_react15.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : null,
+    tasks.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, void 0, void 0, "", true) }))
+  );
 }
 function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
   const tree = lanes ? columnTree(tasks) : null;
@@ -8829,16 +8898,26 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
   );
 }
 function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
-  const columns = boardColumns(tasks);
+  const project = scope?.kind === "project" ? scope.projectId : "";
+  const columns = project ? projectColumns(tasks) : boardColumns(tasks);
   const lanes = scope?.kind === "group";
   const selectedBot = scope?.kind === "bot" ? scope.botId : "";
   const selectedRoom = scope?.kind === "group" ? scope.roomId : "";
+  const projectRows = rail.projects ?? [];
   return (0, import_react15.createElement)(
     "div",
     { className: "bt-board-body" },
     (0, import_react15.createElement)(
       "aside",
       { className: "bt-board-rail", "aria-label": t("Task board") },
+      projectRows.length > 0 ? (0, import_react15.createElement)("h3", { className: "bt-board-rail-head" }, t("Project")) : null,
+      projectRows.map((row) => (0, import_react15.createElement)(RailButton, {
+        key: row.id,
+        row,
+        selected: row.id === project,
+        onSelect,
+        meta: t("{count} members", { count: row.memberCount })
+      })),
       (0, import_react15.createElement)("h3", { className: "bt-board-rail-head" }, t("Your Bots")),
       rail.bots.length === 0 ? (0, import_react15.createElement)("p", { className: "bt-board-empty" }, t("No tasks yet.")) : rail.bots.map((row) => {
         const count = counts2?.[row.id] ?? { done: 0, total: 0 };
@@ -8870,7 +8949,13 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
       (0, import_react15.createElement)(
         "div",
         { className: "bt-board-columns" },
-        ["not-started", "in-progress", "done"].map((column) => (0, import_react15.createElement)(BoardColumn, {
+        project ? [["inFlight", t("In flight")], ["waiting", t("Waiting on you")], ["delivered", t("Delivered today")]].map(([column, title]) => (0, import_react15.createElement)(ProjectColumn, {
+          key: column,
+          column,
+          title,
+          tasks: columns[column],
+          roster
+        })) : ["not-started", "in-progress", "done"].map((column) => (0, import_react15.createElement)(BoardColumn, {
           key: column,
           column,
           tasks: columns[column],
@@ -8902,18 +8987,20 @@ function KanbanRow({ wide, useUi, actions }) {
     wide ? (0, import_react15.createElement)("span", { className: "bt-board-label" }, label) : null
   );
 }
-function scopeName(roster, scope) {
+function scopeName(roster, scope, projects) {
   if (scope?.kind === "group") return roster.roomsById?.[scope.roomId]?.name || t("Group");
   if (scope?.kind === "bot") return roster.byId?.[scope.botId]?.name || "";
+  if (scope?.kind === "project") return (projects ?? []).find((row) => row.id === scope.projectId)?.name ?? "";
   return "";
 }
 function KanbanDialog({ roster, actions, leaving = false }) {
-  const rail = boardRail(roster);
-  const [scope, setScope] = (0, import_react15.useState)(() => rail.bots[0] ? { kind: "bot", botId: rail.bots[0].id } : rail.groups[0] ? { kind: "group", roomId: rail.groups[0].id } : null);
+  const baseRail = boardRail(roster);
+  const [scope, setScope] = (0, import_react15.useState)(() => baseRail.bots[0] ? { kind: "bot", botId: baseRail.bots[0].id } : baseRail.groups[0] ? { kind: "group", roomId: baseRail.groups[0].id } : null);
   const [dragging, setDragging] = (0, import_react15.useState)(null);
   const [error, setError] = (0, import_react15.useState)("");
   const [draft, setDraft] = (0, import_react15.useState)("");
-  const { own, tasks, archive, replace } = useBoardTasks(actions, scope);
+  const { own, tasks, archive, replace, projects: projectRows } = useBoardTasks(actions, scope, roster);
+  const rail = { ...baseRail, projects: projectRows };
   const boardTasks = boardTasksFor(tasks, archive);
   const close = (0, import_react15.useCallback)(() => actions.closeBoard(), []);
   useEscape(close);
@@ -8926,6 +9013,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
     if (columnOf(task) === "done") bucket.done += 1;
   }
   const move = async (id, column) => {
+    if (scope?.kind === "project") return;
     const task = tasks.find((item) => item.id === id) ?? own.find((item) => item.id === id);
     if (!task || !canMoveTask(roster, task) || columnOf(task) === column) return;
     setError("");
@@ -8946,7 +9034,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
       setError(failure?.message ?? String(failure));
     }
   };
-  const name = scopeName(roster, scope);
+  const name = scopeName(roster, scope, rail.projects);
   return (0, import_react15.createElement)(
     "div",
     { className: "bt-mem-layer bt-board-layer", "data-leaving": leaving || void 0 },
@@ -20588,6 +20676,8 @@ function apply(ctx) {
     setBotConnector: (botId, connector, enabled) => after(call("bot-connectors", { botId, connector, enabled })),
     setBotCapability: (botId, name, attached) => after(call("bot-capability", { botId, name, attached })),
     tasks: (payload) => call("tasks", payload ?? {}),
+    // The Project record and its bindings (#1691); the board reads the list to name its rail (#1701).
+    projects: () => call("projects"),
     taskUpdate: (payload) => call("task-update", payload),
     taskCreate: (payload) => call("task-create", payload),
     schedules: () => call("schedules"),

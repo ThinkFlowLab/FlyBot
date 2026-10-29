@@ -695,6 +695,11 @@ const ZH = {
   'Inbox, {count} need you': '收件箱，{count} 项需要你',
   'Close inbox': '关闭收件箱',
   'Your Bots': '你的 Bot',
+  // Project board (#1701)
+  Project: '项目',
+  'In flight': '进行中',
+  'Waiting on you': '等你处理',
+  'Delivered today': '今日交付',
   'Needs you': '需要你',
   'In progress': '进行中',
   'Nothing needs you right now.': '现在没有需要你处理的事。',
