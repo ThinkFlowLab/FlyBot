@@ -1412,6 +1412,17 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
+@@ -837,7 +1305,10 @@
+   'Use this folder': '使用这个文件夹',
+   'Up one level': '上一级',
+   'No folders inside.': '里面没有文件夹。',
+   'Some folders are not shown.': '还有一些文件夹没有显示。',
++  'Project settings': '项目设置',
++  'Project board': '项目看板',
++  'No Project here.': '这里没有项目。',
+ }
+ 
+ // Host errors stay English, since Bots read them too; they are translated where the
 @@ -853,8 +853,11 @@ const HOST_ERRORS = [
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],

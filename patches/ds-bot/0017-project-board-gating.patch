@@ -3,7 +3,19 @@ FlyBot patch 0017-project-board-gating on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/)
 diff --git a/client.js b/client.js
 --- a/client.js
 +++ b/client.js
-@@ -1438,7 +1438,7 @@
+@@ -1352,7 +1352,10 @@
+   "Use this folder": "使用这个文件夹",
+   "Up one level": "上一级",
+   "No folders inside.": "里面没有文件夹。",
+-  "Some folders are not shown.": "还有一些文件夹没有显示。"
++  "Some folders are not shown.": "还有一些文件夹没有显示。",
++  "Project settings": "项目设置",
++  "Project board": "项目看板",
++  "No Project here.": "这里没有项目。"
+ };
+ var HOST_ERRORS = [
+   [/^Model (.+) is not available\. Available: (.*)$/, "模型 $1 不可用。可用的：$2"],
+@@ -1438,7 +1441,7 @@
    "saved by a newer FlyBot; update FlyBot": "由更新的 FlyBot 保存；请更新 FlyBot"
  };
  Object.assign(ZH, HOST_ZH);
@@ -12,7 +24,7 @@ diff --git a/client.js b/client.js
  var service = null;
  var bound = null;
  function installLocale(locale) {
-@@ -1489,23 +1489,23 @@
+@@ -1489,23 +1492,23 @@
    }
    const message = String(error?.message ?? error ?? "error").slice(0, 300);
    const code = typeof error?.code === "string" ? error.code : void 0;
@@ -42,7 +54,7 @@ diff --git a/client.js b/client.js
    if (entries.length > MAX) entries.splice(0, entries.length - MAX);
  }
  var quietly = (where) => (error) => noteClientError(where, error);
-@@ -1546,9 +1546,9 @@
+@@ -1546,9 +1549,9 @@
  var PASTE_NOTE = "FlyBot copied the diagnostics to the clipboard. Paste them here.";
  var REST_NOTE = "The recent errors do not fit in the link. FlyBot copied the diagnostics to the clipboard: paste them below this line.";
  function issueUrl(base, { what = "", diagnostics }) {
@@ -55,7 +67,7 @@ diff --git a/client.js b/client.js
    const full2 = build(diagnostics);
    if (full2.length <= URL_LIMIT) return { url: full2, inline: true };
    const facts = build(`${diagnostics.split("\n\n")[0]}
-@@ -1602,8 +1602,8 @@
+@@ -1602,8 +1605,8 @@
  
  // src/shared/remote-label.js
  function cleanPeerName(name, fallback = "") {
@@ -66,7 +78,7 @@ diff --git a/client.js b/client.js
  }
  function normRemoteHandle(handle) {
    return `@${String(handle ?? "").trim().replace(/^@+/, "").toLowerCase()}`;
-@@ -1708,10 +1708,10 @@
+@@ -1708,10 +1711,10 @@
    const handle = String(record?.handle ?? "").replace(/^@+/, "").trim();
    const bare2 = remoteBotName(record, "").replace(/^@+/, "").trim();
    const unusable = (value) => {
@@ -81,7 +93,7 @@ diff --git a/client.js b/client.js
      return false;
    };
    if (!unusable(bare2)) return bare2;
-@@ -1772,11 +1772,11 @@
+@@ -1772,11 +1775,11 @@
    const friends = [...new Set((Array.isArray(details.remotes) ? details.remotes : []).map((remote) => cleanPeerName(remote?.owner || remote?.name, "")).filter(Boolean))];
    return { bots, friends };
  }
@@ -95,7 +107,7 @@ diff --git a/client.js b/client.js
      return true;
    } catch {
      return false;
-@@ -1924,8 +1924,8 @@
+@@ -1924,8 +1927,8 @@
    }
    return [...homes.values()];
  }
@@ -106,7 +118,7 @@ diff --git a/client.js b/client.js
    const match = value.match(/<untrusted-message from="[^"]*">\n?([\s\S]*?)\n?<\/untrusted-message>/);
    return match ? match[1] : value;
  }
-@@ -2045,9 +2045,9 @@
+@@ -2045,9 +2048,9 @@
  var CHARACTER_COLORS = ["black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray", "aurora"];
  var DEFAULT_COLORS = CHARACTER_COLORS.filter((color) => !["black", "gray", "brown"].includes(color) && !GRADIENTS[color]);
  var isColor = (color) => isHex(color) || Object.hasOwn(INKS, color);
@@ -118,7 +130,7 @@ diff --git a/client.js b/client.js
    return value >>> 0;
  }
  function defaultColor(id) {
-@@ -2168,8 +2168,8 @@
+@@ -2168,8 +2171,8 @@
      return "";
    }
  }
@@ -129,7 +141,7 @@ diff --git a/client.js b/client.js
  var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
  var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
  var MASK_ID = "%MASK%";
-@@ -2220,30 +2220,30 @@
+@@ -2220,30 +2223,30 @@
  var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
  var ADDRESS_BEFORE = /[a-z0-9_./]/i;
  var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
@@ -170,7 +182,7 @@ diff --git a/client.js b/client.js
    const skip = [
      ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
      ...referenceSpans(value, references)
-@@ -2261,8 +2261,8 @@
+@@ -2261,8 +2264,8 @@
    }
    return spans;
  }
@@ -181,7 +193,7 @@ diff --git a/client.js b/client.js
    const skip = [
      ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
      ...referenceSpans(value, references)
-@@ -2288,16 +2288,16 @@
+@@ -2288,16 +2291,16 @@
  var FENCE_ATTR = /\bfrom\s*=\s*(?:"[^"]*"|'[^']*')\s*>/gi;
  var FENCE_TAIL = /<[^<>]*\buntrusted-(?:message|file)\b[^<>]*$/i;
  var FENCE_BARE = /(?:\/\s*)?untrusted-(?:message|file)\b\s*>?/gi;
@@ -202,7 +214,7 @@ diff --git a/client.js b/client.js
    for (let previous; previous !== out; ) {
      previous = out;
      const open = out.indexOf("<untrusted-message");
-@@ -2311,24 +2311,24 @@
+@@ -2311,24 +2314,24 @@
  
  // src/client/text.js
  var MENTION_ORIGIN = "https://bots.local/";
@@ -234,7 +246,7 @@ diff --git a/client.js b/client.js
    if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
    const records = [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []];
    const names = /* @__PURE__ */ new Map();
-@@ -2370,9 +2370,9 @@
+@@ -2370,9 +2373,9 @@
    const main = roster.byId[mainId];
    return main ? currentPart(main) : mainId;
  }
@@ -247,7 +259,7 @@ diff --git a/client.js b/client.js
    try {
      const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
      return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
-@@ -2380,13 +2380,13 @@
+@@ -2380,13 +2383,13 @@
      return [];
    }
  }
@@ -267,7 +279,7 @@ diff --git a/client.js b/client.js
  }
  var COPY_FENCE = /untrusted-(?:message|file)\b/i;
  var escapeName = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-@@ -2396,8 +2396,8 @@
+@@ -2396,8 +2399,8 @@
    const hop = `(?:${known.map(escapeName).join("|")})`;
    return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line2);
  };
@@ -278,7 +290,7 @@ diff --git a/client.js b/client.js
    const known = sortedNames(names);
    if (known.length === 0) return body;
    const hop = `(?:${known.map(escapeName).join("|")})`;
-@@ -2405,8 +2405,8 @@
+@@ -2405,8 +2408,8 @@
    const found = trace.exec(body);
    return found ? body.slice(found[0].length) : body;
  }
@@ -289,7 +301,7 @@ diff --git a/client.js b/client.js
    for (let previous; previous !== body; ) {
      previous = body;
      body = stripHeader(body);
-@@ -2458,14 +2458,14 @@
+@@ -2458,14 +2461,14 @@
    const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
    return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
  }
@@ -306,7 +318,7 @@ diff --git a/client.js b/client.js
      const line2 = raw.trim().replace(/\*\*|__/g, "");
      const heading = /^#{1,6}\s+(.+)$/.exec(line2);
      if (heading) {
-@@ -2580,17 +2580,17 @@
+@@ -2580,17 +2583,17 @@
    for (let index = outline.length - 1; index >= 0; index -= 1) {
      const entry = outline[index];
      if (hiddenTurns.includes(entry.turn)) continue;
@@ -331,7 +343,7 @@ diff --git a/client.js b/client.js
  }
  function dropKnownTrace(line2, names) {
    const known = [...new Set((Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter((name) => name !== ""))].sort((a, b) => b.length - a.length);
-@@ -2604,8 +2604,8 @@
+@@ -2604,8 +2607,8 @@
    return /^[\s,，.。:：]*$/.test(rest) ? "" : rest;
  }
  var botNames = (roster) => [...roster?.bots ?? [], ...roster?.remoteBots ?? [], ...roster?.agents ?? []].map((entry) => entry?.name).filter((name) => typeof name === "string" && name !== "");
@@ -342,7 +354,7 @@ diff --git a/client.js b/client.js
  }
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
-@@ -2624,10 +2624,10 @@
+@@ -2624,10 +2627,10 @@
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
  function faceRowTitle(title) {
@@ -356,7 +368,7 @@ diff --git a/client.js b/client.js
  }
  function modelOf(bot, roster) {
    const ref = bot.model ?? bot.appliedModel;
-@@ -2941,8 +2941,8 @@
+@@ -2941,8 +2944,8 @@
  
  // src/client/room-invite-preview.js
  var INVITE_PREVIEW_NAME_MAX = 60;
@@ -367,7 +379,7 @@ diff --git a/client.js b/client.js
    for (let previous; previous !== out; ) {
      previous = out;
      out = out.replace(/<\/?\s*untrusted-(?:file|message)/gi, "");
-@@ -2955,9 +2955,9 @@
+@@ -2955,9 +2958,9 @@
  function inviteMemberCount(value) {
    if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
    if (typeof value !== "string") return NaN;
@@ -380,7 +392,7 @@ diff --git a/client.js b/client.js
    return Number.isFinite(count) ? count : NaN;
  }
  function invitePreviewOf(seen) {
-@@ -2979,29 +2979,29 @@
+@@ -2979,29 +2982,29 @@
    const total = Math.max(1, Math.ceil(left / 1e3));
    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
  }
@@ -420,7 +432,7 @@ diff --git a/client.js b/client.js
          type: "button",
          className: "fs-btn fs-btn-sm fs-btn-primary",
          "data-flybot": child("join"),
-@@ -3396,10 +3396,10 @@
+@@ -3396,10 +3399,10 @@
  `;
  
  // src/shared/failure-copy.js
@@ -434,7 +446,7 @@ diff --git a/client.js b/client.js
    return plain ? plain[1] : "";
  };
  var KNOWN = {
-@@ -3410,13 +3410,13 @@
+@@ -3410,13 +3413,13 @@
    InsufficientQuota: "The account is out of quota.",
    RateLimitExceeded: "Too many requests right now. Try again in a moment."
  };
@@ -454,7 +466,7 @@ diff --git a/client.js b/client.js
    if (key !== KNOWN.UnsupportedModel || feature === void 0) return fill2(translate(key), void 0);
    const withFeature = "This model does not support {feature}. Pick another model in the Bot's settings.";
    return fill2(translate(withFeature, { feature }), { feature });
-@@ -3631,12 +3631,12 @@
+@@ -3631,12 +3634,12 @@
      const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
      last = now;
      const steps = Math.ceil(dt * 240);
@@ -470,7 +482,7 @@ diff --git a/client.js b/client.js
        }
        if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
          value.x = value.to;
-@@ -4914,10 +4914,10 @@
+@@ -4914,10 +4917,10 @@
  .bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
  .bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
  `;
@@ -483,7 +495,7 @@ diff --git a/client.js b/client.js
    document.head.appendChild(style);
    return style;
  }
-@@ -4937,9 +4937,9 @@
+@@ -4937,9 +4940,9 @@
    }
    return names;
  }
@@ -495,7 +507,7 @@ diff --git a/client.js b/client.js
      if (!compiled.has(fragment)) {
        const exact = [];
        for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
-@@ -4948,7 +4948,7 @@
+@@ -4948,7 +4951,7 @@
      return compiled.get(fragment);
    });
  }
@@ -504,7 +516,7 @@ diff --git a/client.js b/client.js
    const style = installStyles("", tag);
    const cache = /* @__PURE__ */ new WeakMap();
    const render = () => {
-@@ -4962,7 +4962,7 @@
+@@ -4962,7 +4965,7 @@
        }
        for (const name of list) names.add(name);
      }
@@ -513,7 +525,7 @@ diff --git a/client.js b/client.js
      if (style.textContent !== next) style.textContent = next;
    };
    render();
-@@ -5059,11 +5059,11 @@
+@@ -5059,11 +5062,11 @@
    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32"><g fill="${wing}"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><g fill="${wing}" transform="translate(512 0) scale(-1 1)"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><path d="${FLYBOT_BODY}" fill="${brand}"/><rect x="196" y="222" width="34" height="58" rx="17" fill="${face}"/><rect x="282" y="222" width="34" height="58" rx="17" fill="${face}"/><circle cx="256" cy="100" r="22" fill="${brand}"/><rect x="248" y="104" width="16" height="34" fill="${brand}"/></svg>`;
  }
  function brandTitle(title) {
@@ -530,7 +542,7 @@ diff --git a/client.js b/client.js
  }
  function sessionTabLabel(roster, sessionId) {
    if (!roster || !sessionId) return "";
-@@ -5542,14 +5542,14 @@
+@@ -5542,14 +5545,14 @@
      "div",
      { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
      (0, import_react7.createElement)("span", { className: "bt-secret-glide", "data-at": value === "all" ? 0 : 1, "aria-hidden": true }),
@@ -547,7 +559,7 @@ diff --git a/client.js b/client.js
    );
  }
  function SecretHead({ bot, title, detail, name, onClose }) {
-@@ -5627,10 +5627,10 @@
+@@ -5627,10 +5630,10 @@
  }
  function SettledSecret({ bot, request, roster }) {
    const canceled = request.status === "canceled";
@@ -560,7 +572,7 @@ diff --git a/client.js b/client.js
      (0, import_react7.createElement)(
        "div",
        { className: "bt-q-head" },
-@@ -5638,7 +5638,7 @@
+@@ -5638,7 +5641,7 @@
        (0, import_react7.createElement)("div", { className: "bt-q-text" }, (0, import_react7.createElement)(
          "p",
          { className: "bt-q-title" },
@@ -569,7 +581,7 @@ diff --git a/client.js b/client.js
          canceled ? null : (0, import_react7.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
        )),
        canceled ? (0, import_react7.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react7.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react7.createElement)(CheckIcon))
-@@ -5683,11 +5683,11 @@
+@@ -5683,11 +5686,11 @@
      (0, import_react7.createElement)(
        "div",
        { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
@@ -583,7 +595,7 @@ diff --git a/client.js b/client.js
        ))
      ),
      mode === "some" ? (0, import_react7.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react7.createElement)("button", {
-@@ -6059,7 +6059,7 @@
+@@ -6059,7 +6062,7 @@
    return (0, import_react9.createElement)(
      "div",
      { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
@@ -592,7 +604,7 @@ diff --git a/client.js b/client.js
        const key = msgKey ? `${msgKey}:${index}` : void 0;
        const picked = key ? reactions?.[index] ?? [] : [];
        const last = index === texts2.length - 1;
-@@ -6074,9 +6074,9 @@
+@@ -6074,9 +6077,9 @@
            (0, import_react9.createElement)(
              "div",
              { className: "bt-bubble" },
@@ -604,7 +616,7 @@ diff --git a/client.js b/client.js
          ),
          picked.length ? (0, import_react9.createElement)("div", { className: "bt-reacts" }, picked.map((emoji) => (0, import_react9.createElement)("button", {
            key: emoji,
-@@ -6091,9 +6091,9 @@
+@@ -6091,9 +6094,9 @@
  }
  var WAITING_OTHERS_NOTICE = "Waiting for the owner's approval";
  var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -616,7 +628,7 @@ diff --git a/client.js b/client.js
    if (!match) return false;
    const who = match[1];
    for (const participant of room2.participants ?? []) {
-@@ -6124,7 +6124,7 @@
+@@ -6124,7 +6127,7 @@
      };
    }, [open]);
  }
@@ -625,7 +637,7 @@ diff --git a/client.js b/client.js
    const [panel, setPanel] = (0, import_react9.useState)(null);
    const [place, setPlace] = (0, import_react9.useState)(null);
    const [copied, setCopied] = (0, import_react9.useState)(false);
-@@ -6143,13 +6143,13 @@
+@@ -6143,13 +6146,13 @@
      setPanel(kind);
    };
    const copy2 = () => {
@@ -641,7 +653,7 @@ diff --git a/client.js b/client.js
      const link = Object.assign(document.createElement("a"), { href: url, download: `${name}-message.md` });
      link.click();
      setTimeout(() => URL.revokeObjectURL(url), 1e3);
-@@ -6162,7 +6162,7 @@
+@@ -6162,7 +6165,7 @@
      "div",
      { ref: tools, className: "bt-tools", "data-open": panel !== null || void 0 },
      react ? (0, import_react9.createElement)("button", { type: "button", className: "bt-tool", "aria-label": t("Add reaction"), title: t("Add reaction"), "aria-expanded": panel === "react", onClick: (event) => open("react", event) }, (0, import_react9.createElement)(SmileIcon)) : null,
@@ -650,7 +662,7 @@ diff --git a/client.js b/client.js
      (0, import_react9.createElement)("button", { type: "button", className: "bt-tool", "aria-label": t("More message actions"), title: t("More"), "aria-haspopup": "menu", "aria-expanded": panel === "more", onClick: (event) => open("more", event) }, copied ? (0, import_react9.createElement)(CheckIcon) : (0, import_react9.createElement)(DotsIcon)),
      panel === "react" ? (0, import_react_dom.createPortal)((0, import_react9.createElement)(
        "div",
-@@ -6195,14 +6195,14 @@
+@@ -6195,14 +6198,14 @@
    return kept + CUT;
  };
  var onlyMarkup = (lines) => lines.length === 1 ? t("{n} line of reasoning", { n: lines.length }) : t("{n} lines of reasoning", { n: lines.length });
@@ -670,7 +682,7 @@ diff --git a/client.js b/client.js
    return (0, import_react9.createElement)(
      "details",
      { className: "bt-think" },
-@@ -6213,7 +6213,7 @@
+@@ -6213,7 +6216,7 @@
        t("Thought it through"),
        peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
      ),
@@ -679,7 +691,7 @@ diff --git a/client.js b/client.js
    );
  }
  function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
-@@ -6234,7 +6234,7 @@
+@@ -6234,7 +6237,7 @@
  }
  function friendLead(bot, texts2) {
    if (bot?.remote === void 0 || texts2.length === 0) return void 0;
@@ -688,7 +700,7 @@ diff --git a/client.js b/client.js
    return (0, import_react9.createElement)("span", { className: "bt-lead", title: bot.name, "data-flybot": "friend-lead" }, (0, import_react9.createElement)(BotMark, { bot, size: 22 }));
  }
  function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
-@@ -6247,7 +6247,7 @@
+@@ -6247,7 +6250,7 @@
    const closing = useClosingText(node, useTurnData);
    const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn);
    const person = typedBy(roster, sessionId, data.turn);
@@ -697,7 +709,7 @@ diff --git a/client.js b/client.js
    const running = data.status === "running";
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
    if (hidden) return null;
-@@ -6323,11 +6323,11 @@
+@@ -6323,11 +6326,11 @@
    });
    return (0, import_react9.createElement)("div", { className: "bt-event" }, parts);
  }
@@ -712,7 +724,7 @@ diff --git a/client.js b/client.js
    if (!line2) return false;
    return (room2.pendingApprovals ?? []).some((item) => {
      if (item?.kind !== "face_room_message") return false;
-@@ -6337,9 +6337,9 @@
+@@ -6337,9 +6340,9 @@
    });
  }
  var HELD_SENDING_MS = 6e4;
@@ -724,7 +736,7 @@ diff --git a/client.js b/client.js
    const entry = room2.heldLines.filter((item) => seq !== void 0 && item?.seq !== void 0 ? item.seq === seq : item?.botId === botId && String(item?.text ?? "").trim() === said).at(-1);
    if (entry === void 0) return void 0;
    if (entry.status === "rejected") return "rejected";
-@@ -6347,8 +6347,8 @@
+@@ -6347,8 +6350,8 @@
    if (entry.status !== "pending" && entry.status !== "sending") return void 0;
    return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
  }
@@ -735,7 +747,7 @@ diff --git a/client.js b/client.js
    if (held === "rejected") {
      return (0, import_react9.createElement)(
        "div",
-@@ -6357,7 +6357,7 @@
+@@ -6357,7 +6360,7 @@
        (0, import_react9.createElement)("span", null, t("{name} · Not sent", { name: bot.name }))
      );
    }
@@ -744,7 +756,7 @@ diff --git a/client.js b/client.js
    const lead = (0, import_react9.createElement)(
      "button",
      { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
-@@ -6373,7 +6373,7 @@
+@@ -6373,7 +6376,7 @@
      "div",
      { className: "bt-group-msg" },
      name,
@@ -753,7 +765,7 @@ diff --git a/client.js b/client.js
    );
  }
  function remoteSpeaker(source, roster, sessionId) {
-@@ -6408,7 +6408,7 @@
+@@ -6408,7 +6411,7 @@
    return Object.keys(look).length ? look : void 0;
  }
  var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
@@ -762,7 +774,7 @@ diff --git a/client.js b/client.js
    const room2 = roster.roomsById?.[sessionId];
    const face = room2?.origin === "face-to-face";
    const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
-@@ -6425,7 +6425,7 @@
+@@ -6425,7 +6428,7 @@
          person,
          carrier ? (0, import_react9.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
        ),
@@ -771,7 +783,7 @@ diff --git a/client.js b/client.js
        files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
      );
    }
-@@ -6441,7 +6441,7 @@
+@@ -6441,7 +6444,7 @@
        name,
        (0, import_react9.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react9.createElement)(GlobeMark), handle)
      ),
@@ -780,7 +792,7 @@ diff --git a/client.js b/client.js
      files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
    );
  }
-@@ -7513,13 +7513,13 @@
+@@ -7513,13 +7516,13 @@
  }
  var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
  function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
@@ -797,7 +809,7 @@ diff --git a/client.js b/client.js
      elapsed ? (0, import_react12.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
  }
-@@ -7770,11 +7770,11 @@
+@@ -7770,11 +7773,11 @@
  var placeOf = (roster, roomId) => roomId && roomName(roster, roomId) ? t("in {name}", { name: roomName(roster, roomId) }) : "";
  var lastWhy = (task) => [...task.actors ?? []].reverse().find((entry) => typeof entry.why === "string" && entry.why !== "")?.why ?? "";
  var chatOfTask = (task) => task.origin?.roomId ?? task.origin?.sessionId ?? task.ownerBotId;
@@ -812,7 +824,7 @@ diff --git a/client.js b/client.js
      if (key === bot.id || key === currentPart(bot)) return bot.id;
    }
    return void 0;
-@@ -7790,7 +7790,7 @@
+@@ -7790,7 +7793,7 @@
      if (entry) options.push(`${workPhrase(entry.tool)}…`);
    }
    if (sessions?.byId && card.chat) options.push(previewOf(sessions, partOf(roster, card.chat), [], [], botNames(roster)));
@@ -821,7 +833,7 @@ diff --git a/client.js b/client.js
  }
  function toolCalls(card, { roster, work }) {
    const botId = card.bot?.id;
-@@ -7945,9 +7945,9 @@
+@@ -7945,9 +7948,9 @@
        const part = currentPart(bot);
        const at = sessions.byId[part]?.updatedAt;
        if (!fresh(at)) continue;
@@ -834,7 +846,7 @@ diff --git a/client.js b/client.js
      }
    }
    const newest = (a, b) => (b.at ?? Infinity) - (a.at ?? Infinity);
-@@ -7970,10 +7970,10 @@
+@@ -7970,10 +7973,10 @@
      return Promise.resolve(actions.answerQuestion(card.sessionId, card.question.id, { selected, custom }));
    }
    if (card?.kind === "task" && card.status === "input") {
@@ -848,7 +860,7 @@ diff --git a/client.js b/client.js
    }
    if (card?.kind === "task" && card.status === "result") {
      if (choice === "accept") return Promise.resolve(actions.acceptTaskResult(card.task.id));
-@@ -8382,8 +8382,8 @@
+@@ -8382,8 +8385,8 @@
  
  // src/shared/board-card.js
  function taskCardKey(id) {
@@ -859,7 +871,7 @@ diff --git a/client.js b/client.js
  }
  function taskCard(task) {
    const key = taskCardKey(task?.id);
-@@ -8869,11 +8869,11 @@
+@@ -8869,11 +8872,11 @@
      }
    };
    const create = async (title) => {
@@ -874,7 +886,7 @@ diff --git a/client.js b/client.js
        setDraft("");
      } catch (failure) {
        setError(failure?.message ?? String(failure));
-@@ -8989,7 +8989,7 @@
+@@ -8989,7 +8992,7 @@
  var PinMark = () => (0, import_react16.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react16.createElement)(PinMarkIcon));
  var useApproval = (useWork, match) => useWork ? useWork((work) => (work.approvals ?? []).some(match)) : false;
  var useGroupWork = (useWork, pick2) => useWork ? useWork((work) => pick2(work.rooms ?? {}).join(",")) : "";
@@ -883,7 +895,7 @@ diff --git a/client.js b/client.js
    const [id, tool] = key.split("|");
    return { id, tool: tool || void 0 };
  });
-@@ -9922,7 +9922,7 @@
+@@ -9922,7 +9925,7 @@
    const host = useRunningHost2(visible);
    const shown = (0, import_react17.useRef)(null);
    if (visible) shown.current = room2 ? { text: memberAck?.text ?? "", at: memberAck?.at ?? Date.now() } : { text: busyAckText(hostAck), at: hostAck?.at ?? Date.now() };
@@ -892,7 +904,7 @@ diff --git a/client.js b/client.js
    if (!visible || !host || !shown.current || !bot) return null;
    return (0, import_react_dom4.createPortal)((0, import_react17.createElement)(
      "div",
-@@ -9931,8 +9931,8 @@
+@@ -9931,8 +9934,8 @@
        "data-flybot": "busy-ack",
        role: "status",
        "aria-live": "polite",
@@ -903,7 +915,7 @@ diff --git a/client.js b/client.js
      },
      (0, import_react17.createElement)(BotMark, { bot, size: 28, state: "thinking", live: true }),
      (0, import_react17.createElement)(
-@@ -9944,7 +9944,7 @@
+@@ -9944,7 +9947,7 @@
          (0, import_react17.createElement)(
            "div",
            { className: "bt-msg-line" },
@@ -912,7 +924,7 @@ diff --git a/client.js b/client.js
              "div",
              { className: "bt-bubble bt-busy-dots", "aria-hidden": "true" },
              (0, import_react17.createElement)("span", null),
-@@ -10328,10 +10328,10 @@
+@@ -10328,10 +10331,10 @@
        let interim = "";
        for (let index = event.resultIndex; index < event.results.length; index += 1) {
          const result = event.results[index];
@@ -926,7 +938,7 @@ diff --git a/client.js b/client.js
        }
        if (interim) latest.current(interim, false);
      };
-@@ -10377,8 +10377,8 @@
+@@ -10377,8 +10380,8 @@
    );
  }
  function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
@@ -937,7 +949,7 @@ diff --git a/client.js b/client.js
    });
    const quote = useUi((state) => state.quote?.sessionId === sessionId ? state.quote : null);
    (0, import_react19.useEffect)(() => {
-@@ -10746,8 +10746,8 @@
+@@ -10746,8 +10749,8 @@
  function waveBytes(samples, rate = 16e3) {
    const bytes = new Uint8Array(44 + samples.length * 2);
    const view = new DataView(bytes.buffer);
@@ -948,7 +960,7 @@ diff --git a/client.js b/client.js
    };
    ascii(0, "RIFF");
    view.setUint32(4, 36 + samples.length * 2, true);
-@@ -10768,9 +10768,9 @@
+@@ -10768,9 +10771,9 @@
    return bytes;
  }
  function base64Of(bytes) {
@@ -961,7 +973,7 @@ diff --git a/client.js b/client.js
  }
  var captureError = (kind, cause) => Object.assign(new Error(kind), { kind, cause });
  async function openCapture() {
-@@ -11078,7 +11078,7 @@
+@@ -11078,7 +11081,7 @@
        void actions.refreshModels?.();
      }).finally(() => setBusy(""));
    };
@@ -970,7 +982,7 @@ diff --git a/client.js b/client.js
    const choices = models.length === 0 ? [...setupChoices(actions).map(([label, run]) => (0, import_react20.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)), (0, import_react20.createElement)(KeyHelpLink, { key: "key-help" })] : [
      ...groupModels(models).map(([provider, list]) => (0, import_react20.createElement)(
        "div",
-@@ -11110,7 +11110,7 @@
+@@ -11110,7 +11113,7 @@
            "div",
            { className: "bt-msg-line" },
            (0, import_react20.createElement)(BotMark, { bot, size: 22 }),
@@ -979,7 +991,7 @@ diff --git a/client.js b/client.js
          )
        )
      ),
-@@ -11150,9 +11150,9 @@
+@@ -11150,9 +11153,9 @@
    return (0, import_react20.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
  }
  function missingModelKey(message) {
@@ -992,7 +1004,7 @@ diff --git a/client.js b/client.js
  }
  function modelKeyChoices(actions, route) {
    if (/^deepseek/i.test(route)) return setupChoices(actions);
-@@ -11163,8 +11163,8 @@
+@@ -11163,8 +11166,8 @@
    const code = typeof data.code === "string" && data.code ? data.code : void 0;
    const raw = String(data.message ?? "");
    const shell = (key, fallback) => {
@@ -1003,7 +1015,7 @@ diff --git a/client.js b/client.js
    };
    const missing = missingModelKey(raw);
    const title = code === "ACCOUNT_SIGNED_OUT" ? shell("message.accountStopped", t("This turn failed")) : shell("message.turnError", t("This turn failed"));
-@@ -11550,8 +11550,8 @@
+@@ -11550,8 +11553,8 @@
        return `${t("Every day at {time}", { time: clock2(task.time) })}${zone}`;
      case "weekly": {
        const days = (task.weekdays ?? []).join();
@@ -1014,7 +1026,7 @@ diff --git a/client.js b/client.js
      }
      case "cron":
        return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
-@@ -12041,10 +12041,10 @@
+@@ -12041,10 +12044,10 @@
  // src/client/capability-settings.js
  var import_react24 = require("react");
  var blank = () => ({ name: "", kind: "mcp", description: "", transport: "stdio", command: "", argsText: "", envText: "{}", url: "", headersText: "{}", content: "", items: [] });
@@ -1027,7 +1039,7 @@ diff --git a/client.js b/client.js
    } catch {
      throw new Error(t("{label} must be valid JSON.", { label }));
    }
-@@ -12471,11 +12471,11 @@
+@@ -12471,11 +12474,11 @@
    );
  }
  function changeLine(change) {
@@ -1044,7 +1056,7 @@ diff --git a/client.js b/client.js
  }
  function Reply({ answer, dismiss }) {
    return (0, import_react26.createElement)(
-@@ -12546,7 +12546,7 @@
+@@ -12546,7 +12549,7 @@
    const [page, setPage] = (0, import_react26.useState)("summary");
    const [menu, setMenu] = (0, import_react26.useState)(false);
    const [menuShown, menuLeaving] = useLinger(menu, MENU_EXIT_MS2);
@@ -1053,7 +1065,7 @@ diff --git a/client.js b/client.js
    const [answer, setAnswer] = (0, import_react26.useState)(null);
    const menuRef = (0, import_react26.useRef)(null);
    const dotsRef = (0, import_react26.useRef)(null);
-@@ -12598,7 +12598,7 @@
+@@ -12598,7 +12601,7 @@
    };
    const ask = async (event) => {
      event.preventDefault();
@@ -1062,7 +1074,7 @@ diff --git a/client.js b/client.js
      if (asked === "" || answer?.pending) return;
      setText("");
      setAnswer({ asked, pending: true });
-@@ -12664,7 +12664,7 @@
+@@ -12664,7 +12667,7 @@
            (0, import_react26.createElement)("input", {
              ref: inputRef,
              className: "bt-mem-input",
@@ -1071,7 +1083,7 @@ diff --git a/client.js b/client.js
              maxLength: 2e3,
              disabled: view === null,
              placeholder: t("Ask or update"),
-@@ -12673,7 +12673,7 @@
+@@ -12673,7 +12676,7 @@
            }),
            (0, import_react26.createElement)(
              "button",
@@ -1080,7 +1092,7 @@ diff --git a/client.js b/client.js
              busy ? (0, import_react26.createElement)("span", { className: "bt-mem-spin", "aria-hidden": true }) : (0, import_react26.createElement)(ArrowUpIcon)
            )
          )
-@@ -13608,11 +13608,11 @@
+@@ -13608,11 +13611,11 @@
          const entry = outline[index2];
          if (hidden.includes(entry.turn)) continue;
          for (const raw of [entry.response, entry.prompt]) {
@@ -1095,7 +1107,7 @@ diff --git a/client.js b/client.js
            break;
          }
        }
-@@ -13798,10 +13798,10 @@
+@@ -13798,10 +13801,10 @@
    if (effort) payload.effort = effort;
    return payload;
  }
@@ -1108,7 +1120,7 @@ diff --git a/client.js b/client.js
    if (line2 === "") return;
    try {
      await actions.send(id, line2);
-@@ -14063,27 +14063,27 @@
+@@ -14063,27 +14066,27 @@
    };
    const makeGroup = async () => {
      if (admin === null || picked.length === 0) return;
@@ -1141,7 +1153,7 @@ diff --git a/client.js b/client.js
        actions.openSession(picked[0]);
        close();
        return;
-@@ -14094,7 +14094,7 @@
+@@ -14094,7 +14097,7 @@
        ...remotes
      ];
      const room2 = await actions.createRoom(members, participants ? { participants } : {});
@@ -1150,7 +1162,7 @@ diff --git a/client.js b/client.js
      actions.openSession(room2.id);
      close();
    });
-@@ -14308,10 +14308,10 @@
+@@ -14308,10 +14311,10 @@
  // src/client/exchange.js
  var import_react33 = require("react");
  var SHEET_EXIT_MS = 220;
@@ -1164,7 +1176,7 @@ diff --git a/client.js b/client.js
    for (let previous; previous !== body; ) {
      previous = body;
      const open = body.indexOf("<untrusted-message");
-@@ -14480,17 +14480,17 @@
+@@ -14480,17 +14483,17 @@
      actions.closeVoice();
    };
    useEscape(close);
@@ -1188,7 +1200,7 @@ diff --git a/client.js b/client.js
    });
    (0, import_react34.useEffect)(() => {
      if (!note) return void 0;
-@@ -14534,9 +14534,9 @@
+@@ -14534,9 +14537,9 @@
        setPhase("transcribing");
        try {
          const wave = await current.finish(catalog.maxDurationSeconds);
@@ -1200,7 +1212,7 @@ diff --git a/client.js b/client.js
          else setPhase("listening");
        } catch (error) {
          if (turn.current !== own) return;
-@@ -14585,10 +14585,10 @@
+@@ -14585,10 +14588,10 @@
    }, [speech, catalog, listen, cycle]);
    (0, import_react34.useEffect)(() => {
      if (phase !== "thinking" || running || waiting.current === null) return;
@@ -1214,7 +1226,7 @@ diff --git a/client.js b/client.js
      setSaid(spoken);
      setHeard("");
      if (!window.speechSynthesis || !spoken) {
-@@ -15337,8 +15337,8 @@
+@@ -15337,8 +15340,8 @@
    return result;
  }
  function trimmed2(value) {
@@ -1225,7 +1237,7 @@ diff --git a/client.js b/client.js
  }
  function compact(count) {
    for (const [size, unit] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
-@@ -15470,14 +15470,14 @@
+@@ -15470,14 +15473,14 @@
    return labels[kind] ?? kind;
  }
  function Tabs({ label, value, options, onChange, boxRef }) {
@@ -1242,7 +1254,7 @@ diff --git a/client.js b/client.js
    );
  }
  function Stats({ range, total, previous }) {
-@@ -16363,15 +16363,15 @@
+@@ -16363,15 +16366,15 @@
    const names = (0, import_react37.useRef)(new Map(APPS));
    const asked = (0, import_react37.useRef)(0);
    (0, import_react37.useEffect)(() => {
@@ -1261,7 +1273,7 @@ diff --git a/client.js b/client.js
          if (ask !== asked.current) return;
          for (const app of list) names.current.set(app.slug, app.name);
          setFound(list);
-@@ -16605,15 +16605,15 @@
+@@ -16605,15 +16608,15 @@
    (0, import_react38.createElement)("path", { d: "M4 4.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3.5 3v-3H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" }),
    (0, import_react38.createElement)("path", { d: "M10 7v2.6M10 11.4h.01" })
  );
@@ -1280,7 +1292,7 @@ diff --git a/client.js b/client.js
  function whenText2(time) {
    const date = new Date(time);
    const today = (/* @__PURE__ */ new Date()).toDateString() === date.toDateString();
-@@ -16661,8 +16661,8 @@
+@@ -16661,8 +16664,8 @@
        if (!inline && !copied) setPreview(true);
      }));
    };
@@ -1291,7 +1303,7 @@ diff --git a/client.js b/client.js
      setNote(t("Downloaded the log. Keys, tokens, and your home folder are hidden in it."));
    }));
    const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t("Cleared the error log."))));
-@@ -17172,13 +17172,13 @@
+@@ -17172,13 +17175,13 @@
          "nav",
          { ref: nav.box, className: "bt-settings-nav", "aria-label": t("Settings pages") },
          (0, import_react40.createElement)("span", { ref: nav.thumb, className: "bt-thumb", "aria-hidden": true }),
@@ -1307,7 +1319,7 @@ diff --git a/client.js b/client.js
          // DeepSeek Harness's own settings are a separate window with its own title and look; FlyBot
          // does not embed or retitle it (never patch DSH), so the entry says it leaves (#421).
          (0, import_react40.createElement)("button", {
-@@ -17543,16 +17543,16 @@
+@@ -17543,16 +17546,16 @@
      (0, import_react42.createElement)("button", { type: "button", className: "bt-bcard-new", style: { animationDelay: `${state.ids.length * 30}ms` }, onClick: () => actions.browserNewTab(sessionId) }, (0, import_react42.createElement)(PlusIcon), t("New tab"))
    );
  }
@@ -1327,7 +1339,7 @@ diff --git a/client.js b/client.js
      long ? (0, import_react42.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
    );
  }
-@@ -17739,12 +17739,12 @@
+@@ -17739,12 +17742,12 @@
      return false;
    });
    const share = () => {
@@ -1343,7 +1355,7 @@ diff --git a/client.js b/client.js
        if (!written) {
          actions.reportError?.(new Error(t("Could not copy the conversation")), "share");
          return;
-@@ -18120,11 +18120,11 @@
+@@ -18120,11 +18123,11 @@
    }, [tabId, landed]);
    const go = (event) => {
      event.preventDefault();
@@ -1358,7 +1370,7 @@ diff --git a/client.js b/client.js
        if (opened) actions.browserFocus(tabId);
      });
    };
-@@ -18668,19 +18668,19 @@
+@@ -18668,19 +18671,19 @@
      const auto = String(el.getAttribute("autocomplete") || "").toLowerCase();
      return el.type === "password" || /(^|\s)(cc-|one-time-code)/.test(auto) || SECRET_HINT.test(`${el.getAttribute("name") || ""} ${el.id || ""}`);
    };
@@ -1385,7 +1397,7 @@ diff --git a/client.js b/client.js
    const styleOf = (el) => (el.ownerDocument.defaultView || window).getComputedStyle(el);
    const childrenOf = (el) => {
      if (el.shadowRoot) return el.shadowRoot.childNodes;
-@@ -18714,8 +18714,8 @@
+@@ -18714,8 +18717,8 @@
      items.push(item);
      return { item, number: items.length, secret };
    };
@@ -1396,7 +1408,7 @@ diff --git a/client.js b/client.js
    ).slice(0, 80);
    const fenced = (code, lang) => {
      const longest = Math.max(2, ...(code.match(/`{3,}/g) || []).map((run) => run.length));
-@@ -18784,12 +18784,12 @@
+@@ -18784,12 +18787,12 @@
        for (const cell of row.cells) {
          place();
          if (styleOf(cell).display === "none") continue;
@@ -1412,7 +1424,7 @@ diff --git a/client.js b/client.js
            column += 1;
          }
        }
-@@ -18854,9 +18854,9 @@
+@@ -18854,9 +18857,9 @@
      if (node.nodeType === 3) {
        if (!ctx.shown) return "";
        const data = node.data.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
@@ -1425,7 +1437,7 @@ diff --git a/client.js b/client.js
      }
      if (node.nodeType !== 1) return "";
      const el = node;
-@@ -18944,12 +18944,12 @@
+@@ -18944,12 +18947,12 @@
      return marked;
    }
    const body = document.body;
@@ -1442,7 +1454,7 @@ diff --git a/client.js b/client.js
      stop ||= `the text passed ${limits.chars} characters`;
    }
    const page = {
-@@ -18959,7 +18959,7 @@
+@@ -18959,7 +18962,7 @@
      description: document.querySelector('meta[name="description"]')?.content || "",
      selection: String(getSelection() || "").slice(0, 4e3),
      format: "markdown",
@@ -1451,7 +1463,7 @@ diff --git a/client.js b/client.js
      items,
      stats: { ...stats, ms: Math.round(performance.now() - started) }
    };
-@@ -18987,15 +18987,15 @@
+@@ -18987,15 +18990,15 @@
  var BLOCKED = "Cloud metadata addresses do not open here.";
  var blockedAddress = (url) => URL.canParse(url) && METADATA_HOST.test(new URL(url).hostname);
  function browserAddress(input) {
@@ -1475,7 +1487,7 @@ diff --git a/client.js b/client.js
  }
  function createBotBrowsers({ bridge, createSource: createSource2, storage = globalThis.localStorage, document: doc = globalThis.document }) {
    const views = /* @__PURE__ */ new Map();
-@@ -19475,8 +19475,8 @@
+@@ -19475,8 +19478,8 @@
    const frame = col?.parentElement;
    if (!frame) return null;
    const name = frame.className;
@@ -1486,7 +1498,7 @@ diff --git a/client.js b/client.js
  }
  function levelShell(doc, from) {
    const page = doc.scrollingElement || doc.documentElement;
-@@ -19517,6 +19517,123 @@
+@@ -19517,6 +19520,123 @@
    };
  }
  
@@ -1610,7 +1622,7 @@ diff --git a/client.js b/client.js
  // src/client/friend-lines.js
  function friendLineNews(bots, known, isOpen, selfId) {
    const next = { ...known };
-@@ -19586,7 +19703,7 @@
+@@ -19586,7 +19706,7 @@
  }
  
  // src/client/user-message.js
@@ -1619,7 +1631,7 @@ diff --git a/client.js b/client.js
  var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
  var canDrawUserMessages = () => typeof ui.projectUserText === "function";
  function contentParts(content) {
-@@ -19658,58 +19775,58 @@
+@@ -19658,58 +19778,58 @@
      mine: roster?.self?.memberId === authorId
    };
  }
@@ -1699,7 +1711,7 @@ diff --git a/client.js b/client.js
    const referenceLabels = data.referenceLabels ?? [];
    const references = openFile && openSkill ? { openFile, openSkill } : void 0;
    const steering = node.kind === "steering";
-@@ -19720,7 +19837,7 @@
+@@ -19720,7 +19840,7 @@
    const person = incoming && author.authorKind === "human" && !author.ownerName;
    const faceMine = Boolean(room2?.origin === "face-to-face" && !incoming);
    const myName = faceMine ? facePeople(room2, roster).find((entry) => entry.mine)?.name || cleanPeerName(roster.self?.displayName, "") || author?.name || "" : "";
@@ -1708,7 +1720,7 @@ diff --git a/client.js b/client.js
      "div",
      {
        className: incoming ? "bt-umsg bt-umsg-other" : "bt-umsg",
-@@ -19730,22 +19847,22 @@
+@@ -19730,22 +19850,22 @@
        "data-author-kind": author?.authorKind,
        "data-author-name": author?.name
      },
@@ -1741,7 +1753,7 @@ diff --git a/client.js b/client.js
    );
  }
  var USER_MESSAGE_CSS = `
-@@ -19843,33 +19960,33 @@
+@@ -19843,33 +19963,33 @@
  }
  
  // src/client/stats-dock.js
@@ -1782,7 +1794,7 @@ diff --git a/client.js b/client.js
  var inject = ["sessions", "uiWorkspace", "uiConversation", "slots", "theme", "layout"];
  function apply(ctx) {
    const flybot = createClientApi2();
-@@ -20459,7 +20576,7 @@
+@@ -20459,7 +20579,7 @@
        }
        return { ...state, reactions };
      }),
@@ -1791,7 +1803,7 @@ diff --git a/client.js b/client.js
      clearQuote: (token) => ui2.set((state) => state.quote?.token === token ? { ...state, quote: null } : state),
      clearUnread: (id) => setUnread(id, false),
      setFlags: (id, flags) => after(call("set-flags", { id, ...flags })),
-@@ -20487,7 +20604,7 @@
+@@ -20487,7 +20607,7 @@
      setPrefs: (prefs) => after(call("set-prefs", prefs)),
      setMain: (id, main = true, options = {}) => after(call("set-main", { id, main, ...options })),
      updateRoom: (id, patch) => after(call("update-room", { id, ...patch })),
@@ -1800,7 +1812,7 @@ diff --git a/client.js b/client.js
      answerQuestion: (sessionId, questionId, answer) => after(call("answer-question", { sessionId: partFor(sessionId), questionId, answer })),
      answerTaskInput: (id, questionId, answer) => after(call("task-answer-input", { id, questionId, answer })),
      // The Done list is the acceptance surface (#401): a result is accepted, or sent back with a note
-@@ -20514,7 +20631,7 @@
+@@ -20514,7 +20634,7 @@
      connectorBlock: (id, openId) => after(call("connector-block", { id, openId })),
      connectorDisconnect: (id) => after(call("connector-disconnect", { id })),
      connectorRetry: (id) => after(call("connector-retry", { id })),
@@ -1809,7 +1821,7 @@ diff --git a/client.js b/client.js
      saveCapability: (capability) => after(call("capability-save", capability)),
      deleteCapability: (name) => after(call("capability-delete", { name })),
      approveCapability: (name) => after(call("capability-approve", { name })),
-@@ -20537,7 +20654,7 @@
+@@ -20537,7 +20657,7 @@
      usage: () => call("usage", { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
      // `summarize` starts a summary when the entries changed; `regenerate` always does.
      memoryView: (botId, flags = {}) => call("memory-view", { botId, ...flags }),
@@ -1818,7 +1830,7 @@ diff --git a/client.js b/client.js
      memoryForget: (botId, entry) => call("memory-forget", { botId, scope: entry.scope, topic: entry.topic, text: entry.text }),
      diagnostics: (payload) => call("diagnostics", payload),
      diagnosticsLog: () => call("diagnostics-log"),
-@@ -20548,7 +20665,7 @@
+@@ -20548,7 +20668,7 @@
        ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
      },
      // A short confirmation (e.g. "Invite link copied") in the same toast, without the error styling.
@@ -1827,7 +1839,7 @@ diff --git a/client.js b/client.js
      dismissToast: (token) => ui2.set((state) => state.toast && (token === void 0 || state.toast.token === token) ? { ...state, toast: null } : state)
    };
    if (browsers) {
-@@ -20766,6 +20883,7 @@
+@@ -20766,6 +20886,7 @@
      installCompiledStyles(USER_MESSAGE_CSS, "user-messages"),
      installCompiledStyles(MOBILE_CSS, "mobile"),
      installCompiledStyles(PANE_MIN_WIDTH_CSS, "panes"),
@@ -1835,7 +1847,7 @@ diff --git a/client.js b/client.js
      typeof document !== "undefined" ? watchShellLevel(document) : null,
      browsers ? installCompiledStyles(BROWSER_CSS, "browser") : null,
      installTheme(),
-@@ -20783,7 +20901,8 @@
+@@ -20783,7 +20904,8 @@
      shadow("shell.overlay", { id: "bot", order: 50, inject: face }, Overlays),
      shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),
      shadow("shell.overlay", { id: "bot-toast", order: 60, inject: face }, ErrorToast),
@@ -1845,7 +1857,7 @@ diff --git a/client.js b/client.js
    ];
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, "conversation"),
-@@ -20836,7 +20955,7 @@
+@@ -20836,7 +20958,7 @@
    ];
    ctx.effect(() => {
      const style = installStyles(TURN_FAILURES_CSS, "turn-failures");
@@ -1854,6 +1866,7 @@ diff --git a/client.js b/client.js
      return () => {
        off();
        style.remove();
+
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
