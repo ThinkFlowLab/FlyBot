@@ -174,8 +174,12 @@ export function install(rt) {
       agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
       return
     }
+    // The marker is forgotten only when nothing is left to hold back. A retry still waiting on that
+    // Session's backoff timer is this exchange's next delivery (#1688 review): dropping the marker
+    // now would let the timer ask the member again.
+    const waitingOnRetry = rateLimitRetries.get(sessionId)?.timer !== undefined
     for (const message of [...(agent.inbox?.nextStep ?? []), ...(agent.inbox?.nextTurn ?? [])]) {
-      if (message.source?.exchangeId === exchangeId && agent.inbox.remove(message.id)) stoppedRoomTurns.delete(exchangeId)
+      if (message.source?.exchangeId === exchangeId && agent.inbox.remove(message.id) && !waitingOnRetry) stoppedRoomTurns.delete(exchangeId)
     }
   }
 
@@ -625,6 +629,17 @@ export function install(rt) {
           const wait = RATE_LIMIT_BACKOFF_MS[spent]
           rt.warn('ds-bot: the provider rate limited %s (attempt %d of %d), asking again in %d ms: %s', id, spent + 1, RATE_LIMIT_BACKOFF_MS.length + 1, wait, failureLine(failure).slice(0, 200))
           const timer = setTimeout(() => {
+            // #1679: the person stopped the round while the retry waited. Asking the member again
+            // would spend a model call and its tools on an answer nobody sees — the round is gone
+            // and this exchange is marked stopped — so the wait is dropped here, where `info`
+            // still names the exchange. A stop after the timer fired is the running-turn path.
+            if (info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId)) {
+              // Only this wait is forgotten: `rateLimitRetries` is keyed by Session, and a later turn
+              // in that Session may already own the registered timer (#1688 review). Clearing that
+              // one would silently drop its retry.
+              if (rateLimitRetries.get(id)?.timer === timer) forgetRateLimit(id)
+              return
+            }
             rateLimitRetries.set(id, { spent: spent + 1 })
             retryRateLimited(id, info, origin).catch((error) => {
               rt.warn('ds-bot: the rate-limited turn for %s could not be asked again: %s', id, error)

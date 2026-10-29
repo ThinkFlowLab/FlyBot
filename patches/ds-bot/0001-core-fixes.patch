@@ -3,7 +3,7 @@ FlyBot patch 0001-core-fixes on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Generate
 diff --git a/README.md b/README.md
 --- a/README.md
 +++ b/README.md
-@@ -27,6 +27,7 @@
+@@ -27,6 +27,7 @@ Tested with dsh `0.2.0-rc.2` (Web and Desktop) on Linux.
  - **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
  - **Images**: for a model that cannot read images, a vision model first turns the image into text.
  - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
@@ -11,7 +11,7 @@ diff --git a/README.md b/README.md
  - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
  - **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
  
-@@ -66,14 +67,17 @@
+@@ -66,14 +66,17 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
    config:
      workspace: /path/to/workspace   # where the Bots work; default <home>/workspace
      home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/bot
@@ -30,7 +30,7 @@ diff --git a/README.md b/README.md
  ```
  
  **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
-@@ -82,10 +86,11 @@
+@@ -82,10 +82,11 @@ The same card can carry DSH itself: a DS Bot release may name the DSH release it
  
  ## Models
  
@@ -149,7 +149,7 @@ diff --git a/src/client/approval-notices.js b/src/client/approval-notices.js
 diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 --- a/src/client/bot-browsers.js
 +++ b/src/client/bot-browsers.js
-@@ -171,7 +171,7 @@
+@@ -171,7 +171,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
    async function create(tabId) {
      const botId = owner.get(tabId)
      const reservation = await bridge.acquire(`bot:${botId}`)
@@ -158,7 +158,7 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
      const element = doc.createElement('webview')
      // The shell forwards app shortcuts from a focused webview that carries these
      // attributes, as it does for its own Sidebar browser.
-@@ -293,7 +293,7 @@
+@@ -293,7 +293,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
    async function closeTab(botId, tabId) {
      const state = tabs.getSnapshot()[botId]
      if (state === undefined || !state.ids.includes(tabId)) return
@@ -167,7 +167,7 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
      if (shown === tabId) await show(null)
      await release(tabId)
      // The waits above can overlap a new tab or an active-tab switch; drop the
-@@ -375,7 +375,7 @@
+@@ -375,7 +375,7 @@ export function createBotBrowsers({ bridge, createSource, storage = globalThis.l
    async function forget(botId) {
      ensureTabs(botId)
      for (const tabId of tabs.getSnapshot()[botId]?.ids ?? []) {
@@ -187,7 +187,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  import { createPortal } from 'react-dom'
  import { BotMark } from './mark.js'
  import { STORAGE } from './storage.js'
-@@ -13,15 +14,6 @@
+@@ -13,15 +13,6 @@ import { t } from './i18n.js'
  
  export const PANEL_LINGER_MS = 300
  const WIDTH_KEY = STORAGE.browserWidth
@@ -203,7 +203,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  // How long the Bot's mark shows that it read the page.
  const READ_FLASH_MS = 2400
  const EMPTY_PAGE = { url: '', title: '', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, excerpt: '' }
-@@ -52,17 +44,17 @@
+@@ -52,17 +52,17 @@ export function Favicon({ src, className }) {
  }
  
  // null until the user sets a width: the Bot page then opens at DETAILS_WIDTH and the
@@ -454,7 +454,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +220,44 @@
+@@ -44,15 +44,44 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
@@ -503,7 +503,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
      error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
  }
  
-@@ -62,5 +267,5 @@
+@@ -62,5 +62,5 @@ export function ConnectorsPage({ roster, actions }) {
    return h('section', { className: 'bt-set-section' },
      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
@@ -513,7 +513,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 diff --git a/src/client/feedback.js b/src/client/feedback.js
 --- a/src/client/feedback.js
 +++ b/src/client/feedback.js
-@@ -37,7 +37,7 @@
+@@ -37,7 +37,7 @@ function entrySummary(entry) {
    return entry.text
  }
  
@@ -522,7 +522,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
  
  export function FeedbackPage({ actions, run, Section, Row }) {
    const [what, setWhat] = useState('')
-@@ -99,19 +99,19 @@
+@@ -99,19 +99,19 @@ export function FeedbackPage({ actions, run, Section, Row }) {
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setPreview(!preview), 'aria-expanded': preview }, preview ? t('Hide') : t('Show')),
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: copyReport }, t('Copy'))),
        preview ? h('div', { className: 'bt-set-row bt-fb-preview' }, h('pre', { tabIndex: 0, 'aria-label': t('Diagnostics') }, report?.markdown || t('Loading…'))) : null,
@@ -545,7 +545,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
              entry.code ? h('span', { className: 'bt-tag bt-fb-code' }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null)),
        h(Row, { label: t('Error log'), hint: t('Kept on this computer across restarts, up to about 1 MB.') },
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: downloadLog }, t('Download')),
-@@ -133,9 +133,10 @@
+@@ -133,9 +133,10 @@ export function ErrorToast({ useUi, actions }) {
      return () => { clearTimeout(fade); clearTimeout(gone) }
    }, [toast?.token])
    if (!toast) return null
@@ -558,7 +558,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
      h('button', { type: 'button', className: 'bt-icon-btn bt-toast-close', 'aria-label': t('Dismiss'), onClick: () => actions.dismissToast(toast.token) }, h(CloseIcon)))
  }
  
-@@ -155,13 +156,13 @@
+@@ -155,13 +155,13 @@ export const FEEDBACK_CSS = `
  .bt-fb-text{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
  .bt-fb-code{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
  .bt-event-error{color:#e02135}
@@ -638,7 +638,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Shared
    'Main Bot': '主 Bot',
    Working: '工作中',
-@@ -12,6 +65,67 @@
+@@ -12,6 +12,67 @@ const ZH = {
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -706,7 +706,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +140,21 @@
+@@ -26,6 +26,21 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -728,7 +728,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +170,73 @@
+@@ -41,22 +41,73 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -805,7 +805,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +273,59 @@
+@@ -93,6 +93,59 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -865,7 +865,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +338,64 @@
+@@ -105,17 +105,64 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -934,7 +934,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -128,8 +408,6 @@
+@@ -128,8 +128,6 @@ const ZH = {
    New: '新',
  
    // New chat
@@ -943,7 +943,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,9 +432,24 @@
+@@ -154,9 +154,24 @@ const ZH = {
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -968,7 +968,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
-@@ -172,6 +465,16 @@
+@@ -172,6 +172,16 @@ const ZH = {
    'Close details': '关闭详情',
    'Copied conversation': '已复制对话',
    'Share conversation': '分享对话',
@@ -985,7 +985,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Copy conversation as Markdown': '把对话复制为 Markdown',
    'This conversation is not part of your Bot team.': '这个对话不属于你的 Bot 团队。',
    'Admin {name}': '管理员 {name}',
-@@ -215,6 +518,25 @@
+@@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
    'Applies from the next message.': '从下一条消息开始生效。',
@@ -1011,7 +1011,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Profile: '资料',
    Label: '标签',
    'Optional. Shown under the name.': '可选，显示在名字下方。',
-@@ -238,6 +560,7 @@
+@@ -238,6 +238,7 @@ const ZH = {
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
    Manage: '管理',
@@ -1019,7 +1019,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
-@@ -274,6 +597,8 @@
+@@ -274,6 +274,8 @@ const ZH = {
    'Harness default': 'Harness 默认',
    Saving: '保存中',
    'Manage models': '管理模型',
@@ -1028,7 +1028,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,9 +637,10 @@
+@@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
@@ -1041,7 +1041,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +650,6 @@
+@@ -324,7 +324,6 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
@@ -1049,7 +1049,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
-@@ -333,6 +658,8 @@
+@@ -333,6 +333,8 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
@@ -1058,7 +1058,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',
-@@ -344,13 +671,13 @@
+@@ -344,13 +344,13 @@ const ZH = {
    '{n} d': '{n} 天',
  
    // Plugin updates
@@ -1078,7 +1078,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +687,74 @@
+@@ -360,9 +360,74 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -1154,7 +1154,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,10 +782,13 @@
+@@ -390,10 +390,13 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -1168,7 +1168,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Earlier messages': '更早的消息',
    'Loading earlier messages…': '正在加载更早的消息…',
    'Couldn’t load earlier messages · Retry': '更早的消息没加载出来 · 重试',
-@@ -403,6 +798,9 @@
+@@ -403,6 +403,9 @@ const ZH = {
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
    'Message from': '收到消息：',
@@ -1178,7 +1178,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -412,6 +810,8 @@
+@@ -412,6 +412,8 @@ const ZH = {
    'Working out a plan': '理一下思路',
    'Sorting out the details': '梳理细节',
    'On it': '在做了',
@@ -1187,7 +1187,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Busy with it': '正在处理',
    'Moving ahead': '推进中',
    'Taking care of it': '处理中',
-@@ -439,7 +839,6 @@
+@@ -439,7 +439,6 @@ const ZH = {
    'Looking back through the chat': '翻看聊天记录',
    '{name} looked up its own chat': '{name} 查看了自己的对话',
    '{name} looked up its own chat for “{text}”': '{name} 在自己的对话里查找「{text}」',
@@ -1195,7 +1195,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +849,31 @@
+@@ -450,12 +450,31 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -1228,7 +1228,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
-@@ -478,6 +896,7 @@
+@@ -478,6 +478,7 @@ const ZH = {
    Selected: '已选',
    Skip: '跳过',
    Submit: '提交',
@@ -1236,7 +1236,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Choose all that apply': '可多选',
    'Dismiss question': '关闭问题',
    Dismiss: '关闭',
-@@ -485,7 +904,7 @@
+@@ -485,7 +485,7 @@ const ZH = {
    'Your answer': '你的回答',
  
    // Secrets
@@ -1245,7 +1245,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No Bot': '没有 Bot',
    'Paste or type the key': '粘贴或输入密钥',
    'Only {name}': '只给 {name}',
-@@ -501,7 +920,6 @@
+@@ -501,7 +501,6 @@ const ZH = {
    'At least {count} characters.': '至少 {count} 个字符。',
    'Replace value': '替换值',
    'Saving…': '保存中…',
@@ -1253,7 +1253,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Allowing…': '允许中…',
    Allow: '允许',
    '{bot} asked for {name}': '{bot} 请求了 {name}',
-@@ -528,7 +946,7 @@
+@@ -528,7 +528,7 @@ const ZH = {
    'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
    'What it is for': '用途',
    Value: '值',
@@ -1262,7 +1262,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -568,7 +986,6 @@
+@@ -568,7 +568,6 @@ const ZH = {
    Remove: '删除',
    'Ask or update': '询问或更新',
    "Ask about or update {name}'s memory": '询问或更新 {name} 的记忆',
@@ -1270,7 +1270,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Added: {text}': '已添加：{text}',
    'Added to team memory: {text}': '已加入团队记忆：{text}',
    'Updated: {text}': '已更新：{text}',
-@@ -697,11 +1114,11 @@
+@@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
    // About
@@ -1285,7 +1285,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +1128,13 @@
+@@ -711,6 +711,13 @@ const ZH = {
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1299,7 +1299,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
-@@ -726,7 +1150,7 @@
+@@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
    'GitHub issue': 'GitHub issue',
@@ -1308,7 +1308,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +1162,7 @@
+@@ -738,7 +738,7 @@ const ZH = {
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -1317,7 +1317,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,12 +1195,21 @@
+@@ -771,12 +771,21 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1339,7 +1339,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Once, {time}': '一次，{time}',
    'Every day at {time}': '每天 {time}',
    'Every {days} at {time}': '每{days} {time}',
-@@ -784,7 +1217,21 @@
+@@ -784,7 +784,21 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1361,7 +1361,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
-@@ -794,6 +1241,7 @@
+@@ -794,6 +794,7 @@ const ZH = {
    minutes: '分钟',
    hours: '小时',
    days: '天',
@@ -1369,7 +1369,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Morning briefing': '早间简报',
    'What to do': '要做什么',
    'Sum up what changed since yesterday and what needs me today.': '总结一下昨天以来的变化，以及今天需要我处理的事。',
-@@ -806,9 +1254,20 @@
+@@ -806,9 +806,20 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1392,7 +1392,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
    'Automation tasks are off in DSH': 'DSH 的「自动化任务」没有打开',
-@@ -819,10 +1278,19 @@
+@@ -819,10 +819,19 @@ const ZH = {
    'Pick a date and time': '选一个日期和时间',
    'Pick a time in the future': '选一个将来的时间',
    'Pick a time of day': '选一个时间',
@@ -1412,7 +1412,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -853,8 +1321,11 @@
+@@ -853,8 +853,11 @@ const HOST_ERRORS = [
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
@@ -1424,7 +1424,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +1354,20 @@
+@@ -883,6 +883,20 @@ const HOST_ZH = {
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1445,7 +1445,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +1390,8 @@
+@@ -905,6 +905,8 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1513,7 +1513,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    })
  }
  
-@@ -31,12 +50,12 @@
+@@ -31,12 +31,12 @@ export function busyMembers(room, work, roster) {
      .map(entry => ({ ...entry, bot: roster.byId[entry.id] }))
  }
  
@@ -1531,7 +1531,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  // The groups a Bot is at work in.
-@@ -44,7 +63,7 @@
+@@ -44,7 +44,7 @@ export function botGroupWork(botId, work, roster) {
    return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries]) => {
      const entry = entries.find(item => item.botId === botId)
      const room = roster.roomsById[roomId]
@@ -1540,7 +1540,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    })
  }
  
-@@ -57,7 +76,7 @@
+@@ -57,7 +57,7 @@ export function summaryText(busy) {
        : asks.length === 2 ? t('{first} and {second} are waiting for your approval', { first: names[0], second: names[1] })
          : t('{first}, {second} and {count} more are waiting for your approval', { first: names[0], second: names[1], count: asks.length - 2, total: asks.length })
    const first = workers[0]
@@ -1549,7 +1549,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    return { waiting, doing }
  }
  
-@@ -66,24 +85,30 @@
+@@ -66,24 +66,30 @@ function Face({ entry, size }) {
      h(BotMark, { bot: entry.bot, size, state: entry.state === 'ask' ? 'alert' : toolState(entry.doing?.tool ?? '') }))
  }
  
@@ -1590,7 +1590,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  // Above a group's composer: who is at work here, and a line for the rest; both open the
-@@ -106,11 +131,11 @@
+@@ -106,11 +106,11 @@ export function MemberDock({ sessionId, useRoster, useWork, actions }) {
      const { rows, rest } = splitBusy(busy)
      const open = () => actions.showDetails(sessionId)
      return h('div', { ref, className: 'bt-mw-dock-stack' },
@@ -1605,7 +1605,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    })))
  }
  
-@@ -148,6 +173,13 @@
+@@ -148,6 +148,13 @@ function useNow(active) {
  
  const since = (now, at) => (typeof at === 'number' && now - at >= 60000 ? ` · ${elapsedLabel(now - at)}` : '')
  
@@ -1619,7 +1619,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  function ApprovalCard({ approval, bot, actions }) {
    const [busy, setBusy] = useState(false)
    const answer = (choice) => {
-@@ -164,14 +196,16 @@
+@@ -164,14 +164,16 @@ function ApprovalCard({ approval, bot, actions }) {
      approval.answerable
        ? h('div', { className: 'bt-mw-actions' },
          h('button', { type: 'button', className: 'bt-q-btn', disabled: busy, onClick: () => answer('reject') }, t('Reject')),
@@ -1640,7 +1640,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    const [stopping, setStopping] = useState(false)
    if (entry.state === 'ask') {
      return h('div', { className: 'bt-mw-member' },
-@@ -179,9 +213,6 @@
+@@ -179,9 +179,6 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
        entry.approvals.map(approval => h(ApprovalCard, { key: approval.id, approval, bot, actions })))
    }
    if (entry.state !== 'work') return null
@@ -1650,7 +1650,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    const stop = () => {
      setStopping(true)
      void Promise.resolve(actions.stopMemberWork(room.id, bot.id))
-@@ -190,8 +221,8 @@
+@@ -190,8 +190,8 @@ export function MemberWork({ entry, bot, room, roster, actions, now }) {
    }
    return h('div', { className: 'bt-mw-member' },
      h('div', { className: 'bt-mw-state bt-mw-work' },
@@ -1661,7 +1661,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  export function useMemberWork(room, useWork) {
-@@ -203,7 +234,6 @@
+@@ -203,7 +203,6 @@ export function useMemberWork(room, useWork) {
  
  export const MEMBER_CSS = `
  .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
@@ -1669,7 +1669,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
  .bt-mw-row:hover{background:var(--bt-hover)}
  .bt-mw-row>.bt-mark{flex:none}
-@@ -213,9 +243,7 @@
+@@ -213,9 +213,7 @@ export const MEMBER_CSS = `
  .bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
  .bt-mw-stop:hover{background:var(--bt-hover)}
  .bt-mw-stop:disabled{opacity:.5;cursor:default}
@@ -1680,7 +1680,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
  .bt-mw-stack>*+*{margin-left:-4px}
  .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
-@@ -230,9 +258,9 @@
+@@ -230,9 +230,9 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
  .bt-mw-text{color:var(--bt-ink);overflow-wrap:anywhere}
  .bt-mw-reason{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
  .bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1695,7 +1695,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
-@@ -27,7 +27,7 @@
+@@ -27,7 +27,7 @@ export function useMemoryCount(botId, actions) {
      countListeners.add(listener)
      listener()
      let stop = false
@@ -1719,7 +1719,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  import { SPRING_POP, SPRING_SHAPE, spring, useLinger } from './motion.js'
  import { t } from './i18n.js'
  
-@@ -33,14 +33,8 @@
+@@ -33,14 +33,8 @@ export function groupModels(models) {
  
  const servedOf = (roster, ref) => (roster.models ?? []).find(model => model.ref === ref)
  
@@ -1736,7 +1736,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  
  // The thinking levels of one model, `{efforts, defaultEffort?}` or undefined when it
  // has none. The catalog carries them for models Bots use; any other ref asks the host.
-@@ -139,6 +133,8 @@
+@@ -139,6 +139,8 @@ export function useAnchoredMenu() {
  // levels of the shown model when it has them.
  // `onPick`/`onPickEffort` replace saving to the Bot, for a Bot that does not exist yet.
  export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onPickEffort }) {
@@ -1745,7 +1745,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const { isOpen, shownPlace, leaving, button, menu, open, close } = useAnchoredMenu()
    const shown = modelOf(bot, roster)
    const current = bot.model ?? bot.appliedModel
-@@ -184,11 +180,11 @@
+@@ -184,11 +184,11 @@ export function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onP
          : h('div', { className: 'bt-model-none' }, t('No models are set up in DeepSeek Harness yet.')),
        effortRows(reasoning).length > 0 ? h(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
        h('div', { className: 'bt-menu-sep', role: 'separator' }),
@@ -1759,7 +1759,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  export function ModelChoiceDock({ sessionId, useRoster, actions }) {
    const roster = useRoster(value => value)
    const bot = roster.byId[sessionId]
-@@ -197,6 +193,10 @@
+@@ -197,6 +197,10 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
    const shown = Boolean(bot) && currentPart(bot) === sessionId && roster.ready
    useEffect(() => { if (shown) void actions.refreshModels?.() }, [shown, sessionId])
    if (!bot || currentPart(bot) !== sessionId || !roster.ready) return null
@@ -1770,7 +1770,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
    const models = roster.models ?? []
    const lost = bot.model ? !models.some(model => model.ref === bot.model) : false
    // An unknown catalog (none listed) cannot tell a lost model from a slow provider.
-@@ -215,7 +215,7 @@
+@@ -215,7 +215,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
        ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name })
        : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name })
    const choices = models.length === 0
@@ -1779,7 +1779,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
      : [
          ...groupModels(models).map(([provider, list]) => h('div', { key: list[0].provider ?? provider, className: 'bt-model-choice-group', role: 'group', 'aria-label': provider },
            h('div', { className: 'bt-model-choice-provider', 'aria-hidden': true }, provider),
-@@ -225,7 +225,7 @@
+@@ -225,7 +225,7 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
              title: model.ref === roster.defaultModel ? `${model.ref} · ${t('Harness default')}` : model.ref,
              onClick: () => pick(model.ref),
            }, model.name, busy === model.ref ? h('span', { className: 'bt-model-spin', 'aria-label': t('Saving…') }) : null))))),
@@ -1788,7 +1788,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
        ]
    return h('div', { className: 'bt-model-dock' },
      h('div', { className: 'bt-astack', 'data-lead': '' },
-@@ -237,6 +237,15 @@
+@@ -237,6 +237,15 @@ export function ModelChoiceDock({ sessionId, useRoster, actions }) {
      error ? h('div', { className: 'bt-secret-error bt-model-error', role: 'alert' }, error) : null)
  }
  
@@ -1804,7 +1804,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // Ways to get a first model. The DeepSeek sign-in exists only where the shell carries
  // its account plugin (the Desktop); the API key and custom models use the shell's
  // own editors.
-@@ -244,10 +253,67 @@
+@@ -244,10 +244,67 @@ function setupChoices(actions) {
    return [
      actions.canSignIn?.() ? [t('Sign in to DeepSeek'), () => actions.signIn()] : null,
      [t('Enter a DeepSeek API key'), () => openHarnessOnboarding('deepseek-official')],
@@ -1873,7 +1873,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  // The shell's own DeepSeek sign-in dialog, borrowed from its account plugin: the
  // plugin's model sign-in entry renders here with the plugin's own operations.
  export function DeepSeekSignIn({ useUi, actions }) {
-@@ -272,6 +338,16 @@
+@@ -272,6 +272,16 @@ function SignInHost({ entry, actions }) {
  }
  
  export const MODEL_CSS = `
@@ -1910,7 +1910,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
-@@ -47,7 +50,8 @@
+@@ -47,7 +47,8 @@ function weekdayNames(days) {
  function everyText(seconds) {
    if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
    if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
@@ -1920,7 +1920,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // How often a task runs, in the user's words.
-@@ -70,9 +74,22 @@
+@@ -70,9 +70,22 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -1945,7 +1945,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
    useEffect(() => {
-@@ -85,14 +102,34 @@
+@@ -85,14 +85,34 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
      setBusy(true)
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
    }
@@ -1982,13 +1982,14 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
-@@ -106,41 +143,77 @@
+@@ -106,41 +106,77 @@ function inAnHour() {
    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
  }
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2012,8 +2013,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2077,7 +2077,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          h('optgroup', { label: t('Bots') }, roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
          roster.rooms.length > 0 ? h('optgroup', { label: t('Group chats') }, roster.rooms.map(room => h('option', { key: room.id, value: room.id }, room.name))) : null)),
      h('label', { className: 'bt-set-row bt-bs-row' },
-@@ -153,6 +226,7 @@
+@@ -153,6 +153,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
        h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
        h('div', { key: kind, className: 'bt-task-when bt-veil' },
@@ -2085,7 +2085,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +240,165 @@
+@@ -166,56 +166,165 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2268,7 +2268,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,13 +408,15 @@
+@@ -225,13 +225,15 @@ export function ScheduleSummary({ bot, actions }) {
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -2285,7 +2285,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  .bt-task[data-done]{opacity:.6}
  .bt-task[data-busy]{opacity:.4}
  .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
-@@ -239,6 +424,12 @@
+@@ -239,6 +239,12 @@ export const SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
@@ -2310,7 +2310,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  
  export const MENTION_ORIGIN = 'https://bots.local/'
  
-@@ -10,9 +12,12 @@
+@@ -10,9 +10,12 @@ export const MENTION_ORIGIN = 'https://bots.local/'
  // ("@新 Bot" in "@新 Bot 2"); it then stays plain text.
  export function linkMentions(text, bots, selfId) {
    if (!text || !text.includes('@')) return text
@@ -2324,7 +2324,7 @@ diff --git a/src/client/text.js b/src/client/text.js
      if (!span.bot || span.bot.id === selfId) continue
      out += `${text.slice(cursor, span.start)}[${text.slice(span.start + 1, span.end).replace(/[[\]\\]/g, '\\$&')}](${MENTION_ORIGIN}${span.bot.id})`
      cursor = span.end
-@@ -25,6 +30,26 @@
+@@ -25,6 +25,26 @@ export function mentionTarget(event) {
    return anchor ? anchor.getAttribute('href').slice(MENTION_ORIGIN.length) : null
  }
  
@@ -2351,7 +2351,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' })
  }
-@@ -48,6 +73,24 @@
+@@ -48,6 +48,24 @@ export function relativeShort(ms) {
  export const contentText = content => (content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
  export const HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/
  export const currentPart = bot => bot.sessionId ?? bot.id
@@ -2376,7 +2376,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // The prompts in a due scheduled task's message. DSH frames it for the model: one
  // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
  export function reminderPrompts(text) {
-@@ -62,6 +105,105 @@
+@@ -62,6 +62,105 @@ export function reminderPrompts(text) {
    }
  }
  export const stripHeader = text => text.replace(HEADER, '')
@@ -2482,7 +2482,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  
  // Of the Bots in a conversation, the one whose memory changed last, by the host's
  // clock: changes reaching one window in the same poll share a `seen` time.
-@@ -95,6 +237,13 @@
+@@ -95,6 +95,13 @@ export function summaryBlocks(text) {
    return blocks
  }
  
@@ -2496,7 +2496,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  export function isHiddenTurn(roster, sessionId, turn) {
    if (sessionId === undefined || turn === undefined) return false
    return (roster.exchangeTurns[sessionId] ?? []).includes(turn)
-@@ -102,6 +251,13 @@
+@@ -102,6 +102,13 @@ export function isHiddenTurn(roster, sessionId, turn) {
  
  export const toolName = root => root.name || root.call?.name
  
@@ -2510,7 +2510,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // While a Session's history loads, a card asked in it may yet be drawn at its call,
  // so the docks hold it back until then.
  export const historyLoading = snapshot => snapshot?.openState === 'cold' || snapshot?.openState === 'loading'
-@@ -125,7 +281,7 @@
+@@ -125,7 +125,7 @@ export function toolArgs(root) {
  }
  
  // A relay context is a Bot-to-Bot request, reply or stop notice injected into the
@@ -2519,7 +2519,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // parts) are not events in the chat, nor is a request handed back after its line was
  // already shown: deferred, resumed after a restart, or retried after a tool call
  // written as text.
-@@ -200,18 +356,84 @@
+@@ -200,18 +200,84 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
  }
  
  // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
@@ -2607,7 +2607,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  const formatTokens = count => (count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count))
  
  // Same buckets as the shell's usage pill: every prompt-side billing bucket plus output.
-@@ -230,3 +452,35 @@
+@@ -230,3 +230,35 @@ export function usageOf(list, ids) {
    const hit = input > 0 ? Math.round((cacheRead / input) * 100) : 0
    return t('{tokens} tok · Cache hit {hit}%', { tokens: formatTokens(input + output), hit })
  }
@@ -2653,7 +2653,7 @@ diff --git a/src/client/voice.js b/src/client/voice.js
  import { MicIcon, CloseIcon } from './icons.js'
  import { BotMark, RoomAvatar } from './mark.js'
  import { speechApi, useDictation } from './composer.js'
-@@ -12,7 +12,6 @@
+@@ -12,7 +12,6 @@ import { openCapture, speechCatalog, transcribeWave, turnDetector } from './spee
  // again. With DSH's Voice Input plugin on, its recognizer hears the user: one
  // recording ends after a pause and is transcribed whole. Otherwise the browser's
  // own speech recognition does. The browser's speech synthesis reads the answer.
@@ -2661,7 +2661,7 @@ diff --git a/src/client/voice.js b/src/client/voice.js
  const VOICE_LABELS = {
    listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', paused: 'Paused',
    setup: 'Voice input needs its speech model', unsupported: 'Voice chat is not available in this browser',
-@@ -27,7 +26,7 @@
+@@ -27,7 +27,7 @@ function useMicLevel(enabled) {
      let audio = null
      let frame = 0
      let stopped = false
@@ -2670,7 +2670,7 @@ diff --git a/src/client/voice.js b/src/client/voice.js
        if (stopped) { media.getTracks().forEach(track => track.stop()); return }
        stream = media
        audio = new AudioContext()
-@@ -184,7 +183,7 @@
+@@ -184,7 +184,7 @@ export function VoiceMode({ sessionId, roster, actions, useSessions, useSessionS
      const [count, text] = [lastReply.slice(0, lastReply.indexOf('|')), lastReply.slice(lastReply.indexOf('|') + 1)]
      if (count === waiting.current || !text.trim()) return
      waiting.current = null
@@ -2682,7 +2682,7 @@ diff --git a/src/client/voice.js b/src/client/voice.js
 diff --git a/src/host/agents.js b/src/host/agents.js
 --- a/src/host/agents.js
 +++ b/src/host/agents.js
-@@ -77,6 +77,13 @@
+@@ -77,6 +77,13 @@ export function install(rt) {
      const readOnly = rt.readOnly()
      if (readOnly !== undefined) throw new Error(readOnly)
    }
@@ -2696,7 +2696,7 @@ diff --git a/src/host/agents.js b/src/host/agents.js
    const record = (agentId) => {
      const agent = state.agents[agentId]
      if (agent === undefined) throw new Error('Unknown DSH Agent')
-@@ -84,16 +91,15 @@
+@@ -84,16 +84,15 @@ export function install(rt) {
    }
  
    async function createAgentSession(agentId, workspaceId) {
@@ -2716,7 +2716,7 @@ diff --git a/src/host/agents.js b/src/host/agents.js
      // agent/created fired before the session joined the index, so restrict again now.
      await restrictTeamTools(await rt.resolveAgent(sessionId))
      return sessionId
-@@ -103,48 +109,54 @@
+@@ -103,48 +103,54 @@ export function install(rt) {
    // picker or a fork) is adopted into the same Agent: it keeps dsh's surface and
    // the team tools stay hidden.
    async function adoptAgentSession(agentId, sessionId) {
@@ -2794,7 +2794,7 @@ diff --git a/src/host/agents.js b/src/host/agents.js
    }
  
    async function renameAgentSession(agentId, sessionId, title) {
-@@ -158,9 +170,9 @@
+@@ -158,9 +158,9 @@ export function install(rt) {
    }
  
    async function removeAgent(agentId) {
@@ -2807,7 +2807,7 @@ diff --git a/src/host/agents.js b/src/host/agents.js
      const kept = []
      let failure
      for (const sessionId of sessions) {
-@@ -174,12 +186,10 @@
+@@ -174,12 +174,10 @@ export function install(rt) {
      // What could not be archived stays with the Agent, so it keeps its tool
      // restriction and the removal can be retried from the same place.
      if (kept.length > 0) {
@@ -2872,7 +2872,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
  
  export function install(rt) {
    const { ctx } = rt
-@@ -16,7 +53,18 @@
+@@ -16,7 +16,18 @@ export function install(rt) {
      const sessionId = request.agent?.session?.id ?? request.agent?.id
      const owner = sessionId === undefined ? undefined : rt.groupOwners.get(sessionId)
      const botId = owner?.botId ?? (sessionId === undefined ? undefined : rt.chatOwners.get(sessionId))
@@ -2892,7 +2892,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
      const id = randomUUID()
      const entry = {
        id,
-@@ -47,14 +95,82 @@
+@@ -47,14 +47,82 @@ export function install(rt) {
      })
    }, { prepend: true })
  
@@ -2976,7 +2976,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
      entry.answer(outcome)
    }
  
-@@ -65,5 +181,5 @@
+@@ -65,5 +65,5 @@ export function install(rt) {
      }
    }
  
@@ -2992,7 +2992,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-@@ -7,8 +8,8 @@
+@@ -7,8 +7,8 @@ const ENSURE_TIMEOUT_MS = 15_000
  
  export function validateCapabilityName(value) {
    const name = String(value ?? '').trim()
@@ -3003,7 +3003,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
-@@ -264,7 +265,7 @@
+@@ -264,7 +264,7 @@ export function install(rt) {
      return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
    }
    const disposeMount = async mount => {
@@ -3015,7 +3015,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 --- a/src/host/chat-index.js
 +++ b/src/host/chat-index.js
-@@ -82,7 +82,7 @@
+@@ -82,7 +82,7 @@ export function install(rt) {
        // A damaged file is rebuilt from the logs once.
        for (const fresh of [false, true]) {
          try {
@@ -3097,7 +3097,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +68,985 @@
+@@ -38,132 +38,985 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -4150,7 +4150,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
-@@ -16,7 +16,7 @@
+@@ -16,7 +16,7 @@ const LOG_MAX_BYTES = 1 << 20
  const STACK_LINES = 8
  const TEXT_MAX = 2000
  export const REPORT_ENTRIES = 20
@@ -4159,7 +4159,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
  
  const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
-@@ -66,7 +66,7 @@
+@@ -66,7 +66,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
    const lines = [
      '| | |',
      '|---|---|',
@@ -4168,7 +4168,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      row('DSH', facts.dshVersion),
      row('Surface', client.surface),
      row('OS', facts.os),
-@@ -105,9 +105,9 @@
+@@ -105,9 +105,9 @@ const dshVersion = () => {
        try {
          const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
          if (manifest.name === '@deepseek-ai/dsh-llm') return manifest.version
@@ -4180,7 +4180,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
    return undefined
  }
  
-@@ -167,7 +167,9 @@
+@@ -167,7 +167,9 @@ export function install(rt) {
      const error = args.find(arg => arg instanceof Error)
      const line = clean(format(template, ...args.map(arg => (arg instanceof Error ? errorText(arg) : arg))))
      const frames = typeof error?.stack === 'string' ? error.stack.split('\n').filter(item => /^\s+at /.test(item)).slice(0, STACK_LINES).map(item => item.trim()) : []
@@ -4191,7 +4191,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      console.error(`[ds-bot] ${line}${frames.length > 0 ? `\n${clean(frames.join('\n'))}` : ''}`)
      note({
        level: 'warn',
-@@ -217,7 +219,7 @@
+@@ -217,7 +217,7 @@ export function install(rt) {
    })
  
    async function report(body = {}) {
@@ -4200,7 +4200,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      const list = await entries()
      const client = sanitizeClient(body.client)
      const clientEntries = sanitizeClientEntries(body.clientErrors)
-@@ -232,7 +234,7 @@
+@@ -232,7 +232,7 @@ export function install(rt) {
    }
  
    async function logText() {
@@ -4221,7 +4221,7 @@ diff --git a/src/host/images.js b/src/host/images.js
  import { join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
  import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
-@@ -27,6 +27,56 @@
+@@ -27,6 +27,56 @@ export function offloadTargets(session, beforeSeq) {
    return targets
  }
  
@@ -4278,19 +4278,18 @@ diff --git a/src/host/images.js b/src/host/images.js
  export function install(rt) {
    const { ctx, config, home } = rt
  
-@@ -128,16 +178,18 @@
+@@ -128,16 +128,18 @@ export function install(rt) {
      return ocrPending.get(id)
    }
  
 -  const imageLabel = attachment => (attachment.name
 -    ? `"${attachment.name}"`
 -    : `sha256:${String(attachment.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)}`)
--
--  function imageAsText(attachment, reading) {
 +  // The store and the file sandbox, read once per call: either can be absent (a deployment without
 +  // attachments, a test), and `attachmentFilePath` then falls back to the local object layout.
 +  const attachmentServices = () => ({ home, attachments: ctx.get('attachments'), fs: ctx.get('fs') })
-+
+ 
+-  function imageAsText(attachment, reading) {
 +  // `path` is set only when the reading failed and the bytes really are on disk: the placeholder then
 +  // tells the Bot where to find them, which is the point of #779.
 +  function imageAsText(attachment, reading, path) {
@@ -4303,7 +4302,7 @@ diff --git a/src/host/images.js b/src/host/images.js
          : `[Image ${label}. You cannot see images, so ${reading.model} read it for you:]\n${reading.text}\n[End of image ${label}]`,
      }
    }
-@@ -150,7 +202,7 @@
+@@ -150,7 +150,7 @@ export function install(rt) {
        const reading = await imageReading(attachment, sessionId)
        const label = imageLabel(attachment)
        return reading === null
@@ -4312,7 +4311,7 @@ diff --git a/src/host/images.js b/src/host/images.js
          : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
      }))
    }
-@@ -164,13 +216,20 @@
+@@ -164,13 +164,20 @@ export function install(rt) {
          if (block?.type === 'image' && !block.offloaded) images.set(String(block.attachment.attachmentId), block.attachment)
        }
      }
@@ -4340,7 +4339,7 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,9 +25,11 @@
+@@ -25,9 +25,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
@@ -4353,7 +4352,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
  // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
-@@ -312,7 +314,7 @@
+@@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
  
@@ -4362,7 +4361,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  const summaryRequest = ({ name, own, team, language }) => [
    `Here is everything ${name} remembers: its own memory, then the team memory that every Bot shares. Each line is one entry; [[name]] is a topic.`,
-@@ -327,7 +329,7 @@
+@@ -327,7 +327,7 @@ const summaryRequest = ({ name, own, team, language }) => [
  ].join('\n')
  
  const ASK_SYSTEM = [
@@ -4371,7 +4370,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"reply": "…", "changes": […]}',
    '- reply: one to three short sentences to the user. Say what you changed, or answer the question; when the entries do not say, say so. The user does not see the entry numbers, so never mention them.',
    '- changes: empty unless the user asks to add, correct, or remove something. Each change is one of',
-@@ -338,7 +340,7 @@
+@@ -338,7 +338,7 @@ const ASK_SYSTEM = [
  ].join('\n')
  
  const reviewSystem = teamWrites => [
@@ -4380,7 +4379,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
-@@ -486,7 +488,24 @@
+@@ -486,7 +486,24 @@ export function install(rt) {
    // Main Bots and the admins of a group also write the team's; Main Bots read and
    // write every Bot's. The user may do everything from the memory panel.
  
@@ -4406,7 +4405,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
-@@ -632,7 +651,7 @@
+@@ -632,7 +632,7 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
        if (rt.readOnly() !== undefined) return
@@ -4415,7 +4414,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const dir = dirOf(ownScope(botId))
        if (!existsSync(dir)) return
        const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-@@ -837,11 +856,13 @@
+@@ -837,11 +837,13 @@ export function install(rt) {
  
    ctx.tools.register(defineTool({
      name: 'recall',
@@ -4430,7 +4429,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -861,6 +882,20 @@
+@@ -861,6 +861,20 @@ export function install(rt) {
          const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
          return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
        }
@@ -4451,7 +4450,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
        const query = String(args.query ?? '').trim().slice(0, 120)
        if (query === '') {
-@@ -872,6 +907,21 @@
+@@ -872,6 +872,21 @@ export function install(rt) {
            ].join('\n')
          }).join('\n\n')
        }
@@ -4473,7 +4472,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
        const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {
          const hay = squash(`${entry.text} ${entry.file.topic ?? ''}`)
-@@ -941,6 +991,8 @@
+@@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
    async function botShot(bot, system, text, tag) {
@@ -4482,7 +4481,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
-@@ -1004,7 +1056,7 @@
+@@ -1004,7 +1004,7 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -4491,7 +4490,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
-@@ -1123,17 +1175,28 @@
+@@ -1123,17 +1123,28 @@ export function install(rt) {
  
    // What is new in a group, from its log: the member's Session holds the same
    // messages wrapped in turn prompts.
@@ -4522,7 +4521,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
      }
      return {
-@@ -1158,7 +1221,7 @@
+@@ -1158,7 +1158,7 @@ export function install(rt) {
      return { texts: kept, count: kept.length }
    }
  
@@ -4531,7 +4530,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const actor = { id: bot.id, name: bot.name, session: sessionId, auto: true }
      const done = []
      let failed
-@@ -1166,7 +1229,7 @@
+@@ -1166,7 +1166,7 @@ export function install(rt) {
        // A Bot deleted mid-review keeps no more changes, its team ones included.
        if (rt.botOf(bot.id) === undefined) return 0
        // Its role may change mid-review too, so each change asks again.
@@ -4540,7 +4539,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const op = String(change?.op ?? '')
        const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
        const target = numbered[Number(change?.entry) - 1]
-@@ -1272,7 +1335,7 @@
+@@ -1272,7 +1272,7 @@ export function install(rt) {
        const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
        if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
        if (rt.botOf(bot.id) === undefined) return
@@ -4549,7 +4548,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
-@@ -1378,8 +1441,29 @@
+@@ -1378,8 +1378,29 @@ export function install(rt) {
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
  
@@ -4582,7 +4581,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js
-@@ -5,6 +5,28 @@
+@@ -5,6 +5,28 @@ import { normalize, splitRef } from './text.js'
  
  const CATALOG_TTL_MS = 10_000
  const ROUTE_WAIT_MS = 30_000
@@ -4611,7 +4610,7 @@ diff --git a/src/host/models.js b/src/host/models.js
  
  export function install(rt) {
    const { ctx, state } = rt
-@@ -68,7 +90,9 @@
+@@ -68,7 +68,9 @@ export function install(rt) {
    // The profile default model of DSH, when it is served; else the first served model.
    function pickDefault(entries) {
      const ref = defaultRef()
@@ -4622,7 +4621,7 @@ diff --git a/src/host/models.js b/src/host/models.js
    }
    const defaultModel = async () => pickDefault(await catalog())
  
-@@ -90,6 +114,7 @@
+@@ -90,6 +90,7 @@ export function install(rt) {
    // A Bot with no model yet waits for the user to pick one and changes nothing. A
    // model that is no longer served falls back to the last one it ran on, then the default.
    async function desiredModel(bot) {
@@ -4630,7 +4629,7 @@ diff --git a/src/host/models.js b/src/host/models.js
      if (!bot.model) return undefined
      const entries = await catalog()
      const served = new Set(entries.map(entry => entry.ref))
-@@ -143,19 +168,78 @@
+@@ -143,19 +143,78 @@ export function install(rt) {
  
    const sameSelection = (a, b) => a.provider === b.provider && a.model === b.model && a.reasoningEffort === b.reasoningEffort
  
@@ -4711,7 +4710,7 @@ diff --git a/src/host/models.js b/src/host/models.js
      bot.appliedModel = ref
      if (effort === undefined) delete bot.appliedEffort
      else bot.appliedEffort = effort
-@@ -163,8 +247,8 @@
+@@ -163,8 +163,8 @@ export function install(rt) {
      return ref
    }
  
@@ -4722,7 +4721,7 @@ diff --git a/src/host/models.js b/src/host/models.js
    async function waitForModel(bot, ms = ROUTE_WAIT_MS) {
      const deadline = Date.now() + ms
      for (;;) {
-@@ -194,9 +278,56 @@
+@@ -194,9 +194,56 @@ export function install(rt) {
      }
    }
  
@@ -4836,7 +4835,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
    '- You run the group chats too. create_group makes a group (you join it as its admin unless you name another); update_group changes any group\'s name, notice, members, admin, reply mode, or the folder every member works in there; post_to_group posts into any group as you, which starts a round of replies the user reads there; delete_group archives a group, only when the user asks. list_bots shows every group.',
    '- The team can have more than one Main Bot; list_bots marks them. They share these powers, so coordinate with them through message_bot.',
  ].join('\n')
-@@ -45,8 +58,10 @@
+@@ -45,8 +45,10 @@ export function install(rt) {
      if (bot !== undefined) {
        return [
          '# Your identity',
@@ -4851,7 +4850,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
-@@ -9,6 +9,7 @@
+@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
  import { mkdir, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
  import { SOURCE_KIND } from './constants.js'
@@ -4859,7 +4858,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
  
  // Long enough for DSH to finish opening its workspaces after a start.
  const RESUME_DELAY_MS = 3000
-@@ -51,7 +52,7 @@
+@@ -51,7 +51,7 @@ export function install(rt) {
    // What the last run left; read before this run notes anything.
    let interrupted = readNotes(file)
  
@@ -4868,7 +4867,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    let turns = {}
    /** @type {Record<string, {at:number, args:any}[]>} deliveries no turn has taken up, by Session */
    let queued = {}
-@@ -76,6 +77,10 @@
+@@ -76,6 +76,10 @@ export function install(rt) {
        await writeFile(file, snapshot, 'utf8')
      }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
    }
@@ -4879,7 +4878,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    const update = (id, change) => {
      const next = change(turns[id])
      if (next === turns[id]) return
-@@ -84,26 +89,33 @@
+@@ -84,26 +84,33 @@ export function install(rt) {
      else turns[id] = next
      persist()
    }
@@ -4924,7 +4923,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      try {
        return await deliver(noted)
      } catch (error) {
-@@ -137,10 +149,13 @@
+@@ -137,10 +137,13 @@ export function install(rt) {
        case 'turn/start': {
          const owner = rt.groupOwners.get(id)
          const botId = owner?.botId ?? rt.chatOwners.get(id)
@@ -4939,7 +4938,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          if (event.data?.source?.kind !== SOURCE_KIND) break
          // turns.js, installed earlier, has already claimed the turn's trigger.
          const info = rt.live.get(id)?.info
-@@ -151,7 +166,9 @@
+@@ -151,7 +151,9 @@ export function install(rt) {
        case 'turn/end': {
          // DSH stops every turn as it shuts down; that one is picked up at the next start.
          const reason = event.data?.reason
@@ -4950,7 +4949,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          update(id, () => undefined)
          break
        }
-@@ -173,17 +190,17 @@
+@@ -173,17 +173,17 @@ export function install(rt) {
        // A turn already picked up once and cut off again stays stopped: a restart loop
        // must not run it forever.
        if (record.resumed) return
@@ -4971,7 +4970,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    }
  
    // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
-@@ -198,11 +215,50 @@
+@@ -198,11 +198,50 @@ export function install(rt) {
        && current(item.args) !== undefined && taken?.has(item.args.exchangeId) !== true)
      if (fresh.length === 0) return
      const target = current(fresh[0].args)
@@ -5024,7 +5023,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      }
    }
  
-@@ -211,26 +267,41 @@
+@@ -211,26 +211,41 @@ export function install(rt) {
      if (rt.readOnly() !== undefined) return
      const { turns: noted, queued: dropped } = interrupted
      interrupted = { turns: {}, queued: {} }
@@ -5120,7 +5119,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-@@ -28,6 +62,28 @@
+@@ -28,6 +28,28 @@ export function reminderText(text) {
    return lines.length === 0 ? text : lines.map(prompt => `[Scheduled task] ${prompt}`).join('\n')
  }
  
@@ -5149,7 +5148,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The create request that gives a stored record its timing again, for a move.
  function requestOf(record) {
    const base = { title: record.title, prompt: record.prompt }
-@@ -39,6 +95,28 @@
+@@ -39,6 +39,28 @@ function requestOf(record) {
    return null
  }
  
@@ -5178,7 +5177,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -59,9 +137,11 @@
+@@ -59,9 +59,11 @@ function selectorOf(when) {
        return { weekly: { time: `${when.time}:00`, time_zone: zone, weekdays } }
      }
      case 'every': {
@@ -5193,7 +5192,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
      }
      default:
        throw invalid('Pick when it runs')
-@@ -89,63 +169,502 @@
+@@ -89,63 +89,502 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5730,7 +5729,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 diff --git a/src/host/steward.js b/src/host/steward.js
 --- a/src/host/steward.js
 +++ b/src/host/steward.js
-@@ -10,7 +10,9 @@
+@@ -10,7 +10,9 @@ import { estimateTokens } from './text.js'
  
  // For a model that declares no window.
  export const DEFAULT_WINDOW = 500_000
@@ -5756,7 +5755,7 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
  
  export function install(rt) {
    const { ctx, config } = rt
-@@ -20,6 +22,8 @@
+@@ -20,6 +20,8 @@ export function install(rt) {
      if (decision.kind === 'reject' || signal.aborted) return decision
      await rt.load()
      if (!rt.isBotSession(agent.id) || signal.aborted) return decision
@@ -5800,7 +5799,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +47,7 @@
+@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -5809,7 +5808,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -48,12 +71,20 @@
+@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
  
  export function install(rt) {
    const { ctx, state } = rt
@@ -5831,7 +5830,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +101,60 @@
+@@ -70,13 +70,60 @@ export function install(rt) {
      })
    }
  
@@ -5894,7 +5893,21 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +240,31 @@
+@@ -96,8 +96,12 @@ export function install(rt) {
+       agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
+       return
+     }
++    // The marker is forgotten only when nothing is left to hold back. A retry still waiting on that
++    // Session's backoff timer is this exchange's next delivery (#1688 review): dropping the marker
++    // now would let the timer ask the member again.
++    const waitingOnRetry = rateLimitRetries.get(sessionId)?.timer !== undefined
+     for (const message of [...(agent.inbox?.nextStep ?? []), ...(agent.inbox?.nextTurn ?? [])]) {
+-      if (message.source?.exchangeId === exchangeId && agent.inbox.remove(message.id)) stoppedRoomTurns.delete(exchangeId)
++      if (message.source?.exchangeId === exchangeId && agent.inbox.remove(message.id) && !waitingOnRetry) stoppedRoomTurns.delete(exchangeId)
+     }
+   }
+ 
+@@ -162,17 +162,31 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -5927,7 +5940,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +288,33 @@
+@@ -196,7 +196,33 @@ export function install(rt) {
      return merged
    }
  
@@ -5962,7 +5975,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +322,9 @@
+@@ -204,7 +204,9 @@ export function install(rt) {
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
@@ -5973,7 +5986,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
      return bots
    }
-@@ -221,6 +341,7 @@
+@@ -221,6 +221,7 @@ export function install(rt) {
          botId: owner.botId,
          since: entry.since,
          ...(entry.tool ? { tool: entry.tool } : {}),
@@ -5981,7 +5994,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +359,54 @@
+@@ -238,6 +238,54 @@ export function install(rt) {
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -6036,7 +6049,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -266,6 +435,7 @@
+@@ -266,6 +266,7 @@ export function install(rt) {
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
          startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
@@ -6044,7 +6057,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
-@@ -280,7 +450,9 @@
+@@ -280,7 +280,9 @@ export function install(rt) {
          endCall(id, entry, event.data?.subCallId)
          break
        case 'tool/result':
@@ -6055,7 +6068,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          break
        case 'turn/start':
          setActivity(id, 'thinking')
-@@ -288,11 +460,17 @@
+@@ -288,11 +288,17 @@ export function install(rt) {
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
@@ -6073,7 +6086,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +478,14 @@
+@@ -300,6 +300,14 @@ export function install(rt) {
          break
        case 'user/message': {
          const source = event.data?.source
@@ -6088,7 +6101,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,15 +517,27 @@
+@@ -331,15 +331,27 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -6118,7 +6131,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
            else if (expectsReply(source) && !answersUser(source)
-@@ -363,12 +561,15 @@
+@@ -363,12 +363,15 @@ export function install(rt) {
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -6139,7 +6152,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +587,17 @@
+@@ -386,11 +386,17 @@ export function install(rt) {
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -6157,7 +6170,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -399,19 +606,47 @@
+@@ -399,19 +399,58 @@ export function install(rt) {
          entry.since = undefined
          entry.tool = undefined
          entry.calls = undefined
@@ -6180,6 +6193,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +          const wait = RATE_LIMIT_BACKOFF_MS[spent]
 +          rt.warn('ds-bot: the provider rate limited %s (attempt %d of %d), asking again in %d ms: %s', id, spent + 1, RATE_LIMIT_BACKOFF_MS.length + 1, wait, failureLine(failure).slice(0, 200))
 +          const timer = setTimeout(() => {
++            // #1679: the person stopped the round while the retry waited. Asking the member again
++            // would spend a model call and its tools on an answer nobody sees — the round is gone
++            // and this exchange is marked stopped — so the wait is dropped here, where `info`
++            // still names the exchange. A stop after the timer fired is the running-turn path.
++            if (info?.role === 'room' && stoppedRoomTurns.has(info.exchangeId)) {
++              // Only this wait is forgotten: `rateLimitRetries` is keyed by Session, and a later turn
++              // in that Session may already own the registered timer (#1688 review). Clearing that
++              // one would silently drop its retry.
++              if (rateLimitRetries.get(id)?.timer === timer) forgetRateLimit(id)
++              return
++            }
 +            rateLimitRetries.set(id, { spent: spent + 1 })
 +            retryRateLimited(id, info, origin).catch((error) => {
 +              rt.warn('ds-bot: the rate-limited turn for %s could not be asked again: %s', id, error)
@@ -6206,7 +6230,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +654,24 @@
+@@ -419,6 +419,24 @@ export function install(rt) {
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
@@ -6231,7 +6255,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +687,7 @@
+@@ -434,6 +434,7 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6239,7 +6263,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +700,7 @@
+@@ -446,6 +446,7 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6247,7 +6271,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +715,14 @@
+@@ -460,14 +460,14 @@ export function install(rt) {
            } else if (!stopped && reason?.kind !== 'aborted') {
              // The round moved on without this member; how its turn ends still reaches the group.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
@@ -6264,7 +6288,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,13 +743,32 @@
+@@ -488,13 +488,32 @@ export function install(rt) {
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -6312,7 +6336,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
  const PAGE_MESSAGES = 400
  const PAGE_TIMEOUT_MS = 20_000
  const SCAN_TIMEOUT_MS = 180_000
-@@ -45,30 +46,107 @@
+@@ -45,30 +45,107 @@ const tokensOf = usage => ({
    output: count(usage.outputTokens),
  })
  
@@ -6421,7 +6445,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
          break
        case 'session/end-seed':
          if (data.inherited === true) {
-@@ -82,14 +160,30 @@
+@@ -82,14 +82,30 @@ export function foldCalls(events, from = {}) {
          if (usage === undefined || usage === null) break
          const attempt = state.retry?.turn === data.turn && state.retry.step === data.step ? state.retry.count : 0
          const key = `${data.turn}:${data.step}:${attempt}`
@@ -6454,7 +6478,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
  }
  
  // One aggregate per Session, model, use, and quarter hour.
-@@ -144,14 +238,14 @@
+@@ -144,14 +144,14 @@ function sqliteLedger(DatabaseSync, path) {
          DROP TABLE IF EXISTS marks;
          DROP TABLE IF EXISTS owners;
          DROP TABLE IF EXISTS kinds;
@@ -6471,7 +6495,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
      const dropLogged = db.prepare('DELETE FROM calls WHERE session = ? AND live = 0')
      const getMark = db.prepare('SELECT through, fold, sealed FROM marks WHERE session = ?')
      const setMark = db.prepare('INSERT OR REPLACE INTO marks (session, through, fold, sealed) VALUES (?, ?, ?, ?)')
-@@ -160,7 +254,10 @@
+@@ -160,7 +160,10 @@ function sqliteLedger(DatabaseSync, path) {
      const allKinds = db.prepare('SELECT session, kind FROM kinds')
      const putKind = db.prepare('INSERT OR REPLACE INTO kinds (session, kind) VALUES (?, ?)')
      const grouped = db.prepare(`SELECT session, provider, model, kind, time / ${SLOT_MS} AS slot, SUM(input) AS input, SUM(cache_read) AS cacheRead, SUM(cache_write) AS cacheWrite, SUM(output) AS output, COUNT(*) AS calls FROM calls GROUP BY session, provider, model, kind, slot`)
@@ -6483,7 +6507,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
      return {
        mark(session) {
          const row = getMark.get(session)
-@@ -233,6 +330,28 @@
+@@ -233,6 +233,28 @@ export function install(rt) {
    let opening
    // Metered calls that finish before the ledger opens.
    const early = []
@@ -6512,7 +6536,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
    function openLedger() {
      if (ledger !== undefined) return Promise.resolve(ledger)
      const job = opening ??= (async () => {
-@@ -250,7 +369,7 @@
+@@ -250,7 +250,7 @@ export function install(rt) {
        const damaged = error => /malformed|not a database|corrupt/i.test(String(error?.message ?? error))
        for (const fresh of [false, true]) {
          try {
@@ -6521,7 +6545,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
            return sqliteLedger(DatabaseSync, path)
          } catch (error) {
            if (fresh || !damaged(error)) {
-@@ -367,9 +486,14 @@
+@@ -367,9 +367,14 @@ export function install(rt) {
      }
      events.reverse()
      if (events.length > 0 && events[0].seq !== from + 1) throw new Error(`the history of ${sessionId} came back with a gap`)
@@ -6538,7 +6562,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
        reset: fold.reset,
        mark: { through, fold: fold.state, sealed: sealable },
      })
-@@ -556,9 +680,17 @@
+@@ -556,9 +556,17 @@ export function install(rt) {
        try { journal(book, sessionId) } catch (error) { rt.warn('ds-bot: usage could not journal %s: %s', sessionId, error) }
      })()
    }
@@ -6558,7 +6582,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
      if (ledger !== undefined) {
        try { ledger.add(row) } catch (error) { rt.warn('ds-bot: usage could not record a call: %s', error) }
        return
-@@ -579,6 +711,7 @@
+@@ -579,6 +579,7 @@ export function install(rt) {
      }
      return (async function* meter() {
        let usage
@@ -6566,7 +6590,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
        try {
          for await (const chunk of next()) {
            if (chunk?.type === 'usage' && chunk.usage && typeof chunk === 'object' && !counted.has(chunk)) {
-@@ -588,10 +721,23 @@
+@@ -588,10 +588,23 @@ export function install(rt) {
            yield chunk
          }
        } finally {
@@ -6595,7 +6619,7 @@ diff --git a/src/host/usage.js b/src/host/usage.js
 diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 --- a/src/shared/mentions.js
 +++ b/src/shared/mentions.js
-@@ -63,3 +63,24 @@
+@@ -63,3 +63,24 @@ export function mentionSpans(text, bots, { references = [] } = {}) {
    }
    return spans
  }
@@ -6623,7 +6647,7 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 --- a/test/approval-notices.test.js
 +++ b/test/approval-notices.test.js
-@@ -3,6 +3,8 @@
+@@ -3,6 +3,8 @@ import { test } from 'node:test'
  import { fileURLToPath } from 'node:url'
  import { runInNewContext } from 'node:vm'
  import { build } from 'esbuild'
@@ -6632,7 +6656,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
  
  const bundle = await build({
    entryPoints: [fileURLToPath(new URL('../src/client/approval-notices.js', import.meta.url))],
-@@ -10,7 +12,7 @@
+@@ -10,7 +10,7 @@ const bundle = await build({
  })
  
  // One window: the platform's Notification, whether the page shows, and the work source.
@@ -6641,7 +6665,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    const shown = []
    const opened = []
    function Notification(title, options) {
-@@ -26,14 +28,16 @@
+@@ -26,14 +26,16 @@ function windowWith({ permission = 'granted', visibility = 'visible' } = {}) {
      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
      set: (next) => { snapshot = next; for (const listener of listeners) listener() },
    }
@@ -6660,7 +6684,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
  }
  
  test('an approval that starts waiting while another conversation shows gets one notification', () => {
-@@ -41,7 +45,7 @@
+@@ -41,7 +41,7 @@ test('an approval that starts waiting while another conversation shows gets one
    page.noticeApprovals({ work: page.work, roster: page.roster, shownSession: () => 'a', openSession: page.openSession, since: 100 })
    page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
    page.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', sessionId: 'gb', tool: 'pwsh', at: 200 }] })
@@ -6669,7 +6693,7 @@ diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
    page.shown[0].onclick()
    assert.deepEqual([page.opened, page.shown[0].closed], [['r1'], true])
  })
-@@ -62,3 +66,236 @@
+@@ -62,3 +62,236 @@ test('no notification for the conversation on screen, for approvals older than t
    denied.work.set({ bots: {}, approvals: [{ id: 'x1', botId: 'b', roomId: 'r1', tool: 'pwsh', at: 200 }] })
    assert.equal(denied.shown.length, 0)
  })
@@ -6922,7 +6946,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
  import { fakeContext } from './fake-ctx.js'
  import { install as installTurns } from '../src/host/turns.js'
  import { install as installParts } from '../src/host/parts.js'
-@@ -78,7 +78,9 @@
+@@ -78,7 +78,9 @@ async function start(seed) {
      route = options
      return register(options)
    }
@@ -6933,7 +6957,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    let seq = 0
    const emit = (id, type, data) => {
      for (const listener of ctx.listeners.get('session/event') ?? []) {
-@@ -98,7 +100,7 @@
+@@ -98,7 +98,7 @@ async function start(seed) {
    }
    // Loading once fills the Session-owner indexes turns.js filters events by.
    await tool('list_bots', {}, 'a')
@@ -6942,7 +6966,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
  }
  
  const textOf = content => content.map(block => block.text ?? '').join('\n')
-@@ -269,7 +271,6 @@
+@@ -269,7 +269,6 @@ function turnsHost() {
      noteFailure() {},
      warn() {},
      switchJobs: () => [],
@@ -6950,7 +6974,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    }
    installTurns(rt)
    let seq = 0
-@@ -356,6 +357,109 @@
+@@ -356,6 +356,109 @@ test('a joined request gets the failure notice when the model call fails', () =>
    assert.match(delivered[0].text, /^Writer could not answer your message: its model call failed \(SERVER 503: upstream busy\)/)
  })
  
@@ -7060,7 +7084,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
  test('a joined request never claims the next turn', () => {
    const { rt, emit, delivered } = turnsHost()
    emit('b', 'turn/start', { turn: 1 })
-@@ -510,3 +614,64 @@
+@@ -510,3 +510,64 @@ test('a request the model keeps turning down moves the Bot on, without its lates
    await delay(30)
    assert.equal(made, 2)
  })
@@ -7128,7 +7152,7 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
 diff --git a/test/client-bundle.test.js b/test/client-bundle.test.js
 --- a/test/client-bundle.test.js
 +++ b/test/client-bundle.test.js
-@@ -22,7 +22,7 @@
+@@ -22,7 +22,7 @@ test('client.js registers a factory that exports apply and inject', () => {
  
    const requested = []
    const platform = {
@@ -7195,7 +7219,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  
  test('signIn asks GitHub who owns the token', async () => {
    const token = fresh()
-@@ -41,8 +77,7 @@
+@@ -41,8 +41,7 @@ const teamHome = () => {
  }
  
  // A loader that hands out a fake MCP client and records each mount.
@@ -7205,7 +7229,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    const mounts = []
    const plugin = { name: 'mcp-client', apply() {} }
    const loader = {
-@@ -50,17 +85,21 @@
+@@ -50,17 +50,21 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
      unwrapExports: exports => exports.default,
    }
    const ctx = fakeContext({ services: { loader } })
@@ -7229,7 +7253,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    return { ctx, home, mounts }
  }
  
-@@ -75,20 +114,20 @@
+@@ -75,20 +75,20 @@ async function call(ctx, endpoint, payload) {
    return response.json()
  }
  
@@ -7254,7 +7278,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts.length, 1)
    assert.deepEqual(mounts[0].config, {
      transport: 'streamable-http',
-@@ -98,12 +137,12 @@
+@@ -98,12 +98,12 @@ test('connecting saves the token, kept out of every Bot shell, and mounts GitHub
      failOnStartupError: true,
    })
    const state = await call(ctx, 'state', {})
@@ -7269,7 +7293,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(mounts[0].disposed, true)
    assert.deepEqual((await call(ctx, 'state', {})).value.secrets, [])
  })
-@@ -113,7 +152,7 @@
+@@ -113,7 +113,7 @@ test('a token GitHub refuses is not saved', async (t) => {
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(401, {})
    const { ctx, home, mounts } = setup()
@@ -7278,7 +7302,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    assert.equal(result.ok, false)
    assert.match(result.error.message, /did not accept/)
-@@ -126,10 +165,10 @@
+@@ -126,10 +126,10 @@ test('a failed MCP connection shows the error without the token, and Try again m
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup({ fail: true })
@@ -7291,7 +7315,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(github.state, 'error')
    assert.ok(!github.error.includes(token), github.error)
    assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
-@@ -142,7 +181,7 @@
+@@ -142,7 +142,7 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup()
@@ -7300,7 +7324,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
    await call(ctx, 'secret-delete', { name: 'GITHUB_TOKEN' })
    const state = await call(ctx, 'state', {})
-@@ -150,13 +189,25 @@
+@@ -150,13 +150,25 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
    assert.equal(state.value.connectors[0].state, 'off')
  })
  
@@ -7329,7 +7353,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +216,730 @@
+@@ -165,10 +165,730 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -8064,7 +8088,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 --- a/test/follow-through.test.js
 +++ b/test/follow-through.test.js
-@@ -3,7 +3,7 @@
+@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -8073,7 +8097,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  import { fakeContext } from './fake-ctx.js'
  import { stripWrittenCalls, writesToolCall } from '../src/host/turns.js'
  
-@@ -27,9 +27,13 @@
+@@ -27,9 +27,13 @@ const seed = () => ({
  // One DS Bot host on `home`; a second start on the same home is a restart.
  // Hosts by home: a home is removed only after its hosts stopped and their writes landed.
  const started = new Map()
@@ -8087,7 +8111,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const agents = new Map()
    const agentOf = (sessionId) => {
      if (!agents.has(sessionId)) {
-@@ -43,25 +47,37 @@
+@@ -43,25 +43,37 @@ async function start(home) {
    Object.assign(ctx, {
      llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
      workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
@@ -8129,7 +8153,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    started.set(home, [...(started.get(home) ?? []), host])
    return host
  }
-@@ -72,15 +88,57 @@
+@@ -72,15 +72,57 @@ const freshHome = (t) => {
    t.after(async () => {
      await Promise.all((started.get(home) ?? []).map(host => host.stop()))
      started.delete(home)
@@ -8191,7 +8215,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const notes = (home) => {
    try { return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')) } catch { return { turns: {}, queued: {} } }
-@@ -104,7 +162,7 @@
+@@ -104,7 +104,7 @@ async function openRoomTurn(t, host) {
  }
  
  test('a group turn cut off by a restart is picked up once, and the group is told', async (t) => {
@@ -8200,7 +8224,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const home = freshHome(t)
    const first = await start(home)
    await openRoomTurn(t, first)
-@@ -143,7 +201,7 @@
+@@ -143,7 +143,7 @@ test('a group turn cut off by a restart is picked up once, and the group is told
  })
  
  test('a request cut off by a restart goes on under the same exchange; own-chat work resumes in the chat', async (t) => {
@@ -8209,7 +8233,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const home = freshHome(t)
    const first = await start(home)
    run(first, 'b', 1, { content: [{ type: 'text', text: '[Message from Chief]\nDraft the plan' }], source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'x1', senderName: 'Chief', senderSessionId: 'a', hop: 0 } })
-@@ -165,7 +223,7 @@
+@@ -165,7 +165,7 @@ test('a request cut off by a restart goes on under the same exchange; own-chat w
  })
  
  test('when only DS Bot restarts, a turn still running or finished meanwhile is not picked up', async (t) => {
@@ -8218,7 +8242,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const home = freshHome(t)
    const first = await start(home)
    run(first, 'b', 1, { content: [{ type: 'text', text: '[Message from Chief]\nDraft the plan' }], source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: 'x1', senderName: 'Chief', senderSessionId: 'a', hop: 0 } })
-@@ -195,8 +253,112 @@
+@@ -195,8 +195,112 @@ test('when only DS Bot restarts, a turn still running or finished meanwhile is n
    assert.deepEqual([third.agentOf('b').calls[0].source.exchangeId, third.agentOf('a').calls.length], ['x1', 0])
  })
  
@@ -8332,7 +8356,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const home = freshHome(t)
    const first = await start(home)
    run(first, 'a', 1, { content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } })
-@@ -234,7 +396,7 @@
+@@ -234,7 +234,7 @@ test('a message a shutdown cancelled is sent again once; one still waiting, take
    await settle(() => (notes(home).queued.b ?? []).length === 2)
    await first.stop()
  
@@ -8341,7 +8365,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
    const second = await start(home)
    // A hard stop keeps the inbox: that message runs when the Session wakes.
    second.agentOf('b').inbox.nextTurn.push(numbers)
-@@ -246,6 +408,67 @@
+@@ -246,6 +246,67 @@ test('a message a shutdown cancelled is sent again once; one still waiting, take
    assert.equal((await second.call('exchange', { a: 'a', b: 'b' })).value.length, 4)
  })
  
@@ -8409,7 +8433,7 @@ diff --git a/test/follow-through.test.js b/test/follow-through.test.js
  const WRITTEN = 'Checking now.\n<tool_call>\n<function=pwsh>\n<parameter=command>\nGet-ChildItem E:\\\n</parameter>\n</function>\n</tool_call>'
  
  test('a tool call written as text gets one more turn on the same round slot', async (t) => {
-@@ -283,6 +506,29 @@
+@@ -283,6 +283,29 @@ test('in its own chat, a Bot that wrote a tool call as text is asked to make it'
    assert.match(text(retry), /^\[Your last reply wrote a tool call as text, so nothing ran\]/)
  })
  
@@ -8449,7 +8473,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -24,9 +24,8 @@
+@@ -24,9 +24,8 @@ const seed = () => ({
    revision: 0,
  })
  
@@ -8461,7 +8485,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    const ctx = fakeContext()
    const agents = new Map()
    const agentOf = (sessionId) => {
-@@ -71,9 +70,10 @@
+@@ -71,9 +71,10 @@ async function start() {
    const tool = (name, args, sessionId, exec = {}) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId }, ...exec })
    const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
    const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
@@ -8474,7 +8498,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
-@@ -237,14 +237,14 @@
+@@ -237,14 +237,14 @@ test('a member that fails after the round moved on shows the failure in the grou
    const [approval] = (await host.call('state', {})).value.work.approvals
    await host.call('approval-answer', { id: approval.id, choice: 'allow' })
    await outcome
@@ -8492,7 +8516,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    assert.deepEqual(round.failed, ['Writer'])
    assert.equal(host.agentOf('gb').calls.length, 1)
  })
-@@ -294,3 +294,186 @@
+@@ -294,3 +294,186 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })
@@ -8682,7 +8706,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 diff --git a/test/group-work.test.js b/test/group-work.test.js
 --- a/test/group-work.test.js
 +++ b/test/group-work.test.js
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,7 @@ import { test } from 'node:test'
  import { apply } from '../index.js'
  import { fakeContext } from './fake-ctx.js'
  import { ROOM_LATE_ROUNDS, ROOM_WORK_GRACE_MS } from '../src/host/constants.js'
@@ -8690,7 +8714,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  
  // Chief, the admin of group 'r1', speaks there from 'ga'; Writer from 'gb'; Tester from 'gc'.
  const seed = (room = {}) => ({
-@@ -113,6 +114,7 @@
+@@ -113,6 +113,7 @@ const settle = async (check) => {
    while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
    assert.ok(check(), 'condition not reached')
  }
@@ -8698,7 +8722,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
  
-@@ -287,3 +289,169 @@
+@@ -287,3 +287,169 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
@@ -8871,7 +8895,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 diff --git a/test/history.test.js b/test/history.test.js
 --- a/test/history.test.js
 +++ b/test/history.test.js
-@@ -27,6 +27,7 @@
+@@ -27,6 +27,7 @@ test('historyEntry keeps answers, user and Bot messages, and skips setup', () =>
    assert.equal(historyEntry({ ...asked, type: 'tool/ptc-dispatch' }, false), undefined)
    assert.deepEqual(historyEntry(said('hello', { kind: 'user' }), false), { answer: false, who: 'user', text: 'hello', keepAnswers: true })
    assert.deepEqual(historyEntry(said('[Reply from W]\nok', { kind: 'bot', role: 'reply' }), false), { answer: false, who: 'bot', text: '[Reply from W]\nok', keepAnswers: true })
@@ -8882,7 +8906,7 @@ diff --git a/test/history.test.js b/test/history.test.js
 diff --git a/test/home-lock.test.js b/test/home-lock.test.js
 --- a/test/home-lock.test.js
 +++ b/test/home-lock.test.js
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
  import { hostname, tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -8891,7 +8915,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
  import { homeLock } from '../src/host/home-lock.js'
  import { fakeContext } from './fake-ctx.js'
  
-@@ -118,10 +118,14 @@
+@@ -118,10 +118,14 @@ function start(t, home) {
      route = options
      return register(options)
    }
@@ -8907,7 +8931,7 @@ diff --git a/test/home-lock.test.js b/test/home-lock.test.js
    return call
  }
  
-@@ -185,3 +189,129 @@
+@@ -185,3 +185,129 @@ test('a reading host follows the other host\'s keys, never writes them, and keep
    const saved = JSON.parse(readFileSync(secretsPath, 'utf8')).secrets.map(secret => secret.name).sort()
    assert.deepEqual(saved, ['FIRST_KEY', 'MINE', 'SECOND_KEY', 'THIRD_KEY'])
  })
@@ -9051,7 +9075,7 @@ diff --git a/test/images.test.js b/test/images.test.js
  
  test('offloadTargets selects live images from prior user and tool messages', () => {
    const events = [
-@@ -32,3 +35,83 @@
+@@ -32,3 +32,83 @@ test('offloadTargets selects live images from prior user and tool messages', ()
      { seq: 2, imageIndexes: [0] },
    ])
  })
@@ -9138,7 +9162,7 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -37,6 +37,9 @@
+@@ -37,6 +37,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'effect ds-bot: state lock',
      'on llm/adapters-updated',
      'on session/event',
@@ -9148,7 +9172,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: agent tool restrict retry',
      'on agent/created',
      'effect ds-bot: identity section',
-@@ -47,6 +50,7 @@
+@@ -47,6 +47,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool stop_bot',
      'tool create_bot',
      'tool update_bot',
@@ -9156,7 +9180,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'tool list_models',
      'tool create_group',
      'tool update_group',
-@@ -60,11 +64,16 @@
+@@ -60,11 +60,16 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
@@ -9173,7 +9197,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on approval/request (prepend)',
      'on agent/inbox/discarded',
      'on session/event',
-@@ -81,6 +90,7 @@
+@@ -81,6 +81,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on agent/pre-step (prepend)',
      'on agent/request-error (prepend)',
      'on agent/request-error (prepend)',
@@ -9181,7 +9205,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on agent/status',
      'on llm/stream',
      'on llm/stream',
-@@ -91,12 +101,23 @@
+@@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -9205,7 +9229,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: api route',
      'route POST /api/bot',
      'effect ds-bot: load state',
-@@ -137,6 +158,17 @@
+@@ -137,6 +137,17 @@ test('the client channel answers from the saved state', async (t) => {
    assert.equal((await call('set-prefs', { motion: 'lively' })).value.motion, 'lively')
    assert.equal('motion' in (await call('set-prefs', { motion: 'normal' })).value, false)
    assert.deepEqual((await call('set-prefs', { motion: 'wild' })).error, { code: 'bot/invalid', message: 'Motion must be quiet, normal or lively', details: {} })
@@ -9226,7 +9250,7 @@ diff --git a/test/install.test.js b/test/install.test.js
 diff --git a/test/member-status.test.js b/test/member-status.test.js
 --- a/test/member-status.test.js
 +++ b/test/member-status.test.js
-@@ -22,7 +22,7 @@
+@@ -22,7 +22,7 @@ runInNewContext(bundle.outputFiles[0].text, {
      return platform[name]
    },
  })
@@ -9235,7 +9259,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  // Values from the bundle's realm compare by content only.
  const plain = value => JSON.parse(JSON.stringify(value))
  // Renders the dock's own parts of an element tree, and lists its rows' labels.
-@@ -41,10 +41,10 @@
+@@ -41,10 +41,10 @@ const rowLabels = (node) => {
  test('the members line names who waits for an approval first, then who is at work', () => {
    const names = { a: 'Anvil', b: 'Flint', c: 'Prism', d: 'Quill', e: 'King', f: 'Comet' }
    const roster = { byId: Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { id, name }])) }
@@ -9249,7 +9273,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
    }
    const busy = busyMembers(room, work, roster)
    assert.deepEqual(plain(busy.map(entry => [entry.bot.name, entry.state])), [['Anvil', 'ask'], ['Flint', 'ask'], ['Prism', 'ask'], ['Quill', 'work'], ['Comet', 'work']])
-@@ -61,7 +61,7 @@
+@@ -61,7 +61,7 @@ const team = {
  }
  const dock = (sessionId, work) => expand(MemberDock({ sessionId, useRoster: pick => pick(team), useWork: pick => pick(work), actions: {} }))
  
@@ -9258,7 +9282,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
    const work = {
      // Anvil runs in its own chat too; its work here wins.
      bots: { a: { since: 1, tool: 'pwsh' }, b: { since: 1, roomId: 'r2', tool: 'edit' } },
-@@ -70,10 +70,10 @@
+@@ -70,10 +70,10 @@ test('a member at work in the group gets a row; the speaker, work elsewhere and
    }
    const busy = busyMembers(team.roomsById.r1, work, team)
    const { rows, rest } = splitBusy(busy)
@@ -9273,7 +9297,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  })
  
  test('a Bot\'s own chat shows the groups it is at work in, unless its own chat runs', () => {
-@@ -82,3 +82,128 @@
+@@ -82,3 +82,128 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
    assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
    assert.equal(dock('b', away), null)
  })
@@ -9405,7 +9429,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
 +++ b/test/memory.test.js
-@@ -176,6 +176,15 @@
+@@ -176,6 +176,15 @@ function start({ home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-')), replies =
  }
  
  const settle = () => new Promise(resolve => setTimeout(resolve, 20))
@@ -9421,7 +9445,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
  
  test('remember saves one entry with its source, and forget removes it, both in the journal', async (t) => {
    const { tool, read, journal, stop } = start()
-@@ -336,7 +345,7 @@
+@@ -336,7 +336,7 @@ test('the memory panel shows every entry and a summary the Bot\'s model writes o
    const asked = (await call('memory-view', { botId: 'b2', summarize: true })).value
    assert.deepEqual(asked.entries.map(entry => [entry.scope, entry.topic, entry.text]), [['own', null, 'Likes tea']])
    assert.equal(asked.summarizing, true)
@@ -9430,7 +9454,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2', summarize: true })).value
    assert.deepEqual([done.summary.text, done.fresh, done.summarizing, done.error], ['## Overview\nYou like tea.', true, false, null])
    assert.equal(requests.length, 1)
-@@ -347,13 +356,13 @@
+@@ -347,13 +347,13 @@ test('the memory panel shows every entry and a summary the Bot\'s model writes o
    await tool('remember', { text: 'Lives in Hangzhou' }, 'b2')
    replies.push(new Error('provider down'))
    assert.equal((await call('memory-view', { botId: 'b2', summarize: true })).value.fresh, false)
@@ -9446,7 +9470,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    assert.equal((await call('memory-view', { botId: 'b2' })).value.summary.text, '## Overview\nYou like tea and live in Hangzhou.')
    assert.equal((await call('memory-view', { botId: 'nope' })).error.message, 'Unknown Bot')
  })
-@@ -367,7 +376,7 @@
+@@ -367,7 +367,7 @@ test('a summary cut off at the output limit is written once more with a bigger b
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9455,7 +9479,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.fresh, done.error], ['## Overview\nYou like tea.', true, null])
    assert.deepEqual(requests.map(request => request.maxTokens), [2048, 8192])
-@@ -383,11 +392,11 @@
+@@ -383,11 +383,11 @@ test('a summary cut off at both budgets keeps the old one and says the reasoning
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9469,7 +9493,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const failed = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(failed.summary.text, '## Overview\nYou like tea.')
    assert.match(failed.error, /reasoning.*output budget|output budget.*reasoning/i)
-@@ -399,14 +408,14 @@
+@@ -399,14 +399,14 @@ test('the panel call asks for the model\'s lowest thinking level when it has no
    t.after(() => first.stop())
    await first.tool('remember', { text: 'Likes tea' }, 'b2')
    await first.call('memory-view', { botId: 'b2', summarize: true })
@@ -9486,7 +9510,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    assert.equal(second.requests[0].reasoningEffort, undefined)
  })
  
-@@ -418,7 +427,7 @@
+@@ -418,7 +418,7 @@ test('a summary the Bot\'s model refuses is written by the profile default model
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9495,7 +9519,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.fresh, done.error], ['## Overview\nYou like tea.', true, null])
    assert.deepEqual(routes(requests), ['deepseek/v4@2048', 'deepseek/flash@2048'])
-@@ -431,7 +440,7 @@
+@@ -431,7 +431,7 @@ test('a summary cut off at both budgets on the Bot\'s model is written by the de
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9504,7 +9528,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.error], ['## Overview\nYou like tea.', null])
    assert.deepEqual(routes(requests), ['deepseek/v4@2048', 'deepseek/v4@8192', 'deepseek/flash@2048'])
-@@ -443,7 +452,7 @@
+@@ -443,7 +443,7 @@ test('a summary that failed on both models is tried again once the Bot has anoth
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9513,7 +9537,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const failed = (await call('memory-view', { botId: 'b2', summarize: true })).value
    assert.equal(failed.error, 'deepseek/v4: 401: Unauthorized; deepseek/flash: 503 Service Unavailable')
    assert.equal(failed.summarizing, false)
-@@ -453,7 +462,7 @@
+@@ -453,7 +453,7 @@ test('a summary that failed on both models is tried again once the Bot has anoth
    replies.push('## Overview\nYou like tea.')
    const retried = (await call('memory-view', { botId: 'b2', summarize: true })).value
    assert.deepEqual([retried.summarizing, retried.error], [true, null])
@@ -9522,7 +9546,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.error], ['## Overview\nYou like tea.', null])
    assert.deepEqual(routes(requests).slice(2), ['deepseek/flash@2048'])
-@@ -519,7 +528,7 @@
+@@ -519,7 +519,7 @@ test('a host that only reads the team shows memory but changes none of it', asyn
  // Until no review waits or runs.
  async function reviewed(call) {
    for (let tries = 0; tries < 200; tries += 1) {
@@ -9531,7 +9555,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
      if ((await call('state', {})).value.memoryReviews === 0) return
    }
    throw new Error('the memory review did not finish')
-@@ -994,7 +1003,7 @@
+@@ -994,7 +994,7 @@ test('a turn whose Session moves to a fresh part before its review is still revi
  test('config.memoryReview false leaves memory to the Bots\' own remember calls', async (t) => {
    const { ctx, call, section, requests, stop } = start({ config: { memoryReview: false, memoryReviewDelayMs: 0 } })
    t.after(() => stop())
@@ -9540,7 +9564,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    await call('state', {})
    assert.match(section('b2'), /Call it in that same turn, before you reply/)
    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
-@@ -1010,7 +1019,7 @@
+@@ -1010,7 +1010,7 @@ test('config.memory false leaves the tools, the section, and the panel out', asy
    assert.equal((await call('state', {})).value.memory, false)
    assert.equal((await call('memory-view', { botId: 'b2' })).error.message, 'Memory is turned off on this host')
    // The first state call applies the Bots' models and saves; let that finish first.
@@ -9549,7 +9573,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
  })
  
  // Routes such as OpenCode Go turn down a request that names no Session. Each memory
-@@ -1021,7 +1030,7 @@
+@@ -1021,7 +1021,7 @@ test('a memory summary names the Bot chat on both of its tries', async (t) => {
    t.after(() => stop())
    await tool('remember', { text: 'Likes tea' }, 'b2')
    await call('memory-view', { botId: 'b2', summarize: true })
@@ -9558,7 +9582,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1085,94 @@
+@@ -1076,3 +1076,94 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -9656,7 +9680,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
 +++ b/test/model-menu.test.js
-@@ -26,7 +26,7 @@
+@@ -26,7 +26,7 @@ runInNewContext(bundle.outputFiles[0].text, {
      return platform[name]
    },
  })
@@ -9665,7 +9689,7 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
  
  function nodes(tree, match) {
    if (!tree || typeof tree !== 'object') return []
-@@ -89,6 +89,8 @@
+@@ -89,6 +89,8 @@ test('an empty catalog offers setup choices, and a ready model needs no choice d
    assert.deepEqual(nodes(tree, node => node.type === 'button').map(button => button.children[0]), [
      'Enter a DeepSeek API key', 'Open settings to set up a custom model',
    ])
@@ -9674,7 +9698,7 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
    assert.equal(dock(models, { model: models[0].ref }).tree, null)
    assert.equal(dock(models, { ready: false }).tree, null)
  })
-@@ -99,3 +101,58 @@
+@@ -99,3 +99,58 @@ test('the Thinking section always offers Default, so a picked level can be clear
    assert.deepEqual([...effortRows({ efforts }).map(row => row.effort)], [undefined, 'low', 'high'])
    assert.equal(effortRows({ efforts: [] }).length, 0)
  })
@@ -9736,7 +9760,7 @@ diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 diff --git a/test/models.test.js b/test/models.test.js
 --- a/test/models.test.js
 +++ b/test/models.test.js
-@@ -144,6 +144,98 @@
+@@ -144,6 +144,98 @@ test('a Bot model applies its thinking level, and only re-selects on a change',
    assert.equal(bot.appliedEffort, undefined)
  })
  
@@ -9835,7 +9859,7 @@ diff --git a/test/models.test.js b/test/models.test.js
  test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
    const { rt } = bench({ reasoning: {
      'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
-@@ -164,7 +256,7 @@
+@@ -164,7 +164,7 @@ test('the catalog attaches thinking levels to models a Bot uses', async () => {
    assert.equal(entries.find(entry => entry.ref === 'stepfun/step-5')?.reasoning, undefined)
  })
  
@@ -9844,7 +9868,7 @@ diff --git a/test/models.test.js b/test/models.test.js
    const { rt, providers, listeners } = bench({ providers: {} })
    const waiting = rt.waitForModel({ model: 'stepfun/step-5' }, 5000)
    setTimeout(() => {
-@@ -186,3 +278,106 @@
+@@ -186,3 +186,106 @@ test('a Bot on the default model with its own thinking level leaves the default
    await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
    assert.deepEqual(current(), fallback)
  })
@@ -9954,7 +9978,7 @@ diff --git a/test/models.test.js b/test/models.test.js
 diff --git a/test/prompt.test.js b/test/prompt.test.js
 --- a/test/prompt.test.js
 +++ b/test/prompt.test.js
-@@ -25,7 +25,7 @@
+@@ -25,7 +25,7 @@ test('Bots get a scoped progress rule without changing the private/group prompt
    t.after(() => ctx.dispose())
    const rules = [
      '- Only for a direct user request in your own chat that needs several steps: write one short sentence of normal reply text before your first tool call, and make that tool call in the same response. Never start such a task with tools alone or end it with a promise. On long tasks, give brief factual updates only at meaningful milestones, then keep working.',
@@ -9963,7 +9987,7 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
    ]
    for (const id of ['main', 'worker']) {
      for (const rule of rules) {
-@@ -43,3 +43,40 @@
+@@ -43,3 +43,40 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
    assert.doesNotMatch(prompt('room'), /progress|milestone/)
    assert.equal(prompt('outside'), '')
  })
@@ -10019,7 +10043,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  import { fakeContext } from './fake-ctx.js'
  import { reminderText } from '../src/host/schedules.js'
  
-@@ -21,44 +21,102 @@
+@@ -21,44 +21,102 @@ const TEAM = {
    questions: {},
  }
  
@@ -10132,7 +10156,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
    const refused = await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } })
    assert.equal(refused.ok, false)
    assert.match(refused.error.message, /Automation tasks are off/)
-@@ -103,6 +161,39 @@
+@@ -103,6 +103,39 @@ test('tasks are created on the Bot’s current part, listed by Bot, and deleted'
    assert.match((await call('schedule-delete', { sessionId: 'outside', id: 'schedule-3' })).error.message, /No such task/)
  })
  
@@ -10172,7 +10196,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +212,712 @@
+@@ -121,3 +121,712 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -10895,7 +10919,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -41,7 +41,7 @@
+@@ -41,7 +41,7 @@ async function drain(stream) {
  // `ctx.llm.stream` runs the plugin's `llm/stream` listeners in order, as DSH does,
  // and then a route that turns down a request without a Session. `respond` gives the
  // text of each answer the route lets through.
@@ -10904,7 +10928,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-session-identity-'))
    writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
    const bench = { tokens: 0, compacted: 0, respond: () => '', requests: [] }
-@@ -49,13 +49,13 @@
+@@ -49,13 +49,13 @@ function start() {
      summarize() {},
      async compactIfNeeded() {
        bench.compacted += 1
@@ -10920,7 +10944,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
    async function* route(options) {
      bench.requests.push(options)
      if (options.sessionId === undefined) {
-@@ -95,7 +95,7 @@
+@@ -95,7 +95,7 @@ function start() {
      sessions: { messageProjections: [] },
      workspaceRegistry: { archiveSession: async () => {} },
    })
@@ -10929,7 +10953,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
    const hook = pattern => ctx.listeners.get('llm/stream').find(listener => pattern.test(String(listener)))
    const stop = async () => {
      await ctx.dispose()
-@@ -105,7 +105,7 @@
+@@ -105,7 +105,7 @@ function start() {
      }
      rmSync(home, { recursive: true, force: true, maxRetries: 5 })
    }
@@ -10938,7 +10962,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  }
  
  for (const sessionId of ['b2', 'g3']) {
-@@ -124,6 +124,48 @@
+@@ -124,6 +124,48 @@ for (const sessionId of ['b2', 'g3']) {
    })
  }
  
@@ -10987,7 +11011,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  test('an image in a Bot chat is read for that chat, and the chat gets the reading', async (t) => {
    const { ctx, bench, stop } = start()
    t.after(stop)
-@@ -172,3 +214,43 @@
+@@ -172,3 +172,43 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a
    assert.equal(images(own('b2', picture), pass), passed)
    assert.notEqual(images(round('b2', picture), pass), passed)
  })
@@ -11034,7 +11058,7 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 diff --git a/test/steward.test.js b/test/steward.test.js
 --- a/test/steward.test.js
 +++ b/test/steward.test.js
-@@ -16,7 +16,7 @@
+@@ -16,7 +16,7 @@ test('a model without a window counts as the default, and odd settings fall back
    // A reply that would take the whole window still leaves half of it.
    assert.equal(linesFor({ window: 100_000, reserve: 200_000 }).usable, 50_000)
    for (const checkRatio of [0, 1, 1.5, -1, 'x', undefined]) {
@@ -11046,7 +11070,7 @@ diff --git a/test/steward.test.js b/test/steward.test.js
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js
-@@ -11,7 +11,7 @@
+@@ -11,7 +11,7 @@ const { outputFiles } = await build({
      contents: [
        "export { ToolCell, callTree } from './src/client/cells.js'",
        "export { QuestionDock } from './src/client/questions.js'",
@@ -11055,7 +11079,7 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
        "export { countCards } from './src/client/sources.js'",
      ].join('\n'),
      resolveDir: fileURLToPath(new URL('..', import.meta.url)),
-@@ -44,7 +44,7 @@
+@@ -44,7 +44,7 @@ runInNewContext(outputFiles[0].text, {
      throw new Error(`Unexpected platform module ${name}`)
    },
  })
@@ -11064,7 +11088,7 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
  
  // Runs the effects collected since the last render; returns the cleanups.
  const mount = () => {
-@@ -329,7 +329,7 @@
+@@ -329,7 +329,7 @@ test('a PTC group relay shows its replies from the sub-call, live and after relo
    stop()
    timers.clear()
    assert.deepEqual(asked, ['room'])
@@ -11073,7 +11097,7 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
  })
  
  // #105: the secret and question cards of a PTC program showed nowhere.
-@@ -355,3 +355,64 @@
+@@ -355,3 +355,64 @@ test('PTC secret and question cards show at their sub-calls and act on their own
    assert.doesNotMatch(shown(program([call('ask_user', 'call-0-1:ptc:1')]), { roster }), /Which draft\?/)
    assert.equal(shown(program([call('ask_user', 'call-1-2:ptc:1')]), { roster: team() }), '')
  })
@@ -11141,7 +11165,7 @@ diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 diff --git a/test/tool-node.test.js b/test/tool-node.test.js
 --- a/test/tool-node.test.js
 +++ b/test/tool-node.test.js
-@@ -97,7 +97,6 @@
+@@ -97,7 +97,6 @@ test('non-relay context and ds-bot package sources are ignored', () => {
    const steps = [stepAt(1, 10), stepAt(2, 30)]
    const contexts = [
      relay(12, 'request', { handoff: true }),
@@ -11149,7 +11173,7 @@ diff --git a/test/tool-node.test.js b/test/tool-node.test.js
      relay(16, 'room'),
      relay(18, 'secret'),
      relay(22, 'request', { senderSessionId: undefined }),
-@@ -108,5 +107,5 @@
+@@ -108,5 +108,5 @@ test('non-relay context and ds-bot package sources are ignored', () => {
      relay(27, 'stopped', { retried: true }),
      relay(28, 'request'),
    ]
@@ -11159,7 +11183,7 @@ diff --git a/test/tool-node.test.js b/test/tool-node.test.js
 diff --git a/test/work-dir.test.js b/test/work-dir.test.js
 --- a/test/work-dir.test.js
 +++ b/test/work-dir.test.js
-@@ -219,6 +219,32 @@
+@@ -219,6 +219,32 @@ test('an idle Bot\'s own chat moves to its new folder at once, and back', async
    assert.match(handoffOf(agentOf('s2')), new RegExp(`because your working folder changed to ${escapeRegExp(team)}\\.`))
  })
  
@@ -11192,7 +11216,7 @@ diff --git a/test/work-dir.test.js b/test/work-dir.test.js
  test('a running Bot moves at its next step and carries that step\'s input along', async (t) => {
    const { requests, services } = approvalServices('allowed-once')
    const { tool, preStep, agentOf, created, project, state, stop } = await start({ services })
-@@ -241,6 +267,42 @@
+@@ -241,6 +241,42 @@ test('a running Bot moves at its next step and carries that step\'s input along'
    assert.equal(await preStep('s1'), 'next')
  })
  
@@ -11235,7 +11259,7 @@ diff --git a/test/work-dir.test.js b/test/work-dir.test.js
  test('a folder outside the team workspace needs the user\'s approval', async (t) => {
    const rejected = approvalServices('rejected')
    const first = await start({ services: rejected.services })
-@@ -264,7 +326,7 @@
+@@ -264,7 +264,7 @@ test('a folder outside the team workspace needs the user\'s approval', async (t)
    const allowed = approvalServices('allowed-once')
    const third = await start({ services: allowed.services })
    t.after(third.stop)
