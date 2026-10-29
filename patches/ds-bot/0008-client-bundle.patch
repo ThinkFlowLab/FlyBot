@@ -572,7 +572,7 @@ diff --git a/client.js b/client.js
    // Command palette
    Messages: "消息",
    Commands: "命令",
-@@ -446,10 +446,14 @@ var ZH = {
+@@ -446,10 +446,13 @@ var ZH = {
    Reply: "回复",
    "More message actions": "更多操作",
    More: "更多",
@@ -583,7 +583,6 @@ diff --git a/client.js b/client.js
    "Thought it through": "思考过程",
 +  "{n} line of reasoning": "{n} 行思考内容",
 +  "{n} lines of reasoning": "{n} 行思考内容",
-+  "Seen — I’ll get to this right after the current step.": "看到了，这步做完就接着处理你这条。",
    "Earlier messages": "更早的消息",
    "Loading earlier messages…": "正在加载更早的消息…",
    "Couldn’t load earlier messages · Retry": "更早的消息没加载出来 · 重试",
@@ -3618,13 +3617,18 @@ diff --git a/client.js b/client.js
  [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
  [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
  [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
-@@ -2646,8 +2646,14 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -2646,8 +2646,19 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
  [data-chat-running]>span:not([role=status]){display:none!important}
  [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
 +.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 +.bt-busy-ack .bt-astack{align-items:flex-start}
 +.bt-busy-ack .bt-bubble{opacity:.92}
++.bt-busy-dots{display:inline-flex;align-items:center;gap:4px;height:22px}
++.bt-busy-dots>span{width:5px;height:5px;border-radius:50%;background:var(--bt-ink-3);animation:bt-busy-blink 1.2s ease-in-out infinite}
++.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
++@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
++@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
  .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
  .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 +.bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}
@@ -5174,13 +5178,8 @@ diff --git a/client.js b/client.js
 -    ) : null,
 -    foot
 +    error ? (0, import_react8.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
-+  );
-+  return (0, import_react8.createElement)(
-+    "div",
-+    { className: "bt-held-actions", "data-flybot": "held-reply-actions" },
-+    custom ? (0, import_react8.createElement)(boundary(), { id: custom.id, fallback: plain }, (0, import_react8.createElement)(custom.component, { held, decide, call: call3, actions })) : plain
    );
- }
+-}
 -function SettledQuestion({ question, answer }) {
 -  const options = optionsOf(question);
 -  const prompt = question?.question ?? "";
@@ -5198,6 +5197,12 @@ diff --git a/client.js b/client.js
 -    );
 -  }
 -  return (0, import_react4.createElement)(
++  return (0, import_react8.createElement)(
++    "div",
++    { className: "bt-held-actions", "data-flybot": "held-reply-actions" },
++    custom ? (0, import_react8.createElement)(boundary(), { id: custom.id, fallback: plain }, (0, import_react8.createElement)(custom.component, { held, decide, call: call3, actions })) : plain
++  );
++}
 +
 +// src/client/turn-reasoning.js
 +function turnReasoning(steps, current) {
@@ -6060,9 +6065,7 @@ diff --git a/client.js b/client.js
 +}
 +function NewDivider() {
 +  return (0, import_react9.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react9.createElement)("span", null, t("New")));
- }
--function RequestView({ bot, request, roster, actions }) {
--  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
++}
 +function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
 +  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
 +  (0, import_react9.useEffect)(() => {
@@ -6081,6 +6084,11 @@ diff --git a/client.js b/client.js
 +  });
 +  return fresh ? (0, import_react9.createElement)(NewDivider) : null;
  }
+-function RequestView({ bot, request, roster, actions }) {
+-  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
++function Nothing() {
++  return null;
+ }
 -function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
 -  const bot = roster.byId[sessionId];
 -  if (!bot) return null;
@@ -6088,20 +6096,6 @@ diff --git a/client.js b/client.js
 -  if (request) return (0, import_react5.createElement)("div", { className: "bt-q-inline" }, (0, import_react5.createElement)(RequestView, { bot, request, roster, actions }));
 -  if (done && /already saved/.test(contentText(content))) {
 -    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
--  }
-+function Nothing() {
-   return null;
- }
--function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
--  const roster = useRoster((value) => value);
--  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
--  const loading = useSession?.(historyLoading) === true;
--  const bot = roster.byId[sessionId];
--  if (!bot || currentPart(bot) !== sessionId) return null;
--  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
--  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
--  if (waiting.length === 0) return null;
--  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
 +var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
 +var isConnectorTool = (name) => typeof name === "string" && /^mcp__(github|composio)__/.test(name);
 +var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
@@ -6150,9 +6144,31 @@ diff --git a/client.js b/client.js
 +    if (isHiddenNotice(block)) continue;
 +    if (block?.type === "tool-removal" && block.toolName) parts.push(`Tool removed: ${block.toolName}`);
 +    else if (block?.type === "tool-addition" && block.toolName) parts.push(`Tool added: ${block.toolName}`);
-+  }
+   }
+-  return null;
 +  if (parts.length === 0) return null;
 +  return (0, import_react9.createElement)("div", { className: "bt-event" }, parts.join(" · "));
+ }
+-function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
+-  const roster = useRoster((value) => value);
+-  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
+-  const loading = useSession?.(historyLoading) === true;
+-  const bot = roster.byId[sessionId];
+-  if (!bot || currentPart(bot) !== sessionId) return null;
+-  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
+-  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
+-  if (waiting.length === 0) return null;
+-  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
++var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
++function clockLabel(time, now = Date.now()) {
++  const date = new Date(time);
++  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
++  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
++  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
++  if (days === 0) return t("Today {time}", { time: clock4 });
++  if (days === 1) return t("Yesterday {time}", { time: clock4 });
++  const sameYear = date.getFullYear() === new Date(now).getFullYear();
++  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
  }
 -function ScopeEditor({ secret, roster, onSave }) {
 -  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
@@ -6186,16 +6202,13 @@ diff --git a/client.js b/client.js
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
 -    )
 -  );
-+var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
-+function clockLabel(time, now = Date.now()) {
-+  const date = new Date(time);
-+  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-+  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
-+  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
-+  if (days === 0) return t("Today {time}", { time: clock4 });
-+  if (days === 1) return t("Yesterday {time}", { time: clock4 });
-+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-+  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
++function nextTurnStart(turns, turn) {
++  let next;
++  for (const key in turns) {
++    const candidate = Number(key);
++    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
++  }
++  return next === void 0 ? void 0 : turns[next].first;
  }
 -function ValueEditor({ secret, onSave }) {
 -  const [value, setValue] = (0, import_react5.useState)("");
@@ -6226,13 +6239,14 @@ diff --git a/client.js b/client.js
 -    ),
 -    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
 -  );
-+function nextTurnStart(turns, turn) {
-+  let next;
-+  for (const key in turns) {
-+    const candidate = Number(key);
-+    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
-+  }
-+  return next === void 0 ? void 0 : turns[next].first;
++function openingTurn(turns, firstTurns, hiddenTurns) {
++  if (!turns || !firstTurns) return null;
++  const start = nextTurnStart(turns, -Infinity);
++  if (start === void 0) return null;
++  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
++  const listed = firstTurns.split(",").map(Number);
++  const earlier = listed.filter((entry) => entry < turn);
++  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
  }
 -function SecretRow({ secret, roster, actions, run, open, onToggle }) {
 -  const [confirm, setConfirm] = (0, import_react5.useState)(false);
@@ -6276,14 +6290,14 @@ diff --git a/client.js b/client.js
 -      )
 -    ) : null
 -  );
-+function openingTurn(turns, firstTurns, hiddenTurns) {
-+  if (!turns || !firstTurns) return null;
-+  const start = nextTurnStart(turns, -Infinity);
-+  if (start === void 0) return null;
-+  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
-+  const listed = firstTurns.split(",").map(Number);
-+  const earlier = listed.filter((entry) => entry < turn);
-+  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
++var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
++function movedOnSince(visit, turns, hiddenTurns) {
++  if (typeof visit?.entered !== "number") return false;
++  for (const key in turns ?? {}) {
++    if (hiddenTurns?.includes(Number(key))) continue;
++    if (turns[key].first !== void 0 && turns[key].first > visit.entered) return true;
++  }
++  return false;
  }
 -function AddSecret({ actions, run, onDone }) {
 -  const [name, setName] = (0, import_react5.useState)("");
@@ -6312,15 +6326,6 @@ diff --git a/client.js b/client.js
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
 -    )
-+var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
-+function movedOnSince(visit, turns, hiddenTurns) {
-+  if (typeof visit?.entered !== "number") return false;
-+  for (const key in turns ?? {}) {
-+    if (hiddenTurns?.includes(Number(key))) continue;
-+    if (turns[key].first !== void 0 && turns[key].first > visit.entered) return true;
-+  }
-+  return false;
-+}
 +var settledVisit = (visit) => typeof visit?.seen === "number" && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit;
 +function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
 +  const turn = location2.turn;
@@ -6670,6 +6675,14 @@ diff --git a/client.js b/client.js
 -      item(t("Copy"), CopyIcon, copy2),
 -      item(t("Download"), DownloadIcon, download2)
 -    ), document.body) : null
+-  );
+-}
+-function ThinkingRow({ text }) {
+-  return (0, import_react6.createElement)(
+-    "details",
+-    { className: "bt-think" },
+-    (0, import_react6.createElement)("summary", null, t("Thought it through")),
+-    (0, import_react6.createElement)("div", { className: "bt-think-text" }, text)
 +    { className: "bt-group-replies" },
 +    replies.map((reply, index) => {
 +      const stored = roster.byId[reply.botId];
@@ -6752,13 +6765,15 @@ diff --git a/client.js b/client.js
 +    })
    );
  }
--function ThinkingRow({ text }) {
--  return (0, import_react6.createElement)(
--    "details",
--    { className: "bt-think" },
--    (0, import_react6.createElement)("summary", null, t("Thought it through")),
--    (0, import_react6.createElement)("div", { className: "bt-think-text" }, text)
--  );
+-function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
+-  const tail = useTurnData?.("turn-tail");
+-  const location2 = node.location;
+-  const turn = location2?.kind === "turn" || location2?.kind === "step" ? location2.turn : void 0;
+-  const seq = node.data.finalNode?.seq;
+-  return (0, import_react6.useMemo)(() => {
+-    if (typeof fileMentions !== "function" || turn?.status !== "closed" || seq === void 0) return void 0;
+-    return tail?.closing?.finalNode.seq === seq ? fileMentions({ turn, seq, openFile }) : void 0;
+-  }, [fileMentions, openFile, seq, tail, turn]);
 +var DRAWN = /* @__PURE__ */ new Set(["message_bot", "stop_bot", "create_bot", "update_bot", "group_relay", "create_group", "update_group", "delete_group", "post_to_group", "ask_user", "request_secret", "ask_user_question", "read_group_chat", "remember", "forget"]);
 +var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
 +function callTree(root) {
@@ -6774,15 +6789,40 @@ diff --git a/client.js b/client.js
 +  visit(root);
 +  return calls;
  }
--function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
--  const tail = useTurnData?.("turn-tail");
--  const location2 = node.location;
--  const turn = location2?.kind === "turn" || location2?.kind === "step" ? location2.turn : void 0;
--  const seq = node.data.finalNode?.seq;
--  return (0, import_react6.useMemo)(() => {
--    if (typeof fileMentions !== "function" || turn?.status !== "closed" || seq === void 0) return void 0;
--    return tail?.closing?.finalNode.seq === seq ? fileMentions({ turn, seq, openFile }) : void 0;
--  }, [fileMentions, openFile, seq, tail, turn]);
+-function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
+-  const roster = useRoster((value) => value);
+-  const data = node.data;
+-  const steps = useTurnSteps(String(data.turn));
+-  const contexts = useTurnContext(String(data.turn));
+-  const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData });
+-  const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn);
+-  const texts2 = groupPart === "reasoning" ? [] : data.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "").map((block) => block.text);
+-  const running = data.status === "running";
+-  useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
+-  if (hidden) return null;
+-  const reasoning = groupPart === "response" ? "" : turnReasoning(steps, data);
+-  const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : [];
+-  if (texts2.length === 0 && !reasoning && relays.length === 0) return null;
+-  const selfId = roster.byId[sessionId]?.id ?? sessionId;
+-  return (0, import_react6.createElement)(
+-    import_react6.Fragment,
+-    null,
+-    relays.map((relay) => {
+-      const source = relay.source;
+-      const sender = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t("a Bot"), color: "gray" };
+-      return (0, import_react6.createElement)(EventLine, {
+-        key: relay.seq,
+-        prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
+-        bots: [sender],
+-        onOpen: () => {
+-          if (sender.id) actions.openExchange(selfId, sender.id);
+-        },
+-        whole: true
+-      });
+-    }),
+-    reasoning ? (0, import_react6.createElement)(ThinkingRow, { text: reasoning }) : null,
+-    texts2.length ? (0, import_react6.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
+-  );
 +function useShownCards(actions, sessionId, callIds) {
 +  const key = JSON.stringify(callIds);
 +  (0, import_react9.useLayoutEffect)(() => {
@@ -6792,7 +6832,19 @@ diff --git a/client.js b/client.js
 +    return () => actions.noteCards(sessionId, ids, -1);
 +  }, [sessionId, key]);
  }
--function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
+-function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
+-  if (whole && bots.length === 1) {
+-    return (0, import_react6.createElement)(
+-      "div",
+-      { className: "bt-event" },
+-      (0, import_react6.createElement)(
+-        "button",
+-        { type: "button", className: "bt-event-whole", title: bots[0].name, onClick: () => onOpen?.(bots[0]) },
+-        (0, import_react6.createElement)("span", null, prefix),
+-        (0, import_react6.createElement)(BotMark, { bot: bots[0], size: 16 }),
+-        (0, import_react6.createElement)("span", { className: "bt-event-name" }, bots[0].name)
+-      )
+-    );
 +function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
 +  const tool = toolName(call4);
 +  const done = call4.kind === "tool-result";
@@ -6868,70 +6920,7 @@ diff --git a/client.js b/client.js
 +      return done && !call4.isError ? (0, import_react9.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call4.content), roster, actions, findBot }) : null;
 +    default:
 +      return null;
-+  }
-+}
-+function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
-   const roster = useRoster((value) => value);
--  const data = node.data;
--  const steps = useTurnSteps(String(data.turn));
--  const contexts = useTurnContext(String(data.turn));
--  const mentions = useFileMentions({ node, openFile, fileMentions, useTurnData });
--  const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn);
--  const texts2 = groupPart === "reasoning" ? [] : data.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "").map((block) => block.text);
--  const running = data.status === "running";
--  useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
--  if (hidden) return null;
--  const reasoning = groupPart === "response" ? "" : turnReasoning(steps, data);
--  const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : [];
--  if (texts2.length === 0 && !reasoning && relays.length === 0) return null;
--  const selfId = roster.byId[sessionId]?.id ?? sessionId;
--  return (0, import_react6.createElement)(
--    import_react6.Fragment,
--    null,
--    relays.map((relay) => {
--      const source = relay.source;
--      const sender = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t("a Bot"), color: "gray" };
--      return (0, import_react6.createElement)(EventLine, {
--        key: relay.seq,
--        prefix: source.role === "stopped" ? t("Stopped by") : source.role === "reply" ? t("Reply from") : t("Message from"),
--        bots: [sender],
--        onOpen: () => {
--          if (sender.id) actions.openExchange(selfId, sender.id);
--        },
--        whole: true
--      });
--    }),
--    reasoning ? (0, import_react6.createElement)(ThinkingRow, { text: reasoning }) : null,
--    texts2.length ? (0, import_react6.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
--  );
-+  const root = node.data.root;
-+  const turn = node.location?.turn?.turn ?? root.turn;
-+  const hidden = isHiddenTurn(roster, sessionId, turn);
-+  const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
-+  const calls = hidden ? [] : callTree(root);
-+  const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
-+  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
-+  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
-+  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
-+  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
-+  if (drawn.length === 0) return null;
-+  const env = { sessionId, roster, actions, useUi, findBot };
-+  return (0, import_react9.createElement)(import_react9.Fragment, null, drawn.map((call4, index) => (0, import_react9.createElement)(import_react9.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
- }
--function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
--  if (whole && bots.length === 1) {
--    return (0, import_react6.createElement)(
--      "div",
--      { className: "bt-event" },
--      (0, import_react6.createElement)(
--        "button",
--        { type: "button", className: "bt-event-whole", title: bots[0].name, onClick: () => onOpen?.(bots[0]) },
--        (0, import_react6.createElement)("span", null, prefix),
--        (0, import_react6.createElement)(BotMark, { bot: bots[0], size: 16 }),
--        (0, import_react6.createElement)("span", { className: "bt-event-name" }, bots[0].name)
--      )
--    );
--  }
+   }
 -  const parts = [];
 -  parts.push((0, import_react6.createElement)("span", { key: "p" }, prefix));
 -  bots.forEach((bot, index) => {
@@ -6944,13 +6933,6 @@ diff --git a/client.js b/client.js
 -    ));
 -  });
 -  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
-+
-+// src/client/awaiting.js
-+var AWAIT_REPLY_MS = 10 * 60 * 1e3;
-+function awaitingReply(roster, sessionId, now = Date.now()) {
-+  const at = roster?.remoteAwaiting?.[sessionId];
-+  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
-+  return now - at < AWAIT_REPLY_MS;
  }
 -function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
 -  const lead = (0, import_react6.createElement)(
@@ -6969,13 +6951,21 @@ diff --git a/client.js b/client.js
 -    ),
 -    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 -  );
-+
-+// src/client/remote-approval-wait.js
-+var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
-+function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
-+  if (!remote) return null;
-+  if (tool && inputAt <= (tool.at ?? 0)) return null;
-+  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
++function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
++  const roster = useRoster((value) => value);
++  const root = node.data.root;
++  const turn = node.location?.turn?.turn ?? root.turn;
++  const hidden = isHiddenTurn(roster, sessionId, turn);
++  const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
++  const calls = hidden ? [] : callTree(root);
++  const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
++  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
++  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
++  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
++  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
++  if (drawn.length === 0) return null;
++  const env = { sessionId, roster, actions, useUi, findBot };
++  return (0, import_react9.createElement)(import_react9.Fragment, null, drawn.map((call4, index) => (0, import_react9.createElement)(import_react9.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
  }
 -function GroupEvent({ prefix, room: room2, name, roster, actions }) {
 -  return (0, import_react6.createElement)(
@@ -6985,14 +6975,12 @@ diff --git a/client.js b/client.js
 -    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
 -  );
 +
-+// src/client/activity-row-host.js
-+var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
-+var TAIL_HOST = "tail";
-+function findRunningHostIn(root) {
-+  if (!root || typeof root.querySelector !== "function") return null;
-+  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
-+  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
-+  return root.querySelector(RUNNING_HOST);
++// src/client/awaiting.js
++var AWAIT_REPLY_MS = 10 * 60 * 1e3;
++function awaitingReply(roster, sessionId, now = Date.now()) {
++  const at = roster?.remoteAwaiting?.[sessionId];
++  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
++  return now - at < AWAIT_REPLY_MS;
  }
 -function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
 -  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
@@ -7008,6 +6996,31 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)("button", { type: "button", title: result, onClick: () => actions.openMemory(target.id) }, (0, import_react6.createElement)(MemoryIcon), label)
 -  );
 +
++// src/client/remote-approval-wait.js
++var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
++function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
++  if (!remote) return null;
++  if (tool && inputAt <= (tool.at ?? 0)) return null;
++  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
+ }
+-function PartLine({ time }) {
+-  return (0, import_react6.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react6.createElement)("span", null, dayLabel(time)) : null);
++
++// src/client/activity-row-host.js
++var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
++var TAIL_HOST = "tail";
++function findRunningHostIn(root) {
++  if (!root || typeof root.querySelector !== "function") return null;
++  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
++  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
++  return root.querySelector(RUNNING_HOST);
+ }
+-var scrollParent = (node) => {
+-  for (let at = node.parentElement; at; at = at.parentElement) {
+-    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
+-  }
+-  return null;
++
 +// src/client/activity-row.js
 +var import_react10 = require("react");
 +var import_react_dom2 = require("react-dom");
@@ -7018,9 +7031,7 @@ diff --git a/client.js b/client.js
 +  if (minutes < 60) return `${Math.max(1, minutes)}m`;
 +  const hours = Math.floor(minutes / 60);
 +  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
- }
--function PartLine({ time }) {
--  return (0, import_react6.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react6.createElement)("span", null, dayLabel(time)) : null);
++}
 +var REMOTE_GRACE_MS = 1500;
 +function useAwaitingReply(roster, sessionId) {
 +  const at = roster?.remoteAwaiting?.[sessionId];
@@ -7032,12 +7043,7 @@ diff --git a/client.js b/client.js
 +    return () => clearTimeout(timer);
 +  }, [shown, at]);
 +  return shown;
- }
--var scrollParent = (node) => {
--  for (let at = node.parentElement; at; at = at.parentElement) {
--    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
--  }
--  return null;
++}
 +function findHost(where) {
 +  if (where !== TAIL_HOST) return findRunningHostIn(document);
 +  const flow = document.querySelector("[data-conversation-scroll] [data-chat-flow]") ?? document.querySelector("[data-chat-flow]");
@@ -10298,7 +10304,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
  .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
  .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
-@@ -5491,18 +5491,112 @@ var SIDEBAR_CSS = `
+@@ -5491,18 +5491,128 @@ var SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
@@ -10317,23 +10323,25 @@ diff --git a/client.js b/client.js
 -// src/client/header.js
 -var import_react9 = require("react");
 +// src/client/busy-ack-logic.js
-+var BUSY_ACK_KEY = "Seen — I’ll get to this right after the current step.";
++function busyAckText(hostAck) {
++  return typeof hostAck?.text === "string" ? hostAck.text.trim() : "";
++}
++function busyAckPending(hostAck) {
++  return busyAckText(hostAck) === "";
++}
 +function pendingBusyPlacement(submissions) {
 +  if (!Array.isArray(submissions)) return false;
 +  return submissions.some((item) => item?.placement === "queued" || item?.placement === "steering");
 +}
 +function busyAckVisible({ hostAck, pendingBusy, streamingText }) {
 +  if (streamingText) return false;
-+  return Boolean(hostAck?.text) || pendingBusy === true;
++  return busyAckText(hostAck) !== "" || pendingBusy === true;
 +}
 +
 +// src/client/busy-ack.js
 +var import_react17 = require("react");
  var import_react_dom4 = require("react-dom");
 -var GoArrow = () => (0, import_react9.createElement)("svg", { width: 14, height: 14, viewBox: "-12 -12 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react9.createElement)("path", { d: "M-7 0H7M2 -5L7 0L2 5" }));
-+function busyAckText(hostAck) {
-+  return hostAck?.text || t(BUSY_ACK_KEY);
-+}
 +function useRunningHost2(active) {
 +  const [host, setHost] = (0, import_react17.useState)(null);
 +  (0, import_react17.useEffect)(() => {
@@ -10370,6 +10378,7 @@ diff --git a/client.js b/client.js
 +  const host = useRunningHost2(visible);
 +  const shown = (0, import_react17.useRef)(null);
 +  if (visible) shown.current = { text: busyAckText(hostAck), at: hostAck?.at ?? Date.now() };
++  const text = shown.current?.text ?? "";
 +  if (!visible || !host || !shown.current || !bot) return null;
 +  return (0, import_react_dom4.createPortal)((0, import_react17.createElement)(
 +    "div",
@@ -10377,7 +10386,9 @@ diff --git a/client.js b/client.js
 +      className: "bt-busy-ack",
 +      "data-flybot": "busy-ack",
 +      role: "status",
-+      "aria-live": "polite"
++      "aria-live": "polite",
++      "aria-busy": text ? void 0 : "true",
++      "data-pending": text ? void 0 : ""
 +    },
 +    (0, import_react17.createElement)(BotMark, { bot, size: 28, state: "thinking", live: true }),
 +    (0, import_react17.createElement)(
@@ -10389,7 +10400,13 @@ diff --git a/client.js b/client.js
 +        (0, import_react17.createElement)(
 +          "div",
 +          { className: "bt-msg-line" },
-+          (0, import_react17.createElement)("div", { className: "bt-bubble" }, shown.current.text)
++          text ? (0, import_react17.createElement)("div", { className: "bt-bubble" }, text) : (0, import_react17.createElement)(
++            "div",
++            { className: "bt-bubble bt-busy-dots", "aria-hidden": "true" },
++            (0, import_react17.createElement)("span", null),
++            (0, import_react17.createElement)("span", null),
++            (0, import_react17.createElement)("span", null)
++          )
 +        )
 +      )
 +    )
@@ -10399,6 +10416,11 @@ diff --git a/client.js b/client.js
 +.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 +.bt-busy-ack .bt-astack{align-items:flex-start}
 +.bt-busy-ack .bt-bubble{opacity:.92}
++.bt-busy-dots{display:inline-flex;align-items:center;gap:4px;height:22px}
++.bt-busy-dots>span{width:5px;height:5px;border-radius:50%;background:var(--bt-ink-3);animation:bt-busy-blink 1.2s ease-in-out infinite}
++.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
++@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
++@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 +`;
 +
 +// src/client/header.js

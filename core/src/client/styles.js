@@ -973,6 +973,11 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 .bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 .bt-busy-ack .bt-astack{align-items:flex-start}
 .bt-busy-ack .bt-bubble{opacity:.92}
+.bt-busy-dots{display:inline-flex;align-items:center;gap:4px;height:22px}
+.bt-busy-dots>span{width:5px;height:5px;border-radius:50%;background:var(--bt-ink-3);animation:bt-busy-blink 1.2s ease-in-out infinite}
+.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
+@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
 .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 .bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}

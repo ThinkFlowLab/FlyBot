@@ -1,6 +1,14 @@
 // Pure busy-ack helpers (#1584). Kept free of React so unit tests import them without a DOM.
 
-export const BUSY_ACK_KEY = 'Seen — I’ll get to this right after the current step.'
+// No canned sentence: until the host's context-aware ack arrives the bubble is
+// only the Bot's mark and a short blinking indicator (#1656).
+export function busyAckText(hostAck) {
+  return typeof hostAck?.text === 'string' ? hostAck.text.trim() : ''
+}
+
+export function busyAckPending(hostAck) {
+  return busyAckText(hostAck) === ''
+}
 
 export function pendingBusyPlacement(submissions) {
   if (!Array.isArray(submissions)) return false
@@ -9,5 +17,5 @@ export function pendingBusyPlacement(submissions) {
 
 export function busyAckVisible({ hostAck, pendingBusy, streamingText }) {
   if (streamingText) return false
-  return Boolean(hostAck?.text) || pendingBusy === true
+  return busyAckText(hostAck) !== '' || pendingBusy === true
 }

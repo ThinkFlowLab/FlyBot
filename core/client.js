@@ -840,7 +840,6 @@ var ZH = {
   "Thought it through": "思考过程",
   "{n} line of reasoning": "{n} 行思考内容",
   "{n} lines of reasoning": "{n} 行思考内容",
-  "Seen — I’ll get to this right after the current step.": "看到了，这步做完就接着处理你这条。",
   "Earlier messages": "更早的消息",
   "Loading earlier messages…": "正在加载更早的消息…",
   "Couldn’t load earlier messages · Retry": "更早的消息没加载出来 · 重试",
@@ -4759,6 +4758,11 @@ body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]:
 .bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 .bt-busy-ack .bt-astack{align-items:flex-start}
 .bt-busy-ack .bt-bubble{opacity:.92}
+.bt-busy-dots{display:inline-flex;align-items:center;gap:4px;height:22px}
+.bt-busy-dots>span{width:5px;height:5px;border-radius:50%;background:var(--bt-ink-3);animation:bt-busy-blink 1.2s ease-in-out infinite}
+.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
+@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
 .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 .bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}
@@ -9847,22 +9851,24 @@ var SIDEBAR_CSS = `
 `;
 
 // src/client/busy-ack-logic.js
-var BUSY_ACK_KEY = "Seen — I’ll get to this right after the current step.";
+function busyAckText(hostAck) {
+  return typeof hostAck?.text === "string" ? hostAck.text.trim() : "";
+}
+function busyAckPending(hostAck) {
+  return busyAckText(hostAck) === "";
+}
 function pendingBusyPlacement(submissions) {
   if (!Array.isArray(submissions)) return false;
   return submissions.some((item) => item?.placement === "queued" || item?.placement === "steering");
 }
 function busyAckVisible({ hostAck, pendingBusy, streamingText }) {
   if (streamingText) return false;
-  return Boolean(hostAck?.text) || pendingBusy === true;
+  return busyAckText(hostAck) !== "" || pendingBusy === true;
 }
 
 // src/client/busy-ack.js
 var import_react17 = require("react");
 var import_react_dom4 = require("react-dom");
-function busyAckText(hostAck) {
-  return hostAck?.text || t(BUSY_ACK_KEY);
-}
 function useRunningHost2(active) {
   const [host, setHost] = (0, import_react17.useState)(null);
   (0, import_react17.useEffect)(() => {
@@ -9899,6 +9905,7 @@ function BusyAckBubble({ sessionId, useRoster, useBusyAcks, useSessionStatus, us
   const host = useRunningHost2(visible);
   const shown = (0, import_react17.useRef)(null);
   if (visible) shown.current = { text: busyAckText(hostAck), at: hostAck?.at ?? Date.now() };
+  const text = shown.current?.text ?? "";
   if (!visible || !host || !shown.current || !bot) return null;
   return (0, import_react_dom4.createPortal)((0, import_react17.createElement)(
     "div",
@@ -9906,7 +9913,9 @@ function BusyAckBubble({ sessionId, useRoster, useBusyAcks, useSessionStatus, us
       className: "bt-busy-ack",
       "data-flybot": "busy-ack",
       role: "status",
-      "aria-live": "polite"
+      "aria-live": "polite",
+      "aria-busy": text ? void 0 : "true",
+      "data-pending": text ? void 0 : ""
     },
     (0, import_react17.createElement)(BotMark, { bot, size: 28, state: "thinking", live: true }),
     (0, import_react17.createElement)(
@@ -9918,7 +9927,13 @@ function BusyAckBubble({ sessionId, useRoster, useBusyAcks, useSessionStatus, us
         (0, import_react17.createElement)(
           "div",
           { className: "bt-msg-line" },
-          (0, import_react17.createElement)("div", { className: "bt-bubble" }, shown.current.text)
+          text ? (0, import_react17.createElement)("div", { className: "bt-bubble" }, text) : (0, import_react17.createElement)(
+            "div",
+            { className: "bt-bubble bt-busy-dots", "aria-hidden": "true" },
+            (0, import_react17.createElement)("span", null),
+            (0, import_react17.createElement)("span", null),
+            (0, import_react17.createElement)("span", null)
+          )
         )
       )
     )
@@ -9928,6 +9943,11 @@ var BUSY_ACK_CSS = `
 .bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 .bt-busy-ack .bt-astack{align-items:flex-start}
 .bt-busy-ack .bt-bubble{opacity:.92}
+.bt-busy-dots{display:inline-flex;align-items:center;gap:4px;height:22px}
+.bt-busy-dots>span{width:5px;height:5px;border-radius:50%;background:var(--bt-ink-3);animation:bt-busy-blink 1.2s ease-in-out infinite}
+.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
+@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 `;
 
 // src/client/header.js

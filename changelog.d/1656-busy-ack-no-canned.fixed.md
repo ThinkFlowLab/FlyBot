@@ -1,0 +1,1 @@
+The busy-ack bubble no longer falls back to the fixed line 「看到了，这步做完就接着处理你这条。」 while the host's acknowledgment is on its way: it shows only the Bot's mark and a short blinking indicator, and the host's context-aware line replaces it when it arrives ([#1656](https://github.com/ThinkFlowLab/FlyBot/issues/1656)).
