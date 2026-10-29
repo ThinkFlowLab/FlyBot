@@ -2642,3 +2642,110 @@ test('the Read-only plane and the 2-way Edit plane stay byte-identical to the ba
   }
   for (const [key, value] of Object.entries(now)) assert.equal(value, BASE_PLANES[key], `${key} moved`)
 })
+
+// #1693: the laid-out Edit plane shrinks its cards to the panel (98 wide at a
+// 364px drawer) but the parallel frame and the wires were still drawn from the
+// old 168x72 card: the frame reached x = -22..386 into the clipped canvas and a
+// wire's horizontal run crossed the cards of the other line.
+const cardBoxOf = (node, height) => {
+  const w = node.w ?? client.NODE_W
+  const h = node.h ?? height
+  return { id: node.id, left: node.x - w / 2, right: node.x + w / 2, top: node.y, bottom: node.y + h }
+}
+const enclosesBox = (frame, box) => frame.left <= box.left && frame.left + frame.width >= box.right &&
+  frame.top <= box.top && frame.top + frame.height >= box.bottom
+const framesOf = view => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-par')).map(node => node.props.style)
+function crossesRect([a, b], rect) {
+  if (a.x === b.x) {
+    const lo = Math.min(a.y, b.y)
+    const hi = Math.max(a.y, b.y)
+    return a.x > rect.left && a.x < rect.right && Math.max(lo, rect.top) < Math.min(hi, rect.bottom)
+  }
+  if (a.y === b.y) {
+    const lo = Math.min(a.x, b.x)
+    const hi = Math.max(a.x, b.x)
+    return a.y > rect.top && a.y < rect.bottom && Math.max(lo, rect.left) < Math.min(hi, rect.right)
+  }
+  return false
+}
+
+test('the parallel frame reads the drawn card size, not the fixed 168x72 (#1693)', () => {
+  const members = [
+    { id: 'a', x: 72, y: 148, w: 98, h: 96 },
+    { id: 'b', x: 182, y: 148, w: 98, h: 96 },
+    { id: 'c', x: 292, y: 148, w: 98, h: 96 },
+  ]
+  const frame = client.parallelFrameStyle(members)
+  assert.equal(frame.left, 72 - 98 / 2 - 10, 'the frame starts left of the first card by its own width')
+  assert.equal(frame.left + frame.width, 292 + 98 / 2 + 10, 'the frame ends right of the last card by its own width')
+  assert.equal(frame.top, 148 - 20)
+  assert.equal(frame.height, 96 + 10)
+})
+
+for (const cardHeight of [72, 96]) {
+  test(`the laid-out frame encloses every card inside the 364px panel at card height ${cardHeight} (#1693)`, () => {
+    const graph = parallelGraph(3)
+    const heights = Object.fromEntries(graph.nodes.map(node => [node.id, cardHeight]))
+    const plane = client.editPlane(graph, client.DRAWER_FLOW_W, heights)
+    assert.equal(plane.wrapped, true, 'a 3-way step does not fit the fitted plane')
+    assert.equal(plane.frames?.length, 1, 'the laid-out plane says which band frame it drew')
+    const frame = plane.frames[0]
+    assert.ok(frame.left >= 0, `the frame starts at ${frame.left}, left of the panel`)
+    assert.ok(frame.left + frame.width <= client.DRAWER_FLOW_W, `the frame ends at ${frame.left + frame.width}, past the ${client.DRAWER_FLOW_W}px panel`)
+    const members = graph.layers.find(layer => layer.length > 1).map(id => plane.nodes.find(node => node.id === id))
+    for (const card of members.map(node => cardBoxOf(node, cardHeight))) {
+      assert.ok(enclosesBox(frame, card), `the frame ${frame.left}..${frame.left + frame.width}, ${frame.top}..${frame.top + frame.height} leaves ${card.id} (${card.left}..${card.right}, ${card.top}..${card.bottom}) outside`)
+    }
+    // The drawn cards are `flowLayout`'s own boxes, not a second copy of the rows.
+    const layout = client.flowLayout(graph, client.DRAWER_FLOW_W, heights)
+    for (const node of members) {
+      const box = layout.boxes.get(node.id)
+      assert.deepEqual([node.x, node.y, node.w, node.h], [box.x, box.top, box.w, box.h], `${node.id} is not the box flowLayout drew`)
+    }
+  })
+}
+
+test('the laid-out Edit plane paints the parallel frame inside the panel and around the cards (#1693)', async () => {
+  const graph = parallelGraph(3)
+  const { view, nodeAt } = await openDrawer(graph)
+  const panel = Number(findAll(view.tree, node => node.props?.['data-plane'] === '1')[0].props.style.width)
+  assert.equal(panel, client.DRAWER_FLOW_W)
+  const frames = framesOf(view)
+  assert.equal(frames.length, 1, 'the laid-out 3-way step draws one parallel frame')
+  const frame = frames[0]
+  assert.ok(frame.left >= 0 && frame.left + frame.width <= panel, `the frame ${frame.left}..${frame.left + frame.width} is outside the ${panel}px panel`)
+  const layer = new Set(graph.layers.find(layer => layer.length > 1))
+  for (const card of drawnCards(nodeAt, graph).filter(card => layer.has(card.id))) {
+    assert.ok(enclosesBox(frame, card), `${card.id} (${card.left}..${card.right}, ${card.top}..${card.bottom}) is outside the frame ${frame.left}..${frame.left + frame.width}, ${frame.top}..${frame.top + frame.height}`)
+  }
+  view.unmount()
+})
+
+test('the laid-out Edit plane routes every wire around the cards of a 6-way step (#1693)', async () => {
+  const graph = parallelGraph(6)
+  const { view, nodeAt } = await openDrawer(graph)
+  const cards = drawnCards(nodeAt, graph)
+  assert.equal(cards.length, 8)
+  const paths = findAll(view.tree, node => node.props?.className === 'wf-wires')[0]
+  const drawn = findAll(paths, node => node.type === 'path' && typeof node.props?.d === 'string').map(node => node.props.d)
+  const hits = []
+  for (const d of drawn) {
+    for (const segment of segmentsOf(d)) {
+      for (const card of cards) {
+        // The card's own box and the out-port dot on its bottom-right corner stay
+        // clear. The remove button's box rides 8px above the card's top edge, into
+        // the 12px wrap gap the routing has to cross to reach the second line — the
+        // wire is painted under the card and its button, so the button keeps its click.
+        const areas = [['card', { left: card.left, right: card.right, top: card.top, bottom: card.bottom }], ['out-port', portArea(card)]]
+        for (const [what, rect] of areas) {
+          if (crossesRect(segment, rect)) hits.push(`${what} ${card.id}: ${segment[0].x},${segment[0].y}→${segment[1].x},${segment[1].y}`)
+        }
+      }
+    }
+  }
+  assert.deepEqual(hits, [], 'a wire runs through a card')
+  // The wires are `flowLayout`'s own routing around those boxes, not a second fold.
+  const layout = client.flowLayout(graph, client.DRAWER_FLOW_W, {})
+  assert.deepEqual(drawn, layout.wires.map(wire => wire.d), 'the laid-out plane did not draw the wires flowLayout routed')
+  view.unmount()
+})

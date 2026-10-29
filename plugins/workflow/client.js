@@ -649,17 +649,27 @@ window.__ModuleLoader__.load({
       return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`
     }
 
+    // The drawn card's own size: a fitted plane keeps the 168x72 card, and the
+    // laid-out one shrinks it to the panel (#1693). Reading the box here is what
+    // keeps the frame around the cards it encloses instead of the old card size.
     function parallelFrameStyle(members) {
-      const minX = Math.min(...members.map(node => node.x ?? 0))
-      const maxX = Math.max(...members.map(node => node.x ?? 0))
-      const minY = Math.min(...members.map(node => node.y ?? 0))
-      const maxY = Math.max(...members.map(node => (node.y ?? 0) + NODE_H))
       const pad = 10
+      const boxes = members.map(node => {
+        const x = node.x ?? 0
+        const y = node.y ?? 0
+        const w = node.w ?? NODE_W
+        const h = node.h ?? NODE_H
+        return { left: x - w / 2, right: x + w / 2, top: y, bottom: y + h }
+      })
+      const left = Math.min(...boxes.map(box => box.left))
+      const right = Math.max(...boxes.map(box => box.right))
+      const top = Math.min(...boxes.map(box => box.top))
+      const bottom = Math.max(...boxes.map(box => box.bottom))
       return {
-        left: minX - NODE_W / 2 - pad,
-        top: minY - 20,
-        width: maxX - minX + NODE_W + pad * 2,
-        height: maxY - minY + pad,
+        left: left - pad,
+        top: top - 20,
+        width: right - left + pad * 2,
+        height: bottom - top + pad,
       }
     }
 
@@ -787,31 +797,14 @@ window.__ModuleLoader__.load({
         return members.some((a, i) => members.some((b, j) => j > i && overlaps(a, b)))
       })
       if (!crowded) return { width, scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, height: fit.height, wrapped: false, nodes: fit.nodes }
+      // The laid-out rows are `flowLayout`'s own boxes, and its wires are the ones
+      // routed around those same boxes — one copy of the row geometry (#1693).
+      const layout = flowLayout(workflow, width, heights)
       const stored = new Map((workflow?.nodes ?? []).map(node => [node.id, node]))
-      const drawn = []
-      let y = FIT_PAD
-      for (const row of flowRows(workflow)) {
-        const par = row.length > 1
-        const inner = width - FIT_PAD * 2 - (par ? FLOW_PAR_PAD * 2 : 0)
-        const columns = Math.max(1, Math.min(row.length, Math.floor((inner + FLOW_GAP_X) / (FLOW_NODE_MIN_W + FLOW_GAP_X))))
-        const perLine = Math.ceil(row.length / Math.ceil(row.length / columns))
-        let cursor = y + (par ? FLOW_PAR_LABEL : 0)
-        for (let at = 0; at < row.length; at += perLine) {
-          const line = row.slice(at, at + perLine)
-          const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (line.length - 1)) / line.length)))
-          const total = w * line.length + FLOW_GAP_X * (line.length - 1)
-          const start = Math.round(width / 2 - total / 2)
-          let lineH = 0
-          line.forEach((id, column) => {
-            const h = Math.max(24, Number(heights?.[id]) || NODE_H)
-            lineH = Math.max(lineH, h)
-            drawn.push({ ...stored.get(id), id, x: start + column * (w + FLOW_GAP_X) + w / 2, y: cursor, w, h })
-          })
-          cursor += lineH + FLOW_WRAP_GAP
-        }
-        y = cursor - FLOW_WRAP_GAP + (par ? FLOW_PAR_PAD : 0) + FLOW_ROW_GAP
-      }
-      return { width, scale: 1, offsetX: 0, offsetY: 0, height: Math.max(420, y - FLOW_ROW_GAP + FIT_PAD), wrapped: true, nodes: drawn }
+      const drawn = [...layout.boxes.values()].map(box => ({
+        ...stored.get(box.id), id: box.id, x: box.x, y: box.top, w: box.w, h: box.h,
+      }))
+      return { width: layout.width, scale: 1, offsetX: 0, offsetY: 0, height: Math.max(420, layout.height), wrapped: true, nodes: drawn, wires: layout.wires, frames: layout.frames }
     }
     // One bus per connected group of edges between two adjacent rows: every
     // source drops to the bus, every target rises from it, so a fork leaves one
@@ -1155,26 +1148,42 @@ window.__ModuleLoader__.load({
         !editing ? h(FlowView, { workflow, layout: view, status, roster }) : null,
         editing ? h('div', { className: 'wf-plane', 'data-plane': '1', style: { height, width: plane.width } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height, plane.width) },
+            // The laid-out plane draws the wires `flowLayout` routed around its own
+            // boxes; the fitted plane keeps the single fold between two cards (#1693).
+            plane.wrapped
+              ? (plane.wires ?? []).map(wire => h('path', { key: wire.key, d: wire.d, 'data-wire': wire.kind }))
+              : edges.map(edge => {
+                  const from = drawn.get(edge.from)
+                  const to = drawn.get(edge.to)
+                  if (!from || !to) return null
+                  return h('path', { key: `${edge.from}>${edge.to}`, d: wirePath(from, to, 0) })
+                }),
             edges.map(edge => {
-              const from = drawn.get(edge.from)
               const to = drawn.get(edge.to)
-              if (!from || !to) return null
-              return h('g', { key: `${edge.from}>${edge.to}` },
-                h('path', { d: wirePath(from, to, 0) }),
-                editing ? h('circle', {
-                  cx: to.x, cy: to.y, r: 7, className: 'wf-end',
-                  'data-port': 'end', 'data-src': edge.from, 'data-dst': edge.to,
-                  onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); setGesture({ kind: 'reconnect', from: edge.from, to: edge.to }) },
-                }) : null)
+              if (!to) return null
+              return h('circle', {
+                key: `end:${edge.from}>${edge.to}`,
+                cx: to.x, cy: to.y, r: 7, className: 'wf-end',
+                'data-port': 'end', 'data-src': edge.from, 'data-dst': edge.to,
+                onPointerDown: (event) => { event.preventDefault?.(); event.stopPropagation?.(); setGesture({ kind: 'reconnect', from: edge.from, to: edge.to }) },
+              })
             })),
-          (workflow.layers ?? []).filter(layer => layer.length > 1).map(layer => {
-            const members = layer.map(id => drawn.get(id)).filter(Boolean)
-            if (members.length < 2) return null
-            return h('div', {
-              key: layer.join('+'), className: 'wf-par wf-abs',
-              style: parallelFrameStyle(members),
-            }, h('div', { className: 'wf-plabel' }, tr('Parallel branches · Merge after all pass')))
-          }),
+          // The laid-out frame is the band `flowLayout` drew its cards in, so it
+          // encloses them by construction; the fitted plane keeps the frame drawn
+          // around the scaled cards (#1693).
+          plane.wrapped
+            ? (plane.frames ?? []).map(frame => h('div', {
+                key: frame.key, className: 'wf-par wf-abs',
+                style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
+              }, h('div', { className: 'wf-plabel', style: { maxWidth: frame.labelMax } }, tr('Parallel branches · Merge after all pass'))))
+            : (workflow.layers ?? []).filter(layer => layer.length > 1).map(layer => {
+                const members = layer.map(id => drawn.get(id)).filter(Boolean)
+                if (members.length < 2) return null
+                return h('div', {
+                  key: layer.join('+'), className: 'wf-par wf-abs',
+                  style: parallelFrameStyle(members),
+                }, h('div', { className: 'wf-plabel' }, tr('Parallel branches · Merge after all pass')))
+              }),
           nodes.map(node => {
             const spot = drawn.get(node.id) ?? node
             return h('div', {
