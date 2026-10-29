@@ -785,6 +785,8 @@ const ZH = {
   'Message actions': '消息操作',
   Download: '下载',
   'Thought it through': '思考过程',
+  '{n} line of reasoning': '{n} 行思考内容',
+  '{n} lines of reasoning': '{n} 行思考内容',
   'Seen — I’ll get to this right after the current step.': '看到了，这步做完就接着处理你这条。',
   'Earlier messages': '更早的消息',
   'Loading earlier messages…': '正在加载更早的消息…',

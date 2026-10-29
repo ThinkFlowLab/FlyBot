@@ -136,3 +136,43 @@ test('#1636: an opened row hides its preview, so its first line is not printed t
     /\.bt-think\[open\] \.bt-think-peek\{display:none\}/,
   )
 })
+
+test('#1642: a fence or a rule is not the peek line; the first prose line is', () => {
+  const fenced = [think('```js\nconst x = 1\n```')]
+  const peek = classed(thinkingRow(render(step(1, fenced), [step(1, fenced)])), 'bt-think-peek')
+  assert.ok(peek, 'the closed row carries a line of the reasoning')
+  assert.equal(text(peek), 'const x = 1', 'markup is not what the Bot was thinking')
+  assert.doesNotMatch(text(peek), /```/)
+
+  const ruled = [think('---\n***\nLet me read it\n___')]
+  const second = classed(thinkingRow(render(step(1, ruled), [step(1, ruled)])), 'bt-think-peek')
+  assert.ok(second)
+  assert.equal(text(second), 'Let me read it', 'a horizontal rule is markup too')
+})
+
+test('#1642: a cut preview keeps whole characters and says it was cut', () => {
+  const long = [think(`${'a'.repeat(150)}😀${'b'.repeat(100)}`)]
+  const peek = classed(thinkingRow(render(step(1, long), [step(1, long)])), 'bt-think-peek')
+  assert.ok(peek)
+  const shown = text(peek)
+  assert.equal(shown.length, 160, 'the cap still holds')
+  assert.ok(shown.includes('😀'), 'an emoji inside the cap survives whole')
+  assert.ok(shown.endsWith('…'), 'a clipped line says it was clipped')
+  assert.doesNotMatch(shown, /[\uD800-\uDFFF]/u, 'no half a surrogate pair')
+
+  // The reported input: a pair cut exactly at the cap used to render as U+FFFD.
+  const edge = [think(`${'a'.repeat(159)}😀 tail`)]
+  const cut = text(classed(thinkingRow(render(step(1, edge), [step(1, edge)])), 'bt-think-peek'))
+  assert.equal(cut.length, 160)
+  assert.ok(cut.endsWith('…'))
+  assert.doesNotMatch(cut, /[\uD800-\uDFFF]/u, 'no half a surrogate pair at the cap either')
+})
+
+test('#1642: reasoning that is only markup gets a neutral summary, never a bare fence or an empty row', () => {
+  const onlyMarkup = [think('```js\n```')]
+  const details = thinkingRow(render(step(1, onlyMarkup), [step(1, onlyMarkup)]))
+  assert.ok(details, 'the row stays')
+  const peek = classed(details, 'bt-think-peek')
+  assert.ok(peek, 'the folded row never reads as an empty frame')
+  assert.equal(text(peek), '2 lines of reasoning')
+})

@@ -529,16 +529,40 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // Closes a popover on a press outside the given elements or on Escape.
  function useDismiss(open, close, refs) {
    useEffect(() => {
-@@ -100,9 +100,21 @@ function MessageTools({ text, name, sessionId, react, actions }) {
+@@ -100,9 +100,45 @@ function MessageTools({ text, name, sessionId, react, actions }) {
        item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
  }
  
 +// The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so
 +// the row never reads as an empty frame while the text it names sits behind the caret (#1624).
 +const PEEK_MAX = 160
++const CUT = '…'
++// A fence (```js, ~~~, a closing fence) and a horizontal rule are markup, not something thought, so
++// the preview skips them and takes the first line that has prose (#1642).
++const MARKUP = [/^\s{0,3}(?:`{3,}|~{3,})/, /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/]
++const isMarkup = (line) => MARKUP.some(pattern => pattern.test(line))
++// Graphemes where the platform segments them, code points otherwise: either way the cut never lands
++// inside a surrogate pair, so a clipped emoji cannot show up as U+FFFD (#1642).
++const graphemes = (line) => typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
++  ? [...new Intl.Segmenter().segment(line)].map(part => part.segment)
++  : [...line]
++const clip = (line) => {
++  if (line.length <= PEEK_MAX) return line
++  let kept = ''
++  for (const part of graphemes(line)) {
++    if (kept.length + part.length > PEEK_MAX - CUT.length) break
++    kept += part
++  }
++  return kept + CUT
++}
++// Nothing but markup: a line count still says something, where a fence fragment says nothing (#1642).
++const onlyMarkup = (lines) => (lines.length === 1
++  ? t('{n} line of reasoning', { n: lines.length })
++  : t('{n} lines of reasoning', { n: lines.length }))
 +const peekLine = (text) => {
-+  const line = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).find((part) => part !== '')
-+  return line === undefined ? '' : line.slice(0, PEEK_MAX)
++  const lines = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).filter((part) => part !== '')
++  const prose = lines.find((line) => !isMarkup(line))
++  return prose === undefined ? onlyMarkup(lines) : clip(prose)
 +}
 +
  function ThinkingRow({ text }) {

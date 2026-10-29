@@ -1152,7 +1152,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,10 +390,12 @@ const ZH = {
+@@ -390,10 +390,14 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -1161,6 +1161,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Message actions': '消息操作',
    Download: '下载',
    'Thought it through': '思考过程',
++  '{n} line of reasoning': '{n} 行思考内容',
++  '{n} lines of reasoning': '{n} 行思考内容',
 +  'Seen — I’ll get to this right after the current step.': '看到了，这步做完就接着处理你这条。',
    'Earlier messages': '更早的消息',
    'Loading earlier messages…': '正在加载更早的消息…',

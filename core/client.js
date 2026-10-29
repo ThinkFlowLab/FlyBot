@@ -838,6 +838,8 @@ var ZH = {
   "Message actions": "消息操作",
   Download: "下载",
   "Thought it through": "思考过程",
+  "{n} line of reasoning": "{n} 行思考内容",
+  "{n} lines of reasoning": "{n} 行思考内容",
   "Seen — I’ll get to this right after the current step.": "看到了，这步做完就接着处理你这条。",
   "Earlier messages": "更早的消息",
   "Loading earlier messages…": "正在加载更早的消息…",
@@ -6171,9 +6173,24 @@ function MessageTools({ text, name, sessionId, react, actions }) {
   );
 }
 var PEEK_MAX = 160;
+var CUT = "…";
+var MARKUP = [/^\s{0,3}(?:`{3,}|~{3,})/, /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/];
+var isMarkup = (line2) => MARKUP.some((pattern) => pattern.test(line2));
+var graphemes = (line2) => typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? [...new Intl.Segmenter().segment(line2)].map((part) => part.segment) : [...line2];
+var clip = (line2) => {
+  if (line2.length <= PEEK_MAX) return line2;
+  let kept = "";
+  for (const part of graphemes(line2)) {
+    if (kept.length + part.length > PEEK_MAX - CUT.length) break;
+    kept += part;
+  }
+  return kept + CUT;
+};
+var onlyMarkup = (lines) => lines.length === 1 ? t("{n} line of reasoning", { n: lines.length }) : t("{n} lines of reasoning", { n: lines.length });
 var peekLine = (text) => {
-  const line2 = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).find((part) => part !== "");
-  return line2 === void 0 ? "" : line2.slice(0, PEEK_MAX);
+  const lines = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).filter((part) => part !== "");
+  const prose = lines.find((line2) => !isMarkup(line2));
+  return prose === void 0 ? onlyMarkup(lines) : clip(prose);
 };
 function ThinkingRow({ text }) {
   if (typeof text !== "string" || text.trim() === "") return null;

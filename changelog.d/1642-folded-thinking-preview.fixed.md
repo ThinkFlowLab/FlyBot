@@ -1,0 +1,1 @@
+The folded thinking row's one-line preview now skips fences and horizontal rules, cuts on a character boundary instead of halving an emoji, and ends a clipped line with an ellipsis; reasoning that is nothing but markup says how many lines it has instead of showing a fence fragment ([#1642](https://github.com/ThinkFlowLab/FlyBot/issues/1642)).

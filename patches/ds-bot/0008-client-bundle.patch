@@ -572,7 +572,7 @@ diff --git a/client.js b/client.js
    // Command palette
    Messages: "消息",
    Commands: "命令",
-@@ -446,10 +446,12 @@ var ZH = {
+@@ -446,10 +446,14 @@ var ZH = {
    Reply: "回复",
    "More message actions": "更多操作",
    More: "更多",
@@ -581,6 +581,8 @@ diff --git a/client.js b/client.js
    "Message actions": "消息操作",
    Download: "下载",
    "Thought it through": "思考过程",
++  "{n} line of reasoning": "{n} 行思考内容",
++  "{n} lines of reasoning": "{n} 行思考内容",
 +  "Seen — I’ll get to this right after the current step.": "看到了，这步做完就接着处理你这条。",
    "Earlier messages": "更早的消息",
    "Loading earlier messages…": "正在加载更早的消息…",
@@ -3668,7 +3670,7 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2805,1975 +2805,4080 @@ function sheetClassNames(sheet) {
+@@ -2805,1975 +2805,4095 @@ function sheetClassNames(sheet) {
      visit(sheet.cssRules);
    } catch {
    }
@@ -5172,19 +5174,12 @@ diff --git a/client.js b/client.js
 -    ) : null,
 -    foot
 +    error ? (0, import_react8.createElement)("div", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
-   );
++  );
 +  return (0, import_react8.createElement)(
 +    "div",
 +    { className: "bt-held-actions", "data-flybot": "held-reply-actions" },
 +    custom ? (0, import_react8.createElement)(boundary(), { id: custom.id, fallback: plain }, (0, import_react8.createElement)(custom.component, { held, decide, call: call3, actions })) : plain
-+  );
-+}
-+
-+// src/client/turn-reasoning.js
-+function turnReasoning(steps, current) {
-+  const members = steps.length ? steps : [current];
-+  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
-+  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
+   );
  }
 -function SettledQuestion({ question, answer }) {
 -  const options = optionsOf(question);
@@ -5203,6 +5198,13 @@ diff --git a/client.js b/client.js
 -    );
 -  }
 -  return (0, import_react4.createElement)(
++
++// src/client/turn-reasoning.js
++function turnReasoning(steps, current) {
++  const members = steps.length ? steps : [current];
++  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
++  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
++}
 +var texts = (step) => step.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "");
 +var thinkingLive = (step) => step.status === "running" && texts(step).length === 0 && step.blocks.some((block) => block.kind === "reasoning");
 +var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
@@ -5388,49 +5390,31 @@ diff --git a/client.js b/client.js
 -  const loading = useSession?.(historyLoading) === true;
 -  if (question === void 0 || question.callId && (drawn || loading)) return null;
 -  return (0, import_react4.createElement)(PendingQuestion, { sessionId, question, actions, inline: false });
-+var PEEK_MAX = 160;
-+var peekLine = (text) => {
-+  const line2 = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).find((part) => part !== "");
-+  return line2 === void 0 ? "" : line2.slice(0, PEEK_MAX);
-+};
-+function ThinkingRow({ text }) {
-+  if (typeof text !== "string" || text.trim() === "") return null;
-+  const peek = peekLine(text);
-+  return (0, import_react9.createElement)(
-+    "details",
-+    { className: "bt-think" },
-+    (0, import_react9.createElement)(
-+      "summary",
-+      null,
-+      (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"),
-+      t("Thought it through"),
-+      peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
-+    ),
-+    (0, import_react9.createElement)("div", { className: "bt-think-text" }, text)
-+  );
- }
+-}
 -function AnsweredCell({ node }) {
 -  const data = node.data ?? {};
 -  const questions = Array.isArray(data.questions) ? data.questions : [];
 -  if (questions.length === 0) {
 -    return data.text ? (0, import_react4.createElement)("div", { className: "bt-urow" }, (0, import_react4.createElement)("div", { className: "bt-ububble" }, data.text)) : null;
--  }
++var PEEK_MAX = 160;
++var CUT = "…";
++var MARKUP = [/^\s{0,3}(?:`{3,}|~{3,})/, /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/];
++var isMarkup = (line2) => MARKUP.some((pattern) => pattern.test(line2));
++var graphemes = (line2) => typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? [...new Intl.Segmenter().segment(line2)].map((part) => part.segment) : [...line2];
++var clip = (line2) => {
++  if (line2.length <= PEEK_MAX) return line2;
++  let kept = "";
++  for (const part of graphemes(line2)) {
++    if (kept.length + part.length > PEEK_MAX - CUT.length) break;
++    kept += part;
+   }
 -  const answers = Array.isArray(data.answers) ? data.answers : [];
 -  return (0, import_react4.createElement)("div", { className: "bt-q-inline" }, questions.map((question) => (0, import_react4.createElement)(SettledQuestion, {
 -    key: question.id,
 -    question,
 -    answer: answers.find((answer) => answer.id === question.id) ?? { selected: [] }
 -  })));
-+function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
-+  const tail = useTurnData?.("turn-tail");
-+  const location2 = node.location;
-+  const turn = location2?.kind === "turn" || location2?.kind === "step" ? location2.turn : void 0;
-+  const seq = node.data.finalNode?.seq;
-+  return (0, import_react9.useMemo)(() => {
-+    if (typeof fileMentions !== "function" || turn?.status !== "closed" || seq === void 0) return void 0;
-+    return tail?.closing?.finalNode.seq === seq ? fileMentions({ turn, seq, openFile }) : void 0;
-+  }, [fileMentions, openFile, seq, tail, turn]);
- }
+-}
 -
 -// src/client/secret-card.js
 -var import_react5 = require("react");
@@ -5460,7 +5444,8 @@ diff --git a/client.js b/client.js
 -  if (scope === "all") return t("All Bots");
 -  const names = (scope ?? []).map((id) => roster.byId[id]?.name).filter(Boolean);
 -  return names.length === 0 ? t("No Bot") : names.join(t(" and "));
--};
++  return kept + CUT;
+ };
 -var when = (time) => Number.isFinite(time) ? new Date(time).toLocaleString(dateLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 -function MaskedInput({ value, onChange, onEnter, label, autoFocus = false }) {
 -  return (0, import_react5.createElement)("input", {
@@ -5485,6 +5470,38 @@ diff --git a/client.js b/client.js
 -      event.preventDefault();
 -      onEnter?.();
 -    }
++var onlyMarkup = (lines) => lines.length === 1 ? t("{n} line of reasoning", { n: lines.length }) : t("{n} lines of reasoning", { n: lines.length });
++var peekLine = (text) => {
++  const lines = text.split("\n").map((part) => part.replace(/\s+/g, " ").trim()).filter((part) => part !== "");
++  const prose = lines.find((line2) => !isMarkup(line2));
++  return prose === void 0 ? onlyMarkup(lines) : clip(prose);
++};
++function ThinkingRow({ text }) {
++  if (typeof text !== "string" || text.trim() === "") return null;
++  const peek = peekLine(text);
++  return (0, import_react9.createElement)(
++    "details",
++    { className: "bt-think" },
++    (0, import_react9.createElement)(
++      "summary",
++      null,
++      (0, import_react9.createElement)("span", { className: "bt-think-caret", "aria-hidden": true }, "›"),
++      t("Thought it through"),
++      peek ? (0, import_react9.createElement)("span", { className: "bt-think-peek" }, peek) : null
++    ),
++    (0, import_react9.createElement)("div", { className: "bt-think-text" }, text)
++  );
++}
++function useFileMentions({ node, openFile, fileMentions, useTurnData }) {
++  const tail = useTurnData?.("turn-tail");
++  const location2 = node.location;
++  const turn = location2?.kind === "turn" || location2?.kind === "step" ? location2.turn : void 0;
++  const seq = node.data.finalNode?.seq;
++  return (0, import_react9.useMemo)(() => {
++    if (typeof fileMentions !== "function" || turn?.status !== "closed" || seq === void 0) return void 0;
++    return tail?.closing?.finalNode.seq === seq ? fileMentions({ turn, seq, openFile }) : void 0;
++  }, [fileMentions, openFile, seq, tail, turn]);
++}
 +function useClosingText(node, useTurnData) {
 +  const tail = useTurnData?.("turn-tail");
 +  const seq = node.data.finalNode?.seq;
