@@ -27,6 +27,7 @@ export { reducedMotion }
 
 // Where the row draws: the shell's running status while a turn runs; between turns of a
 // friend's chat (#443), the tail of the transcript's last turn, so it stays below the last message.
+const REMOTE_GRACE_MS = 1500
 function useAwaitingReply(roster, sessionId) {
   const at = roster?.remoteAwaiting?.[sessionId]
   const [, tick] = useState(0)

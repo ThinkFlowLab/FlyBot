@@ -7136,6 +7136,7 @@ function elapsedLabel(ms) {
   const hours = Math.floor(minutes / 60);
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }
+var REMOTE_GRACE_MS = 1500;
 function useAwaitingReply(roster, sessionId) {
   const at = roster?.remoteAwaiting?.[sessionId];
   const [, tick] = (0, import_react10.useState)(0);

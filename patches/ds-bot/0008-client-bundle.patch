@@ -3665,7 +3665,7 @@ diff --git a/client.js b/client.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
-@@ -2855,1925 +2855,4017 @@ function installCompiledStyles(text, tag) {
+@@ -2855,1925 +2855,4018 @@ function installCompiledStyles(text, tag) {
    };
  }
  
@@ -6888,6 +6888,7 @@ diff --git a/client.js b/client.js
  }
 -function PartLine({ time }) {
 -  return (0, import_react6.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react6.createElement)("span", null, dayLabel(time)) : null);
++var REMOTE_GRACE_MS = 1500;
 +function useAwaitingReply(roster, sessionId) {
 +  const at = roster?.remoteAwaiting?.[sessionId];
 +  const [, tick] = (0, import_react10.useState)(0);
