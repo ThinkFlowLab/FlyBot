@@ -286,14 +286,14 @@ function drawerGraph(id, name, nodes) {
   return { ...delivery(), id, name, layers: [], nodes, edges: [] }
 }
 
-async function openDrawer(graph) {
+async function openDrawer(graph, roster = { bots: [] }) {
   const calls = []
   const call = async (name, body) => {
     calls.push({ name, body })
     if (name === 'workflow/state') return { workflows: [graph], templates: [] }
     return { ok: true, workflows: [graph] }
   }
-  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  const view = mount(client.Section, { roster, call, actions: {} })
   await settle()
   findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0].props.onClick()
   button(view.tree, 'Flow').props.onClick()
@@ -2641,6 +2641,63 @@ test('the Read-only plane and the 2-way Edit plane stay byte-identical to the ba
     'read:fork6@368': readOnlyString(parallelGraph(6), 368),
   }
   for (const [key, value] of Object.entries(now)) assert.equal(value, BASE_PLANES[key], `${key} moved`)
+})
+
+// #1686: the drawer's laid-out Edit plane changes structure, not layout. Its cards are drawn in
+// panel coordinates (scale 1, offset 0), so committing a drag there would store the panel point and
+// the Settings canvas — which draws the stored coordinates — would show the node at that point.
+test('a drag in the laid-out Edit plane commits no coordinates and says where the layout lives (#1686)', async () => {
+  const graph = parallelGraph(3)
+  const { view, calls, nodeAt, canvas } = await openDrawer(graph)
+  const stored = JSON.stringify(graph.nodes)
+  const before = nodeAt('r1').props.style.left
+  nodeAt('r1').props.onPointerDown({ clientX: 40, clientY: 160, target: { dataset: {} } })
+  canvas().props.onPointerMove({ clientX: 96, clientY: 208 })
+  canvas().props.onPointerUp({ clientX: 96, clientY: 208, target: { dataset: {} } })
+  await settle()
+  const commits = calls.filter(item => item.name === 'workflow/graph')
+  assert.equal(commits.length, 0, 'a drag in the laid-out plane committed a graph')
+  assert.equal(JSON.stringify(graph.nodes), stored, 'the stored graph moved')
+  assert.equal(nodeAt('r1').props.style.left, before, 'the card did not stay in its row')
+  assert.ok(textOf(view.tree).includes('Layout lives in Settings'), 'the plane did not say where the layout lives')
+  view.unmount()
+})
+
+test('a Bot dropped onto the laid-out Edit plane is stored at the default seat, not at the panel point (#1686)', async () => {
+  const graph = parallelGraph(3)
+  const roster = { bots: [{ id: 'bot-docs', name: 'Docs', role: 'notes', remote: false }] }
+  const { view, calls, canvas } = await openDrawer(graph, roster)
+  const chip = findAll(view.tree, node => node.props?.['data-bot'] === 'bot-docs')[0]
+  chip.props.onPointerDown({ preventDefault() {}, target: { dataset: { bot: 'bot-docs' } } })
+  canvas().props.onPointerUp({ target: { dataset: { plane: '1' } }, offsetX: 300, offsetY: 700 })
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  const seat = saved.body.nodes.find(node => node.botId === 'bot-docs')
+  assert.deepEqual({ x: seat.x, y: seat.y }, { x: 24, y: 24 }, 'the panel drop point was stored as the node position')
+  // Whatever seat it is stored at, the laid-out plane gives the new card a row of its own.
+  const layout = client.flowLayout({ ...graph, nodes: saved.body.nodes }, client.DRAWER_FLOW_W)
+  assert.ok(layout.rows.some(row => row.length === 1 && row[0] === seat.id), 'the new card did not get a row of its own')
+  view.unmount()
+})
+
+test('the laid-out plane hint has its Chinese line (#1686)', async () => {
+  const graph = parallelGraph(3)
+  const { view, nodeAt, canvas } = await openDrawer(graph)
+  const previous = globalThis.__flybot__
+  // The hint's text is read when the drag is refused, so the host translation is put in place
+  // after the drawer mounted: a stub standing in for the whole host at mount time is read by the
+  // page's own reads (avatars, tool links) and hides the workflow list.
+  globalThis.__flybot__ = { ...(previous ?? {}), t: (key) => (key === 'Tasks' ? '任务' : key) }
+  try {
+    nodeAt('r1').props.onPointerDown({ clientX: 40, clientY: 160, target: { dataset: {} } })
+    canvas().props.onPointerMove({ clientX: 96, clientY: 208 })
+    canvas().props.onPointerUp({ clientX: 96, clientY: 208, target: { dataset: {} } })
+    await settle()
+    assert.ok(textOf(view.tree).includes('布局在 Settings 画布改'), 'the hint has no Chinese line')
+  } finally {
+    if (previous === undefined) delete globalThis.__flybot__
+    else globalThis.__flybot__ = previous
+    view.unmount()
+  }
 })
 
 // #1693: the laid-out Edit plane shrinks its cards to the panel (98 wide at a

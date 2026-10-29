@@ -63,6 +63,9 @@ const TASK_ENDPOINTS = new Set([
   // Saving a workflow definition writes `workflows/<id>.json` in the workspace (#1272 step 3): the
   // write needs a signed-in actor, and it is an explicit entry rather than a `task-*` prefix.
   'workflow-save',
+  // The Project record and its bindings (#1691) are team state: a signed-in actor may create,
+  // read and bind, like the task channel.
+  'projects', 'project-create', 'project-read', 'project-bind', 'project-of',
 ])
 
 const deny = (code, message) => ({ ok: false, code, message })

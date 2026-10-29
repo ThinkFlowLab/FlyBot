@@ -1,6 +1,7 @@
 // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
 // host on the same data from writing it, and the indexes that map a Session to the Bot
 // or group chat it belongs to.
+import { randomUUID } from 'node:crypto'
 import { constants, mkdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -21,8 +22,10 @@ const isRecord = value => value !== null && typeof value === 'object' && !Array.
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt
 
-  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>}} */
-  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, revision: 0 }
+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>}} */
+  // `projects` is the durable Project record (#1691); `projectRuns` is the binding a workflow run
+  // reports, because a run lives in the workflow plugin's own state and cannot carry the field.
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -217,6 +220,14 @@ export function install(rt) {
     // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
     if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
     let migrated = !hadCapabilities
+    if (!isRecord(state.projects)) {
+      state.projects = {}
+      migrated = true
+    }
+    if (!isRecord(state.projectRuns)) {
+      state.projectRuns = {}
+      migrated = true
+    }
     if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
       state.capabilities = { items: {} }
       migrated = true
@@ -338,6 +349,96 @@ export function install(rt) {
   // The setup step (#47): a team with no member record gets the single owner a fresh or
   // legacy install starts with. No shipped path makes a second member — team mode stays
   // disabled until the gates in docs/subsystems/team.md pass.
+  // Projects (#1691): the smallest durable identity a group, a Bot or a workflow run can name.
+  // A record is flat and created through `createProject`; a binding hangs off the member record
+  // (`bot.projectId`, `room.projectId`) or off `state.projectRuns` for a workflow run. An unbound
+  // member resolves `null`, so an install with zero Projects behaves exactly as before.
+  const PROJECT_REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+  const PROJECT_STATUSES = new Set(['active', 'archived'])
+  const projectText = (value, limit) => (typeof value === 'string' ? value.trim().slice(0, limit) : '')
+  const projectRefusal = (message, code = 'bot/invalid') => {
+    const error = new Error(message)
+    error.code = code
+    return error
+  }
+  const projectOfId = id => (typeof id === 'string' && isRecord(state.projects[id]) ? state.projects[id] : null)
+  const requireProject = (id) => {
+    const project = projectOfId(id)
+    if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
+    return project
+  }
+  const projectMemberOf = (kind, id) => {
+    if (kind === 'bot') return isRecord(state.bots[id]) ? state.bots[id] : null
+    if (kind === 'group') return isRecord(state.rooms[id]) ? state.rooms[id] : null
+    if (kind === 'run') return null
+    throw projectRefusal(`Unknown Project member kind ${String(kind ?? '')}`)
+  }
+  const projectOfMember = (kind, id) => {
+    if (kind === 'run') return projectOfId(state.projectRuns[String(id ?? '')])
+    const member = projectMemberOf(kind, id)
+    return member === null ? null : projectOfId(member.projectId)
+  }
+  const createProject = (body = {}) => {
+    const name = projectText(body.name, 120)
+    if (name === '') throw projectRefusal('A Project needs a name')
+    const repository = projectText(body.repository, 200)
+    if (repository !== '' && !PROJECT_REPOSITORY.test(repository)) throw projectRefusal('A Project repository is owner/name')
+    const status = projectText(body.status, 40) || 'active'
+    if (!PROJECT_STATUSES.has(status)) throw projectRefusal(`Unknown Project status ${status}`)
+    const now = Date.now()
+    const id = `project-${randomUUID()}`
+    const record = {
+      id,
+      name,
+      repository: repository === '' ? null : repository,
+      defaultBranch: projectText(body.defaultBranch, 120) || 'main',
+      ownerUserId: projectText(body.ownerUserId, 120) || null,
+      createdAt: now,
+      updatedAt: now,
+      status,
+    }
+    state.projects[id] = record
+    return record
+  }
+  const readProject = id => projectOfId(id)
+  const listProjects = () => Object.values(state.projects).filter(isRecord)
+  // One Project to many members, a member to at most one Project; `projectId: null` unbinds.
+  const bindProject = (body = {}) => {
+    const kind = projectText(body.kind, 20)
+    const id = projectText(body.id, 200)
+    if (id === '') throw projectRefusal('A binding needs the member id')
+    const project = body.projectId === undefined || body.projectId === null ? null : requireProject(projectText(body.projectId, 200))
+    if (kind === 'run') {
+      if (project === null) delete state.projectRuns[id]
+      else state.projectRuns[id] = project.id
+      return project
+    }
+    const member = projectMemberOf(kind, id)
+    if (member === null) throw projectRefusal(`Unknown ${kind} ${id}`, 'bot/not-found')
+    if (project === null) delete member.projectId
+    else member.projectId = project.id
+    if (project !== null) project.updatedAt = Math.max(project.updatedAt, Date.now())
+    return project
+  }
+  const projectEndpoint = async (endpoint, body = {}) => {
+    switch (endpoint) {
+      case 'projects': return { projects: listProjects() }
+      case 'project-create': {
+        const project = createProject(body)
+        await save()
+        return { project }
+      }
+      case 'project-read': return { project: readProject(projectText(body.id, 200)) }
+      case 'project-bind': {
+        const project = bindProject(body)
+        await save()
+        return { project }
+      }
+      case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
+      default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')
+    }
+  }
+
   const ensureOwner = () => {
     if (Object.keys(state.members).length > 0) return false
     state.members[OWNER_ID] = { id: OWNER_ID, createdAt: Date.now(), designatedChiefId: null }
@@ -625,5 +726,6 @@ export function install(rt) {
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
     initialOwnerId, syncDesignatedChief,
+    projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember,
   })
 }
