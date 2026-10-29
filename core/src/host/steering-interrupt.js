@@ -3,6 +3,10 @@
 // inbox so the message is claimed at once instead of waiting for the blocking step.
 export const INTERRUPT_AFTER_MS = 60_000
 
+const longWait = ({ waitStartedAt, now, thresholdMs }) => typeof waitStartedAt === 'number'
+  && typeof now === 'number'
+  && now - waitStartedAt > thresholdMs
+
 // Whether this human send should abort the running turn. `waitStartedAt` is the start of
 // the oldest tool call still open in the Session — the observable foreground wait.
 export function shouldInterruptOnHumanSend({
@@ -16,9 +20,22 @@ export function shouldInterruptOnHumanSend({
   return sourceKind === 'user'
     && turnRunning === true
     && ownChat === true
-    && typeof waitStartedAt === 'number'
-    && typeof now === 'number'
-    && now - waitStartedAt > thresholdMs
+    && longWait({ waitStartedAt, now, thresholdMs })
+}
+
+// A group room's own Session is not the Bot's chat (#1650): the line lands there, but the
+// wait belongs to the member turn that room's round is waiting on, so that turn is the one
+// that lets go — through Stop's room path, never the own-chat cancel.
+export function shouldYieldRoomTurn({
+  sourceKind,
+  roomTurnRunning,
+  waitStartedAt,
+  now,
+  thresholdMs = INTERRUPT_AFTER_MS,
+}) {
+  return sourceKind === 'user'
+    && roomTurnRunning === true
+    && longWait({ waitStartedAt, now, thresholdMs })
 }
 
 export function install(rt) {
@@ -55,6 +72,26 @@ export function install(rt) {
       .catch(() => {})
   }
 
+  // The member turn the room's round is still waiting on: the waiter is the round itself,
+  // and the room index plus the live exchange have to agree with it. A member that went on
+  // working has no waiter, so its turn no longer holds the room.
+  const awaitedRoomTurn = (roomId) => {
+    for (const [exchangeId, waiter] of rt.roomWaiters?.entries() ?? []) {
+      if (waiter?.roomId !== roomId) continue
+      const owner = rt.groupOwners?.get(waiter.sessionId)
+      const info = rt.live?.get(waiter.sessionId)?.info
+      if (owner?.roomId !== roomId || info?.role !== 'room' || info.exchangeId !== exchangeId) continue
+      return { sessionId: waiter.sessionId, exchangeId }
+    }
+    return undefined
+  }
+
+  const yieldRoomTurn = (turn) => {
+    // Same as the own-chat path: the evidence goes first, so one let-go per wait.
+    open.delete(turn.sessionId)
+    void Promise.resolve(rt.stopRoomTurn?.(turn.sessionId, turn.exchangeId)).catch(() => {})
+  }
+
   ctx.on('session/event', (session, event) => {
     const id = session?.id
     if (id === undefined || event?.type === undefined) return
@@ -78,15 +115,29 @@ export function install(rt) {
         return
       case 'user/message': {
         const source = event.data?.source
-        const waitStartedAt = startedAtOf(id)
-        if (!shouldInterruptOnHumanSend({
+        if (rt.chatOwners?.has(id) === true) {
+          const waitStartedAt = startedAtOf(id)
+          if (!shouldInterruptOnHumanSend({
+            sourceKind: source?.kind,
+            turnRunning: turnRunning(id),
+            ownChat: true,
+            waitStartedAt,
+            now: now(),
+          })) return
+          interrupt(id)
+          return
+        }
+        const room = rt.roomOf?.(id)
+        if (room === undefined) return
+        const turn = awaitedRoomTurn(room.id)
+        if (turn === undefined) return
+        if (!shouldYieldRoomTurn({
           sourceKind: source?.kind,
-          turnRunning: turnRunning(id),
-          ownChat: rt.chatOwners?.has(id) === true,
-          waitStartedAt,
+          roomTurnRunning: turnRunning(turn.sessionId),
+          waitStartedAt: startedAtOf(turn.sessionId),
           now: now(),
         })) return
-        interrupt(id)
+        yieldRoomTurn(turn)
         return
       }
       default:
