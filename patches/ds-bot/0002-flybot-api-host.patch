@@ -137,7 +137,7 @@ diff --git a/src/host/home-lock.js b/src/host/home-lock.js
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
-@@ -5,6 +5,8 @@
+@@ -5,6 +5,8 @@ import { join } from 'node:path'
  import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
  import { currentColor, isColor, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
@@ -146,7 +146,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
  
  export function install(rt) {
    const { ctx, config, home, defaults, state } = rt
-@@ -15,7 +15,7 @@
+@@ -15,7 +15,7 @@ export function install(rt) {
      if (state.workspaceId && ctx.workspaceRegistry.get(state.workspaceId)) return state.workspaceId
      const path = config.workspace ?? join(home, 'workspace')
      await mkdir(path, { recursive: true })
@@ -155,7 +155,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -56,18 +56,49 @@
+@@ -56,18 +56,49 @@ export function install(rt) {
      return `${stem} ${index}`
    }
  
@@ -213,7 +213,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const id = await createSession(cleanName, { dir })
      try {
        state.bots[id] = {
-@@ -80,45 +80,48 @@
+@@ -80,45 +80,48 @@ export function install(rt) {
          ...(modelRef ? { model: modelRef } : {}),
          ...(effortId ? { effort: effortId } : {}),
          ...(dir ? { workDir: dir } : {}),
@@ -286,7 +286,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        // A save that another change queued meanwhile still carries this Bot; a later
        // one writes the team without it.
        void rt.save().catch(() => {})
-@@ -128,24 +128,12 @@
+@@ -128,24 +128,12 @@ export function install(rt) {
      }
    }
  
@@ -313,7 +313,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        name: freshName(`${bot.name} copy`),
        role: bot.role,
        instructions: bot.instructions,
-@@ -155,7 +155,6 @@
+@@ -155,7 +155,6 @@ export function install(rt) {
        effort: served ? bot.effort : undefined,
        // A folder that went away since leaves the copy in the team workspace.
        workDir: bot.workDir !== undefined && await rt.isFolder(bot.workDir) ? bot.workDir : undefined,
@@ -321,7 +321,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      })
    }
  
-@@ -189,6 +189,8 @@
+@@ -189,6 +189,8 @@ export function install(rt) {
        if (avatar) bot.avatar = avatar
        else delete bot.avatar
      }
@@ -330,7 +330,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.model !== undefined) {
        if (patch.model === null || patch.model === '') delete bot.model
        else bot.model = await rt.resolveModel(patch.model)
-@@ -212,17 +212,11 @@
+@@ -212,17 +212,11 @@ export function install(rt) {
      await rt.save()
      if (modelChanged) await rt.applyModel(bot, { force: true })
      if (moved) void rt.followFolder(bot.id)
@@ -349,7 +349,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (entry === undefined) throw new Error('Unknown conversation')
      if (typeof pinned === 'boolean') entry.pinned = pinned
      if (typeof hidden === 'boolean') entry.hidden = hidden
-@@ -235,7 +235,14 @@
+@@ -235,7 +235,14 @@ export function install(rt) {
    // admin may change its own group but not delete it. Only a member can be admin.
  
    const roomBusy = id => [...rt.roomProgress.values()].some(round => round.roomId === id)
@@ -365,7 +365,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
  
    function cleanRoomName(text, selfId) {
-@@ -257,7 +257,7 @@
+@@ -257,7 +257,7 @@ export function install(rt) {
    async function followMemberNames(rooms = Object.values(state.rooms)) {
      for (const room of rooms) {
        if (room.named) continue
@@ -374,7 +374,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        if (next === room.name) continue
        room.name = next
        await retitleRoom(room)
-@@ -269,9 +269,24 @@
+@@ -269,9 +269,24 @@ export function install(rt) {
      if (members.length > ROOM_MAX_MEMBERS) throw new Error(`A group chat holds at most ${ROOM_MAX_MEMBERS} Bots`)
    }
  
@@ -402,7 +402,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const custom = cleanRoomName(roomName ?? '')
      // A Main Bot leads the groups it makes; a group the user makes is led by a Main
      // Bot member when it has one.
-@@ -294,7 +294,19 @@
+@@ -294,7 +294,19 @@ export function install(rt) {
          createdAt: Date.now(),
          createdBy: createdBy ?? null,
        }
@@ -422,7 +422,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        return state.rooms[id]
      } catch (error) {
        // The group's Session was already made: archive it instead of leaving an orphan.
-@@ -306,13 +306,19 @@
+@@ -306,13 +306,19 @@ export function install(rt) {
      }
    }
  
@@ -445,7 +445,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      let members = Array.isArray(patch.members) ? [...new Set(patch.members)] : [...room.members]
      for (const member of patch.add ?? []) if (!members.includes(member)) members.push(member)
      members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))
-@@ -328,6 +328,14 @@
+@@ -328,6 +328,14 @@ export function install(rt) {
        admin = null
      }
      if (patch.mode !== undefined && !ROOM_MODES.includes(patch.mode)) throw new Error(`Reply mode must be one of ${ROOM_MODES.join(', ')}`)
@@ -460,7 +460,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const name = patch.name === undefined ? undefined : cleanRoomName(patch.name, room.id)
      const notice = patch.notice === undefined ? undefined : cleanNotice(patch.notice)
      const moving = patch.workDir !== undefined
-@@ -340,14 +340,24 @@
+@@ -340,14 +340,24 @@ export function install(rt) {
      const removed = room.members.filter(member => !members.includes(member))
      if (added.length > 0) changes.push(`added ${names(added)}`)
      if (removed.length > 0) changes.push(`removed ${names(removed)}`)
@@ -490,7 +490,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.mode !== undefined && patch.mode !== room.mode) {
        room.mode = patch.mode
        changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
-@@ -371,7 +371,13 @@
+@@ -371,7 +371,13 @@ export function install(rt) {
          delete room.named
        }
      }
@@ -505,7 +505,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (room.name !== before) {
        changes.push(`renamed it "${room.name}"`)
        await retitleRoom(room)
-@@ -383,8 +383,11 @@
+@@ -383,8 +383,11 @@ export function install(rt) {
    async function deleteRoom(id) {
      const room = rt.roomOf(id)
      if (room === undefined) throw new Error('Unknown group chat')
@@ -517,7 +517,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      rt.roomInbox.delete(id)
      const failed = await saveForDelete()
      // Armed scheduled tasks refuse a plain archive and would keep delivering into
-@@ -409,6 +409,10 @@
+@@ -409,6 +409,10 @@ export function install(rt) {
      } else if (replace !== undefined && replace !== id) {
        const at = others.indexOf(replace)
        if (at === -1) throw new Error('Only a Main Bot can be replaced')
@@ -528,7 +528,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,12 +417,30 @@
+@@ -417,12 +417,30 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -563,7 +563,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    }
  
    async function deleteBot(id) {
-@@ -434,22 +434,42 @@
+@@ -434,22 +434,42 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
      const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
@@ -606,7 +606,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const failed = await saveForDelete()
      // Same as deleteRoom: stopActivity removes the Session's armed scheduled tasks.
      // Past parts are archived too: a part move can leave tasks on the old Session,
-@@ -481,7 +481,9 @@
+@@ -481,7 +481,9 @@ export function install(rt) {
      if (state.mainBotIds.some(id => rt.botOf(id))) return
      // Only the team's first Main Bot is stored as the DeepSeek whale; other Bots get a
      // look from their id, and a Bot made Main Bot later keeps its own.
@@ -617,7 +617,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        .finally(() => { bootstrapping = null })
      await bootstrapping
    }
-@@ -489,6 +489,6 @@
+@@ -489,6 +489,6 @@ export function install(rt) {
    Object.assign(rt, {
      ensureWorkspace, createSession, createBot, duplicateBot, updateBot, setFlags,
      roomBusy, autoRoomName, retitleRoom, createRoom, updateRoom, deleteRoom,
@@ -678,7 +678,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
-@@ -50,12 +50,88 @@
+@@ -50,12 +50,88 @@ export function install(rt) {
      }
    }
    const readOnly = () => {
@@ -768,7 +768,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const readFileState = async () => {
      let contents
      try {
-@@ -87,10 +87,32 @@
+@@ -87,10 +87,32 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -802,7 +802,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      return undefined
    }
  
-@@ -104,6 +104,14 @@
+@@ -104,6 +104,14 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
@@ -817,7 +817,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
        state.capabilities = { items: {} }
        migrated = true
-@@ -112,6 +112,11 @@
+@@ -112,6 +112,11 @@ export function install(rt) {
        migrated = true
      }
      for (const bot of Object.values(state.bots)) {
@@ -829,7 +829,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        if (!Array.isArray(bot.capabilities)) {
          bot.capabilities = []
          migrated = true
-@@ -120,6 +120,11 @@
+@@ -120,6 +120,11 @@ export function install(rt) {
          bot.color = currentColor(bot.color)
          migrated = true
        }
@@ -841,7 +841,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,214 @@
+@@ -161,12 +161,215 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1019,8 +1019,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +      }
 +      case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
 +      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
-+      // project-board.js; it reads and returns, and writes nothing.
-+      case 'project-board': return { tasks: rt.projectBoard?.(projectText(body.id, 200)) ?? [] }
++      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
++      // so the board applies the same visibility rule `tasks` does (#1723).
++      case 'project-board': return { tasks: rt.projectBoard?.(projectText(body.id, 200), actor) ?? [] }
 +      default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')
 +    }
 +  }
@@ -1057,7 +1058,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -185,14 +185,24 @@
+@@ -185,14 +185,24 @@ export function install(rt) {
      for (const room of stale) void rt.retitleRoom(room)
    })()
  
@@ -1083,7 +1084,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,11 +235,37 @@
+@@ -235,11 +235,37 @@ export function install(rt) {
      return warnReadOnly()
    }
  
@@ -1121,7 +1122,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      state.revision += 1
      state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
      const snapshot = JSON.stringify(state, null, 2)
-@@ -260,9 +260,10 @@
+@@ -260,9 +260,10 @@ export function install(rt) {
          ensureLock()
          await rename(temp, statePath)
          seen = stamp()
@@ -1133,7 +1134,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
-@@ -273,13 +273,37 @@
+@@ -273,13 +273,37 @@ export function install(rt) {
      })
    }
  
@@ -1173,7 +1174,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const isMain = id => id !== undefined && state.mainBotIds.includes(id)
  
    // Group Sessions. A member speaks in each group from a hidden Session of its own,
-@@ -313,6 +313,13 @@
+@@ -313,6 +313,13 @@ export function install(rt) {
        }
        for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
      }
@@ -1187,7 +1188,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      // The agents module owns the DSH Agent session index; it installs after this.
      rt.indexAgents?.()
    }
-@@ -328,6 +328,8 @@
+@@ -328,6 +328,8 @@ export function install(rt) {
      delete room.sessions[botId]
      if (room.segments !== undefined) delete room.segments[botId]
      groupOwners.delete(sessionId)
@@ -1196,7 +1197,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,28 @@
+@@ -335,23 +335,28 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined

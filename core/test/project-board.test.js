@@ -191,3 +191,41 @@ test('#1713: a run binding never carries another Project’s card onto a board',
     await stop()
   }
 })
+
+// #1723: the board is the one Project read that never carried the caller, so it painted a card
+// that `tasks` refuses to the same member. A second owner with its own Bot, room and Project is
+// what the leak needs; nothing here belongs in `seed()`.
+const crossSeed = () => {
+  const team = seed()
+  team.members['owner-2'] = { id: 'owner-2', createdAt: 2, designatedChiefId: null }
+  team.bots.b = { id: 'b', name: 'Writer', role: 'Write', sessionId: 'b', createdAt: 3, ownerId: 'owner-2' }
+  team.rooms.r2 = { id: 'r2', name: 'Garden', members: ['b'], mode: 'admin', admin: 'b', named: true, sessions: {}, log: [], seq: 0, seen: {}, projectId: 'project-p2' }
+  team.projects['project-p2'] = { id: 'project-p2', name: 'P2', repository: 'ThinkFlowLab/FlyBot', defaultBranch: 'main', ownerUserId: 'owner-2', createdAt: 1, updatedAt: 1, status: 'active' }
+  team.tasks['task-b1'] = { id: 'task-b1', kind: 'group', status: 'working', ownerBotId: 'b', origin: { roomId: 'r2' }, assignee: 'Writer', title: 'Write it', createdAt: 6, updatedAt: 10 }
+  return team
+}
+
+test('#1723: a Project board paints only the cards `tasks` would let the member open', async () => {
+  const { rt, callAs, stop } = await start(undefined, crossSeed())
+  try {
+    rt.authenticate = async token => (token === 'tok-1' ? { memberId: 'owner-1' } : token === 'tok-2' ? { memberId: 'owner-2' } : null)
+    rt.state.authSessions = { 's-1': { memberId: 'owner-1', tokenHash: 'a' }, 's-2': { memberId: 'owner-2', tokenHash: 'b' } }
+    // The card `tasks` refuses to member A is the one the board must not paint for it.
+    const refused = await callAs('tasks', { botId: 'b' }, 'tok-1')
+    assert.equal(refused.ok, false, JSON.stringify(refused))
+    assert.equal(refused.error.code, 'bot/forbidden', JSON.stringify(refused))
+    const theirs = await callAs('project-board', { id: 'project-p2' }, 'tok-1')
+    assert.equal(theirs.ok, true, JSON.stringify(theirs))
+    assert.deepEqual(theirs.value.tasks ?? [], [], 'member A reads nothing of member B’s board')
+    // Member B reads the same board and still gets its card.
+    const own = await callAs('project-board', { id: 'project-p2' }, 'tok-2')
+    assert.equal(own.ok, true, JSON.stringify(own))
+    assert.deepEqual(own.value.tasks.map(row => row.id), ['task-b1'])
+    // #1716's same-owner ALLOW and #1715's empty board stay as they were.
+    const p1 = await callAs('project-board', { id: 'project-p1' }, 'tok-1')
+    assert.deepEqual(p1.value.tasks.map(row => row.id), ['task-group'])
+    const empty = await callAs('project-board', { id: 'project-empty' }, 'tok-1')
+    assert.equal(empty.ok, true, JSON.stringify(empty))
+    assert.deepEqual(empty.value.tasks, [])
+  } finally { await stop() }
+})

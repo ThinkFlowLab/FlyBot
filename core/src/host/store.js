@@ -474,8 +474,9 @@ export function install(rt) {
       }
       case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
       // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
-      // project-board.js; it reads and returns, and writes nothing.
-      case 'project-board': return { tasks: rt.projectBoard?.(projectText(body.id, 200)) ?? [] }
+      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
+      // so the board applies the same visibility rule `tasks` does (#1723).
+      case 'project-board': return { tasks: rt.projectBoard?.(projectText(body.id, 200), actor) ?? [] }
       default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')
     }
   }

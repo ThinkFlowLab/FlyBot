@@ -571,5 +571,11 @@ the owner — or for every caller on a Project whose record names no owner. `pro
 by the host with `bot/forbidden` unless the caller may manage the Project the binding names (or the
 one it is leaving, when unbinding); the refusal writes nothing, so hiding a button is never the
 gate. Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
+Those rows are the ones the caller could open through `tasks` (#1723): `store.js` passes the
+authenticated actor into `projectBoard(projectId, actor)`, and the board drops every card
+`rt.taskVisible` refuses — a card is visible to its requester, to the owner of its Bot or an
+ancestor of it, and to the admin of the room it came from. The predicate stays in `tasks.js`, one
+copy of the rule `tasks` itself answers with, so the board cannot paint a card the same member is
+refused there; a board with nothing to paint is still `[]`, not an error.
 `project-board` is listed in `authz.js`'s `TASK_ENDPOINTS`, so a signed-in deployment does not
 refuse it as an unknown endpoint.

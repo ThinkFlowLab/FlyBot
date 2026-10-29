@@ -313,6 +313,15 @@ export function install(rt) {
     if (!rt.authzEnforced?.()) return true
     return mayAct(task, actor) || owns(actor, task.ownerBotId)
   }
+  // One visibility rule for a card row (#1723): the requester, the owner of the Bot (or an
+  // ancestor), or a group admin of the card's room. It is the rule `tasks` answers with, and it
+  // is exported so the Project board cannot paint a card the same actor would be refused there.
+  const taskVisible = (task, actor) => {
+    if (mayAct(task, actor) || ancestorOwned(actor, task.ownerBotId)) return true
+    const roomId = typeof task?.origin?.roomId === 'string' ? task.origin.roomId : ''
+    return roomId !== '' && roomAdmin(actor, state.rooms?.[roomId])
+  }
+  rt.taskVisible = taskVisible
   const view = (task) => {
     const parent = task.parentId ? store()[task.parentId] : undefined
     // `claimCue` is the board's own memory of the line it posted (#1253); no reader of a card needs

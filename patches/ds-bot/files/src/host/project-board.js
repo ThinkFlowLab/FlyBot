@@ -22,7 +22,7 @@ const boardOf = (task) => {
 export function install(rt) {
   // Rows for one Project, deduped by task id. An unknown Project and a Project with nothing
   // under it both answer `[]`: reading a board is not a reason to throw.
-  const projectBoard = (projectId) => {
+  const projectBoard = (projectId, actor) => {
     const id = text(projectId)
     if (id === '') return []
     if (!rt.readProject?.(id)) return []
@@ -31,9 +31,14 @@ export function install(rt) {
     for (const ref of rt.projectRunRefs?.({ hasTask: taskId => Object.hasOwn(tasks, taskId) }) ?? []) {
       refs.set(ref.taskId, ref)
     }
+    // #1723: a row is painted only when the caller could open that card through `tasks`. The
+    // predicate lives in tasks.js (`rt.taskVisible`); a host that has not installed it shows
+    // nothing, because an unreadable rule is not a reason to widen a board.
+    const visible = typeof rt.taskVisible === 'function' ? rt.taskVisible : () => false
     const rows = []
     for (const task of Object.values(tasks)) {
       if (task === null || typeof task !== 'object') continue
+      if (!visible(task, actor)) continue
       const board = boardOf(task)
       // The Project of the card's own board. A card that has a board already belongs somewhere; a
       // board whose member is unbound names no Project, and only then may a run carry the card.
