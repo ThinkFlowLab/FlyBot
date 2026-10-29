@@ -7115,6 +7115,16 @@ function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
   return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
 }
 
+// src/client/activity-row-host.js
+var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
+var TAIL_HOST = "tail";
+function findRunningHostIn(root) {
+  if (!root || typeof root.querySelector !== "function") return null;
+  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
+  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
+  return root.querySelector(RUNNING_HOST);
+}
+
 // src/client/activity-row.js
 var import_react10 = require("react");
 var import_react_dom2 = require("react-dom");
@@ -7126,9 +7136,6 @@ function elapsedLabel(ms) {
   const hours = Math.floor(minutes / 60);
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }
-var RUNNING_HOST = "[data-chat-flow] > [data-chat-running]";
-var TAIL_HOST = "tail";
-var REMOTE_GRACE_MS = 1500;
 function useAwaitingReply(roster, sessionId) {
   const at = roster?.remoteAwaiting?.[sessionId];
   const [, tick] = (0, import_react10.useState)(0);
@@ -7141,10 +7148,10 @@ function useAwaitingReply(roster, sessionId) {
   return shown;
 }
 function findHost(where) {
-  if (where !== TAIL_HOST) return document.querySelector(where);
+  if (where !== TAIL_HOST) return findRunningHostIn(document);
   const flow = document.querySelector("[data-conversation-scroll] [data-chat-flow]") ?? document.querySelector("[data-chat-flow]");
   if (!flow) return null;
-  const running = flow.querySelector(":scope > [data-chat-running]");
+  const running = findRunningHostIn(flow);
   if (running) return running;
   const tails = flow.querySelectorAll(":scope > * [data-turn-tail], :scope > [data-turn-tail]");
   return tails.length ? tails[tails.length - 1] : null;

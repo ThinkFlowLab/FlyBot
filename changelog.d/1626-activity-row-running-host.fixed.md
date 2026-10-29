@@ -1,0 +1,1 @@
+After a message is sent on DeepSeek Harness 0.2.1, the Bot avatar and shimmering status line under the transcript show again: the activity row finds `RunningStatus` even when it sits inside the `conversation.chat.flow` slot ([#1626](https://github.com/ThinkFlowLab/FlyBot/issues/1626)).
