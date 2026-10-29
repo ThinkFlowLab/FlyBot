@@ -9,7 +9,7 @@
 // that names nothing, keeps the claim exactly as before. `rematch: true` drops
 // that one claim and matches again — the panel's per-task action.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -211,5 +211,78 @@ test('#1647: a claim naming a Bot that is gone keeps today\'s behaviour until a 
     assert.equal(readStore(dir).claims['task-9'], undefined, 'the panel action clears a dangling claim')
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// The store as it sits on disk: bytes and mtime, so a write that changes nothing
+// is still caught, and a claim that silently disappears cannot hide behind a
+// reload or behind `present()` rebuilding its answer.
+const snapshot = dir => ({
+  bytes: readFileSync(join(dir, 'workflows.json')),
+  mtimeMs: statSync(join(dir, 'workflows.json')).mtimeMs,
+})
+
+test('#1647: a card that left `open` keeps its claim when it names another live workflow', async () => {
+  // (a) The named target is live and different, so the invalidation branch runs, but
+  // `matchTask` matches nothing that is not `open`. Dropping the claim first and
+  // then finding no match leaves the card with no holder at all — the third state
+  // that must never exist: recorded nowhere, accepted silently.
+  for (const status of ['claimed', 'working', 'blocked', 'done']) {
+    const dir = mkdtempSync(join(tmpdir(), `wf-claim-${status}-`))
+    try {
+      const svc = serviceAt(dir)
+      const alpha = named(svc, 'Alpha')
+      const beta = named(svc, 'Beta')
+      await svc.ingest({ id: 'task-9', status: 'open', title: 'Ship it', workflowId: alpha.id })
+      const before = snapshot(dir)
+
+      const moved = await svc.ingest({ id: 'task-9', status, title: 'Ship it', workflowId: beta.id })
+      assert.deepEqual({ ok: moved.ok, matched: moved.matched }, { ok: true, matched: false }, `${status}: no match, and no error`)
+
+      const after = snapshot(dir)
+      assert.deepEqual(after.bytes, before.bytes, `${status}: the store is byte-identical`)
+      assert.equal(after.mtimeMs, before.mtimeMs, `${status}: the store was not rewritten`)
+
+      const store = readStore(dir)
+      assert.deepEqual(store.claims['task-9'], { kind: 'workflow', id: alpha.id }, `${status}: the claim is still Alpha's`)
+      assert.equal(store.routes['task-9'].id, alpha.id, `${status}: the route did not move without a new holder`)
+
+      const held = Object.fromEntries(serviceAt(dir).state().workflows.map(item => [item.name, item.heldTasks]))
+      assert.deepEqual(held.Alpha, ['task-9'], `${status}: Alpha still holds it after a reload`)
+      assert.deepEqual(held.Beta, [], `${status}: and Beta never did`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
+
+test('#1647: a non-open card naming a workflow that does not exist keeps its claim too', async () => {
+  // (b) The guard beside (a): the named field names nothing live, so `namedTarget`
+  // is null and the early return already keeps the claim. This case is not red on
+  // the old code; it stays so the invalidation branch cannot later start dropping
+  // records for a target that does not exist.
+  for (const status of ['claimed', 'working', 'blocked', 'done']) {
+    const dir = mkdtempSync(join(tmpdir(), `wf-claim-gone-${status}-`))
+    try {
+      const svc = serviceAt(dir)
+      const alpha = named(svc, 'Alpha')
+      named(svc, 'Beta')
+      await svc.ingest({ id: 'task-9', status: 'open', title: 'Ship it', workflowId: alpha.id })
+      const before = snapshot(dir)
+
+      const kept = await svc.ingest({ id: 'task-9', status, title: 'Ship it', workflowId: 'no-such-workflow' })
+      assert.equal(kept.ok, true, `${status}: no error`)
+      assert.equal(kept.already, true, `${status}: nothing resolvable to move to, so the claim still answers`)
+
+      const after = snapshot(dir)
+      assert.deepEqual(after.bytes, before.bytes, `${status}: the store is byte-identical`)
+      assert.equal(after.mtimeMs, before.mtimeMs, `${status}: the store was not rewritten`)
+
+      const store = readStore(dir)
+      assert.deepEqual(store.claims['task-9'], { kind: 'workflow', id: alpha.id }, `${status}: the claim is still Alpha's`)
+      assert.equal(store.routes['task-9'].id, alpha.id, `${status}: the route stays with it`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   }
 })
