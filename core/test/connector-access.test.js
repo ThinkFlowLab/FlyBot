@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { CONNECTOR_IDS, connectorOfTool } from '../src/host/connector-access.js'
+import { CONNECTOR_IDS, connectorOfTool, roomGithubWriteReason } from '../src/host/connector-access.js'
 import { fakeContext } from './fake-ctx.js'
 
 // #335, #369, #601: the connector tools are mounted once for the whole DSH profile. Every turn of the
@@ -12,7 +12,21 @@ import { fakeContext } from './fake-ctx.js'
 // owner can turn a connector off for one Bot, and a friend's Bot never has them.
 
 const COMPOSIO = ['mcp__composio__COMPOSIO_SEARCH_TOOLS', 'mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL']
-const GITHUB = ['mcp__github__create_issue', 'mcp__github__get_me']
+// #1234: a group room keeps github's read half only. The reads are the three families a room round
+// uses; the writes are every other github tool, and each family is named here, not read from the rule.
+const GITHUB_ROOM_READ = ['mcp__github__get_me', 'mcp__github__list_issues', 'mcp__github__search_code']
+const GITHUB_ROOM_WRITE = [
+  'mcp__github__create_issue',
+  'mcp__github__merge_pull_request',
+  'mcp__github__push_files',
+  'mcp__github__update_issue',
+  'mcp__github__delete_file',
+  'mcp__github__add_issue_comment',
+  'mcp__github__create_or_update_file',
+]
+// Every github tool the profile serves: the writes first so GITHUB[0] stays a plain github tool for
+// the tests that only mean "some github tool".
+const GITHUB = [...GITHUB_ROOM_WRITE, ...GITHUB_ROOM_READ]
 const OWN = ['read', 'ask_user']
 // #1237: the four tools @deepseek-ai/dsh-tool-schedule registers, and the ones a room turn drops.
 const SCHEDULE = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
@@ -142,11 +156,12 @@ test('default: a connected connector is on for every Bot, old or new, in its cha
     done()
   }
   // The group Session answers the room's round (stamped as the host's own), in a room of the owner's own Bots.
-  // #1237: it is the one Session that carries neither the composio tools nor the schedule ones.
-  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'the mask lands with the Agent, not with the turn')
+  // #1237 dropped composio and schedule; #1234 also drops github's write half.
+  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO, ...GITHUB_ROOM_WRITE].sort(), 'the mask lands with the Agent, not with the turn')
   const done = await turn('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: 'rr', senderName: 'You', hop: 0, origin: 'owner' })
   assert.match(guard(COMPOSIO[0], 'room-writer'), /not available in a group room/)
-  assert.equal(guard(GITHUB[0], 'room-writer'), undefined, 'github stays: a room judges pull requests')
+  assert.equal(guard('mcp__github__get_me', 'room-writer'), undefined, 'github reads stay: a room reads pull requests')
+  assert.match(guard(GITHUB[0], 'room-writer'), /not available in a group room \(#1234\)/, 'a github write goes, and the refusal names it')
   done()
   assert.equal(guard(COMPOSIO[0], 'plain'), undefined)
   assert.equal(guard(COMPOSIO[0], 'elsewhere'), undefined)
@@ -203,18 +218,59 @@ test('#1237: a room turn drops the composio and schedule tools and keeps github 
   const { agentFor, hiddenFrom, allHidden, guard, stop } = await setup()
   t.after(stop)
   await agentFor('room-writer')
-  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO].sort(), 'every composio tool goes')
-  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'and the four schedule tools, nothing else')
-  for (const name of [...GITHUB, ...OWN]) assert.equal(allHidden('room-writer').has(name), false, `${name} stays`)
+  assert.deepEqual([...hiddenFrom('room-writer')].sort(), [...COMPOSIO, ...GITHUB_ROOM_WRITE].sort(), 'every composio tool goes, and every github write')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE].sort(), 'and the four schedule tools, nothing else')
+  for (const name of [...GITHUB_ROOM_READ, ...OWN]) assert.equal(allHidden('room-writer').has(name), false, `${name} stays`)
   // #1271: pinned literally. The comparison above uses the same constant the mask reads, so it cannot
   // notice a renamed or emptied SCHEDULE_TOOLS; these are the DSH names (0.2.0-rc.2).
   for (const name of ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']) assert.ok(allHidden('room-writer').has(name), `${name} is hidden in a room`)
-  for (const name of [...GITHUB, ...OWN]) assert.equal(guard(name, 'room-writer'), undefined, `${name}`)
+  for (const name of [...GITHUB_ROOM_READ, ...OWN]) assert.equal(guard(name, 'room-writer'), undefined, `${name}`)
   for (const name of [...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, name)
   assert.equal(guard('schedule_list', 'room-writer'), 'Schedules are managed in your own chat, not in a group room (#1237).')
   // #1271: a friend's Bot that holds a room Session is refused here too, and it has no composio tools in
   // its own chat either, so the refusal no longer points there.
   for (const name of [...COMPOSIO]) assert.equal(guard(name, 'room-writer'), 'The composio connector is not available in a group room (#1237).', name)
+})
+
+// #1234: github's 43 tools are ~47.4k characters of schema re-sent on every call of every room turn
+// (#796). A room round reads a pull request; it has no business creating, merging or pushing one, so the
+// read families stay and every other github tool leaves that Session's list — and a call names the tool.
+test('#1234: a room Session carries github reads only, its own chat is unchanged, and lifting the rule restores the count', async (t) => {
+  const { ctx, live, agentFor, allHidden, guard, stop } = await setup()
+  t.after(stop)
+  const agent = await agentFor('room-writer')
+  const chat = await agentFor('writer')
+  for (const name of GITHUB_ROOM_READ) {
+    assert.equal(allHidden('room-writer').has(name), false, `${name} is a read and stays in the room`)
+    assert.equal(guard(name, 'room-writer'), undefined, name)
+  }
+  for (const name of GITHUB_ROOM_WRITE) {
+    assert.ok(allHidden('room-writer').has(name), `${name} is a write and leaves the room's list`)
+    // Named, never silent: a Bot that meant to call it reads which tool went and where it can be used.
+    assert.equal(guard(name, 'room-writer'), `The ${name} tool is not available in a group room (#1234): a room gets GitHub's read tools (list/get/search) only. Change GitHub from your own chat.`, name)
+  }
+  // The whitelist fails closed: a github tool nobody classified as a read is not mounted in a room.
+  live.served.push('mcp__github__fork_repository')
+  ctx.emit('tools/change')
+  await tick()
+  assert.ok(allHidden('room-writer').has('mcp__github__fork_repository'), 'an unclassified github tool is a write in a room')
+  assert.equal(guard('mcp__github__fork_repository', 'room-writer'), roomGithubWriteReason('mcp__github__fork_repository'))
+  assert.match(guard('mcp__github__fork_repository', 'room-writer'), /^The mcp__github__fork_repository tool is not available in a group room \(#1234\)/, 'the refusal names the tool')
+  // The Bot's own chat is untouched: it keeps every github tool, reads and writes, and the composio ones.
+  assert.deepEqual([...allHidden('writer')], [], 'a chat Session is untouched')
+  assert.equal(guard('mcp__github__create_issue', 'writer'), undefined)
+  // The ablation the issue asks for: lift the rule and the room's tool count comes back to the chat's.
+  const roomCount = ctx.tools.schemas(agent).length
+  const chatCount = ctx.tools.schemas(chat).length
+  const dropped = allHidden('room-writer').size
+  assert.ok(roomCount < chatCount, `${roomCount} room tools against ${chatCount} in the chat: the room drops ${chatCount - roomCount}`)
+  assert.equal(chatCount - roomCount, dropped, 'the room drops exactly the names its mask hides')
+  assert.deepEqual(sorted(allHidden('room-writer')), sorted([...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE, 'mcp__github__fork_repository']), 'composio, schedule and every github write')
+  // With the filter gone there is nothing left to drop: the same Bot's other Session is not a room and
+  // serves every one of these names, so its count is what the room's would fall back to.
+  const chatNames = new Set(ctx.tools.schemas(chat).map(schema => schema.name))
+  for (const name of [...GITHUB_ROOM_WRITE, ...GITHUB_ROOM_READ]) assert.ok(chatNames.has(name), `${name} is served outside a room`)
+  assert.deepEqual([...allHidden('writer')], [], 'so the filter is the only difference between the two')
 })
 
 test('#1237: a Bot\'s own chat keeps composio and the schedule tools', async (t) => {
@@ -234,12 +290,12 @@ test('#1237: a schedule tool that appears after the mask landed is denied on the
   // the mask cannot name them (restrict() refuses a name the profile does not serve).
   live.served = live.served.filter(name => !SCHEDULE.includes(name))
   await agentFor('room-writer')
-  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO].sort())
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...GITHUB_ROOM_WRITE].sort())
   // The plugin loads after the room Session is up; the registry says so and the room mask is recomputed.
   live.served.push(...SCHEDULE)
   ctx.emit('tools/change')
   await tick()
-  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the late tools are denied too')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE].sort(), 'the late tools are denied too')
 })
 
 // #1271: hideConnectorTools lifts the old mask before it installs the new one, so a restrict() that
@@ -249,12 +305,12 @@ test('#1271: a mask that cannot be installed keeps the previous narrowing, it do
   const { ctx, live, agentFor, allHidden, warns, stop } = await setup()
   t.after(stop)
   await agentFor('room-writer')
-  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), 'the room mask lands first')
+  assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE].sort(), 'the room mask lands first')
   // A connector tool the Agent itself serves: schemas(agent) lists it, restrict() refuses it.
   live.own = ['mcp__composio__SOMETHING_LOCAL']
   ctx.emit('tools/change')
   await tick()
-  for (const name of [...COMPOSIO, ...SCHEDULE]) assert.ok(allHidden('room-writer').has(name), `${name} stays hidden`)
+  for (const name of [...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE]) assert.ok(allHidden('room-writer').has(name), `${name} stays hidden`)
   // #1271: and the host says which name it had to leave listed — the docs and the changelog both say it
   // warns, so a silent filter was the other half of the defect.
   const said = warns.map(args => args.map(arg => String(arg)).join(' ')).join('\n')
@@ -278,10 +334,11 @@ test('#601: a group round of any origin keeps the github tools, also with a frie
     take('room-writer', { kind: 'bot', form: 'relay', role: 'room', roomId: 'room', exchangeId: `rr-${origin}`, senderName: 'You', hop: 0, ...(origin ? { origin } : {}) })
     begin('room-writer')
     await tick()
-    for (const name of GITHUB) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
+    for (const name of GITHUB_ROOM_READ) assert.equal(guard(name, 'room-writer'), undefined, `${origin}: ${name}`)
+    for (const name of GITHUB_ROOM_WRITE) assert.match(guard(name, 'room-writer'), /not available in a group room \(#1234\)/, `${origin}: ${name}`)
     for (const name of [...SCHEDULE]) assert.match(guard(name, 'room-writer'), /own chat, not in a group room/, `${origin}: ${name}`)
     for (const name of [...COMPOSIO]) assert.match(guard(name, 'room-writer'), /not available in a group room/, `${origin}: ${name}`)
-    assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE].sort(), `${origin}: the mask is the same in every origin`)
+    assert.deepEqual([...allHidden('room-writer')].sort(), [...COMPOSIO, ...SCHEDULE, ...GITHUB_ROOM_WRITE].sort(), `${origin}: the mask is the same in every origin`)
     end('room-writer')
   }
 })
@@ -295,7 +352,9 @@ test('the owner turns a connector off for one Bot; others follow, and turning it
   assert.equal(off.ok, true, JSON.stringify(off))
   assert.deepEqual(off.value, { botId: 'writer', connectors: { composio: false } })
   // The list and the guard follow at once, in the Bot's own chat and in its group Session.
-  for (const id of ['writer', 'room-writer']) assert.deepEqual(sorted(hiddenFrom(id)), sorted(COMPOSIO), id)
+  assert.deepEqual(sorted(hiddenFrom('writer')), sorted(COMPOSIO), 'writer')
+  // #1234: the room Session also drops github's writes, which no switch here touches.
+  assert.deepEqual(sorted(hiddenFrom('room-writer')), sorted([...COMPOSIO, ...GITHUB_ROOM_WRITE]), 'room-writer')
   const done = await turn('writer', FRIEND)
   assert.match(guard(COMPOSIO[0], 'writer'), /composio connector is turned off for Writer\. Its owner can turn it on/)
   assert.equal(guard(GITHUB[0], 'writer'), undefined, 'the other connector is untouched')

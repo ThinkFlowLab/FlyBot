@@ -18,9 +18,13 @@
 //     tools, ~20.4k characters (≈5.2k tokens at the measured 3.92 chars/token) re-sent on every call
 //     of every room turn, and a room round uses neither — an outside app is reached from the Bot's own
 //     chat, and a schedule is created, listed and changed there too (#628: a schedule belongs to a
-//     Session, so managing it from a member's room Session would write to the wrong place). The github
-//     tools stay: judging a pull request in a room needs them, and taking them away is a separate
-//     decision (#1237 「不做」). The Bot's own chat and its parts are unchanged.
+//     Session, so managing it from a member's room Session would write to the wrong place).
+//   - A group room turn carries github's read half only (#1234): the three families a room round
+//     actually uses — `list_*`, `get_*`, `search_*` — stay, and every other `mcp__github__*` (the
+//     writes: create/update/delete/merge/push/comment/…) is not mounted there. Reading a pull request
+//     to answer in a room needs no write, and a room round that means to change something does it from
+//     the Bot's own chat. A call to a dropped tool is refused by name, never silently. The Bot's own
+//     chat and its parts are unchanged.
 //   - The tools are taken out of the Bot's tool list (restrict, per Agent) and every call is refused by
 //     a guard that looks at the answer when the call happens.
 //
@@ -38,6 +42,13 @@ export const connectorOfTool = name => (typeof name === 'string' ? CONNECTOR_IDS
 // refuses a name this profile does not serve, so a name missing here only means the tool stays.
 export const SCHEDULE_TOOLS = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
 const SCHEDULES = new Set(SCHEDULE_TOOLS)
+const GITHUB_PREFIX = prefixOf(GITHUB)
+// #1234: a group room gets github's read half. The read families a room round uses are the three
+// below; anything else under the github mount is a write (create/update/delete/merge/push/comment/…),
+// so the rule is a whitelist and a new tool nobody classified fails closed.
+const ROOM_GITHUB_READ = /^mcp__github__(?:list|get|search)(?:_|$)/
+export const githubWriteInRoom = name => typeof name === 'string' && name.startsWith(GITHUB_PREFIX) && !ROOM_GITHUB_READ.test(name)
+export const roomGithubWriteReason = name => `The ${name} tool is not available in a group room (#1234): a room gets GitHub's read tools (list/get/search) only. Change GitHub from your own chat.`
 const RUN_DENIED = new Set(EPHEMERAL_DENIED_TOOLS)
 const MAX_DEPTH = 8
 
@@ -114,7 +125,7 @@ export function install(rt) {
   // #1237: a group room turn carries no composio tools and no schedule tools. `groupOwners` is the
   // store's Session -> room index, so this is the same Session a room round answers in.
   const inRoom = who => who.sessionId !== undefined && rt.groupOwners?.has(who.sessionId) === true
-  const roomHidden = (who, name) => inRoom(who) && (connectorOfTool(name) === COMPOSIO || SCHEDULES.has(name))
+  const roomHidden = (who, name) => inRoom(who) && (connectorOfTool(name) === COMPOSIO || SCHEDULES.has(name) || githubWriteInRoom(name))
 
   // The origin an Agent's request to another Bot carries on (message_bot, stop_bot, post_to_group): the
   // strictest answer, OTHER when it cannot be told. Not a Bot's Agent (the DSH Agent): the owner's own.
@@ -142,9 +153,10 @@ export function install(rt) {
     // the room rule reads the same session id whoseAgent already resolved. The tip is in the reason:
     // a Bot that reads it knows where the tool went, and the refusal is the same for every origin.
     if (roomHidden(who, name)) {
-      return id === COMPOSIO
-        ? `The ${COMPOSIO} connector is not available in a group room (#1237).`
-        : `Schedules are managed in your own chat, not in a group room (#1237).`
+      // #1234: the github write refusal names the tool it refused, so a Bot that meant to call it reads
+      // which one went and where to go. The two #1237 families keep their own sentences.
+      if (id === COMPOSIO) return `The ${COMPOSIO} connector is not available in a group room (#1237).`
+      return id === GITHUB ? roomGithubWriteReason(name) : `Schedules are managed in your own chat, not in a group room (#1237).`
     }
     if (id === undefined) return undefined
     if (who.unknown === true) return `The ${id} connector is not available here: the Bot this Agent works for could not be determined.`
