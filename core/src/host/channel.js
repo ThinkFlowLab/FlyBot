@@ -665,6 +665,14 @@ export function install(rt) {
         case 'workflows':
         case 'workflow-save':
           return ok(await rt.workflowEndpoint(endpoint, body))
+        // Projects (#1691): a durable Project record and the binding a group, Bot or run names.
+        case 'projects':
+        case 'project-create':
+        case 'project-read':
+        case 'project-bind':
+        case 'project-of':
+          await rt.load()
+          return ok(await rt.projectEndpoint(endpoint, body))
         case 'share-brief':
           await rt.load()
           await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)
