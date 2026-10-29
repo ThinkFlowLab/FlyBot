@@ -2309,6 +2309,59 @@ for (const width of [364, 530, 300]) {
   })
 }
 
+// A fan no single drawer row can hold: four branches in one layer (#1658).
+function wideFork() {
+  const branches = ['r1', 'r2', 'r3', 'r4']
+  return {
+    ...delivery(), id: 'wide-fork', name: 'Wide fork',
+    layers: [['fork'], branches, ['join']],
+    nodes: [
+      { id: 'fork', name: 'Fork', role: '分叉' },
+      ...branches.map(id => ({ id, name: id.toUpperCase(), role: '分支' })),
+      { id: 'join', name: 'Join', role: '汇合' },
+    ],
+    edges: [
+      ...branches.map(id => ({ from: 'fork', to: id })),
+      ...branches.map(id => ({ from: id, to: 'join' })),
+    ],
+  }
+}
+
+for (const width of [400, 364]) {
+  test(`a four-way drawer layer stays inside ${width}px, one frame, every box and wire in the plane (#1658)`, () => {
+    const layout = client.flowLayout(wideFork(), width)
+    const boxes = [...layout.boxes.values()]
+    assert.equal(boxes.length, 6)
+    for (const box of boxes) {
+      assert.ok(box.left >= 0 && box.left + box.w <= width, `${box.id} box ${box.left}..${box.left + box.w} is outside 0..${width}`)
+      assert.ok(box.top >= 0 && box.top + box.h <= layout.height, `${box.id} box ${box.top}..${box.top + box.h} is outside 0..${layout.height}`)
+    }
+    for (const a of boxes) for (const b of boxes) {
+      if (a === b) continue
+      const apart = a.left + a.w <= b.left || b.left + b.w <= a.left || a.top + a.h <= b.top || b.top + b.h <= a.top
+      assert.ok(apart, `${a.id} overlaps ${b.id}`)
+    }
+    assert.equal(layout.frames.length, 1, 'the four branches stay in one dashed frame')
+    const frame = layout.frames[0]
+    assert.ok(frame.left >= 0 && frame.left + frame.width <= width, `frame ${frame.left}..${frame.left + frame.width} is outside 0..${width}`)
+    for (const id of ['r1', 'r2', 'r3', 'r4']) {
+      const box = layout.boxes.get(id)
+      assert.ok(box.left > frame.left && box.left + box.w < frame.left + frame.width, `${id} spills out of the parallel frame`)
+      assert.ok(box.top > frame.top && box.top + box.h < frame.top + frame.height, `${id} spills out of the parallel frame`)
+    }
+    for (const id of ['fork', 'join']) {
+      const box = layout.boxes.get(id)
+      assert.ok(box.top + box.h <= frame.top || box.top >= frame.top + frame.height, `${id} overlaps the parallel frame`)
+    }
+    assert.equal(layout.wires.filter(wire => wire.kind === 'fork' || wire.kind === 'join').length, 2)
+    for (const wire of layout.wires) {
+      for (const p of pointsOf(wire.d)) {
+        assert.ok(p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= layout.height, `${wire.key} leaves the plane at ${p.x},${p.y}`)
+      }
+    }
+  })
+}
+
 test('the drawer flowchart draws the step layout, not the stored editor coordinates, and clamps a long run summary', async () => {
   const graph = quickLane()
   const long = 'p1641-r3 · #1641（Fixes #1640 social waiting-for-approval 卡不写目的地、没有跳转）在实时 head 重审并出 PASS 后入队。上一轮 run-d477062e 在 review 节点被 DSH 重启打断'
