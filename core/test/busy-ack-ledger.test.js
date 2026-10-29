@@ -112,6 +112,39 @@ test('the claim of a next-turn line after turn/end adds no second call or senten
   assert.deepEqual(Object.keys(view), [], 'a claim of an acked line does not reopen the ack it ended with the turn')
 })
 
+test('the line that opens a turn is not acknowledged as a busy arrival (#1698)', async (t) => {
+  const h = await host(t)
+  const opener = personLine('m-open', 'please read the AGENTS file')
+
+  // The real order on an idle Session: the line is queued, the host opens the turn, and only then
+  // is the line claimed. `turn/start` is appended before the step's `user/message` (agent-loop
+  // `index.js:943` then `:1061`), so the line that started the turn is judged busy by the claim.
+  h.emit('a', 'agent/inbox/spliced', spliced([opener]).data)
+  h.running('a', 1)
+  h.emit('a', 'turn/start', { turn: 1 })
+  h.emit('a', 'user/message', claim(opener).data)
+  await h.rt.busyAckReady('a')
+
+  assert.equal(h.llm.calls.length, 0, 'the line that opened the turn costs no ack call')
+  assert.deepEqual(h.rt.busyAcksView(), {}, 'and publishes no ack entry')
+  assert.equal(h.rt.busyAckLedgerSize('a'), 0, 'the opening line is not remembered as acked')
+
+  // A line that really lands while that turn runs is still acknowledged once, at its arrival.
+  const busy = personLine('m-busy', 'and then the cover image')
+  h.emit('a', 'agent/inbox/spliced', spliced([busy]).data)
+  assert.equal(await h.rt.busyAckReady('a'), 'ACK:and then the cover image')
+  assert.equal(h.llm.calls.length, 1)
+
+  // Its claim opens the next turn and adds no second call: the line keeps its one ack.
+  h.emit('a', 'turn/end', { status: 'completed' })
+  h.running('a', 2)
+  h.emit('a', 'turn/start', { turn: 2 })
+  h.emit('a', 'user/message', claim(busy).data)
+  await h.rt.busyAckReady('a')
+  assert.equal(h.llm.calls.length, 1, 'the claim of an acked line adds no call')
+  assert.deepEqual(h.rt.busyAcksView(), {}, 'and does not reopen the entry the turn ended')
+})
+
 test('two lines interleaved across a turn boundary cost two calls, and their claims add none (#1684)', async (t) => {
   const h = await host(t)
   h.running('a')
