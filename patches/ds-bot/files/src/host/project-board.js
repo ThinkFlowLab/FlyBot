@@ -60,6 +60,14 @@ export function install(rt) {
         column: columnOf(task),
         assignee: task.assignee ?? null,
         updatedAt: task.updatedAt ?? task.createdAt ?? null,
+        // The typed contract (#1720) is read from the same row, not a second copy: a board that
+        // shows a rework or a held lease shows what the task store wrote. A record stored before
+        // the slice carries none of the keys and reads back exactly as it did.
+        ...(task.taskClass ? { taskClass: task.taskClass } : {}),
+        ...(task.reworkOf ? { reworkOf: task.reworkOf } : {}),
+        ...(task.handoff && typeof task.handoff === 'object' ? { handoff: task.handoff } : {}),
+        ...(Array.isArray(task.evidence) ? { evidence: task.evidence } : {}),
+        ...(task.lease && typeof task.lease === 'object' ? { lease: task.lease } : {}),
         ...(fromRun ? { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) } : {}),
       })
     }

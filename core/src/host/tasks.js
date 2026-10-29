@@ -353,7 +353,10 @@ export function install(rt) {
       transition(task, next, actor, extra)
       if (next === 'result-ready') task.result = { kind: 'summary', summary: (task.note || 'Completed').slice(0, 2000) }
     }
-    if (target === 'accepted') settleOverall(task)
+    if (target === 'accepted') {
+      settleOverall(task)
+      closeRework(task, actor)
+    }
     return true
   }
 
@@ -375,6 +378,178 @@ export function install(rt) {
     const moved = applyColumn(parent, 'done', null, 'last child completed')
     if (moved) parent.progress = 100
     return moved
+  }
+
+  // ---------------------------------------------------------------- the typed contract (#1720)
+  // Five additive fields, none of which changes an existing one: `taskClass` (the typed kind,
+  // beside the group-card `kind`), `reworkOf` (a rework child's link to the card it reworks,
+  // beside the part-of-overall `parentId`), `handoff`, `evidence` and `lease`. Every one is
+  // validated by name — a refusal names the field, never a silently dropped value.
+  const TASK_CLASSES = ['work', 'rework', 'release', 'triage', 'meeting']
+  const HANDOFF_REASON_MAX = 300
+  const EVIDENCE_MAX = 8
+  const LEASE_TTL_SEC = 30 * 60
+  // A role is known when a Bot carries it; `requester` is the human side of a handoff, which no
+  // Bot record names. Anything else is refused with the role quoted back (#1720).
+  const RESERVED_ROLES = new Set(['requester'])
+  const knownRole = role => RESERVED_ROLES.has(role) || Object.values(state.bots ?? {}).some(bot => Boolean(bot?.role) && sameRole(bot.role, role))
+  const boundedLine = (value, max, name) => {
+    const text = String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (text.length > max) throw invalid(`${name} is at most ${max} characters`)
+    return text
+  }
+  const readTaskClass = (value) => {
+    if (value === undefined || value === null || value === '') return undefined
+    const taskClass = String(value)
+    if (!TASK_CLASSES.includes(taskClass)) throw invalid(`taskClass must be one of ${TASK_CLASSES.join(', ')}`)
+    return taskClass
+  }
+  const readReworkOf = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') return undefined
+    const id = boundedLine(value, 80, 'reworkOf')
+    if (find(id) === undefined) throw invalid(`reworkOf names no task: ${id}`)
+    return id
+  }
+  const readStampOf = (value, name) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const parsed = typeof value === 'string' && value.trim() !== '' ? Date.parse(value) : Number.NaN
+    if (!Number.isFinite(parsed)) throw invalid(`${name} must be a time (milliseconds or an ISO date)`)
+    return parsed
+  }
+  const readHandoff = (value) => {
+    if (value === undefined || value === null) return undefined
+    if (typeof value !== 'object' || Array.isArray(value)) throw invalid('handoff must be an object with from, to, at and reason')
+    const from = boundedLine(value.from, ROLE_MAX, 'handoff.from')
+    const to = boundedLine(value.to, ROLE_MAX, 'handoff.to')
+    if (from === '') throw invalid('handoff needs the role it came from (from)')
+    if (to === '') throw invalid('handoff needs the role it goes to (to)')
+    if (!knownRole(from)) throw refuse('unknown-role', `handoff.from names the role "${from}", which no Bot carries`)
+    if (!knownRole(to)) throw refuse('unknown-role', `handoff.to names the role "${to}", which no Bot carries`)
+    const reason = boundedLine(value.reason, HANDOFF_REASON_MAX, 'handoff.reason')
+    const at = value.at === undefined || value.at === null ? stamp() : readStampOf(value.at, 'handoff.at')
+    return { from, to, at, reason }
+  }
+  const readEvidence = (value) => {
+    if (value === undefined || value === null) return undefined
+    if (!Array.isArray(value)) throw invalid('evidence must be a list of at most 8 entries of { sha, pr, check, at }')
+    if (value.length > EVIDENCE_MAX) throw invalid(`evidence carries at most ${EVIDENCE_MAX} entries`)
+    return value.map((entry) => {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) throw invalid('each evidence entry is an object of { sha, pr, check, at }')
+      const sha = boundedLine(entry.sha, 64, 'evidence.sha')
+      const check = boundedLine(entry.check, 200, 'evidence.check')
+      let pr
+      if (entry.pr !== undefined && entry.pr !== null && entry.pr !== '') {
+        pr = typeof entry.pr === 'number' ? entry.pr : Number(entry.pr)
+        if (!Number.isInteger(pr) || pr < 1) throw invalid('evidence.pr must be a pull request number')
+      }
+      const at = entry.at === undefined || entry.at === null ? undefined : readStampOf(entry.at, 'evidence.at')
+      if (sha === '' && pr === undefined && check === '' && at === undefined) throw invalid('an evidence entry needs a sha, a pr, a check or an at')
+      return { sha, ...(pr === undefined ? {} : { pr }), check, ...(at === undefined ? {} : { at }) }
+    })
+  }
+  const readLease = (value) => {
+    if (value === undefined || value === null) return undefined
+    if (typeof value !== 'object' || Array.isArray(value)) throw invalid('lease must be an object with holder, takenAt and expiresAt')
+    const holder = boundedLine(value.holder, 200, 'lease.holder')
+    if (holder === '') throw invalid('lease needs a holder')
+    const takenAt = readStampOf(value.takenAt, 'lease.takenAt')
+    const expiresAt = readStampOf(value.expiresAt, 'lease.expiresAt')
+    if (expiresAt <= takenAt) throw invalid('lease.expiresAt must be after lease.takenAt')
+    return { holder, takenAt, expiresAt }
+  }
+  // One write path for the five fields (#1720): the tool, the conversation path and the HTTP
+  // endpoints all reach it, so a refusal is the same refusal wherever the value came from. The
+  // reads happen before any assignment, so a refused write leaves the card exactly as it was.
+  function writeContract(task, body = {}) {
+    const taskClass = readTaskClass(body.taskClass)
+    const reworkOf = readReworkOf(body.reworkOf)
+    const handoff = readHandoff(body.handoff)
+    const evidence = readEvidence(body.evidence)
+    const clearingLease = body.lease === null
+    const lease = readLease(body.lease)
+    if (taskClass !== undefined) task.taskClass = taskClass
+    if (reworkOf !== undefined) task.reworkOf = reworkOf
+    if (handoff !== undefined) task.handoff = handoff
+    if (evidence !== undefined) task.evidence = evidence
+    if (clearingLease) delete task.lease
+    if (lease !== undefined) task.lease = lease
+    return { taskClass, reworkOf, handoff, evidence, lease }
+  }
+  // The typed contract on a card that is created here rather than written by a caller.
+  const defaultContract = (task) => {
+    task.taskClass = 'work'
+    return task
+  }
+  const leaseOf = task => (task?.lease !== null && typeof task?.lease === 'object' ? task.lease : undefined)
+  const leaseLive = (task, now = Date.now()) => {
+    const lease = leaseOf(task)
+    return lease !== undefined && Number.isFinite(lease.expiresAt) && lease.expiresAt > now
+  }
+  const holderName = id => botRecord(id)?.name ?? String(id ?? '')
+  // An expired lease returns a queued card to the queue (#1720): the member holding it is gone
+  // or stalled, so the item is offered again instead of staying claimed for ever. A card that
+  // is not a queued item keeps its status; only the dead lease is dropped.
+  function expireLeases(now = Date.now()) {
+    let expired = 0
+    for (const task of Object.values(store())) {
+      const lease = leaseOf(task)
+      if (lease === undefined || !Number.isFinite(lease.expiresAt) || lease.expiresAt > now) continue
+      if (!task.queueRole || (task.status !== 'claimed' && task.status !== 'working')) {
+        delete task.lease
+        continue
+      }
+      requeue(task, 'lease expired', 0)
+      delete task.lease
+      expired += 1
+    }
+    return expired
+  }
+  // A rejection is a handover, not a status flip (#1720): the original's `handoff` names the
+  // roles, and the rework is one child card linked by `reworkOf` — never `parentId`, which
+  // means "part of an overall card" and must never make `settleOverall` fire. A replay of the
+  // same rejection reuses the child that is still open instead of creating a second one.
+  function openRework(original, note) {
+    const reason = boundedLine(note, HANDOFF_REASON_MAX, 'handoff.reason')
+    const to = oneLine(botRecord(original.ownerBotId)?.role ?? '', ROLE_MAX) || 'requester'
+    const from = 'requester'
+    const at = stamp()
+    original.handoff = { from, to, at, reason }
+    const existing = Object.values(store()).find(task => task.reworkOf === original.id && openTask(task))
+    if (existing !== undefined) {
+      existing.handoff = { from, to, at, reason }
+      existing.actors = [...(existing.actors ?? []), { status: existing.status, at, by: 'rework replayed' }]
+      existing.updatedAt = at
+      return existing
+    }
+    const child = {
+      id: `task-${randomBytes(8).toString('hex')}`,
+      status: 'open',
+      taskClass: 'rework',
+      reworkOf: original.id,
+      createdAt: at,
+      updatedAt: at,
+      requesterId: original.requesterId ?? null,
+      ownerBotId: original.ownerBotId,
+      title: oneLine(`${original.title} (rework)`, 300),
+      note: reason,
+      source: 'rework',
+      handoff: { from, to, at, reason },
+      origin: { ...(original.origin ?? {}) },
+      actors: [{ status: 'open', at, by: 'rework opened' }],
+    }
+    store()[child.id] = child
+    return child
+  }
+  // The one write that returns the original to `result-ready` (#1720): it runs where a task is
+  // accepted, and the guard is the original still being `working`, so accepting a rework child
+  // twice moves the original once and a replay after a restart is a no-op.
+  function closeRework(child, actor) {
+    if (child?.taskClass !== 'rework' || typeof child.reworkOf !== 'string') return false
+    const original = find(child.reworkOf)
+    if (original === undefined || original.status !== 'working') return false
+    transition(original, 'result-ready', actor, { by: 'rework accepted' })
+    original.result = { kind: 'summary', summary: 'Rework accepted' }
+    return true
   }
 
   function applyFields(task, body) {
@@ -472,6 +647,7 @@ export function install(rt) {
     delete task.inputApprovalIds
     delete task.approvalId
     delete task.claimedBy
+    delete task.lease
     task.status = 'open'
     task.ownerBotId = task.queueBy ?? task.ownerBotId
     task.progress = 0
@@ -598,6 +774,7 @@ export function install(rt) {
       origin: { roomId: room.id },
       actors: [{ status: 'open', at, by: 'dispatch', ...(by ? { botId: by } : {}) }],
     }
+    defaultContract(task)
     store()[task.id] = task
     await save()
     return view(task)
@@ -610,6 +787,7 @@ export function install(rt) {
     const room = resolveRoom(botId, body.group, roomId)
     const entry = room ? state.rooms?.[room] : undefined
     if (!entry) throw invalid('A claim needs a group')
+    if (expireLeases() > 0) await rt.save()
     const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
     if (myRole === '') throw refuse('not-in-role', 'this Bot has no role to claim with')
     // WIP = 1: one card in progress fills the member's slot. A blocked card waits on a person,
@@ -624,7 +802,12 @@ export function install(rt) {
     if (wantedId !== undefined) {
       pick = find(wantedId)
       if (pick === undefined) throw stale(`no task ${wantedId}`)
-      if (!unclaimed(pick) || pick.origin?.roomId !== entry.id) throw stale(`no queued item ${wantedId} in this group`)
+      if (!unclaimed(pick) || pick.origin?.roomId !== entry.id) {
+        if (leaseLive(pick)) {
+          throw refuse('lease-held', `task ${pick.id} is held by ${holderName(pick.lease.holder)} until ${new Date(pick.lease.expiresAt).toISOString()}`)
+        }
+        throw stale(`no queued item ${wantedId} in this group`)
+      }
       if (!sameRole(pick.queueRole, myRole)) throw refuse('not-in-role', `that item is queued for ${pick.queueRole}, and this Bot is ${myRole}`)
       if (!offered(pick)) return { item: null, reason: 'waiting' }
     } else {
@@ -643,6 +826,8 @@ export function install(rt) {
     live.ownerBotId = botId
     delete live.retryAt
     delete live.queueReason
+    const claimedAt = Date.now()
+    live.lease = { holder: botId, takenAt: claimedAt, expiresAt: claimedAt + LEASE_TTL_SEC * 1000 }
     transition(live, 'claimed', null, { by: 'claimed from the queue' })
     announceClaim(live)
     await save()
@@ -699,6 +884,7 @@ export function install(rt) {
         origin: { ...(roomId ? { roomId } : {}), ...(origin.sessionId ? { sessionId: String(origin.sessionId) } : {}) },
         actors: [{ status: 'open', at, by: 'conversation', ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
       }
+      defaultContract(task)
       store()[task.id] = task
       return task
     }
@@ -795,6 +981,14 @@ export function install(rt) {
           throw stale('This task is waiting on an answer. Ask, then pass answer with what was said.')
         }
         if (title && task.title !== title) task.title = title
+        // A refused value must not leave a half-created card behind: the writer validates before
+        // it assigns, and a new row it refuses is removed again (#1720).
+        try {
+          writeContract(task, item)
+        } catch (error) {
+          if (isNew) delete store()[task.id]
+          throw error
+        }
         const { progress } = applyFields(task, item)
         if (!task.source) task.source = 'conversation'
         const before = task.updatedAt
@@ -990,6 +1184,8 @@ export function install(rt) {
           origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },
           actors: [{ status: 'open', at: stamp(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
         }
+        defaultContract(task)
+        writeContract(task, body)
         const { progress } = applyFields(task, body)
         const column = readColumn(body.column)
         applyColumn(task, column, actor)
@@ -1004,6 +1200,7 @@ export function install(rt) {
         const task = find(body.id)
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         if (!mayUpdate(task, actor)) throw forbidden('Only the requester or the Bot\'s owner may update this task')
+        writeContract(task, body)
         const { progress } = applyFields(task, body)
         const column = readColumn(body.column)
         const before = task.updatedAt
@@ -1073,6 +1270,7 @@ export function install(rt) {
         requireRequester(task, actor)
         transition(task, 'accepted', actor)
         settleOverall(task)
+        closeRework(task, actor)
         requestWriteBack(task, 'accepted', undefined, actor)
         await save()
         return view(task)
@@ -1086,6 +1284,7 @@ export function install(rt) {
         if (note === '') throw invalid('Send back needs a note for the Bot')
         transition(task, 'working', actor, { by: 'sent back' })
         task.followUp = { note, at: task.updatedAt }
+        openRework(task, note)
         requestWriteBack(task, 'working', note, actor)
         await save()
         return view(task)

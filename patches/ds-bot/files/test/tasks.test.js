@@ -797,9 +797,14 @@ test('the requester sends a result back with a note and the same task returns to
   const accepted = await app.call('task-accept-result', { id: returned.id }, alice.sessionToken)
   assert.equal(accepted.ok, true, JSON.stringify(accepted))
   assert.equal(accepted.value.status, 'accepted')
-  // One task record, moved — never a second task for the second attempt.
+  // One original record, moved — and exactly one rework card beside it, linked by 'reworkOf'
+  // and never 'parentId' (#1720): the second attempt is tracked, not a second original.
   const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks
-  assert.deepEqual(Object.values(saved).map(task => task.id), [returned.id])
+  assert.deepEqual(Object.values(saved).filter(task => task.reworkOf === undefined).map(task => task.id), [returned.id])
+  const rework = Object.values(saved).filter(task => task.reworkOf === returned.id)
+  assert.equal(rework.length, 1, 'one rework card for one rejection')
+  assert.equal(rework[0].taskClass, 'rework')
+  assert.equal(rework[0].parentId, undefined, 'a rework card is not part of an overall card')
   assert.equal(saved[returned.id].followUp.note, 'the second file is missing')
 })
 

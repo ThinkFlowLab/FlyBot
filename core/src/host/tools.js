@@ -933,6 +933,43 @@ ${task.writeBack.body}`)
             ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. Call ask_user in your own chat. For a group card, post one short question in the group only when a person has to decide.' },
             answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
             target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },
+            taskClass: { type: 'string', enum: ['work', 'rework', 'release', 'triage', 'meeting'], description: 'The typed class of the card. Work is the default; a rework card fixes a card that was rejected.' },
+            reworkOf: { type: 'string', description: 'The id of the card this rework card fixes. A rework card is not a part of a group card, so pass reworkOf, never parent.' },
+            handoff: {
+              type: 'object',
+              description: 'Who handed this card to whom, why and when. Both roles must be roles a Bot carries (or requester).',
+              properties: {
+                from: { type: 'string', description: 'The role the card came from.' },
+                to: { type: 'string', description: 'The role the card went to.' },
+                at: { type: 'number', description: 'When, in milliseconds since the epoch. Defaults to now.' },
+                reason: { type: 'string', description: 'One line, at most 300 characters.' },
+              },
+              additionalProperties: false,
+            },
+            evidence: {
+              type: 'array',
+              description: 'Up to 8 pointers to what proves the work: a sha, a pull request, a check name, when.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  sha: { type: 'string' },
+                  pr: { type: 'integer' },
+                  check: { type: 'string' },
+                  at: { type: 'number', description: 'When, in milliseconds since the epoch.' },
+                },
+              },
+            },
+            lease: {
+              type: 'object',
+              description: 'The claim held on this card: who holds it and when that claim lapses.',
+              properties: {
+                holder: { type: 'string' },
+                takenAt: { type: 'number', description: 'When the claim was taken, in milliseconds since the epoch.' },
+                expiresAt: { type: 'number', description: 'When the claim lapses, in milliseconds since the epoch.' },
+              },
+              additionalProperties: false,
+            },
             postResult: {
               type: 'object',
               description: 'How the decision comment a task asked you to post went. Pass task (its id) and ok; when ok is false, pass the error. One report per decision, and no retrying on its own.',
