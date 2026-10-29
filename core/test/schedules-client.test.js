@@ -331,6 +331,38 @@ test('the copy picker opens with no target chosen, so one click cannot send it (
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ target: 'g1', copyFrom: { sessionId: 'chat-b1', id: 's1' } }])
 })
 
+// #1334: the new-task form opens with no Bot chosen — `roster.bots[0]` is roster order, so the
+// old opening state created the task for whichever Bot sorted first on one click. A person has to
+// pick a target; a submit without one sends nothing.
+test('the new-task form opens with no target chosen, so one click cannot create it (#1334)', async () => {
+  const sent = []
+  const actions = { ...spy(), scheduleCreate: async (task) => { sent.push(task); return OFF } }
+  // The shim hands states out in hook order: the page's view, `adding` (the form is open),
+  // `editing`, then QuietHoursCard's four. The form's own target is left unseeded on purpose —
+  // this reads the state the form really opens with.
+  seeded.push({ available: true, tasks: [] }, true, null, false, '', '22:00', '07:00')
+  const page = render(SchedulesPage({ roster: OTHERS, actions, start: null }))
+  const form = all(page).find(node => node.type === 'form')
+  assert.ok(form, 'the new-task form is open')
+  const select = all(form).find(node => node.type === 'select')
+  assert.equal(select.props.value, '', 'the placeholder is the opening choice, never the first Bot')
+  const first = all(select).filter(node => node.type === 'option')[0]
+  assert.equal(first.props.value, '', 'the first option is the placeholder')
+  assert.deepEqual(text(first), ['Pick a Bot or group chat'])
+  const create = buttonsOf(form).find(button => text(button).includes('Create task'))
+  assert.equal(create.props.disabled, true, 'Create is disabled until a target is picked')
+  form.props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(sent, [], 'submitting with no target sends nothing')
+  // The target a person picked is the one sent, with the rest of the form's values.
+  seeded.push({ available: true, tasks: [] }, true, null, false, '', '22:00', '07:00', 'g1', 'Briefing', 'Sum up')
+  const picked = render(SchedulesPage({ roster: OTHERS, actions, start: null }))
+  all(picked).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(sent.length, 1)
+  assert.deepEqual([sent[0].target, sent[0].title, sent[0].prompt, sent[0].when.kind], ['g1', 'Briefing', 'Sum up', 'daily'])
+})
+
 test('a task row offers Copy (#1287)', () => {
   seeded.push({ available: true, tasks: [ACTIVE] }, null)
   const card = render(BotSchedules({ bot: { id: 'b1' }, roster: OTHERS, actions: { ...spy(), scheduleCreate: async () => OFF } }))

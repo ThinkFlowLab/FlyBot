@@ -11672,7 +11672,7 @@ function formStart(task) {
 }
 function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const first = formStart(task);
-  const [target, setTarget] = (0, import_react23.useState)(task ? task.botId ?? task.roomId : start ?? roster.bots[0]?.id ?? "");
+  const [target, setTarget] = (0, import_react23.useState)(task ? task.botId ?? task.roomId : start ?? "");
   const [title, setTitle] = (0, import_react23.useState)(first.title);
   const [prompt, setPrompt] = (0, import_react23.useState)(first.prompt);
   const [kind, setKind] = (0, import_react23.useState)(first.kind);
@@ -11691,7 +11691,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   };
   const submit = (event) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || target === "") return;
     setBusy(true);
     setError("");
     let when3;
@@ -11719,6 +11719,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
       (0, import_react23.createElement)(
         "select",
         { className: "bt-select bt-task-bot", value: target, onChange: (event) => setTarget(event.target.value) },
+        (0, import_react23.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
         (0, import_react23.createElement)("optgroup", { label: t("Bots") }, roster.bots.map((bot) => (0, import_react23.createElement)("option", { key: bot.id, value: bot.id }, bot.name))),
         roster.rooms.length > 0 ? (0, import_react23.createElement)("optgroup", { label: t("Group chats") }, roster.rooms.map((room2) => (0, import_react23.createElement)("option", { key: room2.id, value: room2.id }, room2.name))) : null
       )

@@ -172,7 +172,9 @@ export function formStart(task) {
 function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   // A task goes to a Bot's chat or to a group chat, where it reads as your message.
   const first = formStart(task)
-  const [target, setTarget] = useState(task ? (task.botId ?? task.roomId) : start ?? roster.bots[0]?.id ?? '')
+  // No default target (#1334): roster order is not a choice, and a form that opened on
+  // `roster.bots[0]` created the task for whoever sorted first on one click.
+  const [target, setTarget] = useState(task ? (task.botId ?? task.roomId) : start ?? '')
   const [title, setTitle] = useState(first.title)
   const [prompt, setPrompt] = useState(first.prompt)
   const [kind, setKind] = useState(first.kind)
@@ -196,7 +198,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   }
   const submit = (event) => {
     event.preventDefault()
-    if (busy) return
+    if (busy || target === '') return
     setBusy(true)
     setError('')
     let when
@@ -211,6 +213,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
     h('label', { className: 'bt-set-row bt-bs-row' },
       h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Send to'))),
       h('select', { className: 'bt-select bt-task-bot', value: target, onChange: event => setTarget(event.target.value) },
+        h('option', { value: '' }, t('Pick a Bot or group chat')),
         h('optgroup', { label: t('Bots') }, roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
         roster.rooms.length > 0 ? h('optgroup', { label: t('Group chats') }, roster.rooms.map(room => h('option', { key: room.id, value: room.id }, room.name))) : null)),
     h('label', { className: 'bt-set-row bt-bs-row' },

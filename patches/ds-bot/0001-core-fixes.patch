@@ -1910,7 +1910,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
-@@ -47,7 +47,8 @@ function weekdayNames(days) {
+@@ -47,7 +50,8 @@ function weekdayNames(days) {
  function everyText(seconds) {
    if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
    if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
@@ -1920,7 +1920,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // How often a task runs, in the user's words.
-@@ -70,9 +70,22 @@ export function timingText(task) {
+@@ -70,9 +74,22 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -1945,7 +1945,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
    useEffect(() => {
-@@ -85,14 +85,34 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -85,14 +102,34 @@ function TaskRow({ task, actions, onView
      setBusy(true)
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
    }
@@ -1982,14 +1982,13 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
-@@ -106,25 +106,56 @@ function inAnHour() {
+@@ -106,41 +143,77 @@ function inAnHour() {
    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
  }
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2013,7 +2012,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2026,7 +2026,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 -  const [count, setCount] = useState(1)
 -  const [unit, setUnit] = useState('hours')
 +  const first = formStart(task)
-+  const [target, setTarget] = useState(task ? (task.botId ?? task.roomId) : start ?? roster.bots[0]?.id ?? '')
++  // No default target (#1334): roster order is not a choice, and a form that opened on
++  // `roster.bots[0]` created the task for whoever sorted first on one click.
++  const [target, setTarget] = useState(task ? (task.botId ?? task.roomId) : start ?? '')
 +  const [title, setTitle] = useState(first.title)
 +  const [prompt, setPrompt] = useState(first.prompt)
 +  const [kind, setKind] = useState(first.kind)
@@ -2053,7 +2055,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    }
    const submit = (event) => {
      event.preventDefault()
-@@ -133,8 +133,10 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+-    if (busy) return
++    if (busy || target === '') return
+     setBusy(true)
      setError('')
      let when
      try { when = timing() } catch { setError(t('Pick a date and time')); setBusy(false); return }
@@ -2066,7 +2070,14 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    }
    const toggleDay = day => setWeekdays(days => (days.includes(day) ? days.filter(item => item !== day) : [...days, day].sort()))
    return h('form', { className: 'bt-set-card bt-task-form', onSubmit: submit },
-@@ -153,6 +153,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+     h('label', { className: 'bt-set-row bt-bs-row' },
+       h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Send to'))),
+       h('select', { className: 'bt-select bt-task-bot', value: target, onChange: event => setTarget(event.target.value) },
++        h('option', { value: '' }, t('Pick a Bot or group chat')),
+         h('optgroup', { label: t('Bots') }, roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
+         roster.rooms.length > 0 ? h('optgroup', { label: t('Group chats') }, roster.rooms.map(room => h('option', { key: room.id, value: room.id }, room.name))) : null)),
+     h('label', { className: 'bt-set-row bt-bs-row' },
+@@ -153,6 +226,7 @@ function TaskForm({ roster, actions, sta
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
        h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
        h('div', { key: kind, className: 'bt-task-when bt-veil' },
@@ -2074,7 +2085,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +166,165 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,56 +240,165 @@ function TaskForm({ roster, actions, sta
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2180,9 +2191,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-+  ]
-+}
-+
+   ]
+ }
+ 
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
@@ -2204,7 +2215,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-   ]
++  ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -2224,8 +2235,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
- }
- 
++}
++
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -2257,7 +2268,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,13 +225,15 @@ export function ScheduleSummary({ bot, actions }) {
+@@ -225,13 +408,15 @@ export function ScheduleSummary({ bot, a
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -2274,7 +2285,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  .bt-task[data-done]{opacity:.6}
  .bt-task[data-busy]{opacity:.4}
  .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
-@@ -239,6 +239,12 @@ export const SCHEDULE_CSS = `
+@@ -239,6 +424,12 @@ export const SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
