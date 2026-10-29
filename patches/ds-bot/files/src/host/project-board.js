@@ -35,20 +35,27 @@ export function install(rt) {
     for (const task of Object.values(tasks)) {
       if (task === null || typeof task !== 'object') continue
       const board = boardOf(task)
-      const boardProject = board === null ? null : rt.projectOfMember?.(board.kind, board.id)
+      // The Project of the card's own board. A card that has a board already belongs somewhere; a
+      // board whose member is unbound names no Project, and only then may a run carry the card.
+      const ownProject = board === null ? null : rt.projectOfMember?.(board.kind, board.id)
       const ref = refs.get(task.id)
       const runProject = ref === undefined ? null : rt.projectOfMember?.('run', ref.runId)
-      // The card's own board wins; a card the run created has no Project of its own, so the
-      // run's binding carries it and the row is reported as coming from the workflow.
-      const source = boardProject?.id === id ? board.kind : runProject?.id === id ? 'workflow' : null
+      // The card's own board wins, and it is read whether or not it names this Project: a card
+      // bound elsewhere is not borrowed through the run that happened to consume it. The run
+      // carries only a card with no Project of its own, and it lends its id only to this board
+      // — #1713: both halves let the far Project's run put its card here and its id on our row.
+      const source = ownProject !== null
+        ? ownProject.id === id ? board.kind : null
+        : runProject?.id === id ? 'workflow' : null
       if (source === null) continue
+      const fromRun = ref !== undefined && (runProject === null || runProject.id === id)
       rows.push({
         id: task.id,
         source,
         column: columnOf(task),
         assignee: task.assignee ?? null,
         updatedAt: task.updatedAt ?? task.createdAt ?? null,
-        ...(ref === undefined ? {} : { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) }),
+        ...(fromRun ? { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) } : {}),
       })
     }
     return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || String(a.id).localeCompare(String(b.id)))
