@@ -36,7 +36,7 @@ export const EPHEMERAL_DENIED_TOOLS = Object.freeze([
 // EPHEMERAL_DENIED_TOOLS equal this list; a new tool is classified here or in the denied constant.
 export const EPHEMERAL_ALLOWED_TOOLS = Object.freeze([
   'list_bots', 'list_models', 'list_capabilities', 'bot_schedules', 'schedule_list',
-  'read_own_chat', 'read_group_chat', 'remember', 'forget',
+  'read_own_chat', 'read_group_chat', 'remember', 'forget', 'project_state',
 ])
 // One sentence that names the reason and no substitute route: the run Bot cannot become a team
 // member by finding another tool that does the same thing.
