@@ -193,7 +193,7 @@ if (gitAvailable) {
     const root = join(import.meta.dirname, '..', '..')
     const patchesDir = join(root, 'patches', 'ds-bot')
     const stored = readdirSync(patchesDir).filter(name => /^\d{4}-.*\.patch$/.test(name)).sort()
-    assert.equal(stored.length, 11)
+    assert.equal(stored.length, 10)
     const viaGit = mkdtempSync(join(tmpdir(), 'patch-git-'))
     const viaOurs = mkdtempSync(join(tmpdir(), 'patch-ours-'))
     try {

@@ -18,6 +18,13 @@ const STATE_VERSION = 2
 // The immutable id of the one owner a fresh or legacy team starts with.
 const OWNER_ID = 'owner-1'
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+// Ids arrive from the wire and the saved tables are plain objects, so `table[id]` answers
+// `Object.prototype` for `__proto__` (and `isRecord` accepts it): one own-key read for every
+// id lookup in this file, and a write can never reach a prototype either (#1704).
+const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
+// `table['__proto__'] = value` is swallowed by the prototype setter, so a binding written that
+// way would answer `ok: true` and store nothing: a write defines an own entry instead.
+const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
 
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt
@@ -361,20 +368,26 @@ export function install(rt) {
     error.code = code
     return error
   }
-  const projectOfId = id => (typeof id === 'string' && isRecord(state.projects[id]) ? state.projects[id] : null)
+  const projectOfId = (id) => {
+    if (typeof id !== 'string') return null
+    const project = ownEntry(state.projects, id)
+    return isRecord(project) ? project : null
+  }
   const requireProject = (id) => {
     const project = projectOfId(id)
     if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
     return project
   }
   const projectMemberOf = (kind, id) => {
-    if (kind === 'bot') return isRecord(state.bots[id]) ? state.bots[id] : null
-    if (kind === 'group') return isRecord(state.rooms[id]) ? state.rooms[id] : null
+    if (kind === 'bot' || kind === 'group') {
+      const member = ownEntry(kind === 'bot' ? state.bots : state.rooms, id)
+      return isRecord(member) ? member : null
+    }
     if (kind === 'run') return null
     throw projectRefusal(`Unknown Project member kind ${String(kind ?? '')}`)
   }
   const projectOfMember = (kind, id) => {
-    if (kind === 'run') return projectOfId(state.projectRuns[String(id ?? '')])
+    if (kind === 'run') return projectOfId(ownEntry(state.projectRuns, String(id ?? '')))
     const member = projectMemberOf(kind, id)
     return member === null ? null : projectOfId(member.projectId)
   }
@@ -410,7 +423,7 @@ export function install(rt) {
     const project = body.projectId === undefined || body.projectId === null ? null : requireProject(projectText(body.projectId, 200))
     if (kind === 'run') {
       if (project === null) delete state.projectRuns[id]
-      else state.projectRuns[id] = project.id
+      else setEntry(state.projectRuns, id, project.id)
       return project
     }
     const member = projectMemberOf(kind, id)
@@ -735,7 +748,8 @@ export function install(rt) {
   }
   const findBot = (ref) => {
     if (ref === undefined) return undefined
-    if (state.bots[ref]) return state.bots[ref].remote === undefined ? state.bots[ref] : undefined
+    const direct = ownEntry(state.bots, ref)
+    if (direct) return direct.remote === undefined ? direct : undefined
     const wanted = normalize(ref).replace(/^@/, '')
     // A friend's Bot (remote chat) is no team member, so a name never finds it.
     return Object.values(state.bots).find(bot => bot.remote === undefined && normalize(bot.name) === wanted)
@@ -743,7 +757,8 @@ export function install(rt) {
   // Every group chat whose id or name matches; callers refuse an ambiguous name.
   const findRooms = (ref) => {
     if (ref === undefined || ref === null) return []
-    if (state.rooms[ref]) return [state.rooms[ref]]
+    const direct = ownEntry(state.rooms, ref)
+    if (direct) return [direct]
     const wanted = normalize(unquote(ref))
     return Object.values(state.rooms).filter(room => normalize(room.name) === wanted)
   }

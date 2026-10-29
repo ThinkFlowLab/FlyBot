@@ -33,8 +33,18 @@ const seed = () => ({
   },
 })
 
-async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))) {
-  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+// #1713: a second Project whose run holds the first Project's card. Nothing here belongs in
+// `seed()`: the leak needs a run binding of the far Project on a card that has a board of its own.
+const splitSeed = () => {
+  const team = seed()
+  team.rooms.r2 = { id: 'r2', name: 'Garden', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {}, projectId: 'project-p2' }
+  team.projects['project-p2'] = { id: 'project-p2', name: 'P2', repository: 'ThinkFlowLab/FlyBot', defaultBranch: 'main', ownerUserId: 'owner-1', createdAt: 1, updatedAt: 1, status: 'active' }
+  team.projectRuns = { 'run-1': 'project-p1', 'run-2': 'project-p2' }
+  return team
+}
+
+async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-board-')), team = seed()) {
+  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(team))
   const ctx = fakeContext()
   let route
   const agents = new Map()
@@ -55,11 +65,17 @@ async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))) {
   provideFlyBot(ctx, rt.flybot)
   await rt.load()
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
+  // The same route with the member session cookie the browser sends, for the authz-on case.
+  const callAs = async (endpoint, payload, token) => (await route.fetch(new Request('http://localhost/api/bot', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-flybot-member-session': token },
+    body: JSON.stringify({ endpoint, payload }),
+  }))).json()
   const stop = async ({ keepHome = false } = {}) => {
     await ctx.dispose()
     if (!keepHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { call, stop, rt }
+  return { call, callAs, stop, rt }
 }
 
 const value = (response) => {
@@ -129,6 +145,47 @@ test('the project-board endpoint serves the same rows', async () => {
     assert.deepEqual(rows.map(row => row.id), ['task-group'])
     assert.equal(rows[0].runId, 'run-2')
     assert.deepEqual(value(await call('project-board', { id: 'project-nothing' })).tasks, [])
+  } finally {
+    off()
+    await stop()
+  }
+})
+
+// #1713 A: the endpoint is wired, the store is wired, only the allowlist line was missing, so a
+// signed-in deployment answered `bot/not-found: Unknown endpoint project-board` while every
+// sibling Project read answered ALLOW under the same actor.
+test('#1713: a signed-in actor may read the Project board, like the Project record', async () => {
+  const { rt, callAs, stop } = await start()
+  try {
+    // Enforced means someone has signed in on this host; before that every endpoint answers.
+    rt.authenticate = async (token) => (token === 'tok-a' ? { memberId: 'owner-1' } : null)
+    rt.state.authSessions = { 's-a': { memberId: 'owner-1', tokenHash: 'a' } }
+    const actor = { memberId: 'owner-1' }
+    for (const endpoint of ['projects', 'project-read', 'project-of', 'project-bind']) {
+      assert.equal(rt.authorize(actor, endpoint, { id: 'project-p1' }).ok, true, `${endpoint} answers ALLOW`)
+    }
+    const gate = rt.authorize(actor, 'project-board', { id: 'project-p1' })
+    assert.equal(gate.ok, true, `project-board is refused as ${gate.code}: ${gate.message}`)
+    // The same answer through the channel with the member cookie, not just the allowlist table.
+    const served = await callAs('project-board', { id: 'project-p1' }, 'tok-a')
+    assert.equal(served.ok, true, JSON.stringify(served))
+    assert.deepEqual(served.value.tasks.map(row => row.id), ['task-group'])
+  } finally { await stop() }
+})
+
+// #1713 B: a run of the far Project holds this Project's card; the card belongs to the Project of
+// its own board, and the far board must not inherit it (nor lend its run id to this one).
+test('#1713: a run binding never carries another Project’s card onto a board', async () => {
+  const { rt, stop } = await start(undefined, splitSeed())
+  const off = rt.onProjectProvider(() => [{ taskId: 'task-group', runId: 'run-2' }, { taskId: 'task-run', runId: 'run-1' }])
+  try {
+    const p1 = rt.projectBoard('project-p1')
+    // Rows come newest first, so the identity of a row is its id and source, not its position.
+    assert.deepEqual(p1.map(row => `${row.id}:${row.source}`).sort(), ['task-group:group', 'task-run:workflow'])
+    const group = p1.find(row => row.id === 'task-group')
+    assert.equal(group.runId, undefined, 'a row of this Project never carries another Project’s run id')
+    // Project 2 does not inherit a card whose own board already names Project 1.
+    assert.deepEqual(rt.projectBoard('project-p2'), [], 'the far Project lists no card of this one')
   } finally {
     off()
     await stop()

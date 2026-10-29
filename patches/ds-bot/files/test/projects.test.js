@@ -164,6 +164,73 @@ test('the record and its bindings survive a store re-open', async () => {
   }
 })
 
+// #1704: the id tables are plain objects, so `state.projects['__proto__']` and
+// `state.bots['__proto__']` answered `Object.prototype` (which `isRecord` accepts). An id that
+// is not an own key must resolve as absent, and no request may write `Object.prototype`.
+test('an id that is not an own key resolves as absent and never writes Object.prototype (#1704)', async () => {
+  const { call, stop, home } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'FlyBot', repository: 'ThinkFlowLab/FlyBot' }))
+    const protoRead = await call('project-read', { id: '__proto__' })
+    const protoBind = await call('project-bind', { kind: 'bot', id: '__proto__', projectId: project.id })
+    const protoOf = await call('project-of', { kind: 'bot', id: '__proto__' })
+    const unboundBot = await call('project-of', { kind: 'bot', id: 'b' })
+    const unboundGroup = await call('project-of', { kind: 'group', id: 'r1' })
+    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const observed = JSON.stringify({
+      'project-read __proto__': protoRead.value?.project ?? protoRead,
+      'project-bind __proto__': protoBind,
+      'project-of bot __proto__': protoOf.value?.project ?? protoOf,
+      'project-of unbound bot b': unboundBot.value?.project ?? unboundBot,
+      'project-of unbound group r1': unboundGroup.value?.project ?? unboundGroup,
+      'Object.prototype has own projectId': Object.hasOwn(Object.prototype, 'projectId'),
+      '({}).projectId': ({}).projectId ?? null,
+      'state.json bots.b has own projectId': Object.hasOwn(saved.bots.b, 'projectId'),
+    })
+    // #1710: project-read also answers canManage; an absent Project is never manageable.
+    assert.deepEqual(protoRead.value, { project: null, canManage: false }, observed)
+    assert.equal(protoBind.ok, false, observed)
+    assert.equal(protoBind.error?.code, 'bot/not-found', observed)
+    assert.deepEqual(protoOf.value, { project: null }, observed)
+    assert.deepEqual(unboundBot.value, { project: null }, observed)
+    assert.deepEqual(unboundGroup.value, { project: null }, observed)
+    assert.equal(Object.hasOwn(Object.prototype, 'projectId'), false, observed)
+    assert.equal(({}).projectId, undefined, observed)
+    assert.equal(Object.hasOwn(saved.bots.b, 'projectId'), false, observed)
+  } finally { await stop() }
+})
+
+// #1704, the run half (#1708): a run's binding lives in `state.projectRuns`, a plain object, so
+// `state.projectRuns['__proto__'] = id` was taken by the `__proto__` setter: the request answered
+// `ok: true` and nothing was stored, and `project-of {kind:'run'}` kept answering null. The write
+// now defines an own key, which is what the assertions below read; a plain assignment (or
+// `Reflect.set`) fails them even though the response still says ok.
+test('a run binds under an own key, not through the prototype chain (#1704)', async () => {
+  const { call, stop, home } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'FlyBot', repository: 'ThinkFlowLab/FlyBot' }))
+    const bound = await call('project-bind', { kind: 'run', id: '__proto__', projectId: project.id })
+    const of = await call('project-of', { kind: 'run', id: '__proto__' })
+    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const observed = JSON.stringify({
+      'project-bind run __proto__': bound,
+      'project-of run __proto__': of,
+      'state.projectRuns own __proto__': Object.hasOwn(saved.projectRuns, '__proto__'),
+      'state.projectRuns __proto__': saved.projectRuns['__proto__'] ?? null,
+      'state.projectRuns prototype is Object.prototype': Object.getPrototypeOf(saved.projectRuns) === Object.prototype,
+      'Object.prototype has own projectId': Object.hasOwn(Object.prototype, 'projectId'),
+      "'projectId' in {}": 'projectId' in {},
+    })
+    assert.equal(bound.ok, true, observed)
+    assert.equal(Object.hasOwn(saved.projectRuns, '__proto__'), true, observed)
+    assert.equal(saved.projectRuns['__proto__'], project.id, observed)
+    assert.equal(Object.getPrototypeOf(saved.projectRuns), Object.prototype, observed)
+    assert.equal(Object.hasOwn(Object.prototype, 'projectId'), false, observed)
+    assert.equal('projectId' in {}, false, observed)
+    assert.equal(value(of).project?.id, project.id, observed)
+  } finally { await stop() }
+})
+
 // #1710: the owner of a Project may manage it, a member reads the same board read-only, and the
 // refusal comes from the host action — not from a control the page happens to hide.
 test('the caller becomes the owner, and only the owner may change the Project', async () => {

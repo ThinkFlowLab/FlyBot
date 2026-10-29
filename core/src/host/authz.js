@@ -64,7 +64,10 @@ const TASK_ENDPOINTS = new Set([
   // write needs a signed-in actor, and it is an explicit entry rather than a `task-*` prefix.
   'workflow-save',
   // The Project record and its bindings (#1691) are team state: a signed-in actor may create,
-  // read and bind, like the task channel.
+  // read and bind, like the task channel. `project-board` (#1696) reads the same state and the
+  // same rows through the same bindings, so it sits with them; leaving it out was #1713 — every
+  // other wiring point was present, and a signed-in host answered `bot/not-found: Unknown
+  // endpoint project-board` while `project-read` and `project-of` answered ALLOW.
   'projects', 'project-create', 'project-read', 'project-bind', 'project-of', 'project-board',
 ])
 

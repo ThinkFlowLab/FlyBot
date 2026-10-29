@@ -762,6 +762,7 @@ var ZH = {
   Failed: "失败",
   Cancelled: "已取消",
   "A tool call": "一次工具调用",
+  "A workflow": "一个工作流",
   "1 message waits for your approval": "1 条消息等你批准",
   "{count} messages wait for your approval": "{count} 条消息等你批准",
   "Approve it in the chat": "请在对话里批准",
@@ -6747,7 +6748,8 @@ var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
   "delete_capability",
   "attach_capability",
   "detach_capability",
-  "track_links"
+  "track_links",
+  "project_state"
 ]);
 var isSilentRegistration = (name) => typeof name === "string" && SILENT_REGISTRATION_TOOLS.has(name);
 var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName));
@@ -7355,7 +7357,7 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
     return () => clearTimeout(timer);
   }, [wantKey, shown]);
   const [phase, setPhase] = (0, import_react10.useState)(null);
-  const endedAt = (0, import_react10.useRef)(0);
+  const endedAt2 = (0, import_react10.useRef)(0);
   const shift = (0, import_react10.useRef)(null);
   const leaving = (0, import_react10.useRef)(false);
   leaving.current = phase !== null && !visible;
@@ -7378,7 +7380,7 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   }, [visible]);
   (0, import_react10.useLayoutEffect)(() => {
     if (phase !== null) return;
-    endedAt.current = Date.now();
+    endedAt2.current = Date.now();
     setShown(null);
     const before = shift.current;
     shift.current = null;
@@ -7390,7 +7392,7 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   (0, import_react10.useEffect)(() => {
     if (!running) actions.clearLive(sessionId);
   }, [running, sessionId]);
-  useRowEntrances(() => leaving.current || Date.now() - endedAt.current < 300);
+  useRowEntrances(() => leaving.current || Date.now() - endedAt2.current < 300);
   const [now, setNow] = (0, import_react10.useState)(Date.now);
   (0, import_react10.useEffect)(() => {
     if (phase !== "in") return void 0;
@@ -7762,6 +7764,34 @@ function useTasks(actions) {
   }, []);
   return tasks;
 }
+var workflowsOf = (settled) => settled?.phase === "ready" && Array.isArray(settled.pack?.workflows) ? settled.pack.workflows : [];
+var sharedWorkflows = [];
+var workflowListeners = /* @__PURE__ */ new Set();
+var workflowPoll = null;
+function publishWorkflows(settled) {
+  sharedWorkflows = workflowsOf(settled);
+  for (const listener of workflowListeners) listener(sharedWorkflows);
+}
+function useWorkflows(actions) {
+  const [workflows, setWorkflows] = (0, import_react13.useState)(sharedWorkflows);
+  (0, import_react13.useEffect)(() => {
+    workflowListeners.add(setWorkflows);
+    if (workflowPoll === null && typeof actions?.workflowState === "function") {
+      const load = () => Promise.resolve(actions.workflowState()).then(publishWorkflows, () => {
+      });
+      load();
+      workflowPoll = setInterval(load, POLL_MS2);
+    }
+    return () => {
+      workflowListeners.delete(setWorkflows);
+      if (workflowListeners.size === 0 && workflowPoll !== null) {
+        clearInterval(workflowPoll);
+        workflowPoll = null;
+      }
+    };
+  }, []);
+  return workflows;
+}
 var ownBot = (roster, id) => {
   const bot = roster.byId?.[id];
   if (bot === void 0 || bot.remote) return void 0;
@@ -7808,7 +7838,8 @@ function toolCalls(card, { roster, work }) {
   }
   return newest?.calls ?? 0;
 }
-function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() }) {
+var endedAt = (run) => [run?.finishedAt, run?.updatedAt, run?.at].find((at) => typeof at === "number");
+function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], now = Date.now() }) {
   const needs = [];
   const progress = [];
   const done = [];
@@ -7941,6 +7972,35 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
     else if (task.status === "open" || task.status === "claimed" || task.status === "working") progress.push({ ...card, status: "task", since: task.createdAt });
     else if ((task.status === "accepted" || task.status === "cancelled") && fresh(task.updatedAt)) done.push({ ...card, status: task.status === "accepted" ? "done" : "cancelled" });
   }
+  for (const graph of Array.isArray(workflows) ? workflows : []) {
+    if (graph === null || typeof graph !== "object") continue;
+    const seenRuns = /* @__PURE__ */ new Set();
+    let latest;
+    for (const run of [...graph.runs ?? [], ...graph.history ?? []]) {
+      if (run === null || typeof run !== "object" || run.status !== "failed" || seenRuns.has(run.id)) continue;
+      seenRuns.add(run.id);
+      const at2 = endedAt(run);
+      if (!fresh(at2)) continue;
+      if (latest === void 0 || at2 > endedAt(latest)) latest = run;
+    }
+    if (latest === void 0) continue;
+    const at = endedAt(latest);
+    const name = typeof graph.name === "string" && graph.name.trim() !== "" ? graph.name.trim() : String(graph.id ?? t("A workflow"));
+    const nodeName = typeof latest.failure?.nodeName === "string" ? latest.failure.nodeName.trim() : "";
+    const reason = typeof latest.failure?.text === "string" && latest.failure.text !== "" ? latest.failure.text : typeof latest.failure?.code === "string" ? latest.failure.code : "";
+    const caller = typeof latest.task?.callerBotId === "string" ? ownBot(roster, latest.task.callerBotId) : void 0;
+    needs.push({
+      id: `workflow:${graph.id ?? name}:${latest.id}`,
+      kind: "workflow",
+      status: "failed",
+      at,
+      workflow: { id: graph.id ?? "", name },
+      run: { id: latest.id },
+      title: nodeName === "" ? name : `${name} · ${nodeName}`,
+      reason,
+      ...caller === void 0 ? {} : { bot: caller }
+    });
+  }
   if (sessions?.byId) {
     for (const bot of roster.bots ?? []) {
       if (ownBot(roster, bot.id) === void 0 || work.bots?.[bot.id] !== void 0 || waitingAt.has(`${bot.id}|`)) continue;
@@ -7960,7 +8020,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() 
   }
   return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
 }
-var needsCount = (roster, work, tasks, now) => inboxModel({ roster, work, tasks, now }).needs.length;
+var needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length;
 function visibleNeeds(model, answered) {
   return { ...model, needs: model.needs.filter((card) => !answered?.[card.id]) };
 }
@@ -8108,7 +8168,8 @@ function InboxRow({ wide, useRoster, useWork, useUi, actions }) {
   const work = useWork ? useWork((value) => value) : {};
   const open = useUi ? useUi((value) => Boolean(value.inbox)) : false;
   const tasks = useTasks(actions);
-  const count = needsCount(roster, work, tasks);
+  const workflows = useWorkflows(actions);
+  const count = needsCount(roster, work, tasks, void 0, workflows);
   const label = count > 0 ? t("Inbox, {count} need you", { count }) : t("Inbox");
   return (0, import_react13.createElement)(
     "button",
@@ -8148,7 +8209,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const unconfirmed = card.kind === "task" && card.task?.writeBack?.state === "unconfirmed" ? card.task.writeBack : void 0;
   return (0, import_react13.createElement)(
     "div",
-    { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status },
+    { className: "bt-inbox-card", role: "group", "aria-label": `${t(STATUSES[card.status].label)}: ${card.title}`, "data-status": card.status, "data-run": card.kind === "workflow" ? card.run?.id : void 0 },
     (0, import_react13.createElement)("span", { className: "bt-inbox-ava" }, card.bot ? (0, import_react13.createElement)(BotAvatar, { bot: card.bot, size: 28, badge: false, live: false }) : card.room ? (0, import_react13.createElement)(RoomAvatar, { room: card.room, roster, size: 28 }) : null),
     (0, import_react13.createElement)(
       "span",
@@ -8204,10 +8265,19 @@ function useNow2(ms) {
   }, [ms]);
   return now;
 }
+function openCard(actions, card) {
+  actions.closeInbox();
+  if (card?.kind === "workflow") {
+    actions.openSettings("workflow");
+    return;
+  }
+  actions.openSession(card.chat);
+}
 function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {
   const work = useWork((value) => value);
   const sessions = useSessions((value) => value);
   const tasks = useTasks(actions);
+  const workflows = useWorkflows(actions);
   const now = useNow2(3e4);
   const [answered, setAnswered] = (0, import_react13.useState)({});
   const [busy, setBusy] = (0, import_react13.useState)("");
@@ -8220,7 +8290,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
     const timer = setTimeout(() => setFeedback(""), FEEDBACK_MS);
     return () => clearTimeout(timer);
   }, [feedback]);
-  const model = inboxModel({ roster, work, tasks, sessions, now });
+  const model = inboxModel({ roster, work, tasks, sessions, workflows, now });
   const groups = visibleNeeds(model, answered);
   const answer = (card, choice) => {
     setBusy(card.id);
@@ -8236,10 +8306,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
       setFeedback(card.kind === "approval" ? choice === "allow" ? t("Allowed once for {name}", { name }) : choice === "always-bot" ? t("Always allowed for {name}", { name }) : choice === "always-room" ? t("Always allowed in this group") : t("Rejected for {name}", { name }) : t("Answered"));
     }, (failure) => setErrors((value) => ({ ...value, [card.id]: hostText(failure?.message ?? String(failure)) }))).finally(() => setBusy(""));
   };
-  const open = (card) => {
-    actions.closeInbox();
-    actions.openSession(card.chat);
-  };
+  const open = (card) => openCard(actions, card);
   return (0, import_react13.createElement)(
     "div",
     { className: "bt-mem-layer bt-inbox-layer", "data-leaving": leaving || void 0 },
@@ -20748,6 +20815,7 @@ function apply(ctx) {
   actions.repoStars = () => call("repo-stars");
   actions.workflows = (payload) => call("workflows", payload);
   actions.workflowSave = (payload) => call("workflow-save", payload);
+  actions.workflowState = () => readWorkflows(call);
   actions.noteTurnTime = (sessionId, turn, key, time) => {
     if (sessionId === void 0 || !Number.isFinite(turn) || !Number.isFinite(time)) return;
     turnClock.set((state) => {

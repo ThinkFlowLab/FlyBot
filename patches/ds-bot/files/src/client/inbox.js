@@ -87,6 +87,39 @@ export function useTasks(actions) {
   return tasks
 }
 
+// #1706: the workflow pack, read through the shell's own action so the page's 8s
+// settle and its missing-plugin mapping (workflows.js readWorkflows) are the only
+// readers. Only a `ready` read has runs to offer; a missing plugin, a host error or
+// a timeout is no news and no error line. One poll feeds the row and the dialog, so
+// the badge and the list cannot disagree.
+export const workflowsOf = settled => (settled?.phase === 'ready' && Array.isArray(settled.pack?.workflows) ? settled.pack.workflows : [])
+let sharedWorkflows = []
+const workflowListeners = new Set()
+let workflowPoll = null
+function publishWorkflows(settled) {
+  sharedWorkflows = workflowsOf(settled)
+  for (const listener of workflowListeners) listener(sharedWorkflows)
+}
+export function useWorkflows(actions) {
+  const [workflows, setWorkflows] = useState(sharedWorkflows)
+  useEffect(() => {
+    workflowListeners.add(setWorkflows)
+    if (workflowPoll === null && typeof actions?.workflowState === 'function') {
+      const load = () => Promise.resolve(actions.workflowState()).then(publishWorkflows, () => {})
+      load()
+      workflowPoll = setInterval(load, POLL_MS)
+    }
+    return () => {
+      workflowListeners.delete(setWorkflows)
+      if (workflowListeners.size === 0 && workflowPoll !== null) {
+        clearInterval(workflowPoll)
+        workflowPoll = null
+      }
+    }
+  }, [])
+  return workflows
+}
+
 // My own Bots only: a friend's Bot, and on a shared host another member's, stay out (#349 step 1).
 const ownBot = (roster, id) => {
   const bot = roster.byId?.[id]
@@ -150,11 +183,18 @@ function toolCalls(card, { roster, work }) {
   return newest?.calls ?? 0
 }
 
+// When a finished workflow run ended: `runs` is a publicRun (finishedAt), while a
+// `history` row names the end in its own `at`.
+const endedAt = run => [run?.finishedAt, run?.updatedAt, run?.at].find(at => typeof at === 'number')
+
 /**
  * The three groups of cards, newest first in each.
  * `sessions` is the shell's Session list ({ byId }); `now` the current time.
+ * `workflows` is the workflow pack's graph list (workflow/state), or [] when that
+ * read was not ready: a graph carries its live and failed runs in `runs` and its
+ * finished ones in `history` (#1706).
  */
-export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date.now() }) {
+export function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], now = Date.now() }) {
   const needs = []
   const progress = []
   const done = []
@@ -255,6 +295,41 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
     else if (task.status === 'open' || task.status === 'claimed' || task.status === 'working') progress.push({ ...card, status: 'task', since: task.createdAt })
     else if ((task.status === 'accepted' || task.status === 'cancelled') && fresh(task.updatedAt)) done.push({ ...card, status: task.status === 'accepted' ? 'done' : 'cancelled' })
   }
+  // A workflow run that failed (#1706). The plugin keeps that failure in its own
+  // state, so the Inbox reads it from the same pack the Workflows page gets. One
+  // card per graph — its newest failed run inside the 7-day window Done uses; a
+  // graph's older failures stay on that graph's Runs tab. A run is news even when
+  // its task card is gone, so `history` counts as much as `runs`.
+  for (const graph of Array.isArray(workflows) ? workflows : []) {
+    if (graph === null || typeof graph !== 'object') continue
+    const seenRuns = new Set()
+    let latest
+    for (const run of [...(graph.runs ?? []), ...(graph.history ?? [])]) {
+      if (run === null || typeof run !== 'object' || run.status !== 'failed' || seenRuns.has(run.id)) continue
+      seenRuns.add(run.id)
+      const at = endedAt(run)
+      if (!fresh(at)) continue
+      if (latest === undefined || at > endedAt(latest)) latest = run
+    }
+    if (latest === undefined) continue
+    const at = endedAt(latest)
+    const name = typeof graph.name === 'string' && graph.name.trim() !== '' ? graph.name.trim() : String(graph.id ?? t('A workflow'))
+    const nodeName = typeof latest.failure?.nodeName === 'string' ? latest.failure.nodeName.trim() : ''
+    const reason = typeof latest.failure?.text === 'string' && latest.failure.text !== ''
+      ? latest.failure.text
+      : (typeof latest.failure?.code === 'string' ? latest.failure.code : '')
+    // Attribution only: the card has no chat or place to open, and a `chat` would
+    // make InboxCard preview that session and send Open into it.
+    const caller = typeof latest.task?.callerBotId === 'string' ? ownBot(roster, latest.task.callerBotId) : undefined
+    needs.push({
+      id: `workflow:${graph.id ?? name}:${latest.id}`, kind: 'workflow', status: 'failed', at,
+      workflow: { id: graph.id ?? '', name },
+      run: { id: latest.id },
+      title: nodeName === '' ? name : `${name} · ${nodeName}`,
+      reason,
+      ...(caller === undefined ? {} : { bot: caller }),
+    })
+  }
   // A Bot's chat whose last turn finished in the last 7 days, with its last line.
   if (sessions?.byId) {
     for (const bot of roster.bots ?? []) {
@@ -278,7 +353,8 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, now = Date
 }
 
 // The row's badge: how many cards need me. The Done list needs no Session list for this.
-export const needsCount = (roster, work, tasks, now) => inboxModel({ roster, work, tasks, now }).needs.length
+// It takes the same `workflows` the dialog does, so a failed run is counted where it is listed.
+export const needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length
 
 // Cards the owner already answered leave the Needs you list. The dialog keeps that
 // set until the next roster poll drops the underlying record.
@@ -421,7 +497,8 @@ export function InboxRow({ wide, useRoster, useWork, useUi, actions }) {
   const work = useWork ? useWork(value => value) : {}
   const open = useUi ? useUi(value => Boolean(value.inbox)) : false
   const tasks = useTasks(actions)
-  const count = needsCount(roster, work, tasks)
+  const workflows = useWorkflows(actions)
+  const count = needsCount(roster, work, tasks, undefined, workflows)
   const label = count > 0 ? t('Inbox, {count} need you', { count }) : t('Inbox')
   return h('button', {
     type: 'button', className: 'bt-row bt-inbox-row', 'aria-label': label, title: wide ? undefined : label,
@@ -457,7 +534,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
   const target = card.kind === 'task' ? card.task?.target?.href : undefined
   const writeBack = card.kind === 'task' && card.task?.writeBack?.state === 'failed' ? card.task.writeBack : undefined
   const unconfirmed = card.kind === 'task' && card.task?.writeBack?.state === 'unconfirmed' ? card.task.writeBack : undefined
-  return h('div', { className: 'bt-inbox-card', role: 'group', 'aria-label': `${t(STATUSES[card.status].label)}: ${card.title}`, 'data-status': card.status },
+  return h('div', { className: 'bt-inbox-card', role: 'group', 'aria-label': `${t(STATUSES[card.status].label)}: ${card.title}`, 'data-status': card.status, 'data-run': card.kind === 'workflow' ? card.run?.id : undefined },
     h('span', { className: 'bt-inbox-ava' }, card.bot ? h(BotAvatar, { bot: card.bot, size: 28, badge: false, live: false }) : card.room ? h(RoomAvatar, { room: card.room, roster, size: 28 }) : null),
     h('span', { className: 'bt-inbox-copy' },
       h('span', { className: 'bt-inbox-top' },
@@ -496,10 +573,22 @@ function useNow(ms) {
   return now
 }
 
+// Open on a card. A failed workflow run has no chat to land in, so it opens the
+// Workflow graphs page in settings instead (#1706); every other card keeps the chat.
+export function openCard(actions, card) {
+  actions.closeInbox()
+  if (card?.kind === 'workflow') {
+    actions.openSettings('workflow')
+    return
+  }
+  actions.openSession(card.chat)
+}
+
 export function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {
   const work = useWork(value => value)
   const sessions = useSessions(value => value)
   const tasks = useTasks(actions)
+  const workflows = useWorkflows(actions)
   const now = useNow(30_000)
   // Answers just given: their cards leave at once, and one line says what happened.
   const [answered, setAnswered] = useState({})
@@ -513,7 +602,7 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
     const timer = setTimeout(() => setFeedback(''), FEEDBACK_MS)
     return () => clearTimeout(timer)
   }, [feedback])
-  const model = inboxModel({ roster, work, tasks, sessions, now })
+  const model = inboxModel({ roster, work, tasks, sessions, workflows, now })
   const groups = visibleNeeds(model, answered)
   const answer = (card, choice) => {
     setBusy(card.id)
@@ -535,10 +624,7 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
       }, failure => setErrors(value => ({ ...value, [card.id]: hostText(failure?.message ?? String(failure)) })))
       .finally(() => setBusy(''))
   }
-  const open = (card) => {
-    actions.closeInbox()
-    actions.openSession(card.chat)
-  }
+  const open = (card) => openCard(actions, card)
   return h('div', { className: 'bt-mem-layer bt-inbox-layer', 'data-leaving': leaving || undefined },
     h('div', { className: 'bt-scrim bt-mem-scrim', onMouseDown: close }),
     h('div', { className: 'bt-mem bt-inbox', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'bt-inbox-heading' },

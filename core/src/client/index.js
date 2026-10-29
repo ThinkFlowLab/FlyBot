@@ -33,6 +33,7 @@ import { FOLDER_CSS } from './folder-menu.js'
 import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
 import { INBOX_CSS } from './inbox.js'
+import { readWorkflows } from './workflows.js'
 import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
 import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
@@ -734,6 +735,9 @@ export function apply(ctx) {
   // a file or GitHub itself, and workflow-save is the endpoint authz allows.
   actions.workflows = (payload) => call('workflows', payload)
   actions.workflowSave = (payload) => call('workflow-save', payload)
+  // The Inbox lists failed workflow runs (#1706). It reads the same pack the Workflows page does,
+  // with the same settle, so a missing plugin is "no runs", not an Inbox error line.
+  actions.workflowState = () => readWorkflows(call)
   actions.noteTurnTime = (sessionId, turn, key, time) => {
     if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
     turnClock.set((state) => {
