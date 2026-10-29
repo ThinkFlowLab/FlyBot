@@ -961,8 +961,6 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 diff --git a/src/host/delivery.js b/src/host/delivery.js
 --- a/src/host/delivery.js
 +++ b/src/host/delivery.js
---- a/src/host/delivery.js
-+++ b/src/host/delivery.js
 @@ -2,6 +2,61 @@
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -1025,7 +1023,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
  
  export function install(rt) {
    const { ctx, state } = rt
-@@ -10,27 +65,98 @@
+@@ -10,27 +10,98 @@ export function install(rt) {
      const resolved = await ctx.sessionController.resolveAgent(sessionId)
      if ('error' in resolved) throw new Error(resolved.error?.message ?? 'Session unavailable')
      rt.hideBlockingQuestion(resolved.agent)
@@ -1126,7 +1124,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
    // `sessionId` defaults to the recipient's own chat; group turns name its group Session.
    // `deferred`: a request the Bot already read mid-turn, handed back to answer in a
    // turn of its own; its exchange was recorded when it first arrived. `resumed` and
-@@ -38,13 +164,25 @@
+@@ -38,13 +38,25 @@ export function install(rt) {
    // text (resume.js, turns.js), and `resent` is a message a shutdown cancelled; their
    // exchange is recorded already too. `askedBy` is the member whose @mention called a
    // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
@@ -1155,7 +1153,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      // Session events reject `undefined` members, so optional fields are omitted instead.
      const source = {
        kind: SOURCE_KIND,
-@@ -53,6 +191,8 @@
+@@ -53,6 +53,8 @@ export function install(rt) {
        exchangeId,
        senderName: fromName,
        hop,
@@ -1164,7 +1162,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
        ...(fromId ? { senderSessionId: fromId } : {}),
        ...(replyTo ? { replyTo } : {}),
        ...(roomId ? { roomId } : {}),
-@@ -60,20 +200,29 @@
+@@ -60,20 +60,29 @@ export function install(rt) {
        ...(deferred ? { deferred: true } : {}),
        ...(resumed ? { resumed: true } : {}),
        ...(retried ? { retried: true } : {}),

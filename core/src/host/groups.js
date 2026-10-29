@@ -498,6 +498,12 @@ export function install(rt) {
         if (!takePosted(room.id, line.text)) appendRoom(room, rt.authoredRoomLine?.(room, { who: line.authorName || 'User', text: line.text, authorId: line.authorId, authorKind: line.authorKind || 'human' }) ?? { who: 'User', text: line.text })
         round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
       }
+      // This round answers the line, so its pending copy leaves the relay's queue for
+      // the same reason as in speakMidLine (#1267): the next round must not open it
+      // again. Without this a line the let-go kept queued (#1664) is answered twice.
+      const pending = rt.roomInbox?.get(room.id)
+      const at = pending?.findIndex(item => item.botId === undefined && item.text === line.text) ?? -1
+      if (at !== -1) rt.roomInbox.set(room.id, pending.toSpliced(at, 1))
       const { all, found } = mentionsIn(line.text, members)
       const note = all || found.length > 0 ? 'the user mentioned you' : 'new message from the user'
       let speakers = openingSpeakers(room, { text: line.text })
@@ -559,6 +565,9 @@ export function install(rt) {
     let stopped = false
     const take = () => {
       if (stopped) return
+      // #1664: the room let this turn go, so it no longer answers the line. Leave it
+      // in the Session's queue and in `rt.roomInbox`: the round that runs next opens it.
+      if (rt.roomTurnStopped?.(exchangeId)) return
       for (const line of waitingLines(agent)) {
         if (ROOM_STOP.test(String(line.text).trim())) {
           stopped = true

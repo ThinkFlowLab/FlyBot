@@ -410,3 +410,44 @@ test('a result that names its call id at the top of data still closes the wait',
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(b.cancels.length, 0)
 })
+
+test('a room line sent while the member is let go is not consumed before its turn ends (#1664)', async (t) => {
+  const host = await roomHost(t)
+  const line = 'Did the deploy finish?'
+
+  const round = host.relay('d1')
+  await settle(() => host.agentOf('gb').calls.length === 1)
+  await host.takeTurn('gb', 1, host.agentOf('gb').calls[0])
+
+  await host.emit('gb', { type: 'tool/call', time: Date.now() - 61_000, data: { callId: 'k2', name: 'bash', arguments: '{"command":"npm test"}' } })
+  // The person types into the room; production puts the line in the room Session's
+  // queue as well as in `rt.roomInbox` (channel.send = postRoomMessage + followup).
+  await host.emit('r1', { type: 'user/message', data: { source: { kind: 'user', authorKind: 'human', authorName: 'You' }, content: [{ type: 'text', text: line }] } })
+  host.agentOf('r1').followup({ id: 'u-line', content: [{ type: 'text', text: line }], source: { kind: 'user', authorKind: 'human', authorName: 'You' } })
+  await settle(() => host.agentOf('gb').cancelled.length === 1)
+
+  // The member's turn does not end at once. While it is still open, the 100 ms line
+  // watcher must leave the line alone: both copies stay queued, nothing is steered in.
+  await new Promise(resolve => setTimeout(resolve, 300))
+  assert.deepEqual(host.rt.roomInbox.get('r1')?.map(item => item.text), [line], 'the room queue still holds the line')
+  assert.deepEqual(host.agentOf('r1').inbox.nextTurn.map(message => textOf(message)).filter(text => text.includes(line)), [line], 'the room Session queue still holds the line')
+  assert.equal(host.agentOf('gb').inbox.nextStep.filter(message => textOf(message).includes(line)).length, 0, 'the line was not steered into the stopping member')
+
+  await host.emit('gb', { type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'ds-bot/stopped' } } } })
+  // The room still owes the person an answer: the member is asked with the line, and
+  // the answer reaches the room, once.
+  await settle(() => host.agentOf('gb').calls.length >= 2)
+  const asked = host.agentOf('gb').calls.at(-1)
+  assert.match(textOf(asked), new RegExp(line), 'the member was asked with the line that was sent during the let-go')
+  assert.equal(host.agentOf('gb').inbox.nextStep.filter(message => textOf(message).includes(line)).length, 0, 'still no steer')
+  await host.takeTurn('gb', 2, asked)
+  await host.emit('gb', { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Yes, it finished.' }] } } })
+  await host.emit('gb', { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  const first = JSON.parse(await round.done)
+  assert.ok(first.replies.some(reply => reply.text === 'Yes, it finished.'), 'the round answered the line')
+  assert.equal(first.replies.filter(reply => reply.text === line).length, 1, 'the person\'s line is answered once')
+
+  // The line is not left orphaned in the room queue: the round that answered it
+  // took its queued copy, so a later round does not answer it a second time.
+  assert.deepEqual(host.rt.roomInbox.get('r1') ?? [], [], 'the round that answered it took its queued copy')
+})

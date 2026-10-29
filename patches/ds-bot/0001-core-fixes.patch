@@ -1910,7 +1910,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
-@@ -47,7 +50,8 @@ function weekdayNames(days) {
+@@ -47,7 +47,8 @@ function weekdayNames(days) {
  function everyText(seconds) {
    if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
    if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
@@ -1920,7 +1920,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // How often a task runs, in the user's words.
-@@ -70,9 +74,22 @@ export function timingText(task) {
+@@ -70,9 +70,22 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -1945,7 +1945,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
    useEffect(() => {
-@@ -85,14 +102,34 @@ function TaskRow({ task, actions, onView
+@@ -85,14 +85,34 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
      setBusy(true)
      void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
    }
@@ -1982,13 +1982,14 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      h('button', {
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
-@@ -106,41 +143,77 @@ function inAnHour() {
+@@ -106,41 +106,77 @@ function inAnHour() {
    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
  }
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2012,8 +2013,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2077,7 +2077,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          h('optgroup', { label: t('Bots') }, roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
          roster.rooms.length > 0 ? h('optgroup', { label: t('Group chats') }, roster.rooms.map(room => h('option', { key: room.id, value: room.id }, room.name))) : null)),
      h('label', { className: 'bt-set-row bt-bs-row' },
-@@ -153,6 +226,7 @@ function TaskForm({ roster, actions, sta
+@@ -153,6 +153,7 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
        h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
        h('div', { key: kind, className: 'bt-task-when bt-veil' },
@@ -2085,7 +2085,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +240,165 @@ function TaskForm({ roster, actions, sta
+@@ -166,56 +166,165 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2268,7 +2268,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,13 +408,15 @@ export function ScheduleSummary({ bot, a
+@@ -225,13 +225,15 @@ export function ScheduleSummary({ bot, actions }) {
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
@@ -2285,7 +2285,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  .bt-task[data-done]{opacity:.6}
  .bt-task[data-busy]{opacity:.4}
  .bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
-@@ -239,6 +424,12 @@ export const SCHEDULE_CSS = `
+@@ -239,6 +239,12 @@ export const SCHEDULE_CSS = `
  .bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
  .bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
  .bt-task-remove svg{width:14px;height:14px}
@@ -5763,8 +5763,6 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
---- a/src/host/turns.js
-+++ b/src/host/turns.js
 @@ -3,8 +3,31 @@
  //
  // Turn tracking: which turns were triggered by another Bot, and what they said.
@@ -5797,7 +5795,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +47,7 @@
+@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -5806,7 +5804,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -48,12 +71,20 @@
+@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
  
  export function install(rt) {
    const { ctx, state } = rt
@@ -5828,7 +5826,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +101,60 @@
+@@ -70,13 +70,60 @@ export function install(rt) {
      })
    }
  
@@ -5891,7 +5889,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const roomInbox = new Map()
    const queueRoomMessage = (roomId, item) => roomInbox.set(roomId, [...(roomInbox.get(roomId) ?? []), item])
    // Member turns of a group round the user stopped: what they end with stays out of the group.
-@@ -162,17 +240,31 @@
+@@ -162,17 +162,31 @@ export function install(rt) {
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
    const expectsReply = info => info.role === 'request' || info.role === 'stopped'
@@ -5924,7 +5922,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +288,33 @@
+@@ -196,7 +196,33 @@ export function install(rt) {
      return merged
    }
  
@@ -5959,7 +5957,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const workView = () => {
      const bots = {}
      for (const [id, entry] of live) {
-@@ -204,7 +322,9 @@
+@@ -204,7 +204,9 @@ export function install(rt) {
        const owner = rt.groupOwners.get(id)
        const botId = owner?.botId ?? rt.chatOwners.get(id)
        if (botId === undefined || (owner !== undefined && bots[botId] !== undefined)) continue
@@ -5970,7 +5968,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
      return bots
    }
-@@ -221,6 +341,7 @@
+@@ -221,6 +221,7 @@ export function install(rt) {
          botId: owner.botId,
          since: entry.since,
          ...(entry.tool ? { tool: entry.tool } : {}),
@@ -5978,7 +5976,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +359,54 @@
+@@ -238,6 +238,54 @@ export function install(rt) {
      return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
    }
  
@@ -6033,7 +6031,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
      const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
-@@ -266,6 +435,7 @@
+@@ -266,6 +266,7 @@ export function install(rt) {
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
          startCall(id, entry, event.data?.callId, name, String(event.data?.arguments ?? ''))
@@ -6041,7 +6039,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
-@@ -280,7 +450,9 @@
+@@ -280,7 +280,9 @@ export function install(rt) {
          endCall(id, entry, event.data?.subCallId)
          break
        case 'tool/result':
@@ -6052,7 +6050,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          break
        case 'turn/start':
          setActivity(id, 'thinking')
-@@ -288,11 +460,17 @@
+@@ -288,11 +288,17 @@ export function install(rt) {
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
@@ -6070,7 +6068,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          if (entry.pending !== undefined) {
            claimTrigger(id, entry, entry.pending)
            entry.pending = undefined
-@@ -300,6 +478,14 @@
+@@ -300,6 +300,14 @@ export function install(rt) {
          break
        case 'user/message': {
          const source = event.data?.source
@@ -6085,7 +6083,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
-@@ -331,15 +517,27 @@
+@@ -331,15 +331,27 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
              ...(source.quiet ? { quiet: true } : {}),
@@ -6115,7 +6113,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (entry.turn === undefined) entry.pending = source
            else if (!opened) claimTrigger(id, entry, source)
            else if (expectsReply(source) && !answersUser(source)
-@@ -363,12 +561,15 @@
+@@ -363,12 +363,15 @@ export function install(rt) {
            if (rt.roomOf(id) && source.kind === 'user') {
              const images = (Array.isArray(event.data.content) ? event.data.content : [])
                .filter(block => block?.type === 'image' && !block.offloaded).map(block => block.attachment)
@@ -6136,7 +6134,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              delete state.questions[id]
              void rt.save().catch(() => {})
            }
-@@ -386,11 +587,17 @@
+@@ -386,11 +386,17 @@ export function install(rt) {
        case 'turn/end': {
          setActivity(id, undefined)
          const info = entry.info
@@ -6154,7 +6152,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          entry.turn = undefined
          entry.info = undefined
          entry.texts = []
-@@ -399,19 +606,47 @@
+@@ -399,19 +399,47 @@ export function install(rt) {
          entry.since = undefined
          entry.tool = undefined
          entry.calls = undefined
@@ -6203,7 +6201,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +654,24 @@
+@@ -419,6 +419,24 @@ export function install(rt) {
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
@@ -6228,7 +6226,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +687,7 @@
+@@ -434,6 +434,7 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6236,7 +6234,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +700,7 @@
+@@ -446,6 +446,7 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -6244,7 +6242,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +715,14 @@
+@@ -460,14 +460,14 @@ export function install(rt) {
            } else if (!stopped && reason?.kind !== 'aborted') {
              // The round moved on without this member; how its turn ends still reaches the group.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
@@ -6261,7 +6259,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,13 +743,27 @@
+@@ -488,13 +488,32 @@ export function install(rt) {
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -6288,7 +6286,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    return found
 +  }
 +
-+  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
++  // #1664: a member turn the room let go is stopped from the moment `stopRoomTurn`
++  // notes the exchange, which is before its `turn/end` arrives. The room's line
++  // watcher asks this so it leaves the person's line queued for the next round.
++  const roomTurnStopped = exchangeId => stoppedRoomTurns.has(exchangeId)
++
++  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn, roomTurnStopped })
  }
 diff --git a/src/host/usage.js b/src/host/usage.js
 --- a/src/host/usage.js
@@ -8441,7 +8444,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
-@@ -24,9 +24,8 @@
+@@ -24,9 +24,8 @@ const seed = () => ({
    revision: 0,
  })
  
@@ -8453,7 +8456,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    const ctx = fakeContext()
    const agents = new Map()
    const agentOf = (sessionId) => {
-@@ -71,9 +70,10 @@
+@@ -71,9 +71,10 @@ async function start() {
    const tool = (name, args, sessionId, exec = {}) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId }, ...exec })
    const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
    const askApproval = (sessionId, extra = {}, next = () => 'from-dsh') => ctx.listeners.get('approval/request')[0]({ agent: { session: { id: sessionId } }, toolName: 'pwsh', reason: 'escalate sandbox', ...extra }, next)
@@ -8466,7 +8469,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
-@@ -237,14 +237,14 @@
+@@ -237,14 +237,14 @@ test('a member that fails after the round moved on shows the failure in the grou
    const [approval] = (await host.call('state', {})).value.work.approvals
    await host.call('approval-answer', { id: approval.id, choice: 'allow' })
    await outcome
@@ -8484,7 +8487,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    assert.deepEqual(round.failed, ['Writer'])
    assert.equal(host.agentOf('gb').calls.length, 1)
  })
-@@ -294,3 +294,186 @@
+@@ -294,3 +294,186 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })

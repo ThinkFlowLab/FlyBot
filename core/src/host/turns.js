@@ -765,5 +765,10 @@ export function install(rt) {
     return found
   }
 
-  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn })
+  // #1664: a member turn the room let go is stopped from the moment `stopRoomTurn`
+  // notes the exchange, which is before its `turn/end` arrives. The room's line
+  // watcher asks this so it leaves the person's line queued for the next round.
+  const roomTurnStopped = exchangeId => stoppedRoomTurns.has(exchangeId)
+
+  Object.assign(rt, { botTurnOrigin, live, liveOf, handedFromGroup, roomWaiters, roomProgress, roomInbox, activityView, workView, roomWorkView, endedView, noteRunFailure, callDetail, stopRoomTurn, roomTurnStopped })
 }
