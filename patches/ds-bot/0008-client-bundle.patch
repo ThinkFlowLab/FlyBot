@@ -5514,7 +5514,7 @@ diff --git a/client.js b/client.js
      actions.noteTurnTime(sessionId, turn, "first", start);
    }, [sessionId, turn, start]);
    const visit = useUi((state) => state.visits?.[sessionId]);
-@@ -4199,11 +6716,66 @@
+@@ -4199,11 +6716,67 @@
      const own = state[sessionId]?.[turn];
      return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
    });
@@ -5557,7 +5557,8 @@ diff --git a/client.js b/client.js
 +  "detach_capability",
 +  "track_links",
 +  "project_state",
-+  "project_digest"
++  "project_digest",
++  "meeting"
 +]);
 +var isSilentRegistration = (name) => typeof name === "string" && SILENT_REGISTRATION_TOOLS.has(name);
 +var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName));

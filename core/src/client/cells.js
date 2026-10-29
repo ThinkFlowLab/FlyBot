@@ -724,7 +724,7 @@ const SILENT_REGISTRATION_TOOLS = new Set([
   'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
   'list_capabilities', 'save_capability', 'delete_capability',
   'attach_capability', 'detach_capability',
-  'track_links', 'project_state', 'project_digest',
+  'track_links', 'project_state', 'project_digest', 'meeting',
 ])
 const isSilentRegistration = name => typeof name === 'string' && SILENT_REGISTRATION_TOOLS.has(name)
 const isHiddenNotice = block => (block?.type === 'tool-removal' && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)))

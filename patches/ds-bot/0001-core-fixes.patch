@@ -9232,12 +9232,13 @@ diff --git a/test/install.test.js b/test/install.test.js
      'tool list_models',
      'tool create_group',
      'tool update_group',
-@@ -60,11 +60,17 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -60,11 +60,18 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
 +    'tool track_tasks',
 +    'tool project_state',
++    'tool meeting',
      'effect ds-bot: chat index',
 +    'effect ds-bot: external room participants',
 +    'effect ds-bot: group chat section',
