@@ -930,6 +930,7 @@ ${task.writeBack.body}`)
             assignee: { type: 'string', description: 'Name of the Bot that owns this subtask. Only the room\'s task lead may name another member. The card is claimed, and that Bot starts the work without waiting for a confirmation.' },
             queue: { type: 'boolean', description: 'Enqueue this item for a role instead of naming an assignee. Only the room\'s task lead may enqueue. Pass role with it: the item belongs to the room until a member of that role claims it, and enqueuing wakes one idle member of that role.' },
             role: { type: 'string', description: 'The role a queued item is for: the Bot role label, matched case-insensitively. It is not a group membership role.' },
+            cap: { type: 'integer', description: 'The role queue ceiling this graph runs with. Omit for the default of 8. An enqueue over it is refused, naming the role and the cap; re-offering an item already in the queue is counted once.' },
             ask: { type: 'string', description: 'The question you need before this task can continue. The task waits. Call ask_user in your own chat. For a group card, post one short question in the group only when a person has to decide.' },
             answer: { type: 'string', description: 'What the user or the group answered. Pass it to resume a task that was waiting.' },
             target: { type: 'string', description: 'Where a decision on this task is written back: a GitHub issue or pull request, as https://github.com/owner/repo/issues/12 or owner/repo#12. Optional.' },

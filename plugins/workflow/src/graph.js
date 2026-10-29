@@ -260,7 +260,8 @@ export function normalizeGraph(graph) {
   }
   const { layers } = ranksOf(graph.nodes, edges)
   const nodes = layoutNodes(graph.nodes.map(node => ({ ...node })), layers)
-  return { ...graph, nodes, edges, layers }
+  // A graph the operator marked strict runs its nodes in declared order with no fan-out (#1729).
+  return { ...graph, strict: graph.strict === true, nodes, edges, layers }
 }
 
 export function validateGraph(graph) {
@@ -534,6 +535,12 @@ export function startFrontier(graph, status, fired) {
     if (!predSatisfied(graph, id, next, fired)) continue
     next[id] = 'running'
     started.push(id)
+  }
+  // Strict order (#1729): one node at a time, in declared order. A sibling that was ready is left
+  // queued and starts once the one before it finishes.
+  if (graph.strict === true && started.length > 1) {
+    for (const id of started.slice(1)) next[id] = 'queued'
+    started.length = 1
   }
   const finished = graph.nodes.every(node => settled(next[node.id]))
   return { status: next, started, finished }
