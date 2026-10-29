@@ -6,15 +6,15 @@
 // meeting writes no file and produces no task. Decisions stay on the existing store
 // (`state.meetings`), so there is no second store.
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
 import { workDirFor } from './project-state.js'
+import { ASSISTANT_ROLE } from './project-assistant.js'
 
 // The Project Assistant takes a position like anyone else, but it does not write the decision
 // file and does not close the meeting (the Chief or the owner does).
-const ASSISTANT_ROLE = 'Project Assistant'
 const CLASSES = ['ordinary', 'major', 'severe']
 const STANCES = ['agree', 'dissent', 'abstain']
 const QUESTION_MAX = 600
@@ -24,7 +24,9 @@ const PARTICIPANTS_MAX = 32
 const OPEN_STATES = new Set(['open', 'deliberating'])
 
 const oneLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
-const slugOf = value => oneLine(value, 80).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+// A slug keeps letters and digits of every script, so two different Chinese questions do not both
+// fall back to `meeting` and collide on one day's file.
+const slugOf = value => oneLine(value, 80).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 80)
 const dateOf = now => new Date(now).toISOString().slice(0, 10)
 
 const refuse = (code, message) => Object.assign(new Error(`${code}: ${message}`), { code: `meeting/${code}` })
@@ -164,11 +166,20 @@ export function install(rt) {
     return meeting
   }
 
-  const position = (meeting, { as, stance, text }, now) => {
+  const position = (meeting, { as, stance, text, silent }, now) => {
     if (!OPEN_STATES.has(meeting.status)) throw refuse('closed', `the meeting is ${meeting.status}`)
     const name = oneLine(as, NAME_MAX)
     const participant = meeting.participants.find(p => p.name === name)
     if (participant === undefined) throw refuse('not-invited', `${name === '' ? 'the caller' : name} was not invited to this meeting`)
+    if (silent === true) {
+      // An invited participant who did not answer is recorded as silent, so `decided` can say so
+      // instead of waiting for a position that will not come.
+      participant.silent = true
+      if (meeting.status === 'open') meeting.status = 'deliberating'
+      meeting.updatedAt = now
+      return meeting
+    }
+    participant.silent = false
     const chosen = String(stance ?? 'agree')
     if (!STANCES.includes(chosen)) throw refuse('invalid', 'stance must be agree, dissent or abstain')
     participant.position = { stance: chosen, text: oneLine(text, TEXT_MAX), at: now }
@@ -183,38 +194,59 @@ export function install(rt) {
   const decide = async (meeting, args, { now, actor }) => {
     if (!OPEN_STATES.has(meeting.status)) throw refuse('closed', `the meeting is ${meeting.status}`)
     if (actor?.role === ASSISTANT_ROLE) throw refuse('forbidden', 'a Project Assistant takes a position; it does not close the meeting')
-    meeting.owner = oneLine(args.owner, NAME_MAX)
-    meeting.decision = oneLine(args.decision ?? args.text, TEXT_MAX)
-    meeting.class = String(args.class ?? 'ordinary')
-    if (!CLASSES.includes(meeting.class)) throw refuse('invalid', `class must be one of ${CLASSES.join(', ')}`)
+    // The candidate is a copy: a refused decision leaves the stored meeting exactly as it was.
+    const candidate = {
+      ...meeting,
+      owner: oneLine(args.owner, NAME_MAX),
+      decision: oneLine(args.decision ?? args.text, TEXT_MAX),
+      class: String(args.class ?? 'ordinary'),
+      evidence: readEvidence(args.evidence),
+    }
+    if (!CLASSES.includes(candidate.class)) throw refuse('invalid', `class must be one of ${CLASSES.join(', ')}`)
     if (args.dissent !== undefined) {
       const text = oneLine(args.dissent?.text, TEXT_MAX)
       const ownerName = oneLine(args.dissent?.owner, NAME_MAX)
       if (text === '') throw refuse('invalid', 'a dissent needs the objection it records')
-      meeting.dissent = { text, owner: ownerName }
+      candidate.dissent = { text, owner: ownerName }
     }
-    meeting.evidence = readEvidence(args.evidence)
-    const reason = governanceRefusal(meeting)
+    const reason = governanceRefusal(candidate)
     if (reason !== undefined) throw refuse('governance', reason)
 
     const dir = args.dir ?? workDirFor(rt, args.exec)
     if (typeof dir !== 'string' || dir === '') throw refuse('no-folder', 'the Session has no working folder to archive the decision in')
-    const file = decisionsPath(now, meeting.slug)
-    const body = decisionBody(meeting, file, now)
-    const bytes = Buffer.from(body, 'utf8')
+    const file = decisionsPath(now, candidate.slug)
+    const target = join(dir, file)
     await mkdir(join(dir, 'decisions'), { recursive: true })
     try {
-      await readFile(join(dir, file))
+      await readFile(target)
       throw refuse('exists', `the decision file already exists: ${file}`)
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
     }
-    await writeFile(join(dir, file), bytes)
 
-    const closed = { ...meeting, status: 'decided', decidedAt: now, updatedAt: now, closedBy: actor?.name ?? meeting.owner }
-    closed.decisionFile = file
+    const closed = {
+      ...candidate,
+      status: 'decided',
+      decidedAt: now,
+      updatedAt: now,
+      closedBy: actor?.name ?? candidate.owner,
+      decisionFile: file,
+    }
+    const bytes = Buffer.from(decisionBody(closed, file, now), 'utf8')
+    // The file appears only after every produced task exists: a refused task deletes the temp
+    // file, so `decisions/` stays as it was and the meeting can be closed again.
+    const temp = `${target}.tmp-${randomBytes(4).toString('hex')}`
+    await writeFile(temp, bytes)
+    let taskIds
+    try {
+      taskIds = await produceTasks(closed, args.tasks, { now, actor })
+    } catch (error) {
+      await rm(temp, { force: true })
+      throw error
+    }
+    await rename(temp, target)
     closed.decisionSha256 = createHash('sha256').update(bytes).digest('hex')
-    closed.taskIds = await produceTasks(closed, args.tasks, { now, actor })
+    closed.taskIds = taskIds
     store()[meeting.id] = closed
     return closed
   }
@@ -275,7 +307,7 @@ export function install(rt) {
       case 'open':
         return summary(newMeeting(body, now))
       case 'position':
-        return summary(position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text }, now))
+        return summary(position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text, silent: body.silent }, now))
       case 'decide':
         return summary(await decide(find(body.meeting), { ...body, exec: body.exec }, { now, actor }))
       case 'block':
@@ -302,6 +334,7 @@ export function install(rt) {
       participants: { type: 'array', items: { type: 'string' }, description: 'Every invited participant name (open)' },
       options: { type: 'array', items: { type: 'string' }, description: 'Options the meeting weighed (open)' },
       as: { type: 'string', description: 'The participant the position belongs to (position); defaults to the calling Bot\'s name' },
+      silent: { type: 'boolean', description: 'Record that the participant did not answer (position); counts as a recorded position for `decided`' },
       stance: { type: 'string', enum: ['agree', 'dissent', 'abstain'], description: 'The position taken (position)' },
       text: { type: 'string', description: 'What the participant said (position)' },
       owner: { type: 'string', description: 'Who owns the decision (decide)' },

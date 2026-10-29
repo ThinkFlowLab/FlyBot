@@ -164,3 +164,62 @@ test('#1731: question → positions → decided → one decision file → linked
   assert.equal(Object.values(rt.state.tasks).length, 1)
   assert.equal(Object.values(rt.state.tasks)[0].evidence[0].check, rt.state.meetings[id].decisionFile)
 })
+
+test('#1731: a refused produced task archives nothing, leaves the meeting open, and a retry succeeds', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Which storage shape should Stage 4 use?')
+  await positionAll(meeting, id)
+  await assert.rejects(
+    meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Use the existing store.', evidence: [{ pr: 1731 }], tasks: [{ botId: 'ghost', title: 'x' }] }),
+    /no Bot named ghost/,
+  )
+  assert.deepEqual(existsSync(join(dir, 'decisions')) ? readdirSync(join(dir, 'decisions')) : [], [], 'a refused task archives no decision file')
+  assert.equal(rt.state.meetings[id].status, 'deliberating', 'the meeting did not close')
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Use the existing store.', evidence: [{ pr: 1731 }], tasks: [{ botId: 'd1', title: 'Ship the record' }] })
+  assert.equal(rt.state.meetings[id].status, 'decided', 'the valid retry closes the meeting')
+  assert.equal(readdirSync(join(dir, 'decisions')).length, 1, 'exactly one decision file appears')
+})
+
+test('#1731: a refused decision writes no decision text onto the stored meeting', async (t) => {
+  const { rt, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Which storage shape should Stage 4 use?')
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'the existing store' })
+  await assert.rejects(
+    meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'A decision nobody was present for.', evidence: [{ pr: 1731 }] }),
+    /no position recorded for: Dev, Reviewer/,
+  )
+  assert.equal(rt.state.meetings[id].decision, undefined, 'the refused decision text is not stored')
+  assert.equal(rt.state.meetings[id].owner, undefined, 'the refused owner is not stored')
+  assert.equal(rt.state.meetings[id].evidence.length, 0, 'the refused evidence is not stored')
+  await positionAll(meeting, id)
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Use the existing store.', evidence: [{ pr: 1731 }] })
+  assert.equal(rt.state.meetings[id].status, 'decided')
+})
+
+test('#1731: a participant recorded silent lets the meeting close', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Which storage shape should Stage 4 use?', ['Chief', 'Dev'])
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'the existing store' })
+  await meeting({ action: 'position', meeting: id, as: 'Dev', silent: true })
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Use the existing store.', evidence: [{ pr: 1731 }] })
+  assert.equal(rt.state.meetings[id].status, 'decided')
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /\*\*Dev\*\* — invited; recorded no position \(silent\)/)
+})
+
+test('#1731: two Chinese questions decided on one day keep separate decision files', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const first = await open('会议记录应该放在现有 store 里吗？', ['Chief'])
+  await meeting({ action: 'position', meeting: first, as: 'Chief', stance: 'agree', text: '是' })
+  await meeting({ action: 'decide', meeting: first, owner: 'Chief', decision: '记录放现有 store。', evidence: [{ pr: 1731 }] })
+  const second = await open('会议记录应该单独建一个库吗？', ['Chief'])
+  await meeting({ action: 'position', meeting: second, as: 'Chief', stance: 'abstain', text: '否' })
+  await meeting({ action: 'decide', meeting: second, owner: 'Chief', decision: '不单独建库。', evidence: [{ pr: 1731 }] })
+  const files = [rt.state.meetings[first].decisionFile, rt.state.meetings[second].decisionFile]
+  assert.notEqual(files[0], files[1])
+  assert.deepEqual(readdirSync(join(dir, 'decisions')).sort(), files.map(f => f.replace('decisions/', '')).sort())
+})
