@@ -2233,3 +2233,102 @@ test('two live attempts for one task are both left unmarked (#1507)', () => {
   assert.equal(rows.some(row => row.supersededBy || row.retryOf), false)
   assert.equal(client.resolveFocusedRun(workflow, null).id, 'run-b')
 })
+
+// The drawer's read-only flowchart (FlyBot PR 快线 report): rows come from the
+// steps, wires from the drawn boxes, and nothing hangs in empty space.
+function quickLane() {
+  return {
+    ...delivery(), id: 'quick', name: 'FlyBot PR 快线',
+    layers: [['route'], ['inspect', 'review'], ['merge']],
+    // Stored editor coordinates that disagree with the steps on purpose.
+    nodes: [
+      { id: 'route', name: 'Route', role: '路由', x: 0, y: 600 },
+      { id: 'inspect', name: 'Inspect', role: '检查', x: 40, y: 380 },
+      { id: 'review', name: 'Review', role: '审查', x: 60, y: 620 },
+      { id: 'merge', name: 'Merge', role: '合并', x: 2000, y: 0 },
+    ],
+    edges: [
+      { from: 'route', to: 'inspect' }, { from: 'route', to: 'review' },
+      { from: 'inspect', to: 'merge' }, { from: 'review', to: 'merge' },
+      { from: 'merge', to: 'route', loop: true, max: 2 },
+    ],
+  }
+}
+
+function pointsOf(d) {
+  return [...d.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)].map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
+}
+
+for (const width of [364, 530, 300]) {
+  test(`flowLayout lays the quick lane out from its steps at ${width}px: no overlap, no gap, wires on anchors (#1652)`, () => {
+    const graph = quickLane()
+    const layout = client.flowLayout(graph, width, { inspect: 90 })
+    const boxes = [...layout.boxes.values()]
+    assert.equal(boxes.length, 4)
+    assert.equal(Math.min(...boxes.map(box => box.top)) <= 12 + 20, true, 'the graph starts at the top, no empty band above it')
+    for (const box of boxes) {
+      assert.ok(box.left >= 0 && box.left + box.w <= width, `${box.id} is outside the plane`)
+      assert.ok(box.top + box.h <= layout.height)
+    }
+    for (const a of boxes) for (const b of boxes) {
+      if (a === b) continue
+      const apart = a.left + a.w <= b.left || b.left + b.w <= a.left || a.top + a.h <= b.top || b.top + b.h <= a.top
+      assert.ok(apart, `${a.id} overlaps ${b.id}`)
+    }
+    assert.equal(layout.frames.length, 1)
+    const frame = layout.frames[0]
+    for (const id of ['inspect', 'review']) {
+      const box = layout.boxes.get(id)
+      assert.ok(box.left > frame.left && box.left + box.w < frame.left + frame.width && box.top > frame.top && box.top + box.h < frame.top + frame.height, `${id} spills out of the parallel frame`)
+    }
+    for (const id of ['route', 'merge']) {
+      const box = layout.boxes.get(id)
+      assert.ok(box.top + box.h <= frame.top || box.top >= frame.top + frame.height, `${id} overlaps the parallel frame`)
+    }
+    // Every wire segment starts or ends on a node anchor, or on a bus that one does.
+    const anchors = boxes.flatMap(box => [{ x: box.x, y: box.top }, { x: box.x, y: box.top + box.h }])
+    const buses = layout.wires.filter(wire => wire.kind === 'fork' || wire.kind === 'join')
+    assert.equal(buses.length, 2, 'one fork bus and one join bus')
+    const busYs = buses.map(wire => new Set(pointsOf(wire.d).filter(p => !anchors.some(a => a.x === p.x && a.y === p.y)).map(p => p.y)))
+    for (const ys of busYs) assert.equal(ys.size, 1, 'a fork or join meets at one height')
+    for (const wire of layout.wires) {
+      const pts = pointsOf(wire.d)
+      for (const p of pts) assert.ok(p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= layout.height, `${wire.key} leaves the plane`)
+      if (wire.kind === 'drop' || wire.kind === 'step' || wire.kind === 'loop') {
+        const end = pts.at(-1)
+        assert.ok(anchors.some(a => a.x === end.x && a.y === end.y), `${wire.key} does not land on a node`)
+      }
+      for (let i = 1; i < pts.length; i++) {
+        if (wire.d.split(' ').filter(t => t === 'M').length > 1) break
+        assert.ok(pts[i].x === pts[i - 1].x || pts[i].y === pts[i - 1].y, `${wire.key} has a diagonal segment`)
+      }
+    }
+    const inspect = layout.boxes.get('inspect')
+    assert.equal(inspect.h, 90, 'a measured height moves the anchors')
+    assert.ok(layout.wires.some(wire => pointsOf(wire.d).some(p => p.x === inspect.x && p.y === inspect.top + 90)), 'the join leaves the measured bottom of Inspect')
+  })
+}
+
+test('the drawer flowchart draws the step layout, not the stored editor coordinates, and clamps a long run summary', async () => {
+  const graph = quickLane()
+  const long = 'p1641-r3 · #1641（Fixes #1640 social waiting-for-approval 卡不写目的地、没有跳转）在实时 head 重审并出 PASS 后入队。上一轮 run-d477062e 在 review 节点被 DSH 重启打断'
+  graph.run = { ...graph.run, taskSummary: long, nodeStatus: { route: 'done', inspect: 'done', review: 'running', merge: 'queued' }, running: ['review'] }
+  const call = async (name) => name === 'workflow/state' ? { workflows: [graph], templates: [] } : { ok: true, workflows: [graph] }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  const plane = findAll(view.tree, node => node.props?.['data-plane'] === '1')[0]
+  const width = Number(plane.props.style.width)
+  for (const id of ['route', 'inspect', 'review', 'merge']) {
+    const style = findAll(view.tree, node => node.props?.['data-node'] === id)[0].props.style
+    assert.ok(style.left >= 0 && style.left + style.width <= width, `${id} drawn outside the panel`)
+  }
+  assert.equal(findAll(view.tree, node => String(node.props?.className ?? '').includes('wf-par')).length, 1)
+  const term = () => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-term'))[0]
+  assert.ok(term().props.className.includes('wf-term-clamp'))
+  button(view.tree, 'Show more').props.onClick()
+  assert.equal(term().props.className.includes('wf-term-clamp'), false)
+  assert.ok(button(view.tree, 'Show less'))
+  view.unmount()
+})

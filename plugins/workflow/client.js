@@ -128,6 +128,8 @@ window.__ModuleLoader__.load({
       'Next run: {time}': '下次运行：{time}',
       'Step {step}': '步骤 {step}',
       'Parallel branches · Merge after all pass': '并行分支 · 全部通过后汇合',
+      'Show more': '展开',
+      'Show less': '收起',
       // Stage timeline (#1489). The key is the English line; service.js and
       // narrate.js keep the Chinese text only as the fallback for rows written
       // before the key existed.
@@ -677,6 +679,138 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // The drawer's read-only flowchart is laid out from the steps, not from the
+    // stored editor coordinates: hand-dragged x/y drawn into a narrow panel put
+    // nodes on top of the parallel frame and left wires hanging in empty space.
+    // Rows follow `layers`, a parallel row sits inside its dashed frame, node
+    // boxes shrink to the panel width, and each wire is routed orthogonally from
+    // the drawn boxes — `heights` are the measured node heights, so a card that
+    // wraps to a taller box moves its anchors with it.
+    const FLOW_GAP_X = 12
+    const FLOW_ROW_GAP = 36
+    const FLOW_PAR_PAD = 10
+    const FLOW_PAR_LABEL = 28
+    const FLOW_NODE_MIN_W = 96
+    function flowRows(workflow) {
+      const nodes = (workflow?.nodes ?? []).filter(node => node && typeof node.id === 'string')
+      const ids = new Set(nodes.map(node => node.id))
+      const seen = new Set()
+      const rows = []
+      for (const layer of workflow?.layers ?? []) {
+        const row = (Array.isArray(layer) ? layer : []).filter(id => ids.has(id) && !seen.has(id))
+        row.forEach(id => seen.add(id))
+        if (row.length) rows.push(row)
+      }
+      for (const node of nodes) if (!seen.has(node.id)) rows.push([node.id])
+      return rows
+    }
+    function flowLayout(workflow, panelWidth = DRAWER_FLOW_W, heights = {}) {
+      const width = Math.max(Number(panelWidth) || DRAWER_FLOW_W, FLOW_NODE_MIN_W + FIT_PAD * 2)
+      const rows = flowRows(workflow)
+      const boxes = new Map()
+      const frames = []
+      const bands = []
+      let y = FIT_PAD
+      rows.forEach((row, index) => {
+        const par = row.length > 1
+        const inner = width - FIT_PAD * 2 - (par ? FLOW_PAR_PAD * 2 : 0)
+        const w = Math.max(FLOW_NODE_MIN_W, Math.min(NODE_W, Math.floor((inner - FLOW_GAP_X * (row.length - 1)) / row.length)))
+        const total = w * row.length + FLOW_GAP_X * (row.length - 1)
+        const start = Math.round(width / 2 - total / 2)
+        const top = y + (par ? FLOW_PAR_LABEL : 0)
+        let rowH = 0
+        row.forEach((id, column) => {
+          const hgt = Math.max(24, Number(heights?.[id]) || NODE_H)
+          rowH = Math.max(rowH, hgt)
+          const left = start + column * (w + FLOW_GAP_X)
+          boxes.set(id, { id, row: index, left, top, w, h: hgt, x: left + w / 2 })
+        })
+        const bottom = top + rowH + (par ? FLOW_PAR_PAD : 0)
+        // The label rides the frame's top border; with two branches it fits between
+        // the two drops so no wire runs through it.
+        const labelMax = row.length === 2 ? w + FLOW_GAP_X - 16 : total
+        if (par) frames.push({ key: row.join('+'), left: start - FLOW_PAR_PAD, top: y, width: total + FLOW_PAR_PAD * 2, height: bottom - y, labelMax })
+        bands.push({ top: y, bottom })
+        y = bottom + FLOW_ROW_GAP
+      })
+      const height = rows.length ? y - FLOW_ROW_GAP + FIT_PAD : 0
+      return { width, height, rows, boxes, frames, bands, wires: flowWires(workflow?.edges ?? [], boxes, bands, width) }
+    }
+    // One bus per connected group of edges between two adjacent rows: every
+    // source drops to the bus, every target rises from it, so a fork leaves one
+    // point and a join meets in one point. Skip and loop edges run in the right
+    // gutter. Every point is a box anchor or lies on the segment between two.
+    function flowWires(edges, boxes, bands, width) {
+      const wires = []
+      const gaps = new Map()
+      const skips = []
+      for (const edge of edges) {
+        const from = boxes.get(edge?.from)
+        const to = boxes.get(edge?.to)
+        if (!from || !to || from === to) continue
+        if (!edge.loop && to.row === from.row + 1) {
+          const list = gaps.get(from.row) ?? []
+          list.push({ edge, from, to })
+          gaps.set(from.row, list)
+        } else skips.push({ edge, from, to })
+      }
+      for (const [row, list] of gaps) {
+        // Union the edges of this gap into groups that share a source or target.
+        const parent = new Map()
+        const find = key => { while (parent.get(key) !== key) key = parent.get(key); return key }
+        const join = (a, b) => { parent.set(find(a), find(b)) }
+        for (const { from, to } of list) {
+          if (!parent.has(`s${from.id}`)) parent.set(`s${from.id}`, `s${from.id}`)
+          if (!parent.has(`t${to.id}`)) parent.set(`t${to.id}`, `t${to.id}`)
+          join(`s${from.id}`, `t${to.id}`)
+        }
+        const groups = new Map()
+        for (const item of list) {
+          const key = find(`s${item.from.id}`)
+          const group = groups.get(key) ?? { sources: new Map(), targets: new Map(), edges: [] }
+          group.sources.set(item.from.id, item.from)
+          group.targets.set(item.to.id, item.to)
+          group.edges.push(item.edge)
+          groups.set(key, group)
+        }
+        const gapTop = bands[row].bottom
+        const gapBottom = bands[row + 1].top
+        const ordered = [...groups.values()]
+        ordered.forEach((group, k) => {
+          const busY = Math.round(gapTop + (gapBottom - gapTop) * (k + 1) / (ordered.length + 1))
+          const sources = [...group.sources.values()]
+          const targets = [...group.targets.values()]
+          const key = group.edges.map(edge => `${edge.from}>${edge.to}`).join(',')
+          if (sources.length === 1 && targets.length === 1 && Math.abs(sources[0].x - targets[0].x) < 0.5) {
+            const x = sources[0].x
+            wires.push({ key, kind: 'step', d: `M ${x} ${sources[0].top + sources[0].h} L ${x} ${targets[0].top}`, arrow: true })
+            return
+          }
+          const xs = sources.concat(targets).map(box => box.x)
+          const minX = Math.min(...xs)
+          const maxX = Math.max(...xs)
+          const parts = sources.map(box => `M ${box.x} ${box.top + box.h} L ${box.x} ${busY}`)
+          if (maxX - minX >= 0.5) parts.push(`M ${minX} ${busY} L ${maxX} ${busY}`)
+          wires.push({ key: `${key}|bus`, kind: sources.length > 1 ? 'join' : 'fork', d: parts.join(' '), arrow: false })
+          for (const box of targets) wires.push({ key: `${key}|${box.id}`, kind: 'drop', d: `M ${box.x} ${busY} L ${box.x} ${box.top}`, arrow: true })
+        })
+      }
+      skips.forEach(({ edge, from, to }, k) => {
+        const gutter = Math.round(width - 4 - k * 5)
+        const outY = Math.round(bands[from.row].bottom + Math.min(10, FLOW_ROW_GAP / 3))
+        const inY = Math.round(bands[to.row].top - Math.min(10, FLOW_ROW_GAP / 3))
+        const sx = from.x
+        const tx = to.x
+        wires.push({
+          key: `${edge.from}>${edge.to}|${edge.loop ? 'loop' : 'skip'}`,
+          kind: edge.loop || to.row <= from.row ? 'loop' : 'skip',
+          d: `M ${sx} ${from.top + from.h} L ${sx} ${outY} L ${gutter} ${outY} L ${gutter} ${inY} L ${tx} ${inY} L ${tx} ${to.top}`,
+          arrow: true,
+        })
+      })
+      return wires
+    }
+
     function liveStageRuns(workflow) {
       let liveRuns = (workflow.runs ?? []).filter(run => run?.live === true && (run.status === 'running' || run.status === 'failed'))
       if (liveRuns.length === 0 && workflow.run?.live === true && (workflow.run.status === 'running' || workflow.run.status === 'failed')) {
@@ -780,7 +914,33 @@ window.__ModuleLoader__.load({
       const [ghost, setGhost] = useState(null)
       const [dragPreview, setDragPreview] = useState(null)
       const [selectedNode, setSelectedNode] = useState(null)
+      const [termOpen, setTermOpen] = useState(false)
+      const [measure, setMeasure] = useState({ width: 0, heights: {} })
+      const canvasRef = useRef(null)
       const status = run?.nodeStatus ?? {}
+      // Read the drawn panel width and node heights after every paint and on
+      // resize, so the wires follow the boxes the browser actually laid out.
+      useEffect(() => {
+        const el = canvasRef.current
+        const read = () => {
+          const width = Math.round(el?.getBoundingClientRect?.().width || 0)
+          const heights = {}
+          for (const item of el?.querySelectorAll?.('.wf-flow-view [data-node]') ?? []) {
+            const value = Math.round(item.offsetHeight || 0)
+            if (value > 0) heights[item.dataset?.node] = value
+          }
+          setMeasure(prev => {
+            const same = prev.width === width && Object.keys(heights).length === Object.keys(prev.heights).length &&
+              Object.entries(heights).every(([id, value]) => prev.heights[id] === value)
+            return same ? prev : { width, heights }
+          })
+        }
+        read()
+        if (typeof ResizeObserver !== 'function' || !el) return undefined
+        const observer = new ResizeObserver(read)
+        observer.observe(el)
+        return () => observer.disconnect()
+      })
       const nodes = workflow.nodes
       const edges = workflow.edges ?? []
       // The drawer paints a fitted copy of the world graph (#1513). The fit is a
@@ -795,6 +955,7 @@ window.__ModuleLoader__.load({
         if (base) drawn.set(id, { ...base, x: spot.x * scale + plane.offsetX, y: spot.y + plane.offsetY })
       }
       const height = plane.height
+      const view = flowLayout(workflow, measure.width > 0 ? measure.width : DRAWER_FLOW_W, measure.heights)
       const locals = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && !nodes.some(node => node.botId === bot.id))
       const selected = nodes.find(node => node.id === selectedNode)
       const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
@@ -834,7 +995,9 @@ window.__ModuleLoader__.load({
       const updateNode = (nodeId, updates) => {
         commit(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
       }
-      return h('div', { className: 'wf-canvas', 'data-fit': 'drawer', onPointerMove: movePointer, onPointerUp: endPointer, onPointerCancel: () => { setGesture(null); setGhost(null); setDragPreview(null) } },
+      const termText = run ? taskSummary(run.task, run) : ''
+      const termLong = termText.length > 90
+      return h('div', { className: 'wf-canvas', 'data-fit': 'drawer', ref: canvasRef, onPointerMove: movePointer, onPointerUp: endPointer, onPointerCancel: () => { setGesture(null); setGhost(null); setDragPreview(null) } },
         editing ? h('div', { className: 'wf-palette' },
           h('p', { className: 'wf-palette-hint' }, tr('Drag a Bot here')),
           h('div', { className: 'wf-palette-row' },
@@ -854,8 +1017,11 @@ window.__ModuleLoader__.load({
           style: { left: dragPreview.x + 10, top: dragPreview.y + 10 },
           'aria-hidden': true,
         }, h(PaletteBotFace, { bot: gesture.bot, size: 24 }), h('span', { className: 'wf-drag-ghost-name' }, gesture.bot?.name ?? '')) : null,
-        run ? h('div', { className: 'wf-term', title: run.task?.title ?? '' }, taskSummary(run.task, run)) : null,
-        h('div', { className: 'wf-plane', 'data-plane': '1', style: { height, width: plane.width } },
+        run ? h('div', { className: `wf-term${termLong && !termOpen ? ' wf-term-clamp' : ''}`, title: run.task?.title ?? '' },
+          h('span', { className: 'wf-term-text' }, termText),
+          termLong ? h('button', { type: 'button', className: 'wf-term-more', 'aria-expanded': termOpen, onClick: () => setTermOpen(!termOpen) }, tr(termOpen ? 'Show less' : 'Show more')) : null) : null,
+        !editing ? h(FlowView, { workflow, layout: view, status, roster }) : null,
+        editing ? h('div', { className: 'wf-plane', 'data-plane': '1', style: { height, width: plane.width } },
           h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(height, plane.width) },
             edges.map(edge => {
               const from = drawn.get(edge.from)
@@ -905,7 +1071,7 @@ window.__ModuleLoader__.load({
                 },
               }, '×') : null,
               h(FlowNode, { node, status: status[node.id] ?? 'queued', roster }))
-          })),
+          })) : null,
         run?.status === 'done' ? h('div', { className: 'wf-term on' }, tr('Done')) : null,
         editing && selected ? h('div', { className: 'wf-node-inspector' },
           h('div', { className: 'wf-inspector-header' },
@@ -917,6 +1083,33 @@ window.__ModuleLoader__.load({
             onChange: (event) => updateNode(selected.id, { prompt: event.target.value }),
             placeholder: tr('System prompt'),
           })) : null)
+    }
+
+    function FlowView({ workflow, layout, status, roster }) {
+      const nodes = workflow.nodes ?? []
+      return h('div', { className: 'wf-plane wf-flow-view', 'data-plane': '1', style: { height: layout.height, width: layout.width } },
+        h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(layout.height, layout.width) },
+          h('defs', null,
+            h('marker', { id: 'wf-flow-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' },
+              h('path', { d: 'M0 1 9 5 0 9z', className: 'wf-arrow' }))),
+          layout.wires.map(wire => h('path', {
+            key: wire.key, d: wire.d, 'data-wire': wire.kind,
+            className: wire.kind === 'loop' ? 'wf-wire-loop' : undefined,
+            markerEnd: wire.arrow ? 'url(#wf-flow-arrow)' : undefined,
+          }))),
+        layout.frames.map(frame => h('div', {
+          key: frame.key, className: 'wf-par wf-abs',
+          style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
+        }, h('div', { className: 'wf-plabel', style: { maxWidth: frame.labelMax } }, tr('Parallel branches · Merge after all pass')))),
+        nodes.map(node => {
+          const box = layout.boxes.get(node.id)
+          if (!box) return null
+          return h('div', {
+            key: node.id, 'data-node': node.id,
+            className: `wf-node wf-abs ${status[node.id] ?? 'queued'}`,
+            style: { left: box.left, top: box.top, width: box.w },
+          }, h(FlowNode, { node, status: status[node.id] ?? 'queued', roster }))
+        }))
     }
 
     function FlowNode({ node, status, roster }) {
@@ -1844,7 +2037,15 @@ window.__ModuleLoader__.load({
 .wf-canvas[data-fit="drawer"]{min-height:0;align-items:stretch;overflow:hidden}
 .wf-canvas[data-fit="drawer"] .wf-plane{width:100%;margin:2px 0 0}
 .wf-canvas[data-fit="drawer"] .wf-wires{left:0;width:100%;overflow:visible}
-.wf-canvas[data-fit="drawer"] .wf-term{white-space:normal;overflow:visible;text-overflow:clip;text-align:center;line-height:1.35;align-self:center;max-width:100%}
+.wf-canvas[data-fit="drawer"] .wf-term{white-space:normal;overflow:visible;text-overflow:clip;text-align:left;line-height:1.45;align-self:stretch;max-width:100%;padding:8px 12px;font-size:12px;word-break:break-word}
+.wf-canvas[data-fit="drawer"] .wf-term.wf-term-clamp .wf-term-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.wf-term-text{display:block}
+.wf-term-more{display:block;margin-top:2px;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:11.5px;cursor:pointer}
+.wf-flow-view .wf-node{box-sizing:border-box}
+.wf-flow-view .wf-plabel{width:max-content;box-sizing:border-box;white-space:normal}
+.wf-flow-view .wf-wires path{stroke-linejoin:round}
+.wf-flow-view .wf-wires path.wf-wire-loop{stroke-dasharray:4 3}
+.wf-flow-view .wf-arrow{fill:var(--bt-ink-3,#9a9a9a);stroke:none}
 .wf-palette{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:min(100%,360px);margin:0 auto 4px;padding:10px 12px;border:1px dashed var(--bt-line,rgba(20,20,20,.14));border-radius:12px;background:var(--bt-card,#fff)}
 .wf-palette-hint{margin:0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
 .wf-palette-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
@@ -1920,7 +2121,11 @@ window.__ModuleLoader__.load({
 .wf-wiring{font-size:12px;color:var(--bt-ink-3,#9a9a9a);padding:2px 8px 6px;line-height:1.5}
 .wf-assign-row{opacity:.9}
 .wf-par{position:relative;z-index:0;pointer-events:none;border:1px dashed var(--bt-ink-3,#9a9a9a);border-radius:14px;padding:16px 8px 8px}
-.wf-node.wf-abs{z-index:1}
+/* .wf-node and .wf-par set position:relative after .wf-abs, which pulled every
+   drawn node and frame back into the flow: boxes stacked under the frame and
+   lost their wires. The pair outranks both. */
+.wf-node.wf-abs{position:absolute;z-index:1;box-sizing:border-box}
+.wf-par.wf-abs{position:absolute;box-sizing:border-box}
 .wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));background:var(--bt-card,#fff);padding:0 6px;white-space:normal;text-align:center;line-height:1.25;max-width:calc(100% - 16px)}
 .wf-settings-canvas{padding:16px}
 .wf-settings-layout{display:flex;flex-direction:column;gap:16px}
@@ -1968,6 +2173,7 @@ window.__ModuleLoader__.load({
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
       runHistoryRows, liveStageRuns, resolveFocusedRun, newestAttempt, parallelFrameStyle, fitPlane,
+      flowLayout, flowRows,
       DRAWER_FLOW_W, NODE_W, NODE_H,
       botPaletteSubtitle, botTint, settledCall,
     }
