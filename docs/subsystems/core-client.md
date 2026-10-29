@@ -267,13 +267,34 @@ A discarded `.catch(() => {})` in the client sources either starts with `void` (
 - The roster poll (`index.js` `pull`) sends `watching: !document.hidden` with each `state` call (#497), so the host knows a window is on screen and the social plugin reads friends' inboxes at its live cadence: a friend's first line, its held reply's card, the Inbox count and the unread badge arrive in that window within seconds, with no reload.
 - The **NEW** divider (`cells.js` `TurnTailCell` / `TurnProcessCell` / the unread opening) compares turn times with the visit's `seen` (when the chat was last left) and `entered` (when this visit opened). Once the divider has been on screen (`NewMessagePills` in `header.js`, `view.divider === 'in-view'`) and a shown turn begins after the visit opened (`movedOnSince`: a friend's next line, the user's own message; hidden exchange turns do not count), `actions.settleVisit` sets `seen` to `entered` (`settledVisit`) and every divider of the visit goes, as on leaving and coming back. A divider still scrolled out of view, or a chat where nothing new happened, keeps it until the visit ends. Same rule in every chat, including a friend's typed line in the Bot's own chat (#275). Covered by `core/test/turn-tail.test.js`.
 
-### Project board pane (#1710)
+### Project board pane (#1710, reachable since #1701)
 
 `src/client/project-board.js` draws one Project over the read model the host already aggregates
-(`project-board`). `projectBoardView({ project, rows, canManage })` is pure: it groups the rows by
-`source` (`bot` | `group` | `workflow`, empty sources left out), carries `column`, `assignee` and the
-`runId`/`nodeId` a workflow row came from, and keeps `row.id` equal to the underlying task id, so
-opening a row opens that task and the view never copies a row. An empty Project renders the empty
-state, not an error. `canManage` comes from `project-read` and only decides whether the management
-affordances are drawn; the refusal itself is the host's. The pane is registered on the existing
-`shell.overlay` surface and opens at `#project=<id>`.
+(`project-board`). `projectBoardView({ project, rows, canManage, tasks })` is pure: it groups the rows
+by `source` (`bot` | `group` | `workflow`, empty sources left out), carries `column`, `assignee` and the
+`runId`/`nodeId` a workflow row came from, and keeps `row.id` equal to the underlying task id, so a row
+never copies a row. The `tasks` list is the ordinary task read joined by `id` (a `Map`, one pass): a row
+takes its `title`, falls back to `note`, and only then to `@assignee` / `—`, plus its `priority`, so three
+cards held by the same person no longer read the same. An empty Project renders the empty state, not an
+error. `canManage` comes from `project-read` and only decides whether the management affordances are
+drawn; the refusal itself is the host's.
+
+The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
+re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
+the board. The entry is the **Project board** button in `KanbanDialog`'s header: it is drawn only when the
+selected Bot or group carries a `projectId`, writes `#project=<id>` and closes the Tasks dialog, leaving
+the overlay to take over. It is not a second board and not a rail row.
+
+A row knows the board its task lives on without re-deciding membership: the mapping follows the host's own
+`source` (`group` → the task's `origin.roomId`, `bot` → its `ownerBotId`, a `workflow` row is one a run
+carried in and has no board of its own). A row with a board is a button: it writes `#task=<kind>:<id>` and
+`actions.openBoard()`, and `KanbanDialog` consumes that hash once on mount, moves its scope to that Bot or
+group and clears the hash, so a reload does not reopen the same board. A row without a board (or without a
+task record) is not a button — `role` alone opens nothing. Opening the pane is four host reads once, with
+no polling and no per-Bot read: `projects`, `project-read`, `project-board`, and the `tasks` list the rows
+are joined against. Tests: `core/test/project-board-view.test.js`, `core/test/project-board.test.js`,
+`core/test/project-board-entry.test.js`.
+
+The board's three column names go through the same dictionary as the task board: `not-started`,
+`in-progress` and `done` are keys in `i18n.js`, so a zh UI reads 未开始 / 进行中 / 已完成 instead of the raw
+status.

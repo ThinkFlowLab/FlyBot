@@ -1356,7 +1356,11 @@ var ZH = {
   "Some folders are not shown.": "还有一些文件夹没有显示。",
   "Project settings": "项目设置",
   "Project board": "项目看板",
-  "No Project here.": "这里没有项目。"
+  "No Project here.": "这里没有项目。",
+  // The Project board names its columns with the same keys the task record uses.
+  "not-started": "未开始",
+  "in-progress": "进行中",
+  "done": "已完成"
 };
 var HOST_ERRORS = [
   [/^Model (.+) is not available\. Available: (.*)$/, "模型 $1 不可用。可用的：$2"],
@@ -8920,6 +8924,16 @@ function KanbanDialog({ roster, actions, leaving = false }) {
   const boardTasks = boardTasksFor(tasks, archive);
   const close = (0, import_react15.useCallback)(() => actions.closeBoard(), []);
   useEscape(close);
+  (0, import_react15.useEffect)(() => {
+    if (typeof window === "undefined") return;
+    if (!window.location.hash.startsWith("#task=")) return;
+    const [kind, id] = window.location.hash.slice("#task=".length).split(":");
+    window.location.hash = "";
+    if (id === void 0 || id === "") return;
+    if (kind === "bot" && roster.byId?.[id]) setScope({ kind: "bot", botId: id });
+    if (kind === "group" && roster.roomsById?.[id]) setScope({ kind: "group", roomId: id });
+  }, []);
+  const projectId = scope?.kind === "bot" ? roster.byId?.[scope.botId]?.projectId : scope?.kind === "group" ? roster.roomsById?.[scope.roomId]?.projectId : void 0;
   const counts2 = {};
   for (const task of [...own, ...archive]) {
     const id = task.ownerBotId;
@@ -8962,6 +8976,17 @@ function KanbanDialog({ roster, actions, leaving = false }) {
         { className: "bt-mem-head" },
         (0, import_react15.createElement)("h2", { id: "bt-board-heading" }, t("Board")),
         (0, import_react15.createElement)("span", { className: "bt-mem-status" }, name),
+        // #1701: the board the Bot or group belongs to opens from here; nothing else writes the
+        // Project hash, so without this the Project board was reachable only by editing the URL.
+        projectId ? (0, import_react15.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm",
+          "data-open-project": projectId,
+          onClick: () => {
+            window.location.hash = `#project=${projectId}`;
+            close();
+          }
+        }, t("Project board")) : null,
         (0, import_react15.createElement)("span", { className: "bt-mem-head-gap" }),
         (0, import_react15.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close board"), autoFocus: true, onClick: close }, (0, import_react15.createElement)(CloseIcon))
       ),
@@ -19602,19 +19627,38 @@ var PROJECT_BOARD_CSS = `
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
 var text = (value) => typeof value === "string" ? value.trim() : "";
-function projectBoardView({ project, rows, canManage } = {}) {
+var boardOfRow = (row, task) => {
+  if (task === void 0) return null;
+  if (row.source === "group") {
+    const id = text(task.origin?.roomId);
+    return id === "" ? null : { kind: "group", id };
+  }
+  if (row.source === "bot") {
+    const id = text(task.ownerBotId);
+    return id === "" ? null : { kind: "bot", id };
+  }
+  return null;
+};
+function projectBoardView({ project, rows, canManage, tasks } = {}) {
   const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
+  const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
   const groups = PROJECT_SOURCES.map((source) => ({
     source,
     label: SOURCE_LABELS[source],
-    rows: list.filter((row) => row.source === source).map((row) => ({
-      id: text(row.id),
-      key: `task:${text(row.id)}`,
-      column: text(row.column) || "not-started",
-      assignee: text(row.assignee) || null,
-      runId: text(row.runId) || null,
-      nodeId: text(row.nodeId) || null
-    }))
+    rows: list.filter((row) => row.source === source).map((row) => {
+      const task = byId.get(text(row.id));
+      return {
+        id: text(row.id),
+        key: `task:${text(row.id)}`,
+        column: text(row.column) || "not-started",
+        assignee: text(row.assignee) || null,
+        runId: text(row.runId) || null,
+        nodeId: text(row.nodeId) || null,
+        title: text(task?.title) || text(task?.note) || null,
+        priority: text(task?.priority) || null,
+        board: boardOfRow(row, task)
+      };
+    })
   })).filter((group) => group.rows.length > 0);
   return {
     projectId: text(project?.id) || null,
@@ -19632,28 +19676,33 @@ function ProjectBoardRows({ view, onOpen }) {
     "section",
     { key: group.source, className: "bt-project-group", "data-source": group.source },
     (0, import_react46.createElement)("h4", null, t(group.label)),
-    group.rows.map((row) => (0, import_react46.createElement)(
-      "div",
-      {
-        key: row.key,
-        className: "bt-project-row",
-        "data-task-id": row.id,
-        "data-column": row.column,
-        role: "button",
-        tabIndex: 0,
-        onClick: () => onOpen?.(row.id),
-        onKeyDown: (event) => {
-          if (event.key === "Enter" || event.key === " ") onOpen?.(row.id);
-        }
-      },
-      (0, import_react46.createElement)("span", { className: "bt-project-column" }, t(row.column)),
-      (0, import_react46.createElement)("span", { className: "bt-project-title" }, row.assignee ? `@${row.assignee}` : "—"),
-      row.runId === null ? null : (0, import_react46.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
-    ))
+    group.rows.map((row) => {
+      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
+      return (0, import_react46.createElement)(
+        "div",
+        {
+          key: row.key,
+          className: "bt-project-row",
+          "data-task-id": row.id,
+          "data-column": row.column,
+          "data-priority": row.priority ?? void 0,
+          role: open === void 0 ? void 0 : "button",
+          tabIndex: open === void 0 ? void 0 : 0,
+          onClick: open,
+          onKeyDown: open === void 0 ? void 0 : (event) => {
+            if (event.key === "Enter" || event.key === " ") open();
+          }
+        },
+        (0, import_react46.createElement)("span", { className: "bt-project-column" }, t(row.column)),
+        (0, import_react46.createElement)("span", { className: "bt-project-title" }, row.title ?? (row.assignee ? `@${row.assignee}` : "—")),
+        row.priority === null ? null : (0, import_react46.createElement)("span", { className: "bt-project-priority" }, row.priority),
+        row.runId === null ? null : (0, import_react46.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
+      );
+    })
   ));
 }
-function ProjectBoardPane({ project, rows, canManage, onOpen }) {
-  const view = projectBoardView({ project, rows, canManage });
+function ProjectBoardPane({ project, rows, canManage, tasks, onOpen }) {
+  const view = projectBoardView({ project, rows, canManage, tasks });
   return (0, import_react46.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
@@ -19663,16 +19712,27 @@ function ProjectBoardPane({ project, rows, canManage, onOpen }) {
     (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen })
   );
 }
-function ProjectBoardOverlay() {
+function ProjectBoardOverlay({ actions } = {}) {
   const [state, setState] = (0, import_react46.useState)(null);
+  const [hash, setHash] = (0, import_react46.useState)(() => typeof window === "undefined" ? "" : window.location.hash);
   const close = (0, import_react46.useCallback)(() => {
     if (typeof window !== "undefined") window.location.hash = "";
     setState(null);
   }, []);
   (0, import_react46.useEffect)(() => {
-    if (typeof window === "undefined") return;
-    if (!window.location.hash.startsWith("#project")) return;
-    const wanted = window.location.hash.slice("#project".length).replace(/^=/, "");
+    if (typeof window === "undefined") return void 0;
+    const sync = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", sync);
+    sync();
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  (0, import_react46.useEffect)(() => {
+    if (typeof window === "undefined") return void 0;
+    if (!hash.startsWith("#project")) {
+      setState(null);
+      return void 0;
+    }
+    const wanted = hash.slice("#project".length).replace(/^=/, "");
     let live = true;
     void (async () => {
       try {
@@ -19680,27 +19740,42 @@ function ProjectBoardOverlay() {
         const projects = listing?.projects ?? [];
         const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
         if (project === void 0) {
-          if (live) setState({ project: null, rows: [], canManage: false });
+          if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
           return;
         }
-        const [read, board] = await Promise.all([call("project-read", { id: project.id }), call("project-board", { id: project.id })]);
-        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true });
+        const [read, board, taskList] = await Promise.all([
+          call("project-read", { id: project.id }),
+          call("project-board", { id: project.id }),
+          call("tasks", {})
+        ]);
+        const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
+        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true, tasks });
       } catch {
-        if (live) setState({ project: null, rows: [], canManage: false });
+        if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
     })();
     return () => {
       live = false;
     };
-  }, []);
+  }, [hash]);
   if (state === null) return null;
   return (0, import_react46.createElement)(
     "div",
     { className: "bt-overlay bt-project-overlay", role: "dialog", "aria-label": t("Project board") },
     (0, import_react46.createElement)("button", { type: "button", className: "bt-project-close", onClick: close }, t("Close")),
-    state.project === null ? (0, import_react46.createElement)("div", { className: "bt-project-empty" }, t("No Project here.")) : (0, import_react46.createElement)(ProjectBoardPane, { project: state.project, rows: state.rows, canManage: state.canManage, onOpen: (id) => {
-      window.location.hash = `#task=${id}`;
-    } })
+    state.project === null ? (0, import_react46.createElement)("div", { className: "bt-project-empty" }, t("No Project here.")) : (0, import_react46.createElement)(ProjectBoardPane, {
+      project: state.project,
+      rows: state.rows,
+      canManage: state.canManage,
+      tasks: state.tasks,
+      // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
+      // lands on that Bot or group. Nothing here re-decides which board that is.
+      onOpen: (board) => {
+        if (typeof window !== "undefined") window.location.hash = `#task=${board.kind}:${board.id}`;
+        actions?.openBoard?.();
+        setState(null);
+      }
+    })
   );
 }
 
@@ -20973,7 +21048,8 @@ function apply(ctx) {
     shadow("shell.overlay", { id: "bot-signin", order: 55, inject: face }, DeepSeekSignIn),
     shadow("shell.overlay", { id: "bot-toast", order: 60, inject: face }, ErrorToast),
     shadow("shell.overlay", { id: "flybot-approvals", order: 58, inject: face }, FlyBotApprovals),
-    shadow("shell.overlay", { id: "project-board", order: 57 }, ProjectBoardOverlay)
+    // The board's rows open the Tasks board a task lives on, which only `actions` can do (#1701).
+    shadow("shell.overlay", { id: "project-board", order: 57, inject: face }, ProjectBoardOverlay)
   ];
   const installConversation = () => [
     installCompiledStyles(CONVERSATION_CSS, "conversation"),

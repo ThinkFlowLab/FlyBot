@@ -368,6 +368,21 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
   const boardTasks = boardTasksFor(tasks, archive)
   const close = useCallback(() => actions.closeBoard(), [])
   useEscape(close)
+  // #1701: a Project board row opens the board its task lives on by naming it here, so the id a
+  // row carries is read rather than written into a hash nothing consumed.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!window.location.hash.startsWith('#task=')) return
+    const [kind, id] = window.location.hash.slice('#task='.length).split(':')
+    window.location.hash = ''
+    if (id === undefined || id === '') return
+    if (kind === 'bot' && roster.byId?.[id]) setScope({ kind: 'bot', botId: id })
+    if (kind === 'group' && roster.roomsById?.[id]) setScope({ kind: 'group', roomId: id })
+  }, [])
+  // The Project this board belongs to, when its Bot or group is bound to one.
+  const projectId = scope?.kind === 'bot'
+    ? roster.byId?.[scope.botId]?.projectId
+    : scope?.kind === 'group' ? roster.roomsById?.[scope.roomId]?.projectId : undefined
   const counts = {}
   for (const task of [...own, ...archive]) {
     const id = task.ownerBotId
@@ -404,6 +419,12 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
       h('div', { className: 'bt-mem-head' },
         h('h2', { id: 'bt-board-heading' }, t('Board')),
         h('span', { className: 'bt-mem-status' }, name),
+        // #1701: the board the Bot or group belongs to opens from here; nothing else writes the
+        // Project hash, so without this the Project board was reachable only by editing the URL.
+        projectId ? h('button', {
+          type: 'button', className: 'bt-soft bt-soft-sm', 'data-open-project': projectId,
+          onClick: () => { window.location.hash = `#project=${projectId}`; close() },
+        }, t('Project board')) : null,
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h(BoardView, {

@@ -1310,6 +1310,10 @@ const ZH = {
   'Project settings': '项目设置',
   'Project board': '项目看板',
   'No Project here.': '这里没有项目。',
+  // The Project board names its columns with the same keys the task record uses.
+  'not-started': '未开始',
+  'in-progress': '进行中',
+  'done': '已完成',
 }
 
 // Host errors stay English, since Bots read them too; they are translated where the

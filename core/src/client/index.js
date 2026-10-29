@@ -911,7 +911,8 @@ export function apply(ctx) {
     shadow('shell.overlay', { id: 'bot-signin', order: 55, inject: face }, DeepSeekSignIn),
     shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),
     shadow('shell.overlay', { id: 'flybot-approvals', order: 58, inject: face }, FlyBotApprovals),
-    shadow('shell.overlay', { id: 'project-board', order: 57 }, ProjectBoardOverlay),
+    // The board's rows open the Tasks board a task lives on, which only `actions` can do (#1701).
+    shadow('shell.overlay', { id: 'project-board', order: 57, inject: face }, ProjectBoardOverlay),
   ]
   const installConversation = () => [
     installCompiledStyles(CONVERSATION_CSS, 'conversation'),

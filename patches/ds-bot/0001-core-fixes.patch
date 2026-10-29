@@ -1413,13 +1413,17 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +838,9 @@
+@@ -838,6 +838,13 @@ const ZH = {
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
 +  'Project settings': '项目设置',
 +  'Project board': '项目看板',
 +  'No Project here.': '这里没有项目。',
++  // The Project board names its columns with the same keys the task record uses.
++  'not-started': '未开始',
++  'in-progress': '进行中',
++  'done': '已完成',
  }
  
  // Host errors stay English, since Bots read them too; they are translated where the
