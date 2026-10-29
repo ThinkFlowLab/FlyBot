@@ -66,7 +66,9 @@ export function install(rt) {
         callsOf(id).set(String(event.data?.subCallId ?? ''), eventTime(event))
         return
       case 'tool/result':
-        end(id, String(event.data?.callId ?? ''))
+        // The host reports a result as `{ message: ToolResultMessage }`, so the call id is
+        // on the message; only older payloads carry it at the top of `data` (#1644).
+        end(id, String(event.data?.callId ?? event.data?.message?.toolCallId ?? ''))
         return
       case 'tool/ptc-dispatch':
         end(id, String(event.data?.subCallId ?? ''))

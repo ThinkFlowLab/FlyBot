@@ -402,7 +402,9 @@ export function install(rt) {
         endCall(id, entry, event.data?.subCallId)
         break
       case 'tool/result':
-        endCall(id, entry, event.data?.callId)
+        // A result carries its call id on `data.message`, the shape the host writes; the
+        // top-level read only serves older payloads (#1644).
+        endCall(id, entry, event.data?.callId ?? event.data?.message?.toolCallId)
         break
       case 'turn/start':
         setActivity(id, 'thinking')

@@ -5931,6 +5931,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A program is as quick as the tools it runs, so its sub-calls decide.
          if (rt.groupOwners.has(id) && name !== PROGRAM_TOOL) rt.workRoomTurn?.(id, name)
          break
+@@ -280,7 +280,9 @@ export function install(rt) {
+         endCall(id, entry, event.data?.subCallId)
+         break
+       case 'tool/result':
+-        endCall(id, entry, event.data?.callId)
++        // A result carries its call id on `data.message`, the shape the host writes; the
++        // top-level read only serves older payloads (#1644).
++        endCall(id, entry, event.data?.callId ?? event.data?.message?.toolCallId)
+         break
+       case 'turn/start':
+         setActivity(id, 'thinking')
 @@ -288,11 +288,17 @@ export function install(rt) {
          entry.since = event.time ?? Date.now()
          entry.texts = []

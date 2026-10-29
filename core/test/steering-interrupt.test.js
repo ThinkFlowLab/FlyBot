@@ -45,7 +45,10 @@ function bench() {
 }
 
 const toolCall = (callId, at) => ({ type: 'tool/call', time: at, data: { callId, name: 'bash' } })
-const toolResult = (callId, at) => ({ type: 'tool/result', time: at, data: { callId } })
+// The host writes a result as `{ message: ToolResultMessage }`, so the call id arrives on
+// the message and never at the top level of `data` (DSH's `tool/result` event map).
+const toolResult = (callId, at) => ({ type: 'tool/result', time: at, data: { message: { role: 'tool', toolCallId: callId, isError: false, content: [] } } })
+const toolResultTopLevelId = (callId, at) => ({ type: 'tool/result', time: at, data: { callId } })
 const human = (at) => ({ type: 'user/message', time: at, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'steer' }] } })
 
 test('a human line 59s into a foreground wait does not abort the turn', async () => {
@@ -92,6 +95,42 @@ test('a finished wait, a group Session and an idle Session never interrupt', asy
   b.emit('a', toolCall('c3', T0 + 181_000))
   b.advance(61_000)
   b.emit('a', human(T0 + 242_000))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(b.cancels.length, 0)
+})
+
+test("a landed tool result closes its wait, so a long turn is not read as a long wait (#1644)", async () => {
+  const b = bench()
+  b.emit('a', toolCall('c1', T0))
+  b.emit('a', toolResult('c1', T0 + 5_000))
+  b.advance(61_000)
+  b.emit('a', human(T0 + 61_000))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(b.cancels.length, 0)
+})
+
+test('a closed wait does not age a later call in the same turn (#1644)', async () => {
+  const b = bench()
+  b.emit('a', toolCall('c1', T0))
+  b.emit('a', toolResult('c1', T0 + 5_000))
+  b.emit('a', toolCall('c2', T0 + 100_000))
+  b.advance(130_000)
+  b.emit('a', human(T0 + 130_000))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(b.cancels.length, 0)
+  // The same call is still a wait once it has run past the line.
+  b.advance(31_000)
+  b.emit('a', human(T0 + 161_000))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(b.cancels.length, 1)
+})
+
+test('a result that names its call id at the top of data still closes the wait', async () => {
+  const b = bench()
+  b.emit('a', toolCall('c1', T0))
+  b.emit('a', toolResultTopLevelId('c1', T0 + 5_000))
+  b.advance(61_000)
+  b.emit('a', human(T0 + 61_000))
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(b.cancels.length, 0)
 })
