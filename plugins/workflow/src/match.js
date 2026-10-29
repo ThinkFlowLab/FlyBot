@@ -55,13 +55,15 @@ function token(hay, kind) {
   return match ? match[1] : ''
 }
 
-export function matchTask(task, { workflows = [], bots = [] } = {}) {
+// The target the task's own fields name, ignoring triggers: a `workflow:` or
+// `bot:` token, `workflowId`/`workflow`, or an assignee naming a workflow or a
+// local Bot. A stored claim yields only to this — a trigger is a guess, and a
+// card that names nothing keeps the claim it has (#1647).
+export function namedTarget(task, { workflows = [], bots = [] } = {}) {
   if (!task || typeof task !== 'object') return null
-  if (task.status !== 'open') return null
   const graphs = workflows.filter(item => item && item.id && item.name)
   const locals = bots.filter(bot => bot && bot.remote !== true && bot.id && bot.name)
-  const hay = haystack(task)
-  const lower = hay.toLowerCase()
+  const lower = haystack(task).toLowerCase()
 
   const workflowToken = findWorkflow(graphs, token(lower, 'workflow'))
   if (workflowToken) return { kind: 'workflow', id: workflowToken.id }
@@ -78,6 +80,18 @@ export function matchTask(task, { workflows = [], bots = [] } = {}) {
 
   const assignedBot = assignee ? findBot(locals, assignee) : undefined
   if (assignedBot) return { kind: 'bot', id: assignedBot.id }
+
+  return null
+}
+
+export function matchTask(task, options = {}) {
+  if (!task || typeof task !== 'object') return null
+  if (task.status !== 'open') return null
+  const named = namedTarget(task, options)
+  if (named) return named
+
+  const graphs = (options.workflows ?? []).filter(item => item && item.id && item.name)
+  const lower = haystack(task).toLowerCase()
 
   let best = null
   let bestLength = 0

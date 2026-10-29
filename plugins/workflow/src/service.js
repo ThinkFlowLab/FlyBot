@@ -11,7 +11,7 @@ import {
   missingProviders, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
   rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
-import { matchTask } from './match.js'
+import { matchTask, namedTarget } from './match.js'
 import { linesFor } from './narrate.js'
 import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, templateById, templateCatalog, weeklyWorkflow } from './template.js'
 
@@ -21,6 +21,9 @@ const FILE = 'workflows.json'
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
 const MAX_ORPHANS = 50
+// How many held task ids a workflow lists in `workflow/state`; the count beside
+// them is always the whole truth (#1647).
+const MAX_HELD_TASKS = 20
 // A live step waits for its Bot's reply, and nothing else bounds that wait
 // (#1530). These are the only two numbers a stuck run depends on: how long one
 // step may stay unanswered, and how long a hand-off that did not land waits
@@ -276,8 +279,23 @@ export function createWorkflowService({
     state.logs[workflowId] = log.slice(-MAX_MESSAGES)
   }
 
+  // Task ids each workflow holds, sorted. `heldTaskCount` is the whole truth and
+  // the list beside it is capped (#1647); a Bot claim is not a workflow claim.
+  function heldTaskIds() {
+    const held = new Map()
+    for (const [taskId, claim] of Object.entries(state.claims ?? {})) {
+      if (claim?.kind !== 'workflow') continue
+      const list = held.get(claim.id)
+      if (list) list.push(taskId)
+      else held.set(claim.id, [taskId])
+    }
+    for (const list of held.values()) list.sort()
+    return held
+  }
+
   function present() {
     const roster = bots() ?? []
+    const held = heldTaskIds()
     return {
       ok: true,
       version: 1,
@@ -307,6 +325,8 @@ export function createWorkflowService({
         preview: rowPreview(item, previewRun(item.id)),
         run: publicRun(item, displayRun(item.id)),
         messages: state.logs[item.id] ?? [],
+        heldTasks: (held.get(item.id) ?? []).slice(0, MAX_HELD_TASKS),
+        heldTaskCount: (held.get(item.id) ?? []).length,
       }) }),
     }
   }
@@ -731,6 +751,14 @@ export function createWorkflowService({
         return
       }
     }
+  }
+
+  // A claim and its route travel together; neither is left behind (#1647).
+  function forgetClaim(taskId) {
+    const had = Object.hasOwn(state.claims, taskId) || Object.hasOwn(state.routes, taskId)
+    delete state.claims[taskId]
+    delete state.routes[taskId]
+    return had
   }
 
   function rememberClaim(taskId, decision) {
@@ -1466,15 +1494,30 @@ export function createWorkflowService({
       return this.assign({ workflowId: item.id, taskId, title, ...(body.callerBotId ? { callerBotId: body.callerBotId } : {}) })
     },
     // Auto-assign an open board task. A miss leaves the task untouched.
+    // A stored claim is not a life sentence (#1647): when the card itself now
+    // names another live target, the claim and its route go and the task is
+    // matched again. A trigger, or a card that names nothing, keeps it. Passing
+    // `rematch: true` drops that one claim first — the panel's per-task action.
     ingest(task = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const taskId = cleanLine(task.id, 80)
       if (!taskId) return { ok: false, error: 'A task needs an id' }
+      if (task.rematch === true && forgetClaim(taskId)) write()
       const claimed = state.claims[taskId]
-      const decision = claimed?.kind === 'bot' || claimed?.kind === 'workflow'
-        ? claimed
-        : matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
-      if (!decision) return { ok: true, matched: false }
+      if (claimed?.kind === 'bot' || claimed?.kind === 'workflow') {
+        const named = namedTarget(task, { workflows: state.workflows, bots: bots() ?? [] })
+        if (!named || (named.kind === claimed.kind && named.id === claimed.id)) {
+          return { ok: true, matched: true, already: true, decision: claimed }
+        }
+        forgetClaim(taskId)
+        write()
+      }
+      const decision = matchTask(task, { workflows: state.workflows, bots: bots() ?? [] })
+      if (!decision) {
+        // A rematch on a task that now names nothing leaves it unassigned, and
+        // says so; the claim it dropped is already on disk.
+        return { ok: true, matched: false }
+      }
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
       if (prev?.key === key) return { ok: true, matched: true, already: true, decision }
@@ -1484,7 +1527,7 @@ export function createWorkflowService({
         return { ok: true, matched: true, already: false, decision }
       }
       if (queuedOrRunning(decision.id, taskId)) {
-        state.routes[taskId] = { key, kind: decision.kind, id: decision.id, at: now() }
+        rememberClaim(taskId, decision)
         write()
         return { ok: true, matched: true, already: true, decision }
       }

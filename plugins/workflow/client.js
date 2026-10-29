@@ -111,6 +111,10 @@ window.__ModuleLoader__.load({
       'Rename workflow': '重命名 Workflow',
       'Are you sure you want to delete "{name}"? This cannot be undone.': '确定删除「{name}」？此操作无法撤销。',
       'No open tasks on the Tasks board.': 'Tasks 看板上没有可分配的任务。',
+      'Tasks this workflow holds': '此 Workflow 持有的任务',
+      'Re-match': '重新匹配',
+      '{count} more held tasks': '还有 {count} 个持有的任务',
+      'Could not re-match this task': '无法重新匹配该任务',
       'Loading the Tasks board…': '正在读取 Tasks 看板…',
       'Could not load the Tasks board.': '无法读取 Tasks 看板。',
       Retry: '重试',
@@ -528,10 +532,11 @@ window.__ModuleLoader__.load({
     }
 
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
-    function Stage({ workflow, roster, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop }) {
+    function Stage({ workflow, roster, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop, onRematch }) {
       const chatRef = useRef(null)
       const chatFoot = useRef({ height: 0, shown: 0 })
       const liveRuns = liveStageRuns(workflow)
+      const held = workflow.heldTasks ?? []
       const viewRun = resolveFocusedRun(workflow, focusedRunId)
       const showSummary = (workflow.queueDepth ?? 0) > 0 || liveRuns.length > 1
       const visible = stageMessages(workflow, workflow.messages, roster)
@@ -557,6 +562,14 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
           showSummary ? h('div', { className: 'wf-strip wf-strip-summary' },
             h('span', { className: 'wf-chip queued' }, tr('{count} running · queue {depth}', { count: workflow.activeCount ?? liveRuns.length, depth: workflow.queueDepth ?? 0 }))) : null,
+          held.length > 0 ? h('div', { className: 'wf-held' },
+            h('div', { className: 'wf-held-head' }, tr('Tasks this workflow holds')),
+            held.map(taskId => h('div', { className: 'wf-held-row', key: taskId },
+              h('span', { className: 'wf-held-id', title: taskId }, taskId),
+              h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onRematch?.(taskId) }, tr('Re-match')))),
+            (workflow.heldTaskCount ?? held.length) > held.length
+              ? h('div', { className: 'wf-held-more' }, tr('{count} more held tasks', { count: (workflow.heldTaskCount ?? held.length) - held.length }))
+              : null) : null,
           liveRuns.length > 0 ? h('div', { className: 'wf-strips' },
             liveRuns.map(run => h(RunStrip, {
               key: run.id, workflow, run, focused: viewRun?.id === run.id,
@@ -1791,6 +1804,27 @@ window.__ModuleLoader__.load({
         setRowMenu(null)
       }
 
+      // #1647: drop one task's claim and match it again through the same
+      // `workflow/ingest` the board already uses, with the person's explicit
+      // flag. One read of the board to hand over the card's own fields, then one
+      // read of the store — no second polling loop.
+      const rematchTask = async (taskId) => {
+        let row = null
+        const host = globalThis.__flybot__?.host
+        if (typeof host === 'function') {
+          try {
+            const rows = await host('tasks', {})
+            if (Array.isArray(rows)) row = rows.find(task => task && task.id === taskId) ?? null
+          } catch (loadError) {
+            void loadError
+          }
+        }
+        const value = await stageCall('workflow/ingest', { ...(row ?? { id: taskId }), rematch: true }, 'Could not re-match this task')
+        if (value?.ok === false) { setError(value.error ?? tr('Could not re-match this task')); return }
+        setError('')
+        await refresh()
+      }
+
       const confirmAssign = async ({ taskId, target }) => {
         const task = tasks.find(item => item.id === taskId)
         if (!task) return
@@ -1914,6 +1948,7 @@ window.__ModuleLoader__.load({
               if (value?.workflows) setPack(value)
             })
           },
+          onRematch: rematchTask,
         })) : null,
         assignOpen ? portal(h(AssignModal, {
           workflows, tasks, tasksStatus, tasksError, roster, workflowId: openId || workflows[0]?.id,
@@ -1993,6 +2028,11 @@ window.__ModuleLoader__.load({
 .wf-strip-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .wf-strip-summary{justify-content:center;border-style:dashed;background:transparent;margin-bottom:2px;cursor:default;flex-direction:row}
 .wf-btn.wf-danger-outline{box-shadow:inset 0 0 0 1px rgba(229,72,77,.45);color:#e5484d;background:none}
+.wf-held{margin:0 auto 6px;width:min(720px,calc(100% - 48px));border:1px solid var(--bt-line,rgba(20,20,20,.08));background:var(--bt-card,#fff);border-radius:12px;padding:8px 12px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+.wf-held-head{font-size:12px;color:var(--bt-ink-2,#666)}
+.wf-held-row{display:flex;align-items:center;gap:8px;min-width:0}
+.wf-held-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.wf-held-more{font-size:12px;color:var(--bt-ink-2,#666)}
 .wf-tk{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(360px,42vw)}.wf-meta{font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap}
 .wf-segs{display:flex;gap:3px;flex:1;min-width:80px}
 .wf-seg{height:5px;border-radius:3px;background:var(--bt-active,rgba(119,119,119,.17));flex:1}
