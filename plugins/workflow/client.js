@@ -79,6 +79,7 @@ window.__ModuleLoader__.load({
       Edit: '编辑',
       'Finish editing': '完成',
       'Drag a Bot here': '把 Bot 拖到图上',
+      'Layout lives in Settings': '布局在 Settings 画布改',
       'From a template': '从模板新建',
       Remove: '移除',
       'System prompt': '系统提示词',
@@ -1042,6 +1043,8 @@ window.__ModuleLoader__.load({
       const [gesture, setGesture] = useState(null)
       const [ghost, setGhost] = useState(null)
       const [dragPreview, setDragPreview] = useState(null)
+      // One line under the palette when the laid-out plane refused a move (#1686).
+      const [planeHint, setPlaneHint] = useState(null)
       const [selectedNode, setSelectedNode] = useState(null)
       const [termOpen, setTermOpen] = useState(false)
       const [measure, setMeasure] = useState({ width: 0, heights: {} })
@@ -1090,7 +1093,8 @@ window.__ModuleLoader__.load({
       const view = flowLayout(workflow, measure.width > 0 ? measure.width : DRAWER_FLOW_W, measure.heights)
       const locals = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true && !nodes.some(node => node.botId === bot.id))
       const selected = nodes.find(node => node.id === selectedNode)
-      const commit = (nextNodes, nextEdges) => onCommit?.({ nodes: nextNodes, edges: nextEdges })
+      // Any change the plane does take clears the one hint a refused move left (#1686).
+      const commit = (nextNodes, nextEdges) => { setPlaneHint(null); onCommit?.({ nodes: nextNodes, edges: nextEdges }) }
       const movePointer = (event) => {
         if (!gesture) return
         if (gesture.kind === 'add') {
@@ -1108,7 +1112,11 @@ window.__ModuleLoader__.load({
         setDragPreview(null)
         const hit = hitNode(event)
         if (gesture.kind === 'move' && ghost?.[gesture.id]) {
-          commit(nodes.map(node => node.id === gesture.id ? { ...node, ...ghost[gesture.id] } : node), edges)
+          // A laid-out plane draws its cards in panel coordinates, so this ghost is a panel point:
+          // committing it would rewrite the stored layout from a drag made only to see the cards.
+          // The drawer's Edit plane changes structure, not layout (#1686).
+          if (plane.wrapped) setPlaneHint(tr('Layout lives in Settings'))
+          else commit(nodes.map(node => node.id === gesture.id ? { ...node, ...ghost[gesture.id] } : node), edges)
         } else if (gesture.kind === 'wire' && hit && hit !== gesture.from) {
           commit(workflow.nodes, edges.concat([{ from: gesture.from, to: hit }]))
         } else if (gesture.kind === 'reconnect') {
@@ -1117,9 +1125,13 @@ window.__ModuleLoader__.load({
           else if (!hit) commit(workflow.nodes, rest)
         } else if (gesture.kind === 'add' && event.target?.dataset?.plane) {
           const bot = gesture.bot
-          const x = Number.isFinite(event.offsetX) ? Math.round((event.offsetX - plane.offsetX) / scale) : 24
-          const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY - plane.offsetY) : 24
-          commit(workflow.nodes.concat([{ id: nextNodeId(workflow.nodes), name: bot.name, botId: bot.id, role: bot.role ?? '', x, y }]), edges)
+          // In a laid-out plane the drop point is a panel point too, and `flowLayout` gives the new
+          // card its own row either way, so it keeps the plane's default seat (24, 24) instead.
+          const drop = plane.wrapped ? { x: 24, y: 24 } : {
+            x: Number.isFinite(event.offsetX) ? Math.round((event.offsetX - plane.offsetX) / scale) : 24,
+            y: Number.isFinite(event.offsetY) ? Math.round(event.offsetY - plane.offsetY) : 24,
+          }
+          commit(workflow.nodes.concat([{ id: nextNodeId(workflow.nodes), name: bot.name, botId: bot.id, role: bot.role ?? '', x: drop.x, y: drop.y }]), edges)
         }
         setGesture(null)
         setGhost(null)
@@ -1144,6 +1156,7 @@ window.__ModuleLoader__.load({
                 setDragPreview({ x: event.clientX, y: event.clientY })
               },
             })))) : null,
+        editing && plane.wrapped && planeHint ? h('p', { className: 'wf-plane-hint', role: 'status' }, planeHint) : null,
         gesture?.kind === 'add' && dragPreview ? h('div', {
           className: 'wf-drag-ghost',
           style: { left: dragPreview.x + 10, top: dragPreview.y + 10 },
@@ -2213,6 +2226,7 @@ window.__ModuleLoader__.load({
 .wf-flow-view .wf-arrow{fill:var(--bt-ink-3,#9a9a9a);stroke:none}
 .wf-palette{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:min(100%,360px);margin:0 auto 4px;padding:10px 12px;border:1px dashed var(--bt-line,rgba(20,20,20,.14));border-radius:12px;background:var(--bt-card,#fff)}
 .wf-palette-hint{margin:0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
+.wf-plane-hint{margin:0;padding:2px 0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
 .wf-palette-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .wf-palette-bot{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:6px 10px 6px 6px;border:1px solid var(--bt-line,rgba(20,20,20,.1));border-radius:12px;background:var(--bt-main,#fcfcfc);color:inherit;font:inherit;cursor:grab;box-shadow:0 1px 0 rgba(20,20,20,.04);transition:border-color .15s,box-shadow .15s,transform .12s}
 .wf-palette-bot:hover{border-color:color-mix(in srgb,var(--bt-accent,#4d6bfe) 35%,transparent);box-shadow:0 2px 8px color-mix(in srgb,var(--bt-accent,#4d6bfe) 12%,transparent)}
