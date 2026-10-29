@@ -69,6 +69,8 @@ const TASK_ENDPOINTS = new Set([
   // other wiring point was present, and a signed-in host answered `bot/not-found: Unknown
   // endpoint project-board` while `project-read` and `project-of` answered ALLOW.
   'projects', 'project-create', 'project-read', 'project-bind', 'project-of', 'project-board',
+  // The assistant (#1712): its memory is per Project, and deleting a Project takes it along.
+  'project-memory', 'project-memory-write', 'project-delete',
 ])
 
 const deny = (code, message) => ({ ok: false, code, message })

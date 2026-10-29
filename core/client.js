@@ -6753,7 +6753,8 @@ var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
   "attach_capability",
   "detach_capability",
   "track_links",
-  "project_state"
+  "project_state",
+  "project_digest"
 ]);
 var isSilentRegistration = (name) => typeof name === "string" && SILENT_REGISTRATION_TOOLS.has(name);
 var isHiddenNotice = (block) => block?.type === "tool-removal" && (HIDDEN_REMOVED_TOOLS.has(block.toolName) || isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName)) || block?.type === "tool-addition" && (isConnectorTool(block.toolName) || isPluginTool(block.toolName) || isSilentRegistration(block.toolName));

@@ -28,7 +28,7 @@ export const EPHEMERAL_DENIED_TOOLS = Object.freeze([
   'send_message', 'schedule_create', 'schedule_update', 'schedule_delete',
   'message_friend_bot', 'get_friend_file', 'list_friend_bots',
   'define_workflow', 'run_workflow',
-  'read_browser', 'recall', 'create_child_bot',
+  'read_browser', 'recall', 'create_child_bot', 'project_digest',
 ])
 // The team-facing names a run Bot keeps: read-only, and each reads only what the run Bot itself
 // may see. `remember`/`forget` are the only writes, and `writeDenied` keeps them inside the run

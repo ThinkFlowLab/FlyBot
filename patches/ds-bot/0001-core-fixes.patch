@@ -9258,7 +9258,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on agent/status',
      'on llm/stream',
      'on llm/stream',
-@@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,24 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -9269,6 +9269,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: capabilities',
 +    'effect ds-bot: missed scheduled runs',
 +    'tool bot_schedules',
++    'tool project_digest',
 +    'effect ds-bot: automation tasks default',
      'effect ds-bot: usage ledger',
      'on llm/stream',

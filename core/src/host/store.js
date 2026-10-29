@@ -31,7 +31,7 @@ export function install(rt) {
   /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>}} */
   // `projects` is the durable Project record (#1691); `projectRuns` is the binding a workflow run
   // reports, because a run lives in the workflow plugin's own state and cannot carry the field.
-  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, revision: 0 }
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -234,6 +234,12 @@ export function install(rt) {
       state.projectRuns = {}
       migrated = true
     }
+    // A Project Assistant's memory (#1712) is keyed by Project id and read by that id alone, so one
+    // Project's entries never appear in another's answer.
+    if (!isRecord(state.projectMemory)) {
+      state.projectMemory = {}
+      migrated = true
+    }
     if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
       state.capabilities = { items: {} }
       migrated = true
@@ -414,6 +420,59 @@ export function install(rt) {
   }
   const readProject = id => projectOfId(id)
   const listProjects = () => Object.values(state.projects).filter(isRecord)
+  // A Project Assistant's memory (#1712): decisions, open questions and the last digest, stored
+  // per Project id. A Project with no entries answers empty lists, never another Project's.
+  const projectMemoryOf = (id) => {
+    const kept = ownEntry(state.projectMemory, String(id ?? ''))
+    return isRecord(kept) ? kept : null
+  }
+  const projectMemory = (id) => {
+    const project = projectOfId(id)
+    if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
+    const kept = projectMemoryOf(project.id)
+    return {
+      decisions: Array.isArray(kept?.decisions) ? kept.decisions : [],
+      questions: Array.isArray(kept?.questions) ? kept.questions : [],
+      digest: isRecord(kept?.digest) ? kept.digest : null,
+    }
+  }
+  const memoryTable = (project) => {
+    const kept = projectMemoryOf(project.id)
+    if (kept !== null) return kept
+    const fresh = { decisions: [], questions: [], digest: null }
+    setEntry(state.projectMemory, project.id, fresh)
+    return fresh
+  }
+  const appendProjectMemory = (id, kind, entry = {}) => {
+    const project = requireProject(id)
+    if (kind !== 'decision' && kind !== 'question') throw projectRefusal(`Unknown Project memory kind ${String(kind ?? '')}`)
+    const table = memoryTable(project)
+    const list = kind === 'decision' ? table.decisions : table.questions
+    list.push({ text: projectText(entry.text, 600), at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
+    project.updatedAt = Math.max(project.updatedAt, Date.now())
+    return projectMemory(project.id)
+  }
+  // The last digest is one note per Project, replaced only by a later day's build; the assistant
+  // refuses a second build in the same day before it gets here.
+  const setProjectDigest = (id, note = {}) => {
+    const project = requireProject(id)
+    memoryTable(project).digest = { day: projectText(note.day, 20), at: Number(note.at) || Date.now(), text: projectText(note.text, 4000) }
+    project.updatedAt = Math.max(project.updatedAt, Date.now())
+    return projectMemory(project.id)
+  }
+  // Deleting a Project takes its bindings and its memory with it (#1712): an unbound member
+  // resolves `null` again, and no orphan memory keyed by a dead id can be read.
+  const deleteProject = async (id) => {
+    const project = requireProject(id)
+    await rt.projectAssistant?.remove?.(project.id)
+    delete state.projects[project.id]
+    delete state.projectMemory[project.id]
+    for (const member of [...Object.values(state.bots), ...Object.values(state.rooms)]) {
+      if (member.projectId === project.id) delete member.projectId
+    }
+    for (const [runId, bound] of Object.entries(state.projectRuns)) if (bound === project.id) delete state.projectRuns[runId]
+    return project
+  }
   // One Project to many members, a member to at most one Project; `projectId: null` unbinds.
   const bindProject = (body = {}) => {
     const kind = projectText(body.kind, 20)
@@ -456,8 +515,30 @@ export function install(rt) {
         // The caller is stamped as the owner; a member id from the body cannot mint a
         // Project someone else manages.
         const project = createProject({ ...body, ownerUserId: projectActorId(actor) ?? undefined })
+        // One assistant per Project (#1712). A Project must not fail because automation is off, so
+        // a refusal here is recorded on the record and the Project is still created.
+        if (rt.projectAssistant !== undefined) {
+          try {
+            await rt.projectAssistant.create(project.id)
+          } catch (error) {
+            project.assistant = { error: error?.message ?? String(error) }
+          }
+        }
         await save()
         return { project }
+      }
+      case 'project-delete': {
+        const project = await deleteProject(projectText(body.id, 200))
+        await save()
+        return { project }
+      }
+      // The assistant's private memory (#1712): read and write are per Project id, so a caller
+      // holding one id can never reach another Project's entries.
+      case 'project-memory': return { project: readProject(projectText(body.id, 200)), memory: projectMemory(projectText(body.id, 200)) }
+      case 'project-memory-write': {
+        const memory = appendProjectMemory(projectText(body.id, 200), projectText(body.kind, 20), body)
+        await save()
+        return { memory }
       }
       case 'project-read': {
         const project = readProject(projectText(body.id, 200))
@@ -771,5 +852,6 @@ export function install(rt) {
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
     initialOwnerId, syncDesignatedChief,
     projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember,
+    projectMemory, projectMemoryOf, appendProjectMemory, setProjectDigest, deleteProject,
   })
 }

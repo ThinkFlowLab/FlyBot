@@ -672,6 +672,9 @@ export function install(rt) {
         case 'project-bind':
         case 'project-of':
         case 'project-board':
+        case 'project-delete':
+        case 'project-memory':
+        case 'project-memory-write':
           await rt.load()
           return ok(await rt.projectEndpoint(endpoint, body, actor))
         case 'share-brief':

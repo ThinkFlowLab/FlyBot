@@ -13,6 +13,8 @@ The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/cl
 
 - Browser client: sidebar, chat, panels, themes, characters, Bot browser panel (`core/client.js` generated from `core/src/client/`). The sidebar **+** new-chat picker (`core/src/client/new-chat.js`) takes extra rows from slot `flybot.new-chat.action` (after New group chat; `label` / `hint` go through the same `t()` map) and lists only `listedChatBots` (gone, hidden, and home-level remotes stay out; owner labels match the sidebar). Covered by `core/test/new-chat.test.js` in patch `0003-flybot-api-client`.
 
+- Chat context rows: a tool the plugin registers at install draws one `tool-addition` row, and `cells.js` keeps every name in `TEAM_TOOLS` out of the chat (`SILENT_REGISTRATION_TOOLS`, #1101) — the Project Assistant's `project_digest` joins them (#1712), so its 09:00 Session shows the digest, not its registration.
+
 ## Does not own
 
 - The server side, `core/index.js`, `core/src/host/`, `core/src/shared/` → [core-host](core-host.md).
