@@ -64,3 +64,4 @@ keep it to what a reader must act on.
 | Date | Decision | Class | Status |
 | --- | --- | --- | --- |
 | 2026-10-29 | [Stage 1 approved, five-stage direction adopted](2026-10-29-stage-1-approved.md) | major | accepted |
+| 2026-10-29 | [Stage 1 dogfood: the #1550 classification, approval and reclassification](2026-10-29-stage-1-dogfood.md) | major | accepted |
