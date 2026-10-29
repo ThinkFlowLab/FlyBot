@@ -19,10 +19,31 @@ export const COALESCE_MS = 3_000
 export const ACK_TIMEOUT_MS = 3_000
 export const ACK_MAX_TOKENS = 80
 export const ACK_MAX_CHARS = 120
-// How many line ids one ack entry remembers. The person's line is acked at arrival and its
-// `user/message` arrives at the claim, which production logs put up to 768 s later (#1678);
-// the ids, not a time window, are what says "this line already has its ack".
+// How many line ids one Session remembers exactly. The person's line is acked at arrival and its
+// `user/message` arrives at the claim, which production logs put up to 768 s later and after the
+// `turn/end` that clears the ack entry (#1678, #1684); the ids, not a time window, are what says
+// "this line already has its ack". The ids live beside the entry, not inside it, so the entry's
+// lifetime cannot take the memory with it.
 export const LINE_IDS_KEPT = 16
+// The rest of the ids are remembered in a fixed-size filter per Session: an id pruned from the
+// exact set still answers "already acked", so a late claim can never resurrect an old line. The
+// filter is `LEDGER_FILTER_WORDS` 32-bit words — 256 words × 4 bytes = 1 KiB, 8192 bits — with
+// three salted positions per id, and it never grows; a false positive costs one skipped ack,
+// never a second sentence.
+const LEDGER_FILTER_WORDS = 256
+const LEDGER_FILTER_HASHES = 3
+// A filter that is only ever added to saturates: at the three salted positions of this size it
+// already answers "acked" for 3.6% of brand-new lines after 1000 lines, 15.9% after 2000, 44.2%
+// after 4000 and 97.9% after 12000, and every one of those is an ack that falls silent — the gap
+// this ledger exists to close. So after `LEDGER_FILTER_REBUILD_AFTER` ids folded in since the
+// last rebuild, the filter is rebuilt from the exact set alone. Worst fill is then
+// (512 + LINE_IDS_KEPT) × 3 = 1584 of 8192 bits (19.3%), under 1% false positives; the rebuild
+// forgets only ids older than the last `LINE_IDS_KEPT`, which have already been claimed.
+export const LEDGER_FILTER_REBUILD_AFTER = 512
+// Sessions whose line memory is kept. A Session that is archived or stops talking would
+// otherwise hold its ids and its filter for the life of the process; the ones that stop writing
+// are dropped first, and only past this many does a Session lose its memory.
+export const LEDGER_SESSIONS_KEPT = 256
 
 export const ACK_SYSTEM = [
   'You write the one-line acknowledgment a busy assistant sends when a new message arrives while it is still working.',
@@ -74,10 +95,39 @@ const textOf = (content) => {
   return content.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('')
 }
 
+// A deterministic position in the fixed-size filter for a line id. Three hashes of one FNV-1a
+// pass with different salts: an id pruned from the exact set still answers "already acked".
+const hashLine = (text, seed) => {
+  let hash = 0x811c9dc5 ^ seed
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+const lineBits = (lineId) => {
+  const key = String(lineId)
+  const size = LEDGER_FILTER_WORDS * 32
+  return Array.from({ length: LEDGER_FILTER_HASHES }, (_, index) => hashLine(key, index * 0x9e3779b1) % size)
+}
+
+const bitCount = (word) => {
+  let left = word
+  let count = 0
+  while (left !== 0) { left &= left - 1; count += 1 }
+  return count
+}
+
 export function install(rt) {
   const { ctx, config } = rt
   /** @type {Map<string, { text: string, at: number, id: number }>} */
   const acks = new Map()
+  // The line ids a Session has already acknowledged. Kept beside the ack entry, not inside it:
+  // the entry dies at `turn/end`, and the claim of a `next-turn` line always lands after that
+  // (#1684), so the memory has to outlive it.
+  /** @type {Map<string, { exact: Set<string>, bits: Uint32Array, folded: number, rebuilds: number }>} */
+  const ledgers = new Map()
   let counter = 0
 
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
@@ -138,29 +188,79 @@ export function install(rt) {
     try { return await Promise.race([work, late]) } finally { clearTimeout(timer) }
   }
 
-  const rememberLine = (entry, lineId) => {
-    entry.lines.add(lineId)
-    while (entry.lines.size > LINE_IDS_KEPT) entry.lines.delete(entry.lines.values().next().value)
+  const foldIntoFilter = (ledger, key) => {
+    for (const bit of lineBits(key)) ledger.bits[bit >>> 5] |= 1 << (bit & 31)
+  }
+
+  // A fresh filter holding every id the exact set still remembers. Never a bare reset: an id the
+  // exact set already pruned is only in the old filter, and a reset without re-adding the survivors
+  // would put that line back on the table — the duplicate ack this ledger exists to stop.
+  const rebuildFilter = (ledger) => {
+    ledger.bits = new Uint32Array(LEDGER_FILTER_WORDS)
+    for (const key of ledger.exact) foldIntoFilter(ledger, key)
+    ledger.folded = 0
+    ledger.rebuilds += 1
+  }
+
+  // The Session's ledger, created on first use and dropped only when more than
+  // `LEDGER_SESSIONS_KEPT` Sessions have written more recently.
+  const ledgerOf = (sessionId) => {
+    let ledger = ledgers.get(sessionId)
+    if (ledger === undefined) {
+      while (ledgers.size >= LEDGER_SESSIONS_KEPT) ledgers.delete(ledgers.keys().next().value)
+      ledger = { exact: new Set(), bits: new Uint32Array(LEDGER_FILTER_WORDS), folded: 0, rebuilds: 0 }
+    } else {
+      // Recency: a Session writing now must not be the first one an idle Session takes the room
+      // from. Re-inserting moves it to the back of the map's insertion order.
+      ledgers.delete(sessionId)
+    }
+    ledgers.set(sessionId, ledger)
+    return ledger
+  }
+
+  const rememberLine = (sessionId, lineId) => {
+    if (lineId === undefined) return
+    const ledger = ledgerOf(sessionId)
+    const key = String(lineId)
+    if (ledger.exact.has(key)) return
+    ledger.exact.add(key)
+    // Bounded: the exact set holds the lines still waiting for their claim, and an id it drops
+    // is folded into the filter, which is why the drop cannot make that line speak again.
+    while (ledger.exact.size > LINE_IDS_KEPT) {
+      const oldest = ledger.exact.values().next().value
+      ledger.exact.delete(oldest)
+      foldIntoFilter(ledger, oldest)
+      ledger.folded += 1
+    }
+    if (ledger.folded > LEDGER_FILTER_REBUILD_AFTER) rebuildFilter(ledger)
+  }
+
+  const lineAcked = (sessionId, lineId) => {
+    if (lineId === undefined) return false
+    const ledger = ledgers.get(sessionId)
+    if (ledger === undefined) return false
+    const key = String(lineId)
+    if (ledger.exact.has(key)) return true
+    return lineBits(key).every((bit) => (ledger.bits[bit >>> 5] & (1 << (bit & 31))) !== 0)
   }
 
   const note = (sessionId, message, session, lineId) => {
     const now = Date.now()
+    // The same line arrives twice: as a splice when it is queued and as `user/message` when it
+    // is claimed. The claim lands after the `turn/end` that cleared the ack entry, and can be
+    // minutes later than the arrival, past any coalescing window — the Session's line ledger,
+    // not the entry and not the clock, is what says the line already has an ack (#1678, #1684).
+    if (lineAcked(sessionId, lineId)) return acks.get(sessionId)
     const existing = acks.get(sessionId)
-    if (existing !== undefined) {
-      // The same line arrives twice: as a splice when it is queued and as `user/message`
-      // when it is claimed. The claim can be minutes later, past any coalescing window, so
-      // the line's own id — not the clock — is what says it already has an ack (#1678).
-      if (lineId !== undefined && existing.lines.has(lineId)) return existing
-      if (now - existing.at < COALESCE_MS) {
-        if (lineId !== undefined) rememberLine(existing, lineId)
-        existing.at = now
-        return existing
-      }
+    if (existing !== undefined && now - existing.at < COALESCE_MS) {
+      rememberLine(sessionId, lineId)
+      existing.at = now
+      return existing
     }
     counter += 1
     // Published at once with no text: the client draws the pending dots (#1657).
-    const entry = { text: '', at: now, id: counter, lines: new Set() }
-    if (lineId !== undefined) rememberLine(entry, lineId)
+    const entry = { text: '', at: now, id: counter }
+    rememberLine(sessionId, lineId)
     acks.set(sessionId, entry)
     entry.ready = write(session, sessionId, message).then((text) => {
       if (text !== '' && acks.get(sessionId) === entry) entry.text = text
@@ -180,12 +280,20 @@ export function install(rt) {
     // Only a `next-turn` line waits: a `next-step` splice is steered into the running turn and
     // is admitted at its next step, which is the path that never showed a silence before.
     if (event.type === 'agent/inbox/spliced') {
-      if (event.data?.target !== 'next-turn' || !Array.isArray(event.data?.inserted)) return
+      const target = event.data?.target
+      if ((target !== 'next-turn' && target !== 'next-step') || !Array.isArray(event.data?.inserted)) return
       for (const landed of event.data.inserted) {
         const source = landed?.source
         const room = roomLine(id, source)
-        const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
-        if (!own && !(room && turnRunning(id))) continue
+        const running = turnRunning(id)
+        // An own-chat line waits in `next-turn` for the turn to end, which is the silence this
+        // covers; a steer is admitted at the running turn's next step, so own chat needs nothing.
+        // A person's room mid-line is relayed as a steer too, but the silence there is the
+        // member's speaking row (#1646), so that row is acked at arrival whatever inbox the
+        // relay used (#1684).
+        const own = target === 'next-turn'
+          && shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: running, ownChat: ownChat(id) })
+        if (!own && !(room && running)) continue
         const text = textOf(landed?.content)
         note(id, room ? text.replace(relayHeader, '') : text, session, landed?.id)
       }
@@ -227,6 +335,14 @@ export function install(rt) {
       return [[botId, ack === undefined ? { text: '', at: 0 } : { text: ack.text, at: ack.at }]]
     })),
     noteBusyAck: note,
+    // How many line ids the Session's exact ledger holds; the filter beyond it is fixed-size.
+    busyAckLedgerSize: sessionId => ledgers.get(sessionId)?.exact.size ?? 0,
+    // How many Sessions have a ledger; bounded by LEDGER_SESSIONS_KEPT.
+    busyAckLedgerSessions: () => ledgers.size,
+    // How many bits of the Session's filter are set: the filter's fill, for the rebuild bound.
+    busyAckLedgerFill: sessionId => (ledgers.get(sessionId)?.bits ?? []).reduce((sum, word) => sum + bitCount(word), 0),
+    // How many times the Session's filter was rebuilt from the exact set.
+    busyAckLedgerRebuilds: sessionId => ledgers.get(sessionId)?.rebuilds ?? 0,
     // The pending model answer for a Session's ack ('' when none); for tests and diagnostics.
     busyAckReady: sessionId => acks.get(sessionId)?.ready ?? Promise.resolve(''),
     clearBusyAck: clear,
