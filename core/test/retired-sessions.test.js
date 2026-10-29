@@ -16,6 +16,10 @@ import { fakeContext } from './fake-ctx.js'
 const COMPOSIO = ['mcp__composio__COMPOSIO_SEARCH_TOOLS', 'mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL']
 const GITHUB = ['mcp__github__create_issue', 'mcp__github__get_me']
 const ALL = [...COMPOSIO, ...GITHUB]
+// A room mounts github's read half only (#1234), so these two answer differently there.
+const GITHUB_READ = 'mcp__github__get_me'
+const GITHUB_WRITE = 'mcp__github__create_issue'
+const ROOM_GITHUB = /not available in a group room \(#1234\)/
 const REFUSED = /could not be determined/
 const RETIRED = ['writer', 'writer-2', 'room-writer', 'room-writer-old']
 
@@ -104,14 +108,18 @@ test('the owner\'s own Session, an unknown id, no Agent, and a live Bot or room 
   rt.state.rooms.desk2 = { id: 'desk2', name: 'Desk 2', members: ['chief', 'reader'], sessions: { chief: 'room-writer' }, admin: 'chief', mode: 'everyone' }
   await rt.save()
   for (const answer of [...GITHUB].map(name => reason(ctx.guards, name, 'writer-2'))) assert.equal(answer, undefined, 'the live Bot\'s own chat')
-  for (const answer of GITHUB.map(name => reason(ctx.guards, name, 'room-writer'))) assert.equal(answer, undefined, 'the live room\'s Session')
+  assert.equal(reason(ctx.guards, GITHUB_READ, 'room-writer'), undefined, 'the live room\'s Session keeps github\'s read tools')
+  const roomWrite = reason(ctx.guards, GITHUB_WRITE, 'room-writer')
+  assert.match(roomWrite, ROOM_GITHUB, 'the live room carries the #1234 read-only rule')
+  assert.doesNotMatch(roomWrite, REFUSED, 'and it is not the deleted-Bot sentence')
   // The room rule (#1237) still refuses composio there, and it is that sentence — not this fix's.
   for (const answer of COMPOSIO.map(name => reason(ctx.guards, name, 'room-writer'))) assert.doesNotMatch(answer, REFUSED)
   await ctx.dispose()
   const second = await open(home)
   t.after(async () => { await second.ctx.dispose() })
   assert.deepEqual(GITHUB.map(name => reason(second.ctx.guards, name, 'writer-2')).filter(answer => answer !== undefined), [], 'the live Bot still wins after a reload')
-  assert.deepEqual(GITHUB.map(name => reason(second.ctx.guards, name, 'room-writer')).filter(answer => answer !== undefined), [], 'the live room still wins after a reload')
+  assert.equal(reason(second.ctx.guards, GITHUB_READ, 'room-writer'), undefined, 'the live room still wins after a reload')
+  assert.match(reason(second.ctx.guards, GITHUB_WRITE, 'room-writer'), ROOM_GITHUB, 'the live room still carries the #1234 rule after a reload')
   for (const id of RETIRED.filter(id => id !== 'writer-2' && id !== 'room-writer')) {
     for (const answer of refusal(second.ctx.guards, id)) assert.match(answer, REFUSED, id)
   }
