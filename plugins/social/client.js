@@ -2500,8 +2500,10 @@ window.__ModuleLoader__.load({
         const shown = new Set(mine.map(card => card.id))
         const away = [...held, ...local.filter(item => item.inline)]
           .filter(item => !shown.has(item.id) && (!item.roomId || roomIds.has(item.roomId)))
-        if (away.some(item => item.inline)) return { bubble: true }
+        if (away.some(item => item.inline === sessionId)) return { bubble: true }
         for (const item of away) {
+          // A held reply is decided where it is drawn: its own bubble, never a chat to open.
+          if (item.inline) continue
           const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
           const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
           const chat = friend ?? own

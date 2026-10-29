@@ -269,6 +269,17 @@ test('#1640: a held reply names the reply bubble above and offers no jump, becau
   } finally { delete globalThis.__flybot__ }
 })
 
+test('#1640: a held reply from another chat is not this room\'s bubble', async () => {
+  // `local` is every local hold, not only this chat's: a bubble in another chat is not "above" here.
+  const { tree } = await settle([{ ...inlineHold(), id: 'a4', request: { ...inlineHold().request, meta: { replyIn: { sessionId: 's9' } } } }])
+  try {
+    const text = drawn(tree)
+    assert.match(text, /Waiting for the owner's approval/)
+    assert.doesNotMatch(text, /Decide on the reply bubble above/, 'a bubble in another chat is not this chat\'s bubble')
+    assert.equal(button(tree, 'chat-approval-open-chat'), undefined, 'and it is no chat to jump to either')
+  } finally { delete globalThis.__flybot__ }
+})
+
 test('#1640: a room count this dock cannot place keeps the neutral sentence and no button', async () => {
   const { tree } = await settle([])
   try {
