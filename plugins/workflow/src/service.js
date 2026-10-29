@@ -86,6 +86,26 @@ function publicEdge(edge) {
   return out
 }
 
+// #1706: the two fields the Inbox needs to place a run in time. A paused run is
+// still `status: 'running'` with `paused: true` (the engine keeps the status and
+// only deletes `paused` on resume), so both fields follow the status the engine
+// keeps instead of a second reading of `paused`.
+function finishedAtOf(run) {
+  if (run.status !== 'done' && run.status !== 'failed') return null
+  if (typeof run.finishedAt === 'number') return run.finishedAt
+  return typeof run.updatedAt === 'number' ? run.updatedAt : null
+}
+
+function currentStepOf(workflow, run) {
+  if (run.status !== 'running') return null
+  // The same ordered walk the stage's "Running now" strip uses, so the two cannot
+  // name different nodes.
+  const id = orderedIds(workflow, run.nodeStatus, 'running')[0]
+  if (id === undefined) return null
+  const node = workflow.nodes.find(candidate => candidate.id === id)
+  return { id, name: node?.name ?? id }
+}
+
 function publicRun(workflow, run) {
   if (!run) return null
   return {
@@ -104,6 +124,8 @@ function publicRun(workflow, run) {
     history: run.history ?? [],
     startedAt: run.startedAt,
     updatedAt: run.updatedAt,
+    finishedAt: finishedAtOf(run),
+    currentStep: currentStepOf(workflow, run),
     ...(run.live === true ? { live: true } : {}),
     ...(run.paused === true ? { paused: true } : {}),
     ...(run.failure ? { failure: { ...run.failure } } : {}),

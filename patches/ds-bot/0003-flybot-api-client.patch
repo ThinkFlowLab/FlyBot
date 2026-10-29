@@ -1352,7 +1352,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,68 @@
+@@ -1,44 +1,69 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
 +import { createElement as h } from 'react'
 +import { registry as flybotSlots } from './flybot-registry.js'
@@ -1396,6 +1396,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { USAGE_CSS } from './usage-page.js'
  import { SCHEDULE_CSS } from './schedules.js'
 +import { INBOX_CSS } from './inbox.js'
++import { readWorkflows } from './workflows.js'
 +import { KANBAN_CSS } from './kanban.js'
 +import { MOBILE_CSS } from './mobile.js'
 +import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
@@ -1668,7 +1669,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
-@@ -647,6 +647,10 @@ export function apply(ctx) {
+@@ -647,6 +647,13 @@ export function apply(ctx) {
      wakeUpdate()
    }
    actions.repoStars = () => call('repo-stars')
@@ -1676,6 +1677,9 @@ diff --git a/src/client/index.js b/src/client/index.js
 +  // a file or GitHub itself, and workflow-save is the endpoint authz allows.
 +  actions.workflows = (payload) => call('workflows', payload)
 +  actions.workflowSave = (payload) => call('workflow-save', payload)
++  // The Inbox lists failed workflow runs (#1706). It reads the same pack the Workflows page does,
++  // with the same settle, so a missing plugin is "no runs", not an Inbox error line.
++  actions.workflowState = () => readWorkflows(call)
    actions.noteTurnTime = (sessionId, turn, key, time) => {
      if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
      turnClock.set((state) => {

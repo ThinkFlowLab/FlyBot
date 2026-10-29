@@ -706,6 +706,7 @@ const ZH = {
   Failed: '失败',
   Cancelled: '已取消',
   'A tool call': '一次工具调用',
+  'A workflow': '一个工作流',
   '1 message waits for your approval': '1 条消息等你批准',
   '{count} messages wait for your approval': '{count} 条消息等你批准',
   'Approve it in the chat': '请在对话里批准',
