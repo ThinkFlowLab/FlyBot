@@ -319,6 +319,14 @@ then in the queue (`gh api graphql` → `pullRequest.isInMergeQueue`). The queue
 once `Test` passes on the `gh-readonly-queue/main/pr-<n>-<sha>` entry; do not retry. The queue waits up to 5 minutes
 to fill a group and builds one entry at a time.
 
+**A queued head does not move (#1421).** The queue entry is the pull request's head built onto the current `main`, so
+moving the head after `gh pr merge --auto` puts the entry on a tree nobody judged. To rebase, dequeue first, move the head,
+get a PASS naming the new sha, and enqueue again. When a head moves while the pull request sits in the queue, the handling
+is **dequeue + re-judge**, not "let the queue rebuild it": the rebuild changes the base, not the judgement, so the old PASS
+is void and the new tip needs its own. #1395 is the record — entered at 09:51:59Z at `e86a78e2`, force-pushed at
+09:55:02Z to `f81dacac` with a changed implementation, removed from the queue at 09:56:48Z while the PASS still named the
+old sha.
+
 **The patrol that notices a bypass.** `.github/workflows/audit-merges.yml` runs `audit-merges.mjs` against `main` daily
 and on `workflow_dispatch`, read-only. `--since` is the `head_sha` of its own previous successful run, so a merge that
 skipped the queue prints as `bypassed queue:` and fails the run while an older one prints as `earlier bypass:` and does
