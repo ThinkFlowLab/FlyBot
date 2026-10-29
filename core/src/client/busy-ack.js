@@ -2,9 +2,11 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BotMark } from './mark.js'
 import { RUNNING_HOST } from './activity-row.js'
-import { busyAckText, busyAckVisible, pendingBusyPlacement } from './busy-ack-logic.js'
+import { busyAckText, busyAckVisible, pendingBusyPlacement, roomBusyAck, roomBusyAckVisible } from './busy-ack-logic.js'
 
-export { busyAckPending, busyAckText, busyAckVisible, pendingBusyPlacement } from './busy-ack-logic.js'
+export {
+  busyAckPending, busyAckText, busyAckVisible, pendingBusyPlacement, roomBusyAck, roomBusyAckVisible,
+} from './busy-ack-logic.js'
 
 // Spoken busy-ack (#1584): when a human send is accepted while the Bot is running
 // (host live busyAcks, or a local pending queue/steer submission), show one short
@@ -32,15 +34,23 @@ function useRunningHost(active) {
 
 export function BusyAckBubble({ sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }) {
   const roster = useRoster(value => value)
+  const room = roster.roomsById?.[sessionId]
+  // A group draws one member's ack on the row that member's turn runs in (#1646); its
+  // Session is not the conversation being shown, so `busyAcks[sessionId]` never has it.
+  const memberAck = room ? roomBusyAck(room) : null
   const hostAck = useBusyAcks(map => map?.[sessionId] ?? null)
   const running = useSessionStatus(map => map.get(sessionId)?.running === true)
   const pendingBusy = useSession(snapshot => pendingBusyPlacement(snapshot?.pendingSubmissions))
   const streamingText = useLive(state => Object.values(state[sessionId] ?? {}).some(entry => entry?.text))
-  const visible = running && busyAckVisible({ hostAck, pendingBusy, streamingText })
-  const bot = roster.byId[sessionId]
+  const visible = room
+    ? roomBusyAckVisible({ ack: memberAck, pendingBusy })
+    : running && busyAckVisible({ hostAck, pendingBusy, streamingText })
+  const bot = room ? roster.byId[memberAck?.botId] : roster.byId[sessionId]
   const host = useRunningHost(visible)
   const shown = useRef(null)
-  if (visible) shown.current = { text: busyAckText(hostAck), at: hostAck?.at ?? Date.now() }
+  if (visible) shown.current = room
+    ? { text: memberAck?.text ?? '', at: memberAck?.at ?? Date.now() }
+    : { text: busyAckText(hostAck), at: hostAck?.at ?? Date.now() }
   const text = shown.current?.text ?? ''
   if (!visible || !host || !shown.current || !bot) return null
   return createPortal(h('div', {

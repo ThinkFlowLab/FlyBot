@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import {
-  ackLanguage, composeBusyAck, doingOf, shouldNoteBusyAck, topicOf,
+  ackLanguage, composeBusyAck, doingOf, install as installBusyAck, shouldNoteBusyAck, topicOf,
 } from '../src/host/busy-ack.js'
+import { install as installStore } from '../src/host/store.js'
 
 // The pre-#1629 canned lines; an ack must never be either verbatim.
 const OLD_ZH = '收到，我先记着，手头忙完再详细回你。'
@@ -150,4 +154,138 @@ test('a {t} typed in the message is quoted back verbatim, with and without a run
       }
     }
   }
+})
+
+// --- The room side (#1646) -------------------------------------------------
+// A group's member speaks from a hidden Session (`room.sessions[botId]`), and the person's line
+// reaches it as a relayed `role: 'room'` message, not as `source.kind === 'user'`. These tests
+// run the real store beside the real busy-ack install, so `chatOwners` and `groupOwners` are the
+// host's own indexes; only `live` is seeded, as turns.js would have recorded a running turn.
+const roomHost = async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-busy-ack-room-'))
+  const statePath = join(dir, 'state.json')
+  writeFileSync(statePath, JSON.stringify({
+    version: 2,
+    mainBotIds: ['a'],
+    members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
+    bots: {
+      a: { id: 'a', name: 'Chief', sessionId: 'a', ownerId: 'owner-1', createdAt: 1 },
+      b: { id: 'b', name: 'Writer', sessionId: 'b', ownerId: 'owner-1', createdAt: 2 },
+    },
+    rooms: {
+      r1: {
+        id: 'r1', name: 'Ops', members: ['a', 'b'], mode: 'admin', admin: 'b', named: true,
+        sessions: { b: 'gb' }, log: [], seq: 0, seen: {},
+      },
+    },
+    agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0,
+  }))
+  const disposers = []
+  const listeners = new Map()
+  const ctx = {
+    logger: { warn() {}, info() {} },
+    effect(execute) { const dispose = execute(); if (typeof dispose === 'function') disposers.push(dispose) },
+    on(name, fn) { const list = listeners.get(name) ?? listeners.set(name, []).get(name); list.push(fn); return () => {} },
+  }
+  const rt = {
+    ctx, home: dir, statePath,
+    autoRoomName: () => 'Room', retitleRoom: async () => {}, dropGroupSession: () => {}, warn: () => {},
+  }
+  installStore(rt)
+  await rt.load()
+  rt.live = new Map()
+  installBusyAck(rt)
+  t.after(() => {
+    for (const dispose of disposers.splice(0)) dispose()
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+  })
+  const fire = (name, ...args) => { for (const fn of listeners.get(name) ?? []) fn(...args) }
+  const emit = (id, type, data) => fire('session/event', { id }, { type, seq: 1, data })
+  return { rt, emit, fire, chatOwners: rt.chatOwners, groupOwners: rt.groupOwners }
+}
+
+// The relay a person's line takes into a member's group Session (delivery.js + groups.js).
+const roomSay = text => ({
+  type: 'user/message',
+  data: {
+    source: { kind: 'bot', form: 'relay', role: 'room', roomId: 'r1', exchangeId: 'x1', senderName: 'You', hop: 0 },
+    content: [{ type: 'text', text: `[Group chat "Ops" · new message from the user]\n${text}` }],
+  },
+})
+
+test('the indexes the room case leans on are the store\'s own (#1646)', async (t) => {
+  const host = await roomHost(t)
+  assert.equal(host.chatOwners.get('b'), 'b')
+  assert.equal(host.chatOwners.has('gb'), false)
+  assert.deepEqual(host.groupOwners.get('gb'), { botId: 'b', roomId: 'r1' })
+})
+
+test('a room line steered into a running member\'s Session notes one ack for that Session (#1646)', async (t) => {
+  const host = await roomHost(t)
+  host.rt.live.set('gb', { turn: 1, tool: 'bash' })
+  host.emit('gb', 'turn/start', { turn: 1 })
+  host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
+  const acks = host.rt.busyAcksView()
+  assert.deepEqual(Object.keys(acks), ['gb'])
+  assert.match(acks.gb.text, /周报/)
+  assert.match(acks.gb.text, /跑命令/)
+  assert.doesNotMatch(acks.gb.text, /Group chat/)
+  // Coalesced: a second line inside the window keeps the one ack.
+  const at = acks.gb.at
+  host.emit('gb', 'user/message', roomSay('again').data)
+  assert.deepEqual(Object.keys(host.rt.busyAcksView()), ['gb'])
+  assert.equal(host.rt.busyAcksView().gb.text, acks.gb.text)
+  assert.ok(host.rt.busyAcksView().gb.at >= at)
+  // No ack survives the turn.
+  host.emit('gb', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  assert.deepEqual(host.rt.busyAcksView(), {})
+  host.rt.live.set('gb', { turn: 2 })
+  host.emit('gb', 'user/message', roomSay('还在吗').data)
+  assert.ok(host.rt.busyAcksView().gb)
+  host.fire('agent/status', { agent: { session: { id: 'gb' } }, status: 'idle' })
+  assert.deepEqual(host.rt.busyAcksView(), {})
+})
+
+test('a room line to an idle member, and a line another Bot relayed, note nothing (#1646)', async (t) => {
+  const host = await roomHost(t)
+  host.emit('gb', 'user/message', roomSay('没有 turn').data)
+  assert.deepEqual(host.rt.busyAcksView(), {})
+  host.rt.live.set('gb', { turn: 1 })
+  host.emit('gb', 'turn/start', { turn: 1 })
+  const fromBot = roomSay('another Bot called you')
+  fromBot.data.source.senderSessionId = 'a'
+  fromBot.data.source.askedBy = 'a'
+  host.emit('gb', 'user/message', fromBot.data)
+  assert.deepEqual(host.rt.busyAcksView(), {})
+})
+
+test('the room view names a running member before its line lands, then carries the line (#1646)', async (t) => {
+  const host = await roomHost(t)
+  host.rt.live.set('gb', { turn: 1 })
+  host.emit('gb', 'turn/start', { turn: 1 })
+  // The member's turn is already running while the person's line is still being composed:
+  // an empty text, which the client draws as the pending blinking indicator, no sentence.
+  assert.deepEqual(host.rt.roomBusyAcksView({ b: 'gb' }), { b: { text: '', at: 0 } })
+  host.emit('gb', 'user/message', roomSay('帮我把周报再改一下').data)
+  assert.match(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, /周报/)
+  assert.doesNotMatch(host.rt.roomBusyAcksView({ b: 'gb' }).b.text, /Group chat/)
+  // No running turn, no entry; an empty member map stays empty.
+  host.rt.live.delete('gb')
+  assert.deepEqual(host.rt.roomBusyAcksView({ b: 'gb' }), {})
+  assert.deepEqual(host.rt.roomBusyAcksView({}), {})
+})
+
+test('the own-chat ack is unchanged beside the room path (#1646)', async (t) => {
+  const host = await roomHost(t)
+  host.rt.live.set('b', { turn: 1, tool: 'bash' })
+  host.emit('b', 'turn/start', { turn: 1 })
+  host.emit('b', 'user/message', say('check the logs').data)
+  const acks = host.rt.busyAcksView()
+  assert.deepEqual(Object.keys(acks), ['b'])
+  assert.match(acks.b.text, /check the logs/)
+  // The same Session id space: a room line in the member's group Session is its own key.
+  host.rt.live.set('gb', { turn: 1 })
+  host.emit('gb', 'turn/start', { turn: 1 })
+  host.emit('gb', 'user/message', roomSay('帮我看日志').data)
+  assert.deepEqual(Object.keys(host.rt.busyAcksView()).sort(), ['b', 'gb'])
 })

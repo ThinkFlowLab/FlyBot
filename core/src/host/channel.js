@@ -159,6 +159,8 @@ export function install(rt) {
         ...presented,
         log: undefined,
         parts,
+        // A member's busy ack, for the row that member's turn draws in the room flow (#1646).
+        busyAcks: rt.roomBusyAcksView?.(sessions) ?? {},
         pendingApprovals: pending,
         pendingCount: pending.length,
         ...(last ? { preview: previewWho } : {}),

@@ -288,7 +288,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -21,32 +21,149 @@ export function install(rt) {
+@@ -21,32 +21,151 @@ export function install(rt) {
  
    // The DSH interface language of the last browser that asked for the team.
    let uiLocale
@@ -429,6 +429,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        ...presented,
 +        log: undefined,
 +        parts,
++        // A member's busy ack, for the row that member's turn draws in the room flow (#1646).
++        busyAcks: rt.roomBusyAcksView?.(sessions) ?? {},
 +        pendingApprovals: pending,
 +        pendingCount: pending.length,
 +        ...(last ? { preview: previewWho } : {}),

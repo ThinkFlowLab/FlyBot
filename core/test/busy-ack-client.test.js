@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as logic from '../src/client/busy-ack-logic.js'
 
-const { busyAckPending, busyAckText, busyAckVisible, pendingBusyPlacement } = logic
+const {
+  busyAckPending, busyAckText, busyAckVisible, pendingBusyPlacement, roomBusyAck, roomBusyAckVisible,
+} = logic
 
 test('pendingBusyPlacement is true for queued or steering submissions', () => {
   assert.equal(pendingBusyPlacement([]), false)
@@ -42,4 +44,28 @@ test('#1656: the canned sentence is not shipped anywhere in the client', () => {
   assert.match(bubble, /bt-busy-dots/, 'the pending state draws the blinking indicator')
   assert.match(bubble, /'aria-busy': text \? undefined : 'true'/)
   assert.match(bubble, /@keyframes bt-busy-blink/)
+})
+
+test('a room ack is the running member\'s, keyed by the member the host noted (#1646)', () => {
+  assert.equal(roomBusyAck(undefined), null)
+  assert.equal(roomBusyAck({}), null)
+  assert.equal(roomBusyAck({ busyAcks: {} }), null)
+  assert.deepEqual(roomBusyAck({ busyAcks: { b: { text: '收到', at: 7 } } }), { botId: 'b', text: '收到', at: 7 })
+  // The host publishes the member as soon as its turn runs; empty text means the ack line is
+  // still being composed, and the client draws the pending dots for it (#1656, #1646).
+  assert.deepEqual(roomBusyAck({ busyAcks: { b: { text: '', at: 1 } } }), { botId: 'b', text: '', at: 1 })
+  assert.equal(roomBusyAck({ busyAcks: { b: { text: '   ', at: 1 } } }).text, '')
+  // Only the speaking member has one; the newest wins if two ever land together.
+  assert.deepEqual(
+    roomBusyAck({ busyAcks: { a: { text: 'older', at: 5 }, b: { text: 'newer', at: 9 } } }),
+    { botId: 'b', text: 'newer', at: 9 },
+  )
+})
+
+test('a room ack shows its line, or the blinking dots while the person\'s line is still queued (#1646)', () => {
+  assert.equal(roomBusyAckVisible({ ack: null, pendingBusy: true }), false)
+  assert.equal(roomBusyAckVisible({ ack: { botId: 'b', text: '', at: 1 }, pendingBusy: false }), false)
+  assert.equal(roomBusyAckVisible({ ack: { botId: 'b', text: '', at: 1 }, pendingBusy: true }), true)
+  assert.equal(roomBusyAckVisible({ ack: { botId: 'b', text: '收到', at: 1 }, pendingBusy: false }), true)
+  assert.equal(roomBusyAckVisible({ ack: { botId: 'b', text: '收到', at: 1 }, pendingBusy: true }), true)
 })

@@ -129,6 +129,19 @@ export function shouldNoteBusyAck({ sourceKind, turnRunning, ownChat }) {
   return sourceKind === 'user' && turnRunning === true && ownChat === true
 }
 
+// A person's line reaching a member's group Session (#1646). A round relays it as
+// `role: 'room'` with no Bot sender: a Bot's own call carries `senderSessionId`, an
+// @-mention by another Bot carries `askedBy`, and a friend's Bot carries `remote`.
+export function isHumanRoomLine(source) {
+  return source?.role === 'room'
+    && source.senderSessionId === undefined
+    && source.askedBy === undefined
+    && source.remote === undefined
+}
+
+// The relay prefix delivery.js puts on the line; the ack quotes the person's text, not it.
+const relayHeader = /^\[[^\]\n]*\]\r?\n/
+
 const textOf = (content) => {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -145,6 +158,9 @@ export function install(rt) {
 
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
   const ownChat = sessionId => rt.chatOwners?.has(sessionId) === true
+  const groupSession = sessionId => rt.groupOwners?.has(sessionId) === true
+  /** A person's line into this member's running group Session (#1646), once only. */
+  const roomLine = (sessionId, source) => groupSession(sessionId) && isHumanRoomLine(source)
 
   const note = (sessionId, message) => {
     const now = Date.now()
@@ -173,12 +189,12 @@ export function install(rt) {
     const id = session?.id
     if (id === undefined || event?.type === undefined) return
     if (event.type === 'user/message') {
-      if (!shouldNoteBusyAck({
-        sourceKind: event.data?.source?.kind,
-        turnRunning: turnRunning(id),
-        ownChat: ownChat(id),
-      })) return
-      note(id, textOf(event.data?.content ?? event.data?.message?.content))
+      const source = event.data?.source
+      const room = roomLine(id, source)
+      const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
+      if (!own && !(room && turnRunning(id))) return
+      const text = textOf(event.data?.content ?? event.data?.message?.content)
+      note(id, room ? text.replace(relayHeader, '') : text)
       return
     }
     if (event.type === 'assistant/message') {
@@ -196,6 +212,15 @@ export function install(rt) {
 
   Object.assign(rt, {
     busyAcksView: () => Object.fromEntries([...acks].map(([id, ack]) => [id, { text: ack.text, at: ack.at }])),
+    // A room draws the ack on its running member's row (#1646), so its flow is keyed by
+    // member, not by the Session a person cannot see. A member whose turn runs before its
+    // line is composed is published with an empty text: the client draws the same blinking
+    // indicator an own-chat pending ack draws (#1656), never a fixed sentence.
+    roomBusyAcksView: sessions => Object.fromEntries(Object.entries(sessions ?? {}).flatMap(([botId, sessionId]) => {
+      if (!turnRunning(sessionId)) return []
+      const ack = acks.get(sessionId)
+      return [[botId, ack === undefined ? { text: '', at: 0 } : { text: ack.text, at: ack.at }]]
+    })),
     noteBusyAck: note,
     clearBusyAck: clear,
   })
