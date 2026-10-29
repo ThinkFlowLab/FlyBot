@@ -117,9 +117,12 @@ Stated plainly so nobody plans against a mechanism that does not exist:
   [subsystems/team.md](subsystems/team.md) is **planned, not shipped**.
 - Classification is currently written in issue and pull request comments. There is no engine that
   classifies, convenes or records automatically.
-- **No disagreement or reclassification case has been recorded in `decisions/` yet.** Stage 1's
-  acceptance asks for one; until it exists, §5 is the rule that will be followed, not a description
-  of something that already happened.
+- **One reclassification case is recorded**, in
+  [decisions/2026-10-29-stage-1-dogfood.md](../decisions/2026-10-29-stage-1-dogfood.md): Triage
+  classified [#1550](https://github.com/ThinkFlowLab/FlyBot/issues/1550) `needs-human` on
+  2026-10-28, and the owner reclassified it on 2026-10-29, which took the label off. That case is the
+  triage label, not a challenge to an ordinary/major/severe class under §5; that challenge path is
+  still unexercised.
 - Every Bot writes as one shared `Birfy` identity, so a `Written-by:` line is a claim that the gates
   check for presence and name. Per-workstation signatures were declined by the owner on 2026-10-25;
   the residual risk is stated in [AGENTS.md](../AGENTS.md), not solved here.
