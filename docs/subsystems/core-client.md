@@ -266,3 +266,14 @@ A discarded `.catch(() => {})` in the client sources either starts with `void` (
 - A friend's line in my Bot's own chat (#420): `friend-lines.js` `friendLineNews` compares each Bot's host stamp `friendLineAt` with the last stamp this browser has shown (`localStorage` `ds-bot:friend-lines`; stamps against stamps, never this browser's clock) and, when a newer one arrives while that chat is not visited, `index.js` marks the Bot unread the way **Mark as Unread** does, so the row shows the blue dot until the chat is opened. A browser with no record yet takes what is there as shown; another member's shared Bot and a friend's Bot chat are skipped. The Main Bot tile shows the same dot (`.bt-tile-unread`; a wait still shows on its avatar). A line whose source has `remote.firstContact` opens with one muted `FirstContact` line (`cells.js`): `<person or friend's Bot> is talking to <Bot> through Bot Social`. Covered by `core/test/friend-lines.test.js` and `core/test/inbound-ui.test.js`.
 - The roster poll (`index.js` `pull`) sends `watching: !document.hidden` with each `state` call (#497), so the host knows a window is on screen and the social plugin reads friends' inboxes at its live cadence: a friend's first line, its held reply's card, the Inbox count and the unread badge arrive in that window within seconds, with no reload.
 - The **NEW** divider (`cells.js` `TurnTailCell` / `TurnProcessCell` / the unread opening) compares turn times with the visit's `seen` (when the chat was last left) and `entered` (when this visit opened). Once the divider has been on screen (`NewMessagePills` in `header.js`, `view.divider === 'in-view'`) and a shown turn begins after the visit opened (`movedOnSince`: a friend's next line, the user's own message; hidden exchange turns do not count), `actions.settleVisit` sets `seen` to `entered` (`settledVisit`) and every divider of the visit goes, as on leaving and coming back. A divider still scrolled out of view, or a chat where nothing new happened, keeps it until the visit ends. Same rule in every chat, including a friend's typed line in the Bot's own chat (#275). Covered by `core/test/turn-tail.test.js`.
+
+### Project board pane (#1710)
+
+`src/client/project-board.js` draws one Project over the read model the host already aggregates
+(`project-board`). `projectBoardView({ project, rows, canManage })` is pure: it groups the rows by
+`source` (`bot` | `group` | `workflow`, empty sources left out), carries `column`, `assignee` and the
+`runId`/`nodeId` a workflow row came from, and keeps `row.id` equal to the underlying task id, so
+opening a row opens that task and the view never copies a row. An empty Project renders the empty
+state, not an error. `canManage` comes from `project-read` and only decides whether the management
+affordances are drawn; the refusal itself is the host's. The pane is registered on the existing
+`shell.overlay` surface and opens at `#project=<id>`.

@@ -673,7 +673,7 @@ export function install(rt) {
         case 'project-of':
         case 'project-board':
           await rt.load()
-          return ok(await rt.projectEndpoint(endpoint, body))
+          return ok(await rt.projectEndpoint(endpoint, body, actor))
         case 'share-brief':
           await rt.load()
           await rt.setBriefShare(String(body.id ?? ''), String(body.botId ?? ''), body.share === true, actor)

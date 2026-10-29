@@ -559,3 +559,16 @@ A discarded `.catch(() => {})` in the host sources either starts with `void` (fi
 - That placeholder names the file when the Bot's own file tools can open it: `attachmentFilePath` takes the attachment store's `imageHostPath` through the file sandbox's `processPathFromHostPath` (the same mapping `dsh-spill-policy` applies to spooled tool output) and falls back to the local object layout `<home>/attachments/v1/objects/<first two>/<sha256>`. Either candidate must `stat` as a regular file, so a Bot is never sent after a file that is not there (a host path the sandbox cannot open is worse than no path), and only a `sha256:<64 hex>` id has an object path at all.
 - Nothing is copied into a Bot's working folder: a copy would need a lifecycle and a cleanup policy of its own, and the readable path already lets a Bot move or submit the bytes itself.
 - Covered by `core/test/images.test.js` and, through the Session hook and the group relay, `core/test/session-identity.test.js`.
+
+### The Project board and who may act on it (#1710)
+
+`projectEndpoint` takes the authenticated actor. `project-create` stamps the caller's member id as
+`ownerUserId` (an `ownerUserId` in the body cannot mint a Project someone else manages); an install
+with no signed-in session falls back to the first member, the same rule `tasks.js` uses for
+`requesterOf`. `project-read` answers `{ project, canManage }`, where `canManage` is true only for
+the owner — or for every caller on a Project whose record names no owner. `project-bind` is refused
+by the host with `bot/forbidden` unless the caller may manage the Project the binding names (or the
+one it is leaving, when unbinding); the refusal writes nothing, so hiding a button is never the
+gate. Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
+`project-board` is listed in `authz.js`'s `TASK_ENDPOINTS`, so a signed-in deployment does not
+refuse it as an unknown endpoint.

@@ -65,7 +65,7 @@ const TASK_ENDPOINTS = new Set([
   'workflow-save',
   // The Project record and its bindings (#1691) are team state: a signed-in actor may create,
   // read and bind, like the task channel.
-  'projects', 'project-create', 'project-read', 'project-bind', 'project-of',
+  'projects', 'project-create', 'project-read', 'project-bind', 'project-of', 'project-board',
 ])
 
 const deny = (code, message) => ({ ok: false, code, message })

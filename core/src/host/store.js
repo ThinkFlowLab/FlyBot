@@ -420,16 +420,42 @@ export function install(rt) {
     if (project !== null) project.updatedAt = Math.max(project.updatedAt, Date.now())
     return project
   }
-  const projectEndpoint = async (endpoint, body = {}) => {
+  // Who may act on a Project (#1710). The record names its owner member; an install with no
+  // session falls back to the first member, exactly like `requesterOf` in tasks.js. The host
+  // decides this, never the page: a caller that is not the owner may read and nothing else.
+  const projectActorId = actor => projectText(actor?.memberId, 120) || Object.keys(state.members ?? {})[0] || null
+  const projectCanManage = (project, actor) => {
+    if (project === null || typeof project !== 'object') return false
+    const owner = projectText(project.ownerUserId, 120)
+    if (owner === '') return true
+    const actorId = projectActorId(actor)
+    return actorId !== null && actorId === owner
+  }
+  const requireProjectOwner = (project, actor) => {
+    if (project === null) return
+    if (projectCanManage(project, actor)) return
+    throw projectRefusal('Only the owner of this Project may change it', 'bot/forbidden')
+  }
+
+  const projectEndpoint = async (endpoint, body = {}, actor = null) => {
     switch (endpoint) {
       case 'projects': return { projects: listProjects() }
       case 'project-create': {
-        const project = createProject(body)
+        // The caller is stamped as the owner; a member id from the body cannot mint a
+        // Project someone else manages.
+        const project = createProject({ ...body, ownerUserId: projectActorId(actor) ?? undefined })
         await save()
         return { project }
       }
-      case 'project-read': return { project: readProject(projectText(body.id, 200)) }
+      case 'project-read': {
+        const project = readProject(projectText(body.id, 200))
+        return { project, canManage: projectCanManage(project, actor) }
+      }
       case 'project-bind': {
+        const target = body.projectId === undefined || body.projectId === null
+          ? projectOfMember(projectText(body.kind, 20), projectText(body.id, 200))
+          : requireProject(projectText(body.projectId, 200))
+        requireProjectOwner(target, actor)
         const project = bindProject(body)
         await save()
         return { project }

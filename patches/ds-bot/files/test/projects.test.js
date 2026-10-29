@@ -5,15 +5,31 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 
-const seed = () => ({
+const hashToken = token => createHash('sha256').update(token).digest('hex')
+
+// #1710: a second member and two signed-in sessions, so an owner and a non-owner caller both
+// exist without a second process.
+const seed = (sessions = true) => ({
   version: 2,
   revision: 1,
   mainBotIds: ['a'],
-  members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
+  members: {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' },
+    'owner-2': { id: 'owner-2', createdAt: 2, designatedChiefId: null },
+  },
+  ...(sessions
+    ? {
+        authSessions: {
+          's-a': { id: 's-a', memberId: 'owner-1', tokenHash: hashToken('tok-a'), createdAt: 1 },
+          's-b': { id: 's-b', memberId: 'owner-2', tokenHash: hashToken('tok-b'), createdAt: 2 },
+        },
+      }
+    : {}),
   bots: {
     a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1, ownerId: 'owner-1' },
     b: { id: 'b', name: 'Writer', role: 'Write', sessionId: 'b', createdAt: 2, ownerId: 'owner-1' },
@@ -22,8 +38,8 @@ const seed = () => ({
   agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, grants: {},
 })
 
-async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-'))) {
-  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-')), { sessions = true } = {}) {
+  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed(sessions)))
   const ctx = fakeContext()
   const agents = new Map()
   const agentOf = (sessionId) => {
@@ -41,7 +57,11 @@ async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-'))) {
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (options) => { route = options; return register(options) }
   apply(ctx, { home })
-  const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
+  const call = async (endpoint, payload, token = 'tok-a') => (await route.fetch(new Request('http://localhost/api/bot', {
+    method: 'POST',
+    headers: token ? { 'x-flybot-member-session': token } : {},
+    body: JSON.stringify({ endpoint, payload }),
+  }))).json()
   const stop = async ({ keepHome = false } = {}) => {
     await ctx.dispose()
     if (!keepHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 })
@@ -142,4 +162,43 @@ test('the record and its bindings survive a store re-open', async () => {
     await first?.stop({ keepHome: true }).catch(() => {})
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
+})
+
+// #1710: the owner of a Project may manage it, a member reads the same board read-only, and the
+// refusal comes from the host action — not from a control the page happens to hide.
+test('the caller becomes the owner, and only the owner may change the Project', async () => {
+  const { call, stop } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Owned', repository: 'acme/owned', ownerUserId: 'owner-2' }, 'tok-a'))
+    assert.equal(project.ownerUserId, 'owner-1', 'the caller is stamped as the owner, not the body')
+
+    assert.equal(value(await call('project-read', { id: project.id }, 'tok-a')).canManage, true)
+    assert.equal(value(await call('project-read', { id: project.id }, 'tok-b')).canManage, false)
+
+    const refused = await call('project-bind', { kind: 'bot', id: 'a', projectId: project.id }, 'tok-b')
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'bot/forbidden')
+    assert.equal(value(await call('project-of', { kind: 'bot', id: 'a' })).project, null, 'the refusal wrote nothing')
+
+    assert.equal(created(await call('project-bind', { kind: 'bot', id: 'a', projectId: project.id }, 'tok-a')).id, project.id)
+  } finally { await stop() }
+})
+
+test('an install with no signed-in session falls back to its first member as the owner', async () => {
+  const { call, stop } = await start(undefined, { sessions: false })
+  try {
+    const project = created(await call('project-create', { name: 'Solo', repository: 'acme/solo' }))
+    assert.equal(project.ownerUserId, 'owner-1', 'the single-member install stamps its member')
+    assert.equal(value(await call('project-read', { id: project.id })).canManage, true)
+  } finally { await stop() }
+})
+
+test('a signed-in member may read the Project board even though it may not manage it', async () => {
+  const { call, stop } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Board', repository: 'acme/board' }, 'tok-a'))
+    const board = await call('project-board', { id: project.id }, 'tok-b')
+    assert.equal(board.ok, true, JSON.stringify(board), 'project-board is a known endpoint once someone signed in')
+    assert.deepEqual(value(board).tasks, [])
+  } finally { await stop() }
 })

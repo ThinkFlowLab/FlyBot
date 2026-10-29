@@ -36,6 +36,7 @@ import { INBOX_CSS } from './inbox.js'
 import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
 import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
+import { PROJECT_BOARD_CSS, ProjectBoardOverlay } from './project-board.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -887,6 +888,7 @@ export function apply(ctx) {
     installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
     installCompiledStyles(MOBILE_CSS, 'mobile'),
     installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
+    installCompiledStyles(PROJECT_BOARD_CSS, 'project-board'),
     typeof document !== 'undefined' ? watchShellLevel(document) : null,
     browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
     installTheme(),
@@ -905,6 +907,7 @@ export function apply(ctx) {
     shadow('shell.overlay', { id: 'bot-signin', order: 55, inject: face }, DeepSeekSignIn),
     shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),
     shadow('shell.overlay', { id: 'flybot-approvals', order: 58, inject: face }, FlyBotApprovals),
+    shadow('shell.overlay', { id: 'project-board', order: 57 }, ProjectBoardOverlay),
   ]
   const installConversation = () => [
     installCompiledStyles(CONVERSATION_CSS, 'conversation'),
