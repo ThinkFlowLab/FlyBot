@@ -129,3 +129,89 @@ test('#1607: an answered, empty list keeps the honest "another owner" card for a
     assert.doesNotMatch(tree, /Approve/, 'no decision is offered for a card we cannot see')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #1638: the room object the dock is handed already carries `pendingApprovals` — in
+// `core/src/host/channel.js` that array is the very one `pendingCount` counts — so the room view knows
+// it holds a card while the dock's own two polls are still a beat behind. A card this dock would draw
+// is never called somebody else's just because those 5 s lists have not caught up; a card the dock
+// never draws (decided on its own bubble or in the Bot's chat) keeps the line, because there the
+// sentence is true.
+//
+// The room's list is Bot Social's own (`plugins/social/src/social.js` `pendingApprovals` through the
+// room provider), not the host's `flybot/approvals` wrapper: a held line of this face room is
+// `kind: 'face_room_message'` with the room id in `roomId` and no `request` envelope.
+const roomLine = () => ({ id: 'a1', kind: 'face_room_message', status: 'pending', roomId: 'frm1', from: 'SelfTest A2', to: 'the room', text: 'hello room' })
+const roomWithCard = () => ({ ...room(), pendingApprovals: [roomLine()] })
+
+test('#1638: a room holding its own pending card is never announced as another owner waiting', async () => {
+  const app = loadDock()
+  const { state, inst } = harness()
+  inst.props.room = roomWithCard()
+  try {
+    render(app.ChatApprovalDock, inst)
+    runEffects(inst)
+    // One beat behind: both of the dock's own lists answer without this room's card (the lagging poll).
+    state.resolveApprovals([])
+    await tick()
+    const tree = drawn(render(app.ChatApprovalDock, inst))
+    assert.doesNotMatch(tree, /Waiting for the owner's approval/, "the room's own card is never narrated as another owner waiting")
+    assert.doesNotMatch(tree, /\[no-buttons\]/, 'the lagging poll draws no buttonless card')
+  } finally { delete globalThis.__flybot__ }
+})
+
+// A card this dock never draws, whatever list names it: a held reply is decided on its own bubble (#418),
+// and the dock's own list drops it by that marker (`held`, `!item.inline`). Bot Social's room list carries
+// no such marker today (only the host's `localHoldView` sets it), so this pins that the two rules agree if
+// one ever arrives: a card already on screen is not silenced as "somebody else's" nor as nothing.
+test('#1638: a room card drawn on its own bubble keeps the waiting line', async () => {
+  const app = loadDock()
+  const { state, inst } = harness()
+  inst.props.room = { ...room(), pendingApprovals: [{ ...roomLine(), inline: 's9' }] }
+  try {
+    render(app.ChatApprovalDock, inst)
+    runEffects(inst)
+    state.resolveApprovals([])
+    await tick()
+    const tree = drawn(render(app.ChatApprovalDock, inst))
+    assert.match(tree, /Waiting for the owner's approval/, 'a card drawn on its bubble keeps the honest line here')
+    assert.doesNotMatch(tree, /Approve/, 'the dock does not decide a card it never draws')
+  } finally { delete globalThis.__flybot__ }
+})
+
+// The line is not silenced wholesale, or a room that counts a card this chat never draws would lose
+// its only honest voice: our Bot's held direct message to a friend is decided in the Bot's chat
+// (#254, #418), and the room's provider counts it by the sender's handle (`social.js` `roomApprovals`),
+// so the room holds it while this dock draws nothing (#1607). Marking it "another owner's" would be
+// wrong, but "waiting for the owner's approval" is true.
+test('#1638: a room card this chat never draws keeps the waiting line', async () => {
+  const app = loadDock()
+  const { state, inst } = harness()
+  // A group room with the Bot that wrote the held line among its participants; the hold is an
+  // `outbound_message` to a friend, which `pendingApprovals` tags with the local Bot's `fromId`.
+  inst.props.room = {
+    id: 'g1',
+    pendingCount: 1,
+    pendingApprovals: [{ id: 'b1', kind: 'outbound_message', status: 'pending', from: '@self.home', fromId: 'bot1', to: '@friend.home', text: 'a line to a friend' }],
+    participants: [{ kind: 'bot', remote: true, handle: '@self.home' }],
+  }
+  try {
+    render(app.ChatApprovalDock, inst)
+    runEffects(inst)
+    state.resolveApprovals([])
+    await tick()
+    const tree = drawn(render(app.ChatApprovalDock, inst))
+    assert.match(tree, /Waiting for the owner's approval/, 'a card decided elsewhere keeps the honest line')
+    assert.doesNotMatch(tree, /Approve/, 'no decision is offered where the card is not drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+// A quiet room (nothing pending) still draws nothing at all.
+test('#1638: a room with no pending card and a zero count draws no card', () => {
+  const app = loadDock()
+  const { inst } = harness()
+  inst.props.room = { ...room(), pendingCount: 0, pendingApprovals: [] }
+  try {
+    const tree = drawn(render(app.ChatApprovalDock, inst))
+    assert.equal(tree, '', 'a quiet room draws no card')
+  } finally { delete globalThis.__flybot__ }
+})

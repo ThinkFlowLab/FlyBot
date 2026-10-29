@@ -2430,11 +2430,13 @@ window.__ModuleLoader__.load({
         return () => claim([])
       }, [shownIds, sessionId])
       // A card for this room that this chat does not draw is still ours: it is decided on its own bubble
-      // (#418) or in the Bot's chat. "Waiting for the owner's approval" therefore needs both lists answered
-      // and neither holding one for this room (#1607); until then the dock stays quiet, never guesses.
-      const roomIds = new Set([room?.id, room?.face?.roomId].filter(Boolean))
-      const thisRoomHeld = held.some(item => item.roomId && roomIds.has(item.roomId))
-      const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && !thisRoomHeld && (room?.pendingCount ?? 0) > 0
+      // (#418) or in the Bot's chat (#254). "Waiting for the owner's approval" therefore needs both lists
+      // answered, neither holding one for this room (#1607), and no card in the room's own list that this
+      // dock would draw. That list is the very array the room's `pendingCount` counts (channel.js), so it
+      // knows our card one 5 s poll before these two do: that beat stays quiet, never "another owner's"
+      // (#1638). A card the dock never draws keeps the line, because there the sentence is true.
+      const roomCards = approvalsForOpenChat((room?.pendingApprovals ?? []).filter(item => !item.inline), session)
+      const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && roomCards.length === 0 && (room?.pendingCount ?? 0) > 0
       if (!mine.length && !waitingOthers) return null
       const decide = async (item, decision) => {
         setBusy(item.id)
