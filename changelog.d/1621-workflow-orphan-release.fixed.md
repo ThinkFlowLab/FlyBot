@@ -1,0 +1,1 @@
+Deleting a workflow, and a graph edit that ends a running node, no longer drop a run Bot's id before the release that can fail: an id the host would not remove stays on the archived run or in the store's own `orphans` list, and the next load's reap retries it instead of leaving a hidden Bot no state names.

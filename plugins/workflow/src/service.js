@@ -20,6 +20,7 @@ const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
+const MAX_ORPHANS = 50
 // A live step waits for its Bot's reply, and nothing else bounds that wait
 // (#1530). These are the only two numbers a stuck run depends on: how long one
 // step may stay unanswered, and how long a hand-off that did not land waits
@@ -132,9 +133,9 @@ export function createWorkflowService({
   const file = dir ? join(dir, FILE) : null
   let state = load(file, warn) ?? seed()
   state.routes ??= {}
-  state.claims ??= {}
-  state.lanes ??= {}
-  if (!state.laneFormat) migrateRuns(state)
+  // migrateRuns() also normalizes the orphan list a deleted workflow left
+  // (#1621), so a store written by an older version keeps those ids.
+  migrateRuns(state)
   purgeDemos(state, historyRow)
   let seq = state.seq ?? 1
   // One lock for every start and release to serialize drain operations.
@@ -947,7 +948,11 @@ export function createWorkflowService({
       if (!item) return { ok: false, error: 'No such workflow' }
       const lane = laneOf(workflowId)
       for (const run of lane.active ?? []) clearRunTimers(run.id)
-      const releasing = (lane.active ?? []).flatMap(run => Object.values(run.ephemeral ?? {}))
+      // `lane.last` too: #1616 keeps a failed id on the run it archived there,
+      // and the record naming it is what finish() erases (#1621).
+      const releasing = [...new Set([...(lane.active ?? []), lane.last]
+        .filter(Boolean)
+        .flatMap(run => Object.values(run.ephemeral ?? {})))]
       const finish = () => {
         state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
         delete state.lanes[workflowId]
@@ -964,7 +969,12 @@ export function createWorkflowService({
       }
       if (typeof release !== 'function' || releasing.length === 0) return finish()
       return (async () => {
-        await releaseAll(releasing, release, warn)
+        // Deleting a workflow is the owner's action and a Bot that will not go
+        // cannot undo it, but the lane that names that Bot is about to be erased.
+        // The id moves to the store's orphan list, so reap() still retries it
+        // instead of leaving a hidden Bot no state names (#1621).
+        const failed = await releaseAll(releasing, release, warn)
+        noteOrphans(state, failed)
         return finish()
       })()
     },
@@ -1396,17 +1406,26 @@ export function createWorkflowService({
       })
       if (saved.ok === false || endedRuns.length === 0) return saved
       const releasing = endedRuns.flatMap(({ run }) => Object.values(run.ephemeral ?? {}))
-      for (const { run } of endedRuns) {
-        delete run.ephemeral
-        delete run.handed
+      // Release first, then forget the ids (#1616): a run this edit ended that
+      // dropped its Bot before the host really removed it leaves a hidden Bot no
+      // record names again. Only a failed id stays on the archived run, and the
+      // next load's reap() retries it (#1621).
+      const forget = (failed) => {
+        for (const { run } of endedRuns) {
+          keepUnreleased(run, failed)
+          delete run.handed
+        }
       }
-      write()
-      if (typeof spawn !== 'function') {
+      if (typeof spawn !== 'function' || typeof release !== 'function' || releasing.length === 0) {
+        forget([])
+        write()
         drainSync()
         return present()
       }
       return hostSerial(async () => {
-        await releaseAll(releasing, release, warn)
+        const failed = await releaseAll(releasing, release, warn)
+        forget(failed)
+        write()
         await drainAll()
         return present()
       })
@@ -1483,6 +1502,7 @@ export function createWorkflowService({
       const stale = []
       const staleRuns = []
       const abandoned = []
+      const orphans = orphanIds(state)
       let wrote = false
       for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
         const seen = new Set()
@@ -1524,15 +1544,20 @@ export function createWorkflowService({
           warn(`flybot-workflow: could not end ${run.id}: ${error?.message ?? error}`)
         }
       }
-      if (stale.length === 0 && !wrote) return Promise.resolve()
-      if (stale.length === 0) {
+      if (stale.length === 0 && orphans.length === 0 && !wrote) return Promise.resolve()
+      if (stale.length === 0 && orphans.length === 0) {
         write()
         return Promise.resolve()
       }
-      return releaseAll(stale, release, warn).then((failed) => {
+      return releaseAll([...new Set([...stale, ...orphans])], release, warn).then((failed) => {
         // Only the ids the host really removed leave the record. A failed one
         // stays named so this same path retries it on the next load (#1616).
         for (const run of staleRuns) keepUnreleased(run, failed)
+        // #1621: a deleted workflow's Bot has no lane left to name it, so it is
+        // the orphan list that keeps a failed id — the same entry, retried until
+        // the host really removes it.
+        state.orphans = orphans.filter(id => failed.includes(id))
+        if (state.orphans.length === 0) delete state.orphans
         write()
       })
     },
@@ -1573,6 +1598,30 @@ export function createWorkflowService({
       })
     },
   }
+}
+
+// #1621: an id whose release still failed after the record that named it was
+// erased — a workflow delete — has no lane left to retry from. `state.orphans` is
+// its only name, so it lives in the store itself and reap() retries it on every
+// load. The same id is listed once, and the list has a ceiling: a host that never
+// comes back must not grow the store forever.
+function orphanIds(state) {
+  const ids = []
+  for (const id of Array.isArray(state.orphans) ? state.orphans : []) {
+    if (typeof id !== 'string' || id === '' || ids.includes(id)) continue
+    ids.push(id)
+  }
+  return ids.slice(-MAX_ORPHANS)
+}
+
+function noteOrphans(state, ids) {
+  const kept = orphanIds(state)
+  for (const id of ids ?? []) {
+    if (typeof id !== 'string' || id === '' || kept.includes(id)) continue
+    kept.push(id)
+  }
+  state.orphans = kept.slice(-MAX_ORPHANS)
+  if (state.orphans.length === 0) delete state.orphans
 }
 
 // releaseAll() reports the ids it could not remove, and those Bots are still
@@ -1658,6 +1707,10 @@ function purgeDemos(state, historyRow) {
 function migrateRuns(state) {
   state.lanes ??= {}
   state.claims ??= {}
+  // #1621: ids of the run Bots a deleted workflow could not release. They are
+  // the store's only record of those Bots, so an upgrade keeps them (deduped and
+  // capped) and reap() retries them afterwards.
+  noteOrphans(state, [])
   if (state.laneFormat === true) return
   for (const [id, run] of Object.entries(state.runs ?? {})) {
     if (!run || typeof run !== 'object' || state.lanes[id]) continue
