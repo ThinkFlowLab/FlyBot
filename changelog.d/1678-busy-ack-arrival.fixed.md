@@ -1,0 +1,1 @@
+A person's line sent to a busy Bot is acknowledged the moment it arrives, not only when the turn gets round to claiming it: the ack is composed from the inbox splice DSH writes on arrival, and the later claim no longer composes a second one for the same line ([#1678](https://github.com/ThinkFlowLab/FlyBot/issues/1678)).

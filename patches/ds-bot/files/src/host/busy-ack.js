@@ -19,6 +19,10 @@ export const COALESCE_MS = 3_000
 export const ACK_TIMEOUT_MS = 3_000
 export const ACK_MAX_TOKENS = 80
 export const ACK_MAX_CHARS = 120
+// How many line ids one ack entry remembers. The person's line is acked at arrival and its
+// `user/message` arrives at the claim, which production logs put up to 768 s later (#1678);
+// the ids, not a time window, are what says "this line already has its ack".
+export const LINE_IDS_KEPT = 16
 
 export const ACK_SYSTEM = [
   'You write the one-line acknowledgment a busy assistant sends when a new message arrives while it is still working.',
@@ -134,16 +138,29 @@ export function install(rt) {
     try { return await Promise.race([work, late]) } finally { clearTimeout(timer) }
   }
 
-  const note = (sessionId, message, session) => {
+  const rememberLine = (entry, lineId) => {
+    entry.lines.add(lineId)
+    while (entry.lines.size > LINE_IDS_KEPT) entry.lines.delete(entry.lines.values().next().value)
+  }
+
+  const note = (sessionId, message, session, lineId) => {
     const now = Date.now()
     const existing = acks.get(sessionId)
-    if (existing && now - existing.at < COALESCE_MS) {
-      existing.at = now
-      return existing
+    if (existing !== undefined) {
+      // The same line arrives twice: as a splice when it is queued and as `user/message`
+      // when it is claimed. The claim can be minutes later, past any coalescing window, so
+      // the line's own id — not the clock — is what says it already has an ack (#1678).
+      if (lineId !== undefined && existing.lines.has(lineId)) return existing
+      if (now - existing.at < COALESCE_MS) {
+        if (lineId !== undefined) rememberLine(existing, lineId)
+        existing.at = now
+        return existing
+      }
     }
     counter += 1
     // Published at once with no text: the client draws the pending dots (#1657).
-    const entry = { text: '', at: now, id: counter }
+    const entry = { text: '', at: now, id: counter, lines: new Set() }
+    if (lineId !== undefined) rememberLine(entry, lineId)
     acks.set(sessionId, entry)
     entry.ready = write(session, sessionId, message).then((text) => {
       if (text !== '' && acks.get(sessionId) === entry) entry.text = text
@@ -157,13 +174,32 @@ export function install(rt) {
   ctx.on('session/event', (session, event) => {
     const id = session?.id
     if (id === undefined || event?.type === undefined) return
+    // DSH queues a person's line as `agent/inbox/spliced` the moment it arrives; its
+    // `user/message` follows at the next step start, when the line is claimed. The splice is
+    // the arrival, so the ack starts here and the claim below finds it already made (#1678).
+    // Only a `next-turn` line waits: a `next-step` splice is steered into the running turn and
+    // is admitted at its next step, which is the path that never showed a silence before.
+    if (event.type === 'agent/inbox/spliced') {
+      if (event.data?.target !== 'next-turn' || !Array.isArray(event.data?.inserted)) return
+      for (const landed of event.data.inserted) {
+        const source = landed?.source
+        const room = roomLine(id, source)
+        const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
+        if (!own && !(room && turnRunning(id))) continue
+        const text = textOf(landed?.content)
+        note(id, room ? text.replace(relayHeader, '') : text, session, landed?.id)
+      }
+      return
+    }
     if (event.type === 'user/message') {
       const source = event.data?.source
       const room = roomLine(id, source)
       const own = shouldNoteBusyAck({ sourceKind: source?.kind, turnRunning: turnRunning(id), ownChat: ownChat(id) })
       if (!own && !(room && turnRunning(id))) return
       const text = textOf(event.data?.content ?? event.data?.message?.content)
-      note(id, room ? text.replace(relayHeader, '') : text, session)
+      // The claim of a line the splice already acked: same id, so `note` keeps that one ack.
+      const lineId = event.data?.id ?? event.data?.message?.id
+      note(id, room ? text.replace(relayHeader, '') : text, session, lineId)
       return
     }
     if (event.type === 'assistant/message') {
