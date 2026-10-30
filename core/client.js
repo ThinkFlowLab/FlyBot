@@ -7125,12 +7125,12 @@ var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
 function callTree(root) {
   const calls = [];
   const seen = /* @__PURE__ */ new Set();
-  const visit = (call5) => {
-    const id = call5.callId ?? call5;
+  const visit = (call4) => {
+    const id = call4.callId ?? call4;
     if (seen.has(id)) return;
     seen.add(id);
-    calls.push(call5);
-    for (const child of call5.subCalls ?? []) visit(child);
+    calls.push(call4);
+    for (const child of call4.subCalls ?? []) visit(child);
   };
   visit(root);
   return calls;
@@ -7144,20 +7144,20 @@ function useShownCards(actions, sessionId, callIds) {
     return () => actions.noteCards(sessionId, ids, -1);
   }, [sessionId, key]);
 }
-function renderCall(call5, { sessionId, roster, actions, useUi, findBot }) {
-  const tool = toolName(call5);
-  const done = call5.kind === "tool-result";
-  const { text: arg, value: argValue } = toolArgs(call5);
+function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
+  const tool = toolName(call4);
+  const done = call4.kind === "tool-result";
+  const { text: arg, value: argValue } = toolArgs(call4);
   const self = roster.byId[sessionId];
   switch (tool) {
     case "message_bot": {
       const target = findBot(arg("to")) ?? { name: arg("to") ?? "…", color: "gray" };
-      if (done && call5.isError) return (0, import_react9.createElement)("div", { className: "bt-event" }, t("Couldn't message {name}", { name: target.name }));
+      if (done && call4.isError) return (0, import_react9.createElement)("div", { className: "bt-event" }, t("Couldn't message {name}", { name: target.name }));
       return (0, import_react9.createElement)(EventLine, { prefix: t("Messaged"), bots: [target], onOpen: (bot) => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true });
     }
     case "stop_bot": {
       const target = findBot(arg("bot")) ?? { name: arg("bot") ?? "…", color: "gray" };
-      if (done && call5.isError) return (0, import_react9.createElement)("div", { className: "bt-event" }, t("Couldn't stop {name}", { name: target.name }));
+      if (done && call4.isError) return (0, import_react9.createElement)("div", { className: "bt-event" }, t("Couldn't stop {name}", { name: target.name }));
       return (0, import_react9.createElement)(EventLine, { prefix: t("Stopped"), bots: [target], onOpen: (bot) => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true });
     }
     case "create_bot": {
@@ -7170,7 +7170,7 @@ function renderCall(call5, { sessionId, roster, actions, useUi, findBot }) {
       return done && target ? (0, import_react9.createElement)(EventLine, { prefix: t("Updated"), bots: [target], onOpen: (bot) => actions.openSession(bot.id) }) : null;
     }
     case "group_relay":
-      return (0, import_react9.createElement)(GroupReplies, { sessionId, callId: call5.callId, done, content: call5.content, roster, actions, useUi });
+      return (0, import_react9.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi });
     case "create_group":
     case "update_group":
     case "delete_group":
@@ -7182,25 +7182,25 @@ function renderCall(call5, { sessionId, roster, actions, useUi, findBot }) {
         post_to_group: ["Posted in", "Couldn't post in the group"]
       }[tool];
       if (!done) return null;
-      const result = contentText(call5.content);
+      const result = contentText(call4.content);
       const named = /^(Created group|Updated|Nothing changed in|Deleted|Posted in) "([^"]+)"/.exec(result);
-      if (call5.isError || !named) return (0, import_react9.createElement)("div", { className: "bt-event", title: result }, t(verbs[1]));
+      if (call4.isError || !named) return (0, import_react9.createElement)("div", { className: "bt-event", title: result }, t(verbs[1]));
       const name = named[2];
       const room2 = roster.rooms.find((entry) => entry.name === name);
       return (0, import_react9.createElement)(GroupEvent, { prefix: t(verbs[0]), room: tool === "delete_group" ? void 0 : room2, name, roster, actions });
     }
     case "ask_user": {
       const question = roster.questions?.[sessionId];
-      if (!question || question.callId !== call5.callId) return (0, import_react9.createElement)("span", { className: "bt-q-gone", hidden: true });
+      if (!question || question.callId !== call4.callId) return (0, import_react9.createElement)("span", { className: "bt-q-gone", hidden: true });
       return (0, import_react9.createElement)(PendingQuestion, { sessionId, question, actions, inline: true });
     }
     case "request_secret":
-      return (0, import_react9.createElement)(SecretToolCell, { sessionId, callId: call5.callId, name: arg("name"), done, content: call5.content, roster, actions });
+      return (0, import_react9.createElement)(SecretToolCell, { sessionId, callId: call4.callId, name: arg("name"), done, content: call4.content, roster, actions });
     case "ask_user_question": {
       if (!done) return null;
       let parsed = null;
       try {
-        parsed = JSON.parse(contentText(call5.content));
+        parsed = JSON.parse(contentText(call4.content));
       } catch {
         parsed = null;
       }
@@ -7216,7 +7216,7 @@ function renderCall(call5, { sessionId, roster, actions, useUi, findBot }) {
     }
     case "remember":
     case "forget":
-      return done && !call5.isError ? (0, import_react9.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call5.content), roster, actions, findBot }) : null;
+      return done && !call4.isError ? (0, import_react9.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call4.content), roster, actions, findBot }) : null;
     default:
       return null;
   }
@@ -7228,14 +7228,14 @@ function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const hidden = isHiddenTurn(roster, sessionId, turn);
   const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
   const calls = hidden ? [] : callTree(root);
-  const drawn = calls.filter((call5) => DRAWN.has(toolName(call5)));
-  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call5) => call5.kind !== "tool-result");
+  const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
+  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
   const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
-  useShownCards(actions, sessionId, drawn.filter((call5) => CARDS.has(toolName(call5)) && call5.callId).map((call5) => call5.callId));
+  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
   if (drawn.length === 0) return null;
   const env = { sessionId, roster, actions, useUi, findBot };
-  return (0, import_react9.createElement)(import_react9.Fragment, null, drawn.map((call5, index) => (0, import_react9.createElement)(import_react9.Fragment, { key: call5.callId ?? index }, renderCall(call5, env))));
+  return (0, import_react9.createElement)(import_react9.Fragment, null, drawn.map((call4, index) => (0, import_react9.createElement)(import_react9.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 }
 
 // src/client/awaiting.js
@@ -9032,7 +9032,6 @@ function KanbanDialog({ roster, actions, leaving = false }) {
     if (kind === "bot" && roster.byId?.[id]) setScope({ kind: "bot", botId: id });
     if (kind === "group" && roster.roomsById?.[id]) setScope({ kind: "group", roomId: id });
   }, []);
-  const projectId = scope?.kind === "bot" ? roster.byId?.[scope.botId]?.projectId : scope?.kind === "group" ? roster.roomsById?.[scope.roomId]?.projectId : void 0;
   const counts2 = {};
   for (const task of [...own, ...archive]) {
     const id = task.ownerBotId;
@@ -9075,17 +9074,8 @@ function KanbanDialog({ roster, actions, leaving = false }) {
         { className: "bt-mem-head" },
         (0, import_react15.createElement)("h2", { id: "bt-board-heading" }, t("Board")),
         (0, import_react15.createElement)("span", { className: "bt-mem-status" }, name),
-        // #1701: the board the Bot or group belongs to opens from here; nothing else writes the
-        // Project hash, so without this the Project board was reachable only by editing the URL.
-        projectId ? (0, import_react15.createElement)("button", {
-          type: "button",
-          className: "bt-soft bt-soft-sm",
-          "data-open-project": projectId,
-          onClick: () => {
-            window.location.hash = `#project=${projectId}`;
-            close();
-          }
-        }, t("Project board")) : null,
+        // #1854: the left sidebar's Projects row is the one entry to a Project board; this header
+        // used to draw a second door (#1701), so the sidebar row was the only way in for the rest.
         (0, import_react15.createElement)("span", { className: "bt-mem-head-gap" }),
         (0, import_react15.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close board"), autoFocus: true, onClick: close }, (0, import_react15.createElement)(CloseIcon))
       ),
@@ -9174,7 +9164,6 @@ var KANBAN_CSS = `
 // src/client/projects-nav.js
 var import_react16 = require("react");
 var import_react_dom3 = require("react-dom");
-var call4 = (endpoint, payload) => call(`flybot/${endpoint}`, payload);
 var PROJECTS_NAV_CSS = `
 .bt-projects-row { display: flex; align-items: center; gap: 8px; }
 .bt-projects-chevron { margin-left: auto; display: inline-flex; transition: transform 120ms ease; }
@@ -9304,7 +9293,7 @@ function ProjectRoleMenu({ project, x, y, onPick, onClose }) {
   ), document.body);
 }
 function ProjectsNav({ wide = true, request, onOpen } = {}) {
-  const read = request ?? call4;
+  const read = request ?? call;
   const open = (0, import_react16.useCallback)((id) => {
     if (onOpen) {
       onOpen(id);
@@ -15093,7 +15082,7 @@ function settleWorkflowRead(value, fallback = "Could not read workflows") {
   if (templates.length === 0 && workflows.length === 0) return { phase: "empty", error: "", pack };
   return { phase: "ready", error: "", pack };
 }
-function readWorkflows(call5, { timeoutMs = READ_MS } = {}) {
+function readWorkflows(call4, { timeoutMs = READ_MS } = {}) {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value) => {
@@ -15103,7 +15092,7 @@ function readWorkflows(call5, { timeoutMs = READ_MS } = {}) {
       resolve(value);
     };
     const timer = setTimeout(() => finish(settleWorkflowRead(null)), timeoutMs);
-    Promise.resolve().then(() => call5("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: workflowCallError(failure), pack: null }));
+    Promise.resolve().then(() => call4("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: workflowCallError(failure), pack: null }));
   });
 }
 function moveNode(nodes, id, x, y) {
@@ -15532,7 +15521,7 @@ function DeleteModal({ workflow, onClose, onConfirm }) {
     )
   );
 }
-function WorkflowsPage({ call: call5, roster }) {
+function WorkflowsPage({ call: call4, roster }) {
   const [phase, setPhase] = (0, import_react36.useState)("loading");
   const [pack, setPack] = (0, import_react36.useState)(null);
   const [error, setError] = (0, import_react36.useState)("");
@@ -15540,7 +15529,7 @@ function WorkflowsPage({ call: call5, roster }) {
   const [editing, setEditing] = (0, import_react36.useState)(false);
   const [renaming, setRenaming] = (0, import_react36.useState)(null);
   const [deleting, setDeleting] = (0, import_react36.useState)(null);
-  const invoke = typeof call5 === "function" ? call5 : () => Promise.reject(new Error("Could not read workflows"));
+  const invoke = typeof call4 === "function" ? call4 : () => Promise.reject(new Error("Could not read workflows"));
   const apply2 = (settled) => {
     setPhase(settled.phase);
     setPack(settled.pack);
@@ -17699,16 +17688,16 @@ var projectMembers = (roster) => [
   ...(roster?.bots ?? []).filter((bot) => !bot.remote).map((bot) => ({ kind: "bot", id: bot.id, name: bot.name, projectId: bot.projectId ?? null })),
   ...(roster?.rooms ?? []).map((room2) => ({ kind: "group", id: room2.id, name: room2.name, projectId: room2.projectId ?? null }))
 ];
-function ProjectsList({ projects, roster, call: call5, reload }) {
+function ProjectsList({ projects, roster, call: call4, reload }) {
   const members = projectMembers(roster);
   const bind = async (choice, project) => {
     const [kind, id] = String(choice ?? "").split(":");
     if (!kind || !id) return;
-    await call5("project-bind", { kind, id, projectId: project.id });
+    await call4("project-bind", { kind, id, projectId: project.id });
     await reload?.();
   };
   const unbind = async (member) => {
-    await call5("project-bind", { kind: member.kind, id: member.id, projectId: null });
+    await call4("project-bind", { kind: member.kind, id: member.id, projectId: null });
     await reload?.();
   };
   const bound2 = members.filter((member) => member.projectId !== null && member.projectId !== void 0);
@@ -17764,14 +17753,14 @@ function ProjectsList({ projects, roster, call: call5, reload }) {
     )
   ];
 }
-function ProjectsPage({ roster, actions, run, call: call5 }) {
+function ProjectsPage({ roster, actions, run, call: call4 }) {
   const [state, setState] = (0, import_react41.useState)({ projects: [], error: null });
   const [name, setName] = (0, import_react41.useState)("");
   const [workDir, setWorkDir] = (0, import_react41.useState)(null);
   const reload = (0, import_react41.useCallback)(async () => {
-    const listing = await call5("projects");
+    const listing = await call4("projects");
     setState({ projects: listing?.projects ?? [], error: null });
-  }, [call5]);
+  }, [call4]);
   (0, import_react41.useEffect)(() => {
     void reload().catch((error) => setState({ projects: [], error: error?.message ?? String(error) }));
   }, [reload]);
@@ -17781,7 +17770,7 @@ function ProjectsPage({ roster, actions, run, call: call5 }) {
     const body = { name: trimmed3 };
     if (workDir !== null && workDir !== "") body.workDir = workDir;
     try {
-      await call5("project-create", body);
+      await call4("project-create", body);
       setName("");
       setWorkDir(null);
       await reload();
@@ -17825,7 +17814,7 @@ function ProjectsPage({ roster, actions, run, call: call5 }) {
     ),
     // The list is rendered here rather than as a child element: it holds no state of its own,
     // and the page keeps one reload path for both halves.
-    ...ProjectsList({ projects: state.projects, roster, call: call5, reload })
+    ...ProjectsList({ projects: state.projects, roster, call: call4, reload })
   ];
 }
 

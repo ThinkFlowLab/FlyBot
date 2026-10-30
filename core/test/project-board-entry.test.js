@@ -119,19 +119,18 @@ test('#1701: a board row draws the title and opens the board that owns the task'
   assert.deepEqual(plain(opened), [{ kind: 'bot', id: 'a' }], 'clicking opens the board that owns the task')
 })
 
-test('#1701: the Tasks dialog offers an entry that opens the Project board', async () => {
-  const { KanbanDialog, window: fake } = await load('kanban.js')
+test('#1854: the Tasks dialog has no second entry to the Project board', async () => {
+  const { KanbanDialog } = await load('kanban.js')
   states.length = 0
   states.push(
     { kind: 'bot', botId: 'a' }, null, '', '',
     [{ id: 'task-1', status: 'working', ownerBotId: 'a', title: 'One' }], [], [],
   )
   const tree = expand(KanbanDialog({ roster: roster(), actions: { closeBoard: () => {}, tasks: async () => [], openBoard: () => {} } }))
+  // #1854: Projects are entered from the left sidebar only. The board's own `Project board` button
+  // was the second door, so a Bot bound to a Project no longer draws one here.
   const entry = all(tree).filter(node => typeof node.props?.['data-open-project'] === 'string')
-  assert.equal(entry.length, 1, 'a Bot bound to a Project gets one entry on the board')
-  assert.equal(entry[0].props['data-open-project'], 'project-rocket')
-  entry[0].props.onClick()
-  assert.equal(fake.location.hash, '#project=project-rocket', 'the entry opens the Project board through the hash')
+  assert.equal(entry.length, 0, 'the Tasks dialog no longer offers a Project board entry')
 })
 
 test('#1701: the three board columns have their own labels', async () => {

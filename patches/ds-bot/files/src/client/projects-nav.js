@@ -9,7 +9,8 @@ import { createPortal } from 'react-dom'
 import { call as callHost } from './api.js'
 import { t } from './i18n.js'
 
-const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payload)
+// #1854: `projects` and `project-role` are core endpoints, dispatched by bare name in
+// `core/src/host/channel.js`; a `flybot/` prefix here names an endpoint the host does not have.
 
 export const PROJECTS_NAV_CSS = `
 .bt-projects-row { display: flex; align-items: center; gap: 8px; }
@@ -132,7 +133,7 @@ export function ProjectRoleMenu({ project, x, y, onPick, onClose }) {
 }
 
 export function ProjectsNav({ wide = true, request, onOpen } = {}) {
-  const read = request ?? call
+  const read = request ?? callHost
   const open = useCallback((id) => {
     if (onOpen) { onOpen(id); return }
     if (typeof window !== 'undefined') window.location.hash = projectHash(id)

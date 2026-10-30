@@ -379,10 +379,6 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     if (kind === 'bot' && roster.byId?.[id]) setScope({ kind: 'bot', botId: id })
     if (kind === 'group' && roster.roomsById?.[id]) setScope({ kind: 'group', roomId: id })
   }, [])
-  // The Project this board belongs to, when its Bot or group is bound to one.
-  const projectId = scope?.kind === 'bot'
-    ? roster.byId?.[scope.botId]?.projectId
-    : scope?.kind === 'group' ? roster.roomsById?.[scope.roomId]?.projectId : undefined
   const counts = {}
   for (const task of [...own, ...archive]) {
     const id = task.ownerBotId
@@ -419,12 +415,8 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
       h('div', { className: 'bt-mem-head' },
         h('h2', { id: 'bt-board-heading' }, t('Board')),
         h('span', { className: 'bt-mem-status' }, name),
-        // #1701: the board the Bot or group belongs to opens from here; nothing else writes the
-        // Project hash, so without this the Project board was reachable only by editing the URL.
-        projectId ? h('button', {
-          type: 'button', className: 'bt-soft bt-soft-sm', 'data-open-project': projectId,
-          onClick: () => { window.location.hash = `#project=${projectId}`; close() },
-        }, t('Project board')) : null,
+        // #1854: the left sidebar's Projects row is the one entry to a Project board; this header
+        // used to draw a second door (#1701), so the sidebar row was the only way in for the rest.
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h(BoardView, {
