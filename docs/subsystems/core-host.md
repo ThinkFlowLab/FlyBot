@@ -575,7 +575,16 @@ with no signed-in session falls back to the first member, the same rule `tasks.j
 the owner — or for every caller on a Project whose record names no owner. `project-bind` is refused
 by the host with `bot/forbidden` unless the caller may manage the Project the binding names (or the
 one it is leaving, when unbinding); the refusal writes nothing, so hiding a button is never the
-gate. Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
+gate. The same check covers the record itself since #1740: `project-delete`, `project-memory`,
+`project-memory-write` and `project-assistant-owner` ask `requireProjectOwner` first, so a
+non-owner gets `bot/forbidden` and the Project, its memory and the other owner's digest settings
+are unchanged afterwards — a refusal, never a silent no-op. `project-assistant-owner` also refuses
+a body whose `ownerId` is not the caller's own record, so even a Project's owner cannot rewrite
+another owner's quiet window or opt-out before that endpoint is wired; an omitted `ownerId` means
+the caller's own. The gate returns early on a missing id, so `project-memory` keeps the not-found
+refusal it answered before rather than turning an unknown id into a 403. Tests:
+`core/test/project-owner-gate.test.js`.
+Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
 Those rows are the ones the caller could open through `tasks` (#1723): `store.js` passes the
 authenticated actor into `projectBoard(projectId, actor)`, and the board drops every card
 `rt.taskVisible` refuses — a card is visible to its requester, to the owner of its Bot or an

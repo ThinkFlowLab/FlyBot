@@ -849,7 +849,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,348 @@ export function install(rt) {
+@@ -161,12 +161,369 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1090,7 +1090,8 @@ diff --git a/src/host/store.js b/src/host/store.js
 +  }
 +  // Who may act on a Project (#1710). The record names its owner member; an install with no
 +  // session falls back to the first member, exactly like `requesterOf` in tasks.js. The host
-+  // decides this, never the page: a caller that is not the owner may read and nothing else.
++  // decides this, never the page: a caller that is not the owner may read the board and nothing
++  // else; the Project record, its memory and its assistant settings are the owner's (#1740).
 +  const projectActorId = actor => projectText(actor?.memberId, 120) || Object.keys(state.members ?? {})[0] || null
 +  const projectCanManage = (project, actor) => {
 +    if (project === null || typeof project !== 'object') return false
@@ -1124,16 +1125,30 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        await save()
 +        return { project }
 +      }
++      // Deleting a Project and reading or writing its assistant memory are the owner's (#1740).
++      // #1722 shipped them without the check `project-bind` already made, so any signed-in member
++      // could take another member's Project and its private memory with it. The record is read
++      // first, so a missing id still answers not-found from the call that needs it: the gate
++      // returns early on `null`, it never turns an unknown id into a refusal.
 +      case 'project-delete': {
-+        const project = await deleteProject(projectText(body.id, 200))
++        const id = projectText(body.id, 200)
++        requireProjectOwner(readProject(id), actor)
++        const project = await deleteProject(id)
 +        await save()
 +        return { project }
 +      }
 +      // The assistant's private memory (#1712): read and write are per Project id, so a caller
 +      // holding one id can never reach another Project's entries.
-+      case 'project-memory': return { project: readProject(projectText(body.id, 200)), memory: projectMemory(projectText(body.id, 200)) }
++      case 'project-memory': {
++        const id = projectText(body.id, 200)
++        const project = readProject(id)
++        requireProjectOwner(project, actor)
++        return { project, memory: projectMemory(id) }
++      }
 +      case 'project-memory-write': {
-+        const memory = appendProjectMemory(projectText(body.id, 200), projectText(body.kind, 20), body)
++        const id = projectText(body.id, 200)
++        requireProjectOwner(readProject(id), actor)
++        const memory = appendProjectMemory(id, projectText(body.kind, 20), body)
 +        await save()
 +        return { memory }
 +      }
@@ -1151,10 +1166,16 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        return { project }
 +      }
 +      // The assistant's per-owner controls (#1733): a quiet window and the digest opt-out live on
-+      // the Project's own assistant record, not in the host-wide prefs.
++      // the Project's own assistant record, not in the host-wide prefs. The body names the owner,
++      // so it carries the second half of the gate (#1740): a Project's owner may change their own
++      // record and no other, and an omitted ownerId means the caller's own.
 +      case 'project-assistant-owner': {
 +        const project = requireProject(projectText(body.id, 200))
-+        const result = await rt.projectAssistant?.setOwner?.(project.id, projectText(body.ownerId, 120), body.settings ?? {})
++        requireProjectOwner(project, actor)
++        const actorId = projectActorId(actor)
++        const ownerId = projectText(body.ownerId, 120) || actorId
++        if (ownerId !== actorId) throw projectRefusal('Only your own assistant settings may be changed here', 'bot/forbidden')
++        const result = await rt.projectAssistant?.setOwner?.(project.id, ownerId, body.settings ?? {})
 +        await save()
 +        return { project: readProject(project.id), ...(result ?? {}) }
 +      }
