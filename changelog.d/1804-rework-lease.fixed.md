@@ -1,0 +1,1 @@
+A card waiting for its rework keeps its holder when its lease expires instead of being returned to the role queue: the open rework child is the card in flight, so the original is not re-offered to the role that sent it back and cannot be taken again by its producer ([#1804](https://github.com/ThinkFlowLab/FlyBot/issues/1804)).

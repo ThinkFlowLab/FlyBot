@@ -176,3 +176,27 @@ test('a role returns the card to its producer as a rework card the producer can 
   assert.match(await app.track('d1', { claim: true, id: childId }), new RegExp(`^Claimed ${childId} `))
   assert.equal(app.rt.state.tasks[childId].claimedBy, 'd1')
 })
+
+test('a card waiting for its rework is not re-offered when its lease expires (#1804)', async (t) => {
+  const app = await start(t)
+  const id = app.idOf(await app.track('a', { tasks: [{ title: 'Build the route', handoff: { from: 'Lead', to: 'Dev' } }] }))
+  await app.drive()
+  await app.track('d1', { claim: true, id })
+  await app.track('d1', { tasks: [{ id, handoff: { from: 'Dev', to: 'Reviewer', reason: 'diff ready' } }] })
+  await app.drive()
+  await app.track('r1', { claim: true, id })
+  await app.track('r1', { tasks: [{ id, column: 'in-progress' }] })
+  const childId = app.idOf(await app.track('r1', { rework: { task: id, reason: 'no test for the return path' } }))
+  const offers = () => (app.text('r1').match(new RegExp(`Take ${id} `, 'g')) ?? []).length
+  const before = offers()
+
+  // The original waits for the child: recovering it would offer it back to the role that sent it
+  // back and let the producer take it again while the rework is open — the same work twice.
+  assert.equal(await app.rt.taskExpireLeases(Date.now() + 31 * 60 * 1000), 0, 'the card held for rework is not recovered')
+  assert.equal(app.rt.state.tasks[id].status, 'working', 'the original keeps waiting for its rework')
+  await app.drive()
+  assert.equal(offers(), before, 'the Reviewer is not offered the card it sent back')
+  assert.match(app.text('d1'), new RegExp(`Take ${childId} `), 'the producer is offered the rework card')
+  assert.match(await app.track('d1', { claim: true, id }), /no card for Dev in the handoff pool/, 'the producer cannot take the card its rework covers')
+  assert.match(await app.track('d1', { claim: true, id: childId }), new RegExp(`^Claimed ${childId} `), 'the producer takes the card that is in flight')
+})

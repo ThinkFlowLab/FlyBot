@@ -628,6 +628,11 @@ export function install(rt) {
     for (const task of Object.values(store())) {
       const lease = leaseOf(task)
       if (lease === undefined || !Number.isFinite(lease.expiresAt) || lease.expiresAt > now) continue
+      // A card waiting for its rework is not abandoned work (#1804): the open child card is the
+      // one in flight, and putting the original back in a pool would offer it to the role that
+      // sent it back — or let the producer take it again — while the child is still open. It
+      // keeps its holder and `working` until `closeRework` moves it on.
+      if (Object.values(store()).some(other => other.reworkOf === task.id && openTask(other))) continue
       // Read once and clear before the requeue: a second read in the same tick sees no lease, so
       // two expired reads return the card once, not twice (#1729). The recovery is recorded on the
       // card itself, and the dead worker is dropped so the next claim starts with no state of it.
