@@ -199,3 +199,27 @@ test('#1347: the built bundle carries these rules, so a page reload shows them',
   assert.ok(bundle.includes('bt-chat-strip-name'), 'client.js carries the blank-chat strip')
   assert.ok(bundle.includes('Conversation copied as Markdown'), 'client.js carries the copy confirmation')
 })
+
+test('#1750: the Project board overlay covers the shell behind its scrim', () => {
+  const css = read('project-board.js')
+  // The overlay carried `bt-overlay`, a class no stylesheet defines: the board rendered as a short
+  // dialog in the page flow, with the bot tree and workflows legible under its rows and nothing
+  // dimming them. A modal covers the whole viewport, so the shell cannot be read as more board rows.
+  const overlay = rule(css, '.bt-project-overlay')
+  assert.match(overlay, /position:fixed/, 'the layer is taken out of the page flow')
+  assert.match(overlay, /inset:0/, 'and covers the viewport, not just its own content height')
+  assert.match(overlay, /align-items:center/, 'the dialog sits centred in that layer')
+  assert.match(overlay, /justify-content:center/)
+  // Every other modal in the client pairs a `bt-scrim` sibling with its dialog and dismisses on a
+  // click; the Project board was the one overlay with no scrim at all.
+  assert.match(css, /className: 'bt-scrim', onClick: close/, 'the scrim renders beside the dialog and closes the overlay')
+  // Reuse, not a second visual language: the dialog is kanban's own `bt-mem` surface at kanban's size.
+  const dialog = rule(css, '.bt-mem.bt-project-dialog')
+  assert.match(dialog, /width:min\(1080px,calc\(100vw - 32px\)\)/, 'the same dialog width as the Board')
+  assert.match(dialog, /height:min\(760px,calc\(100vh - 48px\)\)/, 'and the same height, so board rows are not mixed with the shell')
+
+  // The app runs client.js, so the rule only reaches the page once it is in the bundle.
+  const bundle = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(rule(bundle, '.bt-project-overlay'), /position:fixed;inset:0/, 'client.js carries the covering layer')
+  assert.ok(bundle.includes('bt-mem bt-project-dialog'), 'and the dialog it centres')
+})

@@ -6,6 +6,12 @@ import { call } from './api.js'
 import { t } from './i18n.js'
 
 export const PROJECT_BOARD_CSS = `
+/* #1750: the board was a short dialog in the page flow — no stylesheet defines 'bt-overlay', so the
+   bot tree and workflows stayed legible under its rows. It is a modal now, on the same tier as the
+   Board and Settings layers, with kanban's own 'bt-scrim' sibling and 'bt-mem' surface. */
+.bt-project-overlay{position:fixed;inset:0;z-index:121;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.bt-mem.bt-project-dialog{width:min(1080px,calc(100vw - 32px));height:min(760px,calc(100vh - 48px))}
+.bt-project-body{flex:1 1 auto;min-height:0;overflow:auto}
 .bt-project-board{padding:16px 18px}
 .bt-project-group{margin:0 0 14px}
 .bt-project-group h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
@@ -164,20 +170,28 @@ export function ProjectBoardOverlay({ actions } = {}) {
     return () => { live = false }
   }, [hash])
   if (state === null) return null
-  return h('div', { className: 'bt-overlay bt-project-overlay', role: 'dialog', 'aria-label': t('Project board') },
-    h('button', { type: 'button', className: 'bt-project-close', onClick: close }, t('Close')),
-    state.project === null
-      ? h('div', { className: 'bt-project-empty' }, t('No Project here.'))
-      // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
-      // that hash and lands on the Bot or group the task belongs to.
-      : h(ProjectBoardPane, {
-        project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
-        // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
-        // lands on that Bot or group. Nothing here re-decides which board that is.
-        onOpen: (board) => {
-          if (typeof window !== 'undefined') window.location.hash = `#task=${board.kind}:${board.id}`
-          actions?.openBoard?.()
-          setState(null)
-        },
-      }))
+  // #1750: the scrim is a sibling in front of the dialog, exactly as the Board draws it, so a click
+  // beside the board dismisses it and the shell behind reads as a backdrop rather than more rows.
+  return h('div', { className: 'bt-project-overlay' },
+    h('div', { className: 'bt-scrim', onClick: close }),
+    h('div', { className: 'bt-mem bt-project-dialog', role: 'dialog', 'aria-modal': true, 'aria-label': t('Project board') },
+      h('div', { className: 'bt-mem-head' },
+        h('h2', {}, t('Project board')),
+        h('span', { className: 'bt-mem-head-gap' }),
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-project-close', autoFocus: true, onClick: close }, t('Close'))),
+      h('div', { className: 'bt-project-body' },
+        state.project === null
+          ? h('div', { className: 'bt-project-empty' }, t('No Project here.'))
+          // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
+          // that hash and lands on the Bot or group the task belongs to.
+          : h(ProjectBoardPane, {
+            project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
+            // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
+            // lands on that Bot or group. Nothing here re-decides which board that is.
+            onOpen: (board) => {
+              if (typeof window !== 'undefined') window.location.hash = `#task=${board.kind}:${board.id}`
+              actions?.openBoard?.()
+              setState(null)
+            },
+          }))))
 }
