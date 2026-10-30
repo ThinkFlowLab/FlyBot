@@ -292,7 +292,17 @@ The pane is registered on the existing `shell.overlay` surface and opens at `#pr
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
 the board. The entry is the **Project board** button in `KanbanDialog`'s header: it is drawn only when the
 selected Bot or group carries a `projectId`, writes `#project=<id>` and closes the Tasks dialog, leaving
-the overlay to take over. It is not a second board and not a rail row.
+the overlay to take over. It is not a second board.
+
+Since #1828 the sidebar draws the entry: one **Projects** row below Tasks, with an expand arrow that
+lists every Project the `projects` listing answered together with the caller's role there. A row
+opens that board by writing `#project=<id>` (the same entry point the overlay reads), the rail's
+version opens the first board, and an install with no Project reads *No Projects yet*. A
+right-click on a row opens the **My role** menu: it lists the `choices` the listing answered and
+marks the current rank (a Member has only the current one, and an Owner never demotes themselves),
+calls `project-role`, and shows a refusal's reason unchanged (`Role unchanged: last-owner`). The
+policy stays in the host; this module (`src/client/projects-nav.js`) only draws the answer. Tests:
+`core/test/projects-nav.test.js`.
 
 A row knows the board its task lives on without re-deciding membership: the mapping follows the host's own
 `source` (`group` → the task's `origin.roomId`, `bot` → its `ownerBotId`, a `workflow` row is one a run

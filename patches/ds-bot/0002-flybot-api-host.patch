@@ -715,7 +715,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
-@@ -50,12 +50,88 @@ export function install(rt) {
+@@ -50,12 +50,88 @@
      }
    }
    const readOnly = () => {
@@ -805,7 +805,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const readFileState = async () => {
      let contents
      try {
-@@ -87,10 +87,32 @@ export function install(rt) {
+@@ -87,10 +87,32 @@
        return undefined
      }
      if (parsed?.version === 1) {
@@ -821,10 +821,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
 +        return undefined
 +      }
-       stuck = undefined
-       return parsed
-     }
--    stuck = 'saved by a newer DS Bot; update DS Bot'
++      stuck = undefined
++      return parsed
++    }
 +    if (parsed?.version === STATE_VERSION) {
 +      const problem = ownershipProblem(parsed)
 +      if (problem !== undefined) {
@@ -832,14 +831,15 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: state %s was refused: %s', statePath, problem)
 +        return undefined
 +      }
-+      stuck = undefined
-+      return parsed
-+    }
+       stuck = undefined
+       return parsed
+     }
+-    stuck = 'saved by a newer DS Bot; update DS Bot'
 +    stuck = 'saved by a newer FlyBot; update FlyBot'
      return undefined
    }
  
-@@ -104,6 +104,20 @@ export function install(rt) {
+@@ -104,6 +104,20 @@
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
@@ -860,7 +860,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
        state.capabilities = { items: {} }
        migrated = true
-@@ -112,6 +112,11 @@ export function install(rt) {
+@@ -112,6 +112,11 @@
        migrated = true
      }
      for (const bot of Object.values(state.bots)) {
@@ -872,7 +872,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        if (!Array.isArray(bot.capabilities)) {
          bot.capabilities = []
          migrated = true
-@@ -120,6 +120,11 @@ export function install(rt) {
+@@ -120,6 +120,11 @@
          bot.color = currentColor(bot.color)
          migrated = true
        }
@@ -884,7 +884,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,390 @@ export function install(rt) {
+@@ -161,12 +161,423 @@
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1147,9 +1147,42 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    throw projectRefusal('Only the owner of this Project may change it', 'bot/forbidden')
 +  }
 +
++// #1828: only the two assignable ranks are stored; the Owner stays derived from `ownerUserIds`.
++  const setProjectRoles = (project, roles) => {
++    const list = value => (Array.isArray(value) ? [...new Set(value.map(id => projectText(id, 120)).filter(id => id !== ''))] : [])
++    project.roles = { maintainers: list(roles?.maintainers), members: list(roles?.members) }
++    project.updatedAt = Math.max(project.updatedAt, Date.now())
++    return project.roles
++  }
 +  const projectEndpoint = async (endpoint, body = {}, actor = null) => {
 +    switch (endpoint) {
-+      case 'projects': return { projects: listProjects() }
++      // #1828: the sidebar reads one list, and each entry carries the caller's own role and the
++      // roles they may switch to — both from the same policy the endpoint applies, so the menu and
++      // the refusal cannot disagree. A host without the helpers (an older plugin instance) answers
++      // neither field and the client draws the list without a role.
++      case 'projects': {
++        const actorId = projectActorId(actor)
++        return {
++          projects: listProjects().map(project => ({
++            ...project,
++            role: rt.projectRoleOf === undefined ? null : rt.projectRoleOf(project, actorId),
++            choices: rt.projectRoleChoices === undefined ? [] : rt.projectRoleChoices(project, actorId),
++          })),
++        }
++      }
++      // #1828: the role switch. The policy lives in project-board.js (`changeRole`), so the endpoint
++      // and the menu cannot disagree; a refusal answers the reason and writes nothing.
++      case 'project-role': {
++        const project = readProject(projectText(body.id, 200))
++        if (project === null) throw projectRefusal('Unknown Project', 'bot/not-found')
++        const result = rt.projectRole === undefined
++          ? { ok: false, reason: 'not-owner' }
++          : rt.projectRole(project, { actor, actorId: projectActorId(actor), targetId: body.memberId, role: body.role })
++        if (result.ok !== true) return { project, changed: false, reason: result.reason }
++        const roles = setProjectRoles(project, result.roles)
++        await save()
++        return { project, changed: true, roles }
++      }
 +      case 'project-create': {
 +        // The caller is stamped as the owner; a member id from the body cannot mint a
 +        // Project someone else manages.
@@ -1276,7 +1309,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -185,14 +185,24 @@ export function install(rt) {
+@@ -185,14 +185,24 @@
      for (const room of stale) void rt.retitleRoom(room)
    })()
  
@@ -1302,7 +1335,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,11 +235,37 @@ export function install(rt) {
+@@ -235,11 +235,37 @@
      return warnReadOnly()
    }
  
@@ -1340,7 +1373,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      state.revision += 1
      state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
      const snapshot = JSON.stringify(state, null, 2)
-@@ -260,9 +260,10 @@ export function install(rt) {
+@@ -260,9 +260,10 @@
          ensureLock()
          await rename(temp, statePath)
          seen = stamp()
@@ -1352,7 +1385,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
-@@ -273,13 +273,37 @@ export function install(rt) {
+@@ -273,13 +273,37 @@
      })
    }
  
@@ -1392,7 +1425,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const isMain = id => id !== undefined && state.mainBotIds.includes(id)
  
    // Group Sessions. A member speaks in each group from a hidden Session of its own,
-@@ -313,6 +313,13 @@ export function install(rt) {
+@@ -313,6 +313,13 @@
        }
        for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
      }
@@ -1406,7 +1439,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      // The agents module owns the DSH Agent session index; it installs after this.
      rt.indexAgents?.()
    }
-@@ -328,6 +328,8 @@ export function install(rt) {
+@@ -328,6 +328,8 @@
      delete room.sessions[botId]
      if (room.segments !== undefined) delete room.segments[botId]
      groupOwners.delete(sessionId)
@@ -1415,7 +1448,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,29 @@ export function install(rt) {
+@@ -335,23 +335,29 @@
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1445,7 +1478,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
 +    initialOwnerId, syncDesignatedChief,
-+    projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember,
++    projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember, setProjectRoles,
 +    projectMemory, projectMemoryOf, projectMemoryFor, appendProjectMemory, setProjectDigest, deleteProject,
    })
  }

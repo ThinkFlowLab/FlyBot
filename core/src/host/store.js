@@ -570,9 +570,42 @@ export function install(rt) {
     throw projectRefusal('Only the owner of this Project may change it', 'bot/forbidden')
   }
 
+// #1828: only the two assignable ranks are stored; the Owner stays derived from `ownerUserIds`.
+  const setProjectRoles = (project, roles) => {
+    const list = value => (Array.isArray(value) ? [...new Set(value.map(id => projectText(id, 120)).filter(id => id !== ''))] : [])
+    project.roles = { maintainers: list(roles?.maintainers), members: list(roles?.members) }
+    project.updatedAt = Math.max(project.updatedAt, Date.now())
+    return project.roles
+  }
   const projectEndpoint = async (endpoint, body = {}, actor = null) => {
     switch (endpoint) {
-      case 'projects': return { projects: listProjects() }
+      // #1828: the sidebar reads one list, and each entry carries the caller's own role and the
+      // roles they may switch to — both from the same policy the endpoint applies, so the menu and
+      // the refusal cannot disagree. A host without the helpers (an older plugin instance) answers
+      // neither field and the client draws the list without a role.
+      case 'projects': {
+        const actorId = projectActorId(actor)
+        return {
+          projects: listProjects().map(project => ({
+            ...project,
+            role: rt.projectRoleOf === undefined ? null : rt.projectRoleOf(project, actorId),
+            choices: rt.projectRoleChoices === undefined ? [] : rt.projectRoleChoices(project, actorId),
+          })),
+        }
+      }
+      // #1828: the role switch. The policy lives in project-board.js (`changeRole`), so the endpoint
+      // and the menu cannot disagree; a refusal answers the reason and writes nothing.
+      case 'project-role': {
+        const project = readProject(projectText(body.id, 200))
+        if (project === null) throw projectRefusal('Unknown Project', 'bot/not-found')
+        const result = rt.projectRole === undefined
+          ? { ok: false, reason: 'not-owner' }
+          : rt.projectRole(project, { actor, actorId: projectActorId(actor), targetId: body.memberId, role: body.role })
+        if (result.ok !== true) return { project, changed: false, reason: result.reason }
+        const roles = setProjectRoles(project, result.roles)
+        await save()
+        return { project, changed: true, roles }
+      }
       case 'project-create': {
         // The caller is stamped as the owner; a member id from the body cannot mint a
         // Project someone else manages.
@@ -956,7 +989,7 @@ export function install(rt) {
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
     initialOwnerId, syncDesignatedChief,
-    projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember,
+    projectEndpoint, createProject, readProject, listProjects, bindProject, projectOfMember, setProjectRoles,
     projectMemory, projectMemoryOf, projectMemoryFor, appendProjectMemory, setProjectDigest, deleteProject,
   })
 }

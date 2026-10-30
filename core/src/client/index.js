@@ -38,6 +38,7 @@ import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
 import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
 import { PROJECT_BOARD_CSS, ProjectBoardOverlay } from './project-board.js'
+import { PROJECTS_NAV_CSS } from './projects-nav.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -893,6 +894,7 @@ export function apply(ctx) {
     installCompiledStyles(MOBILE_CSS, 'mobile'),
     installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
     installCompiledStyles(PROJECT_BOARD_CSS, 'project-board'),
+    installCompiledStyles(PROJECTS_NAV_CSS, 'projects-nav'),
     typeof document !== 'undefined' ? watchShellLevel(document) : null,
     browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
     installTheme(),

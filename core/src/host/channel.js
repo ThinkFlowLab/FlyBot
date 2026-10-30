@@ -675,6 +675,7 @@ export function install(rt) {
         case 'project-bind':
         case 'project-of':
         case 'project-board':
+        case 'project-role':
         case 'project-delete':
         case 'project-memory':
         case 'project-memory-write':

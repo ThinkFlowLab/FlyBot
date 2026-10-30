@@ -16,6 +16,7 @@ import { visibleText } from '../shared/preview.js'
 import { showsDshRow } from './dsh-offer.js'
 import { InboxRow } from './inbox.js'
 import { KanbanRow } from './kanban.js'
+import { ProjectsNav } from './projects-nav.js'
 
 // -------------------------------------------------------------------------
 // Sidebar
@@ -395,6 +396,7 @@ export function TeamSidebar(props) {
     wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
     h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     h(KanbanRow, { wide, useUi, actions }),
+    h(ProjectsNav, { wide }),
     h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       tree ? h('div', { className: 'bt-tree', role: 'group', 'aria-label': t('Bot tree') }, tree.map(node => h(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions })))
         : main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),

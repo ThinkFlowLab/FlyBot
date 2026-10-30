@@ -620,6 +620,20 @@ refused there; a board with nothing to paint is still `[]`, not an error.
 `project-board` is listed in `authz.js`'s `TASK_ENDPOINTS`, so a signed-in deployment does not
 refuse it as an unknown endpoint.
 
+Projects carry three roles since #1828, and only two of them are stored. `roles: { maintainers,
+members }` on the record holds the two assignable ranks; the Owner is derived every time from
+`ownerUserIds` (plus `ownerUserId`), so a record written before this slice reads owner-only with no
+migration and the stored lists can never disagree with the owner. `rolesOf` / `roleOf` /
+`roleChoices` / `changeRole` in `project-board.js` are the whole policy: nobody promotes themselves,
+only an Owner re-roles someone else, the Owner rank is never assignable here, and the last owner
+cannot be demoted. `changeRole` answers `{ ok: true, roles }` or a machine-readable reason
+(`not-owner`, `cannot-self-promote`, `last-owner`, `unknown-role`, `owner-not-assignable`) and the
+record is untouched on a refusal. The `project-role` endpoint runs that function, persists only
+`maintainers`/`members` (`setProjectRoles`), and answers `{ project, changed, reason }`; the
+`projects` listing now also carries each entry's `role` and `choices` for the caller, both read
+from the same functions, so the sidebar menu cannot offer a switch the host would refuse. Tests:
+`core/test/project-roles.test.js`.
+
 ### Role queues, isolated workers and lease recovery (#1729)
 
 Stage 3.2 of the task pool. One queue per role, one worker per claim, one owner for an expired lease; all of it reads the cards already on the board, so there is no second store.

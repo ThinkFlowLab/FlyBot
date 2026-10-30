@@ -1352,7 +1352,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,70 @@
+@@ -1,44 +1,71 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
 +import { createElement as h } from 'react'
 +import { registry as flybotSlots } from './flybot-registry.js'
@@ -1401,6 +1401,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +import { MOBILE_CSS } from './mobile.js'
 +import { PANE_MIN_WIDTH_CSS, watchShellLevel } from './panes.js'
 +import { PROJECT_BOARD_CSS, ProjectBoardOverlay } from './project-board.js'
++import { PROJECTS_NAV_CSS } from './projects-nav.js'
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -1432,7 +1433,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
    let savedUnread = {}
-@@ -50,9 +50,12 @@ export function apply(ctx) {
+@@ -50,9 +50,12 @@
    const SEEN_KEY = STORAGE.seen
    let seenAt = {}
    try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
@@ -1446,7 +1447,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
-@@ -90,6 +90,8 @@ export function apply(ctx) {
+@@ -90,6 +90,8 @@
      return () => window.removeEventListener('pagehide', onPageHide)
    }, 'ds-bot: remember visits on page hide')
    const activity = createSource({})
@@ -1455,7 +1456,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
    const work = createSource({ bots: {}, approvals: [] })
    let workKey = ''
-@@ -125,6 +125,17 @@ export function apply(ctx) {
+@@ -125,6 +125,17 @@
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
    })
@@ -1473,7 +1474,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
-@@ -132,11 +132,14 @@ export function apply(ctx) {
+@@ -132,11 +132,14 @@
    const pull = async () => {
      const order = ++pulls
      const known = roster.getSnapshot()
@@ -1489,7 +1490,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      const nextWork = JSON.stringify(value.work ?? null)
      if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
      noteMemoryNews(value.memoryNews ?? {})
-@@ -145,11 +145,14 @@ export function apply(ctx) {
+@@ -145,11 +145,14 @@
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
      if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
@@ -1504,7 +1505,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      try {
        const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
-@@ -252,17 +252,7 @@ export function apply(ctx) {
+@@ -252,17 +252,7 @@
      const style = installStyles('', 'mentions')
      let last = ''
      const render = () => {
@@ -1523,7 +1524,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        if (next !== last) style.textContent = last = next
      }
      render()
-@@ -325,7 +325,7 @@ export function apply(ctx) {
+@@ -325,7 +325,7 @@
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
  
@@ -1532,7 +1533,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -342,6 +342,7 @@ export function apply(ctx) {
+@@ -342,6 +342,7 @@
      // or the click appears to do nothing.
      isAgentSession: id => isAgentSessionId(id),
      openSession: (id) => {
@@ -1540,7 +1541,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,11 +409,11 @@ export function apply(ctx) {
+@@ -409,11 +409,11 @@
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1556,7 +1557,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        expected = target
        ctx.uiWorkspace.openSession(target)
      },
-@@ -444,10 +444,22 @@ export function apply(ctx) {
+@@ -444,10 +444,22 @@
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
      // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
@@ -1581,7 +1582,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      openConnectors: () => { ui.set(state => ({ ...state, settings: { page: 'connectors', id: null }, menu: null, palette: null, newChat: null })) },
      // Agent mode hands the surface back to the shell; everything open on the Bot
      // surface closes first so nothing stale reopens on the way back.
-@@ -455,7 +455,7 @@ export function apply(ctx) {
+@@ -455,7 +455,7 @@
        if (mode !== 'bot' && mode !== 'agent') return
        if (surface.getSnapshot().mode === mode) return
        if (mode === 'agent') {
@@ -1590,7 +1591,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
-@@ -487,6 +487,12 @@ export function apply(ctx) {
+@@ -487,6 +487,12 @@
        const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null)
        ui.set(state => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }))
      },
@@ -1603,7 +1604,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -530,8 +530,14 @@ export function apply(ctx) {
+@@ -530,8 +530,14 @@
      updateRoom: (id, patch) => after(call('update-room', { id, ...patch })),
      send: (sessionId, text) => after(call('send', { sessionId: partFor(sessionId), text })),
      answerQuestion: (sessionId, questionId, answer) => after(call('answer-question', { sessionId: partFor(sessionId), questionId, answer })),
@@ -1618,7 +1619,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      stopMemberWork: (roomId, botId) => after(call('stop-member-work', { roomId, botId })),
      // Values go out in these requests and never come back in a response.
      secretSet: payload => after(call('secret-set', payload)),
-@@ -539,15 +539,33 @@ export function apply(ctx) {
+@@ -539,15 +539,33 @@
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1653,7 +1654,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
      exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
      roomProgress: roomId => call('room-progress', { roomId }).catch(() => []),
-@@ -566,6 +566,8 @@ export function apply(ctx) {
+@@ -566,6 +566,8 @@
        noteClientError(where, error)
        ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
      },
@@ -1662,7 +1663,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      dismissToast: token => ui.set(state => (state.toast && (token === undefined || state.toast.token === token) ? { ...state, toast: null } : state)),
    }
    // Without the Desktop bridge these stay undefined, and no browser control renders.
-@@ -610,6 +610,7 @@ export function apply(ctx) {
+@@ -610,6 +610,7 @@
    }
    actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
    // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
@@ -1670,7 +1671,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
-@@ -647,6 +647,13 @@ export function apply(ctx) {
+@@ -647,6 +647,13 @@
      wakeUpdate()
    }
    actions.repoStars = () => call('repo-stars')
@@ -1684,7 +1685,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.noteTurnTime = (sessionId, turn, key, time) => {
      if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
      turnClock.set((state) => {
-@@ -689,7 +689,18 @@ export function apply(ctx) {
+@@ -689,7 +689,18 @@
    })
    const browserPages = browsers?.pages ?? createSource({})
    const browserTabs = browsers?.tabs ?? createSource({})
@@ -1704,7 +1705,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ctx.effect(() => noticeApprovals({
      work,
      roster,
-@@ -715,10 +715,23 @@ export function apply(ctx) {
+@@ -715,10 +715,23 @@
    }
  
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
@@ -1728,7 +1729,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const installAtMenu = () => {
      const fiber = ctx.inject(['inputTriggers'], (scope) => {
        scope.effect(() => {
-@@ -730,7 +730,12 @@ export function apply(ctx) {
+@@ -730,7 +730,12 @@
          const launched = sessionId => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE
          const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map(source => triggers.registerSource(source))
          atMenu = { controllerOf }
@@ -1741,7 +1742,7 @@ diff --git a/src/client/index.js b/src/client/index.js
            atMenu = null
            for (const off of offs) off()
          }
-@@ -739,6 +739,14 @@ export function apply(ctx) {
+@@ -739,6 +739,14 @@
      return () => fiber.dispose()
    }
    actions.canReferenceChat = () => atMenu !== null
@@ -1756,7 +1757,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,49 @@ export function apply(ctx) {
+@@ -752,33 +752,50 @@
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -1774,6 +1775,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    installCompiledStyles(MOBILE_CSS, 'mobile'),
 +    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
 +    installCompiledStyles(PROJECT_BOARD_CSS, 'project-board'),
++    installCompiledStyles(PROJECTS_NAV_CSS, 'projects-nav'),
 +    typeof document !== 'undefined' ? watchShellLevel(document) : null,
      browsers ? installCompiledStyles(BROWSER_CSS, 'browser') : null,
      installTheme(),
@@ -1809,7 +1811,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
      shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
      shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
-@@ -790,15 +790,24 @@ export function apply(ctx) {
+@@ -790,15 +790,24 @@
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
@@ -1837,7 +1839,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),
      shadow('conversation.composer', {
        priority: -10,
-@@ -808,7 +808,14 @@ export function apply(ctx) {
+@@ -808,7 +808,14 @@
      shadow('conversation.input.dock', { id: 'bot-model', order: -110, inject: face }, ModelChoiceDock),
      shadow('conversation.input.dock', { id: 'bot-question', order: -100, inject: face }, QuestionDock),
      shadow('conversation.input.dock', { id: 'bot-secret', order: -90, inject: face }, SecretDock),
@@ -2211,7 +2213,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,16 +1,21 @@
+@@ -1,16 +1,22 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -2233,10 +2235,11 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { showsDshRow } from './dsh-offer.js'
 +import { InboxRow } from './inbox.js'
 +import { KanbanRow } from './kanban.js'
++import { ProjectsNav } from './projects-nav.js'
  
  // -------------------------------------------------------------------------
  // Sidebar
-@@ -37,77 +37,151 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
+@@ -37,77 +37,151 @@
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
  
@@ -2406,7 +2409,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
  }
  
-@@ -235,6 +235,31 @@ function useListGlide(listRef, layout, key) {
+@@ -235,6 +235,31 @@
    }, [layout, key])
  }
  
@@ -2438,7 +2441,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  export function TeamSidebar(props) {
    const { wide, useRoster, useUi, useSessions, actions } = props
    const listRef = useRef(null)
-@@ -249,14 +249,26 @@ export function TeamSidebar(props) {
+@@ -249,14 +249,26 @@
    const order = useMemo(() => {
      const stamps = JSON.parse(updated)
      const entries = [
@@ -2468,12 +2471,13 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
-@@ -277,13 +277,17 @@ export function TeamSidebar(props) {
+@@ -277,13 +277,18 @@
            h(UpdateButton, { useUpdate: props.useUpdate, actions }),
            h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
      wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
 +    h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
 +    h(KanbanRow, { wide, useUi, actions }),
++    h(ProjectsNav, { wide }),
      h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
 -      main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
 -      order.map(entry => (entry.kind === 'bot'
@@ -2489,7 +2493,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // The update button at the sidebar's top right: a cloud while a newer DS Bot —
-@@ -327,29 +327,29 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -327,29 +327,29 @@
      setDshError('')
      void actions.installDshUpdate().catch(failure => setDshError(hostText(failure?.message ?? String(failure))))
    }
@@ -2526,7 +2530,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
            : t('You have {version}.', { version: update.current })),
          message ? h('div', { className: 'bt-update-error', role: 'alert' }, t('The update did not finish: {reason}', { reason: message })) : null,
          h('div', { className: 'bt-update-actions' },
-@@ -372,36 +372,12 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -372,36 +372,12 @@
                  }, dshPhase === 'installing' ? t('Updating…') : dshPhase === 'failed' ? t('Try again') : t('Update')))) : null), document.body) : null)
  }
  
@@ -2567,7 +2571,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Account seat of the Settings trigger: the visible label stays for assistive tech only.
-@@ -442,6 +442,26 @@ export function openHarnessOnboarding(id) {
+@@ -442,6 +442,26 @@
    })
  }
  
@@ -2594,7 +2598,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  function openThroughMenu(trigger) {
    const before = new Set(document.querySelectorAll('[role="menu"]'))
    trigger.click()
-@@ -466,8 +466,12 @@ function pressSettingsShortcut() {
+@@ -466,8 +466,12 @@
    }))
  }
  
@@ -2609,7 +2613,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // `seat` is the shell's settings.launcher seat: at priority -10 the whale wins it
  // over a shell account plugin's own launcher (the Desktop's "··· More"), which comes
  // back in Agent mode; FooterAccount stands in while no seat exists at all.
-@@ -511,9 +511,10 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -511,9 +511,10 @@
    const groups = [
      [
        [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
@@ -2623,7 +2627,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      ],
      [
        [t('Switch to classic Agent mode'), SwitchIcon, () => actions.setSurface('agent')],
-@@ -523,6 +523,7 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -523,6 +523,7 @@
      h('button', { ref: button, type: 'button', className: 'bt-account', 'aria-label': t('Account'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle },
        h('span', { className: 'bt-you', 'aria-hidden': true }, h(BotMark, { look: MAIN_LOOK, size: 24 }))),
      open && box ? createPortal(h('div', { className: 'bt-menu bt-menu-up bt-account-menu', role: 'menu', 'aria-label': t('Account'), style: box },
@@ -2631,7 +2635,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
        groups.map((group, index) => h(Fragment, { key: index },
          index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
          group.map(([label, Icon, run, hint]) => h('button', {
-@@ -556,7 +556,10 @@ function useLandOnMainBot(roster, useSessions, actions) {
+@@ -556,7 +556,10 @@
        return undefined
      }
      const last = lastBot.current
@@ -2643,7 +2647,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      return () => clearTimeout(timer)
    }, [mainView, roster])
  }
-@@ -572,9 +572,9 @@ export function FooterAccount(props) {
+@@ -572,9 +572,9 @@
  export function BotReturn({ wide, useSurface, actions }) {
    const mode = useSurface(value => value.mode)
    if (mode !== 'agent') return null
@@ -2656,7 +2660,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Agent mode has none of the shell-group styles, so the return button carries its own.
-@@ -582,22 +582,22 @@ export const RETURN_CSS = `
+@@ -582,22 +582,22 @@
  .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
  .bt-return:hover{background:rgba(127,127,127,.14)}
  .bt-return:active{transform:scale(.96)}
@@ -2684,7 +2688,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // shell's footer classes are CSS-module names, so they match on their stems.
  export const SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -623,7 +623,7 @@ export const SIDEBAR_CSS = `
+@@ -623,7 +623,7 @@
  .bt-update[data-phase=installing] .bt-cloud-arrow{animation:bt-cloud-drop 1.1s cubic-bezier(.45,0,.55,1) infinite}
  @keyframes bt-cloud-drop{0%{transform:translateY(-3px);opacity:0}35%{opacity:1}70%{transform:translateY(1px);opacity:1}100%{transform:translateY(2px);opacity:0}}
  .bt-update-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 1.5px var(--bt-sidebar)}
@@ -2693,7 +2697,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
  .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
  .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
-@@ -658,4 +658,14 @@ export const SIDEBAR_CSS = `
+@@ -658,4 +658,14 @@
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
