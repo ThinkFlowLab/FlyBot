@@ -588,7 +588,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
       if (project === undefined) return { project: null, rows: [], canManage: false, tasks: [] }
       const [record, board, taskList] = await Promise.all([
         read('project-read', { id: project.id }),
-        read('project-board', { id: project.id }),
+        read('project-board', { id: project.id, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
         read('tasks', {}),
       ])
       const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])

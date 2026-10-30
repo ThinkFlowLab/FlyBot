@@ -335,7 +335,7 @@ export function install(rt) {
   // One board: the task rows, then the decisions and meetings that read beside them. An unknown
   // Project and a Project with nothing under it both answer empty sections: reading a board is
   // not a reason to throw.
-  const projectBoard = async (projectId, actor) => {
+  const projectBoard = async (projectId, actor, options = {}) => {
     const id = text(projectId)
     const empty = {
       rows: [],
@@ -415,9 +415,9 @@ export function install(rt) {
     // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
     const metrics = await readMetrics({
       repo: text(rt.githubRepo) || 'ThinkFlowLab/FlyBot',
-      token: text(rt.githubToken),
+      token: text(rt.secretValue?.('GITHUB_TOKEN')),
       fetchImpl: globalThis.fetch,
-      timeZone: text(rt.timeZone) || 'UTC',
+      timeZone: text(options.timeZone) || 'UTC',
       now: typeof rt.now === 'function' ? rt.now() : Date.now(),
       tasks,
     })

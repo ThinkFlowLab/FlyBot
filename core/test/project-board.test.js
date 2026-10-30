@@ -109,6 +109,34 @@ test('a Project board reads a group card and a run-created card without repeatin
   }
 })
 
+test('the board takes its token from the host secret store and its zone from the call', async () => {
+  const { rt, stop } = await start()
+  const realSecret = rt.secretValue
+  const realFetch = globalThis.fetch
+  const asked = []
+  const calls = []
+  rt.secretValue = name => { asked.push(name); return name === 'GITHUB_TOKEN' ? 'tok' : undefined }
+  globalThis.fetch = async (url, init) => { calls.push([String(url), init.headers.Authorization]); return { ok: true, json: async () => [] } }
+  try {
+    const board = await rt.projectBoard('project-p1', null, { timeZone: 'Asia/Shanghai' })
+    // #1829: the numbers can only render when the token comes from the same store connectors.js
+    // reads, and the natural day is the reader's zone, which the request carries.
+    assert.equal(asked.includes('GITHUB_TOKEN'), true)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0][1], 'Bearer tok')
+    assert.equal(board.metrics.ok, true)
+    assert.equal(board.metrics.timeZone, 'Asia/Shanghai')
+    // No zone in the call falls back to UTC instead of the host's own idea of a day.
+    calls.length = 0
+    const plain = await rt.projectBoard('project-p1')
+    assert.equal(plain.metrics.timeZone, 'UTC')
+  } finally {
+    globalThis.fetch = realFetch
+    rt.secretValue = realSecret
+    await stop()
+  }
+})
+
 test('an empty Project answers [] and a missing one is not an error', async () => {
   const { rt, stop } = await start()
   try {

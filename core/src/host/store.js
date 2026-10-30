@@ -681,7 +681,8 @@ export function install(rt) {
       // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
       // so the board applies the same visibility rule `tasks` does (#1723).
       case 'project-board': {
-        const board = (await rt.projectBoard?.(projectText(body.id, 200), actor)) ?? []
+        const board = (await rt.projectBoard?.(projectText(body.id, 200), actor,
+          { timeZone: typeof body.timeZone === 'string' ? body.timeZone.slice(0, 64) : undefined })) ?? []
         const rows = Array.isArray(board) ? board : (board.rows ?? [])
         const sections = Array.isArray(board) ? {} : board
         return {
@@ -694,6 +695,9 @@ export function install(rt) {
           inflight: sections.inflight ?? [],
           blocked: sections.blocked ?? [],
           counts: sections.counts ?? { waiting: null, inflight: null, blocked: null, done: null },
+          // #1829: the seven numbers and the running rows ride on this read, so the header and the
+          // cards come from one pass over the same Project.
+          metrics: sections.metrics ?? null,
         }
       }
       default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')

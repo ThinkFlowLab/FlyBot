@@ -91,6 +91,22 @@ test('a cache hit spends the source once', async () => {
   assert.equal(calls, 4)
 })
 
+test('a card claimed after a cached read still shows as running', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => [] })
+  const store = new Map()
+  const before = { t1: { id: 't1', status: 'open', title: 'Wait' } }
+  const first = await readMetrics({ repo: 'a/b', token: 't', fetchImpl, now: NOW, tasks: before, cacheStore: store })
+  assert.equal(first.running.length, 0)
+  // The claim lands a second later, still inside the five-minute window: the numbers are cached,
+  // the rows are not, so the running table is not five minutes stale (#1829).
+  const after = { ...before, t2: { id: 't2', status: 'claimed', claimedBy: 'Dev', claimedAt: NOW - HOUR, updatedAt: NOW, title: 'Ship it' } }
+  const second = await readMetrics({ repo: 'a/b', token: 't', fetchImpl, now: NOW + 1000, tasks: after, cacheStore: store })
+  assert.equal(second.cache, 'hit')
+  assert.deepEqual(second.running.map(row => row.id), ['t2'])
+  assert.equal(store.size, 1)
+  assert.equal(Object.hasOwn([...store.values()][0].value, 'running'), false, 'the cache holds the numbers, not the rows')
+})
+
 test('a running row carries who, how long and where from', () => {
   const row = runningOf({ id: 't1', title: 'Ship it', status: 'claimed', claimedBy: 'Dev', claimedAt: NOW - 2 * HOUR, updatedAt: NOW - HOUR, kind: 'group', origin: { roomId: 'r1' } }, NOW)
   assert.deepEqual(row, { id: 't1', title: 'Ship it', status: 'claimed', who: 'Dev', sinceMs: 2 * HOUR, source: 'group', lastActivityAt: NOW - HOUR })
