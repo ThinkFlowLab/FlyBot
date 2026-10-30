@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -82,7 +82,7 @@ function scheduleService() {
 
 // `existingHome` starts a second runtime on a home the first one left: the restart the
 // resume path reads its notes from.
-function start(existingHome, seedState) {
+function start(existingHome, seedState, options = {}) {
   const home = existingHome ?? mkdtempSync(join(tmpdir(), 'ds-bot-retired-'))
   if (existingHome === undefined) writeFileSync(join(home, 'state.json'), JSON.stringify(seedState ?? team()))
   const schedule = scheduleService()
@@ -99,6 +99,9 @@ function start(existingHome, seedState) {
     return inboxes.get(sessionId)
   }
   let sessions = 0
+  // Every model call, so a path that must spend none can be read as a count (#1786),
+  // and a path that must still review can be read as one.
+  const requests = []
   const agent = sessionId => ({
     session: { id: sessionId, seq: 1, requestHeader: () => undefined },
     id: sessionId,
@@ -117,6 +120,11 @@ function start(existingHome, seedState) {
       listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }],
       listModels: async () => [{ id: 'deepseek-v4-flash' }],
       resolveModelInfo: async () => ({}),
+      async* stream(request) {
+        requests.push(request)
+        yield { type: 'text-delta', index: 0, text: '{"changes": [{"op": "add", "text": "The user reads long threads"}]}' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
     },
     sessionController: {
       create: async () => ({ sessionId: `gs${++sessions}` }),
@@ -140,7 +148,7 @@ function start(existingHome, seedState) {
     route = options
     return register(options)
   }
-  const rt = createRuntime(ctx, { home })
+  const rt = createRuntime(ctx, { home, ...options })
   const call = async (endpoint, payload) => {
     const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))
     return response.json()
@@ -167,7 +175,7 @@ function start(existingHome, seedState) {
     await ctx.dispose()
     if (!keepHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { ctx, rt, schedule, call, tool, emit, userMessage, relay, answer, saved, memoryFile, activeRows, sent, home, stop }
+  return { ctx, rt, schedule, call, tool, emit, userMessage, relay, answer, saved, memoryFile, activeRows, sent, requests, home, stop }
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 25))
@@ -472,4 +480,34 @@ test('#1709 (11): a restart does not pick up a retired Bot\'s turn', async (t) =
   t.after(second.stop)
   await new Promise(resolve => setTimeout(resolve, 3_600))
   assert.deepEqual(second.sent.filter(entry => entry.sessionId === 'b3'), [], 'the retired Bot is not woken by a restart')
+})
+
+// #1786: the group review that brings a lagging member along (#582) asked every member,
+// and `reviewSession` only refused a Bot that no longer existed. A Bot archived after a
+// turn was still billed a model call and still had its archived MEMORY.md rewritten on
+// the next member's turn. Product measured `model calls: ["b2","b3"]` on a clean tree.
+test('#1786: a retired Bot is not brought along by a lagging review, while a live member is', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-retired-'))
+  mkdirSync(join(home, 'memory'), { recursive: true })
+  writeFileSync(join(home, 'memory', 'reviewed.json'), JSON.stringify({ 'group:r1:m1': 5, 'group:r1:b2': 5 }))
+  const log = [
+    { who: 'User', text: 'Call me Lu from now on', seq: 6 },
+    ...Array.from({ length: 39 }, (_, at) => ({ who: 'Coder', botId: 'b3', text: `Step ${at + 1}`, seq: at + 7 })),
+  ]
+  const seeded = team()
+  seeded.rooms.r1 = { ...seeded.rooms.r1, sessions: { m1: 'g1', b2: 'g2', b3: 'g3' }, seq: 45, log }
+  writeFileSync(join(home, 'state.json'), JSON.stringify(seeded))
+  const { ctx, tool, memoryFile, requests, stop } = start(home, undefined, { memoryReviewDelayMs: 0 })
+  t.after(stop)
+  assert.match(await tool('archive_bot', { bot: 'Writer' }, 'm1'), /^Archived Writer\./)
+  // Coder's turn ends: it is the member that brings the others along.
+  ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
+  await waitFor(() => (existsSync(memoryFile('m1')) ? true : undefined))
+  await settle()
+  await settle()
+  // Coder's own turn and the live lagging member are reviewed; the retired Bot is not.
+  assert.deepEqual(requests.map(request => request.sessionId).sort(), ['b3', 'm1'],
+    `only live members are reviewed: ${JSON.stringify(requests.map(request => request.sessionId))}`)
+  assert.equal(existsSync(memoryFile('b2')), false, 'the retired Bot keeps no memory file')
+  assert.match(readFileSync(memoryFile('m1'), 'utf8'), /The user reads long threads/)
 })
