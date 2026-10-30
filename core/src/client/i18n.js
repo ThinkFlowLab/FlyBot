@@ -953,6 +953,8 @@ const ZH = {
   'Saved {name}': '已保存 {name}',
   Canceled: '已取消',
   Done: '完成',
+  // #1855: the one collapsed group that holds a Project's finished cards.
+  'Done cards': '已完成',
   '{bot} is using {name}': '{bot} 正在使用 {name}',
   'a saved key': '一个已保存的密钥',
   'Chosen Bots': '指定的 Bot',

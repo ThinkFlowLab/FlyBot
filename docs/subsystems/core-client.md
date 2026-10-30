@@ -352,6 +352,16 @@ The board's three column names go through the same dictionary as the task board:
 `in-progress` and `done` are keys in `i18n.js`, so a zh UI reads 未开始 / 进行中 / 已完成 instead of the raw
 status.
 
+Finished cards are one group of their own (#1855): `projectBoardView({ project, rows, done, … })` takes the
+archive the host sends beside the rows, keeps every terminal card out of the three source groups (a terminal
+row arriving in `rows` from an older host is folded into the archive instead of dropped), and answers it as
+`done: { group: 'done', label: 'Done cards', collapsed: true, rows }` with the same row shape, so a finished
+card still opens its board and still reads its column. The pane draws it after the queue groups as a
+`<details data-group="done">` with no `open` attribute: the browser keeps it closed until the reader opens
+it, so a Project with 191 finished cards paints the work in flight first, and the header keeps `Done: <count>`
+from the host's own count. The group's label is the `Done cards` key in `i18n.js` (已完成 in zh). Tests:
+`core/test/project-board-view.test.js`.
+
 ### Decision levels and identities on the board (#1831)
 
 A pending decision card draws a level badge (`ordinary` / `major` / `severe`, in the interface

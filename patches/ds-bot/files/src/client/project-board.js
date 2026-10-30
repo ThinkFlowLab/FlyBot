@@ -64,6 +64,15 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
 .bt-project-reason{font-size:11px;opacity:.7}
 
+/* #1855: the finished cards are one group of their own, closed until the reader opens it — a
+   Project with months of history reads as the work in flight, not as its archive. */
+.bt-project-done{margin:18px 0 0;border-top:1px solid var(--bt-line,rgba(127,127,127,.22));padding:12px 0 0}
+.bt-project-done>summary{cursor:pointer;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7;list-style:none}
+.bt-project-done>summary::-webkit-details-marker{display:none}
+.bt-project-done>summary::before{content:'\\25B8';display:inline-block;width:12px;opacity:.6}
+.bt-project-done[open]>summary::before{content:'\\25BE'}
+.bt-project-done[open]>summary{margin:0 0 8px}
+
 /* #1749: management panels. Same surface as the board, one form row per control, and a status
    line that quotes the host's own answer — a refused save reads where the reader pressed it. */
 .bt-project-panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
@@ -100,6 +109,10 @@ export const PROJECT_SOURCES = ['bot', 'group', 'workflow']
 export const SOURCE_LABELS = { bot: 'Bots', group: 'Groups', workflow: 'Workflows' }
 
 const text = value => (typeof value === 'string' ? value.trim() : '')
+
+// #1855: the column a finished card reads. The host sends those cards apart (`done`) and the view
+// keeps them out of every group of work in flight.
+const DONE_COLUMN = 'done'
 
 // The board a row opens, read from the host's own `source` rather than re-deciding membership:
 // a group row names its room, a bot row its owner, and a workflow row is one the run carried in,
@@ -199,36 +212,49 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
 // `decisions` and `meetings` are the host's read of the Project's record (#1767), passed through.
 // `queues` is the other half of that same read (#1768): the waiting, in-flight and blocked cards
 // and their counts, as the host answered them.
-export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
-  const list = Array.isArray(rows) ? rows.filter(row => row !== null && typeof row === 'object' && text(row.id) !== '') : []
+export function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
+  const isRow = row => row !== null && typeof row === 'object' && text(row.id) !== ''
   const byId = new Map((Array.isArray(tasks) ? tasks : [])
     .filter(task => task !== null && typeof task === 'object' && text(task.id) !== '')
     .map(task => [text(task.id), task]))
+  // #1855: the host sends the finished cards beside the rows, in the same shape. A page that talks
+  // to a host which still sends them inside `rows` folds them into the archive on its own: a
+  // finished card is never a row, and no card is dropped or painted twice.
+  const list = []
+  const archived = []
+  const seen = new Set()
+  for (const row of [...(Array.isArray(done) ? done : []), ...(Array.isArray(rows) ? rows : [])]) {
+    if (!isRow(row)) continue
+    const id = text(row.id)
+    if (seen.has(id)) continue
+    seen.add(id)
+    const column = text(row.column) || 'not-started'
+    ;(column === DONE_COLUMN ? archived : list).push(row)
+  }
+  const projectRow = (row) => {
+    const task = byId.get(text(row.id))
+    return {
+      id: text(row.id),
+      key: `task:${text(row.id)}`,
+      column: text(row.column) || 'not-started',
+      assignee: text(row.assignee) || null,
+      runId: text(row.runId) || null,
+      nodeId: text(row.nodeId) || null,
+      title: text(task?.title) || text(task?.note) || null,
+      priority: text(task?.priority) || null,
+      audit: text(row.audit) || null,
+      // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
+      // a card carrying neither renders exactly as before.
+      holder: text(row.holder) || null,
+      speaksFor: text(row.speaksFor) || null,
+      board: boardOfRow(row, task),
+    }
+  }
   const groups = PROJECT_SOURCES
     .map(source => ({
       source,
       label: SOURCE_LABELS[source],
-      rows: list
-        .filter(row => row.source === source)
-        .map((row) => {
-          const task = byId.get(text(row.id))
-          return {
-            id: text(row.id),
-            key: `task:${text(row.id)}`,
-            column: text(row.column) || 'not-started',
-            assignee: text(row.assignee) || null,
-            runId: text(row.runId) || null,
-            nodeId: text(row.nodeId) || null,
-            title: text(task?.title) || text(task?.note) || null,
-            priority: text(task?.priority) || null,
-            audit: text(row.audit) || null,
-            // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
-            // a card carrying neither renders exactly as before.
-            holder: text(row.holder) || null,
-            speaksFor: text(row.speaksFor) || null,
-            board: boardOfRow(row, task),
-          }
-        }),
+      rows: list.filter(row => row.source === source).map(projectRow),
     }))
     .filter(group => group.rows.length > 0)
   // The three groups beside the columns (#1768). They are the host's own read of the queue, the
@@ -239,7 +265,7 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
     .filter(item => item !== null && typeof item === 'object' && text(item.id) !== '')
     .map((item) => {
       const id = text(item.id)
-      const source = text(list.find(row => text(row.id) === id)?.source)
+      const source = text([...list, ...archived].find(row => text(row.id) === id)?.source)
       const task = byId.get(id)
       return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) }
     })
@@ -257,14 +283,46 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
     title: text(project?.name) || 'Project',
     canManage: canManage === true,
     groups,
+    // #1855: one group, closed until the reader opens it. Rows keep the row shape above, so a
+    // finished card is still a card — only its place on the board changed.
+    done: { group: 'done', label: 'Done cards', collapsed: true, rows: archived.map(projectRow) },
     queues: queueGroups,
     counts: rawCounts === null ? null : { waiting: countOf(rawCounts.waiting), inflight: countOf(rawCounts.inflight), blocked: countOf(rawCounts.blocked), done: countOf(rawCounts.done) },
     count: list.length,
-    empty: list.length === 0 && queueGroups.length === 0,
+    empty: list.length === 0 && queueGroups.length === 0 && archived.length === 0,
     emptyText: 'No cards yet.',
     record: projectBoardRecord({ decisions, meetings }),
     metrics: metricsView(metrics, { tasks }),
   }
+}
+
+// One card, drawn once: the rows in flight and the archived rows go through this same projection,
+// so a finished card is the card it was with no second markup to keep in step.
+function projectRowNode(row, onOpen) {
+  const open = row.board === null ? undefined : () => onOpen?.(row.board)
+  return h('div', {
+    key: row.key,
+    className: 'bt-project-row',
+    'data-task-id': row.id,
+    'data-column': row.column,
+    'data-priority': row.priority ?? undefined,
+    role: open === undefined ? undefined : 'button',
+    tabIndex: open === undefined ? undefined : 0,
+    onClick: open,
+    onKeyDown: open === undefined ? undefined : event => { if (event.key === 'Enter' || event.key === ' ') open() },
+  },
+  h('span', { className: 'bt-project-column' }, t(row.column)),
+  h('span', { className: 'bt-project-title-wrap' },
+    h('span', { className: 'bt-project-title' }, row.title ?? (row.assignee ? `@${row.assignee}` : '—')),
+    // The audit text the row already carries (#1730): shown inside the card detail, never a
+    // second read. A row without one renders exactly as before.
+    row.audit === null ? null : h('span', { className: 'bt-project-audit' }, row.audit)),
+  // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
+  // says so, so the three identities (Bot, Assistant, user) never read as one.
+  row.holder === null ? null : h('span', { className: 'bt-project-holder', 'data-holder': row.holder }, `@${row.holder}`),
+  row.speaksFor === null ? null : h('span', { className: 'bt-project-speaks-for', 'data-speaks-for': row.speaksFor }, t('for {user}', { user: row.speaksFor })),
+  row.priority === null ? null : h('span', { className: 'bt-project-priority' }, row.priority),
+  row.runId === null ? null : h('span', { className: 'bt-project-ref' }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`))
 }
 
 function ProjectBoardRows({ view, onOpen }) {
@@ -272,32 +330,17 @@ function ProjectBoardRows({ view, onOpen }) {
   if (view.empty) return h('div', { className: 'bt-project-empty' }, t(view.emptyText))
   return view.groups.map(group => h('section', { key: group.source, className: 'bt-project-group', 'data-source': group.source },
     h('h4', null, t(group.label)),
-    group.rows.map((row) => {
-      const open = row.board === null ? undefined : () => onOpen?.(row.board)
-      return h('div', {
-        key: row.key,
-        className: 'bt-project-row',
-        'data-task-id': row.id,
-        'data-column': row.column,
-        'data-priority': row.priority ?? undefined,
-        role: open === undefined ? undefined : 'button',
-        tabIndex: open === undefined ? undefined : 0,
-        onClick: open,
-        onKeyDown: open === undefined ? undefined : event => { if (event.key === 'Enter' || event.key === ' ') open() },
-      },
-      h('span', { className: 'bt-project-column' }, t(row.column)),
-      h('span', { className: 'bt-project-title-wrap' },
-        h('span', { className: 'bt-project-title' }, row.title ?? (row.assignee ? `@${row.assignee}` : '—')),
-        // The audit text the row already carries (#1730): shown inside the card detail, never a
-        // second read. A row without one renders exactly as before.
-        row.audit === null ? null : h('span', { className: 'bt-project-audit' }, row.audit)),
-      // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
-      // says so, so the three identities (Bot, Assistant, user) never read as one.
-      row.holder === null ? null : h('span', { className: 'bt-project-holder', 'data-holder': row.holder }, `@${row.holder}`),
-      row.speaksFor === null ? null : h('span', { className: 'bt-project-speaks-for', 'data-speaks-for': row.speaksFor }, t('for {user}', { user: row.speaksFor })),
-      row.priority === null ? null : h('span', { className: 'bt-project-priority' }, row.priority),
-      row.runId === null ? null : h('span', { className: 'bt-project-ref' }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`))
-    })))
+    group.rows.map(row => projectRowNode(row, onOpen))))
+}
+
+// #1855: the archive. A <details> with no `open` attribute is closed until the reader opens it, so
+// a Project with 191 finished cards paints the work in flight; the rows are built with the same
+// renderer as the rest of the board and the header keeps counting them.
+function ProjectDoneGroup({ view, onOpen }) {
+  if (view.done.rows.length === 0) return null
+  return h('details', { className: 'bt-project-group bt-project-done', 'data-group': 'done' },
+    h('summary', { className: 'bt-project-done-summary' }, `${t(view.done.label)} · ${view.done.rows.length}`),
+    view.done.rows.map(row => projectRowNode(row, onOpen)))
 }
 
 // How long a card has waited, in the unit a reader wants: minutes under an hour, hours under a
@@ -559,8 +602,8 @@ export function ProjectTeam({ project, onOpenBot }) {
             view.choices.length === 0 ? null : ` · ${t('Can switch to {roles}', { roles: view.choices.map(roleText).join(', ') })}`])))
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics })
+export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
+  const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
     h(ProjectTeam, { project, onOpenBot }),
@@ -580,6 +623,7 @@ export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, m
     h(ProjectRunningTable, { view: view.metrics, onOpen }),
     h(ProjectBoardRows, { view, onOpen }),
     h(ProjectQueueGroups, { view, onOpen }),
+    h(ProjectDoneGroup, { view, onOpen }),
     h(ProjectBoardRecord, { record: view.record }))
 }
 
@@ -743,7 +787,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
       // reads, so the team block prints the rank without a second listing read.
       const base = record?.project ?? project
       const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] }
-      return { project: withRole, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
+      return { project: withRole, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
     }
     const refresh = async (first) => {
       try {
@@ -780,7 +824,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
           : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) })
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
-            project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
+            project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,
             decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics,
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),

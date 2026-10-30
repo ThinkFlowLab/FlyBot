@@ -101,24 +101,26 @@ const all = (node, out = []) => {
 const plain = value => JSON.parse(JSON.stringify(value))
 const textOf = node => (typeof node === 'string' ? node : node && typeof node === 'object' ? (node.children ?? []).map(textOf).join('') : '')
 
-test('the board groups rows from all three sources and keeps each task id', () => {
+test('the board groups rows by their source and keeps each task id', () => {
+  // #1855: `task-g1` is finished, so it reads inside the archive and not as a source-group row.
   const view = plain(projectBoardView({ project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: true }))
   assert.equal(view.projectId, 'project-1')
   assert.equal(view.title, 'FlyBot')
   assert.equal(view.canManage, true)
   assert.equal(view.empty, false)
-  assert.equal(view.count, 3)
-  assert.deepEqual(view.groups.map(group => group.source), ['bot', 'group', 'workflow'])
-  assert.deepEqual(view.groups.map(group => group.rows.length), [1, 1, 1])
+  assert.equal(view.count, 2)
+  assert.deepEqual(view.groups.map(group => group.source), ['bot', 'workflow'])
+  assert.deepEqual(view.groups.map(group => group.rows.length), [1, 1])
   const ids = view.groups.flatMap(group => group.rows.map(row => row.id))
-  assert.deepEqual(ids, ['task-b1', 'task-g1', 'task-w1'], 'the row id is the task id')
-  assert.deepEqual(view.groups.flatMap(group => group.rows.map(row => row.key)), ['task:task-b1', 'task:task-g1', 'task:task-w1'])
+  assert.deepEqual(ids, ['task-b1', 'task-w1'], 'the row id is the task id')
+  assert.deepEqual(view.groups.flatMap(group => group.rows.map(row => row.key)), ['task:task-b1', 'task:task-w1'])
+  assert.deepEqual(view.done.rows.map(row => row.id), ['task-g1'], 'the finished row is the archive')
 })
 
 test('a workflow row carries its run and node; other rows carry none', () => {
   const view = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows, canManage: false }))
   const [botRow] = view.groups[0].rows
-  const workflowRow = view.groups[2].rows[0]
+  const workflowRow = view.groups.find(group => group.source === 'workflow').rows[0]
   assert.equal(botRow.runId, null)
   assert.equal(botRow.nodeId, null)
   assert.equal(workflowRow.runId, 'run-7')
@@ -143,12 +145,13 @@ test('the pane draws the grouped rows and both management buttons, owner or not 
   const member = all(ProjectBoardPane({ project: { id: 'p', name: 'FlyBot' }, rows, canManage: false }))
   assert.match(textOf(owner[0]), /FlyBot/)
   const ownerRows = owner.filter(node => node.props?.['data-task-id'] !== undefined)
-  assert.deepEqual(ownerRows.map(node => node.props['data-task-id']), ['task-b1', 'task-g1', 'task-w1'])
-  const workflow = ownerRows[2]
+  // #1855: the finished row rides last, inside the archive group.
+  assert.deepEqual(ownerRows.map(node => node.props['data-task-id']), ['task-b1', 'task-w1', 'task-g1'])
+  const workflow = ownerRows.find(node => node.props['data-task-id'] === 'task-w1')
   assert.match(textOf(workflow), /run-7 · build/)
   assert.equal(owner.some(node => textOf(node) === 'Project settings'), true)
   const memberRows = member.filter(node => node.props?.['data-task-id'] !== undefined)
-  assert.deepEqual(memberRows.map(node => node.props['data-task-id']), ['task-b1', 'task-g1', 'task-w1'], 'a member still reads the board')
+  assert.deepEqual(memberRows.map(node => node.props['data-task-id']), ['task-b1', 'task-w1', 'task-g1'], 'a member still reads the board')
   // #1749: a non-owner sees the same two buttons; the host refuses the write and the panel says so.
   assert.equal(member.some(node => textOf(node) === 'Project settings'), true)
 })
@@ -474,4 +477,47 @@ test('a running row carries who, claim age, source and activity, and opens its b
   assert.ok(row.sinceMs > RUNNING_OVERDUE_MS)
   assert.equal(row.lastActivityAt, now - 60000)
   assert.equal(row.title, 'Ship it')
+})
+
+// #1855: a Project with months of history opened on a wall of finished rows. The three source groups
+// hold only the work in flight, every finished card lives in one archive group that starts collapsed,
+// and the header keeps counting them (`Done: <count>`).
+const doneRows = Array.from({ length: 191 }, (_, at) => ({ id: `task-d${at}`, source: 'group', column: 'done', assignee: null, updatedAt: at }))
+const openRows = Array.from({ length: 9 }, (_, at) => ({ id: `task-o${at}`, source: 'group', column: 'in-progress', assignee: 'Dev4', updatedAt: 100 + at }))
+const historyQueues = { waiting: [], inflight: [], blocked: [], counts: { waiting: 0, inflight: 0, blocked: 0, done: 191 } }
+
+test('#1855: the view keeps finished cards out of the three groups and in one archive', () => {
+  const view = plain(projectBoardView({ project: { id: 'project-1', name: 'FlyBot' }, rows: openRows, done: doneRows, queues: historyQueues }))
+  assert.equal(view.count, 9, 'the rows are the work in flight')
+  assert.deepEqual(view.groups.map(group => group.rows.length), [9], 'one source, nine rows')
+  assert.equal(view.done.rows.length, 191, 'every finished card is carried, in the same row shape')
+  assert.equal(view.done.rows[0].column, 'done')
+  assert.equal(view.done.rows[0].key, 'task:task-d0')
+  assert.equal(view.done.collapsed, true, 'the archive starts collapsed')
+  assert.equal(view.counts.done, 191, 'the header still counts every finished card')
+  // A page talking to a host that still sends every card in `rows` paints no finished row in a
+  // source group: the terminal row is folded into the archive instead of dropped or repeated.
+  const legacy = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [...openRows, ...doneRows], queues: historyQueues }))
+  assert.deepEqual(legacy.groups.map(group => group.rows.length), [9])
+  assert.equal(legacy.done.rows.length, 191)
+})
+
+test('#1855: the archive is a collapsed group on first paint and the header keeps the count', () => {
+  const props = { project: { id: 'project-1', name: 'FlyBot' }, rows: openRows, done: doneRows, canManage: false, tasks: [], queues: historyQueues }
+  const nodes = all(ProjectBoardPane(props))
+  const archive = nodes.find(node => node.props?.['data-group'] === 'done')
+  assert.ok(archive, 'the archive group is drawn')
+  assert.equal(archive.type, 'details', 'a details element is collapsed by the browser until the reader opens it')
+  assert.equal(archive.props.open, undefined, 'no open attribute on first paint')
+  const archived = all(archive.children).filter(node => node.props?.['data-task-id'] !== undefined)
+  assert.equal(archived.length, 191, 'every finished card is inside the archive')
+  assert.equal(archived.every(node => node.props['data-column'] === 'done'), true)
+  // Nothing outside the archive paints a finished card, and the nine open rows keep their ids.
+  const everyRow = nodes.filter(node => node.props?.['data-task-id'] !== undefined)
+  const outside = everyRow.filter(node => !archived.includes(node))
+  assert.equal(outside.length, 9, 'nine rows beside the archive')
+  assert.equal(outside.some(node => node.props['data-column'] === 'done'), false, 'no finished row among the open rows')
+  const text = nodes.map(textOf).join(' | ')
+  assert.match(text, /Done: 191/)
+  assert.match(text, /Done cards/, 'the archive names what it holds')
 })

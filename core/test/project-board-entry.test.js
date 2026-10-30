@@ -97,7 +97,8 @@ const project = { id: 'project-rocket', name: 'Rocket' }
 test('#1701: a board row shows the task title, its priority and the board that owns it', async () => {
   const { projectBoardView } = await load('project-board.js')
   const view = projectBoardView({ project, rows, canManage: false, tasks: taskRecords })
-  const listed = view.groups.flatMap(group => group.rows)
+  // #1855: a finished row reads inside the archive group, with the same row shape.
+  const listed = [...view.groups.flatMap(group => group.rows), ...view.done.rows]
   const bot = listed.find(row => row.id === 'task-b1')
   const group = listed.find(row => row.id === 'task-g1')
   assert.equal(bot.title, 'Ship the board', 'the row says what the task is')

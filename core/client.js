@@ -1004,6 +1004,8 @@ var ZH = {
   "Saved {name}": "已保存 {name}",
   Canceled: "已取消",
   Done: "完成",
+  // #1855: the one collapsed group that holds a Project's finished cards.
+  "Done cards": "已完成",
   "{bot} is using {name}": "{bot} 正在使用 {name}",
   "a saved key": "一个已保存的密钥",
   "Chosen Bots": "指定的 Bot",
@@ -20193,6 +20195,15 @@ var PROJECT_BOARD_CSS = `
 .bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
 .bt-project-reason{font-size:11px;opacity:.7}
 
+/* #1855: the finished cards are one group of their own, closed until the reader opens it — a
+   Project with months of history reads as the work in flight, not as its archive. */
+.bt-project-done{margin:18px 0 0;border-top:1px solid var(--bt-line,rgba(127,127,127,.22));padding:12px 0 0}
+.bt-project-done>summary{cursor:pointer;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7;list-style:none}
+.bt-project-done>summary::-webkit-details-marker{display:none}
+.bt-project-done>summary::before{content:'\\25B8';display:inline-block;width:12px;opacity:.6}
+.bt-project-done[open]>summary::before{content:'\\25BE'}
+.bt-project-done[open]>summary{margin:0 0 8px}
+
 /* #1749: management panels. Same surface as the board, one form row per control, and a status
    line that quotes the host's own answer — a refused save reads where the reader pressed it. */
 .bt-project-panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
@@ -20225,6 +20236,7 @@ var PROJECT_BOARD_CSS = `
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
 var text = (value) => typeof value === "string" ? value.trim() : "";
+var DONE_COLUMN = "done";
 var boardOfRow = (row, task) => {
   if (task === void 0) return null;
   if (row.source === "group") {
@@ -20298,36 +20310,48 @@ function projectBoardRecord({ decisions, meetings } = {}) {
     }
   };
 }
-function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
-  const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
+function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
+  const isRow = (row) => row !== null && typeof row === "object" && text(row.id) !== "";
   const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
+  const list = [];
+  const archived = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const row of [...Array.isArray(done) ? done : [], ...Array.isArray(rows) ? rows : []]) {
+    if (!isRow(row)) continue;
+    const id = text(row.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const column = text(row.column) || "not-started";
+    (column === DONE_COLUMN ? archived : list).push(row);
+  }
+  const projectRow = (row) => {
+    const task = byId.get(text(row.id));
+    return {
+      id: text(row.id),
+      key: `task:${text(row.id)}`,
+      column: text(row.column) || "not-started",
+      assignee: text(row.assignee) || null,
+      runId: text(row.runId) || null,
+      nodeId: text(row.nodeId) || null,
+      title: text(task?.title) || text(task?.note) || null,
+      priority: text(task?.priority) || null,
+      audit: text(row.audit) || null,
+      // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
+      // a card carrying neither renders exactly as before.
+      holder: text(row.holder) || null,
+      speaksFor: text(row.speaksFor) || null,
+      board: boardOfRow(row, task)
+    };
+  };
   const groups = PROJECT_SOURCES.map((source) => ({
     source,
     label: SOURCE_LABELS[source],
-    rows: list.filter((row) => row.source === source).map((row) => {
-      const task = byId.get(text(row.id));
-      return {
-        id: text(row.id),
-        key: `task:${text(row.id)}`,
-        column: text(row.column) || "not-started",
-        assignee: text(row.assignee) || null,
-        runId: text(row.runId) || null,
-        nodeId: text(row.nodeId) || null,
-        title: text(task?.title) || text(task?.note) || null,
-        priority: text(task?.priority) || null,
-        audit: text(row.audit) || null,
-        // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
-        // a card carrying neither renders exactly as before.
-        holder: text(row.holder) || null,
-        speaksFor: text(row.speaksFor) || null,
-        board: boardOfRow(row, task)
-      };
-    })
+    rows: list.filter((row) => row.source === source).map(projectRow)
   })).filter((group) => group.rows.length > 0);
   const countOf = (value) => value === void 0 || value === null ? null : value;
   const queueItems = (items, annotate) => (Array.isArray(items) ? items : []).filter((item) => item !== null && typeof item === "object" && text(item.id) !== "").map((item) => {
     const id = text(item.id);
-    const source = text(list.find((row) => text(row.id) === id)?.source);
+    const source = text([...list, ...archived].find((row) => text(row.id) === id)?.source);
     const task = byId.get(id);
     return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) };
   });
@@ -20345,14 +20369,51 @@ function projectBoardView({ project, rows, canManage, tasks, decisions, meetings
     title: text(project?.name) || "Project",
     canManage: canManage === true,
     groups,
+    // #1855: one group, closed until the reader opens it. Rows keep the row shape above, so a
+    // finished card is still a card — only its place on the board changed.
+    done: { group: "done", label: "Done cards", collapsed: true, rows: archived.map(projectRow) },
     queues: queueGroups,
     counts: rawCounts === null ? null : { waiting: countOf(rawCounts.waiting), inflight: countOf(rawCounts.inflight), blocked: countOf(rawCounts.blocked), done: countOf(rawCounts.done) },
     count: list.length,
-    empty: list.length === 0 && queueGroups.length === 0,
+    empty: list.length === 0 && queueGroups.length === 0 && archived.length === 0,
     emptyText: "No cards yet.",
     record: projectBoardRecord({ decisions, meetings }),
     metrics: metricsView(metrics, { tasks })
   };
+}
+function projectRowNode(row, onOpen) {
+  const open = row.board === null ? void 0 : () => onOpen?.(row.board);
+  return (0, import_react47.createElement)(
+    "div",
+    {
+      key: row.key,
+      className: "bt-project-row",
+      "data-task-id": row.id,
+      "data-column": row.column,
+      "data-priority": row.priority ?? void 0,
+      role: open === void 0 ? void 0 : "button",
+      tabIndex: open === void 0 ? void 0 : 0,
+      onClick: open,
+      onKeyDown: open === void 0 ? void 0 : (event) => {
+        if (event.key === "Enter" || event.key === " ") open();
+      }
+    },
+    (0, import_react47.createElement)("span", { className: "bt-project-column" }, t(row.column)),
+    (0, import_react47.createElement)(
+      "span",
+      { className: "bt-project-title-wrap" },
+      (0, import_react47.createElement)("span", { className: "bt-project-title" }, row.title ?? (row.assignee ? `@${row.assignee}` : "—")),
+      // The audit text the row already carries (#1730): shown inside the card detail, never a
+      // second read. A row without one renders exactly as before.
+      row.audit === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-audit" }, row.audit)
+    ),
+    // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
+    // says so, so the three identities (Bot, Assistant, user) never read as one.
+    row.holder === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-holder", "data-holder": row.holder }, `@${row.holder}`),
+    row.speaksFor === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
+    row.priority === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-priority" }, row.priority),
+    row.runId === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
+  );
 }
 function ProjectBoardRows({ view, onOpen }) {
   if (view.empty) return (0, import_react47.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
@@ -20360,41 +20421,17 @@ function ProjectBoardRows({ view, onOpen }) {
     "section",
     { key: group.source, className: "bt-project-group", "data-source": group.source },
     (0, import_react47.createElement)("h4", null, t(group.label)),
-    group.rows.map((row) => {
-      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
-      return (0, import_react47.createElement)(
-        "div",
-        {
-          key: row.key,
-          className: "bt-project-row",
-          "data-task-id": row.id,
-          "data-column": row.column,
-          "data-priority": row.priority ?? void 0,
-          role: open === void 0 ? void 0 : "button",
-          tabIndex: open === void 0 ? void 0 : 0,
-          onClick: open,
-          onKeyDown: open === void 0 ? void 0 : (event) => {
-            if (event.key === "Enter" || event.key === " ") open();
-          }
-        },
-        (0, import_react47.createElement)("span", { className: "bt-project-column" }, t(row.column)),
-        (0, import_react47.createElement)(
-          "span",
-          { className: "bt-project-title-wrap" },
-          (0, import_react47.createElement)("span", { className: "bt-project-title" }, row.title ?? (row.assignee ? `@${row.assignee}` : "—")),
-          // The audit text the row already carries (#1730): shown inside the card detail, never a
-          // second read. A row without one renders exactly as before.
-          row.audit === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-audit" }, row.audit)
-        ),
-        // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
-        // says so, so the three identities (Bot, Assistant, user) never read as one.
-        row.holder === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-holder", "data-holder": row.holder }, `@${row.holder}`),
-        row.speaksFor === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
-        row.priority === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-priority" }, row.priority),
-        row.runId === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
-      );
-    })
+    group.rows.map((row) => projectRowNode(row, onOpen))
   ));
+}
+function ProjectDoneGroup({ view, onOpen }) {
+  if (view.done.rows.length === 0) return null;
+  return (0, import_react47.createElement)(
+    "details",
+    { className: "bt-project-group bt-project-done", "data-group": "done" },
+    (0, import_react47.createElement)("summary", { className: "bt-project-done-summary" }, `${t(view.done.label)} · ${view.done.rows.length}`),
+    view.done.rows.map((row) => projectRowNode(row, onOpen))
+  );
 }
 function waitedLabel(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null;
@@ -20672,8 +20709,8 @@ function ProjectTeam({ project, onOpenBot }) {
     )
   );
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics });
+function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
+  const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics });
   return (0, import_react47.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
@@ -20701,6 +20738,7 @@ function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings
     (0, import_react47.createElement)(ProjectRunningTable, { view: view.metrics, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRows, { view, onOpen }),
     (0, import_react47.createElement)(ProjectQueueGroups, { view, onOpen }),
+    (0, import_react47.createElement)(ProjectDoneGroup, { view, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
@@ -20877,7 +20915,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
       const base = record?.project ?? project;
       const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] };
-      return { project: withRole, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
+      return { project: withRole, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
     };
     const refresh = async (first) => {
       try {
@@ -20925,6 +20963,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
         ) : panel === "settings" ? (0, import_react47.createElement)(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react47.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react47.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
+          done: state.done,
           canManage: state.canManage,
           tasks: state.tasks,
           decisions: state.decisions,

@@ -99,6 +99,8 @@ const text = value => (typeof value === 'string' ? value.trim() : '')
 // a member's role queue is `queueRole` on an open card with no `claimedBy` (`tasks.js`), a lease is
 // the one `tasks.js` writes, and a blocked card already stores the question it waits on. This read
 // derives those three groups from those fields, oldest wait first, and writes nothing.
+// The column a finished card reads (#1855): the archive key, never a row.
+const DONE_COLUMN = 'done'
 const ONE_LINE = 200
 const oneLine = value => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, ONE_LINE) : '')
 const stampOf = value => (Number.isFinite(value) ? value : null)
@@ -372,6 +374,9 @@ export function install(rt) {
     const id = text(projectId)
     const empty = {
       rows: [],
+      // #1855: the finished cards are the archive beside the rows, not rows of their own. A Project
+      // that months of work already closed reads as the work in flight plus one count.
+      done: [],
       waiting: [],
       inflight: [],
       blocked: [],
@@ -442,12 +447,17 @@ export function install(rt) {
         ...(fromRun ? { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) } : {}),
       })
     }
-    const done = rows.filter(row => row.column === 'done').length
+    // #1855: a card in the `done` column is a finished record, not work in flight — the archive
+    // read keeps it (in the same row shape and order) under `done`, and `rows` carries the rest.
+    // Only `done` leaves here: a rework, a blocked card and a waiting card are still rows, because
+    // the board is where a reader looks for the work that is still somebody's.
+    const done = rows.filter(row => row.column === DONE_COLUMN)
+    const open = rows.filter(row => row.column !== DONE_COLUMN)
     // An unreadable store answers unknown (#1768): `0` would claim the queue is empty, and the
     // board must not turn "cannot read" into "nothing waiting".
     const queues = !readable
       ? { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } }
-      : buildQueues(mine, done)
+      : buildQueues(mine, done.length)
     const decisions = await decisionsOf(project)
     // #1829: the seven numbers ride on the same read as the rows, so the board and its header
     // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
@@ -459,7 +469,7 @@ export function install(rt) {
       now: typeof rt.now === 'function' ? rt.now() : Date.now(),
       tasks,
     })
-    return { rows, ...queues, decisions, meetings: meetingsOf(project, decisions), metrics }
+    return { rows: open, done, ...queues, decisions, meetings: meetingsOf(project, decisions), metrics }
   }
   const buildQueues = (mine, done) => {
     const now = typeof rt.now === 'function' ? rt.now() : Date.now()
