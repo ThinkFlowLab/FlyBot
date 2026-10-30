@@ -912,6 +912,15 @@ ${task.writeBack.body}`)
         },
         additionalProperties: false,
       },
+      rework: {
+        type: 'object',
+        description: 'Return a card you claimed to the role that produced it, with a one-line reason. This is the target role\'s own refusal: a rework card linked to the returned one opens in the producer\'s pool, and the producer takes it without a dispatch.',
+        properties: {
+          task: { type: 'string', required: true, description: 'The card you claimed and are returning.' },
+          reason: { type: 'string', required: true, description: 'One line on what is missing.' },
+        },
+        additionalProperties: false,
+      },
       tasks: {
         type: 'array',
         description: 'Tasks to create or update. Omit to read your list.',
@@ -1003,6 +1012,10 @@ ${task.writeBack.body}`)
           const role = rt.botOf(self)?.role ?? ''
           const why = result?.reason === 'wip' ? ` You already hold an in-progress card (${result.held}).` : ''
           return `No queued item for ${role === '' ? 'your role' : role} right now.${why}`
+        }
+        if (args?.rework !== undefined) {
+          const child = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
+          return `Rework ${child.id} on ${child.reworkOf} for the ${child.handoff?.to ?? 'producer'} pool: ${String(child.note ?? '').slice(0, 200)}\nThe producer takes it from its own pool. Set that card's column to in-progress when you pick it up. Do not post a status in the group.`
         }
         if (args?.release !== undefined) {
           const returned = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })

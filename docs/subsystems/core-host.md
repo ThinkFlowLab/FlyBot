@@ -553,6 +553,15 @@ DSH's approval outcomes are one-shot (`ApprovalOutcome`: `allowed-once` / `rejec
 
 A discarded `.catch(() => {})` in the host sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).
 
+## Handoff routing (#1775)
+
+A card carries its own route. `handoff.to` names the role that owns the next step, and that role is the card's pool: `writeContract` calls `routeToPool` (`src/host/tasks.js`) on every handoff it records, so `queueRole` becomes `handoff.to` in the same write. A card created with a handoff starts in that pool (the Chief's one dispatch), and a handoff recorded on a card a member is holding (`claimed`, `working` or `blocked`) hands the card on through `requeue` in the same write — the producer lets go of it, `claimedBy` and the lease are cleared, and the card is `open` in the target pool. Recording a handoff is therefore the whole handover: no supervisor step moves the card afterwards.
+
+`task-drive`'s queue pass offers the pool to one idle member of the role. A card with a room is offered to that room's members of the role, as the room queue always was; a card with no room is offered to every local Bot carrying the role, so a chain between roles needs no shared group and no graph. The offer is the existing `Take <id> …` wake, `inflight` and the per-Session hold are unchanged, and a role with no idle member (`holdsCard`, `busy`, or a wake already waiting) leaves the card in the pool: the next pass offers it again, so a card is never lost for want of a worker.
+
+A claim works the same way (#1247's compare-and-set and WIP = 1, unchanged): `track_tasks { claim: true }` without a group takes the highest-priority card of the caller's role whose `handoff.to` matches, and `{ claim: true, id }` takes a named one; a card in another role's pool is refused by name. The target role's own admission is either the claim (accept) or `track_tasks { rework: { task, reason } }` (return): only the member that claimed the card may return it, and the write opens one child card with `taskClass: 'rework'`, `reworkOf` naming the card it fixes and `handoff.to` the producing role — the same `openRework` `task-send-back` uses, now also reachable from the role that received the card. The child is queued for the producer's role, so the producer takes it from its own pool, and the original stays `working` until the rework child is accepted (`closeRework`). A return with no producer role (`handoff.from` missing or `requester`) is refused rather than handed nowhere. Tests: `core/test/task-handoff-route.test.js`.
+
+
 ## Tests
 
 `npm test` in `core/`; smoke test for `index.js` / `src/host/` changes.
