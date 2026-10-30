@@ -2,7 +2,7 @@
 // that same id through `run.task.id`. The aggregate reads both views as one row, never twice,
 // and writes nothing back.
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -95,7 +95,7 @@ test('a Project board reads a group card and a run-created card without repeatin
     { taskId: 'task-missing', runId: 'run-3' },
   ].filter(row => hasTask(row.taskId)))
   try {
-    const rows = rt.projectBoard('project-p1')
+    const rows = (await rt.projectBoard('project-p1')).rows
     assert.equal(rows.length, 2)
     const group = rows.find(row => row.id === 'task-group')
     assert.deepEqual(group, { id: 'task-group', source: 'group', column: 'in-progress', assignee: 'Writer', updatedAt: 10, runId: 'run-2', nodeId: 'planner' })
@@ -114,10 +114,10 @@ test('an empty Project answers [] and a missing one is not an error', async () =
   try {
     // Without a provider the group board still reads on its own; the run-created card has no
     // board of its own and no run binding to give, so it is not a row.
-    assert.deepEqual(rt.projectBoard('project-p1').map(row => [row.id, row.source]), [['task-group', 'group']])
-    assert.deepEqual(rt.projectBoard('project-empty'), [])
-    assert.deepEqual(rt.projectBoard('project-nothing'), [])
-    assert.deepEqual(rt.projectBoard(''), [])
+    assert.deepEqual((await rt.projectBoard('project-p1')).rows.map(row => [row.id, row.source]), [['task-group', 'group']])
+    assert.deepEqual((await rt.projectBoard('project-empty')).rows, [])
+    assert.deepEqual((await rt.projectBoard('project-nothing')).rows, [])
+    assert.deepEqual((await rt.projectBoard('')).rows, [])
   } finally { await stop() }
 })
 
@@ -128,7 +128,7 @@ test('reading the board leaves state.tasks and the run refs byte-identical', asy
   try {
     const before = JSON.stringify({ tasks: rt.state.tasks, projects: rt.state.projects, projectRuns: rt.state.projectRuns })
     const refsBefore = JSON.stringify(rt.projectRunRefs())
-    rt.projectBoard('project-p1')
+    await rt.projectBoard('project-p1')
     assert.equal(JSON.stringify({ tasks: rt.state.tasks, projects: rt.state.projects, projectRuns: rt.state.projectRuns }), before)
     assert.equal(JSON.stringify(rt.projectRunRefs()), refsBefore)
   } finally {
@@ -179,13 +179,13 @@ test('#1713: a run binding never carries another Project’s card onto a board',
   const { rt, stop } = await start(undefined, splitSeed())
   const off = rt.onProjectProvider(() => [{ taskId: 'task-group', runId: 'run-2' }, { taskId: 'task-run', runId: 'run-1' }])
   try {
-    const p1 = rt.projectBoard('project-p1')
+    const p1 = (await rt.projectBoard('project-p1')).rows
     // Rows come newest first, so the identity of a row is its id and source, not its position.
     assert.deepEqual(p1.map(row => `${row.id}:${row.source}`).sort(), ['task-group:group', 'task-run:workflow'])
     const group = p1.find(row => row.id === 'task-group')
     assert.equal(group.runId, undefined, 'a row of this Project never carries another Project’s run id')
     // Project 2 does not inherit a card whose own board already names Project 1.
-    assert.deepEqual(rt.projectBoard('project-p2'), [], 'the far Project lists no card of this one')
+    assert.deepEqual((await rt.projectBoard('project-p2')).rows, [], 'the far Project lists no card of this one')
   } finally {
     off()
     await stop()
@@ -228,4 +228,136 @@ test('#1723: a Project board paints only the cards `tasks` would let the member 
     assert.equal(empty.ok, true, JSON.stringify(empty))
     assert.deepEqual(empty.value.tasks, [])
   } finally { await stop() }
+})
+
+// #1767: the record beside the cards. The Project's working folder holds two decision files and
+// one meeting reached `decided`; the board lists exactly those, with the hash it computed, and a
+// meeting still deliberating is never listed as a decision.
+const recordSeed = () => {
+  const team = seed()
+  team.projects['project-p1'].workDir = '__WORKDIR__'
+  team.meetings = {
+    'meeting-decided': {
+      id: 'meeting-decided', status: 'decided', question: 'Which board carries the record?',
+      owner: 'Chief', project: 'project-p1', decisionFile: 'decisions/2026-10-30-adopt.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 6,
+    },
+    'meeting-open': {
+      id: 'meeting-open', status: 'deliberating', question: 'Should the board page?',
+      project: 'P1', createdAt: 2, updatedAt: 3,
+    },
+    'meeting-blocked': {
+      id: 'meeting-blocked', status: 'blocked', question: 'Who owns the archive?',
+      project: 'project-p1', blockingQuestion: 'The maintainer has not named an owner.',
+      createdAt: 2, updatedAt: 4,
+    },
+    'meeting-other': {
+      id: 'meeting-other', status: 'decided', question: 'Another Project’s question',
+      owner: 'Chief', project: 'project-p2', decisionFile: 'decisions/2026-10-30-elsewhere.md',
+      createdAt: 1, updatedAt: 2, decidedAt: 3,
+    },
+  }
+  return team
+}
+
+// The State reader answers for a repository, so the fixture is one; the decisions folder only
+// exists once this test makes it, which is the read the board performs.
+const folderWithDecisions = () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-'))
+  mkdirSync(join(dir, '.git'))
+  mkdirSync(join(dir, 'decisions'))
+  writeFileSync(join(dir, 'decisions', '2026-10-30-adopt.md'), '# Adopt the board record\n\nThe board lists this file.\n')
+  writeFileSync(join(dir, 'decisions', '2026-10-30-second.md'), '# Keep decisions small\n')
+  return dir
+}
+
+async function startWithRecord() {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const dir = folderWithDecisions()
+  const team = recordSeed()
+  team.projects['project-p1'].workDir = dir
+  const started = await start(home, team)
+  return { ...started, home, dir }
+}
+
+test('#1767: the board lists two decisions with their hash and one decided meeting', async () => {
+  const { rt, call, home, dir, stop } = await startWithRecord()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.dir, dir)
+    assert.deepEqual(board.decisions.files.map(file => file.path), ['decisions/2026-10-30-adopt.md', 'decisions/2026-10-30-second.md'])
+    assert.deepEqual(board.decisions.files.map(file => file.date), ['2026-10-30', '2026-10-30'])
+    assert.deepEqual(board.decisions.files.map(file => file.title), ['Adopt the board record', 'Keep decisions small'])
+    for (const file of board.decisions.files) {
+      assert.match(file.sha256, /^[0-9a-f]{64}$/, 'every decision carries the hash the reader computed')
+      assert.equal(file.bytes, statSync(join(dir, file.path)).size)
+      assert.equal(file.mtime, new Date(statSync(join(dir, file.path)).mtimeMs).toISOString())
+    }
+    // One decided meeting, linked to its file; the deliberating and blocked ones are apart, and a
+    // meeting of another Project is not here at all.
+    assert.deepEqual(board.meetings.decided.map(meeting => meeting.id), ['meeting-decided'])
+    assert.equal(board.meetings.decided[0].path, 'decisions/2026-10-30-adopt.md')
+    assert.equal(board.meetings.decided[0].owner, 'Chief')
+    assert.equal(board.meetings.decided[0].question, 'Which board carries the record?')
+    assert.deepEqual(board.meetings.pending.map(meeting => meeting.status).sort(), ['blocked', 'deliberating'])
+    assert.equal(board.meetings.pending.some(meeting => meeting.id === 'meeting-decided'), false, 'a decided meeting is never pending')
+    assert.equal(board.meetings.decided.some(meeting => meeting.id === 'meeting-open'), false, 'a deliberating meeting is never a decision')
+    // The same read through the endpoint the page uses: `tasks` unchanged, two new keys.
+    const served = value(await call('project-board', { id: 'project-p1' }))
+    assert.deepEqual(served.tasks.map(row => row.id), ['task-group'])
+    assert.equal(served.decisions.files.length, 2)
+    assert.deepEqual(served.meetings.decided.map(meeting => meeting.id), ['meeting-decided'])
+    // Nothing wrote: the team file is the bytes it was when the read began.
+    const before = readFileSync(join(home, 'state.json'))
+    const reread = value(await call('project-board', { id: 'project-p1' }))
+    assert.equal(reread.decisions.files.length, 2)
+    assert.deepEqual(readFileSync(join(home, 'state.json')), before, 'reading the board writes nothing')
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1767: a deleted decision file leaves the next read, and a decided meeting still reads decided', async () => {
+  const { rt, dir, stop } = await startWithRecord()
+  try {
+    rmSync(join(dir, 'decisions', '2026-10-30-second.md'))
+    const afterDelete = await rt.projectBoard('project-p1')
+    assert.deepEqual(afterDelete.decisions.files.map(file => file.path), ['decisions/2026-10-30-adopt.md'])
+    // The archived file the decided meeting names is removed too: the meeting is the record and
+    // stays listed, with no path — the file is gone, not the decision.
+    rmSync(join(dir, 'decisions', '2026-10-30-adopt.md'))
+    const gone = await rt.projectBoard('project-p1')
+    assert.equal(gone.decisions.files.length, 0)
+    assert.match(gone.decisions.reason, /no decision file in .*decisions/)
+    assert.deepEqual(gone.meetings.decided.map(meeting => [meeting.id, meeting.path]), [['meeting-decided', '']])
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#1767: a Project without a decisions folder answers an empty list with the reason, never a throw', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-nodecisions-'))
+  mkdirSync(join(dir, '.git'))
+  const team = recordSeed()
+  team.projects['project-p1'].workDir = dir
+  const { rt, call, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.deepEqual(board.decisions.files, [])
+    assert.match(board.decisions.reason, /no decision file in .*decisions/, 'the empty state names the folder it read')
+    assert.deepEqual(board.meetings.decided.map(meeting => [meeting.id, meeting.path]), [['meeting-decided', '']])
+    // A Project naming no folder is an answer too.
+    const noFolder = await rt.projectBoard('project-empty')
+    assert.deepEqual(noFolder.decisions.files, [])
+    assert.match(noFolder.decisions.reason, /no working folder/)
+    const served = value(await call('project-board', { id: 'project-p1' }))
+    assert.deepEqual(served.decisions.files, [])
+    assert.match(served.decisions.reason, /no decision file/)
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

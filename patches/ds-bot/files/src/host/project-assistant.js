@@ -438,7 +438,10 @@ export function install(rt) {
     const listed = text(ownerId) === '' ? ownersOf(project) : [text(ownerId)]
     const owners = listed.length === 0 ? [''] : listed
     const who = identity(project.id)
-    const rows = rt.projectBoard?.(project.id) ?? []
+    // The board read is the same one the page uses (#1767): the digest wants its cards, not the
+    // decisions and meetings that answer beside them.
+    const board = (await rt.projectBoard?.(project.id)) ?? []
+    const rows = Array.isArray(board) ? board : (board.rows ?? [])
     const state = project.workDir === undefined ? null : await listProjectState(project.workDir).catch(() => null)
     const files = state?.ok === true ? state.files : []
     const results = []

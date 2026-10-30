@@ -522,7 +522,8 @@ test('a card lists for the owner of the Bot that owns it, through the real task 
     }
     await rt.taskEndpoint('task-accept', { id: moving }, null)
     await rt.taskEndpoint('task-start', { id: moving }, null)
-    const rows = rt.projectBoard(project.id)
+    // #1767: the same call now answers the record beside the rows, so the rows are read off it.
+    const rows = (await rt.projectBoard(project.id)).rows
     assert.equal(rows.length, 3)
     assert.ok(rows.every(row => row.assignee === null), 'the board carries a Bot name or null, never a member id')
     assert.equal(actionableFor(rows, 'owner-1').length, 0, 'the raw helper sees no owner without a resolver')

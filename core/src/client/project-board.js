@@ -21,6 +21,18 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-audit{font-size:11px;line-height:1.45;white-space:pre-wrap;opacity:.65;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-row .bt-project-ref{margin-left:auto;font-size:11px;opacity:.6}
 .bt-project-empty{padding:22px 4px;opacity:.7}
+/* #1767: the record beside the cards. The same surface as a row, one step quieter, and no new
+   component language: a heading, a list, and a monospace hash the reader can compare. */
+.bt-project-record{margin:18px 0 0;border-top:1px solid var(--bt-line,rgba(127,127,127,.22));padding:12px 0 0}
+.bt-project-record h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-record h5{margin:10px 0 4px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.55}
+.bt-project-decision,.bt-project-meeting{display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));margin:0 0 6px}
+.bt-project-decision .bt-project-date,.bt-project-meeting .bt-project-date{font-size:11px;opacity:.6;min-width:76px;font-variant-numeric:tabular-nums}
+.bt-project-decision .bt-project-hash{margin-left:auto;font-size:11px;opacity:.55;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-decision .bt-project-title,.bt-project-meeting .bt-project-title{min-width:0}
+.bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-missing{font-size:11px;opacity:.6}
+.bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
 `
 
@@ -47,10 +59,72 @@ const boardOfRow = (row, task) => {
   return null
 }
 
+// One decision file as the board lists it: the name, the day in the name, the title line and the
+// hash the host computed. Nothing here reads a body — the view receives what the read answered.
+const decisionOf = (file) => {
+  if (file === null || typeof file !== 'object') return null
+  const path = text(file.path)
+  if (path === '') return null
+  return {
+    key: `decision:${path}`,
+    path,
+    name: text(file.name) || path.slice(path.lastIndexOf('/') + 1),
+    date: text(file.date),
+    title: text(file.title),
+    sha256: text(file.sha256),
+    shortHash: text(file.sha256).slice(0, 12),
+  }
+}
+
+const meetingOf = (meeting, status) => {
+  if (meeting === null || typeof meeting !== 'object') return null
+  const id = text(meeting.id)
+  if (id === '') return null
+  return {
+    key: `meeting:${id}`,
+    id,
+    date: text(meeting.date),
+    question: text(meeting.question) || text(meeting.title),
+    owner: text(meeting.owner) || null,
+    status,
+    path: text(meeting.path),
+    blockingQuestion: text(meeting.blockingQuestion) || null,
+  }
+}
+
+const listOf = (value) => (Array.isArray(value) ? value.map(item => decisionOf(item)).filter(item => item !== null) : [])
+
+// The record beside the cards (#1767). A section with nothing in it still says which folder was
+// read and why it holds no file, because an empty box reads as "there is nothing to decide", and
+// a Project naming no folder is a different answer from a folder with no decision in it.
+export function projectBoardRecord({ decisions, meetings } = {}) {
+  const dir = text(decisions?.dir) || null
+  const files = listOf(decisions?.files)
+  const decided = Array.isArray(meetings?.decided) ? meetings.decided.map(item => meetingOf(item, 'decided')).filter(item => item !== null) : []
+  const pending = Array.isArray(meetings?.pending) ? meetings.pending.map(item => meetingOf(item, item?.status ?? 'deliberating')).filter(item => item !== null) : []
+  return {
+    decisions: {
+      dir,
+      files,
+      count: files.length,
+      empty: files.length === 0,
+      emptyText: text(decisions?.reason) || (dir === null ? 'This Project names no working folder.' : `No decision file in ${dir}/decisions.`),
+    },
+    meetings: {
+      decided,
+      pending,
+      count: decided.length + pending.length,
+      empty: decided.length === 0 && pending.length === 0,
+      emptyText: text(meetings?.reason) || 'No meeting of this Project is recorded.',
+    },
+  }
+}
+
 // Pure: no fetch, no React, no store. `rows` is the host's read model, `canManage` comes from
 // `project-read` and only decides what the caller may *ask* for — the host refuses regardless.
 // `tasks` is the one task read joined by id: the row carries an id and who holds it, not its text.
-export function projectBoardView({ project, rows, canManage, tasks } = {}) {
+// `decisions` and `meetings` are the host's read of the Project's record (#1767), passed through.
+export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings } = {}) {
   const list = Array.isArray(rows) ? rows.filter(row => row !== null && typeof row === 'object' && text(row.id) !== '') : []
   const byId = new Map((Array.isArray(tasks) ? tasks : [])
     .filter(task => task !== null && typeof task === 'object' && text(task.id) !== '')
@@ -86,6 +160,7 @@ export function projectBoardView({ project, rows, canManage, tasks } = {}) {
     count: list.length,
     empty: list.length === 0,
     emptyText: 'Nothing under this Project yet.',
+    record: projectBoardRecord({ decisions, meetings }),
   }
 }
 
@@ -118,13 +193,45 @@ function ProjectBoardRows({ view, onOpen }) {
     })))
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, onOpen }) {
-  const view = projectBoardView({ project, rows, canManage, tasks })
+// The record beside the cards (#1767): decisions first, then the meetings that reached one, and
+// a meeting still open or blocked listed apart — never as a decision. Every row is text the host
+// already answered; the only thing this reads again is the hash it was handed.
+function ProjectBoardRecord({ record }) {
+  const { decisions, meetings } = record
+  const decisionRows = decisions.files.map(file => h('div', { key: file.key, className: 'bt-project-decision', 'data-path': file.path, 'data-sha256': file.sha256 },
+    h('span', { className: 'bt-project-date' }, file.date),
+    h('span', { className: 'bt-project-title' }, file.title === '' ? file.name : file.title),
+    h('span', { className: 'bt-project-hash', title: file.sha256 }, file.shortHash)))
+  const decidedRows = meetings.decided.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': 'decided' },
+    h('span', { className: 'bt-project-date' }, meeting.date),
+    h('span', { className: 'bt-project-title' }, meeting.question),
+    meeting.owner === null ? null : h('span', { className: 'bt-project-owner' }, `@${meeting.owner}`),
+    // A decided meeting whose file is gone still reads as decided; the missing path says so
+    // instead of the row disappearing with the file.
+    meeting.path === ''
+      ? h('span', { className: 'bt-project-missing' }, 'decision file gone')
+      : h('span', { className: 'bt-project-path' }, meeting.path)))
+  const pendingRows = meetings.pending.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': meeting.status },
+    h('span', { className: 'bt-project-date' }, meeting.date),
+    h('span', { className: 'bt-project-title' }, meeting.blockingQuestion === null ? meeting.question : meeting.blockingQuestion),
+    h('span', { className: 'bt-project-status' }, meeting.status)))
+  return h('section', { className: 'bt-project-record', 'data-decisions': String(decisions.count), 'data-meetings': String(meetings.count) },
+    h('h4', null, t('Decisions')),
+    decisions.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(decisions.emptyText)) : decisionRows,
+    h('h4', null, t('Meetings')),
+    meetings.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(meetings.emptyText)) : decidedRows,
+    meetings.pending.length === 0 ? null : h('h5', null, t('Not decided')),
+    meetings.pending.length === 0 ? null : pendingRows)
+}
+
+export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, onOpen }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
     // Management affordances are drawn only for the owner; the refusal itself is the host's.
     view.canManage ? h('div', { className: 'bt-project-actions' }, h('button', { type: 'button' }, t('Project settings')), h('button', { type: 'button' }, t('Members'))) : null,
-    h(ProjectBoardRows, { view, onOpen }))
+    h(ProjectBoardRows, { view, onOpen }),
+    h(ProjectBoardRecord, { record: view.record }))
 }
 
 // The pane entry point (#1710): `#project=<id>` opens one Project's board, `#project` the first.
@@ -164,7 +271,7 @@ export function ProjectBoardOverlay({ actions } = {}) {
           call('tasks', {}),
         ])
         const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
-        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true, tasks })
+        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings })
       } catch { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }) }
     })()
     return () => { live = false }
@@ -186,6 +293,7 @@ export function ProjectBoardOverlay({ actions } = {}) {
           // that hash and lands on the Bot or group the task belongs to.
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
+            decisions: state.decisions, meetings: state.meetings,
             // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
             // lands on that Bot or group. Nothing here re-decides which board that is.
             onOpen: (board) => {
