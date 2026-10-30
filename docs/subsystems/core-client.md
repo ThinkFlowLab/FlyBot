@@ -332,6 +332,15 @@ The board's three column names go through the same dictionary as the task board:
 `in-progress` and `done` are keys in `i18n.js`, so a zh UI reads 未开始 / 进行中 / 已完成 instead of the raw
 status.
 
+### Decision levels and identities on the board (#1831)
+
+A pending decision card draws a level badge (`ordinary` / `major` / `severe`, in the interface
+language), the recipients it is addressed to (`@name`) and, for a `severe` card, the host's own pause
+reason. A row names the Bot holding the claim (`holder`) and, when it is written for a person, says
+`for <user>`; a decision file keeps its `Written-by:`, so project automation, a Bot claim and a person
+an Assistant speaks for never read as one identity. All of it is read off the host answer, never
+inferred from an assignee label.
+
 ## Project board metrics and the running table (#1829)
 
 `core/src/client/project-board.js` draws the seven cards the host's `project-board` read carries in `metrics`: four day counts and three seven-day medians, each with a one-line caption naming the field and the window. A value the host answered `null` renders `—` (u+2014) and never `0`; an `ok: false` read draws the same cards plus one line naming the host's reason. `metricsView` is pure and takes the host's object as it came. The running table below renders `metrics.running` — a claimed card's title, status, holder, claim age (from the claim's own start), source and last activity — marks a row whose claim passed `RUNNING_OVERDUE_MS` and sends a click through the same `onOpen` the board rows use; with no rows it draws one empty line. The Waiting / In flight / Blocked numbers stay on the one-line count header beside those groups.

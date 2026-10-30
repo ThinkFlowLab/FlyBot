@@ -610,6 +610,19 @@ cannot read answers `counts` of `null`, never `0` (owner rule: an unreadable que
 Nothing here writes, and the queue semantics in `tasks.js` are untouched. Tests:
 `core/test/project-board.test.js`.
 
+### Decision card levels and identities (#1831)
+
+A meeting is the decision card: `open` and `decide` accept `level` (`ordinary` | `major` | `severe`,
+default `ordinary`, an unknown value refused with `meeting/invalid`) and `recipients` (names, deduped,
+at most 32). `severe` is the one level the host refuses to advance on its own: `advanceRefusal(meeting)`
+in `core/src/host/meetings.js` answers the reason (how many participants dissented, else that the Owner
+confirms it) and nothing for `ordinary`/`major`. The board projects that record through
+`decisionCardOf` in `core/src/host/project-board.js`, so every pending and decided row carries `level`,
+`recipients` and `advance: { allowed, reason }`; a record written before the slice reads as an ordinary
+card with no recipients. The same read separates the three identities the record already holds: a row
+carries `holder` (the claim, never the assignee label) and `speaksFor` (the user a card is written for),
+while a decision file keeps its own `Written-by:`. Tests: `core/test/project-board-levels.test.js`.
+
 Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
 Those rows are the ones the caller could open through `tasks` (#1723): `store.js` passes the
 authenticated actor into `projectBoard(projectId, actor)`, and the board drops every card
