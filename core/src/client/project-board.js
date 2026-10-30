@@ -3,7 +3,7 @@
 // `row.id` is the underlying task id — so opening one opens that task and nothing is copied here.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { call } from './api.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 
 export const PROJECT_BOARD_CSS = `
 /* #1750: the board was a short dialog in the page flow — no stylesheet defines 'bt-overlay', so the
@@ -355,8 +355,9 @@ export function ProjectSettingsPanel({ project, call: request, onClose, onSaved 
       onSaved?.(result)
       return result
     } catch (error) {
-      // The host's refusal is the answer the reader acted for; quote it instead of guessing.
-      setStatus(error?.message ?? String(error))
+      // The host's refusal is the answer the reader acted for; quote it instead of guessing, in the
+      // interface language — the record is English, the reader is not.
+      setStatus(hostText(error?.message ?? String(error)))
       return null
     }
   }
@@ -377,10 +378,12 @@ export function ProjectSettingsPanel({ project, call: request, onClose, onSaved 
         h('label', null, h('input', { type: 'checkbox', 'data-action': 'assistant-off', checked: assistantOff, onChange: event => setAssistantOff(event.target.checked) }), ' ', t('Pause the daily digest')),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-assistant-save', onClick: () => run('project-assistant-owner', { id, settings: { off: assistantOff === true } }, t('Assistant settings saved.')) }, t('Save')))),
     h('div', { className: 'bt-project-field' },
+      // The host knows two memory kinds; the free text the panel takes is recorded as a decision,
+      // never as a third kind the host would refuse (#1820).
       h('label', { htmlFor: 'bt-project-note' }, t('Add to the assistant memory')),
       h('textarea', { id: 'bt-project-note', value: note, onChange: event => setNote(event.target.value) }),
       h('div', { className: 'bt-project-row-actions' },
-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-memory-save', onClick: () => run('project-memory-write', { id, kind: 'note', text: text(note) }, t('Memory saved.')) }, t('Save memory')))),
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-memory-save', onClick: () => run('project-memory-write', { id, kind: 'decision', text: text(note) }, t('Memory saved.')) }, t('Save memory')))),
     h('div', { className: 'bt-project-status-line', role: 'status' }, status),
     h('div', { className: 'bt-project-row-actions' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))

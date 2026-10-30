@@ -2,14 +2,29 @@
 // with no handler at all, so clicking either only moved focus. These pin the three surfaces a
 // reader now gets: each button opens its panel, the settings panel saves only through the write
 // paths the host already has, and the members panel lists who the record and the board name.
+//
+// The memory save goes through `rt.projectEndpoint` (#1820): the panel used to send a kind the host
+// does not know, and a stub that only recorded the payload kept that wrong call green.
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+import { createRuntime } from '../index.js'
+import { fakeContext } from './fake-ctx.js'
 
+// The entry carries the dictionary beside the panels: `t` and `hostText` reach the panel only
+// through the same copy of `i18n.js`, and that is true inside one bundle and nowhere else.
 const bundle = await build({
-  entryPoints: [fileURLToPath(new URL('../src/client/project-board.js', import.meta.url))],
+  stdin: {
+    contents: "export * from './src/client/project-board.js'\nexport { DICTIONARY, hostText, installLocale } from './src/client/i18n.js'",
+    resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+    sourcefile: 'project-board-panels-entry.js',
+    loader: 'js',
+  },
   bundle: true, format: 'cjs', platform: 'node', write: false,
   external: ['react', 'react-dom'],
 })
@@ -38,7 +53,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel } = module.exports
+const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel, hostText, installLocale } = module.exports
 
 const render = (component, props) => { index = 0; return component(props) }
 const all = (node, out = []) => {
@@ -57,6 +72,60 @@ const text = (node) => {
   return ''
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
+// The host answers across more than one macrotask (its own save included), so one tick would read
+// the tree before `run` has set the status.
+const settle = async () => { for (let i = 0; i < 10; i++) await tick() }
+
+// The seeded Project is all the panel needs: the endpoint it calls is the app's own, and neither an
+// assistant Session nor a scheduled digest is part of the write.
+const seed = () => ({
+  version: 2,
+  revision: 1,
+  mainBotIds: ['a'],
+  members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
+  bots: { a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1, ownerId: 'owner-1' } },
+  rooms: {}, agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, grants: {},
+  projects: {
+    'project-1': { id: 'project-1', name: 'FlyBot', repository: null, defaultBranch: 'main', ownerUserId: 'owner-1', createdAt: 1, updatedAt: 1, status: 'active' },
+  },
+})
+const project = () => seed().projects['project-1']
+
+async function startHost(t) {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-panels-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+  const ctx = fakeContext()
+  const agents = new Map()
+  const agentOf = (sessionId) => {
+    if (!agents.has(sessionId)) agents.set(sessionId, { session: { id: sessionId }, followup() {}, steer() {}, inject() {}, cancel() {}, whenIdle() {}, inbox: { nextStep: [], nextTurn: [], remove() {} } })
+    return agents.get(sessionId)
+  }
+  Object.assign(ctx, {
+    llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
+    workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async () => ({ id: 'w1' }), archiveSession: async () => {} },
+    sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async id => ({ agent: agentOf(id) }), selectModel: async () => {} },
+    sessionTitle: { rename: async () => {} },
+    sessions: { flush: async () => {} },
+  })
+  const rt = createRuntime(ctx, { home })
+  await rt.load()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  return rt
+}
+
+// The dictionary the client binds through `installLocale`: `hostText` reads the active language from
+// the same service, so a refusal the panel quotes can be checked as the reader sees it.
+function fakeLocale(active) {
+  const dicts = new Map()
+  return {
+    register: (ns, locale, dict) => { dicts.set(`${ns}:${locale}`, dict); return () => dicts.delete(`${ns}:${locale}`) },
+    bind: ns => (key, params) => {
+      const text = (active === 'zh' ? dicts.get(`${ns}:zh`)?.[key] : undefined) ?? key
+      return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
+    },
+    getLocale: () => ({ active }),
+  }
+}
 
 const rows = [{ id: 'task-1', source: 'bot', column: 'in-progress', assignee: 'Dev4' }]
 
@@ -75,7 +144,7 @@ test('both management buttons open their panel, owner or not', () => {
   assert.deepEqual(opened, ['settings', 'members'])
 })
 
-test('the settings panel saves through project-bind, project-assistant-owner and project-memory-write', async () => {
+test('the settings panel saves through project-bind and project-assistant-owner', async () => {
   const sent = []
   const save = async (endpoint, payload) => { sent.push({ endpoint, payload }); return { ok: true } }
   let tree = render(ProjectSettingsPanel, { project: { id: 'project-1', name: 'FlyBot' }, call: save, onClose() {} })
@@ -90,14 +159,70 @@ test('the settings panel saves through project-bind, project-assistant-owner and
   byAction(tree, 'project-assistant-save').props.onClick()
   await tick()
   assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))), { endpoint: 'project-assistant-owner', payload: { id: 'project-1', settings: { off: false } } })
+})
 
-  tree = render(ProjectSettingsPanel, { project: { id: 'project-1', name: 'FlyBot' }, call: save, onClose() {} })
+// The memory save is checked against the host, not against the payload the panel thinks it sent —
+// the old `kind: 'note'` was refused by `project-memory-write` and this test stayed green.
+test('the settings panel memory save lands in the Project memory through the real endpoint', async (t) => {
+  const rt = await startHost(t)
+  const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
+  let tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
   const note = all(tree).find(node => node.props?.id === 'bt-project-note')
   note.props.onChange({ target: { value: 'ship on Friday' } })
-  tree = render(ProjectSettingsPanel, { project: { id: 'project-1', name: 'FlyBot' }, call: save, onClose() {} })
+  tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
   byAction(tree, 'project-memory-save').props.onClick()
-  await tick()
-  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))), { endpoint: 'project-memory-write', payload: { id: 'project-1', kind: 'note', text: 'ship on Friday' } })
+  await settle()
+  tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+  const status = all(tree).find(node => node.props?.role === 'status')
+  assert.equal(text(status), 'Memory saved.', 'the panel reports the state the host answered')
+  const memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
+  assert.deepEqual(memory.decisions.map(entry => entry.text), ['ship on Friday'], 'the text typed into the panel is in the Project memory')
+
+  // The success line is localized as well: the same panel under a zh locale says so in Chinese.
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    byAction(tree, 'project-memory-save').props.onClick()
+    await settle()
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    const zhStatus = all(tree).find(node => node.props?.role === 'status')
+    assert.equal(text(zhStatus), '记忆已保存。')
+  } finally {
+    off()
+  }
+})
+
+// The other half: a kind the host does not know is refused and writes nothing, the two kinds it
+// does know land, and a refusal reaches the reader in the interface language.
+test('a memory kind the host does not know writes nothing, and the panel quotes a refusal in Chinese', async (t) => {
+  const rt = await startHost(t)
+  await assert.rejects(() => rt.projectEndpoint('project-memory-write', { id: 'project-1', kind: 'note', text: 'ship on Friday' }),
+    error => error.code === 'bot/invalid' && /Unknown Project memory kind note/.test(error.message))
+  let memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
+  assert.deepEqual(memory.decisions, [], 'a refused write leaves no entry behind')
+  assert.deepEqual(memory.questions, [], 'and it does not land in the other list either')
+  await rt.projectEndpoint('project-memory-write', { id: 'project-1', kind: 'decision', text: 'ship on Friday' })
+  memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
+  assert.deepEqual(memory.decisions.map(entry => entry.text), ['ship on Friday'], 'the kind the panel now sends is one the host accepts')
+
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    const refused = async () => { throw Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' }) }
+    let tree = render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
+    byAction(tree, 'project-memory-save').props.onClick()
+    await settle()
+    tree = render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
+    const status = all(tree).find(node => node.props?.role === 'status')
+    assert.equal(text(status), '只有这个项目的主人可以修改')
+    // Only the refusals this panel's three write paths can reach are translated (#1820): the owner
+    // gate, an empty member id, and a stale Project id. The one-token id rule leaves a longer
+    // sentence as the host wrote it instead of half-translating it.
+    assert.equal(hostText('A binding needs the member id'), '绑定需要 member id')
+    assert.equal(hostText('Unknown Project project-1'), '找不到项目 project-1')
+    assert.equal(hostText('Unknown Project status active'), 'Unknown Project status active')
+  } finally {
+    off()
+  }
 })
 
 test("the settings panel shows the host's refusal instead of pretending the save landed", async () => {

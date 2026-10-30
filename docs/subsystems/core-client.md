@@ -281,6 +281,13 @@ cards held by the same person no longer read the same. A row that carries the ho
 error. `canManage` comes from `project-read` and only decides whether the management affordances are
 drawn; the refusal itself is the host's.
 
+The **Project settings** panel (#1749) saves through the three host write paths it draws — `project-bind`,
+`project-assistant-owner` and `project-memory-write` — and through no fourth. Its memory box sends one of
+the two kinds the host knows: the free text is recorded as a `decision`, never as a third kind
+`project-memory-write` would refuse, so the success line (`Memory saved.`) is reachable. The status line
+quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese. Tests:
+`core/test/project-board-panels.test.js`.
+
 The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
 the board. The entry is the **Project board** button in `KanbanDialog`'s header: it is drawn only when the
