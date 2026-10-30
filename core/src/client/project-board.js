@@ -4,6 +4,7 @@
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { call } from './api.js'
 import { dateLocale, hostText, t } from './i18n.js'
+import { roleText } from './role-labels.js'
 
 export const PROJECT_BOARD_CSS = `
 /* #1750: the board was a short dialog in the page flow — no stylesheet defines 'bt-overlay', so the
@@ -77,6 +78,20 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-member .bt-project-member-kind{margin-left:auto;font-size:11px;opacity:.6}
 .bt-project-status-line{font-size:12px;opacity:.75;min-height:16px}
 .bt-project-note{font-size:12px;opacity:.65;margin:0}
+
+/* #1860: the Project team — who runs the Project, who speaks for the reader, and the role pool.
+   One quiet block above the cards, and a Bot row is a button because a reader is looking a
+   person up. The pool row keeps the rank it plays and the ranks the host said it may switch to. */
+.bt-project-team{margin:0 0 14px}
+.bt-project-team h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-team-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));margin:0 0 6px}
+.bt-project-team-row[data-open-bot]{cursor:pointer}
+.bt-project-team-row[data-open-bot]:hover{background:var(--bt-hover,rgba(127,127,127,.14))}
+.bt-project-team-label{font-size:12px;opacity:.7;min-width:96px}
+.bt-project-team-bot{font-size:12px;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-team-roles{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;opacity:.75}
+.bt-project-team-role{font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-team-myrole{margin-left:auto;font-size:11px;opacity:.65}
 `
 
 // Sources in the order the board reads them; a source with no rows is left out so three empty
@@ -471,10 +486,84 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows)
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers }) {
+// #1860: the Project team — the Project's own Chief (#1859), the assistant that speaks for the
+// caller (#1712) and the role pool (#1828) — read off the one `project-read` record. A record
+// written before `chief` landed answers no id, and a spawn that failed answers `{ error }`; both
+// keep the row and read "not set", so neither slice has to wait for the other.
+const botIdOf = entry => (entry !== null && typeof entry === 'object' ? text(entry.botId) : '')
+const idList = value => (Array.isArray(value) ? value.map(id => text(id)).filter(id => id !== '') : [])
+
+export function projectTeamView(project) {
+  const stored = project?.roles !== null && typeof project?.roles === 'object' ? project.roles : {}
+  // The Owner is derived, never stored twice: the host reads it from `ownerUserIds` and so does
+  // the pool, so a record that never ran `setProjectRoles` still names its Owner.
+  const owner = []
+  const addOwner = (id) => { const clean = text(id); if (clean !== '' && !owner.includes(clean)) owner.push(clean) }
+  addOwner(project?.ownerUserId)
+  for (const id of idList(project?.ownerUserIds)) addOwner(id)
+  const maintainers = idList(stored.maintainers).filter(id => !owner.includes(id))
+  const members = idList(stored.members).filter(id => !owner.includes(id) && !maintainers.includes(id))
+  return {
+    chief: botIdOf(project?.chief),
+    agent: botIdOf(project?.assistant),
+    roles: { owner, maintainers, members },
+    empty: owner.length === 0 && maintainers.length === 0 && members.length === 0,
+    // Both come from the `projects` listing (#1828), which the overlay keeps on the record: the
+    // `project-read` record answers no rank, and the panel never re-derives the host's policy.
+    role: text(project?.role),
+    choices: idList(project?.choices),
+  }
+}
+
+const teamRow = (role, label, botId, onOpenBot) => h('div', {
+  key: role, className: 'bt-project-team-row', 'data-team-role': role,
+  // A row with no Bot is the fallback the slice specifies: still drawn, with nothing to open.
+  ...(botId === ''
+    ? { 'data-team-state': 'not-set' }
+    : {
+      'data-open-bot': botId, role: 'button', tabIndex: 0,
+      'aria-label': t("Open {name}'s chat", { name: botId }),
+      onClick: () => onOpenBot?.(botId),
+      onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenBot?.(botId) } },
+    }),
+},
+h('span', { key: 'label', className: 'bt-project-team-label' }, label),
+botId === ''
+  ? h('span', { key: 'value', className: 'bt-project-missing' }, t('Not set'))
+  : h('span', { key: 'value', className: 'bt-project-team-bot' }, `@${botId}`))
+
+const POOL_RANKS = [['owner', 'owner'], ['maintainer', 'maintainers'], ['member', 'members']]
+
+export function ProjectTeam({ project, onOpenBot }) {
+  const view = projectTeamView(project)
+  const ranks = view.empty
+    ? h('span', { className: 'bt-project-missing' }, t('No one in this pool yet.'))
+    : h('span', { className: 'bt-project-team-roles' },
+      POOL_RANKS.map(([role, key]) => (view.roles[key].length === 0
+        ? null
+        : h('span', { key: role, className: 'bt-project-team-role', 'data-pool-role': role },
+          `${roleText(role)}: ${view.roles[key].map(id => `@${id}`).join(', ')}`))))
+  return h('section', { className: 'bt-project-team', 'data-team': 'chief,agent,pool' },
+    h('h4', null, t('Project team')),
+    teamRow('chief', t('Project Chief'), view.chief, onOpenBot),
+    teamRow('agent', t('My agent'), view.agent, onOpenBot),
+    h('div', { key: 'pool', className: 'bt-project-team-row', 'data-team-role': 'pool' },
+      h('span', { key: 'label', className: 'bt-project-team-label' }, t('Role pool')),
+      ranks,
+      // The caller's own rank and what the host said they may switch to: the same answer the
+      // sidebar menu reads, printed where the pool is.
+      view.role === ''
+        ? null
+        : h('span', { key: 'mine', className: 'bt-project-team-myrole', 'data-team-my-role': view.role },
+          [t('My role'), ': ', roleText(view.role),
+            view.choices.length === 0 ? null : ` · ${t('Can switch to {roles}', { roles: view.choices.map(roleText).join(', ') })}`])))
+}
+
+export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
   const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
+    h(ProjectTeam, { project, onOpenBot }),
     // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
     view.counts === null ? null : h('div', { className: 'bt-project-counts', 'data-counts': 'waiting,inflight,blocked,done' },
       h('span', null, [t('Waiting'), ': ', h('b', { key: 'w' }, countText(view.counts.waiting))]),
@@ -649,7 +738,12 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
       const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
       // The groups are the same read as the rows, so the header cannot disagree with the cards.
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
-      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
+      // #1860: `project-read` answers the stored record, which carries no caller rank — `role` and
+      // `choices` are the `projects` listing's answer (#1828). They stay on the record the pane
+      // reads, so the team block prints the rank without a second listing read.
+      const base = record?.project ?? project
+      const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] }
+      return { project: withRole, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
     }
     const refresh = async (first) => {
       try {
@@ -690,6 +784,9 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics,
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),
+            // #1860: a team row opens that Bot's chat. The board is a modal over the conversation,
+            // so it closes first — otherwise the chat opens behind it.
+            onOpenBot: (id) => { close(); actions?.openSession?.(id) },
             // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
             // lands on that Bot or group. Nothing here re-decides which board that is.
             onOpen: (board) => {

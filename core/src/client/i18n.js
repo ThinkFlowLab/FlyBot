@@ -1395,6 +1395,12 @@ const ZH = {
   'On the board': '在看板上',
   'No member is named yet.': '还没有指定成员。',
   'Member management is not part of this slice; owners and the members their cards name are listed here.': '成员管理不在本次范围内；这里列出项目负责人和卡片上点名的成员。',
+  // The Project team block (#1860): who runs the Project, who speaks for the reader, the pool.
+  'Project team': '项目团队',
+  'My agent': '我的助手',
+  'Role pool': '角色池',
+  'Can switch to {roles}': '可切换为 {roles}',
+  'No one in this pool yet.': '角色池里还没有人。',
   'No cards yet.': '还没有卡片。',
   'Open Projects in Settings': '在设置中打开项目',
 }

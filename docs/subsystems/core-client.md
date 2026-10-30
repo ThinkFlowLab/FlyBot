@@ -293,6 +293,18 @@ Project's own Chief as its own row (`data-member-role="chief"`), read from `chie
 record rather than a second call; a Project without a Chief draws no such row. It offers no write — the
 membership write is a later slice. Tests: `core/test/project-board-panels.test.js`.
 
+The **Project team** block (#1860) sits above the cards and draws the three identities a Project has:
+its own Chief (`project.chief.botId`, #1859), the assistant that speaks for the caller
+(`project.assistant.botId`, #1712) and the role pool — `roles.maintainers` / `roles.members` with the
+Owner derived from `ownerUserIds` exactly as the host derives it (`rolesOf`), plus the caller's own
+`role` and `choices`. Those last two are the `projects` listing's answer, not the record's, so
+`ProjectBoardOverlay` keeps them on the record it hands the pane instead of reading the listing a
+second time. A Bot row is a button (`data-open-bot`) that closes the board and opens that chat through
+`actions.openSession`; a Chief row with no `botId` — or with the `{ error }` the host records when the
+spawn failed — stays drawn and reads *Not set*, so this slice never waits on #1859. The rank words
+live in `src/client/role-labels.js`, which the sidebar and this block both print. Tests:
+`core/test/project-board-panels.test.js`.
+
 The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
 the board. The sidebar is the only entry (#1854): the **Project board** button #1701 put in
@@ -308,8 +320,9 @@ calls `project-role`, and shows a refusal's reason unchanged (`Role unchanged: l
 core endpoints and go to the host by their bare names — `projects`, `project-role` — because
 `src/host/channel.js` dispatches them that way; the `flybot/` prefix this module once sent named an
 endpoint the host does not have, and the list stayed empty everywhere (#1854). The
-policy stays in the host; this module (`src/client/projects-nav.js`) only draws the answer. Tests:
-`core/test/projects-nav.test.js`.
+policy stays in the host; this module (`src/client/projects-nav.js`) only draws the answer. The rank
+words themselves moved to `src/client/role-labels.js` (#1860), so the sidebar, its menu and the
+board's Project team block read one vocabulary. Tests: `core/test/projects-nav.test.js`.
 
 A row knows the board its task lives on without re-deciding membership: the mapping follows the host's own
 `source` (`group` → the task's `origin.roomId`, `bot` → its `ownerBotId`, a `workflow` row is one a run

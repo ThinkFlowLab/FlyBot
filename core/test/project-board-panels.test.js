@@ -264,3 +264,51 @@ test('the members panel lists the owners, the Project Chief and the members the 
   assert.deepEqual(members.map(node => node.props['data-member-role']), ['owner', 'owner', 'chief', 'board'])
   assert.equal(byAction(tree, 'project-bind'), undefined, 'membership management is a later slice, not a dead button here')
 })
+
+// #1860: the Project team block. The board draws who runs the Project (its own Chief, #1859), the
+// assistant that speaks for the caller (#1712) and the role pool (#1828), and each Bot row opens
+// that chat from the board. A record written before `chief` landed keeps the row and reads "not set"
+// instead of hiding it, so the two slices never have to merge together.
+const team = () => ({
+  id: 'project-1', name: 'FlyBot', ownerUserId: 'owner-1',
+  chief: { botId: 'bot-chief', sessionId: 's-chief', createdAt: 1 },
+  assistant: { botId: 'bot-assistant', sessionId: 's-assistant', createdAt: 1 },
+  roles: { maintainers: ['bot-maint'], members: ['bot-member'] },
+  role: 'maintainer', choices: ['member'],
+})
+const teamRow = (tree, role) => all(tree).find(node => node.props?.['data-team-role'] === role)
+
+test('the Project team block draws the Chief, my agent and the pool, and opens a chat', () => {
+  resetSlots()
+  const opened = []
+  const tree = render(ProjectBoardPane, { project: team(), rows, canManage: false, onOpenBot: id => opened.push(id) })
+  const lines = all(tree).filter(node => node.props?.['data-team-role'] !== undefined)
+  assert.deepEqual(lines.map(node => node.props['data-team-role']), ['chief', 'agent', 'pool'], 'the block draws exactly the three rows, in that order')
+  assert.equal(teamRow(tree, 'chief').props['data-open-bot'], 'bot-chief', 'the Chief row opens the Project Chief')
+  assert.equal(teamRow(tree, 'agent').props['data-open-bot'], 'bot-assistant', 'my agent opens the assistant Bot')
+  teamRow(tree, 'chief').props.onClick()
+  teamRow(tree, 'agent').props.onClick()
+  assert.deepEqual(opened, ['bot-chief', 'bot-assistant'], 'each Bot row opens that chat from the board')
+  const pool = text(teamRow(tree, 'pool'))
+  assert.match(pool, /bot-maint/, 'the pool lists the maintainers the record stores')
+  assert.match(pool, /bot-member/, 'and the members')
+  assert.match(pool, /Maintainer/, "and the caller's own rank beside them")
+})
+
+test('a Project with no Chief keeps the row and reads "not set"', () => {
+  resetSlots()
+  const opened = []
+  const bare = { id: 'project-1', name: 'FlyBot', ownerUserId: 'owner-1', assistant: { botId: 'bot-assistant' } }
+  const tree = render(ProjectBoardPane, { project: bare, rows, canManage: false, onOpenBot: id => opened.push(id) })
+  const chief = teamRow(tree, 'chief')
+  assert.ok(chief, 'the Chief row is drawn even when the record carries no Chief')
+  assert.equal(chief.props['data-team-state'], 'not-set')
+  assert.equal(chief.props['data-open-bot'], undefined, 'a row with no Bot opens nothing')
+  assert.match(text(chief), /Not set/)
+  // A `chief` that carries the host's refusal reads the same way: the row stays, nothing opens.
+  const failed = { id: 'project-1', name: 'FlyBot', chief: { error: 'this host has no Project Chief seam, so no Chief was created' } }
+  const drawn = teamRow(render(ProjectBoardPane, { project: failed, rows, onOpenBot: id => opened.push(id) }), 'chief')
+  assert.equal(drawn.props['data-team-state'], 'not-set')
+  assert.match(text(drawn), /Not set/)
+  assert.deepEqual(opened, [])
+})
