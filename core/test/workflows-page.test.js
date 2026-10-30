@@ -397,3 +397,78 @@ test('a fitted graph keeps the right-hand card and the wire into it inside the c
   }
   assert.ok(226 * scale <= half + 0.01, 'the Claim → 取证 arrowhead lands inside the canvas, not on the clip line')
 })
+
+// #1769: below MIN_FIT the drawing stops shrinking, so a graph wider than the canvas
+// overflowed on both sides — and the left half of a scroller cannot be reached, because
+// `scrollLeft` stops at 0. The fit therefore reserves the left overflow as stage padding,
+// so nothing sits left of the canvas edge and the rest scrolls to the right.
+const NARROW = 380
+const wideGraph = {
+  ...forkGraph,
+  nodes: forkGraph.nodes.map((node) => (node.id === 'forensics' ? { ...node, x: -400 } : node)),
+}
+const widePack = { ok: true, templates: [], workflows: [wideGraph] }
+const wideLayout = () => wf.fitLayout(wideGraph.nodes, NARROW)
+
+test('a graph wider than the canvas is fitted at half size with a reachable left edge (#1769)', () => {
+  assert.equal(typeof wf.fitLayout, 'function', 'the fit and its offset come from one helper')
+  const layout = wideLayout()
+  // 400px of card plus the 108px frame reach the canvas as 508px; half a 380px canvas is
+  // 190px, so #1752's scale stops at the MIN_FIT floor instead of shrinking further.
+  assert.equal(layout.scale, 0.5)
+  // The 64px the plane still overflows is reserved on the LEFT of the stage, so the
+  // scroller only ever has to scroll right.
+  assert.equal(layout.pad, 64)
+  assert.equal(layout.left, 0)
+  assert.ok(layout.right > NARROW, 'the graph still overflows on the right, where it can be scrolled')
+  assert.ok(layout.scrollWidth - NARROW > 0, 'the canvas keeps a scroll range')
+  assert.ok(layout.scrollWidth >= layout.right, 'the scroll range covers the right edge it draws')
+  // The leftmost card sits at the canvas' own left edge in screen pixels: pad + width/2
+  // centred, then the card's own half (84px) at the fitted scale (CARD_HALF).
+  const cardLeft = layout.pad + NARROW / 2 + (-400 - 84) * layout.scale
+  assert.equal(cardLeft, 12, 'the leftmost card starts 12px INSIDE the canvas, not under the clip line')
+})
+
+test('the fitted stage carries the left offset and the plane is the same size as the helper says (#1769)', () => {
+  const tree = renderView({
+    phase: 'ready', pack: widePack, opened: { source: 'own', id: wideGraph.id }, error: '', editing: false,
+    canvasWidth: NARROW,
+  })
+  const stage = all(tree).find((entry) => entry.props?.className === 'bt-wf-stage')
+  const fit = all(tree).find((entry) => entry.props?.className === 'bt-wf-fit')
+  assert.ok(stage, 'the stage renders')
+  assert.ok(fit, 'the fit layer renders')
+  assert.equal(stage.props.style.paddingLeft, 64)
+  assert.equal(fit.props.style.transform, 'scale(0.5)')
+  assert.equal(stage.props.style.height, Math.round(Math.max(420, ...wideGraph.nodes.map((node) => node.y + 150)) * 0.5))
+})
+
+test('a graph that fits keeps the #1752 scale and no left offset (#1769)', () => {
+  // The reported regression would be a wider change: a plane that fits must keep the scale
+  // #1752 shipped with, and must not be shifted by even one pixel.
+  assert.equal(wf.fitScale(forkGraph.nodes, NARROW), 190 / 202)
+  const layout = wf.fitLayout(forkGraph.nodes, NARROW)
+  assert.equal(layout.pad, 0)
+  assert.ok(Math.abs(layout.left) < 1e-6, `the fitted plane starts at the canvas edge (${layout.left})`)
+  const tree = renderView({
+    phase: 'ready', pack: forkPack, opened: { source: 'own', id: forkGraph.id }, error: '', editing: false,
+    canvasWidth: NARROW,
+  })
+  const stage = all(tree).find((entry) => entry.props?.className === 'bt-wf-stage')
+  const fit = all(tree).find((entry) => entry.props?.className === 'bt-wf-fit')
+  assert.equal(stage.props.style.paddingLeft, undefined, 'a plane that fits is not padded')
+  assert.equal(fit.props.style.transform, `scale(${190 / 202})`)
+})
+
+test('the measured width is the canvas clientWidth, the same box the scroll range is read in (#1769)', () => {
+  // `clientWidth` excludes the border and includes the padding, which is exactly the box the
+  // pad is reserved in — so the measurement is injected as that same property, never as a
+  // border box, and the pad does not pay a pixel for the border.
+  const el = { getBoundingClientRect: () => ({ width: NARROW + 2 }) }
+  Object.defineProperty(el, 'clientWidth', { value: NARROW, configurable: true })
+  assert.equal(wf.measureCanvasWidth(el), NARROW, 'clientWidth decides, not the border box')
+  assert.equal(wf.fitLayout(wideGraph.nodes, wf.measureCanvasWidth(el)).pad, 64, 'the border is not folded into the pad')
+  assert.equal(wf.measureCanvasWidth({}), 0, 'a host that has no layout yet reads as 0')
+  assert.equal(wf.measureCanvasWidth({ clientWidth: -1 }), 0)
+  assert.equal(wf.measureCanvasWidth({ clientWidth: Number.NaN }), 0)
+})
