@@ -5281,6 +5281,21 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
      }
      default:
        throw invalid('Pick when it runs')
+@@ -75,7 +75,14 @@ export function install(rt) {
+   const attach = (sub) => {
+     const own = sub.schedule
+     service = own
+     sub.effect(() => () => { if (service === own) service = null }, 'ds-bot: schedule service')
++    // The service appearing — at startup, or when the automation bundle is switched on later — is
++    // the moment a Project Assistant that never got its 09:00 digest can schedule it (#1751). The
++    // assistant module installs after this one, so an install-time attach finds nothing to call and
++    // a later attach finds the hook; either way a Project created before the service existed keeps
++    // its retry on `project-create`.
++    rt.projectAssistant?.reconcile?.()
++      ?.catch?.(error => rt.warn?.('ds-bot: re-scheduling Project digests failed: %s', error?.message ?? error))
+   }
+   if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
+   else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
 @@ -89,63 +89,543 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
