@@ -548,3 +548,25 @@ test('#1786: a retired Bot is not brought along by a lagging review, while a liv
   assert.equal(existsSync(memoryFile('b2')), false, 'the retired Bot keeps no memory file')
   assert.match(readFileSync(memoryFile('m1'), 'utf8'), /The user reads long threads/)
 })
+
+// 12. reach — a grant left on a retired Bot still let the friend's Bot in from outside and
+// wake it, invisibly to the owner: retirement cleared the tree entry, not the sharing (#1801).
+test('#1801: a retired Bot keeps no outside reach, so the friend\'s line is not delivered', async (t) => {
+  const seeded = team()
+  seeded.grants = {
+    b2: [{ id: 'b2:@bob.bot::0', grantee: '@bob.bot' }],
+    b3: [{ id: 'b3:@carol.bot::0', grantee: '@carol.bot' }],
+  }
+  const { rt, tool, sent, saved, stop } = start(undefined, seeded)
+  t.after(stop)
+  const friend = { kind: 'remote', handle: '@bob.bot', name: 'Bob' }
+  const before = await rt.flybot.bot.send({ from: friend, to: 'b2', text: 'before the retirement' })
+  assert.equal(before.action, 'allow', JSON.stringify(before))
+  assert.equal(sent.filter(entry => entry.sessionId === 'b2').length, 1, 'the shared Bot takes the friend\'s line')
+  assert.match(await tool('archive_bot', { bot: 'Writer' }, 'm1'), /^Archived Writer\./)
+  const after = await rt.flybot.bot.send({ from: friend, to: 'b2', text: 'hello after' })
+  assert.equal(after.action, 'deny', 'the retired Bot is not reachable from outside')
+  assert.equal(sent.filter(entry => entry.sessionId === 'b2').length, 1, 'nothing was delivered after retirement')
+  assert.deepEqual(saved().grants?.b2 ?? [], [], 'the grant went with the retirement')
+  assert.deepEqual(saved().grants?.b3 ?? [], seeded.grants.b3, 'a live Bot keeps its own sharing')
+})
