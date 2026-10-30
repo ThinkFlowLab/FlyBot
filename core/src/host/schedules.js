@@ -495,8 +495,15 @@ export function install(rt) {
     const current = rt.chatOf(botId)
     if (service === null || current === undefined) return { paused: 0, armed: 0, available: false }
     // A part hand-off leaves a task on the Session it was made in (#896, #1436), so the Bot's
-    // own chat is every part it owns, not only the one it is on now.
+    // own chat is every part it owns, not only the one it is on now. The same holds for the
+    // group Sessions it speaks through, current and earlier; a room's own Session (its id is
+    // the room id) is the whole group's and never one of them.
     const parts = new Set([current, ...(rt.botOf(botId)?.segments ?? []).map(segment => segment.sessionId)])
+    for (const room of Object.values(state.rooms ?? {})) {
+      const sessionId = room.sessions?.[botId]
+      if (sessionId !== undefined) parts.add(sessionId)
+      for (const segment of room.segments?.[botId] ?? []) parts.add(segment.sessionId)
+    }
     const rows = (await service.catalog()).filter(entry => parts.has(entry.sessionId) && entry.status === 'active')
     const held = []
     for (const row of rows) {

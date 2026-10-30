@@ -355,6 +355,51 @@ test('#1799: archiving disarms a task armed in an earlier part of the Bot\'s own
   assert.deepEqual(activeRows('b3-old'), [], 'no row is armed on the retired Bot\'s earlier part again')
 })
 
+// 5d (c). The Bot's group seat is a Session of its own too (#1816): a row armed on
+// `room.sessions[botId]` was not in the set `pauseBotSchedules` built, so a retired Bot's
+// standup kept firing in the room every day. The room's own task (`room.id`) and another
+// member's seat are not the Bot's, and stay armed.
+test('#1816: archiving disarms a task armed in the Bot\'s group Session, and only that', async (t) => {
+  const { tool, schedule, activeRows, saved, stop } = start()
+  t.after(stop)
+  // One row on the Bot's own chat, one on its seat in `Launch`.
+  await schedule.create('b3', { title: 'Morning', prompt: 'Write', daily: { time: '08:00', time_zone: 'UTC' } })
+  await schedule.create('s-b3', { title: 'Group standup', prompt: 'Stand up', daily: { time: '09:00', time_zone: 'UTC' } })
+  // Guards: the room's own task and another member's seat.
+  await schedule.create('r1', { title: 'Room retro', prompt: 'Retro', daily: { time: '10:00', time_zone: 'UTC' } })
+  await schedule.create('s-b2', { title: 'Writer brief', prompt: 'Brief', daily: { time: '11:00', time_zone: 'UTC' } })
+  assert.equal(activeRows('s-b3').length, 1, 'the group standup is armed before the archive')
+
+  const answer = await tool('archive_bot', { bot: 'Coder' }, 'm1')
+  assert.match(answer, /^Archived Coder\./)
+  assert.match(answer, /Paused 2 task\(s\) across its chats\./, `the count covers the group seat: ${answer}`)
+  assert.deepEqual(activeRows('b3'), [], 'no row is left armed on the own chat')
+  assert.deepEqual(activeRows('s-b3'), [], 'no row is left armed on the Bot\'s group seat')
+  const held = Object.values(saved().pausedSchedules ?? {})
+  assert.deepEqual(held.map(entry => entry.sessionId).sort(), ['b3', 's-b3'], 'the group seat\'s row keeps its Session')
+  // Not the room's, and not another member's: retiring one Bot never disarms the room.
+  assert.equal(activeRows('r1').length, 1, 'the room\'s own task stays armed')
+  assert.equal(activeRows('s-b2').length, 1, 'another member\'s group Session keeps its row')
+  const listed = await tool('bot_schedules', {}, 's-b3')
+  assert.match(listed, /"Group standup".*paused, group chat "Launch", session s-b3/, `the Bot reads its seat's row as paused: ${listed}`)
+})
+
+// The earlier parts of that seat are its Sessions too (#1816): a hand-off in a group
+// leaves the seat's old Session behind, exactly as an own-chat hand-off does (#1799).
+test('#1816: an earlier part of the Bot\'s group seat is disarmed too', async (t) => {
+  const seeded = team()
+  seeded.rooms.r1.segments = { b3: [{ sessionId: 's-b3-old', endedAt: 5 }] }
+  const { tool, schedule, activeRows, stop } = start(undefined, seeded)
+  t.after(stop)
+  await schedule.create('s-b3-old', { title: 'Old standup', prompt: 'Stand up', daily: { time: '09:00', time_zone: 'UTC' } })
+  await schedule.create('b3', { title: 'Morning', prompt: 'Write', daily: { time: '08:00', time_zone: 'UTC' } })
+
+  const answer = await tool('archive_bot', { bot: 'Coder' }, 'm1')
+  assert.match(answer, /Paused 2 task\(s\) across its chats\./, `the count covers the seat's earlier part: ${answer}`)
+  assert.deepEqual(activeRows('s-b3-old'), [], 'no row is left armed on the earlier part of the group seat')
+  assert.deepEqual(activeRows('b3'), [])
+})
+
 // 5e. schedule-resume — pausing a task and then retiring its Bot put the same row back:
 // Resume re-creates the held record on the retired Bot's chat Session, so the door Part A
 // closes on create/copy/update stayed open one step later (#1709).

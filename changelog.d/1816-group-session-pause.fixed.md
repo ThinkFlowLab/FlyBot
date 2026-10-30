@@ -1,0 +1,1 @@
+Retiring a Bot now disarms the tasks armed in the group Sessions it speaks through as well as those in its own chat; a group's own reminders are left untouched ([#1816](https://github.com/ThinkFlowLab/FlyBot/issues/1816)).

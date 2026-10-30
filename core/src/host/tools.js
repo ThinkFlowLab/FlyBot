@@ -409,8 +409,8 @@ export function install(rt) {
         return `Could not archive the Bot: ${error.message}`
       }
       // A timer left armed is a Bot that still wakes on its own, so the answer counts them.
-      const paused = freed?.available === true && freed.paused > 0 ? ` Paused ${freed.paused} task(s) in its own chat.` : ''
-      const armed = freed?.available === true && freed.armed > 0 ? ` ${freed.armed} task(s) in its own chat are still armed.` : ''
+      const paused = freed?.available === true && freed.paused > 0 ? ` Paused ${freed.paused} task(s) across its chats.` : ''
+      const armed = freed?.available === true && freed.armed > 0 ? ` ${freed.armed} task(s) across its chats are still armed.` : ''
       return `Archived ${target.name}. It is out of the tree and the default Bot list; its chats and history stay readable, and it is not deleted.${paused}${armed}`
     },
   }))
