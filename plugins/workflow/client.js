@@ -240,6 +240,13 @@ window.__ModuleLoader__.load({
     }
 
     const STATUS_KEY = { queued: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', idle: 'Idle' }
+    // One graph has one state source: the last run's nodeStatus, and Idle when no run
+    // exists at all (#1753). Settings paints exactly this; the room Flow used to drop
+    // a finished run and default every seat to Queued, which read as pending work.
+    function nodeState(status, id) {
+      if (!status) return 'idle'
+      return status[id] ?? 'queued'
+    }
     // Why a run failed, from the record the host keeps (#1493). A failure it did not
     // name still reads Failed: the reason is added information, never a requirement.
     const FAILURE_KEY = {
@@ -604,6 +611,10 @@ window.__ModuleLoader__.load({
 
     function DrawerBody({ workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit, viewRun }) {
       const run = viewRun?.live === true ? viewRun : null
+      // The Flow tab paints the run the stage already has — the live run if there is
+      // one, else the last one — so an idle workflow shows its last result, the same
+      // graph.run.nodeStatus Settings draws, instead of an empty map (#1753).
+      const nodeStatus = run?.nodeStatus ?? workflow.run?.nodeStatus ?? null
       return h('div', { className: 'wf-dr-body' },
         h('div', { className: 'wf-dr-title' },
           h('div', { className: 'wf-ico wf-ico-lg' }, glyph()),
@@ -613,7 +624,7 @@ window.__ModuleLoader__.load({
           ['flow', 'details', 'runs'].map(key => h('button', {
             key, type: 'button', role: 'tab', 'aria-selected': tab === key, className: tab === key ? 'on' : '', onClick: () => onTab(key),
           }, tr(key === 'flow' ? 'Flow' : key === 'details' ? 'Details' : 'Runs')))),
-        tab === 'flow' ? h(Flow, { workflow, run, roster, onTip, editing, onCommit }) : null,
+        tab === 'flow' ? h(Flow, { workflow, run, nodeStatus, roster, onTip, editing, onCommit }) : null,
         tab === 'details' ? h(Details, { workflow, roster }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
         h('div', { className: 'wf-ctl' },
@@ -1032,7 +1043,7 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function Flow({ workflow, run, roster, onTip, editing, onCommit }) {
+    function Flow({ workflow, run, nodeStatus, roster, onTip, editing, onCommit }) {
       const [gesture, setGesture] = useState(null)
       const [ghost, setGhost] = useState(null)
       const [dragPreview, setDragPreview] = useState(null)
@@ -1042,7 +1053,7 @@ window.__ModuleLoader__.load({
       const [termOpen, setTermOpen] = useState(false)
       const [measure, setMeasure] = useState({ width: 0, heights: {} })
       const canvasRef = useRef(null)
-      const status = run?.nodeStatus ?? {}
+      const status = nodeStatus ?? run?.nodeStatus ?? null
       // Read the drawn panel width and node heights after every paint and on
       // resize, so the wires follow the boxes the browser actually laid out. Both
       // planes are measured: the Read-only one puts its heights into `flowLayout`,
@@ -1202,7 +1213,7 @@ window.__ModuleLoader__.load({
             return h('div', {
               key: node.id,
               'data-node': node.id,
-              className: `wf-node wf-abs ${status[node.id] ?? 'queued'} ${selectedNode === node.id ? 'selected' : ''}`,
+              className: `wf-node wf-abs ${nodeState(status, node.id)} ${selectedNode === node.id ? 'selected' : ''}`,
               style: plane.wrapped ? { left: spot.x - spot.w / 2, top: spot.y, width: spot.w } : { left: spot.x - NODE_W / 2, top: spot.y },
               onClick: () => editing ? setSelectedNode(node.id) : null,
               onPointerDown: (event) => {
@@ -1227,7 +1238,7 @@ window.__ModuleLoader__.load({
                   setSelectedNode(null)
                 },
               }, '×') : null,
-              h(FlowNode, { node, status: status[node.id] ?? 'queued', roster }))
+              h(FlowNode, { node, status: nodeState(status, node.id), roster }))
           })) : null,
         run?.status === 'done' ? h('div', { className: 'wf-term on' }, tr('Done')) : null,
         editing && selected ? h('div', { className: 'wf-node-inspector' },
@@ -1263,9 +1274,9 @@ window.__ModuleLoader__.load({
           if (!box) return null
           return h('div', {
             key: node.id, 'data-node': node.id,
-            className: `wf-node wf-abs ${status[node.id] ?? 'queued'}`,
+            className: `wf-node wf-abs ${nodeState(status, node.id)}`,
             style: { left: box.left, top: box.top, width: box.w },
-          }, h(FlowNode, { node, status: status[node.id] ?? 'queued', roster }))
+          }, h(FlowNode, { node, status: nodeState(status, node.id), roster }))
         }))
     }
 

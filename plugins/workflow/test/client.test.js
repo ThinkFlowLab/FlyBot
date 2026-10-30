@@ -1234,6 +1234,68 @@ test('the drawer Flow mounts the fitted narrow canvas and Settings keeps the scr
   settings.unmount()
 })
 
+const NODE_STATES = ['queued', 'running', 'done', 'failed', 'skipped', 'idle']
+const nodeStatesOf = tree => Object.fromEntries(
+  findAll(tree, node => typeof node.props?.['data-node'] === 'string' && String(node.props.className ?? '').split(' ').includes('wf-node'))
+    .map(node => [node.props['data-node'], String(node.props.className).split(' ').find(name => NODE_STATES.includes(name))]),
+)
+
+// Settings → Workflows paints graph.run.nodeStatus (core/test/workflows-page.test.js pins
+// both the last-run chips and the "no run is Idle, not Queued" rule). The room Flow reads
+// the same field from the same read, so an idle workflow cannot disagree with Settings (#1753).
+test('an idle workflow paints its last run node status in the room Flow, the same statuses Settings paints (#1753)', async () => {
+  const graph = delivery()
+  graph.activeCount = 0
+  graph.runs = []
+  graph.run = {
+    ...graph.run,
+    status: 'done',
+    running: [],
+    doneCount: 4,
+    nodeStatus: { planner: 'done', writer: 'done', coder: 'done', reviewer: 'done', tester: 'queued', deployer: 'queued' },
+  }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  // A finished run has no live strip, so the stage pill is the drawer's only handle.
+  findAll(view.tree, node => node.type === 'button' && node.props?.className === 'wf-pill')[0].props.onClick()
+  await settle()
+  button(view.tree, 'Flow').props.onClick()
+  await settle()
+  assert.deepEqual(nodeStatesOf(view.tree), {
+    planner: 'done', writer: 'done', coder: 'done', reviewer: 'done', tester: 'queued', deployer: 'queued',
+  }, 'the room Flow draws the last run statuses Settings draws')
+  assert.equal(findAll(view.tree, node => node.props?.className === 'wf-node wf-abs queued').length, 2)
+  view.unmount()
+})
+
+test('a workflow that never ran paints idle seats in the room Flow, not a fake queue (#1753)', async () => {
+  const graph = { ...delivery(), run: null, runs: [] }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && node.props?.className === 'wf-pill')[0].props.onClick()
+  await settle()
+  button(view.tree, 'Flow').props.onClick()
+  await settle()
+  assert.deepEqual(nodeStatesOf(view.tree), {
+    planner: 'idle', writer: 'idle', coder: 'idle', reviewer: 'idle', tester: 'idle', deployer: 'idle',
+  }, 'a graph with no run is idle in the room Flow, as it is in Settings')
+  assert.match(textOf(view.tree), /Idle/)
+  assert.doesNotMatch(textOf(view.tree), /Queued/, 'an idle workflow must not report a pending queue')
+  view.unmount()
+})
+
 test('the workflow stage mounts no message composer', async () => {
   const graph = delivery()
   const prevFlybot = globalThis.__flybot__

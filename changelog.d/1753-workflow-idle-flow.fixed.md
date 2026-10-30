@@ -1,0 +1,1 @@
+The room's Flow panel now paints the last run's node statuses for an idle workflow, the same statuses Settings → Workflows draws, instead of showing every node as Queued; a workflow that never ran shows Idle in both views ([#1753](https://github.com/ThinkFlowLab/FlyBot/issues/1753)).
