@@ -155,7 +155,7 @@ window.__ModuleLoader__.load({
       '{node} did not take this step ({code}).': '{node} 没有接到这一步（{code}）。',
       '{node} did not take this step ({code}); retrying in {seconds}s ({tries}/{total}).': '{node} 没有接到这一步（{code}），{seconds} 秒后重试（{tries}/{total}）。',
       '{node} did not take this step ({code}); {total} retries did not land, the run failed.': '{node} 没有接到这一步（{code}），重试 {total} 次仍未落地，run 已标记失败。',
-      '{node} timed out: no reply for {minutes} minutes, the run was marked failed.': '{node} 超时：{minutes} 分钟没有回包，run 已标记失败。',
+      '{node} step deadline reached ({minutes} min), the run was marked failed.': '{node} 这一步到达 {minutes} 分钟的截止时间，run 已标记失败。',
       'Started · {task} · {nodes}': '开始 · {task} · {nodes}',
       'Task {task} entered the workflow; {nodes} claimed it': '任务 {task} 已进入 Workflow，{nodes} 认领',
       '{node} failed; went back to {nodes} to retry': '{node} 失败，已返回 {nodes} 重试',

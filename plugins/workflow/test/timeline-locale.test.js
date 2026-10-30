@@ -200,10 +200,10 @@ const EVENTS = [
   { id: 'e7', kind: 'system', tone: 'bad', key: '{node} cannot start: missing input {missing}.', params: { node: 'Writer', missing: 'brief' }, text: 'Writer 不能开始：缺少输入 brief。' },
   { id: 'e8', kind: 'system', tone: 'bad', key: '{node} did not take this step ({code}); retrying in {seconds}s ({tries}/{total}).', params: { node: 'Writer', code: 'deny', seconds: 1, tries: 1, total: 2 }, text: 'Writer 没有接到这一步（deny），1 秒后重试（1/2）。' },
   { id: 'e9', kind: 'system', tone: 'bad', key: '{node} did not take this step ({code}); {total} retries did not land, the run failed.', params: { node: 'Writer', code: 'deny', total: 2 }, text: 'Writer 没有接到这一步（deny），重试 2 次仍未落地，run 已标记失败。' },
-  { id: 'e10', kind: 'system', tone: 'bad', key: '{node} timed out: no reply for {minutes} minutes, the run was marked failed.', params: { node: 'Writer', minutes: 10 }, text: 'Writer 超时：10 分钟没有回包，run 已标记失败。' },
+  { id: 'e10', kind: 'system', tone: 'bad', key: '{node} step deadline reached ({minutes} min), the run was marked failed.', params: { node: 'Writer', minutes: 10 }, text: 'Writer 这一步到达 10 分钟的截止时间，run 已标记失败。' },
 ]
 
-const CHINESE_FRAMES = ['任务已分配', '排队 ·', '已创建 · 成员', '已暂停', '已继续', '已停止', '不能开始', '没有接到这一步', '超时']
+const CHINESE_FRAMES = ['任务已分配', '排队 ·', '已创建 · 成员', '已暂停', '已继续', '已停止', '不能开始', '没有接到这一步', '截止时间']
 
 test('the English shell renders the timeline event lines in English', async () => {
   const text = await stageText(EVENTS, 'en')
@@ -216,7 +216,7 @@ test('the English shell renders the timeline event lines in English', async () =
   assert.ok(text.includes('Writer cannot start: missing input brief.'))
   assert.ok(text.includes('Writer did not take this step (deny); retrying in 1s (1/2).'))
   assert.ok(text.includes('Writer did not take this step (deny); 2 retries did not land, the run failed.'))
-  assert.ok(text.includes('Writer timed out: no reply for 10 minutes, the run was marked failed.'))
+  assert.ok(text.includes('Writer step deadline reached (10 min), the run was marked failed.'))
   for (const frame of CHINESE_FRAMES) assert.equal(text.includes(frame), false, `the English shell still shows the Chinese frame ${frame}`)
 })
 
@@ -231,7 +231,7 @@ test('the Chinese shell renders the same timeline event lines in Chinese', async
   assert.ok(text.includes('Writer 不能开始：缺少输入 brief。'))
   assert.ok(text.includes('Writer 没有接到这一步（deny），1 秒后重试（1/2）。'))
   assert.ok(text.includes('Writer 没有接到这一步（deny），重试 2 次仍未落地，run 已标记失败。'))
-  assert.ok(text.includes('Writer 超时：10 分钟没有回包，run 已标记失败。'))
+  assert.ok(text.includes('Writer 这一步到达 10 分钟的截止时间，run 已标记失败。'))
   assert.equal(text.includes('Task assigned'), false, 'the Chinese shell still shows the English frame')
   assert.equal(text.includes('cannot start'), false, 'the Chinese shell still shows the English failure frame')
 })
@@ -442,16 +442,16 @@ test('the deadline timeout frame reads in the shell language, from the real serv
 
   const row = svc.state().workflows.find(item => item.id === flow.id)
   const line = row.messages
-    .filter(message => message.key === '{node} timed out: no reply for {minutes} minutes, the run was marked failed.')
+    .filter(message => message.key === '{node} step deadline reached ({minutes} min), the run was marked failed.')
     .at(-1)
   assert.ok(line, 'the timeout frame must carry its key')
   assert.deepEqual(line.params, { node: 'Planner', minutes: DEFAULT_STEP_TIMEOUT_MINUTES })
-  assert.match(line.text, new RegExp(`^Planner 超时：${DEFAULT_STEP_TIMEOUT_MINUTES} 分钟没有回包`))
+  assert.match(line.text, new RegExp(`^Planner 这一步到达 ${DEFAULT_STEP_TIMEOUT_MINUTES} 分钟的截止时间`))
 
   const en = await stageText(row.messages, 'en')
-  assert.ok(en.includes(`Planner timed out: no reply for ${DEFAULT_STEP_TIMEOUT_MINUTES} minutes, the run was marked failed.`), `the English deadline frame is missing from: ${en}`)
+  assert.ok(en.includes(`Planner step deadline reached (${DEFAULT_STEP_TIMEOUT_MINUTES} min), the run was marked failed.`), `the English deadline frame is missing from: ${en}`)
   assert.equal(/[\u4e00-\u9fff]/.test(en), false, `the English shell still shows Chinese copy: ${en}`)
 
   const zh = await stageText(row.messages, 'zh')
-  assert.ok(zh.includes(`Planner 超时：${DEFAULT_STEP_TIMEOUT_MINUTES} 分钟没有回包`), `the Chinese deadline frame is missing from: ${zh}`)
+  assert.ok(zh.includes(`Planner 这一步到达 ${DEFAULT_STEP_TIMEOUT_MINUTES} 分钟的截止时间`), `the Chinese deadline frame is missing from: ${zh}`)
 })
