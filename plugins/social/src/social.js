@@ -94,7 +94,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const MIME = { '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.tsv': 'text/tab-separated-values', '.json': 'application/json', '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
 export const mimeOf = name => MIME[extname(String(name)).toLowerCase()] ?? 'application/octet-stream'
 const TEXTUAL = new Set(['text/plain', 'text/markdown', 'text/csv', 'text/tab-separated-values', 'application/json'])
-const sizeLabel = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`)
+export const sizeLabel = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`)
 // Remote strings that reach model-visible text: one line, no brackets or markup, capped.
 export const cleanText = (value, fallback = '') => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || fallback
 // Owner-only draft body: keep punctuation the friend will see; strip controls and cap.
