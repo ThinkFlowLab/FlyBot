@@ -474,8 +474,10 @@ export function install(rt) {
     const owners = listed.length === 0 ? [''] : listed
     const who = identity(project.id)
     // The board read is the same one the page uses (#1767): the digest wants its cards, not the
-    // decisions and meetings that answer beside them.
-    const board = (await rt.projectBoard?.(project.id)) ?? []
+    // decisions and meetings that answer beside them. It asks for the Project's own facts (#1846):
+    // with no actor every card is invisible once a member has signed in, and a digest built from one
+    // reader's page reported "no change" on a moving board. The flag is this call's alone.
+    const board = (await rt.projectBoard?.(project.id, null, { internal: true })) ?? []
     const rows = Array.isArray(board) ? board : (board.rows ?? [])
     const state = project.workDir === undefined ? null : await listProjectState(project.workDir).catch(() => null)
     const files = state?.ok === true ? state.files : []

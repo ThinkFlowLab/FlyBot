@@ -399,11 +399,15 @@ export function install(rt) {
     // predicate lives in tasks.js (`rt.taskVisible`); a host that has not installed it shows
     // nothing, because an unreadable rule is not a reason to widen a board.
     const visible = typeof rt.taskVisible === 'function' ? rt.taskVisible : () => false
+    // #1846: the Project's own daily digest reports the facts of the Project, not one member's page,
+    // and it is the one caller that says so explicitly. The flag is read from this argument and
+    // nowhere else: the channel builds `options` from the zone alone, so no request body reaches it.
+    const internal = options.internal === true
     const rows = []
     const mine = []
     for (const task of readable ? Object.values(tasks) : []) {
       if (task === null || typeof task !== 'object') continue
-      if (!visible(task, actor)) continue
+      if (!internal && !visible(task, actor)) continue
       const board = boardOf(task)
       // The Project of the card's own board. A card that has a board already belongs somewhere; a
       // board whose member is unbound names no Project, and only then may a run carry the card.
