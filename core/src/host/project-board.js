@@ -72,7 +72,9 @@ export function changeRole(project, { actorId, targetId, role } = {}) {
   const target = self ? text(actorId) : text(targetId)
   const wanted = text(role)
   const current = rolesOf(project)
-  if (PROJECT_ROLE_RANKS[wanted] === undefined) return { ok: false, reason: 'unknown-role' }
+  // #1838: a plain object answers for names it inherits, so `toString` used to read as a rank and
+  // fall through to the demote path. Only an own key of the table is a role.
+  if (!Object.hasOwn(PROJECT_ROLE_RANKS, wanted)) return { ok: false, reason: 'unknown-role' }
   if (wanted === 'owner') return { ok: false, reason: 'owner-not-assignable' }
   if (actor === null) return { ok: false, reason: 'not-owner' }
   if (self) {

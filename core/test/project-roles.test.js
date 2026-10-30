@@ -45,3 +45,27 @@ test('the last owner cannot be demoted, by themselves or by anyone else (#1828)'
   assert.deepEqual(changeRole(p, { actorId: 'owner', targetId: 'owner', role: 'owner' }), { ok: false, reason: 'owner-not-assignable' })
   assert.deepEqual(rolesOf(p), { owner: ['owner'], maintainers: [], members: [] })
 })
+
+// #1838: `PROJECT_ROLE_RANKS` is a plain object, so a name inherited from Object.prototype used to
+// read as a defined rank, skip every refusal, and land on the demote path. A role name is the rank
+// table's own key or it is not a role.
+test('#1838: role "toString" is refused and a Maintainer keeps that rank', () => {
+  const p = project({ roles: { maintainers: ['m'], members: ['n'] } })
+  const before = rolesOf(p)
+  assert.deepEqual(changeRole(p, { actorId: 'owner', targetId: 'm', role: 'toString' }), { ok: false, reason: 'unknown-role' })
+  assert.deepEqual(rolesOf(p), before)
+})
+
+test('#1838: role "__proto__" is refused and a Maintainer keeps that rank', () => {
+  const p = project({ roles: { maintainers: ['m'], members: ['n'] } })
+  const before = rolesOf(p)
+  assert.deepEqual(changeRole(p, { actorId: 'owner', targetId: 'm', role: '__proto__' }), { ok: false, reason: 'unknown-role' })
+  assert.deepEqual(rolesOf(p), before)
+})
+
+test('#1838: role "constructor" is refused and a Maintainer keeps that rank', () => {
+  const p = project({ roles: { maintainers: ['m'], members: ['n'] } })
+  const before = rolesOf(p)
+  assert.deepEqual(changeRole(p, { actorId: 'owner', targetId: 'm', role: 'constructor' }), { ok: false, reason: 'unknown-role' })
+  assert.deepEqual(rolesOf(p), before)
+})
