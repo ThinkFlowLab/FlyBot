@@ -1,0 +1,1 @@
+A Bot Social read served from the channel answers only for the Bot the actor owns: a `body.botId` the actor does not own is refused with `bot/forbidden` before the handler registers that Bot's identity or syncs its grants ([#1788](https://github.com/ThinkFlowLab/FlyBot/issues/1788)).

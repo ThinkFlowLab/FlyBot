@@ -469,3 +469,39 @@ test('#613: a member cannot take another owner’s Main Bot’s place', async (t
   // And Bob's own Bot keeps the plain promotion the deployment-wide list gives it.
   assert.equal(rt.authorize(actorB, 'set-main', { id: 'b1', main: true }).ok, true)
 })
+
+// #1788: a Bot Social read served from the channel answered for any Bot whose id the
+// caller put in the body — the handler registered that Bot's identity and synced its
+// grants while serving it, so a member read another member's friends and wrote on their
+// behalf. The read stays a read: the refusal happens in authz, before the handler runs.
+test('a Bot Social read answers only for the actor\'s own Bot (#1788)', async (t) => {
+  const saved = {
+    ...TEAM,
+    bots: {
+      ...TEAM.bots,
+      a1: { id: 'a1', sessionId: 'a1', name: 'A', instructions: '', createdAt: 2, ownerId: 'owner-1' },
+    },
+  }
+  const { rt } = runtime(t, saved)
+  await rt.load()
+  // The plugin registers this endpoint with `{ read: true }` (plugins/social/src/social.js).
+  rt.flybotIsRead = name => name === 'social/share-friends'
+  const actorA = await rt.authenticate((await redeemOwner(rt)).sessionToken)
+  const actorB = await rt.authenticate((await redeemOwner(rt)).sessionToken)
+  assert.equal(actorB.memberId, 'owner-2')
+
+  const foreign = rt.authorize(actorB, 'flybot/social/share-friends', { botId: 'a1' })
+  assert.equal(foreign.ok, false, `another member's Bot is refused: ${JSON.stringify(foreign)}`)
+  assert.equal(foreign.code, 'bot/forbidden')
+  assert.match(foreign.message, /You do not own that Bot/)
+
+  const own = rt.authorize(actorA, 'flybot/social/share-friends', { botId: 'a1' })
+  assert.equal(own.ok, true, `its own Bot still reads: ${JSON.stringify(own)}`)
+
+  // No actor is the single-member install exactly as it was: unenforced, nothing narrows.
+  const legacy = runtime(t, saved)
+  await legacy.rt.load()
+  assert.equal(legacy.rt.authorize(null, 'flybot/social/share-friends', { botId: 'a1' }).ok, true)
+  // And once authz applies, a missing actor is still refused before any Bot is read.
+  assert.equal(rt.authorize(null, 'flybot/social/share-friends', { botId: 'a1' }).code, 'bot/unauthorized')
+})

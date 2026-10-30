@@ -239,8 +239,15 @@ export function install(rt) {
 
     // FlyBot plugin endpoints (src/host/hooks.js) served on this channel: reads go to
     // any signed-in actor; plugin writes are deployment-wide until plugins declare
-    // owners, so they follow the shared rule.
+    // owners, so they follow the shared rule. One read is not deployment-wide: a friend
+    // list and its grants belong to the Bot's owner, so a body.botId the actor does not
+    // own is refused here, before the handler registers a Bot Social identity or syncs
+    // its grants (#1788, owner-decided tightening). Every other plugin read stays open
+    // to every signed-in actor.
     if (ep.startsWith('flybot/')) {
+      if (ep === 'flybot/social/share-friends' && body?.botId !== undefined) {
+        return botOwnedBy(actor, body.botId) ? ALLOW : deny('bot/forbidden', 'You do not own that Bot')
+      }
       if (rt.flybotIsRead?.(ep.slice('flybot/'.length)) === true) return ALLOW
       // Held-send decisions are per-owner enforced in hooks.js — the approval belongs
       // to the sender Bot's owner — so deciding does not follow the shared rule (#52).
