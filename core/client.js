@@ -1004,6 +1004,8 @@ var ZH = {
   "Saved {name}": "已保存 {name}",
   Canceled: "已取消",
   Done: "完成",
+  // #1855: the one collapsed group that holds a Project's finished cards.
+  "Done cards": "已完成",
   "{bot} is using {name}": "{bot} 正在使用 {name}",
   "a saved key": "一个已保存的密钥",
   "Chosen Bots": "指定的 Bot",
@@ -1442,6 +1444,12 @@ var ZH = {
   "On the board": "在看板上",
   "No member is named yet.": "还没有指定成员。",
   "Member management is not part of this slice; owners and the members their cards name are listed here.": "成员管理不在本次范围内；这里列出项目负责人和卡片上点名的成员。",
+  // The Project team block (#1860): who runs the Project, who speaks for the reader, the pool.
+  "Project team": "项目团队",
+  "My agent": "我的助手",
+  "Role pool": "角色池",
+  "Can switch to {roles}": "可切换为 {roles}",
+  "No one in this pool yet.": "角色池里还没有人。",
   "No cards yet.": "还没有卡片。",
   "Open Projects in Settings": "在设置中打开项目"
 };
@@ -9167,6 +9175,13 @@ var KANBAN_CSS = `
 }
 `;
 
+// src/client/role-labels.js
+var ROLE_LABELS = { owner: "Owner", maintainer: "Maintainer", member: "Member" };
+function roleText(role) {
+  if (role === null || role === void 0 || role === "") return "";
+  return t(ROLE_LABELS[role] ?? String(role));
+}
+
 // src/client/projects-nav.js
 var import_react16 = require("react");
 var import_react_dom3 = require("react-dom");
@@ -9188,11 +9203,6 @@ var PROJECTS_NAV_CSS = `
 .bt-project-menu-item:not([aria-checked="true"])::before { content: " "; margin-right: 2px; }
 .bt-project-menu-item[disabled] { opacity: .6; cursor: default; }
 `;
-var ROLE_LABELS = { owner: "Owner", maintainer: "Maintainer", member: "Member" };
-function roleText(role) {
-  if (role === null || role === void 0 || role === "") return "";
-  return t(ROLE_LABELS[role] ?? String(role));
-}
 function projectHash(id) {
   return `#project=${encodeURIComponent(String(id ?? ""))}`;
 }
@@ -20185,6 +20195,15 @@ var PROJECT_BOARD_CSS = `
 .bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
 .bt-project-reason{font-size:11px;opacity:.7}
 
+/* #1855: the finished cards are one group of their own, closed until the reader opens it — a
+   Project with months of history reads as the work in flight, not as its archive. */
+.bt-project-done{margin:18px 0 0;border-top:1px solid var(--bt-line,rgba(127,127,127,.22));padding:12px 0 0}
+.bt-project-done>summary{cursor:pointer;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7;list-style:none}
+.bt-project-done>summary::-webkit-details-marker{display:none}
+.bt-project-done>summary::before{content:'\\25B8';display:inline-block;width:12px;opacity:.6}
+.bt-project-done[open]>summary::before{content:'\\25BE'}
+.bt-project-done[open]>summary{margin:0 0 8px}
+
 /* #1749: management panels. Same surface as the board, one form row per control, and a status
    line that quotes the host's own answer — a refused save reads where the reader pressed it. */
 .bt-project-panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
@@ -20199,10 +20218,25 @@ var PROJECT_BOARD_CSS = `
 .bt-project-member .bt-project-member-kind{margin-left:auto;font-size:11px;opacity:.6}
 .bt-project-status-line{font-size:12px;opacity:.75;min-height:16px}
 .bt-project-note{font-size:12px;opacity:.65;margin:0}
+
+/* #1860: the Project team — who runs the Project, who speaks for the reader, and the role pool.
+   One quiet block above the cards, and a Bot row is a button because a reader is looking a
+   person up. The pool row keeps the rank it plays and the ranks the host said it may switch to. */
+.bt-project-team{margin:0 0 14px}
+.bt-project-team h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-team-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));margin:0 0 6px}
+.bt-project-team-row[data-open-bot]{cursor:pointer}
+.bt-project-team-row[data-open-bot]:hover{background:var(--bt-hover,rgba(127,127,127,.14))}
+.bt-project-team-label{font-size:12px;opacity:.7;min-width:96px}
+.bt-project-team-bot{font-size:12px;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-team-roles{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;opacity:.75}
+.bt-project-team-role{font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-team-myrole{margin-left:auto;font-size:11px;opacity:.65}
 `;
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
 var text = (value) => typeof value === "string" ? value.trim() : "";
+var DONE_COLUMN = "done";
 var boardOfRow = (row, task) => {
   if (task === void 0) return null;
   if (row.source === "group") {
@@ -20276,36 +20310,48 @@ function projectBoardRecord({ decisions, meetings } = {}) {
     }
   };
 }
-function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
-  const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
+function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
+  const isRow = (row) => row !== null && typeof row === "object" && text(row.id) !== "";
   const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
+  const list = [];
+  const archived = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const row of [...Array.isArray(done) ? done : [], ...Array.isArray(rows) ? rows : []]) {
+    if (!isRow(row)) continue;
+    const id = text(row.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const column = text(row.column) || "not-started";
+    (column === DONE_COLUMN ? archived : list).push(row);
+  }
+  const projectRow = (row) => {
+    const task = byId.get(text(row.id));
+    return {
+      id: text(row.id),
+      key: `task:${text(row.id)}`,
+      column: text(row.column) || "not-started",
+      assignee: text(row.assignee) || null,
+      runId: text(row.runId) || null,
+      nodeId: text(row.nodeId) || null,
+      title: text(task?.title) || text(task?.note) || null,
+      priority: text(task?.priority) || null,
+      audit: text(row.audit) || null,
+      // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
+      // a card carrying neither renders exactly as before.
+      holder: text(row.holder) || null,
+      speaksFor: text(row.speaksFor) || null,
+      board: boardOfRow(row, task)
+    };
+  };
   const groups = PROJECT_SOURCES.map((source) => ({
     source,
     label: SOURCE_LABELS[source],
-    rows: list.filter((row) => row.source === source).map((row) => {
-      const task = byId.get(text(row.id));
-      return {
-        id: text(row.id),
-        key: `task:${text(row.id)}`,
-        column: text(row.column) || "not-started",
-        assignee: text(row.assignee) || null,
-        runId: text(row.runId) || null,
-        nodeId: text(row.nodeId) || null,
-        title: text(task?.title) || text(task?.note) || null,
-        priority: text(task?.priority) || null,
-        audit: text(row.audit) || null,
-        // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
-        // a card carrying neither renders exactly as before.
-        holder: text(row.holder) || null,
-        speaksFor: text(row.speaksFor) || null,
-        board: boardOfRow(row, task)
-      };
-    })
+    rows: list.filter((row) => row.source === source).map(projectRow)
   })).filter((group) => group.rows.length > 0);
   const countOf = (value) => value === void 0 || value === null ? null : value;
   const queueItems = (items, annotate) => (Array.isArray(items) ? items : []).filter((item) => item !== null && typeof item === "object" && text(item.id) !== "").map((item) => {
     const id = text(item.id);
-    const source = text(list.find((row) => text(row.id) === id)?.source);
+    const source = text([...list, ...archived].find((row) => text(row.id) === id)?.source);
     const task = byId.get(id);
     return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) };
   });
@@ -20323,14 +20369,51 @@ function projectBoardView({ project, rows, canManage, tasks, decisions, meetings
     title: text(project?.name) || "Project",
     canManage: canManage === true,
     groups,
+    // #1855: one group, closed until the reader opens it. Rows keep the row shape above, so a
+    // finished card is still a card — only its place on the board changed.
+    done: { group: "done", label: "Done cards", collapsed: true, rows: archived.map(projectRow) },
     queues: queueGroups,
     counts: rawCounts === null ? null : { waiting: countOf(rawCounts.waiting), inflight: countOf(rawCounts.inflight), blocked: countOf(rawCounts.blocked), done: countOf(rawCounts.done) },
     count: list.length,
-    empty: list.length === 0 && queueGroups.length === 0,
+    empty: list.length === 0 && queueGroups.length === 0 && archived.length === 0,
     emptyText: "No cards yet.",
     record: projectBoardRecord({ decisions, meetings }),
     metrics: metricsView(metrics, { tasks })
   };
+}
+function projectRowNode(row, onOpen) {
+  const open = row.board === null ? void 0 : () => onOpen?.(row.board);
+  return (0, import_react47.createElement)(
+    "div",
+    {
+      key: row.key,
+      className: "bt-project-row",
+      "data-task-id": row.id,
+      "data-column": row.column,
+      "data-priority": row.priority ?? void 0,
+      role: open === void 0 ? void 0 : "button",
+      tabIndex: open === void 0 ? void 0 : 0,
+      onClick: open,
+      onKeyDown: open === void 0 ? void 0 : (event) => {
+        if (event.key === "Enter" || event.key === " ") open();
+      }
+    },
+    (0, import_react47.createElement)("span", { className: "bt-project-column" }, t(row.column)),
+    (0, import_react47.createElement)(
+      "span",
+      { className: "bt-project-title-wrap" },
+      (0, import_react47.createElement)("span", { className: "bt-project-title" }, row.title ?? (row.assignee ? `@${row.assignee}` : "—")),
+      // The audit text the row already carries (#1730): shown inside the card detail, never a
+      // second read. A row without one renders exactly as before.
+      row.audit === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-audit" }, row.audit)
+    ),
+    // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
+    // says so, so the three identities (Bot, Assistant, user) never read as one.
+    row.holder === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-holder", "data-holder": row.holder }, `@${row.holder}`),
+    row.speaksFor === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
+    row.priority === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-priority" }, row.priority),
+    row.runId === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
+  );
 }
 function ProjectBoardRows({ view, onOpen }) {
   if (view.empty) return (0, import_react47.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
@@ -20338,41 +20421,17 @@ function ProjectBoardRows({ view, onOpen }) {
     "section",
     { key: group.source, className: "bt-project-group", "data-source": group.source },
     (0, import_react47.createElement)("h4", null, t(group.label)),
-    group.rows.map((row) => {
-      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
-      return (0, import_react47.createElement)(
-        "div",
-        {
-          key: row.key,
-          className: "bt-project-row",
-          "data-task-id": row.id,
-          "data-column": row.column,
-          "data-priority": row.priority ?? void 0,
-          role: open === void 0 ? void 0 : "button",
-          tabIndex: open === void 0 ? void 0 : 0,
-          onClick: open,
-          onKeyDown: open === void 0 ? void 0 : (event) => {
-            if (event.key === "Enter" || event.key === " ") open();
-          }
-        },
-        (0, import_react47.createElement)("span", { className: "bt-project-column" }, t(row.column)),
-        (0, import_react47.createElement)(
-          "span",
-          { className: "bt-project-title-wrap" },
-          (0, import_react47.createElement)("span", { className: "bt-project-title" }, row.title ?? (row.assignee ? `@${row.assignee}` : "—")),
-          // The audit text the row already carries (#1730): shown inside the card detail, never a
-          // second read. A row without one renders exactly as before.
-          row.audit === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-audit" }, row.audit)
-        ),
-        // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
-        // says so, so the three identities (Bot, Assistant, user) never read as one.
-        row.holder === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-holder", "data-holder": row.holder }, `@${row.holder}`),
-        row.speaksFor === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
-        row.priority === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-priority" }, row.priority),
-        row.runId === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
-      );
-    })
+    group.rows.map((row) => projectRowNode(row, onOpen))
   ));
+}
+function ProjectDoneGroup({ view, onOpen }) {
+  if (view.done.rows.length === 0) return null;
+  return (0, import_react47.createElement)(
+    "details",
+    { className: "bt-project-group bt-project-done", "data-group": "done" },
+    (0, import_react47.createElement)("summary", { className: "bt-project-done-summary" }, `${t(view.done.label)} · ${view.done.rows.length}`),
+    view.done.rows.map((row) => projectRowNode(row, onOpen))
+  );
 }
 function waitedLabel(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null;
@@ -20564,12 +20623,99 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows
   );
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics });
+var botIdOf = (entry) => entry !== null && typeof entry === "object" ? text(entry.botId) : "";
+var idList = (value) => Array.isArray(value) ? value.map((id) => text(id)).filter((id) => id !== "") : [];
+function projectTeamView(project) {
+  const stored = project?.roles !== null && typeof project?.roles === "object" ? project.roles : {};
+  const owner = [];
+  const addOwner = (id) => {
+    const clean = text(id);
+    if (clean !== "" && !owner.includes(clean)) owner.push(clean);
+  };
+  addOwner(project?.ownerUserId);
+  for (const id of idList(project?.ownerUserIds)) addOwner(id);
+  const maintainers = idList(stored.maintainers).filter((id) => !owner.includes(id));
+  const members = idList(stored.members).filter((id) => !owner.includes(id) && !maintainers.includes(id));
+  return {
+    chief: botIdOf(project?.chief),
+    agent: botIdOf(project?.assistant),
+    roles: { owner, maintainers, members },
+    empty: owner.length === 0 && maintainers.length === 0 && members.length === 0,
+    // Both come from the `projects` listing (#1828), which the overlay keeps on the record: the
+    // `project-read` record answers no rank, and the panel never re-derives the host's policy.
+    role: text(project?.role),
+    choices: idList(project?.choices)
+  };
+}
+var teamRow = (role, label, botId, onOpenBot) => (0, import_react47.createElement)(
+  "div",
+  {
+    key: role,
+    className: "bt-project-team-row",
+    "data-team-role": role,
+    // A row with no Bot is the fallback the slice specifies: still drawn, with nothing to open.
+    ...botId === "" ? { "data-team-state": "not-set" } : {
+      "data-open-bot": botId,
+      role: "button",
+      tabIndex: 0,
+      "aria-label": t("Open {name}'s chat", { name: botId }),
+      onClick: () => onOpenBot?.(botId),
+      onKeyDown: (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenBot?.(botId);
+        }
+      }
+    }
+  },
+  (0, import_react47.createElement)("span", { key: "label", className: "bt-project-team-label" }, label),
+  botId === "" ? (0, import_react47.createElement)("span", { key: "value", className: "bt-project-missing" }, t("Not set")) : (0, import_react47.createElement)("span", { key: "value", className: "bt-project-team-bot" }, `@${botId}`)
+);
+var POOL_RANKS = [["owner", "owner"], ["maintainer", "maintainers"], ["member", "members"]];
+function ProjectTeam({ project, onOpenBot }) {
+  const view = projectTeamView(project);
+  const ranks = view.empty ? (0, import_react47.createElement)("span", { className: "bt-project-missing" }, t("No one in this pool yet.")) : (0, import_react47.createElement)(
+    "span",
+    { className: "bt-project-team-roles" },
+    POOL_RANKS.map(([role, key]) => view.roles[key].length === 0 ? null : (0, import_react47.createElement)(
+      "span",
+      { key: role, className: "bt-project-team-role", "data-pool-role": role },
+      `${roleText(role)}: ${view.roles[key].map((id) => `@${id}`).join(", ")}`
+    ))
+  );
+  return (0, import_react47.createElement)(
+    "section",
+    { className: "bt-project-team", "data-team": "chief,agent,pool" },
+    (0, import_react47.createElement)("h4", null, t("Project team")),
+    teamRow("chief", t("Project Chief"), view.chief, onOpenBot),
+    teamRow("agent", t("My agent"), view.agent, onOpenBot),
+    (0, import_react47.createElement)(
+      "div",
+      { key: "pool", className: "bt-project-team-row", "data-team-role": "pool" },
+      (0, import_react47.createElement)("span", { key: "label", className: "bt-project-team-label" }, t("Role pool")),
+      ranks,
+      // The caller's own rank and what the host said they may switch to: the same answer the
+      // sidebar menu reads, printed where the pool is.
+      view.role === "" ? null : (0, import_react47.createElement)(
+        "span",
+        { key: "mine", className: "bt-project-team-myrole", "data-team-my-role": view.role },
+        [
+          t("My role"),
+          ": ",
+          roleText(view.role),
+          view.choices.length === 0 ? null : ` · ${t("Can switch to {roles}", { roles: view.choices.map(roleText).join(", ") })}`
+        ]
+      )
+    )
+  );
+}
+function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
+  const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics });
   return (0, import_react47.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
     (0, import_react47.createElement)("h3", null, view.title),
+    (0, import_react47.createElement)(ProjectTeam, { project, onOpenBot }),
     // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
     view.counts === null ? null : (0, import_react47.createElement)(
       "div",
@@ -20592,6 +20738,7 @@ function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings
     (0, import_react47.createElement)(ProjectRunningTable, { view: view.metrics, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRows, { view, onOpen }),
     (0, import_react47.createElement)(ProjectQueueGroups, { view, onOpen }),
+    (0, import_react47.createElement)(ProjectDoneGroup, { view, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
@@ -20766,7 +20913,9 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       ]);
       const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
-      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
+      const base = record?.project ?? project;
+      const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] };
+      return { project: withRole, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
     };
     const refresh = async (first) => {
       try {
@@ -20814,6 +20963,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
         ) : panel === "settings" ? (0, import_react47.createElement)(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react47.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react47.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
+          done: state.done,
           canManage: state.canManage,
           tasks: state.tasks,
           decisions: state.decisions,
@@ -20822,6 +20972,12 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           metrics: state.metrics,
           onSettings: () => setPanel("settings"),
           onMembers: () => setPanel("members"),
+          // #1860: a team row opens that Bot's chat. The board is a modal over the conversation,
+          // so it closes first — otherwise the chat opens behind it.
+          onOpenBot: (id) => {
+            close();
+            actions?.openSession?.(id);
+          },
           // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
           // lands on that Bot or group. Nothing here re-decides which board that is.
           onOpen: (board) => {

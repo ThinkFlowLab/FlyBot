@@ -597,6 +597,14 @@ channel instead of only in-process; the two landed together because a dispatch w
 allow-list entry would reach `store.js` with the owner check bypassed. The gate returns early on a missing id, so `project-memory` keeps the not-found
 refusal it answered before rather than turning an unknown id into a 403. Tests:
 `core/test/project-owner-gate.test.js`.
+The rows are the work still open (#1855). A card in the `done` column — `accepted`, `cancelled`,
+`failed` — is a finished record, so `projectBoard` returns it under `done` (the same row shape, the same
+order, deduped with the rows) instead of in `rows`/`tasks`; `counts.done` keeps counting every finished
+card, so the header and the #1829 metrics read exactly as they did. Nothing else is filtered: a rework, a
+blocked and a waiting card stay rows. The `project-board` endpoint carries the archive beside `tasks` as
+`done`, which is what a page needs to fold months of history into one closed group instead of painting it.
+An unreadable store still answers `counts` of `null`. Tests: `core/test/project-board.test.js`.
+
 Beside the columns the board reads three groups (#1768), from the same pass and never a
 second store: `waiting` is an open card with a `queueRole` and no claim, oldest wait first, carrying
 the role and the milliseconds since its own `createdAt`; `inflight` is the card a claim (or the lease

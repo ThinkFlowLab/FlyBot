@@ -953,6 +953,8 @@ const ZH = {
   'Saved {name}': '已保存 {name}',
   Canceled: '已取消',
   Done: '完成',
+  // #1855: the one collapsed group that holds a Project's finished cards.
+  'Done cards': '已完成',
   '{bot} is using {name}': '{bot} 正在使用 {name}',
   'a saved key': '一个已保存的密钥',
   'Chosen Bots': '指定的 Bot',
@@ -1395,6 +1397,12 @@ const ZH = {
   'On the board': '在看板上',
   'No member is named yet.': '还没有指定成员。',
   'Member management is not part of this slice; owners and the members their cards name are listed here.': '成员管理不在本次范围内；这里列出项目负责人和卡片上点名的成员。',
+  // The Project team block (#1860): who runs the Project, who speaks for the reader, the pool.
+  'Project team': '项目团队',
+  'My agent': '我的助手',
+  'Role pool': '角色池',
+  'Can switch to {roles}': '可切换为 {roles}',
+  'No one in this pool yet.': '角色池里还没有人。',
   'No cards yet.': '还没有卡片。',
   'Open Projects in Settings': '在设置中打开项目',
 }

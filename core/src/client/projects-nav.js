@@ -8,6 +8,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { createPortal } from 'react-dom'
 import { call as callHost } from './api.js'
 import { t } from './i18n.js'
+import { roleText } from './role-labels.js'
 
 // #1854: `projects` and `project-role` are core endpoints, dispatched by bare name in
 // `core/src/host/channel.js`; a `flybot/` prefix here names an endpoint the host does not have.
@@ -31,12 +32,9 @@ export const PROJECTS_NAV_CSS = `
 .bt-project-menu-item[disabled] { opacity: .6; cursor: default; }
 `
 
-const ROLE_LABELS = { owner: 'Owner', maintainer: 'Maintainer', member: 'Member' }
-
-export function roleText(role) {
-  if (role === null || role === undefined || role === '') return ''
-  return t(ROLE_LABELS[role] ?? String(role))
-}
+// The rank words live in `role-labels.js` (#1860): the board's Project team block prints the same
+// three ranks, so re-exporting keeps this module's own callers reading one vocabulary.
+export { roleText }
 
 // `#project=<id>` is the one entry point the board reads (`ProjectBoardOverlay`), so opening a row
 // writes the hash instead of mounting a second copy of the board.

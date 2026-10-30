@@ -163,7 +163,7 @@ test('#1530: a step nobody answers fails the run at its deadline and releases th
   assert.equal(after.run.status, 'failed')
   assert.equal(after.run.nodeStatus.plan, 'failed')
   assert.equal(after.activeCount, 0)
-  assert.match(chat(svc.state(), flow.id), /超时|timed out/i)
+  assert.match(chat(svc.state(), flow.id), /截止时间/)
   assert.ok(released.length > 0)
   assert.ok(warnings.some(line => /timed out|超时/.test(line)))
   assert.equal(timers.pending(), 0, 'the deadline is cleared once the run ends')
@@ -388,4 +388,55 @@ test('#1580: a stepTimeoutMinutes outside 1..120 is refused when the workflow is
   const cleared = svc.setStepTimeout({ workflowId: flow.id, stepTimeoutMinutes: null })
   assert.equal(cleared.ok, true)
   assert.equal(row(cleared, flow.id).stepTimeoutMinutes, DEFAULT_STEP_TIMEOUT_MINUTES)
+})
+
+// #1868: the deadline is not silence. A step that is still working is killed by
+// the same timer as one whose Bot never answered, so the stage line and
+// `run.failure` name the deadline the step reached, not a reply that never came.
+test('#1868: a step that reaches its deadline says so instead of "no reply"', async () => {
+  const { svc, released, timers } = harness()
+  const flow = make(svc)
+  await svc.assign({ workflowId: flow.id, taskId: '#1868-deadline', title: 'Long build' })
+
+  await timers.tick(STEP_DEADLINE_MS - 1)
+  assert.equal(row(svc.state(), flow.id).run.status, 'running', 'the step is still live before its deadline')
+
+  await timers.tick(1)
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run.status, 'failed', 'the deadline still ends the run')
+  assert.equal(after.run.nodeStatus.plan, 'failed')
+  assert.equal(after.run.failure.code, 'step-failed')
+  assert.equal(after.run.failure.nodeName, 'Planner')
+  assert.match(String(after.run.failure.text), /step deadline reached \(45 min\)/)
+  assert.doesNotMatch(String(after.run.failure.text), /no reply/)
+
+  const line = after.messages.at(-1)
+  assert.equal(line.key, '{node} step deadline reached ({minutes} min), the run was marked failed.')
+  assert.deepEqual(line.params, { node: 'Planner', minutes: DEFAULT_STEP_TIMEOUT_MINUTES })
+  const said = chat(svc.state(), flow.id)
+  assert.match(said, /45 分钟的截止时间/)
+  assert.doesNotMatch(said, /没有回包/)
+  assert.doesNotMatch(said, /no reply/)
+  assert.ok(released.length > 0, 'the run Bots are still released at the deadline')
+})
+
+// #1868: a lane created through `define_workflow` has no way to carry its own
+// deadline, so every lane silently inherits 45 minutes. `define()` forwards the
+// field the create path already validates, and refuses a bad one.
+test('#1868: define() carries stepTimeoutMinutes and refuses a bad one', () => {
+  const { svc } = harness()
+
+  const made = svc.define({ name: 'Ninety minute step', nodes: TIMED_NODES, edges: [{ from: 'plan', to: 'code' }], stepTimeoutMinutes: 90 })
+  assert.equal(made.ok, true, JSON.stringify(made.reasons ?? made))
+  const flow = made.workflows.find(item => item.name === 'Ninety minute step')
+  assert.equal(row(svc.state(), flow.id).stepTimeoutMinutes, 90)
+
+  const bad = svc.define({ name: 'Zero minute step', nodes: TIMED_NODES, edges: [{ from: 'plan', to: 'code' }], stepTimeoutMinutes: 0 })
+  assert.equal(bad.ok, false, 'a deadline outside 1..120 must be refused, not dropped')
+  assert.match(String(bad.error), /stepTimeoutMinutes is an integer from 1 to 120/)
+
+  const omitted = svc.define({ name: 'Default minute step', nodes: TIMED_NODES, edges: [{ from: 'plan', to: 'code' }] })
+  assert.equal(omitted.ok, true)
+  const plain = omitted.workflows.find(item => item.name === 'Default minute step')
+  assert.equal(row(svc.state(), plain.id).stepTimeoutMinutes, DEFAULT_STEP_TIMEOUT_MINUTES)
 })

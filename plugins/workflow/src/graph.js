@@ -437,6 +437,13 @@ export function missingProviders(graph) {
 // "EARLY-END <reason>". A step that quotes, negates or reports one of them is still working.
 // `tip-unchanged` and `open-pr` keep that same structured signal plus their prose fallbacks,
 // so a Bot that forgets the marker cannot burn a loop or an onFail attempt on the same tip.
+// In a declared OUTPUT a non-strict reason counts as a whole word (#1866): a brief that names
+// `data-open-project` contains `open-pr`, and that must not end the run.
+function wholeWord(value, reason) {
+  if (value === reason) return true
+  return new RegExp(`(^|[^a-z0-9_-])${reason}([^a-z0-9_-]|$)`).test(value)
+}
+
 function checkEarlyEnd(outputs, text) {
   const lowerText = String(text ?? '').toLowerCase()
   const outputValues = Object.values(outputs ?? {}).map(v => String(v ?? '').toLowerCase().trim())
@@ -451,8 +458,8 @@ function checkEarlyEnd(outputs, text) {
   }
 
   for (const reason of reasons) {
-    // A strict reason must be the whole value; a prose fallback may contain it.
-    if (outputValues.some(v => v === reason || (!strict.has(reason) && v.includes(reason)))) {
+    // A strict reason must be the whole value; a prose fallback must be a whole word.
+    if (outputValues.some(v => (strict.has(reason) ? v === reason : wholeWord(v, reason)))) {
       return { shouldEnd: true, reason }
     }
   }

@@ -277,8 +277,11 @@ export function createWorkflowService({
     for (const nodeId of running) armDeadline(item, run, nodeId)
   }
 
-  // A step nobody answers is not progress. Fail the run, free its Bots and say
-  // which step timed out, so a dead Bot cannot hold a lane slot forever.
+  // A step that reaches its deadline is failed, frees its Bots and says which
+  // step it was, so a lost Bot cannot hold a lane slot forever. The deadline is a
+  // limit on the wait, not proof nothing arrived: a step was killed at 45 minutes
+  // while still writing (#1868), so the line names the deadline it reached and
+  // never reads as a reply that never came.
   function expireStep(workflowId, runId, nodeId) {
     return hostSerial(async () => {
       const item = workflow(workflowId)
@@ -292,11 +295,11 @@ export function createWorkflowService({
       push(workflowId, [{
         kind: 'system',
         tone: 'bad',
-        key: '{node} timed out: no reply for {minutes} minutes, the run was marked failed.',
+        key: '{node} step deadline reached ({minutes} min), the run was marked failed.',
         params: { node: node?.name ?? nodeId, minutes },
-        text: `${node?.name ?? nodeId} 超时：${minutes} 分钟没有回包，run 已标记失败。`,
+        text: `${node?.name ?? nodeId} 这一步到达 ${minutes} 分钟的截止时间，run 已标记失败。`,
       }], now())
-      endRun(item, run, { code: 'step-failed', nodeName: node?.name, text: `no reply for ${minutes} minutes` })
+      endRun(item, run, { code: 'step-failed', nodeName: node?.name, text: `step deadline reached (${minutes} min)` })
       await releaseRun(workflowId, run)
       await drainAll()
       return present()
@@ -768,8 +771,6 @@ export function createWorkflowService({
     return {
       id: task.id,
       title: task.title,
-      // #1869: a rebuilt row loses the brief unless it is named here too.
-      ...(task.brief ? { brief: task.brief } : {}),
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
       ...(task.projectId ? { projectId: task.projectId } : {}),
       ...(task.handoff ? { handoff: task.handoff } : {}),
@@ -793,6 +794,8 @@ export function createWorkflowService({
     }
     if (!best) return null
     const task = laneOf(best.item.id).queue.shift()
+    // #1869: the row is rebuilt from the parked fields, so the brief has to be
+    // named here too or it is lost exactly when the run starts.
     return { item: best.item, task: carriedTask(task) }
   }
 
@@ -985,13 +988,13 @@ export function createWorkflowService({
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
       // #1856: a parked run keeps the Project it was assigned with.
       ...(task.projectId ? { projectId: task.projectId } : {}),
+      // #1869: the brief stays on the parked card, on disk and until the run starts.
+      ...(task.brief ? { brief: task.brief } : {}),
       // #1862: and the handoff the shadow pass records a verdict for.
       ...(task.handoff ? { handoff: task.handoff } : {}),
       ...(task.handoffContext ? { handoffContext: task.handoffContext } : {}),
       ...(task.acceptance ? { acceptance: task.acceptance } : {}),
       ...(task.evidence ? { evidence: task.evidence } : {}),
-      // #1869: the brief stays on the parked card, on disk and until the run starts.
-      ...(task.brief ? { brief: task.brief } : {}),
     })
     const ahead = lane.queue.length - 1
     push(item.id, [{
@@ -1664,7 +1667,17 @@ export function createWorkflowService({
         if (saved.ok === false) return saved
         return finish()
       }
-      return this.create({ name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description, ...(authoredBy ? { authoredBy } : {}) })
+      // #1868: a lane created through `define_workflow` used to inherit the 45-minute
+      // default with no way to say otherwise. The field goes to `create()`, which
+      // validates it through `stepTimeoutValue()`: a bad value is refused, not dropped.
+      const stepTimeoutMinutes = body.stepTimeoutMinutes === undefined || body.stepTimeoutMinutes === null || body.stepTimeoutMinutes === ''
+        ? undefined
+        : body.stepTimeoutMinutes
+      return this.create({
+        name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description,
+        ...(stepTimeoutMinutes === undefined ? {} : { stepTimeoutMinutes }),
+        ...(authoredBy ? { authoredBy } : {}),
+      })
     },
     // Start a named workflow. `brief` is the task instruction and `task` is its id;
     // the title is its first line, derivable here because this call has no separate

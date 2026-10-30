@@ -713,6 +713,9 @@ export function install(rt) {
         const sections = Array.isArray(board) ? {} : board
         return {
           tasks: rows,
+          // #1855: the finished cards ride beside the rows, in the same row shape, so the page keeps
+          // them in one collapsed group instead of painting a wall of 已完成.
+          done: sections.done ?? [],
           decisions: sections.decisions ?? { dir: null, files: [], reason: 'the board reads no decisions' },
           meetings: sections.meetings ?? { decided: [], pending: [], reason: 'the board reads no meetings' },
           // The queue/lease/blocked groups (#1768) ride along with the sections: one read of the

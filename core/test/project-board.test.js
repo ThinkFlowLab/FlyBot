@@ -580,3 +580,76 @@ test('#1809: two folder-less Projects sharing the team folder list only their ow
     assert.deepEqual(p2.meetings.decided.map(entry => [entry.id, entry.path]), [[second, two]])
   } finally { await stop() }
 })
+
+// #1855: the owner read a Project with months of history as "a wall of 已完成" — the board painted
+// 191 accepted records beside the 9 cards in flight. The rows are the work still open; the finished
+// cards are the archive beside them, and the header count keeps counting every one of them.
+const historySeed = (doneCount = 191, openCount = 9) => {
+  const team = seed()
+  // This read is about one card per row, so the seed keeps its Project and its bindings only.
+  team.tasks = {}
+  for (let at = 0; at < doneCount + openCount; at += 1) {
+    const finished = at < doneCount
+    team.tasks[`task-h${at}`] = {
+      id: `task-h${at}`, kind: 'group', status: finished ? 'accepted' : 'working', ownerBotId: 'a',
+      origin: { roomId: 'r1' }, title: finished ? `Finished ${at}` : `In flight ${at}`,
+      createdAt: at + 1, updatedAt: at + 1,
+    }
+  }
+  return team
+}
+
+test('#1855: a board of 200 cards with 191 done answers 9 rows and counts.done 191', async () => {
+  const { rt, call, stop } = await start(undefined, historySeed())
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.rows.length, 9, 'only the work in flight is a row')
+    assert.equal(board.rows.some(row => row.column === 'done'), false, 'a finished card is never a row')
+    assert.equal(board.done.length, 191, 'every finished card is in the archive')
+    assert.equal(board.done.every(row => row.column === 'done'), true)
+    assert.equal(board.counts.done, 191, 'the header still counts every finished card')
+    // The same read, another key: no card is lost, none is painted twice, and the rows keep their
+    // source order.
+    assert.equal(new Set([...board.rows, ...board.done].map(row => row.id)).size, 200)
+    assert.deepEqual(board.rows.map(row => row.id), Array.from({ length: 9 }, (_, at) => `task-h${191 + at}`))
+    // The endpoint the page reads carries the archive beside the rows.
+    const served = value(await call('project-board', { id: 'project-p1' }))
+    assert.equal(served.tasks.length, 9)
+    assert.equal(served.done.length, 191)
+    assert.equal(served.counts.done, 191)
+  } finally { await stop() }
+})
+
+test('#1855: a card that turns done leaves the rows and raises counts.done by one', async () => {
+  const { rt, stop } = await start(undefined, historySeed(2, 2))
+  try {
+    const before = await rt.projectBoard('project-p1')
+    assert.deepEqual(before.rows.map(row => row.id), ['task-h2', 'task-h3'])
+    assert.equal(before.counts.done, 2)
+    rt.state.tasks['task-h2'].status = 'accepted'
+    const after = await rt.projectBoard('project-p1')
+    assert.deepEqual(after.rows.map(row => row.id), ['task-h3'], 'the finished card stops being a row')
+    assert.equal(after.counts.done, 3, 'and the header counts it once more')
+    assert.deepEqual(after.done.map(row => row.id), ['task-h0', 'task-h1', 'task-h2'])
+  } finally { await stop() }
+})
+
+test('#1855: a rework, a blocked and a waiting card stay rows — only done is filtered', async () => {
+  const team = seed()
+  team.tasks['task-rework'] = { id: 'task-rework', kind: 'group', status: 'result-ready', taskClass: 'rework', reworkOf: 'task-group', origin: { roomId: 'r1' }, title: 'A rework', createdAt: 30, updatedAt: 30 }
+  team.tasks['task-blocked'] = { id: 'task-blocked', kind: 'group', status: 'blocked', waitingFor: 'input', origin: { roomId: 'r1' }, title: 'Blocked', inputRequest: { id: 'q1', question: 'Which branch?' }, createdAt: 31, updatedAt: 31 }
+  team.tasks['task-waiting'] = { id: 'task-waiting', kind: 'group', status: 'open', queueRole: 'Dev', queueBy: 'a', origin: { roomId: 'r1' }, title: 'Waiting', createdAt: 32, updatedAt: 32 }
+  team.tasks['task-finished'] = { id: 'task-finished', kind: 'group', status: 'accepted', origin: { roomId: 'r1' }, title: 'Finished', createdAt: 33, updatedAt: 33 }
+  const { rt, stop } = await start(undefined, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const ids = board.rows.map(row => row.id)
+    assert.deepEqual(ids, ['task-group', 'task-rework', 'task-blocked', 'task-waiting'], 'nothing but done leaves the rows')
+    assert.equal(ids.includes('task-finished'), false)
+    assert.deepEqual(board.done.map(row => row.id), ['task-finished'])
+    assert.equal(board.counts.done, 1)
+    // The queue groups still read the same cards: filtering rows never empties a queue.
+    assert.deepEqual(board.waiting.map(item => item.id), ['task-waiting'])
+    assert.deepEqual(board.blocked.map(item => item.id), ['task-blocked'])
+  } finally { await stop() }
+})

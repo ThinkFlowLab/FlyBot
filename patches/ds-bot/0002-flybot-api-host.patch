@@ -885,7 +885,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,453 @@ export function install(rt) {
+@@ -161,12 +161,456 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1291,6 +1291,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        const sections = Array.isArray(board) ? {} : board
 +        return {
 +          tasks: rows,
++          // #1855: the finished cards ride beside the rows, in the same row shape, so the page keeps
++          // them in one collapsed group instead of painting a wall of 已完成.
++          done: sections.done ?? [],
 +          decisions: sections.decisions ?? { dir: null, files: [], reason: 'the board reads no decisions' },
 +          meetings: sections.meetings ?? { decided: [], pending: [], reason: 'the board reads no meetings' },
 +          // The queue/lease/blocked groups (#1768) ride along with the sections: one read of the

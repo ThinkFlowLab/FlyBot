@@ -134,12 +134,13 @@ export function apply(ctx, config = {}) {
     }))
     offs.push(fb.tools.register({
       name: 'define_workflow',
-      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? } and edges are { from, to, when?, loop?, max?, until? }. prompt is that node\'s Bot system prompt. tools names the connectors the ephemeral run Bot may call (github grants mcp__github__*, composio grants mcp__composio__*); the file and shell rights are a normal Bot\'s, and a node that names no connector gets none. A node does not need a permanent botId. inputs and outputs are { name, type?, required? }. A required input must be produced upstream, or be task, title, or brief on a root. when chooses an edge; loop with max (and optional until) is the only cycle. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
+      description: 'Create or replace a Workflow graph. nodes are { id, name, prompt?, role?, model?, tools?, botId?, inputs?, outputs?, x?, y? } and edges are { from, to, when?, loop?, max?, until? }. prompt is that node\'s Bot system prompt. tools names the connectors the ephemeral run Bot may call (github grants mcp__github__*, composio grants mcp__composio__*); the file and shell rights are a normal Bot\'s, and a node that names no connector gets none. A node does not need a permanent botId. inputs and outputs are { name, type?, required? }. A required input must be produced upstream, or be task, title, or brief on a root. when chooses an edge; loop with max (and optional until) is the only cycle. stepTimeoutMinutes (an integer from 1 to 120) is how long one step may wait for its Bot before the run fails; omit it for the 45-minute default. The Settings page and the flowchart edit the same graph. A friend\'s Bot is refused.',
       parameters: {
         name: { type: 'string', required: true, description: 'Workflow name' },
         workflow: { type: 'string', description: 'Existing id or name to replace. Omit to create.' },
         nodes: { type: 'array', required: true, description: 'Nodes. Each may carry prompt (system prompt), role, model, tools (the connectors it may call: github, composio), inputs, outputs, and an optional local botId. Real work uses an ephemeral Bot per run, not a seated botId.' },
         edges: { type: 'array', required: true, description: 'Hand-offs { from, to }. A fork is two edges out; a join is two edges in. A condition is when: { output, eq } or { else: true }. A loop is loop: true with max (1–8, default 3) and optional until: { output, eq }.' },
+        stepTimeoutMinutes: { type: 'number', description: 'How long one step may wait for its Bot before the run fails, 1–120. Omit for the 45-minute default.' },
       },
       execute: (args, ctx) => service.define({ ...(args ?? {}), ...(ctx?.botId ? { callerBotId: ctx.botId } : {}) }),
     }))
