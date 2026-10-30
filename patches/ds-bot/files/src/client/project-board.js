@@ -34,6 +34,14 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
+.bt-project-counts{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.03em;opacity:.8}
+.bt-project-counts b{font-weight:600}
+.bt-project-group[data-queue="waiting"] .bt-project-row{cursor:default}
+.bt-project-role{font-size:11px;opacity:.65;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-wait{font-size:11px;opacity:.65;margin-left:auto}
+.bt-project-state{font-size:11px;margin-left:auto}
+.bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
+.bt-project-reason{font-size:11px;opacity:.7}
 `
 
 // Sources in the order the board reads them; a source with no rows is left out so three empty
@@ -124,7 +132,9 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
 // `project-read` and only decides what the caller may *ask* for — the host refuses regardless.
 // `tasks` is the one task read joined by id: the row carries an id and who holds it, not its text.
 // `decisions` and `meetings` are the host's read of the Project's record (#1767), passed through.
-export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings } = {}) {
+// `queues` is the other half of that same read (#1768): the waiting, in-flight and blocked cards
+// and their counts, as the host answered them.
+export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues } = {}) {
   const list = Array.isArray(rows) ? rows.filter(row => row !== null && typeof row === 'object' && text(row.id) !== '') : []
   const byId = new Map((Array.isArray(tasks) ? tasks : [])
     .filter(task => task !== null && typeof task === 'object' && text(task.id) !== '')
@@ -152,13 +162,36 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
         }),
     }))
     .filter(group => group.rows.length > 0)
+  // The three groups beside the columns (#1768). They are the host's own read of the queue, the
+  // leases and the blocked cards; nothing is recomputed here, and a count the host could not read
+  // stays `null` so the header says "unknown" instead of a zero nobody measured.
+  const countOf = (value) => (value === undefined || value === null ? null : value)
+  const queueItems = (items, annotate) => (Array.isArray(items) ? items : [])
+    .filter(item => item !== null && typeof item === 'object' && text(item.id) !== '')
+    .map((item) => {
+      const id = text(item.id)
+      const source = text(list.find(row => text(row.id) === id)?.source)
+      const task = byId.get(id)
+      return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) }
+    })
+  const waiting = queueItems(queues?.waiting, item => ({ role: text(item.role) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }))
+  const inflight = queueItems(queues?.inflight, item => ({ holder: text(item.holder) || null, state: item.stalled === true ? 'stalled' : 'running' }))
+  const blocked = queueItems(queues?.blocked, item => ({ reason: text(item.reason) || null }))
+  const queueGroups = [
+    { group: 'waiting', label: 'Waiting', items: waiting },
+    { group: 'inflight', label: 'In flight', items: inflight },
+    { group: 'blocked', label: 'Blocked', items: blocked },
+  ].filter(entry => entry.items.length > 0)
+  const rawCounts = queues?.counts ?? null
   return {
     projectId: text(project?.id) || null,
     title: text(project?.name) || 'Project',
     canManage: canManage === true,
     groups,
+    queues: queueGroups,
+    counts: rawCounts === null ? null : { waiting: countOf(rawCounts.waiting), inflight: countOf(rawCounts.inflight), blocked: countOf(rawCounts.blocked), done: countOf(rawCounts.done) },
     count: list.length,
-    empty: list.length === 0,
+    empty: list.length === 0 && queueGroups.length === 0,
     emptyText: 'No cards yet.',
     record: projectBoardRecord({ decisions, meetings }),
   }
@@ -193,6 +226,49 @@ function ProjectBoardRows({ view, onOpen }) {
     })))
 }
 
+// How long a card has waited, in the unit a reader wants: minutes under an hour, hours under a
+// day. A card with no `createdAt` says nothing rather than "0m".
+export function waitedLabel(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const minutes = Math.floor(ms / 60000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
+// The three groups beside the columns (#1768): a role queue with its wait, the card a claim holds
+// with its holder and lease state, and a blocked card with the reason it already stores.
+function ProjectQueueGroups({ view, onOpen }) {
+  return view.queues.map(entry => h('section', { key: `queue:${entry.group}`, className: 'bt-project-group', 'data-queue': entry.group },
+    h('h4', null, t(entry.label)),
+    entry.items.map(row => {
+      const open = row.board === null ? undefined : () => onOpen?.(row.board)
+      // The annotation is the group's own: a role and how long it waited, the holder and whether
+      // the lease is live, or the reason the card is blocked. Never recomputed from the card here.
+      const note = entry.group === 'waiting'
+        ? h('span', { className: 'bt-project-wait' }, [row.role === null ? null : h('span', { key: 'role', className: 'bt-project-role' }, row.role), waitedLabel(row.waitedMs) === null ? null : ` · ${waitedLabel(row.waitedMs)}`])
+        : entry.group === 'inflight'
+          ? h('span', { className: 'bt-project-state' }, row.holder === null ? t(row.state) : `${row.holder} · ${t(row.state)}`)
+          : h('span', { className: 'bt-project-reason' }, row.reason)
+      return h('div', {
+        key: row.key,
+        className: 'bt-project-row',
+        'data-task-id': row.id,
+        'data-state': row.state ?? undefined,
+        role: open === undefined ? undefined : 'button',
+        tabIndex: open === undefined ? undefined : 0,
+        onClick: open,
+        onKeyDown: open === undefined ? undefined : event => { if (event.key === 'Enter' || event.key === ' ') open() },
+      },
+      h('span', { className: 'bt-project-title-wrap' },
+        h('span', { className: 'bt-project-title' }, row.title ?? `#${row.id}`)),
+      note)
+    })))
+}
+
+const countText = value => (value === null ? t('unknown') : String(value))
+
 // The record beside the cards (#1767): decisions first, then the meetings that reached one, and
 // a meeting still open or blocked listed apart — never as a decision. Every row is text the host
 // already answered; the only thing this reads again is the hash it was handed.
@@ -224,13 +300,20 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows)
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, onOpen }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings })
+export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
+    // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
+    view.counts === null ? null : h('div', { className: 'bt-project-counts', 'data-counts': 'waiting,inflight,blocked,done' },
+      h('span', null, [t('Waiting'), ': ', h('b', { key: 'w' }, countText(view.counts.waiting))]),
+      h('span', null, [t('In flight'), ': ', h('b', { key: 'f' }, countText(view.counts.inflight))]),
+      h('span', null, [t('Blocked'), ': ', h('b', { key: 'b' }, countText(view.counts.blocked))]),
+      h('span', null, [t('Done'), ': ', h('b', { key: 'd' }, countText(view.counts.done))])),
     // Management affordances are drawn only for the owner; the refusal itself is the host's.
     view.canManage ? h('div', { className: 'bt-project-actions' }, h('button', { type: 'button' }, t('Project settings')), h('button', { type: 'button' }, t('Members'))) : null,
     h(ProjectBoardRows, { view, onOpen }),
+    h(ProjectQueueGroups, { view, onOpen }),
     h(ProjectBoardRecord, { record: view.record }))
 }
 
@@ -273,7 +356,9 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
           read('tasks', {}),
         ])
         const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
-        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings })
+        // The groups are the same read as the rows, so the header cannot disagree with the cards.
+        const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
+        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues })
       } catch { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }) }
     })()
     return () => { live = false }
@@ -297,7 +382,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
           // that hash and lands on the Bot or group the task belongs to.
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
-            decisions: state.decisions, meetings: state.meetings,
+            decisions: state.decisions, meetings: state.meetings, queues: state.queues,
             // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
             // lands on that Bot or group. Nothing here re-decides which board that is.
             onOpen: (board) => {

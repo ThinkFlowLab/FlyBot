@@ -795,6 +795,9 @@ var ZH = {
   Low: "较低",
   Claimed: "已认领",
   Blocked: "受阻",
+  Waiting: "等待",
+  "In flight": "进行中",
+  unknown: "未知",
   Start: "开始",
   Complete: "完成",
   "Start task": "开始任务",
@@ -19873,6 +19876,14 @@ var PROJECT_BOARD_CSS = `
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
+.bt-project-counts{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.03em;opacity:.8}
+.bt-project-counts b{font-weight:600}
+.bt-project-group[data-queue="waiting"] .bt-project-row{cursor:default}
+.bt-project-role{font-size:11px;opacity:.65;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-wait{font-size:11px;opacity:.65;margin-left:auto}
+.bt-project-state{font-size:11px;margin-left:auto}
+.bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
+.bt-project-reason{font-size:11px;opacity:.7}
 `;
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
@@ -19941,7 +19952,7 @@ function projectBoardRecord({ decisions, meetings } = {}) {
     }
   };
 }
-function projectBoardView({ project, rows, canManage, tasks, decisions, meetings } = {}) {
+function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues } = {}) {
   const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
   const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
   const groups = PROJECT_SOURCES.map((source) => ({
@@ -19963,13 +19974,31 @@ function projectBoardView({ project, rows, canManage, tasks, decisions, meetings
       };
     })
   })).filter((group) => group.rows.length > 0);
+  const countOf = (value) => value === void 0 || value === null ? null : value;
+  const queueItems = (items, annotate) => (Array.isArray(items) ? items : []).filter((item) => item !== null && typeof item === "object" && text(item.id) !== "").map((item) => {
+    const id = text(item.id);
+    const source = text(list.find((row) => text(row.id) === id)?.source);
+    const task = byId.get(id);
+    return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) };
+  });
+  const waiting = queueItems(queues?.waiting, (item) => ({ role: text(item.role) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }));
+  const inflight = queueItems(queues?.inflight, (item) => ({ holder: text(item.holder) || null, state: item.stalled === true ? "stalled" : "running" }));
+  const blocked = queueItems(queues?.blocked, (item) => ({ reason: text(item.reason) || null }));
+  const queueGroups = [
+    { group: "waiting", label: "Waiting", items: waiting },
+    { group: "inflight", label: "In flight", items: inflight },
+    { group: "blocked", label: "Blocked", items: blocked }
+  ].filter((entry) => entry.items.length > 0);
+  const rawCounts = queues?.counts ?? null;
   return {
     projectId: text(project?.id) || null,
     title: text(project?.name) || "Project",
     canManage: canManage === true,
     groups,
+    queues: queueGroups,
+    counts: rawCounts === null ? null : { waiting: countOf(rawCounts.waiting), inflight: countOf(rawCounts.inflight), blocked: countOf(rawCounts.blocked), done: countOf(rawCounts.done) },
     count: list.length,
-    empty: list.length === 0,
+    empty: list.length === 0 && queueGroups.length === 0,
     emptyText: "No cards yet.",
     record: projectBoardRecord({ decisions, meetings })
   };
@@ -20012,6 +20041,47 @@ function ProjectBoardRows({ view, onOpen }) {
     })
   ));
 }
+function waitedLabel(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const minutes = Math.floor(ms / 6e4);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+function ProjectQueueGroups({ view, onOpen }) {
+  return view.queues.map((entry) => (0, import_react46.createElement)(
+    "section",
+    { key: `queue:${entry.group}`, className: "bt-project-group", "data-queue": entry.group },
+    (0, import_react46.createElement)("h4", null, t(entry.label)),
+    entry.items.map((row) => {
+      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
+      const note = entry.group === "waiting" ? (0, import_react46.createElement)("span", { className: "bt-project-wait" }, [row.role === null ? null : (0, import_react46.createElement)("span", { key: "role", className: "bt-project-role" }, row.role), waitedLabel(row.waitedMs) === null ? null : ` · ${waitedLabel(row.waitedMs)}`]) : entry.group === "inflight" ? (0, import_react46.createElement)("span", { className: "bt-project-state" }, row.holder === null ? t(row.state) : `${row.holder} · ${t(row.state)}`) : (0, import_react46.createElement)("span", { className: "bt-project-reason" }, row.reason);
+      return (0, import_react46.createElement)(
+        "div",
+        {
+          key: row.key,
+          className: "bt-project-row",
+          "data-task-id": row.id,
+          "data-state": row.state ?? void 0,
+          role: open === void 0 ? void 0 : "button",
+          tabIndex: open === void 0 ? void 0 : 0,
+          onClick: open,
+          onKeyDown: open === void 0 ? void 0 : (event) => {
+            if (event.key === "Enter" || event.key === " ") open();
+          }
+        },
+        (0, import_react46.createElement)(
+          "span",
+          { className: "bt-project-title-wrap" },
+          (0, import_react46.createElement)("span", { className: "bt-project-title" }, row.title ?? `#${row.id}`)
+        ),
+        note
+      );
+    })
+  ));
+}
+var countText = (value) => value === null ? t("unknown") : String(value);
 function ProjectBoardRecord({ record }) {
   const { decisions, meetings } = record;
   const decisionRows = decisions.files.map((file) => (0, import_react46.createElement)(
@@ -20049,15 +20119,25 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows
   );
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, onOpen }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings });
+function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues });
   return (0, import_react46.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
     (0, import_react46.createElement)("h3", null, view.title),
+    // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
+    view.counts === null ? null : (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-counts", "data-counts": "waiting,inflight,blocked,done" },
+      (0, import_react46.createElement)("span", null, [t("Waiting"), ": ", (0, import_react46.createElement)("b", { key: "w" }, countText(view.counts.waiting))]),
+      (0, import_react46.createElement)("span", null, [t("In flight"), ": ", (0, import_react46.createElement)("b", { key: "f" }, countText(view.counts.inflight))]),
+      (0, import_react46.createElement)("span", null, [t("Blocked"), ": ", (0, import_react46.createElement)("b", { key: "b" }, countText(view.counts.blocked))]),
+      (0, import_react46.createElement)("span", null, [t("Done"), ": ", (0, import_react46.createElement)("b", { key: "d" }, countText(view.counts.done))])
+    ),
     // Management affordances are drawn only for the owner; the refusal itself is the host's.
     view.canManage ? (0, import_react46.createElement)("div", { className: "bt-project-actions" }, (0, import_react46.createElement)("button", { type: "button" }, t("Project settings")), (0, import_react46.createElement)("button", { type: "button" }, t("Members"))) : null,
     (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen }),
+    (0, import_react46.createElement)(ProjectQueueGroups, { view, onOpen }),
     (0, import_react46.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
@@ -20099,7 +20179,8 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           read("tasks", {})
         ]);
         const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
-        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings });
+        const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
+        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues });
       } catch {
         if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
@@ -20141,6 +20222,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           tasks: state.tasks,
           decisions: state.decisions,
           meetings: state.meetings,
+          queues: state.queues,
           // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
           // lands on that Bot or group. Nothing here re-decides which board that is.
           onOpen: (board) => {

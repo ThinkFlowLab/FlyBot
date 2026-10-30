@@ -709,7 +709,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
-@@ -50,12 +50,88 @@
+@@ -50,12 +79,88 @@
      }
    }
    const readOnly = () => {
@@ -799,7 +799,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const readFileState = async () => {
      let contents
      try {
-@@ -87,10 +87,32 @@
+@@ -87,10 +192,32 @@
        return undefined
      }
      if (parsed?.version === 1) {
@@ -833,7 +833,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      return undefined
    }
  
-@@ -104,6 +104,20 @@
+@@ -104,6 +231,20 @@
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
@@ -854,7 +854,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
        state.capabilities = { items: {} }
        migrated = true
-@@ -112,6 +112,11 @@
+@@ -112,6 +253,11 @@
        migrated = true
      }
      for (const bot of Object.values(state.bots)) {
@@ -866,7 +866,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        if (!Array.isArray(bot.capabilities)) {
          bot.capabilities = []
          migrated = true
-@@ -120,6 +120,11 @@
+@@ -120,6 +266,11 @@
          bot.color = currentColor(bot.color)
          migrated = true
        }
@@ -878,7 +878,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,384 @@
+@@ -161,12 +312,390 @@
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1215,9 +1215,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        return { project: readProject(project.id), ...(result ?? {}) }
 +      }
 +      case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
-+      // The read-only board (#1696, #1767): Project id in, its cards and the record beside them
-+      // out. The aggregate lives in project-board.js; it reads and returns, and writes nothing.
-+      // A host that has not installed it answers empty sections, never a missing key.
++      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
++      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
++      // so the board applies the same visibility rule `tasks` does (#1723).
 +      case 'project-board': {
 +        const board = (await rt.projectBoard?.(projectText(body.id, 200), actor)) ?? []
 +        const rows = Array.isArray(board) ? board : (board.rows ?? [])
@@ -1226,6 +1226,12 @@ diff --git a/src/host/store.js b/src/host/store.js
 +          tasks: rows,
 +          decisions: sections.decisions ?? { dir: null, files: [], reason: 'the board reads no decisions' },
 +          meetings: sections.meetings ?? { decided: [], pending: [], reason: 'the board reads no meetings' },
++          // The queue/lease/blocked groups (#1768) ride along with the sections: one read of the
++          // same Project, so the header counts and the cards cannot disagree.
++          waiting: sections.waiting ?? [],
++          inflight: sections.inflight ?? [],
++          blocked: sections.blocked ?? [],
++          counts: sections.counts ?? { waiting: null, inflight: null, blocked: null, done: null },
 +        }
 +      }
 +      default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')
@@ -1264,7 +1270,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -185,14 +185,24 @@
+@@ -185,14 +714,24 @@
      for (const room of stale) void rt.retitleRoom(room)
    })()
  
@@ -1290,7 +1296,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,11 +235,37 @@
+@@ -235,11 +774,37 @@
      return warnReadOnly()
    }
  
@@ -1328,7 +1334,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      state.revision += 1
      state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
      const snapshot = JSON.stringify(state, null, 2)
-@@ -260,9 +260,10 @@
+@@ -260,9 +825,10 @@
          ensureLock()
          await rename(temp, statePath)
          seen = stamp()
@@ -1340,7 +1346,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
-@@ -273,13 +273,37 @@
+@@ -273,13 +839,37 @@
      })
    }
  
@@ -1380,7 +1386,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const isMain = id => id !== undefined && state.mainBotIds.includes(id)
  
    // Group Sessions. A member speaks in each group from a hidden Session of its own,
-@@ -313,6 +313,13 @@
+@@ -313,6 +903,13 @@
        }
        for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
      }
@@ -1394,7 +1400,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      // The agents module owns the DSH Agent session index; it installs after this.
      rt.indexAgents?.()
    }
-@@ -328,6 +328,8 @@
+@@ -328,6 +925,8 @@
      delete room.sessions[botId]
      if (room.segments !== undefined) delete room.segments[botId]
      groupOwners.delete(sessionId)
@@ -1403,7 +1409,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,29 @@
+@@ -335,23 +934,29 @@
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined

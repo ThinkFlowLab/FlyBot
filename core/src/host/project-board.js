@@ -7,6 +7,10 @@
 // folder goes through `listProjectState`, which already hashes every file, and a decision file
 // is listed with a name, a date and one title line, never its body.
 //
+// #1768 adds the queue beside those: the waiting cards of a role queue, the cards a claim holds
+// (with its lease live or stalled) and the blocked cards, each with the line it already stores.
+// They are derived from the same `state.tasks` pass as the rows, never a second store.
+//
 // Read-only by construction: it reads `state.tasks`, `state.meetings` and the Project bindings,
 // asks each registered provider for the workflow refs of tasks that still exist, and returns the
 // sections. It writes nothing, starts nothing and is not called unless someone asks for the board.
@@ -16,6 +20,44 @@ import { columnOf } from '../shared/task-board.js'
 import { DECISIONS_DIR, listProjectState } from './project-state.js'
 
 const text = value => (typeof value === 'string' ? value.trim() : '')
+
+// The queue, the leases and the blocked cards are host truth the board never copied (#1768):
+// a member's role queue is `queueRole` on an open card with no `claimedBy` (`tasks.js`), a lease is
+// the one `tasks.js` writes, and a blocked card already stores the question it waits on. This read
+// derives those three groups from those fields, oldest wait first, and writes nothing.
+const ONE_LINE = 200
+const oneLine = value => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, ONE_LINE) : '')
+const stampOf = value => (Number.isFinite(value) ? value : null)
+
+// Waiting: an open card a role may claim and no member has. `waitedMs` is measured from the card's
+// own `createdAt`, so the board shows a duration a reader can check, not a guess.
+export function waitingOf(task, now) {
+  if (task === null || typeof task !== 'object') return null
+  if (task.status !== 'open') return null
+  const role = oneLine(task.queueRole)
+  if (role === '' || text(task.claimedBy) !== '') return null
+  const since = stampOf(task.createdAt)
+  return { id: String(task.id), role, since, waitedMs: since === null ? null : Math.max(0, now - since) }
+}
+
+// In flight: the card a member holds. A live lease reads running; an expired one reads stalled —
+// the card record is untouched either way, recovery stays `tasks.js`'s own path (#1720).
+export function inflightOf(task) {
+  if (task === null || typeof task !== 'object') return null
+  if (task.status !== 'claimed' && task.status !== 'working') return null
+  // The holder is the claim, not the assignee label: a card nobody claimed is waiting work, and
+  // only the queue's own claim (or the lease that claim wrote) says a member holds it.
+  const holder = oneLine(task.claimedBy) || oneLine(task.lease?.holder)
+  if (holder === '') return null
+  return { id: String(task.id), holder }
+}
+
+// Blocked: the reason is the card's own line, never a second copy.
+export function blockedOf(task) {
+  if (task === null || typeof task !== 'object' || task.status !== 'blocked') return null
+  const reason = oneLine(task.inputRequest?.question) || oneLine(task.queueReason) || oneLine(task.title) || ''
+  return { id: String(task.id), reason }
+}
 
 // A decision is read for its title line only: the head of the file is enough for a heading, and
 // the body stays where it is. The bound also keeps a megabyte file from being read to answer one
@@ -176,15 +218,21 @@ export function install(rt) {
     const id = text(projectId)
     const empty = {
       rows: [],
+      waiting: [],
+      inflight: [],
+      blocked: [],
+      counts: { waiting: 0, inflight: 0, blocked: 0, done: 0 },
       decisions: { dir: null, files: [], reason: 'no Project: nothing to read' },
       meetings: { decided: [], pending: [], reason: 'no Project: nothing to read' },
     }
     if (id === '') return empty
     const project = rt.readProject?.(id)
     if (!project) return empty
-    const tasks = rt.state?.tasks ?? {}
+    // A store that cannot be read is not an empty store (#1768): `null` keeps the two apart.
+    const tasks = rt.state?.tasks
+    const readable = tasks !== null && typeof tasks === 'object'
     const refs = new Map()
-    for (const ref of rt.projectRunRefs?.({ hasTask: taskId => Object.hasOwn(tasks, taskId) }) ?? []) {
+    for (const ref of rt.projectRunRefs?.({ hasTask: taskId => Object.hasOwn(tasks ?? {}, taskId) }) ?? []) {
       refs.set(ref.taskId, ref)
     }
     // #1723: a row is painted only when the caller could open that card through `tasks`. The
@@ -192,7 +240,8 @@ export function install(rt) {
     // nothing, because an unreadable rule is not a reason to widen a board.
     const visible = typeof rt.taskVisible === 'function' ? rt.taskVisible : () => false
     const rows = []
-    for (const task of Object.values(tasks)) {
+    const mine = []
+    for (const task of readable ? Object.values(tasks) : []) {
       if (task === null || typeof task !== 'object') continue
       if (!visible(task, actor)) continue
       const board = boardOf(task)
@@ -209,6 +258,7 @@ export function install(rt) {
         ? ownProject.id === id ? board.kind : null
         : runProject?.id === id ? 'workflow' : null
       if (source === null) continue
+      mine.push(task)
       const fromRun = ref !== undefined && (runProject === null || runProject.id === id)
       const audit = typeof rt.taskAudit === 'function' ? rt.taskAudit(task.id) : ''
       rows.push({
@@ -232,8 +282,40 @@ export function install(rt) {
         ...(fromRun ? { runId: ref.runId, ...(ref.nodeId ? { nodeId: ref.nodeId } : {}) } : {}),
       })
     }
+    const done = rows.filter(row => row.column === 'done').length
+    // An unreadable store answers unknown (#1768): `0` would claim the queue is empty, and the
+    // board must not turn "cannot read" into "nothing waiting".
+    const queues = !readable
+      ? { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } }
+      : buildQueues(mine, done)
     const decisions = await decisionsOf(project)
-    return { rows, decisions, meetings: meetingsOf(project, decisions) }
+    return { rows, ...queues, decisions, meetings: meetingsOf(project, decisions) }
+  }
+  const buildQueues = (mine, done) => {
+    const now = typeof rt.now === 'function' ? rt.now() : Date.now()
+    const waiting = []
+    const inflight = []
+    const blocked = []
+    for (const task of mine) {
+      const wait = waitingOf(task, now)
+      if (wait !== null) waiting.push(wait)
+      const flight = inflightOf(task)
+      if (flight !== null) {
+        const lease = task.lease !== null && typeof task.lease === 'object' ? task.lease : null
+        const live = lease !== null && Number.isFinite(lease.expiresAt) && lease.expiresAt > now
+        inflight.push({ ...flight, lease: lease === null ? 'none' : live ? 'live' : 'expired', stalled: lease !== null && !live })
+      }
+      const block = blockedOf(task)
+      if (block !== null) blocked.push(block)
+    }
+    // Oldest wait first: the card that has waited longest is the one a person wants next.
+    waiting.sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity) || a.id.localeCompare(b.id))
+    return { waiting, inflight, blocked, counts: { waiting: waiting.length, inflight: inflight.length, blocked: blocked.length, done } }
   }
   rt.projectBoard = projectBoard
+  // The three groups are their own read over the same pass, for a caller that wants only the queue.
+  rt.projectBoardQueues = async (projectId, actor) => {
+    const board = await projectBoard(projectId, actor)
+    return { waiting: board.waiting, inflight: board.inflight, blocked: board.blocked, counts: board.counts }
+  }
 }

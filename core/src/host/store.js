@@ -644,9 +644,9 @@ export function install(rt) {
         return { project: readProject(project.id), ...(result ?? {}) }
       }
       case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
-      // The read-only board (#1696, #1767): Project id in, its cards and the record beside them
-      // out. The aggregate lives in project-board.js; it reads and returns, and writes nothing.
-      // A host that has not installed it answers empty sections, never a missing key.
+      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
+      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
+      // so the board applies the same visibility rule `tasks` does (#1723).
       case 'project-board': {
         const board = (await rt.projectBoard?.(projectText(body.id, 200), actor)) ?? []
         const rows = Array.isArray(board) ? board : (board.rows ?? [])
@@ -655,6 +655,12 @@ export function install(rt) {
           tasks: rows,
           decisions: sections.decisions ?? { dir: null, files: [], reason: 'the board reads no decisions' },
           meetings: sections.meetings ?? { decided: [], pending: [], reason: 'the board reads no meetings' },
+          // The queue/lease/blocked groups (#1768) ride along with the sections: one read of the
+          // same Project, so the header counts and the cards cannot disagree.
+          waiting: sections.waiting ?? [],
+          inflight: sections.inflight ?? [],
+          blocked: sections.blocked ?? [],
+          counts: sections.counts ?? { waiting: null, inflight: null, blocked: null, done: null },
         }
       }
       default: throw projectRefusal(`Unknown endpoint ${endpoint}`, 'bot/not-found')

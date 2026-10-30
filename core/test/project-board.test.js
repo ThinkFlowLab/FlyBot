@@ -361,3 +361,67 @@ test('#1767: a Project without a decisions folder answers an empty list with the
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// #1768: the queue, the leases and the blocked cards beside the columns. The seed adds one card of
+// each shape on Project 1 and one on Project 2, so every group can be asked what it must not show.
+const queueSeed = () => {
+  const team = seed()
+  team.rooms.r2 = { id: 'r2', name: 'Garden', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {}, projectId: 'project-p2' }
+  team.projects['project-p2'] = { id: 'project-p2', name: 'P2', repository: 'ThinkFlowLab/FlyBot', defaultBranch: 'main', ownerUserId: 'owner-1', createdAt: 1, updatedAt: 1, status: 'active' }
+  team.tasks['task-w1'] = { id: 'task-w1', kind: 'group', status: 'open', queueRole: 'Dev', queueBy: 'a', origin: { roomId: 'r1' }, title: 'First queued', createdAt: 10, updatedAt: 10 }
+  team.tasks['task-w2'] = { id: 'task-w2', kind: 'group', status: 'open', queueRole: 'Dev', queueBy: 'a', origin: { roomId: 'r1' }, title: 'Second queued', createdAt: 20, updatedAt: 20 }
+  team.tasks['task-hold'] = { id: 'task-hold', kind: 'group', status: 'claimed', queueRole: 'Dev', claimedBy: 'Dev1', origin: { roomId: 'r1' }, title: 'Claimed', lease: { holder: 'Dev1', takenAt: Date.now() - 1000, expiresAt: Date.now() + 600000 }, createdAt: 30, updatedAt: 30 }
+  team.tasks['task-blocked'] = { id: 'task-blocked', kind: 'group', status: 'blocked', waitingFor: 'input', origin: { roomId: 'r1' }, title: 'Blocked card', inputRequest: { id: 'q1', question: 'Which branch should this ship on?' }, createdAt: 40, updatedAt: 40 }
+  team.tasks['task-far'] = { id: 'task-far', kind: 'group', status: 'open', queueRole: 'Dev', queueBy: 'a', origin: { roomId: 'r2' }, title: 'Other Project', createdAt: 50, updatedAt: 50 }
+  return team
+}
+
+test('#1768: two queued cards and one claimed read as 2 waiting / 1 in flight, holder named', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    const queues = await rt.projectBoardQueues('project-p1')
+    assert.equal(queues.counts.waiting, 2)
+    assert.equal(queues.counts.inflight, 1)
+    // Oldest wait first, with the role it is queued for.
+    assert.deepEqual(queues.waiting.map(item => item.id), ['task-w1', 'task-w2'])
+    assert.deepEqual(queues.waiting.map(item => item.role), ['Dev', 'Dev'])
+    assert.ok(Number.isFinite(queues.waiting[0].waitedMs) && queues.waiting[0].waitedMs >= queues.waiting[1].waitedMs)
+    // The holder is the member that claimed it, and a live lease reads running.
+    assert.deepEqual(queues.inflight.map(item => [item.id, item.holder, item.lease, item.stalled]), [['task-hold', 'Dev1', 'live', false]])
+  } finally { await stop() }
+})
+
+test('#1768: an expired lease reads stalled and the card record does not move', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    const before = JSON.stringify(rt.state.tasks['task-hold'])
+    rt.state.tasks['task-hold'].lease.expiresAt = Date.now() - 1000
+    const moved = JSON.stringify(rt.state.tasks['task-hold'])
+    assert.notEqual(moved, before, 'the test moved the lease itself')
+    const queues = await rt.projectBoardQueues('project-p1')
+    assert.deepEqual(queues.inflight.map(item => [item.id, item.stalled, item.lease]), [['task-hold', true, 'expired']])
+    assert.equal(JSON.stringify(rt.state.tasks['task-hold']), moved, 'reading the board wrote nothing')
+  } finally { await stop() }
+})
+
+test('#1768: a blocked card carries its own reason and another Project is in none of the groups', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    const queues = await rt.projectBoardQueues('project-p1')
+    assert.deepEqual(queues.blocked.map(item => [item.id, item.reason]), [['task-blocked', 'Which branch should this ship on?']])
+    // task-far is queued for the same role but lives on Project 2, and the counts are this Project's.
+    const ids = [...queues.waiting, ...queues.inflight, ...queues.blocked].map(item => item.id)
+    assert.ok(!ids.includes('task-far'), JSON.stringify(ids))
+    assert.deepEqual([queues.counts.waiting, queues.counts.inflight, queues.counts.blocked], [2, 1, 1])
+  } finally { await stop() }
+})
+
+test('#1768: an unreadable queue answers unknown, never zero', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    rt.state.tasks = null
+    const queues = await rt.projectBoardQueues('project-p1')
+    assert.deepEqual(queues.counts, { waiting: null, inflight: null, blocked: null, done: null })
+    assert.deepEqual([queues.waiting, queues.inflight, queues.blocked], [[], [], []])
+  } finally { await stop() }
+})

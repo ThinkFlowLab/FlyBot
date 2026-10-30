@@ -593,6 +593,20 @@ another owner's quiet window or opt-out before that endpoint is wired; an omitte
 the caller's own. The gate returns early on a missing id, so `project-memory` keeps the not-found
 refusal it answered before rather than turning an unknown id into a 403. Tests:
 `core/test/project-owner-gate.test.js`.
+Beside the columns the board reads three groups (#1768), from the same pass and never a
+second store: `waiting` is an open card with a `queueRole` and no claim, oldest wait first, carrying
+the role and the milliseconds since its own `createdAt`; `inflight` is the card a claim (or the lease
+that claim wrote) holds, its holder named, a live lease reading `live` and an expired one `stalled`
+without the card record changing; `blocked` is a blocked card with the one-line reason it already
+stored (`inputRequest.question`, else `queueReason`, else its title). `projectBoard(projectId, actor)`
+keeps answering the record it answered before — `rows`, `decisions`, `meetings` — and now carries the
+groups and the header counts (`waiting`/`inflight`/`blocked`/`done`) from the same read; the
+`project-board` endpoint answers them beside `tasks`, `decisions` and `meetings`, and
+`rt.projectBoardQueues` is the same read for a caller that wants only the queue. A store the host
+cannot read answers `counts` of `null`, never `0` (owner rule: an unreadable queue is unknown).
+Nothing here writes, and the queue semantics in `tasks.js` are untouched. Tests:
+`core/test/project-board.test.js`.
+
 Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
 Those rows are the ones the caller could open through `tasks` (#1723): `store.js` passes the
 authenticated actor into `projectBoard(projectId, actor)`, and the board drops every card

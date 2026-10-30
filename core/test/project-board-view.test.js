@@ -38,7 +38,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView } = module.exports
+const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView, waitedLabel } = module.exports
 const render = (component, props) => { index = 0; return component(props) }
 const flush = async () => {
   const queued = effects
@@ -199,4 +199,54 @@ test('#1767: an empty record names the folder it read and the missing decision f
   const bare = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [] }))
   assert.equal(bare.record.decisions.count, 0)
   assert.match(bare.record.decisions.emptyText, /no working folder/)
+})
+
+// #1768: the three groups beside the columns and the header counts. The host's read is passed in
+// as it came — including a `null` count, which must survive as "unknown" and never become 0.
+const queues = {
+  waiting: [
+    { id: 'task-w1', role: 'Dev', since: 100, waitedMs: 3 * 3600 * 1000 },
+    { id: 'task-w2', role: 'Dev', since: 200, waitedMs: 5 * 60 * 1000 },
+  ],
+  inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'expired', stalled: true }],
+  blocked: [{ id: 'task-g1', reason: 'Which branch should this ship on?' }],
+  counts: { waiting: 2, inflight: 1, blocked: 1, done: 1 },
+}
+
+test('#1768: the view carries the three groups and the header counts', () => {
+  const view = plain(projectBoardView({ project: { id: 'project-1', name: 'FlyBot' }, rows, tasks: [], queues }))
+  assert.deepEqual(view.counts, { waiting: 2, inflight: 1, blocked: 1, done: 1 })
+  assert.deepEqual(view.queues.map(entry => entry.group), ['waiting', 'inflight', 'blocked'])
+  assert.deepEqual(view.queues[0].items.map(item => [item.id, item.role]), [['task-w1', 'Dev'], ['task-w2', 'Dev']])
+  assert.deepEqual(view.queues[1].items.map(item => [item.id, item.holder, item.state]), [['task-b1', 'Dev4', 'stalled']])
+  assert.deepEqual(view.queues[2].items.map(item => [item.id, item.reason]), [['task-g1', 'Which branch should this ship on?']])
+  assert.equal(waitedLabel(3 * 3600 * 1000), '3h')
+  assert.equal(waitedLabel(5 * 60 * 1000), '5m')
+})
+
+test('#1768: an unreadable count stays unknown and is never rendered as 0', () => {
+  const view = plain(projectBoardView({
+    project: { id: 'project-1', name: 'FlyBot' }, rows: [], tasks: [],
+    queues: { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } },
+  }))
+  assert.deepEqual(view.counts, { waiting: null, inflight: null, blocked: null, done: null })
+  const nodes = all(ProjectBoardPane({ project: view.projectId === null ? {} : { id: 'project-1', name: 'FlyBot' }, rows: [], canManage: false, tasks: [], queues: { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } } }))
+  const text = nodes.map(textOf).join(' | ')
+  assert.ok(/unknown/.test(text), text)
+  assert.ok(!/Waiting: 0/.test(text), text)
+  // A board with nothing readable is its own state, not a silent zero.
+  assert.equal(view.empty, true)
+})
+
+test('#1768: the pane draws each group and a blocked card shows its reason', () => {
+  const nodes = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, tasks: [], queues }))
+  const sections = nodes.filter(node => node && node.props && node.props['data-queue'])
+  assert.deepEqual(sections.map(node => node.props['data-queue']), ['waiting', 'inflight', 'blocked'])
+  const text = nodes.map(textOf).join(' | ')
+  assert.ok(text.includes('Dev4 · stalled'), text)
+  assert.ok(text.includes('Which branch should this ship on?'), text)
+  assert.ok(text.includes('3h'), text)
+  // The rows keep their task id, so the click-through to `#task=<id>` is unchanged.
+  const ids = nodes.filter(node => node && node.props && node.props['data-task-id']).map(node => node.props['data-task-id'])
+  assert.ok(ids.includes('task-w1') && ids.includes('task-b1') && ids.includes('task-g1'), JSON.stringify(ids))
 })

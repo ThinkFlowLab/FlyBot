@@ -297,6 +297,14 @@ no polling and no per-Bot read: `projects`, `project-read`, `project-board`, and
 are joined against. Tests: `core/test/project-board-view.test.js`, `core/test/project-board.test.js`,
 `core/test/project-board-entry.test.js`.
 
+The pane draws the three host groups beside the columns (#1768) — `Waiting` with the role and how long
+the card waited, `In flight` with the holder and `running`/`stalled`, `Blocked` with the card's own
+reason — and the header counts waiting / in flight / blocked / done. The groups and the counts are the
+`project-board` answer, not a second read: `waiting`, `inflight`, `blocked` and `counts` ride
+along with `tasks` in the same response. A count the host answered as `null` renders as `unknown` and
+never as `0`; a group with no items is not drawn, and a board with neither rows nor groups is still the
+empty state. Rows keep their task id, so `#task=<id>` still opens the card.
+
 The board's three column names go through the same dictionary as the task board: `not-started`,
 `in-progress` and `done` are keys in `i18n.js`, so a zh UI reads 未开始 / 进行中 / 已完成 instead of the raw
 status.
