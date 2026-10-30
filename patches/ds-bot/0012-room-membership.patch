@@ -594,10 +594,11 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
            ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
            : null,
        h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
-         // The host checks for two members on every change, even a rename.
+-        // The host checks for two members on every change, even a rename.
 -        members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
 -          : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
 -            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')))),
++        // The host's two-Bot floor guards membership changes; this hint warns before one.
 +        members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
 +          : `${admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
 +            : t('No admin yet. An admin can call members with @Name, change the group, and post here.')}${room.origin === 'face-to-face' || room.origin === 'inbound-share' ? '' : ` ${t('The task lead divides the board. When unset, the admin does.')}`}`)),
@@ -1047,12 +1048,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // A member's group Session, created on its first turn there. A new one starts with
    // a fresh look at the log and a brief of the member's own chat; the brief is the
    // first message, so it stays fixed and the prefix stays cacheable.
--  async function groupSessionFor(room, member) {
--    room.sessions ??= {}
--    const known = room.sessions[member.id]
--    if (known !== undefined) {
--      await rt.ensureCapabilities(known)
--      return { id: known, brief: undefined }
 +  // The brief is the member's owner's private chat with the Bot. In a room where
 +  // another owner sits it stays out unless that owner shared it with this room (#53).
 +  const briefAllowed = (room, member) => {
@@ -1064,7 +1059,19 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      // A granted remote Bot speaks for another home; its handle stands for that owner.
 +      else if (p.remote) owners.add(p.handle)
 +      else owners.add(rt.botOf(p.id)?.ownerId)
-     }
++    }
++    owners.delete(undefined)
++    if (owners.size <= 1) return true
++    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
++  }
++
+   async function groupSessionFor(room, member) {
+-    room.sessions ??= {}
+-    const known = room.sessions[member.id]
+-    if (known !== undefined) {
+-      await rt.ensureCapabilities(known)
+-      return { id: known, brief: undefined }
+-    }
 -    const id = await rt.createSession(`${member.name} · ${room.name}`, { dir: rt.workDirOf({ botId: member.id, roomId: room.id }) })
 -    room.sessions[member.id] = id
 -    rt.groupOwners.set(id, { botId: member.id, roomId: room.id })
@@ -1073,12 +1080,6 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    if (ref !== undefined) {
 -      await rt.selectSessionModel(id, splitRef(ref))
 -        .catch(error => rt.warn('ds-bot: model for %s in %s not applied: %s', member.name, room.name, error))
-+    owners.delete(undefined)
-+    if (owners.size <= 1) return true
-+    return participants.some(p => p.kind === 'bot' && p.id === member.id && p.briefShared === true)
-+  }
-+
-+  async function groupSessionFor(room, member) {
 +    const session = await participant.open({ room, member })
 +    return { id: session.id, brief: session.created && briefAllowed(room, member) ? await rt.ownChatBrief(member) : undefined }
 +  }
@@ -1358,7 +1359,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        if (by === undefined) delete called.by
        else called.by = by
        round.slots.splice(next, 0, called)
-@@ -285,23 +285,185 @@ export function install(rt) {
+@@ -285,34 +285,204 @@ export function install(rt) {
    // Session's inbox, so it does not open another round when this one ends. Returns
    // the number of turns added, which the round's limit allows for.
    function drainRoomInbox(room, round, turns, index, agent) {
@@ -1411,11 +1412,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    // The user spoke in this room, so Bots may start their own rounds again.
 -    room.botRounds = 0
 +    // The user spoke in this room, so late replies may be answered again.
-+    room.lateRounds = 0
-+    void rt.save().catch(() => {})
-+    return round.slots.length - before
-+  }
-+
+     room.lateRounds = 0
+     void rt.save().catch(() => {})
+     return round.slots.length - before
+   }
+ 
 +  // One line that reaches the round while a member speaks (#1267). It is logged at once — the room
 +  // shows it when it is sent, not at the next slot — and `notePostedLine` keeps the next relay from
 +  // logging it a second time. Its pending copy leaves the relay's queue, because this round answers
@@ -1428,8 +1429,8 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    if (at !== -1) rt.roomInbox.set(room.id, queued.toSpliced(at, 1))
 +    round.replies.push({ kind: 'user', text: line.text, time: Date.now(), authorId: line.authorId, authorKind: line.authorKind, name: line.authorName })
 +    // The user spoke in this room, so late replies may be answered again.
-     room.lateRounds = 0
-     void rt.save().catch(() => {})
++    room.lateRounds = 0
++    void rt.save().catch(() => {})
 +    // The one line that ends work in flight (#1267 B): the slot is superseded, its turn is cancelled,
 +    // and nothing it says when it stops is posted. The line stays in the Session's queue, so the head
 +    // drain opens it as a fresh line (admin first) for the room to answer.
@@ -1549,10 +1550,11 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      const uncapped = new Set(callees.filter(bot => rt.isAdminOf(room, bot.id)).map(bot => bot.id))
 +      callMembers(round, turns, index - 1, callees, `${call.name} mentioned you`, leads ? ROOM_ADMIN_TURNS_EACH : ROOM_TURNS_EACH, call.by, uncapped, call.text)
 +    }
-     return round.slots.length - before
-   }
- 
-@@ -310,9 +310,17 @@ export function install(rt) {
++    return round.slots.length - before
++  }
++
+   async function runRound(room, round, signal, agent) {
+     let limit = round.slots.length + ROOM_EXTRA_TURNS + (room.admin ? ROOM_ADMIN_EXTRA_TURNS : 0)
      const turns = new Map()
      // The inbox check keeps a message sent during the last speaker's turn inside
      // this round: it drains at the loop's head even once the slots ran out.

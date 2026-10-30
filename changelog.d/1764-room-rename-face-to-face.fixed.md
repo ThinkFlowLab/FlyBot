@@ -1,0 +1,1 @@
+Renaming a face-to-face room no longer fails with "A group chat needs at least two Bots": the host applies that floor only to a patch that actually changes membership, so a name, notice or reply-mode edit goes through in a face-to-face or inbound-share room while a normal room's membership patch still needs two Bots ([#1764](https://github.com/ThinkFlowLab/FlyBot/issues/1764)).

@@ -2400,3 +2400,23 @@ test('#1167: a hidden shared room stays hidden for a later line or a stale join,
   assert.equal(room.hidden, undefined, 'the room opens again')
   assert.equal(roomVisibleTo(rt.state, actorB, room.id), true)
 })
+
+test('#1764: a face-to-face room is renamed without the two-Bot floor', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  await rt.load()
+  const room = await rt.upsertFaceRoom(FACE_SPEC)
+  assert.deepEqual(room.members, ['spec-a'], 'only the local Bot is a member; the seats are remote')
+  const renamed = await call('update-room', { id: room.id, name: 'Renamed room' })
+  assert.equal(renamed.ok, true, renamed.error?.message)
+  assert.equal(rt.roomOf(room.id).name, 'Renamed room')
+  assert.deepEqual(rt.roomOf(room.id).members, ['spec-a'], 'the rename changes no membership')
+})
+
+test('#1764: a normal room still refuses a membership patch that leaves one Bot', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  const refused = await call('update-room', { id: 'war', members: ['chief-a'] })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /at least two Bots/)
+  await rt.load()
+  assert.deepEqual(rt.roomOf('war').members, ['chief-a', 'chief-b'], 'the refused patch changed nothing')
+})

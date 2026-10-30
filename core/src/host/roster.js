@@ -290,8 +290,8 @@ export function install(rt) {
     }
   }
 
-  function checkMembers(members) {
-    if (members.length < 2) throw new Error('A group chat needs at least two Bots')
+  function checkMembers(members, { floor = true } = {}) {
+    if (floor && members.length < 2) throw new Error('A group chat needs at least two Bots')
     if (members.length > ROOM_MAX_MEMBERS) throw new Error(`A group chat holds at most ${ROOM_MAX_MEMBERS} Bots`)
   }
 
@@ -375,7 +375,13 @@ export function install(rt) {
     let members = Array.isArray(patch.members) ? [...new Set(patch.members)] : [...room.members]
     for (const member of patch.add ?? []) if (!members.includes(member)) members.push(member)
     members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))
-    checkMembers(members)
+    // #1764: only a patch that changes membership is judged by the two-Bot floor. A face-to-face
+    // or inbound-share room's seats are synced, not patched, so its local list is not its membership.
+    const changesMembers = patch.members !== undefined || patch.add !== undefined || patch.remove !== undefined
+    if (changesMembers) {
+      const syncedSeats = room.origin === 'face-to-face' || room.origin === 'inbound-share'
+      checkMembers(members, { floor: !syncedSeats })
+    }
     let admin = room.admin ?? null
     if (patch.admin !== undefined) {
       admin = patch.admin || null

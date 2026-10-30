@@ -367,7 +367,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
  
    function cleanRoomName(text, selfId) {
-@@ -257,7 +257,7 @@ export function install(rt) {
+@@ -257,21 +257,36 @@ export function install(rt) {
    async function followMemberNames(rooms = Object.values(state.rooms)) {
      for (const room of rooms) {
        if (room.named) continue
@@ -376,7 +376,13 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        if (next === room.name) continue
        room.name = next
        await retitleRoom(room)
-@@ -269,9 +269,24 @@ export function install(rt) {
+     }
+   }
+ 
+-  function checkMembers(members) {
+-    if (members.length < 2) throw new Error('A group chat needs at least two Bots')
++  function checkMembers(members, { floor = true } = {}) {
++    if (floor && members.length < 2) throw new Error('A group chat needs at least two Bots')
      if (members.length > ROOM_MAX_MEMBERS) throw new Error(`A group chat holds at most ${ROOM_MAX_MEMBERS} Bots`)
    }
  
@@ -424,7 +430,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        return state.rooms[id]
      } catch (error) {
        // The group's Session was already made: archive it instead of leaving an orphan.
-@@ -306,13 +306,19 @@ export function install(rt) {
+@@ -306,17 +306,29 @@ export function install(rt) {
      }
    }
  
@@ -447,6 +453,17 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      let members = Array.isArray(patch.members) ? [...new Set(patch.members)] : [...room.members]
      for (const member of patch.add ?? []) if (!members.includes(member)) members.push(member)
      members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))
+-    checkMembers(members)
++    // #1764: only a patch that changes membership is judged by the two-Bot floor. A face-to-face
++    // or inbound-share room's seats are synced, not patched, so its local list is not its membership.
++    const changesMembers = patch.members !== undefined || patch.add !== undefined || patch.remove !== undefined
++    if (changesMembers) {
++      const syncedSeats = room.origin === 'face-to-face' || room.origin === 'inbound-share'
++      checkMembers(members, { floor: !syncedSeats })
++    }
+     let admin = room.admin ?? null
+     if (patch.admin !== undefined) {
+       admin = patch.admin || null
 @@ -328,6 +328,14 @@ export function install(rt) {
        admin = null
      }
@@ -693,7 +710,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
-@@ -50,12 +50,88 @@
+@@ -50,12 +50,88 @@ export function install(rt) {
      }
    }
    const readOnly = () => {
@@ -783,7 +800,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const readFileState = async () => {
      let contents
      try {
-@@ -87,10 +87,32 @@
+@@ -87,10 +87,32 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -817,7 +834,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      return undefined
    }
  
-@@ -104,6 +104,20 @@
+@@ -104,6 +104,20 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
@@ -838,7 +855,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      if (state.capabilities === null || typeof state.capabilities !== 'object' || Array.isArray(state.capabilities)) {
        state.capabilities = { items: {} }
        migrated = true
-@@ -112,6 +112,11 @@
+@@ -112,6 +112,11 @@ export function install(rt) {
        migrated = true
      }
      for (const bot of Object.values(state.bots)) {
@@ -850,7 +867,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        if (!Array.isArray(bot.capabilities)) {
          bot.capabilities = []
          migrated = true
-@@ -120,6 +120,11 @@
+@@ -120,6 +120,11 @@ export function install(rt) {
          bot.color = currentColor(bot.color)
          migrated = true
        }
@@ -862,7 +879,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,384 @@
+@@ -161,12 +161,384 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1248,7 +1265,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -185,14 +185,24 @@
+@@ -185,14 +185,24 @@ export function install(rt) {
      for (const room of stale) void rt.retitleRoom(room)
    })()
  
@@ -1274,7 +1291,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,11 +235,37 @@
+@@ -235,11 +235,37 @@ export function install(rt) {
      return warnReadOnly()
    }
  
@@ -1312,7 +1329,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      state.revision += 1
      state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
      const snapshot = JSON.stringify(state, null, 2)
-@@ -260,9 +260,10 @@
+@@ -260,9 +260,10 @@ export function install(rt) {
          ensureLock()
          await rename(temp, statePath)
          seen = stamp()
@@ -1324,7 +1341,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          throw error
        }
      })
-@@ -273,13 +273,37 @@
+@@ -273,13 +273,37 @@ export function install(rt) {
      })
    }
  
@@ -1364,7 +1381,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    const isMain = id => id !== undefined && state.mainBotIds.includes(id)
  
    // Group Sessions. A member speaks in each group from a hidden Session of its own,
-@@ -313,6 +313,13 @@
+@@ -313,6 +313,13 @@ export function install(rt) {
        }
        for (const [botId, sessionId] of Object.entries(room.sessions ?? {})) groupOwners.set(sessionId, { botId, roomId: room.id })
      }
@@ -1378,7 +1395,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      // The agents module owns the DSH Agent session index; it installs after this.
      rt.indexAgents?.()
    }
-@@ -328,6 +328,8 @@
+@@ -328,6 +328,8 @@ export function install(rt) {
      delete room.sessions[botId]
      if (room.segments !== undefined) delete room.segments[botId]
      groupOwners.delete(sessionId)
@@ -1387,7 +1404,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,29 @@
+@@ -335,23 +335,29 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1421,11 +1438,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    projectMemory, projectMemoryOf, projectMemoryFor, appendProjectMemory, setProjectDigest, deleteProject,
    })
  }
-
 diff --git a/src/host/tools.js b/src/host/tools.js
 --- a/src/host/tools.js
 +++ b/src/host/tools.js
-@@ -1,10 +1,48 @@
+@@ -1,9 +1,47 @@
  // Team tools: the roster, bot-to-bot messages, group chat settings and posts, and the
  // question card. Group rounds and reading chats are in groups.js.
  import { randomUUID } from 'node:crypto'
@@ -1441,7 +1457,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +import { OTHER, settled } from './turn-origin.js'
 +import { cleanName } from './delivery.js'
 +import { retiredBot } from './store.js'
- 
++
 +// A run Bot (ephemeral) is not a team member: every tool below has an effect that reaches past
 +// the run Bot's own Session — it messages, stops or edits another Bot, edits a group, writes or
 +// attaches a capability, asks the owner for a secret, arms or changes a schedule, reads the team
@@ -1472,11 +1488,10 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +// One sentence that names the reason and no substitute route: the run Bot cannot become a team
 +// member by finding another tool that does the same thing.
 +export const EPHEMERAL_REFUSAL = 'A running Bot is not a team member.'
-+
+ 
  export const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] }
  export const GROUP_REF = { type: 'string', required: true, description: 'Exact group chat name from list_bots' }
- const BLOCKING_QUESTION_TOOL = 'ask_user_question'
-@@ -18,6 +56,21 @@
+@@ -18,6 +18,21 @@ const WORK_DIR_PARAM = { type: 'string', description: 'Full path of the folder t
  export function install(rt) {
    const { ctx, state } = rt
  
@@ -1498,7 +1513,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const callerBot = (exec) => rt.botOf(rt.selfOf(exec.agent?.id))
    const callerRoom = (exec) => {
      const roomId = rt.groupOwners.get(exec.agent?.id)?.roomId
-@@ -27,39 +80,112 @@
+@@ -27,39 +27,112 @@ export function install(rt) {
    const roomLine = (room, self) => {
      const members = room.members.map(rt.botOf).filter(Boolean)
        .map(bot => `${bot.name}${bot.id === room.admin ? ' (admin)' : ''}${bot.id === self ? ' (you)' : ''}`)
@@ -1618,7 +1633,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        ].join('\n')
      },
    }))
-@@ -81,12 +207,18 @@
+@@ -81,12 +81,18 @@ export function install(rt) {
  
    // A tool that throws shows as failed in the chat, instead of as sent or stopped.
    const refuse = (message) => { throw new Error(message) }
@@ -1638,7 +1653,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        message: { type: 'string', required: true, description: 'Self-contained message; the other Bot cannot see this conversation' },
        reply_to: {
          type: 'string',
-@@ -104,8 +236,18 @@
+@@ -104,8 +104,18 @@ export function install(rt) {
        await rt.load()
        const sender = callerBot(exec)
        if (sender === undefined) return 'Only Bots on the team can use message_bot.'
@@ -1659,7 +1674,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) return 'You cannot message yourself.'
        const turn = rt.live.get(exec.agent?.id)
        const hop = Math.max(turn?.info?.hop ?? 0, ...(turn?.joined ?? []).map(joined => joined.info?.hop ?? 0))
-@@ -118,7 +260,11 @@
+@@ -118,7 +118,11 @@ export function install(rt) {
        const toUser = args.reply_to === 'user'
        const working = rt.live.get(chat)?.turn !== undefined
        const steer = args.when !== 'queue' && !toUser
@@ -1672,7 +1687,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const sent = toUser
          ? `Delivered to ${target.name}. It will answer the user in its own chat; nothing comes back to you, so point the user to ${target.name}'s chat instead of relaying.`
          : working && steer
-@@ -152,8 +298,8 @@
+@@ -152,8 +152,8 @@ export function install(rt) {
        await rt.load()
        const sender = callerBot(exec)
        if (sender === undefined || !rt.isMain(sender.id)) refuse('Only a Main Bot can stop other Bots.')
@@ -1683,7 +1698,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (target.id === sender.id) refuse('You cannot stop yourself.')
        const { running } = activeSessions(target.id)
        if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
-@@ -162,21 +308,32 @@
+@@ -162,21 +162,32 @@ export function install(rt) {
          agent.cancel({ kind: 'hook', reason: 'ds-bot/stopped' })
        }
        const why = String(args.reason ?? '').trim() || 'Stop what you are doing; the previous turn was ended on purpose. Acknowledge briefly.'
@@ -1719,7 +1734,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
      },
      output,
      async execute(args, exec) {
-@@ -186,8 +343,8 @@
+@@ -186,8 +186,8 @@ export function install(rt) {
          const workDir = args.work_dir ? await rt.cleanWorkDir(args.work_dir) : undefined
          const name = String(args.name ?? '').trim()
          await rt.approveFolder(exec, { path: workDir, who: { en: `the new Bot ${name}`, zh: `新 Bot ${name} ` } })
@@ -1730,7 +1745,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        } catch (error) {
          return `Could not create the Bot: ${error.message}`
        }
-@@ -212,7 +369,7 @@
+@@ -212,7 +212,7 @@ export function install(rt) {
        const self = rt.selfOf(exec.agent?.id)
        const caller = rt.botOf(self)
        if (caller === undefined) return 'Only Bots on the team can use update_bot.'
@@ -1739,7 +1754,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (bot === undefined) return `No Bot named ${args.bot}.`
        if (bot.id !== caller.id && !rt.isMain(self)) return 'Only a Main Bot can change another Bot. Leave out bot to change yourself, or ask a Main Bot with message_bot.'
        try {
-@@ -231,6 +388,34 @@
+@@ -231,6 +231,34 @@ export function install(rt) {
    }))
  
    ctx.tools.register(defineTool({
@@ -1774,7 +1789,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
      name: 'list_models',
      description: 'List the models a Bot can run on, as provider/model refs for create_bot and update_bot.',
      parameters: {},
-@@ -251,13 +436,13 @@
+@@ -251,13 +251,13 @@ export function install(rt) {
      const bots = []
      const unknown = []
      for (const ref of nameList(refs)) {
@@ -1790,7 +1805,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    const groupNames = self => visibleRooms(self).map(room => `"${room.name}"`).join(', ') || 'none'
    const pickRoom = (ref, self) => {
      const matches = rt.findRooms(ref).filter(room => visibleRooms(self).includes(room))
-@@ -283,7 +468,7 @@
+@@ -283,7 +283,7 @@ export function install(rt) {
        if (!rt.isMain(self)) return 'Only a Main Bot can create group chats. Ask a Main Bot instead.'
        const { bots, unknown } = resolveBots(args.members)
        if (unknown.length > 0) return `No Bot named ${unknown.join(', ')}. Team: ${teamNames()}`
@@ -1799,7 +1814,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
        const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
        try {
-@@ -297,7 +482,7 @@
+@@ -297,7 +297,7 @@ export function install(rt) {
  
    ctx.tools.register(defineTool({
      name: 'update_group',
@@ -1808,7 +1823,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
      parameters: {
        group: GROUP_REF,
        name: { type: 'string', description: 'New group name; an empty string names it after its members again' },
-@@ -305,6 +490,7 @@
+@@ -305,6 +305,7 @@ export function install(rt) {
        add_members: { type: 'array', items: { type: 'string' }, description: 'Exact names of Bots to add' },
        remove_members: { type: 'array', items: { type: 'string' }, description: 'Exact names of Bots to remove' },
        admin: { type: 'string', description: 'Member to make the admin; "none" leaves the group without one (Main Bots only)' },
@@ -1816,7 +1831,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        mode: MODE_PARAM,
        work_dir: { ...WORK_DIR_PARAM, description: `${WORK_DIR_PARAM.description}. Every member works there in this group; an empty string lets each member work in its own folder again (Main Bots only)` },
      },
-@@ -325,10 +511,18 @@
+@@ -325,10 +325,18 @@ export function install(rt) {
        if (args.admin !== undefined && args.admin !== '') {
          if (/^(none|nobody|null|无|没有)$/i.test(String(args.admin).trim())) admin = null
          else {
@@ -1836,7 +1851,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        try {
          const workDir = moving ? await rt.cleanWorkDir(args.work_dir) : undefined
          // A Bot that joins a group with a folder works there from its first turn.
-@@ -345,6 +539,7 @@
+@@ -345,6 +345,7 @@ export function install(rt) {
            notice: args.notice,
            mode: args.mode,
            admin,
@@ -1844,7 +1859,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
            add: add.bots.map(bot => bot.id),
            remove: remove.bots.map(bot => bot.id),
            ...(moving ? { workDir: workDir ?? '' } : {}),
-@@ -395,12 +590,11 @@
+@@ -395,12 +395,11 @@ export function install(rt) {
        if ((info?.hop ?? 0) >= MAX_HOPS) return 'This chain of Bot messages is already long. Stop here and report to the user instead.'
        const text = String(args.message ?? '').trim()
        if (text === '') return 'Write a message to post.'
@@ -1860,7 +1875,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        } catch (failure) {
          return `Could not post in "${room.name}": ${failure.message}`
        }
-@@ -445,6 +639,10 @@
+@@ -445,6 +445,10 @@ export function install(rt) {
          .filter(option => option.label !== '')
          .slice(0, 6)
        if (options.length === 0) return 'Give at least one option.'
@@ -1871,7 +1886,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        // A hidden Bot-to-Bot turn shows none of its calls, so its card goes to the
        // composer dock, which takes questions without a call.
        const turn = rt.live.get(id)?.turn
-@@ -465,6 +663,77 @@
+@@ -465,6 +465,77 @@ export function install(rt) {
      },
    }))
  
@@ -1949,7 +1964,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
    // dsh's own question tool holds the turn open until the user answers, and every
    // message from another Bot or a group round queues behind it. Bot Sessions ask
    // through ask_user instead, so the tool is taken out of their tool list.
-@@ -525,7 +794,7 @@
+@@ -525,7 +525,7 @@ export function install(rt) {
      name: 'save_capability',
      description: 'Create or update a shared MCP server, skill, or pack. Changes apply from your next message.',
      parameters: {
@@ -1958,7 +1973,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        kind: { type: 'string', required: true, enum: ['mcp', 'skill', 'pack'] },
        description: { type: 'string', description: 'What this capability provides' },
        transport: { type: 'string', enum: ['stdio', 'streamable-http'], description: 'How to reach an MCP server: a local command or an HTTP URL' },
-@@ -545,7 +814,7 @@
+@@ -545,7 +545,7 @@ export function install(rt) {
        try {
          const item = await rt.capabilitySave(args, { botId: self })
          const approval = item.kind === 'mcp' && item.transport === 'stdio' && !item.approved
@@ -1967,7 +1982,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
            : ''
          return `Saved ${item.name}. Bots with it attached use the change from their next message.${approval}`
        } catch (error) { return error.message }
-@@ -587,7 +856,7 @@
+@@ -587,7 +587,7 @@ export function install(rt) {
              : attached ? [attached] : []
            const approvals = members
              .filter(item => item.kind === 'mcp' && item.transport === 'stdio' && item.approved !== true)
@@ -1976,7 +1991,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
              .join('')
            return `${verb} ${args.name} ${args.bot ? `to ${result.bot}` : 'to yourself'}. Changes apply from ${result.bot}'s next message.${endpoint === 'attach' ? approvals : ''}`
          } catch (error) { return error.message }
-@@ -595,5 +864,172 @@
+@@ -595,5 +595,172 @@ export function install(rt) {
      }))
    }
  

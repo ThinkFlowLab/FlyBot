@@ -271,7 +271,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
           ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
           : null,
       h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
-        // The host checks for two members on every change, even a rename.
+        // The host's two-Bot floor guards membership changes; this hint warns before one.
         members.length + humans.length + remotes.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
           : `${admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
             : t('No admin yet. An admin can call members with @Name, change the group, and post here.')}${room.origin === 'face-to-face' || room.origin === 'inbound-share' ? '' : ` ${t('The task lead divides the board. When unset, the admin does.')}`}`)),
