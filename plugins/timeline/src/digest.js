@@ -99,7 +99,9 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
     counted: bots.reduce((sum, bot) => sum + bot.counted, 0),
     tokens: { input: sumTokens('input'), output: sumTokens('output'), cacheRead: sumTokens('cacheRead'), cacheWrite: sumTokens('cacheWrite'), calls: sumTokens('calls') },
     longestWait: longest === undefined ? null : { id: longest.id, from: longest.from, to: longest.to, waitedMs: longest.waitedMs ?? 0 },
-    unhealthy: bots.filter(bot => bot.turns >= ERROR_TURNS_MIN && bot.errorRate >= ERROR_RATE_MIN).map(bot => bot.id),
+    // The same denominator as the per-Bot flag above: a failure that began before the window is
+    // counted there, so naming against `turns` alone drops a Bot the report itself flags (#1780).
+    unhealthy: bots.filter(bot => bot.counted >= ERROR_TURNS_MIN && bot.errorRate >= ERROR_RATE_MIN).map(bot => bot.id),
   }
 
   const from = clock(window.from)

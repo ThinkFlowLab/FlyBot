@@ -1,0 +1,1 @@
+The timeline report's `## Team` roll-up now names the same Bots its own per-Bot sections flag: a Bot whose failed turns began before the window (so it has more failures than turns inside it) appears under `needs a look` again instead of being dropped while its section still reads `3 of 3 turns failed` ([#1780](https://github.com/ThinkFlowLab/FlyBot/issues/1780)).

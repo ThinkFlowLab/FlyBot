@@ -102,6 +102,19 @@ test('#582: a Bot that fails most turns is named as needing a look', () => {
   assert.match(digest.markdown, /- look: 3 of 4 turns failed/)
 })
 
+// The per-Bot flag counts against `max(turns, errors)` (#1579): a failure that began before the
+// window still belongs to a turn the window carries. `## Team` must name that Bot too, or the
+// report's roll-up disagrees with the section above it (#1780).
+test('#1780: needs a look names a Bot whose failures began before the window', () => {
+  const digest = buildDigest(make({
+    lanes: [{ id: 'b1', kind: 'bot', name: 'Writer' }],
+    utilization: [{ lane: 'b1', windowMs: 100_000, busyMs: 1000, turns: 2, errors: 3, running: false }],
+  }), { now: 100_000 })
+  assert.deepEqual(digest.bots[0].flags, ['3 of 3 turns failed'])
+  assert.deepEqual(digest.team.unhealthy, ['b1'])
+  assert.match(digest.markdown, /- needs a look: b1/)
+})
+
 // The rollup is the sum of the per-Bot numbers, never a separate count: a report a person reads
 // must not disagree with the lines above it.
 test('#582: the team rollup equals the Bot sections', () => {
