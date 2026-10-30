@@ -36,7 +36,7 @@ function start() {
       resolveAgent: async sessionId => ({ agent: { session: { id: sessionId }, followup: message => sent.push({ sessionId, message }) } }),
       selectModel: async () => {},
       prompt: async (request) => {
-        prompts.push({ sessionId: request.sessionId, text: request.content.map(part => part.text).join('') })
+        prompts.push({ sessionId: request.sessionId, mode: request.mode, text: request.content.map(part => part.text).join('') })
         return { accepted: true }
       },
       page: async () => ({ events: [] }),
@@ -84,6 +84,7 @@ test('#642: three lines inside the window open one turn, in arrival order', asyn
   await drain()
   assert.equal(prompts.length, 1, 'the burst opens one turn, not three')
   assert.equal(prompts[0].text, 'change that one\nand that one too\nand read the log while you are there')
+  assert.equal(prompts[0].mode, 'queue', 'an idle burst still queues its one turn (#642 is unchanged)')
 })
 
 test('#642: a line after the window opens its own turn', async (t) => {
@@ -205,4 +206,60 @@ test('#682: a failed flush on the send path answers the sender the error, not ok
   const retried = await call('send', { sessionId: chief, text: 'busy again' })
   assert.equal(retried.ok, true)
   assert.deepEqual(prompts.map(entry => entry.text), ['held one', 'busy again'], 'the kept line still goes first')
+})
+
+test('#707: a line sent while a turn runs steers into it at its next step', async (t) => {
+  const { call, prompts, rt, stop } = start()
+  t.after(stop)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+
+  rt.liveOf(chief).turn = 'turn-1'
+  await call('send', { sessionId: chief, text: 'actually use the other branch' })
+  await drain()
+  assert.deepEqual(prompts.map(entry => [entry.text, entry.mode]), [['actually use the other branch', 'steer']],
+    'the running turn reads the line at its next step instead of a queued turn opening later')
+
+  t.mock.timers.tick(1_500)
+  await drain()
+  assert.equal(prompts.length, 1, 'the steer opened no second turn behind the timer')
+})
+
+test('#707: the held lines reach a turn that starts inside the window as steers, ahead of the new line', async (t) => {
+  const { call, prompts, rt, stop } = start()
+  t.after(stop)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+
+  await call('send', { sessionId: chief, text: 'held one' })
+  rt.liveOf(chief).turn = 'turn-1'
+  await call('send', { sessionId: chief, text: 'busy one' })
+  await drain()
+  assert.deepEqual(prompts.map(entry => [entry.text, entry.mode]), [
+    ['held one', 'steer'],
+    ['busy one', 'steer'],
+  ], 'arrival order, both read by the running turn')
+})
+
+test('#707: a line sent as the turn ends is not lost and opens no second turn', async (t) => {
+  const { call, prompts, rt, stop } = start()
+  t.after(stop)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  await rt.load()
+  const chief = (await call('state', {})).value.mainBotId
+
+  rt.liveOf(chief).turn = 'turn-1'
+  await call('send', { sessionId: chief, text: 'mid-turn' })
+  await drain()
+  rt.liveOf(chief).turn = undefined
+
+  await call('send', { sessionId: chief, text: 'after the turn' })
+  t.mock.timers.tick(1_500)
+  await drain()
+  assert.deepEqual(prompts.map(entry => [entry.text, entry.mode]), [
+    ['mid-turn', 'steer'],
+    ['after the turn', 'queue'],
+  ], 'the idle line opens exactly one turn of its own')
 })

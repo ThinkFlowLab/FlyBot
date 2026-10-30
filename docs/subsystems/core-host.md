@@ -377,7 +377,7 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 ### A burst of the user's lines (#642)
 
 - Channel `send` in the Bot's **own chat** (no room on that Session) collects the user's lines: the first line that arrives with no turn running starts a 1500 ms `SETTLE_MS` timer on that Session (`channel.js` `settleLine`), further lines inside the window join its text, and the timer opens **one** turn carrying them in arrival order, each on its own line. No sender labels, no "read N messages as one" notice, no new setting; the order is arrival order, never sorted.
-- A line arriving while a turn runs is not held: the window flushes what it holds first (so the queued items stay in arrival order) and the line lands as its own queued item, as before. A Bot-to-Bot `deliver` never waits behind the window — it has its own queue and dedupe (#641).
+- A line arriving while a turn runs is not held: it is delivered into that run as a **steer** (`mode: 'steer'`, #707) so the running turn reads it at its next step and can change direction. The window flushes what it holds first, in arrival order, and those held lines steer too once a turn is running, so a line can never overtake an older one into the same run; the new line opens its own turn only when no turn runs (`mode: 'queue'`). A Bot-to-Bot `deliver` never waits behind the window — it has its own queue and dedupe (#641).
 - A group room is not collected: its line must reach the Session at once so a running round can drain it (`group_relay`, #299), so `settleLine` is only reached when `rt.roomOf(sessionId)` is undefined. The pending timer is cleared on dispose. Covered by `core/test/settle.test.js`.
 
 ### Out-of-app delivery, first half (#355)

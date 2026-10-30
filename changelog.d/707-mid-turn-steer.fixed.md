@@ -1,0 +1,1 @@
+A line typed in a Bot's own chat while its turn is running now reaches that turn at its next step instead of waiting as a separate queued turn, so a mid-run correction changes what the Bot does next ([#707](https://github.com/ThinkFlowLab/FlyBot/issues/707)).

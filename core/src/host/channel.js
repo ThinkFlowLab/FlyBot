@@ -41,9 +41,11 @@ export function install(rt) {
 
   // A burst of the user's own lines (#642): with no turn running, hold them for a moment and open
   // one turn with every line in arrival order. A line that arrives while a turn runs is not held —
-  // it lands as its own queued item, so a burst never reorders work that is already under way.
+  // it is read at that turn's next step (steer, #707), so a correction reaches the work under way.
   const settling = new Map()
   const turnRunning = sessionId => rt.live?.get(sessionId)?.turn !== undefined
+  // #707: a line for a running turn steers into it instead of waiting for a turn of its own.
+  const admission = sessionId => (turnRunning(sessionId) ? 'steer' : 'queue')
   const armSettled = (sessionId, held) => {
     clearTimeout(held.timer)
     held.timer = setTimeout(() => {
@@ -56,7 +58,8 @@ export function install(rt) {
     await ctx.sessionController.prompt({
       requestId: randomUUID(),
       sessionId,
-      mode: 'queue',
+      // A turn that began inside the window takes the held lines at its next step too, in arrival order.
+      mode: admission(sessionId),
       content: [{ type: 'text', text: lines.join('\n') }],
     }, AbortSignal.timeout(30_000))
   }
@@ -612,7 +615,7 @@ export function install(rt) {
           await ctx.sessionController.prompt({
             requestId: randomUUID(),
             sessionId,
-            mode: 'queue',
+            mode: admission(sessionId),
             content: [{ type: 'text', text }],
           }, AbortSignal.timeout(30_000))
           return ok(true)
