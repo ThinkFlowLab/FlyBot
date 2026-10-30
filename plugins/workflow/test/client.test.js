@@ -2667,10 +2667,12 @@ test("a 3-way branch's out-port starts its own wire instead of the card on top o
 })
 
 // The planes the fix must not move, captured byte for byte from 1db1037a, the base
-// this branch builds on: the Read-only plane at 368 and the two-branch Edit plane.
+// this branch builds on: the Read-only plane at 368, and the two-branch Edit plane as
+// #1738 draws it — the fitted pair keeps its centres and its wires, and its two cards
+// take the Read-only plane's 154px column width instead of the 168px card.
 const BASE_PLANES = {
-  'edit:delivery@364': "{\"boxes\":[[\"planner\",98,12,168,72],[\"writer\",98,128,168,72],[\"coder\",98,248,168,72],[\"reviewer\",12,368,168,72],[\"tester\",184,368,168,72],[\"deployer\",98,508,168,72]],\"wires\":[[\"planner>writer\",\"M 182 68 C 182 98, 182 98, 182 128\"],[\"writer>coder\",\"M 182 184 C 182 216, 182 216, 182 248\"],[\"coder>reviewer\",\"M 182 304 L 182 336 L 96 336 L 96 368\"],[\"coder>tester\",\"M 182 304 L 182 336 L 268 336 L 268 368\"],[\"reviewer>deployer\",\"M 96 424 L 96 466 L 182 466 L 182 508\"],[\"tester>deployer\",\"M 268 424 L 268 466 L 182 466 L 182 508\"]]}",
-  'edit:fork2@364': "{\"boxes\":[[\"fork\",98,12,168,72],[\"r1\",12,120,168,72],[\"r2\",184,120,168,72],[\"join\",98,228,168,72]],\"wires\":[[\"fork>r1\",\"M 182 68 L 182 94 L 96 94 L 96 120\"],[\"fork>r2\",\"M 182 68 L 182 94 L 268 94 L 268 120\"],[\"r1>join\",\"M 96 176 L 96 202 L 182 202 L 182 228\"],[\"r2>join\",\"M 268 176 L 268 202 L 182 202 L 182 228\"]]}",
+  'edit:delivery@364': "{\"boxes\":[[\"planner\",98,12,168,72],[\"writer\",98,128,168,72],[\"coder\",98,248,168,72],[\"reviewer\",19,368,154,72],[\"tester\",191,368,154,72],[\"deployer\",98,508,168,72]],\"wires\":[[\"planner>writer\",\"M 182 68 C 182 98, 182 98, 182 128\"],[\"writer>coder\",\"M 182 184 C 182 216, 182 216, 182 248\"],[\"coder>reviewer\",\"M 182 304 L 182 336 L 96 336 L 96 368\"],[\"coder>tester\",\"M 182 304 L 182 336 L 268 336 L 268 368\"],[\"reviewer>deployer\",\"M 96 424 L 96 466 L 182 466 L 182 508\"],[\"tester>deployer\",\"M 268 424 L 268 466 L 182 466 L 182 508\"]]}",
+  'edit:fork2@364': "{\"boxes\":[[\"fork\",98,12,168,72],[\"r1\",19,120,154,72],[\"r2\",191,120,154,72],[\"join\",98,228,168,72]],\"wires\":[[\"fork>r1\",\"M 182 68 L 182 94 L 96 94 L 96 120\"],[\"fork>r2\",\"M 182 68 L 182 94 L 268 94 L 268 120\"],[\"r1>join\",\"M 96 176 L 96 202 L 182 202 L 182 228\"],[\"r2>join\",\"M 268 176 L 268 202 L 182 202 L 182 228\"]]}",
   'read:delivery@368': "{\"boxes\":[[\"planner\",100,12,168,72],[\"writer\",100,120,168,72],[\"coder\",100,228,168,72],[\"reviewer\",22,364,156,72],[\"tester\",190,364,156,72],[\"deployer\",100,482,168,72]],\"wires\":[[\"planner>writer\",\"M 184 84 L 184 120\"],[\"writer>coder\",\"M 184 192 L 184 228\"],[\"coder>reviewer,coder>tester|bus\",\"M 184 300 L 184 318 M 100 318 L 268 318\"],[\"coder>reviewer,coder>tester|reviewer\",\"M 100 318 L 100 364\"],[\"coder>reviewer,coder>tester|tester\",\"M 268 318 L 268 364\"],[\"reviewer>deployer,tester>deployer|bus\",\"M 100 436 L 100 464 M 268 436 L 268 464 M 100 464 L 268 464\"],[\"reviewer>deployer,tester>deployer|deployer\",\"M 184 464 L 184 482\"]]}",
   'read:fork3@368': "{\"boxes\":[[\"fork\",100,12,168,72],[\"r1\",22,148,100,72],[\"r2\",134,148,100,72],[\"r3\",246,148,100,72],[\"join\",100,266,168,72]],\"wires\":[[\"fork>r1,fork>r2,fork>r3|bus\",\"M 184 84 L 184 102 M 72 102 L 296 102\"],[\"fork>r1,fork>r2,fork>r3|r1\",\"M 72 102 L 72 148\"],[\"fork>r1,fork>r2,fork>r3|r2\",\"M 184 102 L 184 148\"],[\"fork>r1,fork>r2,fork>r3|r3\",\"M 296 102 L 296 148\"],[\"r1>join,r2>join,r3>join|bus\",\"M 72 220 L 72 248 M 184 220 L 184 248 M 296 220 L 296 248 M 72 248 L 296 248\"],[\"r1>join,r2>join,r3>join|join\",\"M 184 248 L 184 266\"]]}",
   'read:fork4@368': "{\"boxes\":[[\"fork\",100,12,168,72],[\"r1\",22,148,156,72],[\"r2\",190,148,156,72],[\"r3\",22,232,156,72],[\"r4\",190,232,156,72],[\"join\",100,350,168,72]],\"wires\":[[\"fork>r1,fork>r2,fork>r3,fork>r4|bus\",\"M 184 84 L 184 102 M 100 102 L 268 102\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r1\",\"M 100 102 L 100 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r2\",\"M 268 102 L 268 148\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r3\",\"M 100 102 L 16 102 L 16 226 L 100 226 L 100 232\"],[\"fork>r1,fork>r2,fork>r3,fork>r4|r4\",\"M 268 102 L 16 102 L 16 226 L 268 226 L 268 232\"],[\"r1>join,r2>join,r3>join,r4>join|bus\",\"M 100 220 L 100 226 L 16 226 L 16 332 M 268 220 L 268 226 L 16 226 L 16 332 M 100 304 L 100 332 M 268 304 L 268 332 M 16 332 L 268 332\"],[\"r1>join,r2>join,r3>join,r4>join|join\",\"M 184 332 L 184 350\"]]}",
@@ -2693,7 +2695,7 @@ function readOnlyString(workflow, width) {
   })
 }
 
-test('the Read-only plane and the 2-way Edit plane stay byte-identical to the base (#1677)', () => {
+test('the Read-only plane stays byte-identical to the base, and so does the fitted 2-way Edit plane apart from the card width (#1677, #1738)', () => {
   const now = {
     'edit:delivery@364': editPlaneString(delivery(), 364),
     'edit:fork2@364': editPlaneString(parallelGraph(2), 364),
@@ -2798,7 +2800,9 @@ test('the parallel frame reads the drawn card size, not the fixed 168x72 (#1693)
   assert.equal(frame.left, 72 - 98 / 2 - 10, 'the frame starts left of the first card by its own width')
   assert.equal(frame.left + frame.width, 292 + 98 / 2 + 10, 'the frame ends right of the last card by its own width')
   assert.equal(frame.top, 148 - 20)
-  assert.equal(frame.height, 96 + 10)
+  // The label band above the cards is 20 and the pad below them 10: the frame has to
+  // enclose the cards it names, not stop 10px short of them (#1738).
+  assert.equal(frame.height, 96 + 20 + 10)
 })
 
 for (const cardHeight of [72, 96]) {
@@ -2866,5 +2870,54 @@ test('the laid-out Edit plane routes every wire around the cards of a 6-way step
   // The wires are `flowLayout`'s own routing around those boxes, not a second fold.
   const layout = client.flowLayout(graph, client.DRAWER_FLOW_W, {})
   assert.deepEqual(drawn, layout.wires.map(wire => wire.d), 'the laid-out plane did not draw the wires flowLayout routed')
+  view.unmount()
+})
+
+// #1738: at the 364px drawer the fitted Edit plane draws the delivery
+// Reviewer ‖ Tester pair 4px apart, so each card's out-port (5px past its right
+// edge) and remove button (8px past it) sit under its neighbour, and the fitted
+// frame (top = cards - 20, height = cards + 10) ends 10px above the cards it is
+// meant to enclose. The drawer has to lay the pair out like the Read-only plane
+// does instead of squeezing the fitted one.
+const LABEL_ONE_LINE = 205 // 'Parallel branches · Merge after all pass' on one line at 10.5px
+const frameRect = frame => ({ left: frame.left, top: frame.top, right: frame.left + frame.width, bottom: frame.top + frame.height })
+const labelOf = view => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-plabel'))[0]
+
+test('the drawer Edit plane keeps the delivery parallel pair apart (#1738)', async () => {
+  const graph = delivery()
+  const { view, nodeAt } = await openDrawer(graph)
+  const layer = new Set(graph.layers.find(row => row.length > 1))
+  const pair = drawnCards(nodeAt, graph).filter(card => layer.has(card.id)).sort((a, b) => a.left - b.left)
+  assert.deepEqual(pair.map(card => card.id), ['reviewer', 'tester'], 'the parallel pair moved out of its row')
+  // (a) the two card boxes keep apart and neither card's own controls land on the other.
+  assert.ok(pair[0].right <= pair[1].left, `reviewer ends at ${pair[0].right}, tester starts at ${pair[1].left}`)
+  assert.equal(hits(miniArea(pair[0]), pair[1]), false, `tester (${pair[1].left}..${pair[1].right}) is drawn over reviewer's remove button (${miniArea(pair[0]).left}..${miniArea(pair[0]).right})`)
+  assert.equal(hits(portArea(pair[0]), pair[1]), false, `tester (${pair[1].left}..${pair[1].right}) is drawn over reviewer's out-port (${portArea(pair[0]).left}..${portArea(pair[0]).right})`)
+  view.unmount()
+})
+
+test('the drawer Edit plane encloses the delivery parallel pair in a frame its label fits (#1738)', async () => {
+  const graph = delivery()
+  const { view, nodeAt } = await openDrawer(graph)
+  const panel = findAll(view.tree, node => node.props?.['data-plane'] === '1')[0].props.style
+  assert.equal(panel.width, client.DRAWER_FLOW_W)
+  const layer = new Set(graph.layers.find(row => row.length > 1))
+  const pair = drawnCards(nodeAt, graph).filter(card => layer.has(card.id))
+  // (b) the frame encloses both cards and stays inside the panel, so its border and
+  // the centred label cannot be cut by the drawer's `overflow:hidden` canvas.
+  const frames = framesOf(view)
+  assert.equal(frames.length, 1, 'the drawer drew no frame for the parallel pair')
+  const rect = frameRect(frames[0])
+  assert.ok(rect.left >= 0 && rect.right <= panel.width, `the frame ${rect.left}..${rect.right} is outside the ${panel.width}px panel`)
+  for (const card of pair) {
+    assert.ok(rect.left <= card.left && rect.right >= card.right, `the frame ${rect.left}..${rect.right} leaves ${card.id} (${card.left}..${card.right}) outside`)
+    assert.ok(rect.top <= card.top && rect.bottom >= card.bottom, `the frame ${rect.top}..${rect.bottom} leaves ${card.id} (${card.top}..${card.bottom}) outside`)
+  }
+  // (c) the label keeps one line inside the frame instead of wrapping against a cap.
+  const label = labelOf(view)
+  const cap = String(label.props.style?.maxWidth ?? `${frames[0].width - 16}px`)
+  const labelMax = Number(cap.replace('px', ''))
+  assert.ok(labelMax <= frames[0].width, `the label is ${labelMax}px wide in a ${frames[0].width}px frame`)
+  assert.ok(labelMax >= LABEL_ONE_LINE, `the label is capped at ${labelMax}px, so 'Parallel branches · Merge after all pass' wraps`)
   view.unmount()
 })

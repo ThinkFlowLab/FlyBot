@@ -664,8 +664,12 @@ window.__ModuleLoader__.load({
     // The drawn card's own size: a fitted plane keeps the 168x72 card, and the
     // laid-out one shrinks it to the panel (#1693). Reading the box here is what
     // keeps the frame around the cards it encloses instead of the old card size.
+    const FRAME_PAD = 10
+    // The label rides the frame's top border, so the band above the first card is
+    // taller than the side and bottom pads.
+    const FRAME_LABEL = 20
     function parallelFrameStyle(members) {
-      const pad = 10
+      const pad = FRAME_PAD
       const boxes = members.map(node => {
         const x = node.x ?? 0
         const y = node.y ?? 0
@@ -679,9 +683,11 @@ window.__ModuleLoader__.load({
       const bottom = Math.max(...boxes.map(box => box.bottom))
       return {
         left: left - pad,
-        top: top - 20,
+        top: top - FRAME_LABEL,
         width: right - left + pad * 2,
-        height: bottom - top + pad,
+        // The box has to enclose the cards it names: the label band above them and a
+        // pad below the last row, not just one pad for both (#1738).
+        height: bottom - top + FRAME_LABEL + pad,
       }
     }
 
@@ -794,24 +800,40 @@ window.__ModuleLoader__.load({
     // The drawer's Edit plane. `fitPlane` scales only the node centres (#1513), so the
     // cards keep their 168px width: three or more branches of one parallel step land
     // on top of each other in a 364px drawer, the later card takes the click, and the
-    // branch's out-port cannot start a wire (#1677). While a parallel step's cards do
-    // stay apart the fitted plane is used unchanged, so a two-branch Edit plane draws
-    // exactly what it drew before; when they cannot, the rows come from `layers` with
-    // the Read-only plane's column width and wrap, and the drawn coordinates are the
-    // panel's own, which makes a drag a plain pointer delta.
+    // branch's out-port cannot start a wire (#1677). A two-branch step is squeezed the
+    // same way: the drawer's fit leaves the pair 4px apart, so each card's out-port and
+    // remove button sit under its neighbour and the frame runs against the panel edge
+    // (#1738). A row that is that tight is drawn at `flowLayout`'s own column width, the
+    // width the Read-only plane gives it, so it keeps the row gap and stays a fitted
+    // plane whose drags still commit world coordinates; a row that cannot keep the gap
+    // even then (three or more branches) falls back to the laid-out rows, whose
+    // coordinates are the panel's own, which makes a drag a plain pointer delta.
+    const FIT_PAR_GAP = FLOW_GAP_X
     function editPlane(workflow, panelWidth = DRAWER_FLOW_W, heights = {}) {
       const width = Math.max(Number(panelWidth) || DRAWER_FLOW_W, NODE_W + FIT_PAD * 2)
       const fit = fitPlane(workflow?.nodes, width)
       const at = new Map(fit.nodes.map(node => [node.id, node]))
-      const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE_W && Math.abs(a.y - b.y) < NODE_H
-      const crowded = (workflow?.layers ?? []).some(layer => {
-        const members = (layer ?? []).map(id => at.get(id)).filter(Boolean)
-        return members.some((a, i) => members.some((b, j) => j > i && overlaps(a, b)))
-      })
-      if (!crowded) return { width, scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, height: fit.height, wrapped: false, nodes: fit.nodes }
+      const rows = (workflow?.layers ?? [])
+        .map(layer => (layer ?? []).map(id => at.get(id)).filter(Boolean))
+        .filter(row => row.length > 1)
+      const tight = rows.some(row => row.some((a, i) => row[i + 1] && Math.abs(row[i + 1].x - a.x) < NODE_W + FIT_PAR_GAP))
+      const rowLayout = tight ? flowLayout(workflow, width, heights) : null
+      // The width this card is drawn at: the Read-only plane's column width while that
+      // is narrower than the 168px card, the card's own width otherwise.
+      const cardWidth = id => {
+        const box = rowLayout?.boxes.get(id)
+        return box && box.w < NODE_W ? box.w : NODE_W
+      }
+      const crowded = rows.some(row => row.some((a, i) => row.some((b, j) => j > i &&
+        Math.abs(a.y - b.y) < NODE_H &&
+        Math.abs(a.x - b.x) < (cardWidth(a.id) + cardWidth(b.id)) / 2 + FIT_PAR_GAP)))
+      if (!crowded) {
+        const nodes = fit.nodes.map(node => ({ ...node, w: cardWidth(node.id) }))
+        return { width, scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, height: fit.height, wrapped: false, nodes }
+      }
       // The laid-out rows are `flowLayout`'s own boxes, and its wires are the ones
       // routed around those same boxes — one copy of the row geometry (#1693).
-      const layout = flowLayout(workflow, width, heights)
+      const layout = rowLayout ?? flowLayout(workflow, width, heights)
       const stored = new Map((workflow?.nodes ?? []).map(node => [node.id, node]))
       const drawn = [...layout.boxes.values()].map(box => ({
         ...stored.get(box.id), id: box.id, x: box.x, y: box.top, w: box.w, h: box.h,
@@ -1214,7 +1236,9 @@ window.__ModuleLoader__.load({
               key: node.id,
               'data-node': node.id,
               className: `wf-node wf-abs ${nodeState(status, node.id)} ${selectedNode === node.id ? 'selected' : ''}`,
-              style: plane.wrapped ? { left: spot.x - spot.w / 2, top: spot.y, width: spot.w } : { left: spot.x - NODE_W / 2, top: spot.y },
+              // The fitted plane narrows a squeezed parallel row to the Read-only
+              // plane's column width (#1738), so the drawn width is the card's own.
+              style: plane.wrapped ? { left: spot.x - spot.w / 2, top: spot.y, width: spot.w } : { left: spot.x - (spot.w ?? NODE_W) / 2, top: spot.y, width: spot.w ?? NODE_W },
               onClick: () => editing ? setSelectedNode(node.id) : null,
               onPointerDown: (event) => {
                 if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
