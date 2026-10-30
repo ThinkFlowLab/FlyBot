@@ -25,8 +25,9 @@ const OLD_KEYS = [
   'id', 'workflowId', 'task', 'taskSummary', 'status', 'nodeStatus', 'steps', 'stepBudget',
   'doneCount', 'nodeCount', 'marks', 'running', 'history', 'startedAt', 'updatedAt',
 ]
-// Flags that were already conditional, so a state may or may not carry them.
-const OLD_FLAGS = ['live', 'paused', 'failure', 'earlyEnd', 'ephemeral']
+// Flags that were already conditional, so a state may or may not carry them. `shadow` is the run's
+// own record of the shadow handoff verdict (#1862) and is conditional the same way.
+const OLD_FLAGS = ['live', 'paused', 'failure', 'earlyEnd', 'ephemeral', 'shadow']
 
 const assertOnlyAdded = (run) => {
   for (const key of OLD_KEYS) assert.ok(key in run, `${run.status} run keeps ${key}`)

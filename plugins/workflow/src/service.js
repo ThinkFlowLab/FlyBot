@@ -13,6 +13,7 @@ import {
 } from './graph.js'
 import { matchTask, namedTarget } from './match.js'
 import { linesFor } from './narrate.js'
+import { runHandoff, shadowLine, shadowVerdict } from './pool-shadow.js'
 import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, templateById, templateCatalog, weeklyWorkflow } from './template.js'
 
 const MAX_WORKFLOWS = 24
@@ -48,6 +49,33 @@ function stepTimeoutValue(raw) {
 
 function idOf(prefix) {
   return `${prefix}-${randomBytes(4).toString('hex')}`
+}
+
+// A caller hands facts about a pull request over as plain data; anything else is not a handoff
+// and is dropped rather than refused (#1862), because the shadow pass must never stop a run.
+function plainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+// The handoff is persisted with the task, so it has to survive JSON: a circular or oversized object
+// is dropped here instead of breaking `write()` or bloating the store. Dropping, not refusing, for
+// the same reason as above.
+const MAX_HANDOFF_CHARS = 64 * 1024
+
+function storableJson(value) {
+  try {
+    return JSON.stringify(value).length <= MAX_HANDOFF_CHARS ? value : null
+  } catch {
+    return null
+  }
+}
+
+function storableHandoff(value) {
+  return plainObject(value) === null ? null : storableJson(value)
+}
+
+function storableList(value) {
+  return Array.isArray(value) ? storableJson(value) : null
 }
 
 function publicNode(node, bots) {
@@ -131,6 +159,8 @@ function publicRun(workflow, run) {
     ...(run.failure ? { failure: { ...run.failure } } : {}),
     ...(run.earlyEnd ? { earlyEnd: run.earlyEnd } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
+    // #1862: the shadow pass's record, exposed so the run can be compared with the human path.
+    ...(run.shadow ? { shadow: { ...run.shadow } } : {}),
   }
 }
 
@@ -724,6 +754,21 @@ export function createWorkflowService({
     }
   }
 
+  // The facts a parked run needs when it starts later: who capped it, its Project, and the handoff
+  // the shadow pass reads (#1544, #1856, #1862).
+  function carriedTask(task) {
+    return {
+      id: task.id,
+      title: task.title,
+      ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
+      ...(task.projectId ? { projectId: task.projectId } : {}),
+      ...(task.handoff ? { handoff: task.handoff } : {}),
+      ...(task.handoffContext ? { handoffContext: task.handoffContext } : {}),
+      ...(task.acceptance ? { acceptance: task.acceptance } : {}),
+      ...(task.evidence ? { evidence: task.evidence } : {}),
+    }
+  }
+
   // The oldest queued task whose own workflow still has a slot, or null.
   function takeNext() {
     let best = null
@@ -738,7 +783,7 @@ export function createWorkflowService({
     }
     if (!best) return null
     const task = laneOf(best.item.id).queue.shift()
-    return { item: best.item, task: { id: task.id, title: task.title, ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}), ...(task.projectId ? { projectId: task.projectId } : {}) } }
+    return { item: best.item, task: carriedTask(task) }
   }
 
   function noteUnstarted(item, error) {
@@ -828,6 +873,30 @@ export function createWorkflowService({
     }
   }
 
+  // #1862: the shadow pass. Two sources of handoff facts, one answer: the caller's own `handoff`
+  // when it has the facts in hand, else the run's card and graph (`runHandoff`) when the card
+  // carries an acceptance gate or evidence, which is what lets a real pull request carry a verdict.
+  // The answer is stored on the run and posted as one line — never read by anything that decides.
+  function shadowOf(item, task, run) {
+    const handoff = storableHandoff(task?.handoff)
+    const acceptance = plainObject(task?.acceptance)
+    const evidence = Array.isArray(task?.evidence) ? task.evidence : null
+    if (!handoff && !acceptance && !evidence) return null
+    try {
+      if (handoff) return shadowVerdict(handoff, storableHandoff(task?.handoffContext) ?? {})
+      const derived = runHandoff(item, task, run, {
+        nodeId: orderedIds(item, run.nodeStatus, 'running')[0],
+        inflight: runningOf(laneOf(item.id)).length,
+        workers: maxOf(item),
+      })
+      return shadowVerdict(derived.handoff, derived.ctx)
+    } catch (error) {
+      // A shadow that throws is a missing record, never a failed run.
+      warnOnce(`shadow:${run.id}`, `flybot-workflow: the shadow pass for run ${run.id} recorded nothing: ${error?.message ?? error}`)
+      return null
+    }
+  }
+
   function beginRun(item, task, ephemeral) {
     const holes = missingProviders(item)
     if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
@@ -846,9 +915,13 @@ export function createWorkflowService({
     ], at)
     const stepped = applyOp(item, run, { type: 'start' })
     run = stepped.run
+    const shadow = shadowOf(item, task, run)
+    if (shadow) run = { ...run, shadow }
     bindRunProject(item, task, run)
     laneOf(item.id).active.push(run)
     push(item.id, stepped.lines, at)
+    const line = shadowLine(shadow)
+    if (line) push(item.id, [line], at)
     syncTimers(item, run)
     write()
     return { ok: true, run }
@@ -902,6 +975,11 @@ export function createWorkflowService({
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
       // #1856: a parked run keeps the Project it was assigned with.
       ...(task.projectId ? { projectId: task.projectId } : {}),
+      // #1862: and the handoff the shadow pass records a verdict for.
+      ...(task.handoff ? { handoff: task.handoff } : {}),
+      ...(task.handoffContext ? { handoffContext: task.handoffContext } : {}),
+      ...(task.acceptance ? { acceptance: task.acceptance } : {}),
+      ...(task.evidence ? { evidence: task.evidence } : {}),
     })
     const ahead = lane.queue.length - 1
     push(item.id, [{
@@ -1146,6 +1224,18 @@ export function createWorkflowService({
       const wanted = body.projectId !== undefined ? body.projectId : item.projectId
       const projectId = cleanLine(wanted ?? '', 120)
       if (projectId !== '') task.projectId = projectId
+      // #1862: the caller may pass the facts of a pull request it holds; the shadow pass records the
+      // contract's answer for them and nothing reads it. `acceptance`/`evidence` are the card's own
+      // gate, so a card that carries them gets a verdict from `runHandoff` with no new contract. A
+      // value that cannot be stored is dropped, never refused.
+      const handoff = storableHandoff(body.handoff)
+      if (handoff) task.handoff = handoff
+      const handoffContext = storableHandoff(body.handoffContext)
+      if (handoffContext) task.handoffContext = handoffContext
+      const acceptance = storableHandoff(body.acceptance)
+      if (acceptance) task.acceptance = acceptance
+      const evidence = storableList(body.evidence)
+      if (evidence) task.evidence = evidence
       if (typeof spawn !== 'function') return enqueue(item, task)
       return hostSerial(() => enqueue(item, task))
     },

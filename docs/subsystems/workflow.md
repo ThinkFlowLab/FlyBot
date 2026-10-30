@@ -71,12 +71,44 @@ Core never reads `$DSH_HOME/bot/flybot-workflow`. The plugin registers `flybot.t
 `plugins/workflow/src/pool-contract.js` is the typed handoff contract of #1550 Stage 3 P0: one pure
 `validateHandoff(handoff, ctx)` running the seven checks in order — target, owner, evidence,
 concurrency, idempotency, cycle, quota — plus `escalationTarget(action)`, which names the Chief for
-the two escalating refusals (`cycle-budget`, `quota`) and nobody else. It does no I/O, imports no
-`service.js`, and **no dispatch path calls it**: no endpoint, tool, run, `index.js` or `service.js`
-mentions it, so loading the plugin behaves exactly as before. P1 is the step that will call it;
-until then `plugins/workflow/test/pool-contract.test.js` is its only caller, and
+the two escalating refusals (`cycle-budget`, `quota`) and nobody else. It does no I/O and imports no
+`service.js`. Since P1 (#1862) one path calls it, and only through the shadow step below.
+`plugins/workflow/test/pool-contract.test.js` pins the contract itself, and
 `core/test/task-handoff-route.test.js` feeds the host's own board facts to its target and owner
 checks so the two policies cannot drift apart silently.
+
+## Pool shadow (#1862)
+
+`plugins/workflow/src/pool-shadow.js` is the P1 shadow step: `shadowVerdict(handoff, ctx)` runs the
+P0 contract and returns one record — `{ verdict: 'pass', key }` or `{ verdict: 'reject', code?,
+reason? }` — and `shadowLine(shadow)` turns it into the run's own stage line, `shadow: <verdict> ·
+<code> · <reason>`. The line never begins `Verdict:`, so no reader and no gate can take it for a
+conclusion about the pull request.
+
+- **Two sources of facts, one answer.** `runHandoff(item, task, run, facts)` builds the handoff the
+  run already holds — its card, the node it hands the card to, that node's producer, the pool the
+  workflow declares (each node role, capped by `maxConcurrent`), the exec that owns it, and no
+  previously spent keys — and `assign()` accepts the card's own `acceptance`/`evidence`, so a real
+  pull request carries a verdict without any caller learning a new contract. A caller that has
+  better facts passes `handoff` (card, fromRole, toRole, attempt, acceptance, evidence) and
+  `handoffContext` (roles, pools, execOwner, worker, pool, cycleMax, quota, used), which replace the
+  derived pair wholesale; either way one pair, never mixed.
+- **Record only.** `beginRun()` stores the answer on the run as `shadow: { verdict, code?, reason?,
+  key? }` — exposed by `publicRun()` — and posts the one line. A parked task carries all four fields
+  (`carriedTask()`), so a queued card is shadowed when it actually starts. Nothing reads the record:
+  run status, `nodeStatus` and the step count are the same with or without it, the card is never
+  re-queued, and the pull request fast lane still decides.
+- **A dry run.** The contract records an accepted key in `ctx.seen`; the shadow pass hands it a copy,
+  so a shadow `pass` cannot make the next real handoff look like a duplicate. A handoff that cannot
+  be stored (not an object, circular, over 64 KB) is dropped, and a shadow that throws records
+  nothing — the shadow pass cannot stop a run. A card with no handoff facts, and no acceptance or
+  evidence, gets no record and no line, which is every run that existed before P1.
+- The facts travel over the plugin's own `assign` / `workflow/state` seam only: no host read was
+  needed, so `core/src/host/` is unchanged.
+- Tests: `plugins/workflow/test/pool-shadow.test.js` — a rejected and an accepted handoff, a card
+  shadowed from its own acceptance gate, a parked card, a dropped (circular) handoff, a run that
+  keeps walking its graph with a `reject` on the record, and the purity assertion that the caller's
+  `ctx.seen` is untouched.
 
 ## Tests
 
