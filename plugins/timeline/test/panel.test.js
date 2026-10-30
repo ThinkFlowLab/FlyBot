@@ -113,6 +113,15 @@ test('fmtDur and fmtClock', () => {
   assert.equal(fmtClock(NaN), '–')
 })
 
+// #1783: the panel's duration ladder rounded inside the unit it had already picked, so a value
+// just under the boundary printed a count that unit cannot hold (59_999 -> "60 s", 9_999 ->
+// "10.0 s"). Round once, then carry — the rule #761 applied to the digest's formatMs.
+test('fmtDur rounds once and carries into the next unit (#1783)', () => {
+  const { fmtDur } = client
+  assert.deepEqual([9_999, 59_999, 59_500].map(fmtDur), ['10 s', '1m 00s', '1m 00s'])
+  assert.deepEqual([999, 1_000, 9_949].map(fmtDur), ['999 ms', '1.0 s', '9.9 s'])
+})
+
 test('swimlanes: lanes stack in order and turns, tools, brackets and arrows land in their lanes', () => {
   const g = client.layoutSwimlanes(win({ windowMs: 60_000 }), {})
   assert.deepEqual(g.lanes.map(lane => lane.name), ['You', 'Chief', 'Writer', 'Team Room'])
