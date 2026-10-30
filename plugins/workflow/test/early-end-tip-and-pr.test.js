@@ -173,3 +173,94 @@ test('needs-human and already-claimed markers still end the run', () => {
   })
   assert.equal(claimed.earlyEnd, 'already-claimed')
 })
+
+// #1866: a non-strict reason in a declared output ends the run only as a whole
+// word. `data-open-project` contains `open-pr`, and a triage brief that names it
+// must not be read as "an open PR already fixes this".
+const triageRoster = [
+  { id: 'bot-triage', name: 'Triage', role: 'Triage', remote: false },
+  { id: 'bot-claim', name: 'Claim', role: 'Claim', remote: false },
+]
+
+function triageLane() {
+  return normalizeGraph({
+    id: 'triage-claim',
+    name: 'Triage Claim',
+    nodes: [
+      { id: 'triage', name: 'Triage', role: 'Triage', outputs: [{ name: 'state', type: 'text' }, { name: 'brief', type: 'text' }] },
+      { id: 'claim', name: 'Claim', role: 'Claim', inputs: [{ name: 'brief', type: 'text' }] },
+    ],
+    edges: [{ from: 'triage', to: 'claim' }],
+  })
+}
+
+function triageRun() {
+  const svc = createWorkflowService({ persist: false, now: () => 1_700_000_000_000, bots: () => triageRoster })
+  const graph = triageLane()
+  const created = svc.create({ name: graph.name, nodes: graph.nodes, edges: graph.edges })
+  const workflowId = created.workflows.find(w => w.name === graph.name).id
+  svc.assign({ workflowId, taskId: '1854-impl', title: 'Issue fast line' })
+  return { svc, workflowId }
+}
+
+function triageAdvance(svc, workflowId, { outputs, text }) {
+  const state = svc.advance({ workflowId, nodeId: 'triage', outcome: 'done', text, outputs })
+  return state.workflows.find(w => w.id === workflowId).run
+}
+
+test('a declared output that merely contains open-pr does not end the run (#1866)', () => {
+  const { svc, workflowId } = triageRun()
+  const run = triageAdvance(svc, workflowId, {
+    text: 'Triage done.',
+    outputs: {
+      state: 'ready',
+      brief: 'Drop the second project entry; the DOM attribute data-open-project sits in core/src/client/kanban.js:424-427.',
+    },
+  })
+  assert.equal(run.earlyEnd, undefined)
+  assert.equal(run.status, 'running')
+  assert.equal(run.nodeStatus.claim, 'running')
+})
+
+test('a declared output that merely contains tip-unchanged does not end the run', () => {
+  const { svc, workflowId } = triageRun()
+  const run = triageAdvance(svc, workflowId, {
+    text: 'Triage done.',
+    outputs: { state: 'ready', brief: 'See the data-tip-unchanged-field note in the brief.' },
+  })
+  assert.equal(run.earlyEnd, undefined)
+  assert.equal(run.status, 'running')
+  assert.equal(run.nodeStatus.claim, 'running')
+})
+
+test('a declared output that is exactly open-pr still ends the run', () => {
+  const { svc, workflowId } = triageRun()
+  const run = triageAdvance(svc, workflowId, {
+    text: 'Already handled.',
+    outputs: { state: 'open-pr' },
+  })
+  assert.equal(run.earlyEnd, 'open-pr')
+  assert.notEqual(run.status, 'running')
+  assert.notEqual(run.nodeStatus.claim, 'running')
+})
+
+test('a whole EARLY-END open-pr line still ends the run', () => {
+  const { svc, workflowId } = triageRun()
+  const run = triageAdvance(svc, workflowId, {
+    text: 'Checked the repository.\n\nEARLY-END open-pr\n',
+    outputs: { state: 'ready' },
+  })
+  assert.equal(run.earlyEnd, 'open-pr')
+  assert.notEqual(run.status, 'running')
+  assert.notEqual(run.nodeStatus.claim, 'running')
+})
+
+test('open-pr as a whole word inside a declared output still ends the run', () => {
+  const { svc, workflowId } = triageRun()
+  const run = triageAdvance(svc, workflowId, {
+    text: 'Triage done.',
+    outputs: { state: 'open-pr #1854' },
+  })
+  assert.equal(run.earlyEnd, 'open-pr')
+  assert.notEqual(run.nodeStatus.claim, 'running')
+})
