@@ -1449,15 +1449,11 @@ export function createWorkflowService({
         if (authoredBy) item.authoredBy = authoredBy
         else delete item.authoredBy
         // #1856: `null` clears, omitted keeps, and a name must resolve — an unknown Project
-        // refuses the whole save, so nothing half-written is left behind.
-        if (body.projectId !== undefined) {
-          const wantedId = body.projectId === null ? '' : cleanLine(body.projectId, 120)
-          if (wantedId === '') delete item.projectId
-          else {
-            const project = typeof readProject === 'function' ? readProject(wantedId) : null
-            if (!project || typeof project !== 'object') throw new Error(`Unknown Project ${wantedId}`)
-            item.projectId = wantedId
-          }
+        // refuses the whole save before anything is touched, so a failed edit writes nothing.
+        const projectId = body.projectId === undefined ? undefined : body.projectId === null ? null : cleanLine(body.projectId, 120)
+        if (projectId !== undefined && projectId !== null) {
+          const project = typeof readProject === "function" ? readProject(projectId) : null
+          if (!project || typeof project !== "object") throw new Error(`Unknown Project ${projectId}`)
         }
         const seated = seat(body.nodes, bots() ?? [])
         const seenBots = new Set()
@@ -1500,6 +1496,10 @@ export function createWorkflowService({
         item.nodes = next.nodes
         item.edges = next.edges
         item.layers = next.layers
+        // Applied only once the graph validated and the runs settled, so a save that throws leaves
+        // neither the record nor the lane half-changed (#1856).
+        if (projectId === null) delete item.projectId
+        else if (projectId !== undefined) item.projectId = projectId
         for (const { run, names } of endedRuns) {
           lane.active = lane.active.filter(itemRun => itemRun.id !== run.id)
           lane.last = run
