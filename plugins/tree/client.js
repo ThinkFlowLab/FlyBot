@@ -18,6 +18,9 @@ window.__ModuleLoader__.load({
       const nodes = {}
       for (const b of (await flybot.bots()) || []) {
         const own = b.fields?.['flybot-tree'] ?? {}
+        // `archive_bot` retires a Bot out of the tree (#1793); ds-bot's sidebar forest already skips it
+        // (`forestOf`), so this panel must not keep drawing it as a working member either.
+        if (own.retired === true) continue
         const parent = own.parent, role = own.treeRole
         if (parent === undefined && role === undefined) continue
         // treeRole 'root' marks the root (ds-bot's Main Bot, Chief).
@@ -471,6 +474,7 @@ window.__ModuleLoader__.load({
     function statusOf(bot) {
       const own = bot?.fields?.['flybot-tree'] ?? {}
       if (own.archived) return own.archived.reason === 'merged' && own.archived.intoName ? `archived · merged into ${own.archived.intoName}` : 'archived'
+      if (own.retired === true) return 'retired'
       if (own.idle !== undefined && own.idle !== null) return 'idle'
       // A Bot that fits no role group while every matching level is full: the sidebar says so instead of passing it off as Chief's child.
       if (bot && bot.isMain !== true && !bot.remote && own.retired !== true && own.parent === undefined && own.treeRole === undefined) return 'outside the tree'
@@ -488,7 +492,12 @@ window.__ModuleLoader__.load({
     // only way back to one of their chats the right-click menu. This section is a list of them through
     // the slot the sidebar already renders; `include()` keeps returning false, so the list itself does
     // not change. Collapsed by default, and the section draws nothing at all when there is none.
-    const archivedOf = bots => (bots ?? []).filter(b => b?.fields?.['flybot-tree']?.archived || ARCHIVE_NAME_RE.test(String(b?.name ?? '')))
+    // A retired Bot (#1793) is out of the tree the same way, so it is listed here too — its chat stays
+    // reachable — and its row carries the `retired` tag.
+    const archivedOf = bots => (bots ?? []).filter(b => {
+      const own = b?.fields?.['flybot-tree'] ?? {}
+      return own.archived || own.retired === true || ARCHIVE_NAME_RE.test(String(b?.name ?? ''))
+    })
     function ArchivedView({ bots = [], expanded = false, onToggle, openBot }) {
       if (bots.length === 0) return null
       return h('section', { className: 'flybot-tree flybot-tree-archived', 'aria-label': 'Archived bots' },

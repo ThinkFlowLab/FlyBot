@@ -76,6 +76,43 @@ test('#810: a merged Bot says where it went; a leftover 归档- name needs no fi
   assert.match(html, /class="flybot-tree-role">archived · merged into Editor</)
 })
 
+// #1793: `archive_bot` retires a Bot out of the tree (`forestOf` already skips it), but `treeOf` kept
+// drawing it as a working member and the Archived section did not list it, so its chat was lost.
+test('#1793: a retired Bot leaves the tree and opens from the Archived section with a retired tag', async () => {
+  const mod = loadClient()
+  const bots = [
+    { id: 'c', name: 'Chief', createdAt: 1, isMain: true, fields: { 'flybot-tree': { parent: null, treeRole: 'root' } } },
+    { id: 'live', name: 'Live Dev', createdAt: 2, fields: { 'flybot-tree': { parent: 'c', treeRole: 'dev' } } },
+    { id: 'gone', name: 'Retired Dev', createdAt: 3, fields: { 'flybot-tree': { parent: 'c', treeRole: 'dev', retired: true } } },
+  ]
+  const forest = mod.buildForest((await mod.treeOf({ bots: () => bots })).nodes)
+  const drawn = []
+  const walk = list => list.forEach(node => { drawn.push(node.name); walk(node.children) })
+  walk(forest)
+  assert.deepEqual(drawn, ['Chief', 'Live Dev'], 'the retired Bot is not drawn as a working member')
+  assert.deepEqual(mod.forestOf(bots).map(root => root.name), ['Chief'], 'the sidebar forest already left it out')
+
+  const list = mod.archivedOf(bots)
+  assert.deepEqual(list.map(b => b.id), ['gone'])
+  const html = renderToString(reactStub.createElement(mod.ArchivedView, { bots: list, expanded: true }))
+  assert.match(html, /data-bot-id="gone"/)
+  assert.match(html, /class="flybot-tree-role">retired</)
+
+  const opened = []
+  const view = reactStub.createElement(mod.ArchivedView, { bots: list, expanded: true, openBot: id => opened.push(id) })
+  findAll(view, n => n.props.className === 'flybot-tree-open')[0].props.onClick()
+  assert.deepEqual(opened, ['gone'], 'the retired Bot\'s chat stays reachable')
+})
+
+test('#1793: retired and archived stay distinct, and both are listed', () => {
+  const mod = loadClient()
+  const retired = { id: 'r', name: 'Retired', createdAt: 1, fields: { 'flybot-tree': { parent: 'c', treeRole: 'dev', retired: true } } }
+  const both = { id: 'b', name: 'Retired Editor', createdAt: 2, fields: { 'flybot-tree': { parent: 'c', treeRole: 'dev', retired: true, archived: { reason: 'merged', intoName: 'Editor' } } } }
+  assert.equal(mod.statusOf(retired), 'retired')
+  assert.equal(mod.statusOf(both), 'archived · merged into Editor')
+  assert.deepEqual(mod.archivedOf([retired, both]).map(b => b.id), ['r', 'b'])
+})
+
 test('#810: the section is registered on the sidebar slot, and archived Bots stay out of the Bot list', async () => {
   const mod = loadClient()
   const sections = []
