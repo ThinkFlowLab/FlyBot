@@ -154,6 +154,18 @@ test('swimlanes: lanes stack in order and turns, tools, brackets and arrows land
   assert.equal(g.axis.compressed, false)
 })
 
+// #1797: in an Earlier window the panel measured an unanswered request only up to the window's
+// right edge, so a request still unanswered now read as a shorter wait than it is. The label and
+// the row's ms are measured to `now`; the line itself still stops at the window edge.
+test('swimlanes: an unanswered wait in an earlier window is measured to now (#1797)', () => {
+  const data = win({ windowMs: 15 * 60_000, to: at(43_000) })
+  const g = client.layoutSwimlanes(data, {})
+  const x3 = g.arrows.find(item => item.id === 'x3')
+  assert.equal(x3.wait.label, 'waiting 4.0 s')
+  assert.equal(x3.wait.ms, 4_000)
+  assert.ok(Math.abs(x3.wait.x1 - g.plotRight) < 0.001)
+})
+
 test('swimlanes: "skip quiet time" shrinks the long quiet stretches and keeps the order', () => {
   const data = win({ windowMs: 15 * 60_000 })
   const real = client.layoutSwimlanes(data, { compress: false })

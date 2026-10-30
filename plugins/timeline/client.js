@@ -319,7 +319,12 @@ window.__ModuleLoader__.load({
         if (e.role === 'request' || e.role === 'user' || e.role === 'stopped') {
           const endAt = e.replyAt ?? e.answerAt
           if (endAt !== undefined) arrow.wait = { x0: x, x1: Math.max(x + 1, X(Math.min(to, endAt))), y: a.y + TOP_STRIP - 5, label: `${e.role === 'user' ? 'answer' : 'reply'} ${fmtDur(e.latencyMs)}`, ms: e.latencyMs }
-          else if (e.waiting) arrow.wait = { x0: x, x1: Math.max(x + 1, X(to)), y: a.y + TOP_STRIP - 5, label: `waiting ${fmtDur(to - e.t)}`, open: true, ms: to - e.t }
+          else if (e.waiting) {
+            // The line stops at the window's right edge, but the wait is how long it has gone
+            // unanswered — measured to now, so an Earlier window does not understate it (#1797).
+            const at = win.now ?? to
+            arrow.wait = { x0: x, x1: Math.max(x + 1, X(to)), y: a.y + TOP_STRIP - 5, label: `waiting ${fmtDur(at - e.t)}`, open: true, ms: at - e.t }
+          }
         }
         if (arrow.wait) arrow.y1 = arrow.wait.y
         arrow.title = `${a.name} → ${b.name}: ${e.role}${arrow.wait ? ` · ${arrow.wait.label}` : ''} (delivered ${fmtClock(e.t)})`
