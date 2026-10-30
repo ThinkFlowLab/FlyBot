@@ -541,6 +541,13 @@ export function install(rt) {
     // Retiring disarms its own chat Session (#1709): `schedules` installs after `roster`, and a
     // host without the module (a test that mounts only the roster) simply has nothing to pause.
     const freed = typeof rt.pauseBotSchedules === 'function' ? await rt.pauseBotSchedules(id) : undefined
+    // #1801: retirement ends outside reach the way deletion does. A grant left behind still lets
+    // the friend's Bot wake this one and spend the owner's budget, unseen; reach() reads grants,
+    // so clearing them is the refusal. `reach` installs after `roster`, hence the optional call.
+    if (state.grants?.[id] !== undefined) {
+      delete state.grants[id]
+      await rt.reachChanged?.(id)
+    }
     await rt.save()
     return { bot, freed }
   }
