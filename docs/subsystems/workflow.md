@@ -66,6 +66,18 @@ A core board task (`state.tasks`, `core/src/host/tasks.js`) is the only task ide
 
 Core never reads `$DSH_HOME/bot/flybot-workflow`. The plugin registers `flybot.tasks.onProjectProvider(fn)`; the host calls it with `hasTask(taskId)` and the plugin answers `{ taskId, runId, nodeId? }` from `service.projectTasks()` — one entry per live run that holds a card, `nodeId` being the running node (else the last node handed the card). A run whose card is gone is dropped by the plugin before it can become a row. The aggregate writes nothing: no card, claim or run changes when the board is read, so an install with no Projects, and every caller that never asks, behaves exactly as before.
 
+## Pool contract (#1853)
+
+`plugins/workflow/src/pool-contract.js` is the typed handoff contract of #1550 Stage 3 P0: one pure
+`validateHandoff(handoff, ctx)` running the seven checks in order — target, owner, evidence,
+concurrency, idempotency, cycle, quota — plus `escalationTarget(action)`, which names the Chief for
+the two escalating refusals (`cycle-budget`, `quota`) and nobody else. It does no I/O, imports no
+`service.js`, and **no dispatch path calls it**: no endpoint, tool, run, `index.js` or `service.js`
+mentions it, so loading the plugin behaves exactly as before. P1 is the step that will call it;
+until then `plugins/workflow/test/pool-contract.test.js` is its only caller, and
+`core/test/task-handoff-route.test.js` feeds the host's own board facts to its target and owner
+checks so the two policies cannot drift apart silently.
+
 ## Tests
 
 `plugins/workflow/test/`: graph advance and join, graph edit, assign and persistence, the FIFO queue and concurrency cap, Bot-reply advance, a dispatch that fails without being marked handed, a bounded hand-off retry and a step deadline that fails the run and clears its timer (#1530), a per-workflow `stepTimeoutMinutes` that replaces the ten-minute constant and is refused outside 1..120 (#1580), disposing releases the Bots before the record drops their ids and a released runner name is reusable again, assign-to-bot versus assign-to-workflow, inputs and outputs along edges, a loop that breaks and an if/else branch, failure recovery (onFail edges with max attempts, exhaustion behavior, and compatibility with failOnce and loop edges), templates, `define` / `runNamed`, the matcher, ephemeral spawn and cleanup, a stopped run with its settled node map (#1424), the reply middleware, the client canvas, the settings page (including a condition and a loop), rename and delete (including factory-id rows such as `delivery`), the stage chat's scroll rule (a new visible line follows, a filtered node reply moves nothing), the assign dialog's preselected card and its failed and empty board states (#1457, #1458), a sidebar click that leaves the Workflows section in place, and the claim rules — a re-routed card moves with one claim and one route, the same target writes nothing, a trigger never invalidates, the held list is capped and omits a Bot claim, `rematch: true` drops one claim, and the panel's one re-match action goes through `ingest` (#1647). Run `npm test` in `plugins/workflow`. The host seam that applies `ownerBotId` is `core/test/task-route.test.js`, which also pins that a card written through `track_tasks` reaches the listener (#1462). The host omission of run Bots, and the grant of `stepTools` plus the hidden-approval answer, is `core/test/flybot.test.js`. Which connectors a run Bot may call is `core/test/connector-access.test.js`, and the chain from a node's `tools` through `spawn` to that guard — the built-in delivery nodes included — is `core/test/workflow-node-connectors.test.js`.

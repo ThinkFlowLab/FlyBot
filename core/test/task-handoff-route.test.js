@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { validateHandoff } from '../../plugins/workflow/src/pool-contract.js'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -243,4 +244,42 @@ test('a cancelled rework hands its original back to the lease recovery (#1804)',
   assert.equal(await app.rt.taskExpireLeases(Date.now() + 62 * 60 * 1000), 0, 'the recovered card is not recovered twice')
   await app.drive()
   assert.match(app.text('r1'), new RegExp(`Take ${id} `), 'the Reviewer is offered the card again')
+})
+
+// #1853: the pool contract's first two checks read the same board facts as the host's route
+// (`core/src/host/tasks.js:441-442`, `:494-501`), so the two policies cannot drift apart in
+// silence. The contract's roles, pools and exec owner are taken from the live board here, not
+// written down a second time.
+test('the pool contract and the host route reach the same target and owner verdict (#1853)', async (t) => {
+  const app = await start(t)
+  const bots = Object.values(app.rt.state.bots)
+  const roles = [...new Set(bots.map(bot => bot.role))]
+  const context = (over = {}) => ({
+    roles,
+    pools: Object.fromEntries(roles.map(role => [role, { workers: 1 }])),
+    execOwner: bots.find(bot => bot.id === 'd1').ownerId,
+    worker: { wip: 0 },
+    pool: { inflight: 0, workers: 1 },
+    seen: new Set(),
+    ...over,
+  })
+
+  // 1. target — the host refuses a role no Bot carries, and the contract refuses the same role.
+  const refused = await app.track('a', { tasks: [{ title: 'Ghost handoff', handoff: { from: 'Lead', to: 'Ghost', reason: 'x' } }] })
+  assert.match(refused, /unknown-role/)
+  assert.equal(validateHandoff({ card: 'task-x', fromRole: 'Lead', toRole: 'Ghost', reason: 'x' }, context()).code, 'unknown-role')
+  assert.equal(validateHandoff({ card: 'task-x', fromRole: 'Ghost', toRole: 'Dev', reason: 'x' }, context()).ok, true, 'the contract checks the target role, as the host does, and not the producer')
+
+  // ... and the same acceptance: the pool the host routes the card to is a pool the contract takes.
+  const id = app.idOf(await app.track('a', { tasks: [{ title: 'Build the route', handoff: { from: 'Lead', to: 'Dev', reason: 'first slice' } }] }))
+  const routed = app.rt.state.tasks[id].queueRole
+  assert.equal(routed, 'Dev')
+  assert.equal(validateHandoff({ card: id, fromRole: 'Lead', toRole: routed, reason: 'first slice' }, context()).ok, true)
+
+  // 2. owner — the writing Bot's owner is the exec's only owner; another owner is refused.
+  const dev = bots.find(bot => bot.id === 'd1')
+  assert.equal(validateHandoff({ card: id, fromRole: 'Dev', toRole: 'Reviewer', reason: 'diff ready', owner: dev.ownerId }, context()).ok, true)
+  const notOwner = validateHandoff({ card: id, fromRole: 'Dev', toRole: 'Reviewer', reason: 'diff ready', owner: 'owner-2' }, context())
+  assert.equal(notOwner.code, 'not-owner')
+  assert.equal(dev.ownerId, context().execOwner, 'the board itself gives the exec its one owner')
 })
