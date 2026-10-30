@@ -25,6 +25,12 @@ const MAX_ORPHANS = 50
 // How many held task ids a workflow lists in `workflow/state`; the count beside
 // them is always the whole truth (#1647).
 const MAX_HELD_TASKS = 20
+// #1869: the fields `workflow/assign` reads. Anything else is named back in
+// `ignored`, because a typo (`brif`) used to be dropped in silence.
+const ASSIGN_FIELDS = new Set(['workflowId', 'taskId', 'id', 'title', 'brief', 'callerBotId', 'projectId', 'botId', 'handoff', 'handoffContext', 'acceptance', 'evidence'])
+// A brief is a work order, not a sentence: 20–40 lines is the normal case. The cap
+// is far above what a dispatch can carry, so it only stops an unbounded paste.
+const MAX_BRIEF = 8000
 // A live step waits for its Bot's reply, and nothing else bounds that wait
 // (#1530). These are the only two numbers a stuck run depends on: how long one
 // step may stay unanswered, and how long a hand-off that did not land waits
@@ -598,7 +604,9 @@ export function createWorkflowService({
       prompt: node.prompt ?? node.instructions ?? '',
       model: node.model ?? '',
       tools: node.tools ?? [],
-      brief: run.task?.title ?? '',
+      // #1869: the brief is what the assignment carried; the title is only its
+      // fallback, so a node no longer receives the title twice and the brief never.
+      brief: run.task?.brief || run.task?.title || '',
       taskId: run.task?.id ?? '',
       inputs,
       outputs: node.outputs ?? [],
@@ -760,6 +768,8 @@ export function createWorkflowService({
     return {
       id: task.id,
       title: task.title,
+      // #1869: a rebuilt row loses the brief unless it is named here too.
+      ...(task.brief ? { brief: task.brief } : {}),
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
       ...(task.projectId ? { projectId: task.projectId } : {}),
       ...(task.handoff ? { handoff: task.handoff } : {}),
@@ -980,6 +990,8 @@ export function createWorkflowService({
       ...(task.handoffContext ? { handoffContext: task.handoffContext } : {}),
       ...(task.acceptance ? { acceptance: task.acceptance } : {}),
       ...(task.evidence ? { evidence: task.evidence } : {}),
+      // #1869: the brief stays on the parked card, on disk and until the run starts.
+      ...(task.brief ? { brief: task.brief } : {}),
     })
     const ahead = lane.queue.length - 1
     push(item.id, [{
@@ -1206,14 +1218,22 @@ export function createWorkflowService({
     },
     // A board task joins the workflow's FIFO queue. A free slot starts it.
     // A live run is never replaced. `botId` routes the card to that Bot and
-    // does not start a run.
+    // does not start a run. `brief` is the instruction the node receives; the
+    // title is only the label (and its fallback). A field this endpoint does
+    // not read comes back in `ignored` instead of vanishing (#1869).
     assign(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
-      if (body.botId) return routeBot(body)
+      const ignored = Object.keys(body).filter(key => !ASSIGN_FIELDS.has(key))
+      const answer = value => (ignored.length === 0 ? value : { ...value, ignored })
+      if (body.botId) return answer(routeBot(body))
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
       const task = { id: cleanLine(body.taskId ?? body.id, 80), title: cleanLine(body.title, 300) }
+      // #1869: a 20–40 line brief is the normal case, so it keeps its line breaks
+      // (cleanPrompt) rather than being flattened into one 300-character line.
+      const brief = cleanPrompt(body.brief, MAX_BRIEF)
+      if (brief) task.brief = brief
       if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
       // #1544: the Bot whose tool call started this run, when a Bot started it. The board, the canvas
       // and the API pass none, and the graph's author is the ceiling there.
@@ -1236,8 +1256,8 @@ export function createWorkflowService({
       if (acceptance) task.acceptance = acceptance
       const evidence = storableList(body.evidence)
       if (evidence) task.evidence = evidence
-      if (typeof spawn !== 'function') return enqueue(item, task)
-      return hostSerial(() => enqueue(item, task))
+      if (typeof spawn !== 'function') return answer(enqueue(item, task))
+      return hostSerial(() => Promise.resolve(enqueue(item, task)).then(answer))
     },
     setConcurrency(body = {}) {
       const workflowId = String(body.workflowId ?? '')
@@ -1646,14 +1666,17 @@ export function createWorkflowService({
       }
       return this.create({ name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description, ...(authoredBy ? { authoredBy } : {}) })
     },
-    // Start a named workflow. `brief` is the task title; `task` is its id.
+    // Start a named workflow. `brief` is the task instruction and `task` is its id;
+    // the title is its first line, derivable here because this call has no separate
+    // label — the same meaning `assign` gives any brief since #1869.
     runNamed(body = {}) {
       const item = findWorkflow(body.workflow)
       if (!item) return { ok: false, error: 'No such workflow' }
-      const title = cleanLine(body.brief || body.title, 300)
+      const brief = cleanPrompt(body.brief, MAX_BRIEF)
+      const title = cleanLine(body.title || brief.split('\n')[0], 300)
       if (!title) return { ok: false, error: 'A run needs a brief' }
       const taskId = cleanLine(body.task || body.taskId, 80) || `task-${now().toString(36)}`
-      return this.assign({ workflowId: item.id, taskId, title, ...(body.callerBotId ? { callerBotId: body.callerBotId } : {}) })
+      return this.assign({ workflowId: item.id, taskId, title, ...(brief ? { brief } : {}), ...(body.callerBotId ? { callerBotId: body.callerBotId } : {}) })
     },
     // Auto-assign an open board task. A miss leaves the task untouched.
     // A stored claim is not a life sentence (#1647): when the card itself now
