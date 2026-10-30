@@ -584,9 +584,10 @@ test('#1786: a retired Bot is not brought along by a lagging review, while a liv
   assert.match(await tool('archive_bot', { bot: 'Writer' }, 'm1'), /^Archived Writer\./)
   // Coder's turn ends: it is the member that brings the others along.
   ctx.emit('agent/status', { agent: { id: 'g3' }, status: 'idle' })
-  await waitFor(() => (existsSync(memoryFile('m1')) ? true : undefined))
-  await settle()
-  await settle()
+  // Deterministic: the two reviews this turn launches (the member that ended and the
+  // live lagging member) are async. Wait for both to be recorded rather than for a fixed
+  // number of ticks, which is what made this assertion race on a busy CI runner.
+  await waitFor(() => (requests.length >= 2 && existsSync(memoryFile('m1')) ? true : undefined))
   // Coder's own turn and the live lagging member are reviewed; the retired Bot is not.
   assert.deepEqual(requests.map(request => request.sessionId).sort(), ['b3', 'm1'],
     `only live members are reviewed: ${JSON.stringify(requests.map(request => request.sessionId))}`)
