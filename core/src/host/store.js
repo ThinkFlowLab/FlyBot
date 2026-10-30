@@ -24,6 +24,11 @@ const isRecord = value => value !== null && typeof value === 'object' && !Array.
 // the prototype setter never swallows it (#1704, #1711).
 export const ownEntry = (table, id) => (Object.hasOwn(table, id) ? table[id] : undefined)
 export const setEntry = (table, id, value) => Object.defineProperty(table, id, { value, writable: true, enumerable: true, configurable: true })
+// Retired (#638): the record keeps its chat, parts and memory, but no host path may resolve it
+// into a turn, a capability, a memory write or a timer (#1700, #1709). One predicate, here,
+// because every such path imports it rather than growing its own copy.
+export const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
+
 
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt

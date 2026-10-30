@@ -33,6 +33,7 @@ import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet
 import { defineTool } from './tool-schema.js'
 import { textOf } from './text.js'
 import { output } from './tools.js'
+import { retiredBot } from './store.js'
 
 const MAX_TITLE = 120
 // How long a due task may stay undelivered while the app runs before it counts as failed.
@@ -320,7 +321,10 @@ export function install(rt) {
   function contentOf(body) {
     const bot = state.bots[body.target]
     const room = state.rooms[body.target]
+    // A retired Bot answers as an unknown target (#1709): its chat Session is still alive, so a
+    // row armed here would wake it on a timer.
     if (bot === undefined && room === undefined) throw invalid('No such Bot or group chat')
+    if (retiredBot(bot)) throw invalid('No such Bot or group chat')
     const title = String(body.title ?? '').trim()
     const prompt = String(body.prompt ?? '').trim()
     if (title === '') throw invalid('Give the task a name')
@@ -351,6 +355,7 @@ export function install(rt) {
     const targetBot = state.bots[body.target]
     const targetRoom = state.rooms[body.target]
     if (targetBot === undefined && targetRoom === undefined) throw invalid('No such Bot or group chat')
+    if (retiredBot(targetBot)) throw invalid('No such Bot or group chat')
     const same = owner.botId !== undefined ? targetBot?.id === owner.botId : targetRoom?.id === owner.roomId
     if (same) throw invalid('Pick a different Bot or group chat to copy it to')
     const request = requestOf(source)
@@ -475,6 +480,39 @@ export function install(rt) {
     return schedulesView()
   }
 
+  // Retiring a Bot disarms what its own chat Session already holds (#1709), with the same
+  // semantics as pausing one task: the record is saved in state.pausedSchedules before DSH
+  // drops the row, so a refusing delete loses nothing and is counted as still armed.
+  async function pauseBotSchedules(botId) {
+    const sessionId = rt.chatOf(botId)
+    if (service === null || sessionId === undefined) return { paused: 0, armed: 0, available: false }
+    const rows = (await service.catalog()).filter(entry => entry.sessionId === sessionId && entry.status === 'active')
+    const held = []
+    for (const row of rows) {
+      const request = requestOf(row)
+      if (request === null) continue
+      paused()[row.id] = { id: row.id, sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
+      held.push(row)
+    }
+    // The records are saved before DSH lets the rows go, exactly as pausing one task does.
+    if (held.length > 0) await rt.save()
+    let pausedCount = 0
+    let armed = rows.length - held.length
+    for (const row of held) {
+      try {
+        const result = await service.delete({ sessionId, id: row.id })
+        if (result?.deleted === false) throw invalid('No such task')
+        pausedCount += 1
+      } catch {
+        delete paused()[row.id]
+        armed += 1
+      }
+    }
+    // A row DSH refused to drop is not paused either, so the saved state says so.
+    if (armed > 0) await rt.save()
+    return { paused: pausedCount, armed, available: true }
+  }
+
   // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
   // the paused copy. A one-time task whose time has passed waits for an edit.
   async function resumeSchedule(body) {
@@ -483,6 +521,9 @@ export function install(rt) {
     const held = pausedEntry(sessionId, String(body.id ?? ''))
     const owner = ownerOf(sessionId)
     if (held === undefined || !known(owner)) throw invalid('No such task')
+    // A paused task of a retired Bot stays paused (#1709): resuming it would arm that Bot's
+    // chat Session again, the door create, copy and update refuse.
+    if (owner.botId !== undefined && retiredBot(state.bots[owner.botId])) throw invalid('No such Bot or group chat')
     const request = requestOf(held.record)
     if (request === null) throw invalid('No such task')
     if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Its time has passed. Edit the task to pick a new one')
@@ -661,6 +702,7 @@ export function install(rt) {
 
   Object.assign(rt, {
     scheduleEndpoint: (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor),
+    pauseBotSchedules,
     moveSchedules,
     scheduleRunStarted: runStarted,
     scheduleRunEnded: runEnded,

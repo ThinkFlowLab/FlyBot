@@ -17,6 +17,7 @@
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
+import { retiredBot } from './store.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
@@ -756,7 +757,7 @@ export function install(rt) {
   const memberBot = (room, name) => {
     const wanted = String(name).trim()
     const ids = liveParticipants(room).filter(person => person.kind === 'bot' && !person.remote).map(person => person.id)
-    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && candidate.name === wanted)
+    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && !retiredBot(candidate) && candidate.name === wanted)
     if (matches.length !== 1) throw invalid(`No single Bot named "${wanted.slice(0, 80)}" in this group`)
     return matches[0]
   }
@@ -1240,10 +1241,10 @@ export function install(rt) {
     return save()
   }
   // The responsible Bot is gone: its open tasks fail (they are never silently dropped).
-  rt.taskBotDeleted = botId => {
+  rt.taskBotDeleted = (botId, why = 'the responsible Bot was deleted') => {
     for (const task of Object.values(store())) {
       if (!ACTIVE.has(task.status) || (task.ownerBotId !== botId && task.workBotId !== botId)) continue
-      transition(task, 'failed', null, { why: 'the responsible Bot was deleted' })
+      transition(task, 'failed', null, { why })
       // Deletion is another door a child ends through; its overall card must not stay working.
       settleOverall(task)
     }
@@ -1264,7 +1265,7 @@ export function install(rt) {
     const next = typeof route?.ownerBotId === 'string' ? route.ownerBotId : ''
     if (next === '' || next === task.ownerBotId) return
     const bot = botRecord(next)
-    if (bot === undefined || bot.remote !== undefined) return
+    if (bot === undefined || bot.remote !== undefined || retiredBot(bot)) return
     task.ownerBotId = next
     record(task, null, { by: 'routed' })
     await save()
@@ -1275,7 +1276,9 @@ export function install(rt) {
   // endpoint's own gate, so the answer and the write cannot disagree.
   const assertCreate = (body, actor) => {
     const bot = state.bots?.[String(body?.botId ?? '')]
-    if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+    // The same gate the endpoint had, plus retirement (#1709): a retired Bot takes no new card,
+    // whether it arrives from task-create or a pre-flight.
+    if (bot === undefined || bot.remote !== undefined || retiredBot(bot)) throw forbidden('No such Bot')
     const roomId = body?.roomId ? String(body.roomId) : undefined
     if (!mayCreateOn(bot, actor, roomId)) throw forbidden('You cannot assign a task to that Bot')
     return bot
@@ -1436,6 +1439,9 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
         if (task.status !== 'result-ready') throw stale('Only a result waiting for the requester can be sent back')
+        // Sending back opens a rework card on the same owner, so a retired Bot would get a
+        // fresh card through this door (#1709). Refused before any write: no card is born.
+        if (retiredBot(botRecord(task.ownerBotId))) throw forbidden('No such Bot')
         const note = oneLine(body.note, 500)
         if (note === '') throw invalid('Send back needs a note for the Bot')
         transition(task, 'working', actor, { by: 'sent back' })

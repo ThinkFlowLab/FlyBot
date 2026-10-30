@@ -22,6 +22,7 @@ import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
+import { retiredBot } from './store.js'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 
 export const FLYBOT_API_VERSION = 1
@@ -396,6 +397,9 @@ export function install(rt) {
     if (owner === null) return 'the sender Bot has no owner on this team'
     if (approval.ownerId !== undefined && approval.ownerId !== owner) return 'the sender Bot changed owners after it was held'
     if (!isRemote(request.to) && rt.botOf(request.to) === undefined) return 'the target Bot no longer exists'
+    // A retired Bot is out of the tree but its chat still exists (#1709): delivering to it is
+    // the delivery retirement forbids, so the hold is stale exactly as a deleted target's is.
+    if (!isRemote(request.to) && retiredBot(rt.botOf(request.to))) return 'the target Bot was retired'
     return undefined
   }
   const approvalListeners = new Set()

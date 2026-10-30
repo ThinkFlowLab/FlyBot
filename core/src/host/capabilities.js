@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { RESERVED_NAMES } from './connectors.js'
-import { ownEntry } from './store.js'
+import { ownEntry, retiredBot } from './store.js'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -156,7 +156,8 @@ export function install(rt) {
     const caller = rt.botOf(callerId)
     if (!caller) throw new Error('Only Bots on the team can change capabilities.')
     const target = targetRef ? rt.findBot(targetRef) : caller
-    if (!target) throw new Error(`No Bot named ${targetRef}.`)
+    // A retired Bot is not addressable (#1709): it resolves exactly like an unknown name.
+    if (!target || (targetRef && retiredBot(target))) throw new Error(`No Bot named ${targetRef}.`)
     if (target.id !== caller.id && !rt.isMain(callerId)) throw new Error('Only a Main Bot can change another Bot’s capabilities.')
     const item = ownEntry(ensureLibrary(), String(name ?? ''))
     if (!item) throw new Error(`No capability named ${name}.`)
