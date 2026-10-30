@@ -638,7 +638,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Shared
    'Main Bot': '主 Bot',
    Working: '工作中',
-@@ -12,6 +12,67 @@
+@@ -12,6 +12,67 @@ const ZH = {
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -706,7 +706,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +26,21 @@
+@@ -26,6 +26,21 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -728,7 +728,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
-@@ -41,22 +41,73 @@
+@@ -41,22 +41,73 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -805,7 +805,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connectors: '连接器',
    'Search connectors': '搜索连接器',
    'No connectors': '暂无连接器',
-@@ -93,6 +93,59 @@
+@@ -93,6 +93,59 @@ const ZH = {
    'Connecting…': '正在连接…',
    'Could not connect: {error}': '连接失败：{error}',
    'Connected as {account}': '已连接：{account}',
@@ -865,7 +865,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Connected: '已连接',
    Disconnect: '断开',
    Connect: '连接',
-@@ -105,17 +105,64 @@
+@@ -105,17 +105,64 @@ const ZH = {
    'GitHub addresses must start with https://': 'GitHub 地址必须以 https:// 开头',
    'This DSH cannot load connectors': '这个 DSH 不能加载连接器',
    'No such connector': '没有这个连接器',
@@ -934,7 +934,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Header
    'Message {name}': '给 {name} 发消息',
-@@ -128,8 +128,6 @@
+@@ -128,8 +128,6 @@ const ZH = {
    New: '新',
  
    // New chat
@@ -943,7 +943,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -154,9 +154,24 @@
+@@ -154,9 +154,24 @@ const ZH = {
    Everyone: '所有人',
    'Every member answers in turn, admin first.': '每位成员轮流回答，管理员先说。',
    'Members · {count}': '成员 · {count}',
@@ -968,7 +968,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove {name} from the group': '把 {name} 移出群聊',
    'Remove from group': '移出群聊',
    'Add member': '添加成员',
-@@ -172,6 +172,16 @@
+@@ -172,6 +172,16 @@ const ZH = {
    'Close details': '关闭详情',
    'Copied conversation': '已复制对话',
    'Share conversation': '分享对话',
@@ -985,7 +985,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Copy conversation as Markdown': '把对话复制为 Markdown',
    'This conversation is not part of your Bot team.': '这个对话不属于你的 Bot 团队。',
    'Admin {name}': '管理员 {name}',
-@@ -215,6 +215,25 @@
+@@ -215,6 +215,25 @@ const ZH = {
    'This model is not available now. Pick another one.': '这个模型现在不可用，请换一个。',
    'Every message of this Bot runs on it.': '这个 Bot 的每条消息都用它。',
    'Applies from the next message.': '从下一条消息开始生效。',
@@ -1011,7 +1011,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Profile: '资料',
    Label: '标签',
    'Optional. Shown under the name.': '可选，显示在名字下方。',
-@@ -238,6 +238,7 @@
+@@ -238,6 +238,7 @@ const ZH = {
    'Kept above the other chats.': '排在其他对话上面。',
    'Search still finds it.': '仍然可以搜索到。',
    Manage: '管理',
@@ -1019,7 +1019,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Group chat settings
    'Leave it empty to name the group after its members.': '留空就按成员命名。',
-@@ -274,6 +274,8 @@
+@@ -274,6 +274,8 @@ const ZH = {
    'Harness default': 'Harness 默认',
    Saving: '保存中',
    'Manage models': '管理模型',
@@ -1028,7 +1028,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -312,9 +312,10 @@
+@@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',
    'Back to group chats': '返回群聊列表',
@@ -1041,7 +1041,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +324,6 @@
+@@ -324,7 +324,6 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
@@ -1049,7 +1049,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
-@@ -333,6 +333,8 @@
+@@ -333,6 +333,8 @@ const ZH = {
    // The DSH Agent's own row and Session list. "DSH Agent" is a product name and
    // stays in English.
    'Add DSH Agent': '添加 DSH Agent',
@@ -1058,7 +1058,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Remove DSH Agent': '移除 DSH Agent',
    'New session': '新会话',
    Archive: '归档',
-@@ -344,13 +344,13 @@
+@@ -344,13 +344,13 @@ const ZH = {
    '{n} d': '{n} 天',
  
    // Plugin updates
@@ -1078,7 +1078,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,75 @@
+@@ -360,9 +360,75 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -1155,7 +1155,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Command palette
    Messages: '消息',
    Commands: '命令',
-@@ -390,10 +390,13 @@
+@@ -390,10 +390,13 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
    More: '更多',
@@ -1169,7 +1169,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Earlier messages': '更早的消息',
    'Loading earlier messages…': '正在加载更早的消息…',
    'Couldn’t load earlier messages · Retry': '更早的消息没加载出来 · 重试',
-@@ -403,6 +403,9 @@
+@@ -403,6 +403,9 @@ const ZH = {
    'Replies from': '群聊回复：',
    'Reply from': '收到回复：',
    'Message from': '收到消息：',
@@ -1179,7 +1179,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Stopped by': '叫停者：',
    '{count} messages with': '{count} 条消息，来自',
    'Routine started': '例行任务开始',
-@@ -412,6 +412,8 @@
+@@ -412,6 +412,8 @@ const ZH = {
    'Working out a plan': '理一下思路',
    'Sorting out the details': '梳理细节',
    'On it': '在做了',
@@ -1188,7 +1188,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Busy with it': '正在处理',
    'Moving ahead': '推进中',
    'Taking care of it': '处理中',
-@@ -439,7 +439,6 @@
+@@ -439,7 +439,6 @@ const ZH = {
    'Looking back through the chat': '翻看聊天记录',
    '{name} looked up its own chat': '{name} 查看了自己的对话',
    '{name} looked up its own chat for “{text}”': '{name} 在自己的对话里查找「{text}」',
@@ -1196,7 +1196,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "{name} didn't answer in time": '{name} 没有及时回应',
    '{name} paused for your approval': '{name} 停下来等你批准',
    '{name} started on it': '{name} 开始做了',
-@@ -450,12 +450,31 @@
+@@ -450,12 +450,31 @@ const ZH = {
    'Asked to make the tool call it wrote as text': '工具调用被写成了文字，已让它重新调用',
    'A Bot': '一个 Bot',
    '{name} is waiting for your approval': '{name} 等你批准',
@@ -1229,7 +1229,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    "Couldn't message {name}": '没能给 {name} 发消息',
    Messaged: '已发消息给',
    "Couldn't stop {name}": '没能叫停 {name}',
-@@ -478,6 +478,7 @@
+@@ -478,6 +478,7 @@ const ZH = {
    Selected: '已选',
    Skip: '跳过',
    Submit: '提交',
@@ -1237,7 +1237,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Choose all that apply': '可多选',
    'Dismiss question': '关闭问题',
    Dismiss: '关闭',
-@@ -485,7 +485,7 @@
+@@ -485,7 +485,7 @@ const ZH = {
    'Your answer': '你的回答',
  
    // Secrets
@@ -1246,7 +1246,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No Bot': '没有 Bot',
    'Paste or type the key': '粘贴或输入密钥',
    'Only {name}': '只给 {name}',
-@@ -501,7 +501,6 @@
+@@ -501,7 +501,6 @@ const ZH = {
    'At least {count} characters.': '至少 {count} 个字符。',
    'Replace value': '替换值',
    'Saving…': '保存中…',
@@ -1254,7 +1254,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Allowing…': '允许中…',
    Allow: '允许',
    '{bot} asked for {name}': '{bot} 请求了 {name}',
-@@ -528,7 +528,7 @@
+@@ -528,7 +528,7 @@ const ZH = {
    'NAME, e.g. GITHUB_TOKEN': '名字，例如 GITHUB_TOKEN',
    'What it is for': '用途',
    Value: '值',
@@ -1263,7 +1263,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -568,7 +568,6 @@
+@@ -568,7 +568,6 @@ const ZH = {
    Remove: '删除',
    'Ask or update': '询问或更新',
    "Ask about or update {name}'s memory": '询问或更新 {name} 的记忆',
@@ -1271,7 +1271,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Added: {text}': '已添加：{text}',
    'Added to team memory: {text}': '已加入团队记忆：{text}',
    'Updated: {text}': '已更新：{text}',
-@@ -697,11 +697,11 @@
+@@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
    // About
@@ -1286,7 +1286,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +711,13 @@
+@@ -711,6 +711,13 @@ const ZH = {
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1300,7 +1300,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
-@@ -726,7 +726,7 @@
+@@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
    'GitHub issue': 'GitHub issue',
@@ -1309,7 +1309,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +738,7 @@
+@@ -738,7 +738,7 @@ const ZH = {
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -1318,7 +1318,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,12 +771,21 @@
+@@ -771,12 +771,21 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1340,7 +1340,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Once, {time}': '一次，{time}',
    'Every day at {time}': '每天 {time}',
    'Every {days} at {time}': '每{days} {time}',
-@@ -784,7 +784,21 @@
+@@ -784,7 +784,21 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1362,7 +1362,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'in {name}': '在 {name}',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
-@@ -794,6 +794,7 @@
+@@ -794,6 +794,7 @@ const ZH = {
    minutes: '分钟',
    hours: '小时',
    days: '天',
@@ -1370,7 +1370,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Morning briefing': '早间简报',
    'What to do': '要做什么',
    'Sum up what changed since yesterday and what needs me today.': '总结一下昨天以来的变化，以及今天需要我处理的事。',
-@@ -806,9 +806,20 @@
+@@ -806,9 +806,20 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1393,7 +1393,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
    'Automation tasks are off in DSH': 'DSH 的「自动化任务」没有打开',
-@@ -819,10 +819,19 @@
+@@ -819,10 +819,19 @@ const ZH = {
    'Pick a date and time': '选一个日期和时间',
    'Pick a time in the future': '选一个将来的时间',
    'Pick a time of day': '选一个时间',
@@ -1427,7 +1427,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  
  // Host errors stay English, since Bots read them too; they are translated where the
-@@ -853,8 +853,11 @@
+@@ -853,8 +853,11 @@ const HOST_ERRORS = [
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
@@ -1439,7 +1439,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +883,20 @@
+@@ -883,6 +883,20 @@ const HOST_ZH = {
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1460,7 +1460,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,8 @@
+@@ -905,6 +905,8 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -3008,7 +3008,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-@@ -7,8 +7,8 @@
+@@ -7,8 +7,8 @@ const ENSURE_TIMEOUT_MS = 15_000
  
  export function validateCapabilityName(value) {
    const name = String(value ?? '').trim()
@@ -3019,7 +3019,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
-@@ -139,7 +139,7 @@
+@@ -139,7 +139,7 @@ export function install(rt) {
      await rt.load()
      writeCheck()
      const items = ensureLibrary()
@@ -3028,7 +3028,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
      if (!item) throw new Error(`No capability named ${name}.`)
      if (!ui) editCheck(item, botId, 'delete')
      delete items[item.name]
-@@ -154,9 +154,10 @@
+@@ -154,9 +154,10 @@ export function install(rt) {
      const caller = rt.botOf(callerId)
      if (!caller) throw new Error('Only Bots on the team can change capabilities.')
      const target = targetRef ? rt.findBot(targetRef) : caller
@@ -3041,7 +3041,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
      if (!item) throw new Error(`No capability named ${name}.`)
      await setAttached(target, item.name, endpoint === 'attach')
      return { bot: target.name, attached: endpoint === 'attach' }
-@@ -264,7 +264,7 @@
+@@ -264,7 +264,7 @@ export function install(rt) {
      return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
    }
    const disposeMount = async mount => {
@@ -3050,7 +3050,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    const mountOne = async (agent, bot, agentMounts, name) => {
      const sessionId = agent.session.id
-@@ -454,7 +454,7 @@
+@@ -454,7 +454,7 @@ export function install(rt) {
      if (endpoint === 'capability-approve') {
        await rt.load()
        writeCheck()
@@ -3059,7 +3059,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
        if (!item || item.kind !== 'mcp' || item.transport !== 'stdio') throw new Error(`No unapproved stdio MCP named ${body.name}.`)
        item.approved = true
        item.updatedAt = Date.now()
-@@ -467,7 +467,7 @@
+@@ -467,7 +467,7 @@ export function install(rt) {
        const bot = rt.botOf(String(body.botId ?? ''))
        if (!bot) throw new Error('Unknown Bot')
        const name = String(body.name ?? '')
@@ -4395,7 +4395,7 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,9 +25,12 @@
+@@ -25,9 +25,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
@@ -4409,7 +4409,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
  // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
-@@ -312,7 +312,7 @@
+@@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
  
@@ -4418,7 +4418,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  const summaryRequest = ({ name, own, team, language }) => [
    `Here is everything ${name} remembers: its own memory, then the team memory that every Bot shares. Each line is one entry; [[name]] is a topic.`,
-@@ -327,7 +327,7 @@
+@@ -327,7 +327,7 @@ const summaryRequest = ({ name, own, team, language }) => [
  ].join('\n')
  
  const ASK_SYSTEM = [
@@ -4427,7 +4427,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"reply": "…", "changes": […]}',
    '- reply: one to three short sentences to the user. Say what you changed, or answer the question; when the entries do not say, say so. The user does not see the entry numbers, so never mention them.',
    '- changes: empty unless the user asks to add, correct, or remove something. Each change is one of',
-@@ -338,7 +338,7 @@
+@@ -338,7 +338,7 @@ const ASK_SYSTEM = [
  ].join('\n')
  
  const reviewSystem = teamWrites => [
@@ -4436,7 +4436,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
-@@ -486,7 +486,24 @@
+@@ -486,7 +486,24 @@ export function install(rt) {
    // Main Bots and the admins of a group also write the team's; Main Bots read and
    // write every Bot's. The user may do everything from the memory panel.
  
@@ -4462,7 +4462,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
-@@ -495,7 +495,7 @@
+@@ -495,7 +495,7 @@ export function install(rt) {
      if (/^(own|me|mine|self|yours?|自己|我)$/i.test(value)) return { scope: ownScope(botId) }
      if (/^(team|团队|共享)$/i.test(value)) return { scope: TEAM }
      const bot = rt.findBot(value)
@@ -4471,7 +4471,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return { scope: ownScope(bot.id) }
    }
    function writeDenied(scope, botId) {
-@@ -632,7 +632,7 @@
+@@ -632,7 +632,7 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
        if (rt.readOnly() !== undefined) return
@@ -4480,7 +4480,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const dir = dirOf(ownScope(botId))
        if (!existsSync(dir)) return
        const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-@@ -837,11 +837,13 @@
+@@ -837,11 +837,13 @@ export function install(rt) {
  
    ctx.tools.register(defineTool({
      name: 'recall',
@@ -4495,7 +4495,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -861,6 +861,20 @@
+@@ -861,6 +861,20 @@ export function install(rt) {
          const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
          return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
        }
@@ -4516,7 +4516,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
        const query = String(args.query ?? '').trim().slice(0, 120)
        if (query === '') {
-@@ -872,6 +872,21 @@
+@@ -872,6 +872,21 @@ export function install(rt) {
            ].join('\n')
          }).join('\n\n')
        }
@@ -4538,7 +4538,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
        const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {
          const hay = squash(`${entry.text} ${entry.file.topic ?? ''}`)
-@@ -941,6 +941,8 @@
+@@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
    async function botShot(bot, system, text, tag) {
@@ -4547,7 +4547,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
-@@ -1004,7 +1004,7 @@
+@@ -1004,7 +1004,7 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -4556,7 +4556,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
-@@ -1123,17 +1123,28 @@
+@@ -1123,17 +1123,28 @@ export function install(rt) {
  
    // What is new in a group, from its log: the member's Session holds the same
    // messages wrapped in turn prompts.
@@ -4587,7 +4587,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        return { who, text: `${who === 'user' ? 'User' : who === 'you' ? 'You' : entry.who}: ${entry.text}`, seq: entry.seq }
      }
      return {
-@@ -1158,7 +1158,7 @@
+@@ -1158,7 +1158,7 @@ export function install(rt) {
      return { texts: kept, count: kept.length }
    }
  
@@ -4596,7 +4596,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const actor = { id: bot.id, name: bot.name, session: sessionId, auto: true }
      const done = []
      let failed
-@@ -1166,7 +1166,7 @@
+@@ -1166,7 +1166,7 @@ export function install(rt) {
        // A Bot deleted mid-review keeps no more changes, its team ones included.
        if (rt.botOf(bot.id) === undefined) return 0
        // Its role may change mid-review too, so each change asks again.
@@ -4605,7 +4605,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const op = String(change?.op ?? '')
        const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
        const target = numbered[Number(change?.entry) - 1]
-@@ -1272,7 +1272,7 @@
+@@ -1272,7 +1272,7 @@ export function install(rt) {
        const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
        if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
        if (rt.botOf(bot.id) === undefined) return
@@ -4614,7 +4614,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
-@@ -1378,8 +1378,29 @@
+@@ -1378,8 +1378,29 @@ export function install(rt) {
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
  
@@ -4916,7 +4916,7 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
-@@ -9,6 +9,8 @@
+@@ -9,6 +9,8 @@ import { readFileSync } from 'node:fs'
  import { mkdir, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
  import { SOURCE_KIND } from './constants.js'
@@ -4925,7 +4925,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
  
  // Long enough for DSH to finish opening its workspaces after a start.
  const RESUME_DELAY_MS = 3000
-@@ -51,7 +51,7 @@
+@@ -51,7 +51,7 @@ export function install(rt) {
    // What the last run left; read before this run notes anything.
    let interrupted = readNotes(file)
  
@@ -4934,7 +4934,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    let turns = {}
    /** @type {Record<string, {at:number, args:any}[]>} deliveries no turn has taken up, by Session */
    let queued = {}
-@@ -76,6 +76,10 @@
+@@ -76,6 +76,10 @@ export function install(rt) {
        await writeFile(file, snapshot, 'utf8')
      }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
    }
@@ -4945,7 +4945,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    const update = (id, change) => {
      const next = change(turns[id])
      if (next === turns[id]) return
-@@ -84,26 +84,33 @@
+@@ -84,26 +84,33 @@ export function install(rt) {
      else turns[id] = next
      persist()
    }
@@ -4990,7 +4990,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      try {
        return await deliver(noted)
      } catch (error) {
-@@ -137,10 +137,13 @@
+@@ -137,10 +137,13 @@ export function install(rt) {
        case 'turn/start': {
          const owner = rt.groupOwners.get(id)
          const botId = owner?.botId ?? rt.chatOwners.get(id)
@@ -5005,7 +5005,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          if (event.data?.source?.kind !== SOURCE_KIND) break
          // turns.js, installed earlier, has already claimed the turn's trigger.
          const info = rt.live.get(id)?.info
-@@ -151,7 +151,9 @@
+@@ -151,7 +151,9 @@ export function install(rt) {
        case 'turn/end': {
          // DSH stops every turn as it shuts down; that one is picked up at the next start.
          const reason = event.data?.reason
@@ -5016,7 +5016,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          update(id, () => undefined)
          break
        }
-@@ -164,7 +164,9 @@
+@@ -164,7 +164,9 @@ export function install(rt) {
  
    async function resumeTurn(sessionId, record) {
      const bot = rt.botOf(record.botId)
@@ -5027,7 +5027,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      const text = resumeText(record)
      if (record.roomId !== undefined) {
        const room = rt.roomOf(record.roomId)
-@@ -173,17 +173,17 @@
+@@ -173,17 +173,17 @@ export function install(rt) {
        // A turn already picked up once and cut off again stays stopped: a restart loop
        // must not run it forever.
        if (record.resumed) return
@@ -5048,7 +5048,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
    }
  
    // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
-@@ -198,11 +198,50 @@
+@@ -198,11 +198,50 @@ export function install(rt) {
        && current(item.args) !== undefined && taken?.has(item.args.exchangeId) !== true)
      if (fresh.length === 0) return
      const target = current(fresh[0].args)
@@ -5101,7 +5101,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      }
    }
  
-@@ -211,26 +211,50 @@
+@@ -211,26 +211,50 @@ export function install(rt) {
      if (rt.readOnly() !== undefined) return
      const { turns: noted, queued: dropped } = interrupted
      interrupted = { turns: {}, queued: {} }
@@ -5208,7 +5208,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
  
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
-@@ -28,6 +28,28 @@
+@@ -28,6 +28,28 @@ export function reminderText(text) {
    return lines.length === 0 ? text : lines.map(prompt => `[Scheduled task] ${prompt}`).join('\n')
  }
  
@@ -5237,7 +5237,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The create request that gives a stored record its timing again, for a move.
  function requestOf(record) {
    const base = { title: record.title, prompt: record.prompt }
-@@ -39,6 +39,28 @@
+@@ -39,6 +39,28 @@ function requestOf(record) {
    return null
  }
  
@@ -5266,7 +5266,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The settings form's timing as a create request selector.
  function selectorOf(when) {
    const zone = typeof when?.timeZone === 'string' && when.timeZone !== '' ? when.timeZone : 'UTC'
-@@ -59,9 +59,11 @@
+@@ -59,9 +59,11 @@ function selectorOf(when) {
        return { weekly: { time: `${when.time}:00`, time_zone: zone, weekdays } }
      }
      case 'every': {
@@ -5281,7 +5281,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
      }
      default:
        throw invalid('Pick when it runs')
-@@ -89,63 +89,543 @@
+@@ -89,63 +89,543 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5526,13 +5526,14 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (!known(owner)) continue
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
-+    }
+     }
+-    return { available: true, tasks }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
 +    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
-+  }
-+
+   }
+ 
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
 +  // place on the same Session, otherwise created anew before the old one is deleted.
 +  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
@@ -5677,11 +5678,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        void rt.save().catch(() => {})
 +      }
 +      throw error
-     }
--    return { available: true, tasks }
++    }
 +    return schedulesView()
-   }
- 
++  }
++
 +  // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
 +  // earlier part), or a group chat it speaks in (now, or an earlier part).
 +  const placeOf = (sessionId, botId) => {
