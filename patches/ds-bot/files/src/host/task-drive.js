@@ -302,18 +302,26 @@ export function install(rt) {
       if (!task?.queueRole || task.claimedBy || task.status !== 'open') continue
       const roomId = task.origin?.roomId
       const room = roomId ? rt.roomOf(roomId) : undefined
-      if (!room || room.origin === 'face-to-face') continue
+      if (roomId && (!room || room.origin === 'face-to-face')) continue
       if (Number.isFinite(task.retryAt) && task.retryAt > clock.now()) continue
-      const key = `${roomId}\u0000${String(task.queueRole).toLowerCase()}`
+      // A handoff card (#1775) waits in its role's pool, room or not: the key is the role, so a
+      // card handed from one role to the next is offered in the same pass with no dispatch.
+      const key = `${roomId ?? ''}\u0000${String(task.queueRole).toLowerCase()}`
       const list = byRoomRole.get(key) ?? []
       list.push(task)
       byRoomRole.set(key, list)
     }
     for (const list of byRoomRole.values()) {
       const item = list.slice().sort(compareForQueue)[0]
-      const room = rt.roomOf(item.origin.roomId)
-      const carriers = (room?.members ?? [])
-        .filter(id => { const bot = rt.botOf(id); return Boolean(bot) && bot.remote === undefined && sameRole(bot.role, item.queueRole) })
+      const room = item.origin?.roomId ? rt.roomOf(item.origin.roomId) : undefined
+      const carriers = room
+        ? (room.members ?? [])
+          .filter(id => { const bot = rt.botOf(id); return Boolean(bot) && bot.remote === undefined && sameRole(bot.role, item.queueRole) })
+        // No room: the pool is every local Bot carrying the role, so a handoff chain runs between
+        // members of the team that never share a group.
+        : Object.values(rt.state.bots ?? {})
+          .filter(bot => Boolean(bot) && bot.remote === undefined && bot.role && !retiredBot(bot) && sameRole(bot.role, item.queueRole))
+          .map(bot => bot.id)
       for (const botId of carriers) {
         const sessionId = rt.chatOf(botId)
         if (!sessionId || rt.roomOf(sessionId)) continue

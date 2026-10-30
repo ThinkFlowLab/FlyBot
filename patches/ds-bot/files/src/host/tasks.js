@@ -485,10 +485,22 @@ export function install(rt) {
     if (taskClass !== undefined) task.taskClass = taskClass
     if (reworkOf !== undefined) task.reworkOf = reworkOf
     if (handoff !== undefined) task.handoff = handoff
+    if (handoff !== undefined) routeToPool(task, handoff)
     if (evidence !== undefined) task.evidence = evidence
     if (clearingLease) delete task.lease
     if (lease !== undefined) task.lease = lease
     return { taskClass, reworkOf, handoff, evidence, lease }
+  }
+  // The route on the card (#1775): `handoff.to` names the role that owns the next step, so it is
+  // the card's pool. Recording the handoff starts the card in that pool; recording it on a card a
+  // member is holding hands the card on in the same write, so the producer lets go of it and the
+  // target role can take it with no dispatch from a supervisor.
+  function routeToPool(task, handoff) {
+    const held = task.claimedBy !== undefined || task.status === 'claimed' || task.status === 'working' || task.status === 'blocked'
+    task.queueRole = handoff.to
+    if (held) requeue(task, `handoff to ${handoff.to}`, 0, 'handed on')
+    else if (task.queueBy === undefined) task.queueBy = task.ownerBotId
+    return task.queueRole
   }
   // The typed contract on a card that is created here rather than written by a caller.
   const defaultContract = (task) => {
@@ -642,15 +654,20 @@ export function install(rt) {
   // roles, and the rework is one child card linked by `reworkOf` — never `parentId`, which
   // means "part of an overall card" and must never make `settleOverall` fire. A replay of the
   // same rejection reuses the child that is still open instead of creating a second one.
-  function openRework(original, note) {
+  function openRework(original, note, by = 'requester') {
     const reason = boundedLine(note, HANDOFF_REASON_MAX, 'handoff.reason')
-    const to = oneLine(botRecord(original.ownerBotId)?.role ?? '', ROLE_MAX) || 'requester'
-    const from = 'requester'
+    // A worker-side return names the role that produced the card (#1775); the requester's own
+    // send-back stays the owner's role, exactly as before.
+    const to = by === 'requester'
+      ? oneLine(botRecord(original.ownerBotId)?.role ?? '', ROLE_MAX) || 'requester'
+      : oneLine(original.handoff?.from ?? '', ROLE_MAX)
+    const from = by
     const at = stamp()
     original.handoff = { from, to, at, reason }
     const existing = Object.values(store()).find(task => task.reworkOf === original.id && openTask(task))
     if (existing !== undefined) {
       existing.handoff = { from, to, at, reason }
+      if (by !== 'requester') existing.queueRole = to
       existing.actors = [...(existing.actors ?? []), { status: existing.status, at, by: 'rework replayed' }]
       existing.updatedAt = at
       return existing
@@ -668,6 +685,7 @@ export function install(rt) {
       note: reason,
       source: 'rework',
       handoff: { from, to, at, reason },
+      ...(by === 'requester' ? {} : { queueRole: to, queueBy: original.queueBy ?? original.ownerBotId }),
       origin: { ...(original.origin ?? {}) },
       actors: [{ status: 'open', at, by: 'rework opened' }],
     }
@@ -775,7 +793,7 @@ export function install(rt) {
     .filter(bot => Boolean(bot) && sameRole(bot.role, role))
   // blocked → open is the queue's own edge: a member that cannot finish returns the item, and
   // no other path sends a card back to the queue, so the edge is not on TRANSITIONS.
-  function requeue(task, reason, retryInSec) {
+  function requeue(task, reason, retryInSec, by = 'returned to the queue') {
     dropWorker(task.worker)
     delete task.worker
     delete task.waitingFor
@@ -789,7 +807,7 @@ export function install(rt) {
     task.progress = 0
     task.retryAt = Date.now() + retryInSec * 1000
     task.queueReason = reason
-    record(task, null, { by: 'returned to the queue', retryInSec })
+    record(task, null, { by, retryInSec })
   }
   const resolveParent = (roomId, ref, batch) => {
     const text = String(ref).trim()
@@ -922,7 +940,9 @@ export function install(rt) {
   async function claimQueued(botId, body, roomId) {
     const room = resolveRoom(botId, body.group, roomId)
     const entry = room ? state.rooms?.[room] : undefined
-    if (!entry) throw invalid('A claim needs a group')
+    // A handoff card waits in its role's pool, not in a room (#1775): a member of the role takes it
+    // from its own chat, so a chain handed from one role to the next needs no group and no dispatch.
+    if (!entry) return claimHandoff(botId, body)
     if (expireLeases() > 0) await rt.save()
     const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
     if (myRole === '') throw refuse('not-in-role', 'this Bot has no role to claim with')
@@ -972,6 +992,66 @@ export function install(rt) {
     return { item: view(live) }
   }
 
+  // The role's own pool (#1775): a card whose `handoff.to` names this member's role is offered to
+  // it and to nobody else, and the same compare-and-set gives one member one card. A card with no
+  // room is not offered to a supervisor: the target role takes it, and an idle member wakes for it.
+  async function claimHandoff(botId, body) {
+    if (expireLeases() > 0) await rt.save()
+    const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
+    if (myRole === '') throw refuse('not-in-role', 'this Bot has no role to claim with')
+    const holding = Object.values(store()).filter(task => task.ownerBotId === botId && occupiesSlot(task))
+    if (holding.length > 0) return { item: null, reason: 'wip', held: holding.sort(compareForWork)[0].id }
+    const now = Date.now()
+    const inPool = (task) => {
+      if (task?.status !== 'open' || task.claimedBy !== undefined) return false
+      if (!sameRole(task.handoff?.to, myRole)) return false
+      return !(Number.isFinite(task.retryAt) && task.retryAt > now)
+    }
+    const wantedId = body.id !== undefined && body.id !== null && String(body.id) !== '' ? String(body.id) : undefined
+    let pick
+    if (wantedId !== undefined) {
+      pick = find(wantedId)
+      if (pick === undefined) throw stale(`no task ${wantedId}`)
+      if (!inPool(pick)) throw stale(`no card for ${myRole} in the handoff pool`)
+    } else {
+      pick = Object.values(store()).filter(inPool).sort(compareForQueue)[0]
+    }
+    if (pick === undefined) return { item: null, reason: 'empty' }
+    await rt.load()
+    const live = find(pick.id)
+    if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    live.claimedBy = botId
+    live.ownerBotId = botId
+    delete live.retryAt
+    delete live.queueReason
+    const claimedAt = Date.now()
+    live.lease = { holder: botId, takenAt: claimedAt, expiresAt: claimedAt + LEASE_TTL_SEC * 1000 }
+    live.worker = newWorker()
+    transition(live, 'claimed', null, { by: 'claimed from the handoff pool' })
+    announceClaim(live)
+    await save()
+    return { item: view(live) }
+  }
+
+  // The target role's admission comes back as a rework card (#1775): the member holding the card
+  // returns it to the role that produced it (`handoff.from`), and the producer takes it from its
+  // own pool. The child is linked by `reworkOf`, never `parentId`, and the original stays `working`
+  // until the rework is accepted (`closeRework`).
+  async function returnToProducer(botId, spec) {
+    const task = find(spec?.task ?? spec?.id)
+    if (task === undefined) throw stale(`no task ${String(spec?.task ?? spec?.id ?? '')}`)
+    if (task.claimedBy !== botId) throw forbidden('Only the member that claimed this card may return it to its producer')
+    const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
+    if (!sameRole(task.handoff?.to, myRole)) throw refuse('not-in-role', `card ${task.id} is in the ${task.handoff?.to ?? 'unknown'} pool, not ${myRole}`)
+    const reason = readOptionalLine(spec?.reason, 'A reason')
+    if (reason === undefined) throw invalid('Returning a card to its producer needs a one-line reason')
+    const producer = oneLine(task.handoff?.from ?? '', ROLE_MAX)
+    if (producer === '' || producer === 'requester') throw refuse('no-producer', `card ${task.id} carries no producer role to return it to`)
+    const child = openRework(task, reason, myRole)
+    await save()
+    return view(child)
+  }
+
   // A member that cannot finish returns the item with one line of why; it is not offered
   // again before `retryAt` (#1247).
   async function releaseQueued(botId, spec) {
@@ -1002,6 +1082,7 @@ export function install(rt) {
     // Both come before the read path: a claim arrives with `tasks` omitted, so reading first
     // would return the list instead of the item (#1247).
     if (body?.release !== undefined) return releaseQueued(botId, body.release)
+    if (body?.rework !== undefined) return returnToProducer(botId, body.rework)
     if (body?.claim === true) return claimQueued(botId, body, origin.roomId)
     const items = body?.tasks
     if (items === undefined) return listed(botId)

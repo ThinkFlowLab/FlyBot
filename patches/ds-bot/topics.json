@@ -142,5 +142,8 @@
   ],
   "0016-room-collaboration-smoke": [
     "dev/mock-llm.mjs"
+  ],
+  "0017-handoff-route": [
+    "src/host/tools.js"
   ]
 }
