@@ -362,7 +362,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  
  export const ROOM_MODES = [
    ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
-@@ -15,9 +15,136 @@
+@@ -15,9 +15,136 @@ export const ROOM_MODES = [
  // Without an admin the host answers as everyone, whatever the stored mode says.
  export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
  
@@ -500,7 +500,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  }
  
  // A group chat's settings as grouped cards: its name and notice, who answers, its
-@@ -31,8 +31,22 @@
+@@ -31,8 +31,22 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
@@ -524,7 +524,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
-@@ -65,37 +65,79 @@
+@@ -65,37 +65,79 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
        h('div', { className: 'bt-set-row bt-bs-row' },
          h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Folder'))),
          h(FolderMenu, { value: room.workDir, group: true, actions, run, onPick: workDir => update({ workDir }) }))),
@@ -614,7 +614,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
        h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-bs-danger', 'data-confirm': confirming || undefined, onClick: remove },
          h('span', { className: 'bt-set-copy' },
            h('span', { className: 'bt-bs-label' }, confirming ? t('Delete {name}?', { name: room.name }) : t('Delete group')),
-@@ -116,7 +116,7 @@
+@@ -116,7 +116,7 @@ export function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
      if (busy || admin === null || members.length === 0) return
      setBusy(true)
      let room
@@ -623,7 +623,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
      if (done && room) onCreated(room)
      else setBusy(false)
    }
-@@ -157,6 +157,15 @@
+@@ -157,6 +157,15 @@ export const GROUP_SETTINGS_CSS = `
  .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-gs-who:hover .bt-row-title{text-decoration:underline;text-underline-offset:2px}
  .bt-gs-add{gap:8px;color:var(--bt-ink-2)}

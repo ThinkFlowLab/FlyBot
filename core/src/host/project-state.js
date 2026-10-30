@@ -57,8 +57,12 @@ async function describe(dir, path) {
 // Every Project State file in `dir` with its byte size, content hash and last-modified time.
 // A file that is absent from the folder is left out rather than reported as empty; the
 // decisions folder is read one level deep and only for `*.md`.
-export async function listProjectState(dir) {
-  if (!await repositoryAt(dir)) return { ok: false, reason: `not a repository: ${dir}` }
+//
+// The repository gate belongs to the tool, not to every reader (#1809): a decision file is the
+// board's own artifact and shows up in a folder that is not a repository, while `project_state`
+// keeps refusing such a folder by default. Only the board passes `{ repository: false }`.
+export async function listProjectState(dir, { repository = true } = {}) {
+  if (repository && !await repositoryAt(dir)) return { ok: false, reason: `not a repository: ${dir}` }
   const found = []
   for (const path of PROJECT_STATE_PATHS) {
     try {

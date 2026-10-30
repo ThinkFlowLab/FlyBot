@@ -5,7 +5,9 @@
 // #1767 adds the other half of the record beside the cards: the `decisions/*.md` files of the
 // Project's working folder and the meetings that reached `decided`. It is the same read — the
 // folder goes through `listProjectState`, which already hashes every file, and a decision file
-// is listed with a name, a date and one title line, never its body.
+// is listed with a name, a date and one title line, never its body. #1809 adds the second source:
+// `decide` archives in the Session's working folder, so each decided meeting names the folder it
+// wrote to (`decisionDir`) and the board reads that one file beside the Project folder.
 //
 // #1768 adds the queue beside those: the waiting cards of a role queue, the cards a claim holds
 // (with its lease live or stalled) and the blocked cards, each with the line it already stores.
@@ -14,10 +16,10 @@
 // Read-only by construction: it reads `state.tasks`, `state.meetings` and the Project bindings,
 // asks each registered provider for the workflow refs of tasks that still exist, and returns the
 // sections. It writes nothing, starts nothing and is not called unless someone asks for the board.
-import { open } from 'node:fs/promises'
+import { open, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
-import { DECISIONS_DIR, listProjectState } from './project-state.js'
+import { DECISIONS_DIR, listProjectState, sha256 } from './project-state.js'
 
 const text = value => (typeof value === 'string' ? value.trim() : '')
 
@@ -127,33 +129,83 @@ export function install(rt) {
     return ''
   }
 
+  // The file a decided meeting archived (#1809): read from the folder the record names, and only
+  // that one file — two folder-less Projects share the team folder, so a folder read whole would
+  // show each Project the other's decisions. A record written before this slice names no folder
+  // and resolves through the Project folder exactly as it did.
+  const archivedOf = async (meeting) => {
+    const dir = text(meeting?.decisionDir)
+    const path = text(meeting?.decisionFile)
+    if (dir === '' || !path.startsWith(`${DECISIONS_DIR}/`) || !path.endsWith('.md')) return undefined
+    try {
+      const bytes = await readFile(join(dir, path))
+      const info = await stat(join(dir, path))
+      return { dir, path, bytes: bytes.length, sha256: sha256(bytes), mtime: new Date(info.mtimeMs).toISOString() }
+    } catch {
+      // Absent or unreadable is not a row: the meeting keeps its own record, with no path.
+      return undefined
+    }
+  }
+
   const decisionsOf = async (project) => {
     const dir = folderOf(project)
-    if (dir === '') return { dir: null, files: [], reason: 'no working folder: this Project names none' }
-    let state
-    try {
-      state = await listProjectState(dir)
-    } catch (error) {
-      return { dir, files: [], reason: `unreadable: ${error?.message ?? String(error)}` }
+    const folders = []
+    const found = []
+    if (dir !== '') {
+      folders.push(dir)
+      let state
+      try {
+        // The board's own read takes no repository gate (#1809): a decision file is the board's
+        // artifact, and a Project folder is not a repository in a default install.
+        state = await listProjectState(dir, { repository: false })
+      } catch (error) {
+        return { dir, files: [], reason: `unreadable: ${error?.message ?? String(error)}` }
+      }
+      if (state.ok !== true) return { dir, files: [], reason: state.reason }
+      found.push(...state.files
+        .filter(file => file.path.startsWith(`${DECISIONS_DIR}/`) && file.path.endsWith('.md'))
+        .map(file => ({ ...file, dir })))
     }
-    if (state.ok !== true) return { dir, files: [], reason: state.reason }
-    const found = state.files
-      .filter(file => file.path.startsWith(`${DECISIONS_DIR}/`) && file.path.endsWith('.md'))
+    // The other source: the folder each decided meeting of this Project recorded, one file each.
+    for (const meeting of Object.values(rt.state?.meetings ?? {})) {
+      if (meeting === null || typeof meeting !== 'object' || meeting.status !== 'decided') continue
+      if (!inProject(meeting, project)) continue
+      const archivedDir = text(meeting.decisionDir)
+      if (archivedDir !== '' && !folders.includes(archivedDir)) folders.push(archivedDir)
+      const archived = await archivedOf(meeting)
+      if (archived !== undefined) found.push(archived)
+    }
+    // One row per path — the client keys a row by path, and the Project folder was read first.
+    const seen = new Set()
+    const chosen = found
+      .filter((file) => {
+        if (seen.has(file.path)) return false
+        seen.add(file.path)
+        return true
+      })
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
       .slice(0, DECISIONS_MAX)
     const files = []
-    for (const file of found) {
+    for (const file of chosen) {
       const name = fileName(file.path)
       files.push({
         path: file.path,
         name,
         date: dateOfName(name),
-        title: await titleOf(dir, file.path),
+        title: await titleOf(file.dir, file.path),
         bytes: file.bytes,
         sha256: file.sha256,
         mtime: file.mtime,
       })
     }
-    return { dir, files, reason: files.length === 0 ? `no decision file in ${join(dir, DECISIONS_DIR)}` : '' }
+    const reason = files.length > 0
+      ? ''
+      : folders.length === 0
+        ? 'no working folder: this Project names none'
+        : folders.length === 1
+          ? `no decision file in ${join(folders[0], DECISIONS_DIR)}`
+          : 'no decision file in any folder the record names'
+    return { dir: dir === '' ? null : dir, files, reason }
   }
 
   // A meeting names the Project it belongs to by id or by name (the tool's `project` argument is

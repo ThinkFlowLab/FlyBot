@@ -200,3 +200,47 @@ test('a card waiting for its rework is not re-offered when its lease expires (#1
   assert.match(await app.track('d1', { claim: true, id }), /no card for Dev in the handoff pool/, 'the producer cannot take the card its rework covers')
   assert.match(await app.track('d1', { claim: true, id: childId }), new RegExp(`^Claimed ${childId} `), 'the producer takes the card that is in flight')
 })
+
+// #1804 keeps a card with an open `rework` child out of the lease recovery; this pins the states on
+// both sides of that guard — held while the child is open, recovered once it is cancelled. Green on
+// the base too (the base holds the card back and recovers it the same way), so the case is a
+// regression guard, not a discriminator for #1809.
+test('a cancelled rework hands its original back to the lease recovery (#1804)', async (t) => {
+  const app = await start(t)
+  const id = app.idOf(await app.track('a', { tasks: [{ title: 'Build the route', handoff: { from: 'Lead', to: 'Dev' } }] }))
+  await app.drive()
+  await app.track('d1', { claim: true, id })
+  await app.track('d1', { tasks: [{ id, handoff: { from: 'Dev', to: 'Reviewer', reason: 'diff ready' } }] })
+  await app.drive()
+  await app.track('r1', { claim: true, id })
+  await app.track('r1', { tasks: [{ id, column: 'in-progress' }] })
+  const childId = app.idOf(await app.track('r1', { rework: { task: id, reason: 'no test for the return path' } }))
+  const held = app.rt.state.tasks[id]
+  const worker = held.worker
+  assert.ok(worker, 'the claim that holds the card started a worker')
+
+  // While the child is open the tick leaves the card alone: no recovery, so the worker, the holder
+  // and an empty evidence list all stay put.
+  assert.equal(await app.rt.taskExpireLeases(Date.now() + 31 * 60 * 1000), 0, 'a card waiting for its rework is not recovered')
+  assert.equal(held.status, 'working', 'the original keeps waiting for its rework')
+  assert.equal(held.worker, worker, 'the worker of the open card is not dropped')
+  assert.deepEqual(held.evidence ?? [], [], 'no recovery is recorded while the rework is open')
+
+  // The exit: with the child cancelled no rework is open, so the next tick recovers the card the way
+  // it recovers any abandoned one, and only once.
+  await app.rt.taskEndpoint('task-cancel', { id: childId })
+  assert.equal(app.rt.state.tasks[childId].status, 'cancelled')
+  assert.equal(await app.rt.taskExpireLeases(Date.now() + 61 * 60 * 1000), 1)
+  const recovered = held
+  assert.equal(recovered.status, 'open', 'an abandoned rework does not strand the original')
+  assert.equal(recovered.queueRole, 'Reviewer', 'back in the queue its handoff names')
+  assert.equal(recovered.ownerBotId, held.queueBy, 'the requeue hands the card back to the Bot that enqueued it')
+  assert.equal(recovered.claimedBy, undefined)
+  assert.equal(recovered.lease, undefined)
+  assert.equal(recovered.worker, undefined, 'the dead worker is dropped')
+  assert.equal(app.rt.taskWorkerState(worker), undefined)
+  assert.equal(recovered.evidence?.at(-1)?.check, 'lease expired (held by Rev1)', 'the recovery names the holder it recovered from')
+  assert.equal(await app.rt.taskExpireLeases(Date.now() + 62 * 60 * 1000), 0, 'the recovered card is not recovered twice')
+  await app.drive()
+  assert.match(app.text('r1'), new RegExp(`Take ${id} `), 'the Reviewer is offered the card again')
+})

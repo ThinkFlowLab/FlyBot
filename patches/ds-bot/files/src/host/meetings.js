@@ -290,6 +290,9 @@ export function install(rt) {
       updatedAt: now,
       closedBy: actor?.name ?? candidate.owner,
       decisionFile: file,
+      // The folder the file was archived in (#1809): the board reads the file where `decide` put
+      // it, so a Project folder that differs from this one no longer hides the decision.
+      decisionDir: dir,
     }
     // P-205: the step that fails most often — writing into `decisions/` — now runs before any card,
     // so an unwritable folder leaves the meeting exactly as it was. The temp is claimed here.

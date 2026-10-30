@@ -425,3 +425,130 @@ test('#1768: an unreadable queue answers unknown, never zero', async () => {
     assert.deepEqual([queues.waiting, queues.inflight, queues.blocked], [[], [], []])
   } finally { await stop() }
 })
+
+// #1809: `meeting decide` archives its file in the Session's working folder, while the board read
+// only the Project's own folder — so a default install showed an empty Decisions section and the
+// decided meeting as `decision file gone` while the file sat on disk. These cases drive the real
+// `meeting` tool (open → three positions → decide) and then read the board.
+const meetingTeam = () => ({
+  version: 2,
+  revision: 1,
+  mainBotIds: ['a'],
+  members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
+  bots: {
+    a: { id: 'a', name: 'Chief', role: 'Chief', sessionId: 'a', createdAt: 1, ownerId: 'owner-1' },
+    d1: { id: 'd1', name: 'Dev', role: 'Dev', sessionId: 'd1', createdAt: 2, ownerId: 'owner-1' },
+    r1: { id: 'r1', name: 'Reviewer', role: 'Reviewer', sessionId: 'r1', createdAt: 3, ownerId: 'owner-1' },
+  },
+  rooms: {
+    'room-1': { id: 'room-1', name: 'Ops', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {}, projectId: 'project-p1' },
+    'room-2': { id: 'room-2', name: 'Garden', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {}, projectId: 'project-p2' },
+  },
+  agents: {}, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, grants: {},
+  projects: {
+    'project-p1': { id: 'project-p1', name: 'P1', repository: null, defaultBranch: 'main', ownerUserId: 'owner-1', createdAt: 1, updatedAt: 1, status: 'active' },
+    'project-p2': { id: 'project-p2', name: 'P2', repository: null, defaultBranch: 'main', ownerUserId: 'owner-1', createdAt: 2, updatedAt: 2, status: 'active' },
+  },
+  projectRuns: {}, tasks: {}, meetings: {},
+})
+
+async function startWithMeetings({ project, room, session, team = meetingTeam() } = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const teamDir = mkdtempSync(join(tmpdir(), 'ds-bot-team-'))
+  if (project !== undefined) team.projects['project-p1'].workDir = project
+  if (room !== undefined) team.rooms['room-1'].workDir = room
+  writeFileSync(join(home, 'state.json'), JSON.stringify(team))
+  const ctx = fakeContext()
+  Object.assign(ctx, {
+    llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
+    // The team folder a default install resolves to: the workspace the Session works in.
+    workspaceRegistry: { get: () => ({ id: 'w1', path: teamDir }), resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
+    sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async id => ({ agent: { session: { id }, id, status: 'idle', cancel() {} } }), selectModel: async () => {}, page: async () => ({ records: [], hasMore: false }) },
+    sessionTitle: { rename: async () => {} },
+    sessions: { flush: async () => {} },
+  })
+  const rt = createRuntime(ctx, { home })
+  await rt.load()
+  const exec = { agent: { id: 'a', session: { header: { cwd: session ?? teamDir } } } }
+  const meeting = args => ctx.registeredTools.get('meeting').execute(args, exec)
+  const decide = async (projectId, question) => {
+    const id = (await meeting({ action: 'open', question, participants: ['Chief', 'Dev', 'Reviewer'], project: projectId })).split(' ')[0]
+    for (const name of ['Chief', 'Dev', 'Reviewer']) await meeting({ action: 'position', meeting: id, as: name, stance: 'agree', text: `${name} agrees` })
+    await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Archive where the Session works.' })
+    return id
+  }
+  const stop = async () => {
+    await ctx.dispose()
+    for (const dir of [home, teamDir]) rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+  }
+  return { ctx, rt, home, teamDir, exec, meeting, decide, stop }
+}
+
+test('#1809: a decision archived in the Session folder is listed by the board of a Project that names another folder', async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), 'ds-p1809-project-'))
+  const sessionDir = mkdtempSync(join(tmpdir(), 'ds-p1809-session-'))
+  const { ctx, rt, exec, decide, stop } = await startWithMeetings({ project: projectDir, room: sessionDir, session: sessionDir })
+  try {
+    const id = await decide('project-p1', 'Which folder carries the decision of a Project that names its own?')
+    const meeting = rt.state.meetings[id]
+    assert.match(meeting.decisionDir ?? '', new RegExp(`^${sessionDir}$`), 'the record names the folder it archived in')
+    const named = meeting.decisionFile
+    assert.equal(existsSync(join(sessionDir, named)), true, 'the file stays in the Session folder')
+    assert.equal(existsSync(join(projectDir, 'decisions')), false, 'nothing was written into the Project folder')
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.dir, projectDir, 'the Project folder is still the folder the board reports')
+    assert.deepEqual(board.decisions.files.map(file => file.path), [named], 'the archived file is listed')
+    const listed = board.decisions.files[0]
+    assert.equal(listed.bytes, statSync(join(sessionDir, named)).size, 'bytes come from the folder the file is in')
+    assert.equal(listed.sha256, meeting.decisionSha256, 'the hash is the bytes `decide` archived')
+    assert.equal(listed.title, 'Which folder carries the decision of a Project that names its own?')
+    assert.deepEqual(board.meetings.decided.map(entry => [entry.id, entry.path]), [[id, named]], 'the meeting links to the file, no `decision file gone`')
+    assert.equal(board.decisions.reason, '')
+    // Acceptance 6: the `project_state` tool keeps its repository gate on a plain folder; only the
+    // board's own read is ungated, and that is why the case above can list the file at all.
+    const state = await ctx.registeredTools.get('project_state').execute({}, exec)
+    assert.match(state, /not a repository:/, 'project_state still refuses a plain folder')
+  } finally {
+    await stop()
+    rmSync(projectDir, { recursive: true, force: true })
+    rmSync(sessionDir, { recursive: true, force: true })
+  }
+})
+
+test('#1809: a default install lists the team-folder decision, and a real delete still reads gone', async () => {
+  const { rt, teamDir, decide, stop } = await startWithMeetings()
+  try {
+    const id = await decide('project-p1', 'Which folder holds the record of a default install?')
+    const named = rt.state.meetings[id].decisionFile
+    assert.equal(existsSync(join(teamDir, named)), true, 'the decision is archived in the team folder')
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.dir, null, 'a Project that names no folder still reports no folder')
+    assert.deepEqual(board.decisions.files.map(file => file.path), [named], 'the team-folder decision is listed')
+    assert.equal(board.decisions.files[0].sha256, rt.state.meetings[id].decisionSha256)
+    assert.deepEqual(board.meetings.decided.map(entry => [entry.id, entry.path]), [[id, named]])
+    assert.equal(board.decisions.reason, '')
+    // Acceptance 4: a file that really was deleted still reads `decision file gone`, not a listing.
+    rmSync(join(teamDir, named))
+    const gone = await rt.projectBoard('project-p1')
+    assert.deepEqual(gone.decisions.files, [])
+    assert.deepEqual(gone.meetings.decided.map(entry => [entry.id, entry.path]), [[id, '']], 'a missing file keeps the meeting, with no path')
+  } finally { await stop() }
+})
+
+test('#1809: two folder-less Projects sharing the team folder list only their own decisions', async () => {
+  const { rt, teamDir, decide, stop } = await startWithMeetings()
+  try {
+    const first = await decide('project-p1', 'Where do the decisions of the first Project live?')
+    const second = await decide('project-p2', 'Where do the decisions of the second Project live?')
+    const one = rt.state.meetings[first].decisionFile
+    const two = rt.state.meetings[second].decisionFile
+    assert.equal(existsSync(join(teamDir, one)), true)
+    assert.equal(existsSync(join(teamDir, two)), true)
+    const p1 = await rt.projectBoard('project-p1')
+    assert.deepEqual(p1.decisions.files.map(file => file.path), [one], 'the other Project’s decision is never listed here')
+    assert.deepEqual(p1.meetings.decided.map(entry => [entry.id, entry.path]), [[first, one]])
+    const p2 = await rt.projectBoard('project-p2')
+    assert.deepEqual(p2.decisions.files.map(file => file.path), [two])
+    assert.deepEqual(p2.meetings.decided.map(entry => [entry.id, entry.path]), [[second, two]])
+  } finally { await stop() }
+})
