@@ -290,3 +290,35 @@ test('a Project carries an optional working folder and refuses a relative one', 
     }
   } finally { await stop() }
 })
+
+// #1759: `project-assistant-owner` had a store case and an owner gate (#1740) but no channel case
+// and no `TASK_ENDPOINTS` entry, so every call failed `bot/not-found` and the digest opt-out, the
+// quiet window and the zone were writable only in-process. There is no read endpoint: the second
+// write's answer echoes the record the first one stored, so it proves the write went through the
+// Project's own assistant rather than being accepted and dropped.
+test('the Project owner writes the assistant settings through the host channel (#1759)', async () => {
+  const { call, stop } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Assistant', repository: 'acme/assistant' }, 'tok-a'))
+    assert.equal(typeof project.assistant?.botId, 'string', `the Project got an assistant: ${JSON.stringify(project.assistant)}`)
+
+    // Before #1759 this answered `Unknown endpoint project-assistant-owner` / `bot/not-found` for
+    // both callers: the endpoint was not dispatched at all.
+    const refused = await call('project-assistant-owner', { id: project.id, settings: { off: true } }, 'tok-b')
+    assert.equal(refused.ok, false, JSON.stringify(refused))
+    assert.equal(refused.error.code, 'bot/forbidden', JSON.stringify(refused))
+
+    const written = value(await call('project-assistant-owner', {
+      id: project.id,
+      settings: { off: true, quiet: { on: true, from: '09:00', to: '11:00' }, zone: 'Asia/Shanghai' },
+    }, 'tok-a'))
+    assert.equal(written.owner, 'owner-1')
+    assert.equal(written.off, true)
+    assert.deepEqual(written.quiet, { on: true, from: '09:00', to: '11:00', zone: 'Asia/Shanghai' })
+    assert.equal(written.changed, true)
+
+    const reread = value(await call('project-assistant-owner', { id: project.id, settings: { off: false } }, 'tok-a'))
+    assert.equal(reread.off, false)
+    assert.deepEqual(reread.quiet, { on: true, from: '09:00', to: '11:00', zone: 'Asia/Shanghai' }, 'the window and the zone are still stored')
+  } finally { await stop() }
+})

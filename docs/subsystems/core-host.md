@@ -589,8 +589,11 @@ gate. The same check covers the record itself since #1740: `project-delete`, `pr
 non-owner gets `bot/forbidden` and the Project, its memory and the other owner's digest settings
 are unchanged afterwards — a refusal, never a silent no-op. `project-assistant-owner` also refuses
 a body whose `ownerId` is not the caller's own record, so even a Project's owner cannot rewrite
-another owner's quiet window or opt-out before that endpoint is wired; an omitted `ownerId` means
-the caller's own. The gate returns early on a missing id, so `project-memory` keeps the not-found
+another owner's quiet window or opt-out; an omitted `ownerId` means the caller's own. Since #1759
+`project-assistant-owner` is dispatched by `channel.js` alongside the other `project-*` endpoints
+and listed in `authz.js`'s `TASK_ENDPOINTS`, so the owner reaches the store case through the host
+channel instead of only in-process; the two landed together because a dispatch without the
+allow-list entry would reach `store.js` with the owner check bypassed. The gate returns early on a missing id, so `project-memory` keeps the not-found
 refusal it answered before rather than turning an unknown id into a 403. Tests:
 `core/test/project-owner-gate.test.js`.
 Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
@@ -706,4 +709,6 @@ the host side only, so the tier stays T2 and `core/src/shared/` is untouched.
   delivered to each owner's own Session through `deliver()` with no connector signed in, and the
   refusal is recorded on that digest's note (`GitHub write refused: …`) instead of suppressing the
   message. `Written-by:`/`Posted-for:` appear only when an identity was resolved.
-- Endpoint `project-assistant-owner` (`{ id, ownerId, settings }`) exposes the controls.
+- Endpoint `project-assistant-owner` (`{ id, ownerId, settings }`) exposes the controls: dispatched
+  by `channel.js` and in `authz.js`'s `TASK_ENDPOINTS` since #1759, with `requireProjectOwner`
+  refusing a non-owner with `bot/forbidden` before any record is written.
