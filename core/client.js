@@ -1396,6 +1396,10 @@ var ZH = {
   "not-started": "未开始",
   "in-progress": "进行中",
   "done": "已完成",
+  // The queue rows beside the columns carry the host's own lease state through the same lookup,
+  // so the ids that read emits are keys of their own (#1813).
+  running: "运行中",
+  stalled: "已停滞",
   "Projects": "项目",
   "New Project": "新建项目",
   "Project name": "项目名称",

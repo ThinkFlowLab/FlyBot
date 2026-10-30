@@ -54,7 +54,8 @@
     "test/session-identity.test.js",
     "src/host/steward.js",
     "test/steward.test.js",
-    "test/steward-retry.test.js"
+    "test/steward-retry.test.js",
+    "test/i18n.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",
