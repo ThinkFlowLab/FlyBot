@@ -771,6 +771,7 @@ export function createWorkflowService({
     return {
       id: task.id,
       title: task.title,
+      ...(task.brief ? { brief: task.brief } : {}),
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
       ...(task.projectId ? { projectId: task.projectId } : {}),
       ...(task.handoff ? { handoff: task.handoff } : {}),
