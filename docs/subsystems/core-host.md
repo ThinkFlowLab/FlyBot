@@ -623,6 +623,10 @@ card with no recipients. The same read separates the three identities the record
 carries `holder` (the claim, never the assignee label) and `speaksFor` (the user a card is written for),
 while a decision file keeps its own `Written-by:`. Tests: `core/test/project-board-levels.test.js`.
 
+### Speaking for a person (#1861)
+
+A participant may be invited with `speaksFor` and a `position` may record it, so a Project Chief or an owner's agent can hold a position on a person's behalf; the participant and its position both carry the id, `decide` copies it into the archived record, and the file's `## Participants` line reads `(speaks for <id>)` beside that position. A proxy position counts once in `positions n/m`. `proxyRefusal(meeting)` in `core/src/host/meetings.js` runs inside `governanceRefusal`: a `severe` decision whose only position on one side is a proxy is refused before anything is written unless the spoken-for person is invited and holds their own position or is recorded `silent`. `decisionCardOf` exposes `participants: [{ name, speaksFor, stance, silent }]` and the client meeting row draws the proxy with the existing `for {user}` words. Tests: `core/test/meetings.test.js`.
+
 Reading the board (`project-board`) stays open to a non-owner: the same rows, read-only.
 Those rows are the ones the caller could open through `tasks` (#1723): `store.js` passes the
 authenticated actor into `projectBoard(projectId, actor)`, and the board drops every card

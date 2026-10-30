@@ -40,13 +40,19 @@ export const decisionsPath = (now, slug) => `decisions/${dateOf(now)}-${slug}.md
 function readParticipants(value) {
   if (!Array.isArray(value) || value.length === 0) throw refuse('invalid', 'a meeting needs at least one invited participant')
   if (value.length > PARTICIPANTS_MAX) throw refuse('invalid', `a meeting invites at most ${PARTICIPANTS_MAX} participants`)
-  const names = []
+  const invited = []
   for (const item of value) {
     const name = oneLine(typeof item === 'string' ? item : item?.name, NAME_MAX)
     if (name === '') throw refuse('invalid', 'a participant needs a name')
-    if (!names.includes(name)) names.push(name)
+    const speaksFor = oneLine(typeof item === 'string' ? '' : item?.speaksFor, NAME_MAX)
+    if (invited.some(entry => entry.name === name)) continue
+    invited.push(speaksFor === '' ? { name } : { name, speaksFor })
   }
-  return names.map(name => ({ name, position: undefined, silent: false }))
+  return invited.map(entry => ({
+    ...entry,
+    position: undefined,
+    silent: false,
+  }))
 }
 
 // #1831: the level a decision card carries, and who it is addressed to. `ordinary` closes on one
@@ -103,8 +109,36 @@ function readOptions(value) {
 // or undefined when it may: every invited participant recorded a position (or is recorded as not
 // answering), the decision names its owner, and a dissent carries its own owner. `blocked` is not
 // checked here — a blocked meeting is a legitimate outcome with its own one-sentence question.
+// #1861: a Project Chief or an owner's agent may hold a position for a person, but a `severe`
+// decision may not rest on a proxy alone. When one side's every position is a proxy and the
+// spoken-for person has neither taken a position nor been recorded silent, the meeting is refused
+// before anything is written: the person whose risk it is has to be on the record.
+export function proxyRefusal(meeting) {
+  const level = DECISION_LEVELS.includes(meeting.level) ? meeting.level : 'ordinary'
+  if (level !== 'severe') return undefined
+  const sides = new Map()
+  for (const participant of meeting.participants ?? []) {
+    if (participant?.position === undefined) continue
+    const spokenFor = oneLine(participant.speaksFor ?? participant.position?.speaksFor, NAME_MAX)
+    const side = sides.get(participant.position.stance) ?? []
+    side.push({ name: participant.name, speaksFor: spokenFor })
+    sides.set(participant.position.stance, side)
+  }
+  for (const [stance, side] of sides) {
+    if (!side.every(entry => entry.speaksFor !== '')) continue
+    for (const entry of side) {
+      const person = (meeting.participants ?? []).find(p => p.name === entry.speaksFor)
+      if (person !== undefined && (person.position !== undefined || person.silent === true)) continue
+      return `the ${stance} side of a severe decision rests only on a proxy: ${entry.speaksFor} must take the position itself or be recorded silent`
+    }
+  }
+  return undefined
+}
+
 export function governanceRefusal(meeting) {
   if (!OPEN_STATES.has(meeting.status)) return `the meeting is ${meeting.status}, not open or deliberating`
+  const proxied = proxyRefusal(meeting)
+  if (proxied !== undefined) return proxied
   const missing = (meeting.participants ?? []).filter(p => p.position === undefined && p.silent !== true).map(p => p.name)
   if (missing.length > 0) return `no position recorded for: ${missing.join(', ')}`
   if (oneLine(meeting.owner, NAME_MAX) === '') return 'the decision names no owner'
@@ -163,7 +197,8 @@ const decisionBody = (meeting, file, at) => {
     const said = position === undefined
       ? 'invited; recorded no position (silent)'
       : `${position.stance}${position.text ? ` — ${position.text}` : ''}`
-    lines.push(`- **${participant.name}** — ${said}`)
+    const proxy = oneLine(participant.speaksFor ?? position?.speaksFor, NAME_MAX)
+    lines.push(`- **${participant.name}** — ${said}${proxy === '' ? '' : ` (speaks for ${proxy})`}`)
   }
   lines.push('', '## Dissent', '')
   lines.push(meeting.dissent === undefined
@@ -220,7 +255,7 @@ export function install(rt) {
     return meeting
   }
 
-  const position = (meeting, { as, stance, text, silent }, now) => {
+  const position = (meeting, { as, stance, text, silent, speaksFor }, now) => {
     if (!OPEN_STATES.has(meeting.status)) throw refuse('closed', `the meeting is ${meeting.status}`)
     const name = oneLine(as, NAME_MAX)
     const participant = meeting.participants.find(p => p.name === name)
@@ -236,7 +271,12 @@ export function install(rt) {
     participant.silent = false
     const chosen = String(stance ?? 'agree')
     if (!STANCES.includes(chosen)) throw refuse('invalid', 'stance must be agree, dissent or abstain')
-    participant.position = { stance: chosen, text: oneLine(text, TEXT_MAX), at: now }
+    // #1861: a Project Chief or an owner's agent writes a position on a person's behalf, and the
+    // record says whose it is; an empty value clears it rather than leaving a stale name behind.
+    const spokenFor = oneLine(speaksFor, NAME_MAX)
+    if (spokenFor === '') delete participant.speaksFor
+    else participant.speaksFor = spokenFor
+    participant.position = { stance: chosen, text: oneLine(text, TEXT_MAX), at: now, ...(spokenFor === '' ? {} : { speaksFor: spokenFor }) }
     if (chosen === 'dissent' && oneLine(text, TEXT_MAX) !== '') {
       meeting.dissent = { text: oneLine(text, TEXT_MAX), owner: name }
     }
@@ -466,7 +506,8 @@ export function install(rt) {
     if (meeting.blockingAnswer !== undefined) lines.push(`answer: ${meeting.blockingAnswer}`)
     if (meeting.decisionFile !== undefined) lines.push(`decision file: ${meeting.decisionFile}`, `tasks: ${meeting.taskIds.join(', ') || 'none'}`)
     for (const participant of meeting.participants) {
-      lines.push(`- ${participant.name}: ${participant.position === undefined ? 'silent' : `${participant.position.stance}${participant.position.text ? ` — ${participant.position.text}` : ''}`}`)
+      const proxy = oneLine(participant.speaksFor ?? participant.position?.speaksFor, NAME_MAX)
+      lines.push(`- ${participant.name}: ${participant.position === undefined ? 'silent' : `${participant.position.stance}${participant.position.text ? ` — ${participant.position.text}` : ''}`}${proxy === '' ? '' : ` (speaks for ${proxy})`}`)
     }
     return lines.join('\n')
   }
@@ -483,7 +524,7 @@ export function install(rt) {
         return summary(made)
       }
       case 'position': {
-        const recorded = position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text, silent: body.silent }, now)
+        const recorded = position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text, silent: body.silent, speaksFor: body.speaksFor }, now)
         await rt.save()
         return summary(recorded)
       }
@@ -518,9 +559,23 @@ export function install(rt) {
       title: { type: 'string', description: 'Optional short title for the decision record (open)' },
       issue: { type: 'integer', description: 'The issue number that triggered the meeting (open)' },
       project: { type: 'string', description: 'The Project the meeting belongs to (open)' },
-      participants: { type: 'array', items: { type: 'string' }, description: 'Every invited participant name (open)' },
+      participants: {
+        type: 'array',
+        items: {
+          oneOf: [
+            { type: 'string' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: { name: { type: 'string' }, speaksFor: { type: 'string' } },
+            },
+          ],
+        },
+        description: 'Every invited participant name, or {name, speaksFor} when the participant is a proxy for someone (open)',
+      },
       options: { type: 'array', items: { type: 'string' }, description: 'Options the meeting weighed (open)' },
       as: { type: 'string', description: 'The participant the position belongs to (position); defaults to the calling Bot\'s name' },
+      speaksFor: { type: 'string', description: 'The person a proxy position speaks for (position): a Project Chief or the owner\'s agent records whose position this is' },
       silent: { type: 'boolean', description: 'Record that the participant did not answer (position); counts as a recorded position for `decided`' },
       stance: { type: 'string', enum: ['agree', 'dissent', 'abstain'], description: 'The position taken (position)' },
       text: { type: 'string', description: 'What the participant said (position)' },

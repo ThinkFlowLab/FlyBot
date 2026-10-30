@@ -187,8 +187,20 @@ export function decisionCardOf(meeting) {
   const recipients = Array.isArray(meeting?.recipients)
     ? meeting.recipients.map(item => text(typeof item === 'string' ? item : item?.name)).filter(name => name !== '')
     : []
+  // #1861: the board says who spoke for whom, so a proxy position reads as one. A participant with
+  // no speaksFor is the person themselves; nothing is inferred.
+  const participants = Array.isArray(meeting?.participants)
+    ? meeting.participants
+      .map(participant => ({
+        name: text(participant?.name),
+        speaksFor: text(participant?.speaksFor ?? participant?.position?.speaksFor) || null,
+        stance: text(participant?.position?.stance) || null,
+        silent: participant?.silent === true,
+      }))
+      .filter(participant => participant.name !== '')
+    : []
   const refusal = advanceRefusal(meeting)
-  return { level, recipients, advance: refusal === undefined ? { allowed: true } : { allowed: false, reason: refusal } }
+  return { level, recipients, participants, advance: refusal === undefined ? { allowed: true } : { allowed: false, reason: refusal } }
 }
 
 export function install(rt) {

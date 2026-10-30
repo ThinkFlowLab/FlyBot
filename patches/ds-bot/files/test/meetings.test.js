@@ -223,3 +223,57 @@ test('#1731: two Chinese questions decided on one day keep separate decision fil
   assert.notEqual(files[0], files[1])
   assert.deepEqual(readdirSync(join(dir, 'decisions')).sort(), files.map(f => f.replace('decisions/', '')).sort())
 })
+
+// #1861: a Project Chief or an owner's agent speaks for a person. The position is recorded once,
+// the record says whose it is, and a severe decision may not rest on a proxy alone.
+test('#1861: a proxy position is stored, counted once, and the record names whom it speaks for', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Who holds the storage decision?', ['Chief', 'Owner', { name: 'Project Chief', speaksFor: 'Owner' }])
+  const text = await meeting({ action: 'position', meeting: id, as: 'Project Chief', stance: 'agree', text: 'the existing store', speaksFor: 'Owner' })
+  assert.match(text, /positions 1\/3/)
+  assert.match(text, /Project Chief: agree — the existing store \(speaks for Owner\)/)
+  const stored = rt.state.meetings[id].participants.find(p => p.name === 'Project Chief')
+  assert.equal(stored.speaksFor, 'Owner')
+  assert.equal(stored.position.speaksFor, 'Owner')
+  // The same position read again is one position, not two.
+  await meeting({ action: 'position', meeting: id, as: 'Owner', silent: true })
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'the existing store' })
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Use the existing store.', evidence: [{ pr: 1861 }] })
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /\*\*Project Chief\*\* — agree — the existing store \(speaks for Owner\)/)
+  assert.match(body, /Written-by: Chief/)
+})
+
+test('#1861: a severe decision is refused when its only agree position is a proxy and the person is absent', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Should the storage migration be irreversible?', ['Chief', 'Owner', 'Reviewer'], { level: 'severe' })
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'ship it', speaksFor: 'Owner' })
+  await meeting({ action: 'position', meeting: id, as: 'Reviewer', stance: 'dissent', text: 'wait' })
+  await assert.rejects(
+    meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Ship the migration.', evidence: [{ pr: 1861 }] }),
+    /governance: the agree side of a severe decision rests only on a proxy: Owner must take the position itself or be recorded silent/,
+  )
+  assert.equal(rt.state.meetings[id].status, 'deliberating')
+  assert.equal(existsSync(join(dir, 'decisions')), false, 'a refused severe decision writes no file')
+  // The same proxy carries it once the person is recorded silent, and the file says so.
+  await meeting({ action: 'position', meeting: id, as: 'Owner', silent: true })
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Ship the migration.', evidence: [{ pr: 1861 }] })
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /\*\*Owner\*\* — invited; recorded no position \(silent\)/)
+  assert.match(body, /\*\*Chief\*\* — agree — ship it \(speaks for Owner\)/)
+})
+
+test('#1861: the decision card exposes the participants and their proxies', async (t) => {
+  const { rt, open, meeting, stop } = await boot()
+  t.after(stop)
+  const { decisionCardOf } = await import('../src/host/project-board.js')
+  const id = await open('Who holds the storage decision?', ['Chief', 'Owner'])
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'ship it', speaksFor: 'Owner' })
+  const card = decisionCardOf(rt.state.meetings[id])
+  assert.deepEqual(card.participants, [
+    { name: 'Chief', speaksFor: 'Owner', stance: 'agree', silent: false },
+    { name: 'Owner', speaksFor: null, stance: null, silent: false },
+  ])
+})

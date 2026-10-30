@@ -20237,7 +20237,10 @@ var meetingOf = (meeting, status) => {
     // recipients, exactly as the host reads it.
     level: text(meeting.level) || "ordinary",
     recipients: Array.isArray(meeting.recipients) ? meeting.recipients.map((item) => text(item)).filter((name) => name !== "") : [],
-    advance: meeting.advance !== null && typeof meeting.advance === "object" ? { allowed: meeting.advance.allowed === true, reason: text(meeting.advance.reason) || null } : { allowed: true, reason: null }
+    advance: meeting.advance !== null && typeof meeting.advance === "object" ? { allowed: meeting.advance.allowed === true, reason: text(meeting.advance.reason) || null } : { allowed: true, reason: null },
+    // #1861: the host's participants with who each position speaks for, so the row can say a
+    // Project Chief or an agent held it for someone rather than for themselves.
+    participants: Array.isArray(meeting.participants) ? meeting.participants.map((participant) => ({ name: text(participant?.name), speaksFor: text(participant?.speaksFor) || null })).filter((participant) => participant.name !== "") : []
   };
 };
 var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
@@ -20520,11 +20523,14 @@ function ProjectBoardRecord({ record }) {
     (0, import_react47.createElement)("span", { className: "bt-project-date" }, meeting.date),
     (0, import_react47.createElement)("span", { className: "bt-project-title" }, meeting.question),
     meeting.owner === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-owner" }, `@${meeting.owner}`),
+    proxyRow(meeting),
     // A decided meeting whose file is gone still reads as decided; the missing path says so
     // instead of the row disappearing with the file.
     meeting.path === "" ? (0, import_react47.createElement)("span", { className: "bt-project-missing" }, "decision file gone") : (0, import_react47.createElement)("span", { className: "bt-project-path" }, meeting.path)
   ));
   const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
+  const proxyText = (meeting) => meeting.participants.filter((participant) => participant.speaksFor !== null).map((participant) => `${participant.name} ${t("for {user}", { user: participant.speaksFor })}`).join(", ");
+  const proxyRow = (meeting) => proxyText(meeting) === "" ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": meeting.participants.filter((p) => p.speaksFor !== null).map((p) => p.speaksFor).join(", ") }, proxyText(meeting));
   const levelOf = (meeting) => (0, import_react47.createElement)("span", { className: "bt-project-level", "data-level": meeting.level }, t(meeting.level));
   const pendingRows = meetings.pending.map((meeting) => (0, import_react47.createElement)(
     "div",
@@ -20534,6 +20540,7 @@ function ProjectBoardRecord({ record }) {
     levelOf(meeting),
     recipientText(meeting.recipients) === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-recipients" }, recipientText(meeting.recipients)),
     meeting.advance.allowed ? null : (0, import_react47.createElement)("span", { className: "bt-project-paused" }, meeting.advance.reason),
+    proxyRow(meeting),
     (0, import_react47.createElement)("span", { className: "bt-project-status" }, meeting.status)
   ));
   return (0, import_react47.createElement)(
