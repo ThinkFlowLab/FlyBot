@@ -1387,6 +1387,11 @@ var ZH = {
   Meetings: "会议",
   "Not decided": "未决定",
   "decision file gone": "决策文件已不在",
+  // The decision card's level and the identity a row carries (#1831).
+  ordinary: "普通",
+  major: "重大",
+  severe: "严重",
+  "for {user}": "代 {user} 发言",
   // The Project board names its columns with the same keys the task record uses.
   "not-started": "未开始",
   "in-progress": "进行中",
@@ -20140,6 +20145,14 @@ var PROJECT_BOARD_CSS = `
 .bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
+/* #1831: the card's level, the people it is addressed to, and the identity a row or a comment
+   carries. A severe card is the only one painted louder, because it is the only one that waits. */
+.bt-project-level{font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:999px;border:1px solid var(--bt-line,rgba(127,127,127,.32));opacity:.75}
+.bt-project-level[data-level="severe"]{opacity:1;border-color:#c2410c;color:#c2410c}
+.bt-project-recipients{font-size:11px;opacity:.65}
+.bt-project-paused{font-size:11px;opacity:.75;color:#c2410c}
+.bt-project-holder{font-size:11px;opacity:.7}
+.bt-project-speaks-for{font-size:11px;opacity:.7;font-style:italic}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
 .bt-project-metrics{margin:0 0 14px}
 .bt-project-metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px}
@@ -20218,7 +20231,13 @@ var meetingOf = (meeting, status) => {
     owner: text(meeting.owner) || null,
     status,
     path: text(meeting.path),
-    blockingQuestion: text(meeting.blockingQuestion) || null
+    blockingQuestion: text(meeting.blockingQuestion) || null,
+    // #1831: the level and recipients the host answered, and the refusal to advance a severe card.
+    // Nothing is inferred here: a record written before the slice carries an ordinary card and no
+    // recipients, exactly as the host reads it.
+    level: text(meeting.level) || "ordinary",
+    recipients: Array.isArray(meeting.recipients) ? meeting.recipients.map((item) => text(item)).filter((name) => name !== "") : [],
+    advance: meeting.advance !== null && typeof meeting.advance === "object" ? { allowed: meeting.advance.allowed === true, reason: text(meeting.advance.reason) || null } : { allowed: true, reason: null }
   };
 };
 var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
@@ -20262,6 +20281,10 @@ function projectBoardView({ project, rows, canManage, tasks, decisions, meetings
         title: text(task?.title) || text(task?.note) || null,
         priority: text(task?.priority) || null,
         audit: text(row.audit) || null,
+        // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
+        // a card carrying neither renders exactly as before.
+        holder: text(row.holder) || null,
+        speaksFor: text(row.speaksFor) || null,
         board: boardOfRow(row, task)
       };
     })
@@ -20328,6 +20351,10 @@ function ProjectBoardRows({ view, onOpen }) {
           // second read. A row without one renders exactly as before.
           row.audit === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-audit" }, row.audit)
         ),
+        // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
+        // says so, so the three identities (Bot, Assistant, user) never read as one.
+        row.holder === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-holder", "data-holder": row.holder }, `@${row.holder}`),
+        row.speaksFor === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
         row.priority === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-priority" }, row.priority),
         row.runId === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
       );
@@ -20497,11 +20524,16 @@ function ProjectBoardRecord({ record }) {
     // instead of the row disappearing with the file.
     meeting.path === "" ? (0, import_react47.createElement)("span", { className: "bt-project-missing" }, "decision file gone") : (0, import_react47.createElement)("span", { className: "bt-project-path" }, meeting.path)
   ));
+  const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
+  const levelOf = (meeting) => (0, import_react47.createElement)("span", { className: "bt-project-level", "data-level": meeting.level }, t(meeting.level));
   const pendingRows = meetings.pending.map((meeting) => (0, import_react47.createElement)(
     "div",
-    { key: meeting.key, className: "bt-project-meeting", "data-status": meeting.status },
+    { key: meeting.key, className: "bt-project-meeting", "data-status": meeting.status, "data-level": meeting.level },
     (0, import_react47.createElement)("span", { className: "bt-project-date" }, meeting.date),
     (0, import_react47.createElement)("span", { className: "bt-project-title" }, meeting.blockingQuestion === null ? meeting.question : meeting.blockingQuestion),
+    levelOf(meeting),
+    recipientText(meeting.recipients) === null ? null : (0, import_react47.createElement)("span", { className: "bt-project-recipients" }, recipientText(meeting.recipients)),
+    meeting.advance.allowed ? null : (0, import_react47.createElement)("span", { className: "bt-project-paused" }, meeting.advance.reason),
     (0, import_react47.createElement)("span", { className: "bt-project-status" }, meeting.status)
   ));
   return (0, import_react47.createElement)(

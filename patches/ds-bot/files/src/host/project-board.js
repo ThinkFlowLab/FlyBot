@@ -20,6 +20,7 @@ import { open, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
 import { DECISIONS_DIR, listProjectState, sha256 } from './project-state.js'
+import { advanceRefusal } from './meetings.js'
 import { readMetrics } from './project-metrics.js'
 
 // #1828: a Project's roles. The record stores only `roles: { maintainers, members }`; the owner
@@ -178,6 +179,18 @@ const boardOf = (task) => {
   return null
 }
 
+// #1831: the level, the recipients and whether the card may advance, read off a meeting record.
+// Exported so the read model and its unit test share one projection: a card cannot mean one
+// thing on the board and another in the test.
+export function decisionCardOf(meeting) {
+  const level = ['ordinary', 'major', 'severe'].includes(text(meeting?.level)) ? text(meeting.level) : 'ordinary'
+  const recipients = Array.isArray(meeting?.recipients)
+    ? meeting.recipients.map(item => text(typeof item === 'string' ? item : item?.name)).filter(name => name !== '')
+    : []
+  const refusal = advanceRefusal(meeting)
+  return { level, recipients, advance: refusal === undefined ? { allowed: true } : { allowed: false, reason: refusal } }
+}
+
 export function install(rt) {
   // The folder a Project's decisions live in. A Project names one itself, and when it names none
   // the folder is the one its members work in — the same folder a meeting resolves through
@@ -277,6 +290,10 @@ export function install(rt) {
     return { dir: dir === '' ? null : dir, files, reason }
   }
 
+  // #1831: the card's level, who it is addressed to and whether it may advance ride on every
+  // meeting row; the projection is the exported one, so the board and its test cannot disagree.
+  const cardOf = decisionCardOf
+
   // A meeting names the Project it belongs to by id or by name (the tool's `project` argument is
   // free text), so both forms resolve here rather than one being silently dropped.
   const inProject = (meeting, project) => {
@@ -308,6 +325,7 @@ export function install(rt) {
           date: text(meeting.decidedAt) !== '' ? new Date(meeting.decidedAt).toISOString().slice(0, 10) : '',
           question,
           owner: text(meeting.owner) || null,
+          ...cardOf(meeting),
           path: file === undefined ? '' : file.path,
           ...(file === undefined ? {} : { sha256: file.sha256 }),
         })
@@ -321,6 +339,7 @@ export function install(rt) {
           date: text(meeting.createdAt) !== '' ? new Date(meeting.createdAt).toISOString().slice(0, 10) : '',
           question,
           status: meeting.status,
+          ...cardOf(meeting),
           ...(meeting.status === 'blocked' && text(meeting.blockingQuestion) !== '' ? { blockingQuestion: text(meeting.blockingQuestion) } : {}),
         })
       }
@@ -388,6 +407,11 @@ export function install(rt) {
         source,
         column: columnOf(task),
         assignee: task.assignee ?? null,
+        // #1831: "who is doing" is the claim, not the assignee label, and "who is speaking for
+        // whom" is `speaksFor` — the Assistant writing for a user says so. Both are host truth
+        // the client only prints; a card carrying neither reads exactly as it did.
+        ...(text(task.claimedBy) !== '' ? { holder: text(task.claimedBy) } : {}),
+        ...(text(task.speaksFor) !== '' ? { speaksFor: text(task.speaksFor) } : {}),
         updatedAt: task.updatedAt ?? task.createdAt ?? null,
         // The typed contract (#1720) is read from the same row, not a second copy: a board that
         // shows a rework or a held lease shows what the task store wrote. A record stored before

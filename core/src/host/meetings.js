@@ -49,6 +49,48 @@ function readParticipants(value) {
   return names.map(name => ({ name, position: undefined, silent: false }))
 }
 
+// #1831: the level a decision card carries, and who it is addressed to. `ordinary` closes on one
+// Maintainer's agreement, `major` needs every participating Maintainer to agree, and `severe`
+// (security, data loss, irreversible) pauses on a substantial minority objection for the Owner.
+export const DECISION_LEVELS = CLASSES
+const RECIPIENTS_MAX = 32
+
+export const decisionLevel = (value, fallback = 'ordinary') => {
+  if (value === undefined || value === null || oneLine(value, 20) === '') return fallback
+  const level = oneLine(value, 20)
+  if (!DECISION_LEVELS.includes(level)) throw refuse('invalid', `level must be one of ${DECISION_LEVELS.join(', ')}`)
+  return level
+}
+
+// Who a card is addressed to: every Maintainer it names, plus the Owner when it needs one. The
+// list is stored as names, deduped, and read back as names — no membership set is invented here.
+const readRecipients = (value) => {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw refuse('invalid', 'recipients must be a list of names')
+  const names = []
+  for (const item of value) {
+    const name = oneLine(typeof item === 'string' ? item : item?.name, NAME_MAX)
+    if (name === '') throw refuse('invalid', 'a recipient needs a name')
+    if (!names.includes(name)) names.push(name)
+  }
+  if (names.length > RECIPIENTS_MAX) throw refuse('invalid', `a card is addressed to at most ${RECIPIENTS_MAX} recipients`)
+  return names
+}
+
+// The one level that never advances on its own. A `severe` card is refused automatic promotion
+// with a reason a reader can check — protection against a real risk, not a veto for whoever
+// objects. `ordinary` and `major` advance by their own rule, so this answers nothing for them.
+export function advanceRefusal(meeting) {
+  if (meeting === null || typeof meeting !== 'object') return 'no decision card to advance'
+  const level = DECISION_LEVELS.includes(meeting.level) ? meeting.level : 'ordinary'
+  if (level !== 'severe') return undefined
+  const dissent = (Array.isArray(meeting.participants) ? meeting.participants : [])
+    .filter(participant => participant?.position?.stance === 'dissent').length
+  return dissent > 0
+    ? `a severe decision waits for the Owner: ${dissent} participant${dissent === 1 ? '' : 's'} dissented`
+    : 'a severe decision waits for the Owner, who confirms it before it advances'
+}
+
 function readOptions(value) {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw refuse('invalid', 'options must be a list of one-line options')
@@ -88,6 +130,16 @@ const decisionBody = (meeting, file, at) => {
     '## Class',
     '',
     `${meeting.class} — recorded by ${oneLine(meeting.owner, NAME_MAX)} through meeting \`${meeting.id}\`.`,
+    '',
+    '## Level',
+    '',
+    `${decisionLevel(meeting.level)}${advanceRefusal(meeting) === undefined ? '' : ' — needs the Owner before it advances'}.`,
+    '',
+    '## Recipients',
+    '',
+    ...((meeting.recipients ?? []).length === 0
+      ? ['none named']
+      : (meeting.recipients ?? []).map(name => `- ${oneLine(name, NAME_MAX)}`)),
     '',
     '## Evidence',
     '',
@@ -140,7 +192,7 @@ export function install(rt) {
   }
   const stamp = () => Date.now()
 
-  const newMeeting = ({ question, participants, options, issue, project, title }, now) => {
+  const newMeeting = ({ question, participants, options, issue, project, title, level, recipients }, now) => {
     const text = oneLine(question, QUESTION_MAX)
     if (text === '') throw refuse('invalid', 'a meeting needs the question it answers')
     const same = Object.values(store()).find(other => OPEN_STATES.has(other.status) && keyOf(other.question) === keyOf(text))
@@ -154,6 +206,8 @@ export function install(rt) {
       slug: '',
       participants: readParticipants(participants),
       options: readOptions(options),
+      level: decisionLevel(level),
+      recipients: readRecipients(recipients),
       ...(issue === undefined || issue === null ? {} : { issue }),
       ...(project === undefined || project === null ? {} : { project: oneLine(project, NAME_MAX) }),
       evidence: [],
@@ -262,6 +316,10 @@ export function install(rt) {
       owner: oneLine(args.owner, NAME_MAX),
       decision: oneLine(args.decision ?? args.text, TEXT_MAX),
       class: String(args.class ?? 'ordinary'),
+      // #1831: a decision card carries a level and its recipients. A decide may set either; one
+      // it does not name keeps what the card was opened with, so the level never drifts silently.
+      level: decisionLevel(args.level, decisionLevel(meeting.level)),
+      recipients: args.recipients === undefined ? readRecipients(meeting.recipients) : readRecipients(args.recipients),
       evidence: readEvidence(args.evidence),
     }
     if (!CLASSES.includes(candidate.class)) throw refuse('invalid', `class must be one of ${CLASSES.join(', ')}`)
@@ -398,6 +456,11 @@ export function install(rt) {
     const positions = meeting.participants.filter(p => p.position !== undefined).length
     const head = `${meeting.id} [${meeting.status}] ${meeting.question}`
     const lines = [head, `positions ${positions}/${meeting.participants.length}${meeting.owner ? ` | owner ${meeting.owner}` : ''}`]
+    // #1831: the card's level and recipients are part of what the caller is told, and a severe
+    // card says in the summary why it will not advance on its own.
+    lines.push(`level: ${decisionLevel(meeting.level)}${(meeting.recipients ?? []).length === 0 ? '' : ` | recipients: ${(meeting.recipients ?? []).join(', ')}`}`)
+    const paused = advanceRefusal(meeting)
+    if (paused !== undefined) lines.push(`paused: ${paused}`)
     if (meeting.dissent !== undefined) lines.push(`dissent: ${meeting.dissent.text} — ${meeting.dissent.owner}`)
     if (meeting.blockingQuestion !== undefined) lines.push(`blocking: ${meeting.blockingQuestion}`)
     if (meeting.blockingAnswer !== undefined) lines.push(`answer: ${meeting.blockingAnswer}`)
@@ -464,6 +527,8 @@ export function install(rt) {
       owner: { type: 'string', description: 'Who owns the decision (decide)' },
       decision: { type: 'string', description: 'What was decided, one paragraph (decide)' },
       class: { type: 'string', enum: ['ordinary', 'major', 'severe'], description: 'The decision class (decide), ordinary by default' },
+      level: { type: 'string', enum: ['ordinary', 'major', 'severe'], description: 'The decision level (open, decide): ordinary, major or severe; severe does not advance without the Owner. Default ordinary, or whatever the card already carries' },
+      recipients: { type: 'array', items: { type: 'string' }, description: 'Who the card is addressed to (open, decide): the Maintainers, and the Owner when one must decide' },
       dissent: {
         type: 'object',
         description: 'The dissent that still stands, with its owner (decide). Omit when none stands.',

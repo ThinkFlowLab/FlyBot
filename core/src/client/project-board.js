@@ -33,6 +33,14 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
+/* #1831: the card's level, the people it is addressed to, and the identity a row or a comment
+   carries. A severe card is the only one painted louder, because it is the only one that waits. */
+.bt-project-level{font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:999px;border:1px solid var(--bt-line,rgba(127,127,127,.32));opacity:.75}
+.bt-project-level[data-level="severe"]{opacity:1;border-color:#c2410c;color:#c2410c}
+.bt-project-recipients{font-size:11px;opacity:.65}
+.bt-project-paused{font-size:11px;opacity:.75;color:#c2410c}
+.bt-project-holder{font-size:11px;opacity:.7}
+.bt-project-speaks-for{font-size:11px;opacity:.7;font-style:italic}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
 .bt-project-metrics{margin:0 0 14px}
 .bt-project-metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px}
@@ -124,6 +132,14 @@ const meetingOf = (meeting, status) => {
     status,
     path: text(meeting.path),
     blockingQuestion: text(meeting.blockingQuestion) || null,
+    // #1831: the level and recipients the host answered, and the refusal to advance a severe card.
+    // Nothing is inferred here: a record written before the slice carries an ordinary card and no
+    // recipients, exactly as the host reads it.
+    level: text(meeting.level) || 'ordinary',
+    recipients: Array.isArray(meeting.recipients) ? meeting.recipients.map(item => text(item)).filter(name => name !== '') : [],
+    advance: meeting.advance !== null && typeof meeting.advance === 'object'
+      ? { allowed: meeting.advance.allowed === true, reason: text(meeting.advance.reason) || null }
+      : { allowed: true, reason: null },
   }
 }
 
@@ -184,6 +200,10 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
             title: text(task?.title) || text(task?.note) || null,
             priority: text(task?.priority) || null,
             audit: text(row.audit) || null,
+            // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
+            // a card carrying neither renders exactly as before.
+            holder: text(row.holder) || null,
+            speaksFor: text(row.speaksFor) || null,
             board: boardOfRow(row, task),
           }
         }),
@@ -249,6 +269,10 @@ function ProjectBoardRows({ view, onOpen }) {
         // The audit text the row already carries (#1730): shown inside the card detail, never a
         // second read. A row without one renders exactly as before.
         row.audit === null ? null : h('span', { className: 'bt-project-audit' }, row.audit)),
+      // "Who is doing" is the claim, never the assignee label; a card the Assistant speaks for
+      // says so, so the three identities (Bot, Assistant, user) never read as one.
+      row.holder === null ? null : h('span', { className: 'bt-project-holder', 'data-holder': row.holder }, `@${row.holder}`),
+      row.speaksFor === null ? null : h('span', { className: 'bt-project-speaks-for', 'data-speaks-for': row.speaksFor }, t('for {user}', { user: row.speaksFor })),
       row.priority === null ? null : h('span', { className: 'bt-project-priority' }, row.priority),
       row.runId === null ? null : h('span', { className: 'bt-project-ref' }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`))
     })))
@@ -409,9 +433,17 @@ function ProjectBoardRecord({ record }) {
     meeting.path === ''
       ? h('span', { className: 'bt-project-missing' }, 'decision file gone')
       : h('span', { className: 'bt-project-path' }, meeting.path)))
-  const pendingRows = meetings.pending.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': meeting.status },
+  // #1831: a pending decision card carries its level, who it is addressed to, and — for a severe
+  // card — the host's own refusal to advance it. The words are the host's; the badge only says
+  // which level it is, so a reader can see a severe card without opening it.
+  const recipientText = list => (list.length === 0 ? null : list.map(name => `@${name}`).join(', '))
+  const levelOf = meeting => h('span', { className: 'bt-project-level', 'data-level': meeting.level }, t(meeting.level))
+  const pendingRows = meetings.pending.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': meeting.status, 'data-level': meeting.level },
     h('span', { className: 'bt-project-date' }, meeting.date),
     h('span', { className: 'bt-project-title' }, meeting.blockingQuestion === null ? meeting.question : meeting.blockingQuestion),
+    levelOf(meeting),
+    recipientText(meeting.recipients) === null ? null : h('span', { className: 'bt-project-recipients' }, recipientText(meeting.recipients)),
+    meeting.advance.allowed ? null : h('span', { className: 'bt-project-paused' }, meeting.advance.reason),
     h('span', { className: 'bt-project-status' }, meeting.status)))
   return h('section', { className: 'bt-project-record', 'data-decisions': String(decisions.count), 'data-meetings': String(meetings.count) },
     h('h4', null, t('Decisions')),

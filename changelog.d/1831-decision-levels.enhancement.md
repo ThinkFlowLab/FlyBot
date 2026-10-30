@@ -1,0 +1,1 @@
+Decision cards carry a level (ordinary, major, severe) and the people they are addressed to; a severe card never advances on its own and says why. The Project board shows the level badge and recipients, and a card row names its claim holder and the user the Assistant speaks for.

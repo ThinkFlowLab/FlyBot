@@ -1340,6 +1340,11 @@ const ZH = {
   Meetings: '会议',
   'Not decided': '未决定',
   'decision file gone': '决策文件已不在',
+  // The decision card's level and the identity a row carries (#1831).
+  ordinary: '普通',
+  major: '重大',
+  severe: '严重',
+  'for {user}': '代 {user} 发言',
   // The Project board names its columns with the same keys the task record uses.
   'not-started': '未开始',
   'in-progress': '进行中',
