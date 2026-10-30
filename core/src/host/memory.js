@@ -1287,7 +1287,10 @@ export function install(rt) {
     const owner = ownerOf(sessionId) ?? seen
     if (owner === undefined) return
     const bot = rt.botOf(owner.botId)
-    if (bot === undefined) return
+    // A retired Bot keeps no memory and must not spend a model call (#1786). Its own
+    // chat Session and its group Sessions can still end a turn after the archive, and
+    // a review queued before it would otherwise run with an archived MEMORY.md.
+    if (bot === undefined || retiredBot(bot)) return
     const live = owner.roomId === undefined ? undefined : rt.roomOf(owner.roomId)
     const kept = seen?.roomId === owner.roomId ? seen?.room : undefined
     const member = live?.members?.includes(bot.id) === true
@@ -1368,7 +1371,11 @@ export function install(rt) {
       const sessionId = room.sessions?.[member]
       // A member never reviewed here is behind from the oldest line of the log.
       const behind = cursorsNow()[`group:${room.id}:${member}`] ?? (room.log?.[0]?.seq ?? room.seq ?? 0) - 1
-      if (member !== botId && sessionId !== undefined && (room.seq ?? 0) - behind >= REVIEW_GROUP_LAG) queueReview(sessionId, ownerOf(sessionId))
+      // A retired member is not brought along (#1786): its review would be billed and would
+      // rewrite the memory the archive left behind.
+      if (member === botId || sessionId === undefined) continue
+      if (retiredBot(rt.botOf(member))) continue
+      if ((room.seq ?? 0) - behind >= REVIEW_GROUP_LAG) queueReview(sessionId, ownerOf(sessionId))
     }
   }
 

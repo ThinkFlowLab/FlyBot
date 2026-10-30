@@ -4625,6 +4625,18 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const op = String(change?.op ?? '')
        const topic = op === 'add' && change?.topic !== undefined ? cleanTopic(String(change.topic)) : undefined
        const target = numbered[Number(change?.entry) - 1]
+@@ -1223,7 +1223,10 @@ export function install(rt) {
+     const owner = ownerOf(sessionId) ?? seen
+     if (owner === undefined) return
+     const bot = rt.botOf(owner.botId)
+-    if (bot === undefined) return
++    // A retired Bot keeps no memory and must not spend a model call (#1786). Its own
++    // chat Session and its group Sessions can still end a turn after the archive, and
++    // a review queued before it would otherwise run with an archived MEMORY.md.
++    if (bot === undefined || retiredBot(bot)) return
+     const live = owner.roomId === undefined ? undefined : rt.roomOf(owner.roomId)
+     const kept = seen?.roomId === owner.roomId ? seen?.room : undefined
+     const member = live?.members?.includes(bot.id) === true
 @@ -1272,7 +1272,7 @@ export function install(rt) {
        const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
        if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
@@ -4634,6 +4646,19 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
+@@ -1304,7 +1304,11 @@ export function install(rt) {
+       const sessionId = room.sessions?.[member]
+       // A member never reviewed here is behind from the oldest line of the log.
+       const behind = cursorsNow()[`group:${room.id}:${member}`] ?? (room.log?.[0]?.seq ?? room.seq ?? 0) - 1
+-      if (member !== botId && sessionId !== undefined && (room.seq ?? 0) - behind >= REVIEW_GROUP_LAG) queueReview(sessionId, ownerOf(sessionId))
++      // A retired member is not brought along (#1786): its review would be billed and would
++      // rewrite the memory the archive left behind.
++      if (member === botId || sessionId === undefined) continue
++      if (retiredBot(rt.botOf(member))) continue
++      if ((room.seq ?? 0) - behind >= REVIEW_GROUP_LAG) queueReview(sessionId, ownerOf(sessionId))
+     }
+   }
+ 
 @@ -1378,8 +1378,29 @@ export function install(rt) {
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
