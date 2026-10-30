@@ -7,14 +7,19 @@
 //   node .github/scripts/review-once.mjs --pr 12 --tip <40-char sha> --body-file verdict.md
 //   pbpaste | node .github/scripts/review-once.mjs --pr 12 --tip <40-char sha>
 //
-// It reads the pull request's comments with the token in `$DSH_SECRET_GITHUB_TOKEN` (never printed).
-// When the newest conclusion at this whole tip is a PASS and the body being posted is a PASS too, it
-// prints one line `reused conclusion at <tip>` and posts nothing; otherwise it posts the body and says
-// so. The exceptions are the two bodies AGENTS.md still allows at a tip: a replacement PASS
-// (`Replaces: the PASS at <sha> merge-gate rejected for having no Ran: line`) always posts, and a PASS
-// posted after `Correction from <Bot>: the PASS at <sha> is withdrawn` posts because a withdrawal is
-// what voided the old one. A body that is not a PASS always posts: a later INC / REQUEST_CHANGES
-// supersedes a PASS under newest-wins, and dropping it would let the old PASS stand.
+// It reads the pull request's issue comments with the token in `$DSH_SECRET_GITHUB_TOKEN` (never
+// printed). When the newest conclusion at this whole tip carries the same verdict as the body being
+// posted, it prints one line `reused conclusion at <tip>` and posts nothing; otherwise it posts the
+// body and says so. The exceptions are the two bodies AGENTS.md still allows at a tip: a replacement
+// PASS (`Replaces: the PASS at <sha> merge-gate rejected for having no Ran: line`) always posts, and a
+// PASS posted after `Correction from <Bot>: the PASS at <sha> is withdrawn` posts because a withdrawal
+// is what voided the old one. A body that carries a *different* verdict always posts: a later INC /
+// REQUEST_CHANGES supersedes a PASS under newest-wins, and a later PASS supersedes a withdrawn or
+// refused one, so dropping either would leave the older word standing.
+//
+// The parity claimed here is with `parseReport` — the parser `review-gate` and `merge-gate` read — not
+// with every channel those gates read: a `Verdict:` submitted as a review body is not in this list,
+// so it cannot stop a duplicate comment here.
 //
 // The parse is `parseReport` from `review-gate.mjs` — the parser `review-gate` and `merge-gate` read,
 // so a comment this refuses to duplicate is exactly the comment the gates already count. A verdict
@@ -77,19 +82,24 @@ export function alreadyConcluded({ comments = [], tip } = {}) {
 
 // The two shapes AGENTS.md allows at a tip whose conclusion already exists: a replacement PASS for a
 // report `merge-gate` rejected for having no `Ran:` (#681), and a PASS that supersedes a withdrawn one
-// (#1335). Everything else that is not another PASS is a later word that must reach the pull request.
+// (#1335). Everything else that carries a different verdict than the newest one is a later word that
+// must reach the pull request; the same verdict at the same tip is the second conclusion #1798 exists
+// to stop, whatever it says below the header (#1851).
 const REPLACES = /^\s*Replaces\s*:/im
+const verdictKind = (report) => report?.verdict ?? report?.unknownVerdict ?? null
 export function postDecision({ comments, tip, body } = {}) {
   const newest = alreadyConcluded({ comments, tip })
   const report = parseReport(body)
   const isPass = report.verdict === 'PASS'
   const isReplacement = REPLACES.test(String(body ?? ''))
+  const kind = verdictKind(report)
   if (!newest) return { post: true, reason: 'no conclusion at this tip' }
   if (newest.report.withdraw) return { post: true, reason: 'the newest conclusion at this tip withdrew its PASS' }
-  if (newest.report.verdict !== 'PASS') return { post: true, reason: 'the newest conclusion at this tip is not a PASS' }
-  if (!isPass) return { post: true, reason: 'the body being posted is not a PASS and supersedes the PASS here' }
-  if (isReplacement) return { post: true, reason: 'a replacement PASS for a verdict merge-gate rejected' }
-  return { post: false, reason: 'a PASS already names this tip' }
+  if (isPass && isReplacement) return { post: true, reason: 'a replacement PASS for a verdict merge-gate rejected' }
+  if (kind && kind === verdictKind(newest.report)) {
+    return { post: false, reason: newest.report.verdict === 'PASS' ? 'a PASS already names this tip' : `the same ${kind} already names this tip` }
+  }
+  return { post: true, reason: 'the body carries a different verdict than the newest conclusion here' }
 }
 
 async function realRequest({ method, url, body, token }) {

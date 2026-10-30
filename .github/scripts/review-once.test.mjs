@@ -128,3 +128,19 @@ test('#1851: the newest conclusion at the tip decides, not the first in the list
   assert.equal(result.posted, true)
   assert.equal(seen.posts().length, 1)
 })
+
+test('#1851: the same refusal already at the tip is reused, not posted a second time', async () => {
+  const seen = api([comment(request())])
+  const lines = []
+  const code = await main({ argv: ['--pr', '610', '--tip', tip], body: request(), request: seen.request, token: 'stub', log: (line) => lines.push(line) })
+  assert.equal(code, 0, 'a reuse is the good outcome, so the node exits 0')
+  assert.equal(seen.posts().length, 0, 'a second Verdict: at an unchanged tip is the incident #1798 exists to stop')
+  assert.deepEqual(lines, [`reused conclusion at ${tip}`], 'exactly one line says the conclusion was reused')
+})
+
+test('#1851: a flipped verdict at the tip still posts', async () => {
+  const seen = api([comment(request())])
+  const result = await postOnce({ pr: 610, tip, body: conclusion(), request: seen.request, token: 'stub', log: () => {} })
+  assert.equal(result.posted, true, 'a PASS over a refusal is a different verdict, not a duplicate')
+  assert.equal(seen.posts().length, 1)
+})
