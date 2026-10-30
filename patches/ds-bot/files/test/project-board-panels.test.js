@@ -29,7 +29,9 @@ const bundle = await build({
   external: ['react', 'react-dom'],
 })
 // A hook runtime: every panel is a plain function, so a slot array that survives a re-render is
-// enough to type into a field, press a button, and read the tree it draws next.
+// enough to type into a field, press a button, and read the tree it draws next. It survives one
+// test only — `resetSlots` empties it before each one, so what a test clicks can never be the value
+// the next test reads (#1843).
 let slots = []
 let index = 0
 const react = {
@@ -72,9 +74,27 @@ const text = (node) => {
   return ''
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
-// The host answers across more than one macrotask (its own save included), so one tick would read
-// the tree before `run` has set the status.
-const settle = async () => { for (let i = 0; i < 10; i++) await tick() }
+// #1843: a fixed number of ticks is not a wait. The host answers asynchronously and, on a loaded
+// runner, ten ticks is not enough — the assertion then reads the line the previous test left in the
+// slots. Poll for the drawn state instead, bounded so a real regression fails on the value it reads
+// and never hangs (the same primitive as `retired-bot-paths.test.js`, kept local on purpose).
+const settle = () => new Promise(resolve => setTimeout(resolve, 25))
+const waitFor = async (check) => {
+  for (let at = 0; at < 100; at += 1) {
+    const value = check()
+    if (value !== undefined) return value
+    await settle()
+  }
+  return undefined
+}
+const resetSlots = () => { slots = []; index = 0 }
+const drawnStatus = (draw) => text(all(draw()).find(node => node.props?.role === 'status'))
+// Draw the panel until its status reads `expected`, then read it once more: the assertion keeps a
+// stale line as the actual value instead of reporting a bare timeout.
+const statusAfter = async (draw, expected) => {
+  await waitFor(() => (drawnStatus(draw) === expected ? true : undefined))
+  return drawnStatus(draw)
+}
 
 // The seeded Project is all the panel needs: the endpoint it calls is the app's own, and neither an
 // assistant Session nor a scheduled digest is part of the write.
@@ -130,6 +150,7 @@ function fakeLocale(active) {
 const rows = [{ id: 'task-1', source: 'bot', column: 'in-progress', assignee: 'Dev4' }]
 
 test('both management buttons open their panel, owner or not', () => {
+  resetSlots()
   const opened = []
   const tree = render(ProjectBoardPane, {
     project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false,
@@ -145,6 +166,7 @@ test('both management buttons open their panel, owner or not', () => {
 })
 
 test('the settings panel saves through project-bind and project-assistant-owner', async () => {
+  resetSlots()
   const sent = []
   const save = async (endpoint, payload) => { sent.push({ endpoint, payload }); return { ok: true } }
   let tree = render(ProjectSettingsPanel, { project: { id: 'project-1', name: 'FlyBot' }, call: save, onClose() {} })
@@ -164,29 +186,25 @@ test('the settings panel saves through project-bind and project-assistant-owner'
 // The memory save is checked against the host, not against the payload the panel thinks it sent —
 // the old `kind: 'note'` was refused by `project-memory-write` and this test stayed green.
 test('the settings panel memory save lands in the Project memory through the real endpoint', async (t) => {
+  resetSlots()
   const rt = await startHost(t)
   const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
-  let tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+  const draw = () => render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+  let tree = draw()
   const note = all(tree).find(node => node.props?.id === 'bt-project-note')
   note.props.onChange({ target: { value: 'ship on Friday' } })
-  tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+  tree = draw()
   byAction(tree, 'project-memory-save').props.onClick()
-  await settle()
-  tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-  const status = all(tree).find(node => node.props?.role === 'status')
-  assert.equal(text(status), 'Memory saved.', 'the panel reports the state the host answered')
+  assert.equal(await statusAfter(draw, 'Memory saved.'), 'Memory saved.', 'the panel reports the state the host answered')
   const memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
   assert.deepEqual(memory.decisions.map(entry => entry.text), ['ship on Friday'], 'the text typed into the panel is in the Project memory')
 
   // The success line is localized as well: the same panel under a zh locale says so in Chinese.
   const off = installLocale(fakeLocale('zh'))
   try {
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    tree = draw()
     byAction(tree, 'project-memory-save').props.onClick()
-    await settle()
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    const zhStatus = all(tree).find(node => node.props?.role === 'status')
-    assert.equal(text(zhStatus), '记忆已保存。')
+    assert.equal(await statusAfter(draw, '记忆已保存。'), '记忆已保存。')
   } finally {
     off()
   }
@@ -195,6 +213,7 @@ test('the settings panel memory save lands in the Project memory through the rea
 // The other half: a kind the host does not know is refused and writes nothing, the two kinds it
 // does know land, and a refusal reaches the reader in the interface language.
 test('a memory kind the host does not know writes nothing, and the panel quotes a refusal in Chinese', async (t) => {
+  resetSlots()
   const rt = await startHost(t)
   await assert.rejects(() => rt.projectEndpoint('project-memory-write', { id: 'project-1', kind: 'note', text: 'ship on Friday' }),
     error => error.code === 'bot/invalid' && /Unknown Project memory kind note/.test(error.message))
@@ -208,12 +227,10 @@ test('a memory kind the host does not know writes nothing, and the panel quotes 
   const off = installLocale(fakeLocale('zh'))
   try {
     const refused = async () => { throw Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' }) }
-    let tree = render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
+    const draw = () => render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
+    let tree = draw()
     byAction(tree, 'project-memory-save').props.onClick()
-    await settle()
-    tree = render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
-    const status = all(tree).find(node => node.props?.role === 'status')
-    assert.equal(text(status), '只有这个项目的主人可以修改')
+    assert.equal(await statusAfter(draw, '只有这个项目的主人可以修改'), '只有这个项目的主人可以修改')
     // Only the refusals this panel's three write paths can reach are translated (#1820): the owner
     // gate, an empty member id, and a stale Project id. The one-token id rule leaves a longer
     // sentence as the host wrote it instead of half-translating it.
@@ -226,17 +243,18 @@ test('a memory kind the host does not know writes nothing, and the panel quotes 
 })
 
 test("the settings panel shows the host's refusal instead of pretending the save landed", async () => {
+  resetSlots()
   const refused = Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' })
   const save = async () => { throw refused }
-  let tree = render(ProjectSettingsPanel, { project: { id: 'project-1' }, call: save, onClose() {} })
+  const draw = () => render(ProjectSettingsPanel, { project: { id: 'project-1' }, call: save, onClose() {} })
+  const tree = draw()
   byAction(tree, 'project-memory-save').props.onClick()
-  await tick()
-  tree = render(ProjectSettingsPanel, { project: { id: 'project-1' }, call: save, onClose() {} })
-  const status = all(tree).find(node => node.props?.role === 'status')
-  assert.match(text(status), /Only the owner of this Project/)
+  await waitFor(() => (/Only the owner of this Project/.test(drawnStatus(draw)) ? true : undefined))
+  assert.match(drawnStatus(draw), /Only the owner of this Project/)
 })
 
 test('the members panel lists the owners and the members the board names, and offers no write', () => {
+  resetSlots()
   const tree = render(ProjectMembersPanel, {
     project: { id: 'project-1', ownerUserId: 'owner-1', ownerUserIds: ['owner-1', 'owner-2'] },
     rows, onClose() {},

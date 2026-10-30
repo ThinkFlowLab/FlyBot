@@ -15061,6 +15061,7 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
 // src/client/workflows.js
 var import_react36 = require("react");
 var READ_MS = 8e3;
+var POLL_MS6 = 2e3;
 var WORKFLOW_PLUGIN_HINT = "The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.";
 var COLORS = { Planner: "#8b5cf6", Writer: "#f0509a", Coder: "#1fbf6a", Reviewer: "#f5a524", Tester: "#14b8a6", Deployer: "#2f7cf6" };
 function workflowCallMissing(failure) {
@@ -15548,6 +15549,20 @@ function WorkflowsPage({ call: call4, roster }) {
       gone = true;
     };
   }, []);
+  const live = (pack?.workflows ?? []).some((item) => (item.activeCount ?? 0) > 0);
+  (0, import_react36.useEffect)(() => {
+    if (!live || editing) return void 0;
+    let gone = false;
+    const timer = setInterval(() => {
+      readWorkflows(invoke).then((settled) => {
+        if (!gone) apply2(settled);
+      });
+    }, POLL_MS6);
+    return () => {
+      gone = true;
+      clearInterval(timer);
+    };
+  }, [live, editing]);
   const retry = () => {
     setPhase("loading");
     setError("");
@@ -15556,8 +15571,8 @@ function WorkflowsPage({ call: call4, roster }) {
   };
   const open = (item, source) => {
     if (source === "factory") {
-      const live = (pack?.workflows ?? []).find((workflow) => workflow.id === item.id);
-      setOpened(live ? { source: "own", id: live.id, fromFactory: item.id } : { source: "factory", id: item.id });
+      const live2 = (pack?.workflows ?? []).find((workflow) => workflow.id === item.id);
+      setOpened(live2 ? { source: "own", id: live2.id, fromFactory: item.id } : { source: "factory", id: item.id });
       setEditing(false);
       return;
     }

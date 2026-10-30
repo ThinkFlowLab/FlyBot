@@ -17,23 +17,137 @@ const { outputFiles } = await build({
   external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
 })
 const h = (type, props, ...children) => ({ type, props: { ...props, children } })
-let states = []
-const react = {
-  createElement: h, Fragment: Symbol('F'), useEffect() {}, useLayoutEffect() {}, useMemo: (fn) => fn(), useCallback: (fn) => fn(),
-  useRef: (current) => ({ current }), useSyncExternalStore: (_s, get) => get(), useState: (value) => [states.length > 0 ? states.shift() : value, () => {}],
-}
-const module = { exports: {} }
-runInNewContext(outputFiles[0].text, {
-  module, exports: module.exports, document: { hidden: false }, navigator: { language: 'en' }, localStorage: { getItem: () => null, setItem() {} },
-  setTimeout, clearTimeout,
-  require: (name) => {
-    if (name === 'react') return react
-    if (name === 'react-dom') return { createPortal: (node) => node }
-    if (name === '@deepseek-ai/dsh-client-ui-primitives') return {}
-    throw new Error(`Unexpected platform module ${name}`)
+// #1810: the old fixture faked React with a no-op useEffect and a setter that never
+// re-rendered, so no case in this file could observe an effect or a second read — a
+// polling case written against it passed no matter what the page did. This runtime
+// keeps hook slots per component, re-runs an effect only when its deps change, and
+// re-renders when a setter fires. The 2 s beat stays in the test's hands (the env
+// `setInterval` below is a fake clock); real `setTimeout` stays real so the
+// read-timeout cases still settle.
+const runtime = {
+  instances: new Map(),
+  key: 'root',
+  index: 0,
+  dirty: false,
+  unmounted: false,
+  reset() {
+    this.instances = new Map()
+    this.key = 'root'
+    this.index = 0
+    this.dirty = false
+    this.unmounted = false
   },
-})
-const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode, installLocale, wf } = module.exports
+  instance(key) {
+    let inst = this.instances.get(key)
+    if (!inst) {
+      inst = { slots: [], refs: [], pending: [], deps: new Map(), cleanups: new Map() }
+      this.instances.set(key, inst)
+    }
+    return inst
+  },
+}
+function withInstance(key, run) {
+  const previousKey = runtime.key
+  const previousIndex = runtime.index
+  runtime.key = key
+  runtime.index = 0
+  try { return run() } finally { runtime.key = previousKey; runtime.index = previousIndex }
+}
+function recordEffect(run, deps) {
+  const inst = runtime.instance(runtime.key)
+  inst.pending.push({ index: runtime.index++, run, deps })
+}
+function commitEffects() {
+  for (const inst of runtime.instances.values()) {
+    const pending = inst.pending
+    inst.pending = []
+    for (const { index, run, deps } of pending) {
+      const previous = inst.deps.get(index)
+      const changed = !deps || !previous || deps.length !== previous.length || deps.some((dep, at) => !Object.is(dep, previous[at]))
+      if (!changed) continue
+      const cleanup = inst.cleanups.get(index)
+      if (typeof cleanup === 'function') cleanup()
+      inst.cleanups.delete(index)
+      inst.deps.set(index, deps ? [...deps] : null)
+      const next = run()
+      if (typeof next === 'function') inst.cleanups.set(index, next)
+    }
+  }
+}
+function unmountAll() {
+  runtime.unmounted = true
+  for (const inst of runtime.instances.values()) {
+    for (const cleanup of inst.cleanups.values()) if (typeof cleanup === 'function') cleanup()
+    inst.cleanups.clear()
+    inst.pending = []
+  }
+  runtime.instances.clear()
+}
+const react = {
+  createElement: h, Fragment: Symbol('F'),
+  useEffect: (run, deps) => recordEffect(run, deps),
+  useLayoutEffect: (run, deps) => recordEffect(run, deps),
+  useMemo: (fn) => fn(), useCallback: (fn) => fn(),
+  useRef: (current) => {
+    const inst = runtime.instance(runtime.key)
+    const index = runtime.index++
+    if (!(index in inst.refs)) inst.refs[index] = { current }
+    return inst.refs[index]
+  },
+  useSyncExternalStore: (_s, get) => get(),
+  useState: (initial) => {
+    const inst = runtime.instance(runtime.key)
+    const index = runtime.index++
+    if (!(index in inst.slots)) inst.slots[index] = typeof initial === 'function' ? initial() : initial
+    const set = (next) => {
+      const value = typeof next === 'function' ? next(inst.slots[index]) : next
+      if (Object.is(value, inst.slots[index])) return
+      inst.slots[index] = value
+      if (!runtime.unmounted) runtime.dirty = true
+    }
+    return [inst.slots[index], set]
+  },
+}
+// The fake beat: only `setInterval` is faked, so `advance` is the test's sole clock.
+const beat = {
+  now: 0, nextId: 0, timers: new Map(),
+  reset() { this.now = 0; this.nextId = 0; this.timers.clear() },
+  setInterval(fn, ms) {
+    const id = ++this.nextId
+    this.timers.set(id, { at: this.now + (Number(ms) || 0), every: Math.max(1, Number(ms) || 1), fn })
+    return id
+  },
+  clearInterval(id) { this.timers.delete(id) },
+  due(target) {
+    let found = null
+    for (const [id, timer] of this.timers) {
+      if (timer.at > target) continue
+      if (!found || timer.at < found.timer.at) found = { id, timer }
+    }
+    return found
+  },
+  fire(found) {
+    this.now = found.timer.at
+    this.timers.set(found.id, { ...found.timer, at: found.timer.at + found.timer.every })
+    found.timer.fn()
+  },
+}
+const env = {
+  module: { exports: {} },
+  document: { hidden: false }, navigator: { language: 'en' }, localStorage: { getItem: () => null, setItem() {} },
+  setTimeout, clearTimeout,
+  setInterval: (fn, ms) => beat.setInterval(fn, ms),
+  clearInterval: (id) => beat.clearInterval(id),
+}
+env.require = (name) => {
+  if (name === 'react') return react
+  if (name === 'react-dom') return { createPortal: (node) => node }
+  if (name === '@deepseek-ai/dsh-client-ui-primitives') return {}
+  throw new Error(`Unexpected platform module ${name}`)
+}
+env.module.exports = env.module.exports
+runInNewContext(outputFiles[0].text, env)
+const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode, installLocale, wf } = env.module.exports
 
 const PLUGIN_HINT = 'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.'
 
@@ -49,12 +163,12 @@ function fakeLocale(active) {
   }
 }
 
-const expand = (node) => {
+const expand = (node, path = 'r') => {
   if (node === null || node === undefined || typeof node === 'boolean') return null
-  if (Array.isArray(node)) return node.map(expand)
+  if (Array.isArray(node)) return node.map((child, at) => expand(child, `${path}.${at}`))
   if (typeof node !== 'object') return node
-  if (typeof node.type === 'function') return expand(node.type(node.props))
-  return { ...node, props: { ...node.props, children: expand(node.props.children) } }
+  if (typeof node.type === 'function') return withInstance(path, () => expand(node.type(node.props), path))
+  return { ...node, props: { ...node.props, children: expand(node.props.children, path) } }
 }
 const all = (node, out = []) => {
   if (node && typeof node === 'object') {
@@ -64,8 +178,69 @@ const all = (node, out = []) => {
   return out
 }
 const text = (node) => (node === null || node === undefined ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.props.children) : String(node))
-const renderPage = (props, given = []) => { states = [...given]; const tree = expand(h(WorkflowsPage, props)); states = []; return tree }
+// A render pass: drop every fresh effect record, render, then commit the effects
+// whose deps changed. A setter fired inside an effect marks the tree dirty, and the
+// caller's `settle` renders again — the shape of a page that reacts to a read.
+function renderTree(node) {
+  runtime.dirty = false
+  for (const inst of runtime.instances.values()) inst.pending = []
+  const tree = expand(node)
+  commitEffects()
+  return tree
+}
+const renderPage = (props) => {
+  runtime.reset()
+  return renderTree(h(WorkflowsPage, props))
+}
 const renderView = (props) => expand(h(WorkflowsView, props))
+
+// Mounts the page and hands the test the clock and the tree it can drive. Nothing
+// here is a second implementation of the page: the same component renders, the same
+// effects run, and `advance` is the only thing that moves time.
+function mountPage(props) {
+  runtime.reset()
+  beat.reset()
+  let tree = renderTree(h(WorkflowsPage, props))
+  const settle = async () => {
+    for (let guard = 0; guard < 50; guard += 1) {
+      await new Promise((resolve) => setImmediate(resolve))
+      if (!runtime.dirty) return
+      tree = renderTree(h(WorkflowsPage, props))
+    }
+    throw new Error('the page never settled')
+  }
+  const page = {
+    get tree() { return tree },
+    settle,
+    async advance(ms) {
+      const target = beat.now + ms
+      for (let guard = 0; guard < 200; guard += 1) {
+        const found = beat.due(target)
+        if (!found) break
+        beat.fire(found)
+        // A real 2 s tick lets its read land and re-render before the next tick, so a
+        // poll that stops the interval (the run finished) stops it here too.
+        await settle()
+      }
+      beat.now = Math.max(beat.now, target)
+    },
+    unmount() { unmountAll() },
+    async click(match) {
+      const button = all(tree).find((entry) => entry.type === 'button' && match(entry))
+      assert.ok(button, 'the button the test clicks exists')
+      button.props.onClick({ stopPropagation() {}, preventDefault() {}, target: {} })
+      await settle()
+      return button
+    },
+  }
+  return page
+}
+const chipOf = (tree, id) => {
+  const card = all(tree).find((entry) => entry.props?.['data-node'] === id)
+  const chip = card ? all(card).find((entry) => typeof entry.props?.className === 'string' && entry.props.className.startsWith('bt-wf-chip')) : null
+  return chip ? text(chip) : ''
+}
+const openWorkflow = (page, id) => page.click((entry) => entry.props?.['data-workflow'] === id)
 
 const HOSTILE = '<img src=x onerror=alert(1)>'
 const factory = {
@@ -500,4 +675,106 @@ test('the measured width is the canvas clientWidth, the same box the scroll rang
   assert.equal(wf.measureCanvasWidth({}), 0, 'a host that has no layout yet reads as 0')
   assert.equal(wf.measureCanvasWidth({ clientWidth: -1 }), 0)
   assert.equal(wf.measureCanvasWidth({ clientWidth: Number.NaN }), 0)
+})
+
+// #1810: Settings → Workflows read once at mount, so a step that went running → done
+// left its chip frozen until the page was reopened, while the room drawer for the same
+// run already moved every 2 s. These cases drive the page through a fake clock: the
+// mount read, then the ticks, then the render each answer causes.
+const livePack = (nodeStatus, { activeCount = 1, status = 'running' } = {}) => ({
+  ok: true,
+  templates: [factory],
+  workflows: [{ ...own, activeCount, run: { status, nodeStatus } }],
+})
+
+test('#1810: a running workflow is read again every 2 s and the chip follows the run', async () => {
+  let reads = 0
+  const answers = [
+    livePack({ planner: 'done', coder: 'running' }),
+    livePack({ planner: 'done', coder: 'done' }, { activeCount: 0, status: 'done' }),
+  ]
+  const page = mountPage({
+    call: async () => {
+      reads += 1
+      return answers[Math.min(reads - 1, answers.length - 1)]
+    },
+    roster: { bots: [] },
+  })
+  await page.settle()
+  assert.equal(reads, 1, 'the mount read')
+  await openWorkflow(page, 'wf-mine')
+  assert.equal(chipOf(page.tree, 'coder'), 'Running')
+
+  await page.advance(6000)
+  assert.ok(reads >= 2, `the page asked again while the run was live (${reads} read(s))`)
+  assert.equal(chipOf(page.tree, 'coder'), 'Done', 'the chip moved without remounting the page')
+  assert.equal(chipOf(page.tree, 'planner'), 'Done')
+
+  // The last answer said every run is finished, so the beat stops: no more reads.
+  assert.equal(reads, 2)
+  await page.advance(6000)
+  assert.equal(reads, 2, 'a finished run is not read again')
+})
+
+test('#1810: nothing running means one read in ten seconds, not a poll', async () => {
+  let reads = 0
+  const idle = { ok: true, templates: [factory], workflows: [{ ...own, activeCount: 0, run: { status: 'done', nodeStatus: { planner: 'done', coder: 'done' } } }] }
+  const page = mountPage({ call: async () => { reads += 1; return idle }, roster: { bots: [] } })
+  await page.settle()
+  assert.equal(reads, 1)
+  await page.advance(10000)
+  assert.equal(reads, 1, 'an idle page never asks a second time')
+})
+
+test('#1810: an edit suspends the poll and finishing it brings the poll back', async () => {
+  let reads = 0
+  const page = mountPage({ call: async () => { reads += 1; return livePack({ planner: 'done', coder: 'running' }) }, roster: { bots: [] } })
+  await page.settle()
+  await openWorkflow(page, 'wf-mine')
+  await page.click((entry) => text(entry) === 'Edit')
+  assert.equal(reads, 1)
+  await page.advance(10000)
+  assert.equal(reads, 1, 'a refresh does not land in the middle of an edit')
+  await page.click((entry) => text(entry) === 'Finish editing')
+  await page.advance(2500)
+  assert.equal(reads, 2, 'leaving the editor resumes the beat')
+})
+
+test('#1810: a page that unmounts stops asking', async () => {
+  let reads = 0
+  const page = mountPage({ call: async () => { reads += 1; return livePack({ planner: 'done', coder: 'running' }) }, roster: { bots: [] } })
+  await page.settle()
+  assert.equal(reads, 1)
+  page.unmount()
+  await page.advance(10000)
+  assert.equal(reads, 1, 'no read after the page is gone')
+})
+
+test('#1810: a failed poll shows the error line and Retry, not an empty page', async () => {
+  const unhandled = []
+  const onUnhandled = (reason) => unhandled.push(reason)
+  process.on('unhandledRejection', onUnhandled)
+  try {
+    let reads = 0
+    const page = mountPage({
+      call: async () => {
+        reads += 1
+        if (reads === 1) return livePack({ planner: 'done', coder: 'running' })
+        throw new Error('workflow host down')
+      },
+      roster: { bots: [] },
+    })
+    await page.settle()
+    await openWorkflow(page, 'wf-mine')
+    await page.advance(2000)
+    assert.equal(reads, 2, 'the poll happened and failed')
+    const body = text(page.tree)
+    assert.match(body, /workflow host down/)
+    assert.match(body, /Retry/)
+    assert.doesNotMatch(body, /No workflows yet/)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(unhandled, [])
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+  }
 })

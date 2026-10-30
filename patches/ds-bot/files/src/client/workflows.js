@@ -7,6 +7,10 @@ import { t } from './i18n.js'
 
 export const READ_MS = 8000
 
+// The room's Workflow drawer re-reads a live run on this beat; Settings shows the
+// same data, so it moves at the same speed instead of freezing at mount (#1810).
+export const POLL_MS = 2000
+
 // Shown when @flybot/workflow is not registered. A default install includes it;
 // the page says so instead of the host's "Unknown FlyBot endpoint workflow/…" string.
 const WORKFLOW_PLUGIN_HINT = 'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.'
@@ -417,6 +421,19 @@ export function WorkflowsPage({ call, roster }) {
     readWorkflows(invoke).then((settled) => { if (!gone) apply(settled) })
     return () => { gone = true }
   }, [])
+
+  // The page used to read once, so a running step's chip kept the colour it had at
+  // mount. While any workflow is live it asks again on the room's beat; an edit
+  // suspends that, because a refresh would land in the middle of one (#1810).
+  const live = (pack?.workflows ?? []).some((item) => (item.activeCount ?? 0) > 0)
+  useEffect(() => {
+    if (!live || editing) return undefined
+    let gone = false
+    const timer = setInterval(() => {
+      readWorkflows(invoke).then((settled) => { if (!gone) apply(settled) })
+    }, POLL_MS)
+    return () => { gone = true; clearInterval(timer) }
+  }, [live, editing])
 
   const retry = () => {
     setPhase('loading')
