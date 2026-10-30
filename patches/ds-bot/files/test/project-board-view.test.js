@@ -12,23 +12,40 @@ const bundle = await build({
   bundle: true, format: 'cjs', platform: 'node', write: false,
   external: ['react', 'react-dom'],
 })
+// A hook runtime: the overlay is a plain function, so a slot array that survives a re-render is
+// enough to mount it, let its one read land, and read the tree it draws.
+let slots = []
+let index = 0
+let effects = []
+const react = {
+  createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
+  useCallback: (fn) => { const at = index++; if (!(at in slots)) slots[at] = fn; return slots[at] },
+  useMemo: (fn) => { const at = index++; if (!(at in slots)) slots[at] = fn(); return slots[at] },
+  useEffect: (fn) => { const at = index++; if (!(at in slots)) { slots[at] = true; effects.push(fn) } },
+  useRef: (value) => { const at = index++; if (!(at in slots)) slots[at] = { current: value }; return slots[at] },
+  useState: (initial) => {
+    const at = index++
+    if (!(at in slots)) slots[at] = typeof initial === 'function' ? initial() : initial
+    return [slots[at], (value) => { slots[at] = typeof value === 'function' ? value(slots[at]) : value }]
+  },
+}
+const win = { location: { hash: '' }, addEventListener() {}, removeEventListener() {} }
 const module = { exports: {} }
 runInNewContext(bundle.outputFiles[0].text, {
-  module, exports: module.exports, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise, console,
+  module, exports: module.exports, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise, console, window: win,
   require: (name) => {
-    const platform = {
-      react: {
-        createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
-        useCallback: fn => fn,
-        useEffect: () => {},
-        useState: initial => [initial, () => {}],
-      },
-    }
-    if (!(name in platform)) throw new Error(`no platform module ${name}`)
-    return platform[name]
+    if (name === 'react') return react
+    throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardPane, projectBoardView } = module.exports
+const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView } = module.exports
+const render = (component, props) => { index = 0; return component(props) }
+const flush = async () => {
+  const queued = effects
+  effects = []
+  for (const fn of queued) await fn()
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
 
 const rows = [
   { id: 'task-b1', source: 'bot', column: 'in-progress', assignee: 'Dev4', updatedAt: 3 },
@@ -103,5 +120,22 @@ test('the pane draws the grouped rows and only the owner sees the management con
 test('an empty Project renders the empty text and no row', () => {
   const nodes = all(ProjectBoardPane({ project: { id: 'p', name: 'P' }, rows: [], canManage: false }))
   assert.equal(nodes.filter(node => node.props?.['data-task-id'] !== undefined).length, 0)
-  assert.match(nodes.map(textOf).join(' '), /Nothing under this Project yet/)
+  assert.match(nodes.map(textOf).join(' '), /No cards yet/)
+})
+
+test('a Project-less entry offers the page that creates one (#1766)', async () => {
+  slots = []
+  effects = []
+  win.location.hash = '#project'
+  const opened = []
+  const call = async () => ({ projects: [] })
+  let tree = render(ProjectBoardOverlay, { actions: { openSettings: key => opened.push(key) }, call })
+  await flush()
+  tree = render(ProjectBoardOverlay, { actions: { openSettings: key => opened.push(key) }, call })
+  const nodes = all(tree)
+  assert.match(nodes.map(textOf).join(' '), /No Project yet — create one/)
+  const button = nodes.find(node => node.type === 'button' && /Open Projects in Settings/.test(textOf(node)))
+  assert.ok(button, 'the empty state names the way out')
+  button.props.onClick()
+  assert.deepEqual(opened, ['projects'])
 })

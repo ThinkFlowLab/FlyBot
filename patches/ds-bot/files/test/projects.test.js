@@ -269,3 +269,24 @@ test('a signed-in member may read the Project board even though it may not manag
     assert.deepEqual(value(board).tasks, [])
   } finally { await stop() }
 })
+
+// #1766: the Settings page needs somewhere to say where a Project works, so the record carries an
+// optional folder — the absolute path the folder picker hands back, never a relative one.
+test('a Project carries an optional working folder and refuses a relative one', async () => {
+  const { call, stop } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Site', workDir: '/work/site' }))
+    assert.equal(project.workDir, '/work/site')
+    assert.equal(created(await call('project-read', { id: project.id })).workDir, '/work/site')
+    assert.equal(value(await call('projects', {})).projects[0].workDir, '/work/site', 'the list carries it too')
+
+    assert.equal(created(await call('project-create', { name: 'Bare' })).workDir, null)
+    // An empty value is the field left alone, not a relative folder.
+    assert.equal(created(await call('project-create', { name: 'Blank', workDir: '' })).workDir, null);
+    for (const workDir of ['site', '../site', 'not-absolute/site']) {
+      const refused = await call('project-create', { name: 'Bad', workDir })
+      assert.equal(refused.ok, false, `${JSON.stringify(workDir)} is not a folder`)
+      assert.match(refused.error.message, /absolute path/)
+    }
+  } finally { await stop() }
+})

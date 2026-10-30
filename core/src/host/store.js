@@ -367,6 +367,9 @@ export function install(rt) {
   // member resolves `null`, so an install with zero Projects behaves exactly as before.
   const PROJECT_REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
   const PROJECT_STATUSES = new Set(['active', 'archived'])
+  // A Project's working folder is the absolute path the folder picker hands back (#1766), never a
+  // relative one: a record that says 'src' would mean a different folder on every machine.
+  const PROJECT_WORKDIR = /^(?:\/|[A-Za-z]:[\\/]|~[\\/]|\\\\)[^\u0000-\u001f]*$/
   const projectText = (value, limit) => (typeof value === 'string' ? value.trim().slice(0, limit) : '')
   const projectRefusal = (message, code = 'bot/invalid') => {
     const error = new Error(message)
@@ -401,6 +404,8 @@ export function install(rt) {
     if (name === '') throw projectRefusal('A Project needs a name')
     const repository = projectText(body.repository, 200)
     if (repository !== '' && !PROJECT_REPOSITORY.test(repository)) throw projectRefusal('A Project repository is owner/name')
+    const workDir = projectText(body.workDir, 400)
+    if (workDir !== '' && !PROJECT_WORKDIR.test(workDir)) throw projectRefusal('A Project working folder is an absolute path')
     const status = projectText(body.status, 40) || 'active'
     if (!PROJECT_STATUSES.has(status)) throw projectRefusal(`Unknown Project status ${status}`)
     const now = Date.now()
@@ -410,6 +415,7 @@ export function install(rt) {
       name,
       repository: repository === '' ? null : repository,
       defaultBranch: projectText(body.defaultBranch, 120) || 'main',
+      workDir: workDir === '' ? null : workDir,
       ownerUserId: projectText(body.ownerUserId, 120) || null,
       // Further owners of the same Project (#1733): each has their own memory and their own digest,
       // built from the same board read. An empty list is a single-owner Project.

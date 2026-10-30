@@ -249,13 +249,14 @@ diff --git a/src/client/secret-card.js b/src/client/secret-card.js
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
-@@ -2,13 +2,16 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
+@@ -2,13 +2,16 @@
  import { ACCENT_INKS, INKS } from './inks.js'
  import { isMainOf } from './sources.js'
  import { allThemes } from './themes.js'
+-import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
 +import { WorkflowIcon } from './icons.js'
 +import { WorkflowsPage } from './workflows.js'
- import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
++import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, FolderIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
  import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
  import { openHarnessSettings } from './sidebar.js'
 +import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
@@ -268,18 +269,26 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  import { CreateBot } from './create-bot.js'
  import { KeyIcon, SecretsPage } from './secret-card.js'
  import { UsagePage } from './usage-page.js'
-@@ -23,8 +23,8 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
+@@ -16,6 +19,7 @@
+ import { CapabilitiesPage } from './capability-settings.js'
+ import { SchedulesPage } from './schedules.js'
+ import { FeedbackIcon, FeedbackPage } from './feedback.js'
++import { FolderMenu } from './folder-menu.js'
+ import { AboutPage } from './about.js'
+ import { t } from './i18n.js'
+ 
+@@ -23,8 +27,8 @@
  
  // Settings dialog: a 198px page list beside the page. Bots and group chats each list
  // their members, and one opens on its own settings form. Usage widens the dialog.
 -const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About DS Bot']]
 -const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
-+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-+const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
++const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
++const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
  
  function SetSection({ title, children }) {
    return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
-@@ -35,6 +35,13 @@ function SetRow({ label, hint, children }) {
+@@ -35,6 +39,13 @@
      children ? h('div', { className: 'bt-set-control' }, children) : null)
  }
  
@@ -293,7 +302,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  function GeneralPage({ roster, actions, run }) {
    const prefs = roster.prefs ?? {}
    const themes = allThemes()
-@@ -61,9 +61,17 @@ function GeneralPage({ roster, actions, run }) {
+@@ -61,9 +72,17 @@
            })),
            h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
              h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
@@ -314,7 +323,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    ]
  }
  
-@@ -72,7 +72,9 @@ function GeneralPage({ roster, actions, run }) {
+@@ -72,7 +91,9 @@
  function MainBotsSection({ roster, actions, run }) {
    const mains = (roster.mainBotIds ?? []).map(id => roster.byId[id]).filter(Boolean)
    const [first, ...others] = mains
@@ -325,7 +334,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    return h(SetSection, { title: t('Main Bot') },
      h(SetRow, {
        label: t('Main Bot'),
-@@ -81,7 +81,7 @@ function MainBotsSection({ roster, actions, run }) {
+@@ -81,7 +102,7 @@
      h('select', {
        className: 'bt-select', 'aria-label': t('Main Bot'), value: first?.id ?? '',
        onChange: event => run(actions.setMain(event.target.value, true, first ? { replace: first.id } : {})),
@@ -334,7 +343,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
      others.map(bot => h(SetRow, { key: bot.id, label: bot.name, hint: t('Also a Main Bot.') },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, true, { primary: true })) }, t('Move to first')),
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, false)) }, t('Remove Main Bot role')))),
-@@ -112,8 +112,8 @@ function BotsPage({ roster, actions, run }) {
+@@ -112,8 +133,8 @@
        ? h(CreateBot, { key: 'create', roster, actions, inline: true, onBack: () => setCreating(false), onCreated: bot => actions.openSettings('bots', bot.id) })
        : h('div', { key: 'new', className: 'bt-actions' },
            h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => setCreating(true) }, h(PlusIcon), t('New Bot'))),
@@ -345,7 +354,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
          h('span', { className: 'bt-set-bot' },
            h(BotAvatar, { bot, size: 28, badge: false, live: false }),
            h('span', { className: 'bt-row-title' }, bot.name),
-@@ -140,7 +140,7 @@ function GroupsPage({ roster, actions, run }) {
+@@ -140,7 +161,7 @@
                h('span', { className: 'bt-set-bot' },
                  h(RoomAvatar, { room, roster, size: 28 }),
                  h('span', { className: 'bt-row-title' }, room.name),
@@ -354,7 +363,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
                  admin ? h('span', { className: 'bt-tag bt-tag-admin' }, h(AdminStar), admin.name) : null,
                  room.hidden ? h('span', { className: 'bt-tag' }, t('Hidden')) : null),
                h('span', { className: 'bt-chevron' }, h(ChevronRightIcon)))
-@@ -159,9 +159,13 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -159,9 +180,13 @@
    // A Bot or group deleted while its form is open leaves its page on the list.
    const bot = page === 'bots' && id ? roster.byId[id] : undefined
    const room = page === 'groups' && id ? roster.roomsById[id] : undefined
@@ -370,7 +379,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
    const nav = useGlide(shown, { axis: 'y' })
    // A page enters from the right when it is one level in, from the left when it comes
-@@ -181,16 +181,19 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -181,16 +206,19 @@
    const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null
    return h('div', { className: 'bt-settings-layer', 'data-leaving': leaving || undefined },
      h('div', { className: 'bt-scrim', onMouseDown: close }),
@@ -395,15 +404,123 @@ diff --git a/src/client/settings.js b/src/client/settings.js
        h('div', { className: 'bt-settings-main' },
          h('div', { className: 'bt-settings-head' },
            back ? h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': back, title: back, onClick: () => actions.openSettings(shown) }, h(ChevronLeftIcon)) : null,
-@@ -203,6 +203,8 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -202,7 +230,10 @@
+           shown === 'bots' && !bot ? h(BotsPage, { roster, actions, run }) : null,
            room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,
            shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
++          shown === 'projects' ? h(ProjectsPage, { roster, actions, run, call }) : null,
            shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
 +          shown === 'workflows' ? h(WorkflowsPage, { call, roster }) : null,
 +          pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
            shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
            shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
            shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
+@@ -213,3 +244,105 @@
+           h(UsagePage, { roster, actions, focusId: usageFocus })) : null),
+       h('button', { type: 'button', className: 'bt-settings-close', 'aria-label': t('Close settings'), onClick: close }, h(CloseIcon))))
+ }
++
++// Settings → Projects (#1766): the write half of the Project record. A fresh install has none, so
++// the empty state here is the entry point — create one, then its row opens the board through the
++// hash the board already reads. The working folder comes from the folder picker every other
++// "where does this work happen" control uses; a typed path would be a second way to say it.
++const openProjectBoard = (id) => {
++  if (typeof window !== 'undefined') window.location.hash = `#project=${id}`
++}
++
++const projectMembers = (roster) => [
++  ...(roster?.bots ?? []).filter(bot => !bot.remote).map(bot => ({ kind: 'bot', id: bot.id, name: bot.name, projectId: bot.projectId ?? null })),
++  ...(roster?.rooms ?? []).map(room => ({ kind: 'group', id: room.id, name: room.name, projectId: room.projectId ?? null })),
++]
++
++export function ProjectsList({ projects, roster, call, reload }) {
++  const members = projectMembers(roster)
++  // The binding is the member's own field (`bot.projectId`, `room.projectId`); the record is only
++  // asked again so the row that shows it is read from the host, not guessed here.
++  const bind = async (choice, project) => {
++    const [kind, id] = String(choice ?? '').split(':')
++    if (!kind || !id) return
++    await call('project-bind', { kind, id, projectId: project.id })
++    await reload?.()
++  }
++  const unbind = async (member) => {
++    await call('project-bind', { kind: member.kind, id: member.id, projectId: null })
++    await reload?.()
++  }
++  const bound = members.filter(member => member.projectId !== null && member.projectId !== undefined)
++  return [
++    h(SetSection, { key: 'projects', title: t('Projects · {count}', { count: projects.length }) },
++      projects.length === 0
++        ? h('div', { className: 'bt-set-row' }, h('div', { className: 'bt-set-copy' }, h('span', null, t('No Project yet — create one.'))))
++        : projects.map(project => h(SetRow, {
++          key: project.id, label: project.name,
++          hint: project.workDir === null || project.workDir === undefined ? undefined : project.workDir,
++        },
++        h('div', { className: 'bt-project-row-controls' },
++          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openProjectBoard(project.id) }, t('Open board')),
++          h('select', {
++            className: 'bt-select', 'aria-label': t('Bind to {name}', { name: project.name }), value: '',
++            onChange: event => { void bind(event.target.value, project) },
++          },
++          h('option', { value: '' }, t('Bind a Bot or group')),
++          members.map(member => h('option', { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
++            `${member.kind === 'group' ? t('Group') : t('Bot')} · ${member.name}`))))))),
++    bound.length === 0 ? null : h(SetSection, { key: 'bindings', title: t('Bindings') },
++      bound.map(member => h(SetRow, {
++        key: `${member.kind}:${member.id}`, label: member.name,
++        hint: member.kind === 'group' ? t('Group') : t('Bot'),
++      },
++      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { void unbind(member) } }, t('Unbind'))))),
++  ]
++}
++
++export function ProjectsPage({ roster, actions, run, call }) {
++  const [state, setState] = useState({ projects: [], error: null })
++  const [name, setName] = useState('')
++  const [workDir, setWorkDir] = useState(null)
++  const reload = useCallback(async () => {
++    const listing = await call('projects')
++    setState({ projects: listing?.projects ?? [], error: null })
++  }, [call])
++  useEffect(() => {
++    void reload().catch(error => setState({ projects: [], error: error?.message ?? String(error) }))
++  }, [reload])
++  // Creating re-reads the list rather than appending the answer: the host decides what a Project
++  // is, and the row then shows the record it stored.
++  const create = async () => {
++    const trimmed = name.trim()
++    if (trimmed === '') return
++    const body = { name: trimmed }
++    if (workDir !== null && workDir !== '') body.workDir = workDir
++    try {
++      await call('project-create', body)
++      setName('')
++      setWorkDir(null)
++      await reload()
++    } catch (error) {
++      setState({ projects: state.projects, error: error?.message ?? String(error) })
++    }
++  }
++  return [
++    state.error === null ? null : h('div', { key: 'error', className: 'bt-error', role: 'alert' }, state.error),
++    h(SetSection, { key: 'new', title: t('New Project') },
++      h(SetRow, { label: t('Name') },
++        h('input', {
++          className: 'bt-input', 'aria-label': t('Project name'), value: name, placeholder: t('e.g. Website'),
++          onChange: event => setName(event.target.value),
++        })),
++      h(SetRow, { label: t('Working folder'), hint: t("Optional. Where this Project's work happens.") },
++        h(FolderMenu, { value: workDir, actions, run, onPick: setWorkDir })),
++      h('div', { className: 'bt-actions' },
++        h('button', {
++          type: 'button', className: 'bt-primary bt-with-icon', disabled: name.trim() === '',
++          onClick: () => { void create() },
++        }, h(PlusIcon), t('New Project')))),
++    // The list is rendered here rather than as a child element: it holds no state of its own,
++    // and the page keeps one reload path for both halves.
++    ...ProjectsList({ projects: state.projects, roster, call, reload }),
++  ]
++}
 diff --git a/src/host/browser.js b/src/host/browser.js
 --- a/src/host/browser.js
 +++ b/src/host/browser.js

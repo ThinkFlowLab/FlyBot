@@ -1360,7 +1360,21 @@ var ZH = {
   // The Project board names its columns with the same keys the task record uses.
   "not-started": "未开始",
   "in-progress": "进行中",
-  "done": "已完成"
+  "done": "已完成",
+  "Projects": "项目",
+  "New Project": "新建项目",
+  "Project name": "项目名称",
+  "e.g. Website": "例如：官网",
+  "Optional. Where this Project's work happens.": "可选。这个项目的工作目录。",
+  "Projects · {count}": "项目 · {count}",
+  "No Project yet — create one.": "还没有项目——新建一个。",
+  "Bind a Bot or group": "绑定 Bot 或群聊",
+  "Bind to {name}": "绑定到 {name}",
+  "Open board": "打开看板",
+  "Unbind": "解除绑定",
+  "Bindings": "绑定关系",
+  "No cards yet.": "还没有卡片。",
+  "Open Projects in Settings": "在设置中打开项目"
 };
 var HOST_ERRORS = [
   [/^Model (.+) is not available\. Available: (.*)$/, "模型 $1 不可用。可用的：$2"],
@@ -17066,8 +17080,8 @@ var ABOUT_CSS = `
 // src/client/settings.js
 var import_react40 = require("react");
 var capitalize2 = (word) => word[0].toUpperCase() + word.slice(1);
-var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["schedules", "Scheduled tasks"], ["workflows", "Workflows"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About FlyBot"]];
-var PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon };
+var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["projects", "Projects"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["schedules", "Scheduled tasks"], ["workflows", "Workflows"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About FlyBot"]];
+var PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon };
 function SetSection({ title, children }) {
   return (0, import_react40.createElement)("section", { className: "bt-set-section" }, (0, import_react40.createElement)("h3", null, title), (0, import_react40.createElement)("div", { className: "bt-set-card" }, children));
 }
@@ -17356,6 +17370,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           shown === "bots" && !bot ? (0, import_react40.createElement)(BotsPage, { roster, actions, run }) : null,
           room2 ? (0, import_react40.createElement)("div", { className: "bt-settings-form" }, (0, import_react40.createElement)(GroupSettingsForm, { key: room2.id, room: room2, roster, actions, run })) : null,
           shown === "groups" && !room2 ? (0, import_react40.createElement)(GroupsPage, { roster, actions, run }) : null,
+          shown === "projects" ? (0, import_react40.createElement)(ProjectsPage, { roster, actions, run, call: call2 }) : null,
           shown === "connectors" ? (0, import_react40.createElement)(ConnectorsPage, { roster, actions }) : null,
           shown === "workflows" ? (0, import_react40.createElement)(WorkflowsPage, { call: call2, roster }) : null,
           pluginPage ? (0, import_react40.createElement)(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call: call2, run, t, Section: SetSection, Row: SetRow } }) : null,
@@ -17375,6 +17390,142 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
       (0, import_react40.createElement)("button", { type: "button", className: "bt-settings-close", "aria-label": t("Close settings"), onClick: close }, (0, import_react40.createElement)(CloseIcon))
     )
   );
+}
+var openProjectBoard = (id) => {
+  if (typeof window !== "undefined") window.location.hash = `#project=${id}`;
+};
+var projectMembers = (roster) => [
+  ...(roster?.bots ?? []).filter((bot) => !bot.remote).map((bot) => ({ kind: "bot", id: bot.id, name: bot.name, projectId: bot.projectId ?? null })),
+  ...(roster?.rooms ?? []).map((room2) => ({ kind: "group", id: room2.id, name: room2.name, projectId: room2.projectId ?? null }))
+];
+function ProjectsList({ projects, roster, call: call4, reload }) {
+  const members = projectMembers(roster);
+  const bind = async (choice, project) => {
+    const [kind, id] = String(choice ?? "").split(":");
+    if (!kind || !id) return;
+    await call4("project-bind", { kind, id, projectId: project.id });
+    await reload?.();
+  };
+  const unbind = async (member) => {
+    await call4("project-bind", { kind: member.kind, id: member.id, projectId: null });
+    await reload?.();
+  };
+  const bound2 = members.filter((member) => member.projectId !== null && member.projectId !== void 0);
+  return [
+    (0, import_react40.createElement)(
+      SetSection,
+      { key: "projects", title: t("Projects · {count}", { count: projects.length }) },
+      projects.length === 0 ? (0, import_react40.createElement)("div", { className: "bt-set-row" }, (0, import_react40.createElement)("div", { className: "bt-set-copy" }, (0, import_react40.createElement)("span", null, t("No Project yet — create one.")))) : projects.map((project) => (0, import_react40.createElement)(
+        SetRow,
+        {
+          key: project.id,
+          label: project.name,
+          hint: project.workDir === null || project.workDir === void 0 ? void 0 : project.workDir
+        },
+        (0, import_react40.createElement)(
+          "div",
+          { className: "bt-project-row-controls" },
+          (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openProjectBoard(project.id) }, t("Open board")),
+          (0, import_react40.createElement)(
+            "select",
+            {
+              className: "bt-select",
+              "aria-label": t("Bind to {name}", { name: project.name }),
+              value: "",
+              onChange: (event) => {
+                void bind(event.target.value, project);
+              }
+            },
+            (0, import_react40.createElement)("option", { value: "" }, t("Bind a Bot or group")),
+            members.map((member) => (0, import_react40.createElement)(
+              "option",
+              { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
+              `${member.kind === "group" ? t("Group") : t("Bot")} · ${member.name}`
+            ))
+          )
+        )
+      ))
+    ),
+    bound2.length === 0 ? null : (0, import_react40.createElement)(
+      SetSection,
+      { key: "bindings", title: t("Bindings") },
+      bound2.map((member) => (0, import_react40.createElement)(
+        SetRow,
+        {
+          key: `${member.kind}:${member.id}`,
+          label: member.name,
+          hint: member.kind === "group" ? t("Group") : t("Bot")
+        },
+        (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
+          void unbind(member);
+        } }, t("Unbind"))
+      ))
+    )
+  ];
+}
+function ProjectsPage({ roster, actions, run, call: call4 }) {
+  const [state, setState] = (0, import_react40.useState)({ projects: [], error: null });
+  const [name, setName] = (0, import_react40.useState)("");
+  const [workDir, setWorkDir] = (0, import_react40.useState)(null);
+  const reload = (0, import_react40.useCallback)(async () => {
+    const listing = await call4("projects");
+    setState({ projects: listing?.projects ?? [], error: null });
+  }, [call4]);
+  (0, import_react40.useEffect)(() => {
+    void reload().catch((error) => setState({ projects: [], error: error?.message ?? String(error) }));
+  }, [reload]);
+  const create = async () => {
+    const trimmed3 = name.trim();
+    if (trimmed3 === "") return;
+    const body = { name: trimmed3 };
+    if (workDir !== null && workDir !== "") body.workDir = workDir;
+    try {
+      await call4("project-create", body);
+      setName("");
+      setWorkDir(null);
+      await reload();
+    } catch (error) {
+      setState({ projects: state.projects, error: error?.message ?? String(error) });
+    }
+  };
+  return [
+    state.error === null ? null : (0, import_react40.createElement)("div", { key: "error", className: "bt-error", role: "alert" }, state.error),
+    (0, import_react40.createElement)(
+      SetSection,
+      { key: "new", title: t("New Project") },
+      (0, import_react40.createElement)(
+        SetRow,
+        { label: t("Name") },
+        (0, import_react40.createElement)("input", {
+          className: "bt-input",
+          "aria-label": t("Project name"),
+          value: name,
+          placeholder: t("e.g. Website"),
+          onChange: (event) => setName(event.target.value)
+        })
+      ),
+      (0, import_react40.createElement)(
+        SetRow,
+        { label: t("Working folder"), hint: t("Optional. Where this Project's work happens.") },
+        (0, import_react40.createElement)(FolderMenu, { value: workDir, actions, run, onPick: setWorkDir })
+      ),
+      (0, import_react40.createElement)(
+        "div",
+        { className: "bt-actions" },
+        (0, import_react40.createElement)("button", {
+          type: "button",
+          className: "bt-primary bt-with-icon",
+          disabled: name.trim() === "",
+          onClick: () => {
+            void create();
+          }
+        }, (0, import_react40.createElement)(PlusIcon), t("New Project"))
+      )
+    ),
+    // The list is rendered here rather than as a child element: it holds no state of its own,
+    // and the page keeps one reload path for both halves.
+    ...ProjectsList({ projects: state.projects, roster, call: call4, reload })
+  ];
 }
 
 // src/client/context-menu.js
@@ -19727,7 +19878,7 @@ function projectBoardView({ project, rows, canManage, tasks } = {}) {
     groups,
     count: list.length,
     empty: list.length === 0,
-    emptyText: "Nothing under this Project yet."
+    emptyText: "No cards yet."
   };
 }
 function ProjectBoardRows({ view, onOpen }) {
@@ -19779,7 +19930,8 @@ function ProjectBoardPane({ project, rows, canManage, tasks, onOpen }) {
     (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen })
   );
 }
-function ProjectBoardOverlay({ actions } = {}) {
+function ProjectBoardOverlay({ actions, call: request } = {}) {
+  const read = request ?? call;
   const [state, setState] = (0, import_react46.useState)(null);
   const [hash, setHash] = (0, import_react46.useState)(() => typeof window === "undefined" ? "" : window.location.hash);
   const close = (0, import_react46.useCallback)(() => {
@@ -19803,20 +19955,20 @@ function ProjectBoardOverlay({ actions } = {}) {
     let live = true;
     void (async () => {
       try {
-        const listing = await call("projects");
+        const listing = await read("projects");
         const projects = listing?.projects ?? [];
         const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
         if (project === void 0) {
           if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
           return;
         }
-        const [read, board, taskList] = await Promise.all([
-          call("project-read", { id: project.id }),
-          call("project-board", { id: project.id }),
-          call("tasks", {})
+        const [record, board, taskList] = await Promise.all([
+          read("project-read", { id: project.id }),
+          read("project-board", { id: project.id }),
+          read("tasks", {})
         ]);
         const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
-        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true, tasks });
+        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks });
       } catch {
         if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
@@ -19843,7 +19995,15 @@ function ProjectBoardOverlay({ actions } = {}) {
       (0, import_react46.createElement)(
         "div",
         { className: "bt-project-body" },
-        state.project === null ? (0, import_react46.createElement)("div", { className: "bt-project-empty" }, t("No Project here.")) : (0, import_react46.createElement)(ProjectBoardPane, {
+        state.project === null ? (0, import_react46.createElement)(
+          "div",
+          { className: "bt-project-empty" },
+          (0, import_react46.createElement)("p", null, t("No Project yet — create one.")),
+          (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
+            close();
+            actions?.openSettings?.("projects");
+          } }, t("Open Projects in Settings"))
+        ) : (0, import_react46.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
           canManage: state.canManage,
