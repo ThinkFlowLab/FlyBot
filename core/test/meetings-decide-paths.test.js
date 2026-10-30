@@ -6,7 +6,7 @@
 // - P-192: `blocked` had no way back; the meeting stayed blocked for good.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -271,4 +271,98 @@ test('meetings: a host without the create gate refuses the produced task instead
   assert.deepEqual(tempsIn(dir), [], 'no temp file is left behind')
   assert.deepEqual(filesIn(dir), [], 'no decision file is archived')
   assert.equal(rt.state.meetings[id].status, 'deliberating', 'the meeting did not close')
+})
+
+// P-205: the archive step that fails leaves nothing behind. The `decisions` folder is writable by
+// name but not by content here, and the decide must fail before a card exists — the base created
+// the card first, so every retry added one more.
+test('meetings: a decide that cannot archive its file creates no card, and its retry creates none either', async (t) => {
+  const { rt, dir, open, decide, closeAll, stop } = await boot()
+  const folder = join(dir, 'decisions')
+  t.after(async () => {
+    chmodSync(folder, 0o755)
+    await stop()
+  })
+  const id = await open('Which storage shape should Stage 4 use?')
+  await closeAll(id)
+  mkdirSync(folder)
+  chmodSync(folder, 0o555)
+
+  for (const attempt of [1, 2]) {
+    const refusal = await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] })
+      .then(() => undefined, error => error)
+    assert.equal(refusal?.code, 'EACCES', `attempt ${attempt} fails on the folder itself`)
+    assert.equal(Object.keys(rt.state.tasks ?? {}).length, 0, `attempt ${attempt} creates no card`)
+    assert.deepEqual(tempsIn(dir), [], `attempt ${attempt} leaves no temp file behind`)
+    assert.deepEqual(filesIn(dir), [], `attempt ${attempt} archives no decision file`)
+    assert.equal(rt.state.meetings[id].status, 'deliberating', `attempt ${attempt} leaves the meeting open`)
+  }
+})
+
+// P-205: once the folder takes the write again the same decide lands on the name the failures
+// would have used, and the ids its file lists are exactly the cards on the board.
+test('meetings: a retry once the folder is writable archives the file and lists every card', async (t) => {
+  const { rt, dir, open, decide, closeAll, stop } = await boot()
+  const folder = join(dir, 'decisions')
+  t.after(async () => {
+    chmodSync(folder, 0o755)
+    await stop()
+  })
+  const id = await open('Which storage shape should Stage 4 use?')
+  await closeAll(id)
+  mkdirSync(folder)
+  chmodSync(folder, 0o555)
+  await assert.rejects(decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] }), /EACCES: permission denied/)
+  chmodSync(folder, 0o755)
+
+  await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }, { botId: 'r1', title: 'Review the record' }] })
+  const record = rt.state.meetings[id]
+  const body = readFileSync(join(dir, record.decisionFile), 'utf8')
+  assert.match(record.decisionFile, /-which-storage-shape-should-stage-4-use\.md$/, 'the retry keeps the name the failures left free')
+  assert.deepEqual(filesIn(dir), [record.decisionFile.replace('decisions/', '')], 'exactly one file, under that name')
+  assert.equal(record.status, 'decided')
+  assert.equal(record.taskIds.length, 2, 'both produced tasks are on the record')
+  assert.equal(Object.keys(rt.state.tasks).length, 2, 'and both are on the board')
+  assert.equal(record.taskIds.length, body.split('\n').filter(line => line.startsWith('- Tasks: '))[0].slice('- Tasks: '.length).split(', ').length, 'the file lists as many ids as the record keeps')
+  assert.ok(body.includes(`- Tasks: ${record.taskIds.join(', ')}`), 'the file lists the kept ids in order')
+  assert.equal(record.decisionSha256, sha256(body), 'the recorded sha covers the archived bytes')
+  assert.equal(record.pendingTaskIds, undefined, 'a decided meeting carries no retry bookkeeping')
+  assert.deepEqual(tempsIn(dir), [], 'no temp file survives the success')
+})
+
+// P-205, the window no filesystem lever opens in-process: a decide that died between the cards and
+// the finished file left its ids on the meeting record. The retry must keep those cards rather than
+// create a second one for the same produced task — and the file it writes lists the kept card.
+test('meetings: a retry after the cards exist keeps them instead of creating another', async (t) => {
+  const { rt, dir, open, decide, closeAll, stop } = await boot()
+  t.after(stop)
+  const id = await open('Which storage shape should Stage 4 use?')
+  await closeAll(id)
+  // The card an earlier attempt created, and the record it left behind: ids on the meeting, the
+  // meeting still `deliberating`, no file.
+  const card = await rt.taskEndpoint('task-create', { botId: 'd1', title: 'Write the record' }, { name: 'Chief', role: 'Chief' })
+  rt.state.meetings[id].pendingTaskIds = [card.id]
+
+  // Two more attempts while the folder still refuses the write: neither adds a card, and neither
+  // leaves a file or a temp behind.
+  const folder = join(dir, 'decisions')
+  mkdirSync(folder)
+  chmodSync(folder, 0o555)
+  t.after(() => { try { chmodSync(folder, 0o755) } catch { /* the tree is gone with the test */ } })
+  for (const attempt of [1, 2]) {
+    await assert.rejects(decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] }), /EACCES: permission denied/, `attempt ${attempt} still fails on the folder`)
+    assert.deepEqual(Object.keys(rt.state.tasks), [card.id], `attempt ${attempt} adds no second card`)
+    assert.deepEqual(filesIn(dir), [], `attempt ${attempt} archives nothing`)
+    assert.deepEqual(tempsIn(dir), [], `attempt ${attempt} leaves no temp behind`)
+  }
+  chmodSync(folder, 0o755)
+
+  await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] })
+  const record = rt.state.meetings[id]
+  const body = readFileSync(join(dir, record.decisionFile), 'utf8')
+  assert.deepEqual(Object.keys(rt.state.tasks), [card.id], 'the retry built no second card')
+  assert.deepEqual(record.taskIds, [card.id], 'the record keeps the card the first attempt made')
+  assert.ok(body.includes(`- Tasks: ${card.id}`), 'the file names that card')
+  assert.equal(record.pendingTaskIds, undefined, 'the bookkeeping is gone once the file lands')
+  assert.deepEqual(filesIn(dir), [record.decisionFile.replace('decisions/', '')], 'one file, no second temp')
 })

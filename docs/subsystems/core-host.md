@@ -634,7 +634,10 @@ no second store, no UI-only path and no cron.
   temp file and no decision file. A host that carries no such gate refuses the produced task
   `forbidden` rather than creating it ungated. The decision body is rendered once, after the cards
   exist, so the `- Tasks:` line names the ids the meeting keeps and the recorded sha256 is the
-  sha256 of the bytes archived.
+  sha256 of the bytes archived. The archive folder is claimed (a temp file opened) before any card
+  exists, so a folder that refuses the write fails the decide with no card created, and an attempt
+  that died after the cards leaves their ids on the meeting record so a retry keeps them rather
+  than creating a second card.
 - **Who may close.** A Project Assistant (`role: 'Project Assistant'`) may be invited and record a
   position under its own name; it may not write the decision file or close the meeting, which is
   refused `forbidden`.

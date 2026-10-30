@@ -6,7 +6,7 @@
 // meeting writes no file and produces no task. Decisions stay on the existing store
 // (`state.meetings`), so there is no second store.
 import { createHash, randomBytes } from 'node:crypto'
-import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { link, mkdir, open, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
@@ -237,6 +237,22 @@ export function install(rt) {
     })
   }
 
+  // P-205: the archive folder is touched before any card exists. Claiming the temp file proves the
+  // folder takes a write, so a decide that cannot archive its file fails with no card created,
+  // instead of leaving cards behind for the retry to double. The handle is filled once the ids exist.
+  const claimTemp = async (dir, name) => {
+    const temp = `${join(dir, name)}.tmp-${randomBytes(4).toString('hex')}`
+    return { temp, handle: await open(temp, 'w') }
+  }
+  const dropTemp = async ({ temp, handle }) => {
+    try {
+      await handle.close()
+    } catch {
+      // closed already: the write path closes before it links
+    }
+    await rm(temp, { force: true })
+  }
+
   const decide = async (meeting, args, { now, actor }) => {
     if (!OPEN_STATES.has(meeting.status)) throw refuse('closed', `the meeting is ${meeting.status}`)
     if (actor?.role === ASSISTANT_ROLE) throw refuse('forbidden', 'a Project Assistant takes a position; it does not close the meeting')
@@ -275,8 +291,27 @@ export function install(rt) {
       closedBy: actor?.name ?? candidate.owner,
       decisionFile: file,
     }
-    // The cards come first: the decision file appears only once every produced task exists.
-    closed.taskIds = await produceTasks(planned, { actor })
+    // P-205: the step that fails most often — writing into `decisions/` — now runs before any card,
+    // so an unwritable folder leaves the meeting exactly as it was. The temp is claimed here.
+    let slot = await claimTemp(dir, file)
+    // P-205: the cards come first, but a retry must not double them. If an earlier attempt died
+    // between the cards and the finished file, its ids are on the meeting record and this attempt
+    // keeps that card instead of creating a second one. A re-opened meeting starts from no ids.
+    const pending = Array.isArray(meeting.pendingTaskIds) ? meeting.pendingTaskIds : []
+    try {
+      if (pending.length > 0) {
+        closed.taskIds = pending.filter(id => rt.state.tasks?.[id] !== undefined)
+      } else {
+        closed.taskIds = await produceTasks(planned, { actor })
+        // On the record before the file is written, while the meeting is still `deliberating`: a
+        // failure below (a full disk, a `link` the loop cannot retry) must not double the cards.
+        store()[meeting.id] = { ...meeting, pendingTaskIds: closed.taskIds }
+      }
+    } catch (error) {
+      await dropTemp(slot)
+      throw error
+    }
+    delete closed.pendingTaskIds
 
     // One render, and the bytes hashed are the bytes archived. `link` claims the name without
     // rewriting an existing file; a name lost to a concurrent writer takes the next one, and the
@@ -284,21 +319,26 @@ export function install(rt) {
     let bytes
     let name = file
     for (let attempt = 0; ; attempt += 1) {
-      if (attempt === 8) throw refuse('exists', `no free decision file name left for ${file}`)
+      if (attempt === 8) {
+        await dropTemp(slot)
+        throw refuse('exists', `no free decision file name left for ${file}`)
+      }
       closed.decisionFile = name
       bytes = Buffer.from(decisionBody(closed, name, now), 'utf8')
-      const temp = `${join(dir, name)}.tmp-${randomBytes(4).toString('hex')}`
-      await writeFile(temp, bytes)
       try {
-        await link(temp, join(dir, name))
+        // The temp claimed before the cards is filled here: its bytes are the bytes archived.
+        await slot.handle.writeFile(bytes)
+        await slot.handle.close()
+        await link(slot.temp, join(dir, name))
       } catch (error) {
-        await rm(temp, { force: true })
+        await dropTemp(slot)
         if (error?.code !== 'EEXIST') throw error
         name = await nextFreeFile(dir, now, candidate.slug)
         await repointTasks(closed.taskIds, name, { now, actor })
+        slot = await claimTemp(dir, name)
         continue
       }
-      await rm(temp, { force: true })
+      await rm(slot.temp, { force: true })
       break
     }
     closed.decisionSha256 = createHash('sha256').update(bytes).digest('hex')
