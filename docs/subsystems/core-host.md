@@ -648,8 +648,13 @@ cannot be demoted. `changeRole` answers `{ ok: true, roles }` or a machine-reada
 record is untouched on a refusal. The `project-role` endpoint runs that function, persists only
 `maintainers`/`members` (`setProjectRoles`), and answers `{ project, changed, reason }`; the
 `projects` listing now also carries each entry's `role` and `choices` for the caller, both read
-from the same functions, so the sidebar menu cannot offer a switch the host would refuse. Tests:
-`core/test/project-roles.test.js`.
+from the same functions, so the sidebar menu cannot offer a switch the host would refuse.
+`project-role` is listed in `authz.js`'s `TASK_ENDPOINTS` since #1836 — the third of the family
+after `project-board` (#1713) and `project-assistant-owner` (#1759): `channel.js` dispatched it and
+`store.js` implemented it, and a signed-in host still answered `bot/not-found: Unknown endpoint
+project-role` before the handler ran. `core/test/project-role-authz.test.js` holds the invariant for
+every one of them: each `case` of the channel's `switch (endpoint)` must get a gate answer that is
+not `Unknown endpoint`. Tests: `core/test/project-roles.test.js`.
 
 ### Role queues, isolated workers and lease recovery (#1729)
 

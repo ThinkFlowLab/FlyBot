@@ -857,7 +857,7 @@ diff --git a/client.js b/client.js
    "Working folder": "工作文件夹",
    "Working folder: {folder}": "工作文件夹：{folder}",
    Folder: "文件夹",
-@@ -887,7 +887,66 @@
+@@ -887,7 +887,70 @@
    "Use this folder": "使用这个文件夹",
    "Up one level": "上一级",
    "No folders inside.": "里面没有文件夹。",
@@ -880,6 +880,10 @@ diff --git a/client.js b/client.js
 +  "not-started": "未开始",
 +  "in-progress": "进行中",
 +  "done": "已完成",
++  // The queue rows beside the columns carry the host's own lease state through the same lookup,
++  // so the ids that read emits are keys of their own (#1813).
++  running: "运行中",
++  stalled: "已停滞",
 +  "Projects": "项目",
 +  "New Project": "新建项目",
 +  "Project name": "项目名称",

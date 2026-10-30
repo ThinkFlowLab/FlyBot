@@ -49,3 +49,18 @@ test('copy follows the DSH language and stays English without a locale service',
   assert.equal(t('Model'), 'Model')
   assert.equal(hostText('A Bot named Writer already exists'), 'A Bot named Writer already exists')
 })
+
+// #1813: the Project board's queue rows print the host's lowercase lease state through `t()`
+// (project-board.js), so those ids have to be dictionary keys themselves. #1768's cases never
+// bound a dictionary, which is why a missing entry read as raw English in CI.
+test('#1813: the Project board queue states read in Chinese', () => {
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(t('running'), '运行中')
+    assert.equal(t('stalled'), '已停滞')
+  } finally {
+    off()
+  }
+  // The board keeps emitting the lowercase ids; only the Chinese dictionary changes.
+  assert.equal(t('running'), 'running')
+})

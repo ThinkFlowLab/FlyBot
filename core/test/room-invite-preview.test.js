@@ -19,15 +19,25 @@ const byKind = (node, kind) => walk(node).filter(n => n.props?.['data-flybot'] =
 const preview = { name: 'Saturday room', lead: 'Chief', people: '3 / 8 in the room', expiresAt: '2099-01-01T00:00:00.000Z', clockOffsetMs: 0 }
 
 test('#876: the card names the room, its lead, its people and the deadline', () => {
-  const tree = RoomInvitePreview({ h, preview, onJoin() {}, onClear() {} })
-  assert.equal(tree.props['data-flybot'], 'face-link-preview')
-  assert.equal(tree.children[0].children.join(''), 'Saturday room')
-  assert.equal(tree.children[1].children.join(''), 'Lead: Chief')
-  assert.equal(tree.children[2].children.join(''), '3 / 8 in the room')
-  // The deadline line is the one countdown text, not a per-surface copy of the rule.
-  assert.equal(tree.children[3].children.join(''), inviteCountdownAt(preview.expiresAt, 0, Date.now()))
-  const foot = tree.children[4]
-  assert.deepEqual(foot.children.map(button => button.children[0]), ['Clear', 'Join'])
+  // The render reads the clock itself, so freeze that clock for the whole case: one instant drives
+  // both the rendered line and the expectation. A second reading can land on the far side of a
+  // second boundary and expect one second less than the card drew (#1839).
+  const realNow = Date.now
+  const frozen = realNow()
+  Date.now = () => frozen
+  try {
+    const tree = RoomInvitePreview({ h, preview, onJoin() {}, onClear() {} })
+    assert.equal(tree.props['data-flybot'], 'face-link-preview')
+    assert.equal(tree.children[0].children.join(''), 'Saturday room')
+    assert.equal(tree.children[1].children.join(''), 'Lead: Chief')
+    assert.equal(tree.children[2].children.join(''), '3 / 8 in the room')
+    // The deadline line is the one countdown text, not a per-surface copy of the rule.
+    assert.equal(tree.children[3].children.join(''), inviteCountdownAt(preview.expiresAt, 0, frozen))
+    const foot = tree.children[4]
+    assert.deepEqual(foot.children.map(button => button.children[0]), ['Clear', 'Join'])
+  } finally {
+    Date.now = realNow
+  }
 })
 
 test('#876: `kind` only renames the hooks, so both surfaces draw this one tree', () => {

@@ -1,0 +1,1 @@
+The Project board's queue rows beside the columns now read **运行中** for a live claim and **已停滞** for a stalled one in the Chinese interface, instead of printing the host's lowercase `running`/`stalled` ids ([#1813](https://github.com/ThinkFlowLab/FlyBot/issues/1813)).
