@@ -2921,3 +2921,82 @@ test('the drawer Edit plane encloses the delivery parallel pair in a frame its l
   assert.ok(labelMax >= LABEL_ONE_LINE, `the label is capped at ${labelMax}px, so 'Parallel branches · Merge after all pass' wraps`)
   view.unmount()
 })
+
+// #1856: a Workflow belongs to a Project. The sidebar row names it, a workflow
+// with none says so, and one filter narrows the list to a single Project.
+test('#1856: the sidebar names each workflow Project and filters to one Project', async () => {
+  const alone = delivery()
+  alone.projectId = 'proj-atlas'
+  const loose = { ...delivery(), id: 'loose', name: 'Loose flow' }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [alone, loose], templates: [] }
+    return { ok: true, workflows: [alone, loose] }
+  }
+  const prevHost = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    t: key => (key === 'Tasks' ? '任务' : key),
+    host: async (channel) => (channel === 'projects' ? { projects: [{ id: 'proj-atlas', name: 'Atlas' }] } : []),
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const row = (name) => findAll(view.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes(name))[0]
+    assert.match(textOf(row('发布交付流水线')), /Atlas/, 'the row names the Project the workflow belongs to')
+    assert.match(textOf(row('Loose flow')), /未归属/, 'a workflow with no Project says so')
+
+    const filter = () => findAll(view.tree, node => node.props?.['aria-label'] === '按项目筛选')[0]
+    assert.ok(filter(), 'one Project filter sits above the list')
+    filter().props.onChange({ target: { value: 'proj-atlas' } })
+    await settle()
+    assert.ok(row('发布交付流水线'), 'the chosen Project keeps its own workflow')
+    assert.equal(row('Loose flow'), undefined, 'another Project is filtered out')
+    filter().props.onChange({ target: { value: 'none' } })
+    await settle()
+    assert.ok(row('Loose flow'), 'unowned workflows are a filter of their own')
+    assert.equal(row('发布交付流水线'), undefined)
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prevHost
+  }
+})
+
+// #1856: the editor binds the graph to a Project through the same save that
+// carries the nodes and edges, and an empty choice clears it.
+test('#1856: the settings picker binds a workflow to a Project and clears it', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    if (name === 'workflow/graph') { graph.projectId = body.projectId; return { ok: true, workflows: [{ ...graph }] } }
+    return { ok: true, workflows: [graph] }
+  }
+  const prevHost = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel === 'projects' ? { projects: [{ id: 'proj-atlas', name: 'Atlas' }] } : []),
+  }
+  try {
+    const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    const picker = () => findAll(settings.tree, node => node.type === 'select' && node.props?.['aria-label'] === 'Project')[0]
+    assert.ok(picker(), 'the editor carries a Project picker')
+    assert.equal(picker().props.value, '', 'a workflow with no Project shows the unassigned choice')
+    assert.deepEqual(picker().children.map(textOf), ['Unassigned', 'Atlas'])
+
+    picker().props.onChange({ target: { value: 'proj-atlas' } })
+    await settle()
+    const bound = calls.filter(item => item.name === 'workflow/graph').at(-1)
+    assert.equal(bound.body.projectId, 'proj-atlas')
+    assert.equal(bound.body.workflowId, 'delivery')
+    assert.ok(Array.isArray(bound.body.nodes) && bound.body.nodes.length > 0, 'the save still carries the graph')
+    assert.equal(picker().props.value, 'proj-atlas', 'the picker repaints from the saved store')
+
+    picker().props.onChange({ target: { value: '' } })
+    await settle()
+    const cleared = calls.filter(item => item.name === 'workflow/graph').at(-1)
+    assert.equal(cleared.body.projectId, null, 'an empty choice clears the binding')
+    settings.unmount()
+  } finally {
+    globalThis.__flybot__ = prevHost
+  }
+})

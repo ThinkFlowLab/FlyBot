@@ -22,6 +22,11 @@ window.__ModuleLoader__.load({
     const ZH = {
       Workflows: 'Workflows',
       New: '新建',
+      Project: '项目',
+      Unassigned: '未归属',
+      'All Projects': '全部项目',
+      'Filter by Project': '按项目筛选',
+      'No workflows in this Project': '这个项目下还没有 Workflow',
       'Hand a task to a Workflow': '把任务交给 Workflow',
       'A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.': '任务不再只能交给单个 Bot —— 交给 Workflow 后，会按固定流程依次（或并行）交给各个 Bot 执行。',
       'Pick a task card': '从 Tasks 看板选择任务卡片',
@@ -1501,6 +1506,7 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState('')
       const [loading, setLoading] = useState(true)
       const [attempt, setAttempt] = useState(0)
+      const [projects, setProjects] = useState([])
 
       useEffect(() => {
         let gone = false
@@ -1523,6 +1529,16 @@ window.__ModuleLoader__.load({
         return undefined
       }, [])
 
+      useEffect(() => {
+        const host = globalThis.__flybot__?.host
+        if (typeof host !== 'function') return undefined
+        let gone = false
+        void host('projects', {}).then(listing => {
+          if (!gone && Array.isArray(listing?.projects)) setProjects(listing.projects)
+        }).catch(() => {})
+        return () => { gone = true }
+      }, [])
+
       const workflows = pack?.workflows ?? []
       const current = workflows.find(item => item.id === workflowId) ?? workflows[0]
       const nodes = current?.nodes ?? []
@@ -1540,6 +1556,16 @@ window.__ModuleLoader__.load({
       
       const updateNode = (nodeId, updates) => {
         save(nodes.map(item => item.id === nodeId ? { ...item, ...updates } : item), edges)
+      }
+
+      // The binding is stored with the graph it belongs to: one save carries the
+      // nodes, the edges and the Project, and null clears it.
+      const setProject = (projectId) => {
+        if (!current) return
+        void settledCall(call, 'workflow/graph', { workflowId: current.id, nodes, edges, projectId }, 'Could not save this workflow').then(value => {
+          if (value?.ok === false) { setError(value.error ?? tr('Could not save this workflow')); return }
+          if (value?.workflows) { setPack(value); setError('') }
+        })
       }
       
       const [edgeForm, setEdgeForm] = useState({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
@@ -1594,6 +1620,15 @@ window.__ModuleLoader__.load({
                 value: current.id,
                 onChange: (event) => { setWorkflowId(event.target.value); setSelectedNode(null) },
               }, workflows.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
+            h('label', { className: 'wf-field' },
+              h('span', null, tr('Project')),
+              h('select', {
+                'aria-label': tr('Project'),
+                value: current.projectId ?? '',
+                onChange: (event) => setProject(event.target.value || null),
+              },
+                h('option', { value: '' }, tr('Unassigned')),
+                projects.map(project => h('option', { key: project.id, value: project.id }, project.name)))),
             h('label', { className: 'wf-field' },
               h('span', null, tr('Model')),
               h('select', {
@@ -1847,6 +1882,8 @@ window.__ModuleLoader__.load({
       const [rowMenu, setRowMenu] = useState(null)
       const [renaming, setRenaming] = useState(null)
       const [deleting, setDeleting] = useState(null)
+      const [projects, setProjects] = useState([])
+      const [projectFilter, setProjectFilter] = useState('')
       const stageLeft = useConversationInset()
 
       const stageCall = (name, body, fallback) => settledCall(call, name, body, fallback)
@@ -1870,6 +1907,12 @@ window.__ModuleLoader__.load({
         void refresh().then(async () => {
           const host = globalThis.__flybot__?.host
           if (gone || typeof host !== 'function') return
+          try {
+            const listing = await host('projects', {})
+            if (!gone && Array.isArray(listing?.projects)) setProjects(listing.projects)
+          } catch (loadError) {
+            void loadError
+          }
           try {
             const rows = await host('tasks', {})
             if (!Array.isArray(rows) || gone) return
@@ -1920,6 +1963,10 @@ window.__ModuleLoader__.load({
 
       const workflows = pack?.workflows ?? []
       const open = workflows.find(item => item.id === openId) ?? null
+      const projectName = (id) => projects.find(project => project.id === id)?.name ?? ''
+      const shown = projectFilter === ''
+        ? workflows
+        : workflows.filter(item => (projectFilter === 'none' ? !item.projectId : item.projectId === projectFilter))
 
       useEffect(() => {
         if (!open) { setFocusedRunId(null); return }
@@ -2059,10 +2106,21 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wf-sec' },
           h('span', null, tr('Workflows')),
           h('button', { type: 'button', className: 'wf-new', onClick: () => setCreating(true) }, tr('New'))),
+        workflows.length > 0 ? h('label', { className: 'wf-filter' },
+          h('span', null, tr('Filter by Project')),
+          h('select', {
+            'aria-label': tr('Filter by Project'),
+            value: projectFilter,
+            onChange: (event) => setProjectFilter(event.target.value),
+          },
+            h('option', { value: '' }, tr('All Projects')),
+            projects.map(project => h('option', { key: project.id, value: project.id }, project.name)),
+            h('option', { value: 'none' }, tr('Unassigned')))) : null,
         pack?.tasksWired === false ? h('div', { className: 'wf-wiring', role: 'status' },
           tr('This host does not pass task writes to Workflows, so a card on the board cannot start a run.')) : null,
         workflows.length === 0 && !readError ? h('div', { className: 'wf-muted' }, tr('No workflows yet.')) : null,
-        workflows.map(item => h('button', {
+        workflows.length > 0 && shown.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows in this Project')) : null,
+        shown.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
           onClick: () => { setOpenId(item.id) },
           onContextMenu: (event) => {
@@ -2073,7 +2131,8 @@ window.__ModuleLoader__.load({
         },
           h('span', { className: 'wf-ico' }, h(MiniFlowchart, { workflow: item, compact: true })),
           h('span', { className: 'wf-txt' },
-            h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow')),
+            h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow'),
+              h('span', { className: `wf-proj${projectName(item.projectId) ? '' : ' none'}` }, projectName(item.projectId) || tr('Unassigned'))),
             h('span', { className: 'wf-t2' }, sidebarPreview(item))),
           (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
         h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
@@ -2173,6 +2232,10 @@ window.__ModuleLoader__.load({
     const CSS = `
 .wf-sec{display:flex;align-items:center;justify-content:space-between;padding:12px 8px 4px;font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
 .wf-new{color:var(--bt-accent,#4d6bfe);background:none;border:0;cursor:pointer;font:inherit;font-size:11px}
+.wf-filter{display:flex;align-items:center;gap:8px;padding:0 8px 4px;font-size:11px;color:var(--bt-ink-3,#9a9a9a)}
+.wf-filter select{flex:1;min-width:0;font:inherit;font-size:11px;background:transparent;color:inherit;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:6px;padding:2px 4px}
+.wf-proj{font-size:9.5px;padding:0 5px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.58));line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.wf-proj.none{opacity:.7;font-style:italic}
 .wf-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .wf-row.on,.wf-row:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
 .wf-txt{min-width:0;flex:1}
