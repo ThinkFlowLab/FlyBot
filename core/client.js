@@ -4339,6 +4339,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-actions button,.bt-wf-page>.bt-error button{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
 .bt-wf-page>.bt-error{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
+.bt-wf-stage{position:relative;width:100%}
+.bt-wf-fit{position:relative;width:0;margin:0 auto;transform-origin:50% 0}
+.bt-wf-fit .bt-wf-plane{margin-top:0}
 .bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
 .bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
 .bt-wf-prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:12px 4px 0}
@@ -14852,6 +14855,12 @@ function hitNode(event) {
 }
 var WIRE_SPAN = 480;
 var NODE_WIRE_OUT = 56;
+var CARD_HALF = 84;
+var CARD_H = 72;
+var FRAME_SIDE = 108;
+var FRAME_LABEL = 18;
+var FRAME_FOOT = 10;
+var MIN_FIT = 0.5;
 function wirePath(from, to) {
   const x1 = from.x + WIRE_SPAN;
   const y1 = from.y + NODE_WIRE_OUT;
@@ -14860,33 +14869,54 @@ function wirePath(from, to) {
   const mid = (y1 + y2) / 2;
   return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
 }
+function fitScale(nodes, width) {
+  const reach = Math.max(0, ...(nodes ?? []).map((node) => Math.abs(node.x ?? 0) + FRAME_SIDE));
+  if (!(width > 0) || reach === 0) return 1;
+  return Math.min(1, Math.max(MIN_FIT, width / 2 / reach));
+}
 function GraphCanvas({ graph, editing, roster, onCommit }) {
   const gesture = (0, import_react35.useRef)(null);
+  const canvasRef = (0, import_react35.useRef)(null);
+  const [canvasWidth, setCanvasWidth] = (0, import_react35.useState)(0);
   const nodes = graph.nodes ?? [];
   const edges = graph.edges ?? [];
   const status = graph.run?.nodeStatus ?? null;
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id));
   const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0);
+  const scale = fitScale(nodes, canvasWidth);
+  const drawnHeight = Math.round(height * scale);
+  (0, import_react35.useEffect)(() => {
+    const el = canvasRef.current;
+    const measure = () => {
+      const width = el?.getBoundingClientRect?.().width;
+      if (Number.isFinite(width) && width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width);
+    };
+    measure();
+    if (typeof ResizeObserver !== "function" || !el) return void 0;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canvasWidth]);
   const end = (event) => {
     const current = gesture.current;
     gesture.current = null;
     if (!current || !editing) return;
     if (current.kind === "move") {
-      const x = Math.round(current.x + event.clientX - current.ox);
-      const y = Math.round(current.y + event.clientY - current.oy);
+      const x = Math.round(current.x + (event.clientX - current.ox) / scale);
+      const y = Math.round(current.y + (event.clientY - current.oy) / scale);
       onCommit?.({ nodes: moveNode(nodes, current.id, x, y), edges });
     } else if (current.kind === "wire") {
       const next = connectNodes(edges, current.from, hitNode(event));
       if (next !== edges) onCommit?.({ nodes, edges: next });
     } else if (current.kind === "add" && event.target?.dataset?.plane) {
-      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX) : 24;
-      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY) : 24;
+      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX / scale) : 24;
+      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY / scale) : 24;
       onCommit?.({ nodes: dropBot(nodes, current.bot, x, y), edges });
     }
   };
   return (0, import_react35.createElement)(
     "div",
-    { className: "bt-wf-canvas", onPointerUp: end },
+    { className: "bt-wf-canvas", ref: canvasRef, onPointerUp: end },
     editing ? (0, import_react35.createElement)(
       "div",
       { className: "bt-wf-palette" },
@@ -14922,94 +14952,103 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
     ))) : null,
     (0, import_react35.createElement)(
       "div",
-      { className: "bt-wf-plane", "data-plane": "1", style: { height, "--bt-wf-wire-span": `${WIRE_SPAN}px` } },
+      { className: "bt-wf-stage", style: { height: drawnHeight } },
       (0, import_react35.createElement)(
-        "svg",
-        {
-          className: "bt-wf-wires",
-          "aria-hidden": true,
-          width: WIRE_SPAN * 2,
-          height,
-          viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`
-        },
+        "div",
+        { className: "bt-wf-fit", style: { height, transform: `scale(${scale})` } },
         (0, import_react35.createElement)(
-          "defs",
-          null,
-          (0, import_react35.createElement)("marker", {
-            id: "bt-wf-arrow",
-            viewBox: "0 0 10 10",
-            refX: "8",
-            refY: "5",
-            markerWidth: "6",
-            markerHeight: "6",
-            orient: "auto"
-          }, (0, import_react35.createElement)("path", { d: "M0 0 10 5 0 10z" }))
-        ),
-        edges.map((edge) => {
-          const from = nodes.find((node) => node.id === edge.from);
-          const to = nodes.find((node) => node.id === edge.to);
-          if (!from || !to) return null;
-          return (0, import_react35.createElement)("path", { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: "url(#bt-wf-arrow)" });
-        })
-      ),
-      (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
-        const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean);
-        if (members.length < 2) return null;
-        const minX = Math.min(...members.map((node) => node.x ?? 0));
-        const maxX = Math.max(...members.map((node) => node.x ?? 0));
-        const y = Math.min(...members.map((node) => node.y ?? 0));
-        return (0, import_react35.createElement)("div", {
-          key: layer.join("+"),
-          className: "bt-wf-par",
-          style: { left: minX - 108, top: y - 18, width: maxX - minX + 216, height: 92 }
-        }, (0, import_react35.createElement)("div", { className: "bt-wf-plabel" }, t("Parallel branch, then join")));
-      }),
-      nodes.map((node) => {
-        const state = status ? status[node.id] ?? "queued" : "idle";
-        return (0, import_react35.createElement)(
           "div",
-          {
-            key: node.id,
-            "data-node": node.id,
-            className: `bt-wf-node ${state}${editing ? " editing" : ""}`,
-            style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
-            onPointerDown: (event) => {
-              if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return;
-              gesture.current = { kind: "move", id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 };
-            }
-          },
-          editing ? (0, import_react35.createElement)("button", {
-            type: "button",
-            className: "bt-wf-port",
-            "data-port": "out",
-            "aria-label": node.name,
-            onPointerDown: (event) => {
-              event.preventDefault?.();
-              event.stopPropagation?.();
-              gesture.current = { kind: "wire", from: node.id };
-            }
-          }) : null,
-          editing ? (0, import_react35.createElement)("button", {
-            type: "button",
-            className: "bt-wf-remove",
-            "data-remove": node.id,
-            "aria-label": t("Remove"),
-            onClick: (event) => {
-              event.stopPropagation?.();
-              const next = removeNode(nodes, edges, node.id);
-              onCommit?.(next);
-            }
-          }, "×") : null,
-          (0, import_react35.createElement)("span", { className: `bt-wf-chip ${state}` }, statusLabel2(state)),
-          (0, import_react35.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, (node.name ?? "?").slice(0, 1)),
+          { className: "bt-wf-plane", "data-plane": "1", style: { height, "--bt-wf-wire-span": `${WIRE_SPAN}px` } },
           (0, import_react35.createElement)(
-            "span",
-            { className: "bt-wf-copy" },
-            (0, import_react35.createElement)("span", { className: "bt-wf-name" }, node.name),
-            (0, import_react35.createElement)("span", { className: "bt-wf-role" }, node.role ?? "")
-          )
-        );
-      })
+            "svg",
+            {
+              className: "bt-wf-wires",
+              "aria-hidden": true,
+              width: WIRE_SPAN * 2,
+              height,
+              viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`
+            },
+            (0, import_react35.createElement)(
+              "defs",
+              null,
+              (0, import_react35.createElement)("marker", {
+                id: "bt-wf-arrow",
+                viewBox: "0 0 10 10",
+                refX: "8",
+                refY: "5",
+                markerWidth: "6",
+                markerHeight: "6",
+                orient: "auto"
+              }, (0, import_react35.createElement)("path", { d: "M0 0 10 5 0 10z" }))
+            ),
+            edges.map((edge) => {
+              const from = nodes.find((node) => node.id === edge.from);
+              const to = nodes.find((node) => node.id === edge.to);
+              if (!from || !to) return null;
+              return (0, import_react35.createElement)("path", { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: "url(#bt-wf-arrow)" });
+            })
+          ),
+          (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
+            const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean);
+            if (members.length < 2) return null;
+            const left = Math.min(...members.map((node) => node.x ?? 0)) - FRAME_SIDE;
+            const right = Math.max(...members.map((node) => node.x ?? 0)) + FRAME_SIDE;
+            const top = Math.min(...members.map((node) => node.y ?? 0)) - FRAME_LABEL;
+            const bottom = Math.max(...members.map((node) => node.y ?? 0)) + CARD_H + FRAME_FOOT;
+            return (0, import_react35.createElement)("div", {
+              key: layer.join("+"),
+              className: "bt-wf-par",
+              style: { left, top, width: right - left, height: bottom - top }
+            }, (0, import_react35.createElement)("div", { className: "bt-wf-plabel" }, t("Parallel branch, then join")));
+          }),
+          nodes.map((node) => {
+            const state = status ? status[node.id] ?? "queued" : "idle";
+            return (0, import_react35.createElement)(
+              "div",
+              {
+                key: node.id,
+                "data-node": node.id,
+                className: `bt-wf-node ${state}${editing ? " editing" : ""}`,
+                style: { left: (node.x ?? 0) - CARD_HALF, top: node.y ?? 0 },
+                onPointerDown: (event) => {
+                  if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return;
+                  gesture.current = { kind: "move", id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 };
+                }
+              },
+              editing ? (0, import_react35.createElement)("button", {
+                type: "button",
+                className: "bt-wf-port",
+                "data-port": "out",
+                "aria-label": node.name,
+                onPointerDown: (event) => {
+                  event.preventDefault?.();
+                  event.stopPropagation?.();
+                  gesture.current = { kind: "wire", from: node.id };
+                }
+              }) : null,
+              editing ? (0, import_react35.createElement)("button", {
+                type: "button",
+                className: "bt-wf-remove",
+                "data-remove": node.id,
+                "aria-label": t("Remove"),
+                onClick: (event) => {
+                  event.stopPropagation?.();
+                  const next = removeNode(nodes, edges, node.id);
+                  onCommit?.(next);
+                }
+              }, "×") : null,
+              (0, import_react35.createElement)("span", { className: `bt-wf-chip ${state}` }, statusLabel2(state)),
+              (0, import_react35.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, (node.name ?? "?").slice(0, 1)),
+              (0, import_react35.createElement)(
+                "span",
+                { className: "bt-wf-copy" },
+                (0, import_react35.createElement)("span", { className: "bt-wf-name" }, node.name),
+                (0, import_react35.createElement)("span", { className: "bt-wf-role" }, node.role ?? "")
+              )
+            );
+          })
+        )
+      )
     )
   );
 }

@@ -10,7 +10,7 @@ import { DICTIONARY } from '../src/client/i18n.js'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } from './src/client/workflows.js'\nexport { installLocale } from './src/client/i18n.js'",
+    contents: "export { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode } from './src/client/workflows.js'\nexport * as wf from './src/client/workflows.js'\nexport { installLocale } from './src/client/i18n.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -33,7 +33,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode, installLocale } = module.exports
+const { WorkflowsPage, WorkflowsView, readWorkflows, settleWorkflowRead, moveNode, connectNodes, dropBot, removeNode, installLocale, wf } = module.exports
 
 const PLUGIN_HINT = 'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.'
 
@@ -326,4 +326,74 @@ test('Use this on a preset with a live copy hands the factory id to onUse (#1396
 test('only a factory-backed graph offers Use this (#1396)', () => {
   assert.deepEqual(labelsOfGraph({ source: 'factory', id: 'delivery' }), ['Back', 'Use this'])
   assert.deepEqual(labelsOfGraph({ source: 'own', id: 'wf-mine' }), ['Back', 'Edit'])
+})
+
+// #1752: Settings → Workflows drew a parallel layer as one row whatever the stored y said,
+// so a member the editor had left lower sat outside the dashed frame; and it drew the 960px
+// design plane at 1:1, so a branch near the right edge (and the wire into it) was clipped by
+// the canvas instead of the graph fitting the width.
+const forkGraph = {
+  id: 'wf-fork',
+  name: 'Fork lane',
+  description: 'A fork with one stored offset.',
+  chain: 'Triage → Claim ‖ 取证 → Gate',
+  nodes: [
+    { id: 'triage', name: 'Triage', role: '分诊', x: 0, y: 0 },
+    { id: 'claim', name: 'Claim', role: '认领', x: -94, y: 108 },
+    { id: 'forensics', name: '取证', role: '真机取证', x: 94, y: 159 },
+    { id: 'gate', name: 'Gate', role: '门禁', x: 0, y: 267 },
+  ],
+  edges: [
+    { from: 'triage', to: 'claim' },
+    { from: 'triage', to: 'forensics' },
+    { from: 'claim', to: 'gate' },
+    { from: 'forensics', to: 'gate' },
+  ],
+  layers: [['triage'], ['claim', 'forensics'], ['gate']],
+}
+const forkPack = { ok: true, templates: [], workflows: [forkGraph] }
+
+test('a parallel frame encloses a member stored lower than its partner (#1752)', () => {
+  const tree = renderView({ phase: 'ready', pack: forkPack, opened: { source: 'own', id: forkGraph.id }, error: '', editing: false })
+  const frame = all(tree).find((entry) => entry.props?.className === 'bt-wf-par')
+  assert.ok(frame, 'the parallel frame renders')
+  const left = frame.props.style.left
+  const top = frame.props.style.top
+  const right = left + frame.props.style.width
+  const bottom = top + frame.props.style.height
+  const pair = all(tree)
+    .filter((entry) => ['claim', 'forensics'].includes(entry.props?.['data-node']))
+    .map((entry) => {
+      const cardLeft = entry.props.style.left
+      const cardTop = entry.props.style.top
+      return { id: entry.props['data-node'], left: cardLeft, top: cardTop, right: cardLeft + 168, bottom: cardTop + 72 }
+    })
+  assert.equal(pair.length, 2)
+  for (const card of pair) {
+    assert.ok(left <= card.left && top <= card.top && right >= card.right && bottom >= card.bottom,
+      `the frame ${top}..${bottom} leaves ${card.id} (${card.top}..${card.bottom}) outside`)
+  }
+})
+
+test('the Settings graph fits its plane into the canvas width (#1752)', () => {
+  const tree = renderView({ phase: 'ready', pack: forkPack, opened: { source: 'own', id: forkGraph.id }, error: '', editing: false })
+  const fit = all(tree).find((entry) => entry.props?.className === 'bt-wf-fit')
+  assert.ok(fit, 'the canvas wraps the plane in a fit layer')
+  assert.match(String(fit.props.style?.transform ?? ''), /scale\(/)
+})
+
+test('a fitted graph keeps the right-hand card and the wire into it inside the canvas (#1752)', () => {
+  assert.equal(typeof wf.fitScale, 'function', 'the fit is a pure helper')
+  // The reported workflow stored the branch card at x = 226, past the 380px canvas edge.
+  const nodes = forkGraph.nodes.map((node) => (node.id === 'forensics' ? { ...node, x: 226 } : node))
+  const width = 380
+  const scale = wf.fitScale(nodes, width)
+  assert.ok(scale < 1, `a ${width}px canvas scales a graph that reaches 310px from its centre`)
+  assert.ok(scale >= 0.5, 'the plane never shrinks past half size')
+  const half = width / 2
+  for (const node of nodes) {
+    assert.ok((Math.abs(node.x ?? 0) + 84) * scale <= half + 0.01,
+      `${node.id} stays inside the canvas after the fit`)
+  }
+  assert.ok(226 * scale <= half + 0.01, 'the Claim → 取证 arrowhead lands inside the canvas, not on the clip line')
 })

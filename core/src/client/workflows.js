@@ -119,6 +119,14 @@ function hitNode(event) {
 // SVG viewport; overflow:visible is not reliable for a stroke on the edge.
 const WIRE_SPAN = 480
 const NODE_WIRE_OUT = 56
+// The plane keeps its authored 960px coordinates; only the display is scaled to
+// the canvas (#1752), and cards, frames and wires share that one transform.
+const CARD_HALF = 84
+const CARD_H = 72
+const FRAME_SIDE = 108
+const FRAME_LABEL = 18
+const FRAME_FOOT = 10
+const MIN_FIT = 0.5
 
 function wirePath(from, to) {
   const x1 = from.x + WIRE_SPAN
@@ -129,8 +137,18 @@ function wirePath(from, to) {
   return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
 }
 
+// A canvas narrower than the graph shrinks the whole plane, so the frame, the
+// cards and the wire into them stay inside it. Authored coordinates do not move.
+export function fitScale(nodes, width) {
+  const reach = Math.max(0, ...(nodes ?? []).map((node) => Math.abs(node.x ?? 0) + FRAME_SIDE))
+  if (!(width > 0) || reach === 0) return 1
+  return Math.min(1, Math.max(MIN_FIT, (width / 2) / reach))
+}
+
 function GraphCanvas({ graph, editing, roster, onCommit }) {
   const gesture = useRef(null)
+  const canvasRef = useRef(null)
+  const [canvasWidth, setCanvasWidth] = useState(0)
   const nodes = graph.nodes ?? []
   const edges = graph.edges ?? []
   // A live run names every seat. A definition with no run is idle, the way the
@@ -138,24 +156,38 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
   const status = graph.run?.nodeStatus ?? null
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id))
   const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0)
+  const scale = fitScale(nodes, canvasWidth)
+  const drawnHeight = Math.round(height * scale)
+  useEffect(() => {
+    const el = canvasRef.current
+    const measure = () => {
+      const width = el?.getBoundingClientRect?.().width
+      if (Number.isFinite(width) && width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width)
+    }
+    measure()
+    if (typeof ResizeObserver !== 'function' || !el) return undefined
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [canvasWidth])
   const end = (event) => {
     const current = gesture.current
     gesture.current = null
     if (!current || !editing) return
     if (current.kind === 'move') {
-      const x = Math.round(current.x + event.clientX - current.ox)
-      const y = Math.round(current.y + event.clientY - current.oy)
+      const x = Math.round(current.x + (event.clientX - current.ox) / scale)
+      const y = Math.round(current.y + (event.clientY - current.oy) / scale)
       onCommit?.({ nodes: moveNode(nodes, current.id, x, y), edges })
     } else if (current.kind === 'wire') {
       const next = connectNodes(edges, current.from, hitNode(event))
       if (next !== edges) onCommit?.({ nodes, edges: next })
     } else if (current.kind === 'add' && event.target?.dataset?.plane) {
-      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX) : 24
-      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY) : 24
+      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX / scale) : 24
+      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY / scale) : 24
       onCommit?.({ nodes: dropBot(nodes, current.bot, x, y), edges })
     }
   }
-  return h('div', { className: 'bt-wf-canvas', onPointerUp: end },
+  return h('div', { className: 'bt-wf-canvas', ref: canvasRef, onPointerUp: end },
     editing ? h('div', { className: 'bt-wf-palette' },
       h('span', { className: 'bt-wf-hint' }, t('Drag a Bot here')),
       locals.map((bot) => h('button', {
@@ -178,7 +210,9 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
           onCommit?.({ nodes: nodes.map((item) => (item.id === node.id ? { ...item, prompt } : item)), edges })
         },
       })))) : null,
-    h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height, '--bt-wf-wire-span': `${WIRE_SPAN}px` } },
+    h('div', { className: 'bt-wf-stage', style: { height: drawnHeight } },
+      h('div', { className: 'bt-wf-fit', style: { height, transform: `scale(${scale})` } },
+        h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height, '--bt-wf-wire-span': `${WIRE_SPAN}px` } },
       h('svg', {
         className: 'bt-wf-wires', 'aria-hidden': true,
         width: WIRE_SPAN * 2, height, viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
@@ -196,19 +230,20 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
       (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
         const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean)
         if (members.length < 2) return null
-        const minX = Math.min(...members.map((node) => node.x ?? 0))
-        const maxX = Math.max(...members.map((node) => node.x ?? 0))
-        const y = Math.min(...members.map((node) => node.y ?? 0))
+        const left = Math.min(...members.map((node) => node.x ?? 0)) - FRAME_SIDE
+        const right = Math.max(...members.map((node) => node.x ?? 0)) + FRAME_SIDE
+        const top = Math.min(...members.map((node) => node.y ?? 0)) - FRAME_LABEL
+        const bottom = Math.max(...members.map((node) => node.y ?? 0)) + CARD_H + FRAME_FOOT
         return h('div', {
           key: layer.join('+'), className: 'bt-wf-par',
-          style: { left: minX - 108, top: y - 18, width: maxX - minX + 216, height: 92 },
+          style: { left, top, width: right - left, height: bottom - top },
         }, h('div', { className: 'bt-wf-plabel' }, t('Parallel branch, then join')))
       }),
       nodes.map((node) => {
         const state = status ? (status[node.id] ?? 'queued') : 'idle'
         return h('div', {
           key: node.id, 'data-node': node.id, className: `bt-wf-node ${state}${editing ? ' editing' : ''}`,
-          style: { left: (node.x ?? 0) - 84, top: node.y ?? 0 },
+          style: { left: (node.x ?? 0) - CARD_HALF, top: node.y ?? 0 },
           onPointerDown: (event) => {
             if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return
             gesture.current = { kind: 'move', id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 }
@@ -231,7 +266,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
         h('span', { className: 'bt-wf-copy' },
           h('span', { className: 'bt-wf-name' }, node.name),
           h('span', { className: 'bt-wf-role' }, node.role ?? '')))
-      })))
+      })))))
 }
 
 function Row({ item, source, onOpen, onRename, onDelete }) {

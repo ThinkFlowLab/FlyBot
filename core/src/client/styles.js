@@ -541,6 +541,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-actions button,.bt-wf-page>.bt-error button{height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12.5px;cursor:pointer}
 .bt-wf-page>.bt-error{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .bt-wf-canvas{position:relative;min-height:440px;overflow:auto;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-main);padding:12px 8px 20px}
+.bt-wf-stage{position:relative;width:100%}
+.bt-wf-fit{position:relative;width:0;margin:0 auto;transform-origin:50% 0}
+.bt-wf-fit .bt-wf-plane{margin-top:0}
 .bt-wf-palette{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
 .bt-wf-palette button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--bt-line);background:var(--bt-card);color:inherit;font:inherit;font-size:12px;cursor:pointer}
 .bt-wf-prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:12px 4px 0}
