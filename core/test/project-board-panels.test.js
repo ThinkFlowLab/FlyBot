@@ -253,14 +253,14 @@ test("the settings panel shows the host's refusal instead of pretending the save
   assert.match(drawnStatus(draw), /Only the owner of this Project/)
 })
 
-test('the members panel lists the owners and the members the board names, and offers no write', () => {
+test('the members panel lists the owners, the Project Chief and the members the board names, and offers no write', () => {
   resetSlots()
   const tree = render(ProjectMembersPanel, {
-    project: { id: 'project-1', ownerUserId: 'owner-1', ownerUserIds: ['owner-1', 'owner-2'] },
+    project: { id: 'project-1', ownerUserId: 'owner-1', ownerUserIds: ['owner-1', 'owner-2'], chief: { botId: 'bot-chief', sessionId: 's-chief', createdAt: 1 } },
     rows, onClose() {},
   })
   const members = all(tree).filter(node => node.props?.['data-member-role'] !== undefined)
-  assert.deepEqual(members.map(node => node.props['data-member-id']), ['owner-1', 'owner-2', 'Dev4'])
-  assert.deepEqual(members.map(node => node.props['data-member-role']), ['owner', 'owner', 'board'])
+  assert.deepEqual(members.map(node => node.props['data-member-id']), ['owner-1', 'owner-2', 'bot-chief', 'Dev4'])
+  assert.deepEqual(members.map(node => node.props['data-member-role']), ['owner', 'owner', 'chief', 'board'])
   assert.equal(byAction(tree, 'project-bind'), undefined, 'membership management is a later slice, not a dead button here')
 })

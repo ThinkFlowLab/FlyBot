@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 
 const hashToken = token => createHash('sha256').update(token).digest('hex')
@@ -41,6 +41,9 @@ const seed = (sessions = true) => ({
 async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-')), { sessions = true } = {}) {
   if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed(sessions)))
   const ctx = fakeContext()
+  // A Bot's id is the Session it was given, so a counter keeps the assistant, a Chief and a
+  // later Project's Chief apart (#1859).
+  let sessionCount = 0
   const agents = new Map()
   const agentOf = (sessionId) => {
     if (!agents.has(sessionId)) agents.set(sessionId, { session: { id: sessionId }, followup() {}, steer() {}, inject() {}, cancel() {}, whenIdle() {}, inbox: { nextStep: [], nextTurn: [], remove() {} } })
@@ -50,13 +53,16 @@ async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-')), { s
   Object.assign(ctx, {
     llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
     workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
-    sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async id => ({ agent: agentOf(id) }), selectModel: async () => {} },
+    sessionController: { create: async () => ({ sessionId: `s${++sessionCount}` }), resolveAgent: async id => ({ agent: agentOf(id) }), selectModel: async () => {} },
     sessionTitle: { rename: async () => {} },
     sessions: { flush: async () => {} },
   })
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (options) => { route = options; return register(options) }
-  apply(ctx, { home })
+  // `createRuntime` + `provideFlyBot` is exactly what `apply` does, with the runtime kept so a
+  // test can remove one seam and prove the host still answers (#1859).
+  const rt = createRuntime(ctx, { home })
+  provideFlyBot(ctx, rt.flybot)
   const call = async (endpoint, payload, token = 'tok-a') => (await route.fetch(new Request('http://localhost/api/bot', {
     method: 'POST',
     headers: token ? { 'x-flybot-member-session': token } : {},
@@ -66,7 +72,7 @@ async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-')), { s
     await ctx.dispose()
     if (!keepHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { call, stop, home }
+  return { call, stop, home, rt }
 }
 
 const value = (response) => {
@@ -320,5 +326,92 @@ test('the Project owner writes the assistant settings through the host channel (
     const reread = value(await call('project-assistant-owner', { id: project.id, settings: { off: false } }, 'tok-a'))
     assert.equal(reread.off, false)
     assert.deepEqual(reread.quiet, { on: true, from: '09:00', to: '11:00', zone: 'Asia/Shanghai' }, 'the window and the zone are still stored')
+  } finally { await stop() }
+})
+
+// #1859: every Project gets its own Chief, created with the Project. It is not the user's main
+// Chief acting part-time: the record carries `chief.botId`, the Bot it binds carries `projectId`,
+// and the tip's main Chief stays outside.
+test('project-create writes chief.botId and the Chief Bot carries the projectId (#1859)', async () => {
+  const { call, stop, home } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Chiefed', repository: 'acme/chiefed' }, 'tok-a'))
+    assert.equal(typeof project.chief?.botId, 'string', `the Project got a Chief: ${JSON.stringify(project.chief)}`)
+    assert.equal(project.chief.error, undefined)
+    assert.equal(typeof project.chief.sessionId, 'string')
+    assert.equal(typeof project.chief.createdAt, 'number')
+    assert.notEqual(project.chief.botId, 'a', 'the user\'s main Chief is not the Project Chief')
+
+    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const bot = saved.bots[project.chief.botId]
+    assert.equal(bot.projectId, project.id, `the Chief is bound to its Project: ${JSON.stringify(bot)}`)
+    assert.equal(bot.name, 'Project Chief (Chiefed)')
+    assert.equal(bot.role, 'Project Chief')
+    assert.match(bot.instructions, /Chiefed/)
+    // project-read exposes the record the same way.
+    assert.equal(created(await call('project-read', { id: project.id })).chief.botId, project.chief.botId)
+  } finally { await stop() }
+})
+
+// #1859: two Projects get two Chiefs, and neither is told it may speak for the other.
+test('two Projects get two Chiefs and neither speaks for the other (#1859)', async () => {
+  const { call, stop, home } = await start()
+  try {
+    const one = created(await call('project-create', { name: 'One', repository: 'acme/one' }, 'tok-a'))
+    const two = created(await call('project-create', { name: 'Two', repository: 'acme/two' }, 'tok-a'))
+    assert.notEqual(one.chief.botId, two.chief.botId, 'each Project has its own Chief')
+    assert.notEqual(one.chief.sessionId, two.chief.sessionId)
+
+    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    const first = saved.bots[one.chief.botId]
+    const second = saved.bots[two.chief.botId]
+    assert.equal(first.projectId, one.id)
+    assert.equal(second.projectId, two.id)
+    // Each instruction names its own Project and forbids answering for another; the other
+    // Project's name is not in it at all.
+    assert.match(first.instructions, /"One"/)
+    assert.doesNotMatch(first.instructions, /"Two"/)
+    assert.match(first.instructions, /no other/)
+    assert.match(second.instructions, /"Two"/)
+    assert.doesNotMatch(second.instructions, /"One"/)
+    assert.match(second.instructions, /no other/)
+  } finally { await stop() }
+})
+
+// #1859: a host that ships no Chief seam still creates the Project, records why, and says so once
+// instead of once per Project.
+test('a host without the Project Chief seam creates the Project and records the refusal once (#1859)', async () => {
+  const { call, stop, rt } = await start()
+  try {
+    delete rt.projectChief
+    const warned = []
+    rt.warn = (message) => { warned.push(message) }
+    const one = created(await call('project-create', { name: 'NoChief', repository: 'acme/no-chief' }, 'tok-a'))
+    const two = created(await call('project-create', { name: 'NoChief2', repository: 'acme/no-chief-2' }, 'tok-a'))
+    for (const project of [one, two]) {
+      assert.equal(typeof project.id, 'string', 'the Project is still created')
+      assert.equal(project.chief?.botId, undefined)
+      assert.match(project.chief?.error ?? '', /Project Chief/)
+    }
+    assert.equal(warned.filter(line => /Project Chief/.test(line)).length, 1, `the missing seam is logged once: ${JSON.stringify(warned)}`)
+  } finally { await stop() }
+})
+
+// #1859: `project-delete` retires the Chief and leaves no binding behind.
+test('project-delete retires the Chief and leaves no bot.projectId (#1859)', async () => {
+  const { call, stop, home } = await start()
+  try {
+    const project = created(await call('project-create', { name: 'Retired', repository: 'acme/retired' }, 'tok-a'))
+    const chiefId = project.chief.botId
+    const before = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    assert.equal(before.bots[chiefId].projectId, project.id)
+
+    assert.equal(created(await call('project-delete', { id: project.id }, 'tok-a')).id, project.id)
+
+    const after = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    assert.equal(after.bots[chiefId], undefined, 'the Chief Bot is gone')
+    for (const bot of Object.values(after.bots)) {
+      assert.equal(Object.hasOwn(bot, 'projectId'), false, `${bot.id} still names a deleted Project`)
+    }
   } finally { await stop() }
 })

@@ -288,6 +288,11 @@ the two kinds the host knows: the free text is recorded as a `decision`, never a
 quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese. Tests:
 `core/test/project-board-panels.test.js`.
 
+The **Members** panel lists every owner and every member the board names, and since #1859 also the
+Project's own Chief as its own row (`data-member-role="chief"`), read from `chief` on the `project-read`
+record rather than a second call; a Project without a Chief draws no such row. It offers no write — the
+membership write is a later slice. Tests: `core/test/project-board-panels.test.js`.
+
 The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
 the board. The sidebar is the only entry (#1854): the **Project board** button #1701 put in

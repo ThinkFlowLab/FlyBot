@@ -1383,6 +1383,8 @@ const ZH = {
   'Bind': '绑定',
   'Member unbound.': '已解除成员的绑定。',
   'Project Assistant': '项目助手',
+  'Project Chief': '项目 Chief',
+  'Chief of this Project': '本项目的 Chief',
   'Pause the daily digest': '暂停每日摘要',
   'Assistant settings saved.': '助手设置已保存。',
   'Add to the assistant memory': '添加到助手记忆',

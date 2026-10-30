@@ -1430,6 +1430,8 @@ var ZH = {
   "Bind": "绑定",
   "Member unbound.": "已解除成员的绑定。",
   "Project Assistant": "项目助手",
+  "Project Chief": "项目 Chief",
+  "Chief of this Project": "本项目的 Chief",
   "Pause the daily digest": "暂停每日摘要",
   "Assistant settings saved.": "助手设置已保存。",
   "Add to the assistant memory": "添加到助手记忆",
@@ -20679,6 +20681,7 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
     const name = text(row?.assignee);
     if (name !== "" && !boardMembers.includes(name)) boardMembers.push(name);
   }
+  const chief = text(project?.chief?.botId);
   return (0, import_react47.createElement)(
     "div",
     { className: "bt-project-panel", "data-panel": "project-members" },
@@ -20692,6 +20695,12 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
         (0, import_react47.createElement)("span", null, `@${owner}`),
         (0, import_react47.createElement)("span", { className: "bt-project-member-kind" }, t("Owner"))
       )),
+      chief === "" ? null : (0, import_react47.createElement)(
+        "li",
+        { key: `chief:${chief}`, className: "bt-project-member", "data-member-role": "chief", "data-member-id": chief },
+        (0, import_react47.createElement)("span", null, t("Project Chief")),
+        (0, import_react47.createElement)("span", { className: "bt-project-member-kind" }, t("Chief of this Project"))
+      ),
       boardMembers.map((name) => (0, import_react47.createElement)(
         "li",
         { key: `board:${name}`, className: "bt-project-member", "data-member-role": "board", "data-member-id": name },
@@ -20699,7 +20708,7 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
         (0, import_react47.createElement)("span", { className: "bt-project-member-kind" }, t("On the board"))
       ))
     ),
-    owners.length === 0 && boardMembers.length === 0 ? (0, import_react47.createElement)("div", { className: "bt-project-empty" }, t("No member is named yet.")) : null,
+    owners.length === 0 && boardMembers.length === 0 && chief === "" ? (0, import_react47.createElement)("div", { className: "bt-project-empty" }, t("No member is named yet.")) : null,
     (0, import_react47.createElement)("p", { className: "bt-project-note" }, t("Member management is not part of this slice; owners and the members their cards name are listed here.")),
     (0, import_react47.createElement)(
       "div",

@@ -560,16 +560,22 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
     const name = text(row?.assignee)
     if (name !== '' && !boardMembers.includes(name)) boardMembers.push(name)
   }
+  // The Project's own Chief (#1859), read from the record: created with the Project, never the
+  // user's main Chief acting part-time.
+  const chief = text(project?.chief?.botId)
   return h('div', { className: 'bt-project-panel', 'data-panel': 'project-members' },
     h('h3', null, t('Members')),
     h('ul', { className: 'bt-project-members' },
       owners.map(owner => h('li', { key: `owner:${owner}`, className: 'bt-project-member', 'data-member-role': 'owner', 'data-member-id': owner },
         h('span', null, `@${owner}`),
         h('span', { className: 'bt-project-member-kind' }, t('Owner')))),
+      chief === '' ? null : h('li', { key: `chief:${chief}`, className: 'bt-project-member', 'data-member-role': 'chief', 'data-member-id': chief },
+        h('span', null, t('Project Chief')),
+        h('span', { className: 'bt-project-member-kind' }, t('Chief of this Project'))),
       boardMembers.map(name => h('li', { key: `board:${name}`, className: 'bt-project-member', 'data-member-role': 'board', 'data-member-id': name },
         h('span', null, `@${name}`),
         h('span', { className: 'bt-project-member-kind' }, t('On the board'))))),
-    owners.length === 0 && boardMembers.length === 0 ? h('div', { className: 'bt-project-empty' }, t('No member is named yet.')) : null,
+    owners.length === 0 && boardMembers.length === 0 && chief === '' ? h('div', { className: 'bt-project-empty' }, t('No member is named yet.')) : null,
     h('p', { className: 'bt-project-note' }, t('Member management is not part of this slice; owners and the members their cards name are listed here.')),
     h('div', { className: 'bt-project-row-actions' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))

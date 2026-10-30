@@ -33,7 +33,7 @@ diff --git a/index.js b/index.js
  import * as chatIndex from './src/host/chat-index.js'
  import * as groups from './src/host/groups.js'
  import * as approvals from './src/host/approvals.js'
-@@ -24,11 +24,17 @@ import * as images from './src/host/images.js'
+@@ -24,11 +24,18 @@ import * as images from './src/host/images.js'
  import * as browser from './src/host/browser.js'
  import * as secrets from './src/host/secrets.js'
  import * as connectors from './src/host/connectors.js'
@@ -41,6 +41,7 @@ diff --git a/index.js b/index.js
  import * as capabilities from './src/host/capabilities.js'
  import * as schedules from './src/host/schedules.js'
 +import * as projectAssistant from './src/host/project-assistant.js'
++import * as projectChief from './src/host/project-chief.js'
 +import * as automationDefault from './src/host/automation-default.js'
  import * as usage from './src/host/usage.js'
  import * as update from './src/host/update.js'
@@ -56,7 +57,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
++const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
  
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -821,10 +822,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
 +        return undefined
 +      }
-       stuck = undefined
-       return parsed
-     }
--    stuck = 'saved by a newer DS Bot; update DS Bot'
++      stuck = undefined
++      return parsed
++    }
 +    if (parsed?.version === STATE_VERSION) {
 +      const problem = ownershipProblem(parsed)
 +      if (problem !== undefined) {
@@ -832,9 +832,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: state %s was refused: %s', statePath, problem)
 +        return undefined
 +      }
-+      stuck = undefined
-+      return parsed
-+    }
+       stuck = undefined
+       return parsed
+     }
+-    stuck = 'saved by a newer DS Bot; update DS Bot'
 +    stuck = 'saved by a newer FlyBot; update FlyBot'
      return undefined
    }
@@ -884,7 +885,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,427 @@ export function install(rt) {
+@@ -161,12 +161,453 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -967,6 +968,18 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    const project = projectOfId(id)
 +    if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
 +    return project
++  }
++  // The Project Chief seam (#1859), read at call time so a host that ships no Chief module — an
++  // older core, or a narrowed test host — is told once instead of on every Project. It answers
++  // `undefined` and never throws: automation being off must not refuse a Project.
++  let chiefSeamMissing = false
++  const projectChief = () => {
++    if (rt.projectChief !== undefined) return rt.projectChief
++    if (!chiefSeamMissing) {
++      chiefSeamMissing = true
++      rt.warn?.('ds-bot: this host has no Project Chief seam, so no Project gets its own Chief (#1859)')
++    }
++    return undefined
 +  }
 +  const projectMemberOf = (kind, id) => {
 +    if (kind === 'bot' || kind === 'group') {
@@ -1103,6 +1116,8 @@ diff --git a/src/host/store.js b/src/host/store.js
 +  const deleteProject = async (id) => {
 +    const project = requireProject(id)
 +    await rt.projectAssistant?.remove?.(project.id)
++    // The Project's own Chief retires with it (#1859), by the same path a deleted Bot takes.
++    await projectChief()?.remove?.(project.id)
 +    delete state.projects[project.id]
 +    delete state.projectMemory[project.id]
 +    for (const member of [...Object.values(state.bots), ...Object.values(state.rooms)]) {
@@ -1194,6 +1209,18 @@ diff --git a/src/host/store.js b/src/host/store.js
 +            await rt.projectAssistant.create(project.id)
 +          } catch (error) {
 +            project.assistant = { error: error?.message ?? String(error) }
++          }
++        }
++        // Every Project gets its own Chief (#1859) — not the user's main Chief acting part-time.
++        // Same contract as the assistant: a spawn failure is recorded on the record, and a host
++        // without the seam still creates the Project with the reason written down.
++        const chief = projectChief()
++        if (chief === undefined) project.chief = { error: 'this host has no Project Chief seam, so no Chief was created' }
++        else {
++          try {
++            await chief.create(project.id)
++          } catch (error) {
++            project.chief = { error: error?.message ?? String(error) }
 +          }
 +        }
 +        await save()

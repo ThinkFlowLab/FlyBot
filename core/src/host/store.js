@@ -391,6 +391,18 @@ export function install(rt) {
     if (project === null) throw projectRefusal(`Unknown Project ${String(id ?? '')}`, 'bot/not-found')
     return project
   }
+  // The Project Chief seam (#1859), read at call time so a host that ships no Chief module — an
+  // older core, or a narrowed test host — is told once instead of on every Project. It answers
+  // `undefined` and never throws: automation being off must not refuse a Project.
+  let chiefSeamMissing = false
+  const projectChief = () => {
+    if (rt.projectChief !== undefined) return rt.projectChief
+    if (!chiefSeamMissing) {
+      chiefSeamMissing = true
+      rt.warn?.('ds-bot: this host has no Project Chief seam, so no Project gets its own Chief (#1859)')
+    }
+    return undefined
+  }
   const projectMemberOf = (kind, id) => {
     if (kind === 'bot' || kind === 'group') {
       const member = ownEntry(kind === 'bot' ? state.bots : state.rooms, id)
@@ -526,6 +538,8 @@ export function install(rt) {
   const deleteProject = async (id) => {
     const project = requireProject(id)
     await rt.projectAssistant?.remove?.(project.id)
+    // The Project's own Chief retires with it (#1859), by the same path a deleted Bot takes.
+    await projectChief()?.remove?.(project.id)
     delete state.projects[project.id]
     delete state.projectMemory[project.id]
     for (const member of [...Object.values(state.bots), ...Object.values(state.rooms)]) {
@@ -617,6 +631,18 @@ export function install(rt) {
             await rt.projectAssistant.create(project.id)
           } catch (error) {
             project.assistant = { error: error?.message ?? String(error) }
+          }
+        }
+        // Every Project gets its own Chief (#1859) — not the user's main Chief acting part-time.
+        // Same contract as the assistant: a spawn failure is recorded on the record, and a host
+        // without the seam still creates the Project with the reason written down.
+        const chief = projectChief()
+        if (chief === undefined) project.chief = { error: 'this host has no Project Chief seam, so no Chief was created' }
+        else {
+          try {
+            await chief.create(project.id)
+          } catch (error) {
+            project.chief = { error: error?.message ?? String(error) }
           }
         }
         await save()
