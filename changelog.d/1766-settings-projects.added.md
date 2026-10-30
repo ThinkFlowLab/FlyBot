@@ -1,0 +1,1 @@
+Settings has a **Projects** page beside Bots and group chats ([#1766](https://github.com/ThinkFlowLab/FlyBot/issues/1766)): create a Project with a name and an optional working folder chosen from the folder picker, open its board from the row, and bind or unbind a Bot or a group. A Project-less board now offers the page that creates one instead of a dead end.

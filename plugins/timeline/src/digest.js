@@ -14,7 +14,14 @@ const TOP_TOOLS = 5
 export function formatCount(value) {
   const n = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
   if (n >= M) return `${(n / M).toFixed(1)}M`
-  if (n >= K) return `${(n / K).toFixed(1)}k`
+  if (n >= K) {
+    // Carry a count that rounds up into the next unit (#1779), the same carry #761 fixed for
+    // durations: picking the unit from the raw value and rounding inside it printed `1000.0k` for
+    // 999,950–999,999, a number the k unit cannot hold.
+    const tenths = Math.round(n / 100)
+    if (tenths >= 10_000) return `${(tenths / 10_000).toFixed(1)}M`
+    return `${(n / K).toFixed(1)}k`
+  }
   return String(n)
 }
 

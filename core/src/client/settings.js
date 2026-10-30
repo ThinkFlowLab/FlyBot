@@ -4,7 +4,7 @@ import { isMainOf } from './sources.js'
 import { allThemes } from './themes.js'
 import { WorkflowIcon } from './icons.js'
 import { WorkflowsPage } from './workflows.js'
-import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
+import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, FolderIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
 import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
@@ -19,6 +19,7 @@ import { ConnectorsPage } from './connectors.js'
 import { CapabilitiesPage } from './capability-settings.js'
 import { SchedulesPage } from './schedules.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
+import { FolderMenu } from './folder-menu.js'
 import { AboutPage } from './about.js'
 import { t } from './i18n.js'
 
@@ -26,8 +27,8 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
 // Settings dialog: a 198px page list beside the page. Bots and group chats each list
 // their members, and one opens on its own settings form. Usage widens the dialog.
-const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
+const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
 
 function SetSection({ title, children }) {
   return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
@@ -229,6 +230,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'bots' && !bot ? h(BotsPage, { roster, actions, run }) : null,
           room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
+          shown === 'projects' ? h(ProjectsPage, { roster, actions, run, call }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
           shown === 'workflows' ? h(WorkflowsPage, { call, roster }) : null,
           pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
@@ -241,4 +243,106 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'usage' ? errorLine : null,
           h(UsagePage, { roster, actions, focusId: usageFocus })) : null),
       h('button', { type: 'button', className: 'bt-settings-close', 'aria-label': t('Close settings'), onClick: close }, h(CloseIcon))))
+}
+
+// Settings → Projects (#1766): the write half of the Project record. A fresh install has none, so
+// the empty state here is the entry point — create one, then its row opens the board through the
+// hash the board already reads. The working folder comes from the folder picker every other
+// "where does this work happen" control uses; a typed path would be a second way to say it.
+const openProjectBoard = (id) => {
+  if (typeof window !== 'undefined') window.location.hash = `#project=${id}`
+}
+
+const projectMembers = (roster) => [
+  ...(roster?.bots ?? []).filter(bot => !bot.remote).map(bot => ({ kind: 'bot', id: bot.id, name: bot.name, projectId: bot.projectId ?? null })),
+  ...(roster?.rooms ?? []).map(room => ({ kind: 'group', id: room.id, name: room.name, projectId: room.projectId ?? null })),
+]
+
+export function ProjectsList({ projects, roster, call, reload }) {
+  const members = projectMembers(roster)
+  // The binding is the member's own field (`bot.projectId`, `room.projectId`); the record is only
+  // asked again so the row that shows it is read from the host, not guessed here.
+  const bind = async (choice, project) => {
+    const [kind, id] = String(choice ?? '').split(':')
+    if (!kind || !id) return
+    await call('project-bind', { kind, id, projectId: project.id })
+    await reload?.()
+  }
+  const unbind = async (member) => {
+    await call('project-bind', { kind: member.kind, id: member.id, projectId: null })
+    await reload?.()
+  }
+  const bound = members.filter(member => member.projectId !== null && member.projectId !== undefined)
+  return [
+    h(SetSection, { key: 'projects', title: t('Projects · {count}', { count: projects.length }) },
+      projects.length === 0
+        ? h('div', { className: 'bt-set-row' }, h('div', { className: 'bt-set-copy' }, h('span', null, t('No Project yet — create one.'))))
+        : projects.map(project => h(SetRow, {
+          key: project.id, label: project.name,
+          hint: project.workDir === null || project.workDir === undefined ? undefined : project.workDir,
+        },
+        h('div', { className: 'bt-project-row-controls' },
+          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openProjectBoard(project.id) }, t('Open board')),
+          h('select', {
+            className: 'bt-select', 'aria-label': t('Bind to {name}', { name: project.name }), value: '',
+            onChange: event => { void bind(event.target.value, project) },
+          },
+          h('option', { value: '' }, t('Bind a Bot or group')),
+          members.map(member => h('option', { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
+            `${member.kind === 'group' ? t('Group') : t('Bot')} · ${member.name}`))))))),
+    bound.length === 0 ? null : h(SetSection, { key: 'bindings', title: t('Bindings') },
+      bound.map(member => h(SetRow, {
+        key: `${member.kind}:${member.id}`, label: member.name,
+        hint: member.kind === 'group' ? t('Group') : t('Bot'),
+      },
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { void unbind(member) } }, t('Unbind'))))),
+  ]
+}
+
+export function ProjectsPage({ roster, actions, run, call }) {
+  const [state, setState] = useState({ projects: [], error: null })
+  const [name, setName] = useState('')
+  const [workDir, setWorkDir] = useState(null)
+  const reload = useCallback(async () => {
+    const listing = await call('projects')
+    setState({ projects: listing?.projects ?? [], error: null })
+  }, [call])
+  useEffect(() => {
+    void reload().catch(error => setState({ projects: [], error: error?.message ?? String(error) }))
+  }, [reload])
+  // Creating re-reads the list rather than appending the answer: the host decides what a Project
+  // is, and the row then shows the record it stored.
+  const create = async () => {
+    const trimmed = name.trim()
+    if (trimmed === '') return
+    const body = { name: trimmed }
+    if (workDir !== null && workDir !== '') body.workDir = workDir
+    try {
+      await call('project-create', body)
+      setName('')
+      setWorkDir(null)
+      await reload()
+    } catch (error) {
+      setState({ projects: state.projects, error: error?.message ?? String(error) })
+    }
+  }
+  return [
+    state.error === null ? null : h('div', { key: 'error', className: 'bt-error', role: 'alert' }, state.error),
+    h(SetSection, { key: 'new', title: t('New Project') },
+      h(SetRow, { label: t('Name') },
+        h('input', {
+          className: 'bt-input', 'aria-label': t('Project name'), value: name, placeholder: t('e.g. Website'),
+          onChange: event => setName(event.target.value),
+        })),
+      h(SetRow, { label: t('Working folder'), hint: t("Optional. Where this Project's work happens.") },
+        h(FolderMenu, { value: workDir, actions, run, onPick: setWorkDir })),
+      h('div', { className: 'bt-actions' },
+        h('button', {
+          type: 'button', className: 'bt-primary bt-with-icon', disabled: name.trim() === '',
+          onClick: () => { void create() },
+        }, h(PlusIcon), t('New Project')))),
+    // The list is rendered here rather than as a child element: it holds no state of its own,
+    // and the page keeps one reload path for both halves.
+    ...ProjectsList({ projects: state.projects, roster, call, reload }),
+  ]
 }

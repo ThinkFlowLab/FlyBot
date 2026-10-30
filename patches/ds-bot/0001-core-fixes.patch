@@ -1413,7 +1413,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +1307,18 @@
+@@ -838,6 +1307,32 @@
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
@@ -1429,10 +1429,24 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'not-started': '未开始',
 +  'in-progress': '进行中',
 +  'done': '已完成',
++  'Projects': '项目',
++  'New Project': '新建项目',
++  'Project name': '项目名称',
++  'e.g. Website': '例如：官网',
++  "Optional. Where this Project's work happens.": '可选。这个项目的工作目录。',
++  'Projects · {count}': '项目 · {count}',
++  'No Project yet — create one.': '还没有项目——新建一个。',
++  'Bind a Bot or group': '绑定 Bot 或群聊',
++  'Bind to {name}': '绑定到 {name}',
++  'Open board': '打开看板',
++  'Unbind': '解除绑定',
++  'Bindings': '绑定关系',
++  'No cards yet.': '还没有卡片。',
++  'Open Projects in Settings': '在设置中打开项目',
  }
  
  // Host errors stay English, since Bots read them too; they are translated where the
-@@ -853,8 +1334,11 @@
+@@ -853,8 +1348,11 @@
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
@@ -1444,7 +1458,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +1367,20 @@
+@@ -883,6 +1381,20 @@
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1465,7 +1479,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +1403,8 @@
+@@ -905,6 +1417,8 @@
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1474,6 +1488,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  Object.assign(ZH, HOST_ZH)
  
+
 diff --git a/src/client/member-status.js b/src/client/member-status.js
 --- a/src/client/member-status.js
 +++ b/src/client/member-status.js

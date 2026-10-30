@@ -306,6 +306,9 @@ export function install(rt) {
         // On the record before the file is written, while the meeting is still `deliberating`: a
         // failure below (a full disk, a `link` the loop cannot retry) must not double the cards.
         store()[meeting.id] = { ...meeting, pendingTaskIds: closed.taskIds }
+        // P-209: the pending ids reach the disk before the next card is written, so a restart
+        // between the cards and the file keeps the ids instead of doubling the cards.
+        await rt.save()
       }
     } catch (error) {
       await dropTemp(slot)
@@ -343,6 +346,9 @@ export function install(rt) {
     }
     closed.decisionSha256 = createHash('sha256').update(bytes).digest('hex')
     store()[meeting.id] = closed
+    // P-209: the decision is on disk before `decide` answers, so the retry a stale reader makes is
+    // refused with `closed` instead of writing a second decision file and a second card.
+    await rt.save()
     return closed
   }
 
@@ -403,16 +409,30 @@ export function install(rt) {
     await rt.load()
     const now = Number.isFinite(Number(body.now)) && body.now !== undefined ? Number(body.now) : stamp()
     switch (action) {
-      case 'open':
-        return summary(newMeeting(body, now))
-      case 'position':
-        return summary(position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text, silent: body.silent }, now))
+      case 'open': {
+        const made = newMeeting(body, now)
+        // P-209: a meeting is a record on disk, not a decoration of the live process. Every write
+        // action saves before it answers, so a restart reads what the caller was told.
+        await rt.save()
+        return summary(made)
+      }
+      case 'position': {
+        const recorded = position(find(body.meeting), { as: body.as ?? actor?.name, stance: body.stance, text: body.text, silent: body.silent }, now)
+        await rt.save()
+        return summary(recorded)
+      }
       case 'decide':
         return summary(await decide(find(body.meeting), { ...body, exec: body.exec }, { now, actor }))
-      case 'block':
-        return summary(block(find(body.meeting), body, now))
-      case 'resume':
-        return summary(resume(find(body.meeting), body, now))
+      case 'block': {
+        const blocked = block(find(body.meeting), body, now)
+        await rt.save()
+        return summary(blocked)
+      }
+      case 'resume': {
+        const resumed = resume(find(body.meeting), body, now)
+        await rt.save()
+        return summary(resumed)
+      }
       case 'read':
         return summary(find(body.meeting))
       case 'list':

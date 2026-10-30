@@ -159,7 +159,7 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
     groups,
     count: list.length,
     empty: list.length === 0,
-    emptyText: 'Nothing under this Project yet.',
+    emptyText: 'No cards yet.',
     record: projectBoardRecord({ decisions, meetings }),
   }
 }
@@ -236,7 +236,9 @@ export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, m
 
 // The pane entry point (#1710): `#project=<id>` opens one Project's board, `#project` the first.
 // Reading is a POST through the same host channel every other view uses.
-export function ProjectBoardOverlay({ actions } = {}) {
+export function ProjectBoardOverlay({ actions, call: request } = {}) {
+  // `call` is a seam for the tests only; in the app it is the channel every other view uses.
+  const read = request ?? call
   const [state, setState] = useState(null)
   // The hash is the whole entry point, so it has to be read again every time it changes: an
   // entry that writes `#project=<id>` while this mounts opened nothing when the read was one-shot.
@@ -259,19 +261,19 @@ export function ProjectBoardOverlay({ actions } = {}) {
     let live = true
     void (async () => {
       try {
-        const listing = await call('projects')
+        const listing = await read('projects')
         const projects = listing?.projects ?? []
         const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
         if (project === undefined) { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }); return }
         // Four reads once, none polling: the Project, its record, its rows, and the task texts the
         // rows are joined against. Nothing here asks a Bot by Bot.
-        const [read, board, taskList] = await Promise.all([
-          call('project-read', { id: project.id }),
-          call('project-board', { id: project.id }),
-          call('tasks', {}),
+        const [record, board, taskList] = await Promise.all([
+          read('project-read', { id: project.id }),
+          read('project-board', { id: project.id }),
+          read('tasks', {}),
         ])
         const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
-        if (live) setState({ project: read?.project ?? project, rows: board?.tasks ?? [], canManage: read?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings })
+        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings })
       } catch { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }) }
     })()
     return () => { live = false }
@@ -288,7 +290,9 @@ export function ProjectBoardOverlay({ actions } = {}) {
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-project-close', autoFocus: true, onClick: close }, t('Close'))),
       h('div', { className: 'bt-project-body' },
         state.project === null
-          ? h('div', { className: 'bt-project-empty' }, t('No Project here.'))
+          ? h('div', { className: 'bt-project-empty' },
+            h('p', null, t('No Project yet — create one.')),
+            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { close(); actions?.openSettings?.('projects') } }, t('Open Projects in Settings')))
           // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
           // that hash and lands on the Bot or group the task belongs to.
           : h(ProjectBoardPane, {

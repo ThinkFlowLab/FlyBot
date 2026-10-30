@@ -1319,6 +1319,20 @@ const ZH = {
   'not-started': '未开始',
   'in-progress': '进行中',
   'done': '已完成',
+  'Projects': '项目',
+  'New Project': '新建项目',
+  'Project name': '项目名称',
+  'e.g. Website': '例如：官网',
+  "Optional. Where this Project's work happens.": '可选。这个项目的工作目录。',
+  'Projects · {count}': '项目 · {count}',
+  'No Project yet — create one.': '还没有项目——新建一个。',
+  'Bind a Bot or group': '绑定 Bot 或群聊',
+  'Bind to {name}': '绑定到 {name}',
+  'Open board': '打开看板',
+  'Unbind': '解除绑定',
+  'Bindings': '绑定关系',
+  'No cards yet.': '还没有卡片。',
+  'Open Projects in Settings': '在设置中打开项目',
 }
 
 // Host errors stay English, since Bots read them too; they are translated where the
