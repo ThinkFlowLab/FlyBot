@@ -299,9 +299,15 @@ A row knows the board its task lives on without re-deciding membership: the mapp
 carried in and has no board of its own). A row with a board is a button: it writes `#task=<kind>:<id>` and
 `actions.openBoard()`, and `KanbanDialog` consumes that hash once on mount, moves its scope to that Bot or
 group and clears the hash, so a reload does not reopen the same board. A row without a board (or without a
-task record) is not a button — `role` alone opens nothing. Opening the pane is four host reads once, with
-no polling and no per-Bot read: `projects`, `project-read`, `project-board`, and the `tasks` list the rows
-are joined against. Tests: `core/test/project-board-view.test.js`, `core/test/project-board.test.js`,
+task record) is not a button — `role` alone opens nothing. Opening the pane is four host reads, never a
+per-Bot read: `projects`, `project-read`, `project-board`, and the `tasks` list the rows are joined
+against. Since #1814 they repeat every five seconds while the pane is open, because what a card has
+waited and whether its lease is live are computed by the host at read time: a lease that expires during
+the visit turns the card `stalled` on its own instead of freezing the board. The first read failing
+answers the empty state as it did; a poll that fails keeps the board the last good read drew. Polling
+pauses while a row's own board is open (the hash no longer names this Project) and while the tab is
+hidden, and a read that lands after the pane closed is dropped. Tests:
+`core/test/project-board-view.test.js`, `core/test/project-board.test.js`,
 `core/test/project-board-entry.test.js`.
 
 The pane draws the three host groups beside the columns (#1768) — `Waiting` with the role and how long

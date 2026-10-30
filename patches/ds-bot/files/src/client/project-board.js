@@ -417,6 +417,21 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
 }
 
+// #1814: what a card has waited (`waitedMs`) and whether the lease it holds is live are computed by
+// the host at read time — a lease lasts 30 minutes (`tasks.js` `LEASE_TTL_SEC`) — so a board that
+// reads once freezes: an expiry that happens while the page is open never turns the card `stalled`
+// and `3h` stays `3h`. Five seconds is the cadence the client already polls a board on
+// (`flybot-slots.js`), not a new one.
+export const PROJECT_BOARD_POLL_MS = 5000
+
+// Polling pauses while this board is not on screen, or while the tab is hidden and a read would only
+// spend channel calls. A row's click writes `#task=…` and the board unmounts, so the hash test below
+// is not that unmount: it covers the tick that lands between the write and the effect's cleanup,
+// which would otherwise read for a board nobody is looking at. A drag or an edit state the page may
+// grow later sets its flag here, beside these two, instead of a second condition at the call site.
+const boardPollPaused = () => (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+  || (typeof window !== 'undefined' && !window.location.hash.startsWith('#project'))
+
 // The pane entry point (#1710): `#project=<id>` opens one Project's board, `#project` the first.
 // Reading is a POST through the same host channel every other view uses.
 export function ProjectBoardOverlay({ actions, call: request } = {}) {
@@ -454,27 +469,38 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     if (typeof window === 'undefined') return undefined
     if (!hash.startsWith('#project')) { setState(null); return undefined }
     const wanted = hash.slice('#project'.length).replace(/^=/, '')
-    let live = true
-    void (async () => {
+    let gone = false
+    // Four reads of one board: the Project, its record, its rows, and the task texts the rows are
+    // joined against. Nothing here asks a Bot by Bot.
+    const loadBoard = async () => {
+      const listing = await read('projects')
+      const projects = listing?.projects ?? []
+      const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
+      if (project === undefined) return { project: null, rows: [], canManage: false, tasks: [] }
+      const [record, board, taskList] = await Promise.all([
+        read('project-read', { id: project.id }),
+        read('project-board', { id: project.id }),
+        read('tasks', {}),
+      ])
+      const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
+      // The groups are the same read as the rows, so the header cannot disagree with the cards.
+      const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
+      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues }
+    }
+    const refresh = async (first) => {
       try {
-        const listing = await read('projects')
-        const projects = listing?.projects ?? []
-        const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
-        if (project === undefined) { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }); return }
-        // Four reads once, none polling: the Project, its record, its rows, and the task texts the
-        // rows are joined against. Nothing here asks a Bot by Bot.
-        const [record, board, taskList] = await Promise.all([
-          read('project-read', { id: project.id }),
-          read('project-board', { id: project.id }),
-          read('tasks', {}),
-        ])
-        const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
-        // The groups are the same read as the rows, so the header cannot disagree with the cards.
-        const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
-        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues })
-      } catch { if (live) setState({ project: null, rows: [], canManage: false, tasks: [] }) }
-    })()
-    return () => { live = false }
+        const next = await loadBoard()
+        if (!gone) setState(next)
+      } catch {
+        // The first read is the page's answer, so it takes the empty state it always took. A poll
+        // that fails keeps the board the last good read drew (#1814): a board that vanishes under
+        // the reader is worse than one a tick old, and the next tick asks again.
+        if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] })
+      }
+    }
+    void refresh(true)
+    const timer = setInterval(() => { if (!boardPollPaused()) void refresh(false) }, PROJECT_BOARD_POLL_MS)
+    return () => { gone = true; clearInterval(timer) }
   }, [hash])
   if (state === null) return null
   // #1750: the scrim is a sibling in front of the dialog, exactly as the Board draws it, so a click

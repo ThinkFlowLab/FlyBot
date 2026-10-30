@@ -20303,6 +20303,8 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
     )
   );
 }
+var PROJECT_BOARD_POLL_MS = 5e3;
+var boardPollPaused = () => typeof document !== "undefined" && document.visibilityState === "hidden" || typeof window !== "undefined" && !window.location.hash.startsWith("#project");
 function ProjectBoardOverlay({ actions, call: request } = {}) {
   const read = request ?? call;
   const [state, setState] = (0, import_react46.useState)(null);
@@ -20337,30 +20339,36 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       return void 0;
     }
     const wanted = hash.slice("#project".length).replace(/^=/, "");
-    let live = true;
-    void (async () => {
+    let gone = false;
+    const loadBoard = async () => {
+      const listing = await read("projects");
+      const projects = listing?.projects ?? [];
+      const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
+      if (project === void 0) return { project: null, rows: [], canManage: false, tasks: [] };
+      const [record, board, taskList] = await Promise.all([
+        read("project-read", { id: project.id }),
+        read("project-board", { id: project.id }),
+        read("tasks", {})
+      ]);
+      const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
+      const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
+      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues };
+    };
+    const refresh = async (first) => {
       try {
-        const listing = await read("projects");
-        const projects = listing?.projects ?? [];
-        const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
-        if (project === void 0) {
-          if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
-          return;
-        }
-        const [record, board, taskList] = await Promise.all([
-          read("project-read", { id: project.id }),
-          read("project-board", { id: project.id }),
-          read("tasks", {})
-        ]);
-        const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
-        const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
-        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues });
+        const next = await loadBoard();
+        if (!gone) setState(next);
       } catch {
-        if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
+        if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
-    })();
+    };
+    void refresh(true);
+    const timer = setInterval(() => {
+      if (!boardPollPaused()) void refresh(false);
+    }, PROJECT_BOARD_POLL_MS);
     return () => {
-      live = false;
+      gone = true;
+      clearInterval(timer);
     };
   }, [hash]);
   if (state === null) return null;

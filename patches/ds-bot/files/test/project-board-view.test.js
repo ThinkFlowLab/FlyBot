@@ -30,9 +30,23 @@ const react = {
   },
 }
 const win = { location: { hash: '' }, addEventListener() {}, removeEventListener() {} }
+// #1814: the board polls, so the test owns the clock it polls on. `tick()` runs every scheduled
+// interval callback once and lets the read land; no real 5 s timer is ever armed here.
+const doc = { visibilityState: 'visible' }
+const clock = { timers: [], cleared: [], id: 0 }
+const every = (fn, ms) => { clock.id += 1; clock.timers.push({ id: clock.id, fn, ms }); return clock.id }
+const clearEvery = (id) => { clock.cleared.push(id); clock.timers = clock.timers.filter(timer => timer.id !== id) }
+const resetClock = () => { clock.timers = []; clock.cleared = []; clock.id = 0; doc.visibilityState = 'visible' }
+const tick = async (times = 1) => {
+  for (let at = 0; at < times; at += 1) {
+    for (const timer of Array.from(clock.timers)) timer.fn()
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+}
 const module = { exports: {} }
 runInNewContext(bundle.outputFiles[0].text, {
-  module, exports: module.exports, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise, console, window: win,
+  module, exports: module.exports, setTimeout, clearTimeout, setInterval: every, clearInterval: clearEvery,
+  Date, Promise, console, window: win, document: doc,
   require: (name) => {
     if (name === 'react') return react
     throw new Error(`no platform module ${name}`)
@@ -46,6 +60,27 @@ const flush = async () => {
   for (const fn of queued) await fn()
   await new Promise(resolve => setTimeout(resolve, 0))
 }
+// A mount the way the shell does it: the first render registers the effects, each runs once, and
+// the second render draws the state the read landed on. The cleanups come back so a test can
+// close the board (what the overlay's cleanup does) and watch what stops.
+const mount = async (props) => {
+  slots = []
+  effects = []
+  index = 0
+  ProjectBoardOverlay(props)
+  const cleanups = []
+  for (const fn of effects) {
+    const off = await fn()
+    if (typeof off === 'function') cleanups.push(off)
+  }
+  effects = []
+  // The first read is in flight after the effect returns: let it land before drawing.
+  await new Promise(resolve => setTimeout(resolve, 0))
+  index = 0
+  const tree = ProjectBoardOverlay(props)
+  return { tree, cleanups, redraw: () => { index = 0; return ProjectBoardOverlay(props) } }
+}
+const textIn = tree => all(tree).map(textOf).join(' | ')
 
 const rows = [
   { id: 'task-b1', source: 'bot', column: 'in-progress', assignee: 'Dev4', updatedAt: 3 },
@@ -250,4 +285,158 @@ test('#1768: the pane draws each group and a blocked card shows its reason', () 
   // The rows keep their task id, so the click-through to `#task=<id>` is unchanged.
   const ids = nodes.filter(node => node && node.props && node.props['data-task-id']).map(node => node.props['data-task-id'])
   assert.ok(ids.includes('task-w1') && ids.includes('task-b1') && ids.includes('task-g1'), JSON.stringify(ids))
+})
+// #1814: the wait a card shows and whether its lease is live are computed at read time on the host
+// (`waitedMs`, `buildQueues`), so a board that reads once freezes: a lease that expires while the
+// page is open never turns `stalled` and `3h` stays `3h`. The board polls, and the count below is
+// taken at the channel call itself — the tree is not the evidence, the read is.
+const boardAnswers = (count, { board = null, projectBoard = null } = {}) => async (name) => {
+  count.calls += 1
+  if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+  if (name === 'project-read') return { project: { id: 'project-1', name: 'FlyBot' }, canManage: false }
+  if (name === 'project-board') {
+    if (projectBoard !== null) return projectBoard()
+    return board ?? {
+      tasks: rows,
+      waiting: [],
+      inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'expired', stalled: true }],
+      blocked: [],
+      counts: { waiting: 0, inflight: 1, blocked: 0, done: 1 },
+    }
+  }
+  if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }, { id: 'task-g1', title: 'Group card' }, { id: 'task-w1', title: 'Workflow card' }]
+  return {}
+}
+
+test('#1814: an open board reads on every tick, stops once a row opens its own board or the tab hides, and resumes', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const count = { calls: 0 }
+  const { tree, cleanups } = await mount({ actions: {}, call: boardAnswers(count) })
+  assert.equal(count.calls, 4, 'the first read is the four calls the board makes: Project, record, board, task texts')
+  assert.match(textIn(tree), /Dev4 · stalled/, 'the board draws what the first read answered')
+  const afterFirst = count.calls
+  await tick()
+  assert.equal(count.calls, afterFirst + 4, 'an open board reads again on the next tick')
+  // A row opens its own board: the hash names the task and this board stops drawing, so a tick that
+  // lands before the cleanup must not read. This segment pins the unmount, not the predicate.
+  const afterTick = count.calls
+  win.location.hash = '#task=bot:task-b1'
+  await tick(2)
+  assert.equal(count.calls, afterTick, 'no read after a row opened its own board: the board leaves the screen, so the tick that lands before its cleanup reads nothing')
+  // Closing that board puts this one back in front: the next tick reads again.
+  win.location.hash = '#project'
+  await tick()
+  assert.equal(count.calls, afterTick + 4, 'closing the row’s board resumes the poll')
+  // A hidden tab reads nothing either — this is the segment the named predicate is pinned by.
+  const afterResume = count.calls
+  doc.visibilityState = 'hidden'
+  await tick(2)
+  assert.equal(count.calls, afterResume, 'no read in a hidden tab')
+  doc.visibilityState = 'visible'
+  await tick()
+  assert.equal(count.calls, afterResume + 4, 'a visible tab reads again on the next tick')
+  // Close the board: the timer goes with it, so a tick afterwards reads nothing at all.
+  const afterVisible = count.calls
+  for (const off of cleanups) off()
+  assert.equal(clock.timers.length, 0, 'the poll is cleared when the board closes')
+  await tick(2)
+  assert.equal(count.calls, afterVisible, 'nothing reads after the board closed')
+})
+
+test('#1814: a failing poll keeps the board the last good read drew', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const count = { calls: 0 }
+  let fail = false
+  const healthy = { tasks: rows, waiting: [], inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'expired', stalled: true }], blocked: [], counts: { waiting: 0, inflight: 1, blocked: 0, done: 1 } }
+  const call = async (name) => {
+    count.calls += 1
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') return { project: { id: 'project-1', name: 'FlyBot' }, canManage: false }
+    if (name === 'project-board') { if (fail) throw new Error('the board read failed'); return healthy }
+    if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
+    return {}
+  }
+  const { tree, redraw } = await mount({ actions: {}, call })
+  assert.match(textIn(tree), /Ship the poll/)
+  fail = true
+  await tick()
+  const after = redraw()
+  assert.match(textIn(after), /Ship the poll/, 'the last good board stays on screen')
+  assert.ok(!/No Project yet/.test(textIn(after)), 'a failed poll is not the empty state')
+})
+
+test('#1814: a read that lands after the board closed is dropped', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const count = { calls: 0 }
+  let late = null
+  const healthy = { tasks: rows, waiting: [], inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'expired', stalled: true }], blocked: [], counts: { waiting: 0, inflight: 1, blocked: 0, done: 1 } }
+  const call = async (name) => {
+    count.calls += 1
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') return { project: { id: 'project-1', name: 'FlyBot' }, canManage: false }
+    if (name === 'project-board') return late === null ? healthy : late.promise
+    if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
+    return {}
+  }
+  const { tree, cleanups, redraw } = await mount({ actions: {}, call })
+  assert.match(textIn(tree), /Ship the poll/)
+  late = {}
+  late.promise = new Promise((resolve) => { late.resolve = resolve })
+  await tick()
+  for (const off of cleanups) off()
+  late.resolve({ tasks: [], waiting: [], inflight: [], blocked: [], counts: { waiting: 0, inflight: 0, blocked: 0, done: 0 } })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const after = redraw()
+  assert.match(textIn(after), /Ship the poll/, 'the late read never reaches a closed board')
+  assert.ok(!/No cards yet/.test(textIn(after)), 'the board did not move under the reader')
+})
+
+test('#1814: a second read moves one card to stalled and a waiting card in flight in the same render', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  let boardReads = 0
+  const call = async (name) => {
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') return { project: { id: 'project-1', name: 'FlyBot' }, canManage: false }
+    if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }, { id: 'task-w1', title: 'Waited card' }]
+    if (name === 'project-board') {
+      boardReads += 1
+      const tasks = rows.filter(row => row.id === 'task-b1' || row.id === 'task-w1')
+      // The host computes both facts at read time: the first answer says the lease is live and the
+      // card is still waiting, the second says the lease expired while the page was open.
+      if (boardReads === 1) {
+        return {
+          tasks,
+          waiting: [{ id: 'task-w1', role: 'Reviewer', waitedMs: 3 * 60 * 60 * 1000 }],
+          inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'live', stalled: false }],
+          blocked: [],
+          counts: { waiting: 1, inflight: 1, blocked: 0, done: 0 },
+        }
+      }
+      return {
+        tasks,
+        waiting: [],
+        inflight: [{ id: 'task-b1', holder: 'Dev4', lease: 'expired', stalled: true }, { id: 'task-w1', holder: 'Dev2', lease: 'live', stalled: false }],
+        blocked: [],
+        counts: { waiting: 0, inflight: 2, blocked: 0, done: 0 },
+      }
+    }
+    return {}
+  }
+  const { redraw } = await mount({ actions: {}, call })
+  const first = textIn(redraw())
+  assert.match(first, /Dev4 · running/, 'the first read draws the live lease')
+  assert.match(first, /Waiting: 1/, 'the first read draws the waiting count')
+  await tick()
+  const tree = redraw()
+  const second = textIn(tree)
+  assert.match(second, /Dev4 · stalled/, 'the same render shows the expiry that happened while the page stayed open')
+  assert.match(second, /Dev2 · running/, 'the waiting card is drawn in flight')
+  assert.match(second, /Waiting: 0/, 'the waiting count followed the same read')
+  assert.match(second, /In flight: 2/, 'the in-flight count followed the same read')
+  const stalled = all(tree).filter(node => node && node.props && node.props['data-state'] === 'stalled')
+  assert.deepEqual(stalled.map(node => node.props['data-task-id']), ['task-b1'], 'only the expired card carries the stalled edge')
 })
