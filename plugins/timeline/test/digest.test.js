@@ -36,6 +36,17 @@ test('formatCount and formatMs read at a glance', () => {
   assert.equal(formatMs(undefined), '0s')
 })
 
+// The unit is picked from the raw value, so the rounding inside it can overflow it (#1779): a count
+// one step below a million printed `1000.0k`, which is a number its own unit cannot hold and one a
+// reader has to convert back before it means anything. The carry is the same one #761 fixed for
+// durations.
+test('#1779: a count that rounds up into the next unit prints that unit, not 1000.0k', () => {
+  assert.equal(formatCount(999_949), '999.9k')
+  assert.equal(formatCount(999_950), '1.0M')
+  assert.equal(formatCount(999_999), '1.0M')
+  assert.equal(formatCount(1_000_000), '1.0M')
+})
+
 // The carry must never overflow the unit the text prints (#761): rounding the raw milliseconds
 // inside a unit chosen from the raw value printed `60s` for 59.6 s and `1h60m` for 1h59m50s, and a
 // person pasting the report read those numbers in a standup.
