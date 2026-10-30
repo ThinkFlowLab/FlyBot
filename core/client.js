@@ -20120,6 +20120,18 @@ var PROJECT_BOARD_CSS = `
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
+.bt-project-metrics{margin:0 0 14px}
+.bt-project-metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px}
+.bt-project-metric{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid rgba(127,127,127,.24);border-radius:8px}
+.bt-project-metric-value{font-size:18px;font-weight:600}
+.bt-project-metric-label{font-size:12px;font-weight:600}
+.bt-project-metric-caption{font-size:10px;opacity:.6;line-height:1.3}
+.bt-project-metrics-note{margin:0 0 6px;font-size:11px;opacity:.7}
+.bt-project-running{margin:0 0 14px}
+.bt-project-running-head,.bt-project-running-row{display:grid;grid-template-columns:2fr 1fr 1fr .8fr .8fr 1.2fr;gap:8px;font-size:12px;padding:3px 0}
+.bt-project-running-head{opacity:.6;font-size:10px;letter-spacing:.03em}
+.bt-project-running-row[role="button"]{cursor:pointer}
+.bt-project-running-row[data-overdue="true"]{color:#c2410c}
 .bt-project-counts{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.03em;opacity:.8}
 .bt-project-counts b{font-weight:600}
 .bt-project-group[data-queue="waiting"] .bt-project-row{cursor:default}
@@ -20211,7 +20223,7 @@ function projectBoardRecord({ decisions, meetings } = {}) {
     }
   };
 }
-function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues } = {}) {
+function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
   const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
   const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
   const groups = PROJECT_SOURCES.map((source) => ({
@@ -20259,7 +20271,8 @@ function projectBoardView({ project, rows, canManage, tasks, decisions, meetings
     count: list.length,
     empty: list.length === 0 && queueGroups.length === 0,
     emptyText: "No cards yet.",
-    record: projectBoardRecord({ decisions, meetings })
+    record: projectBoardRecord({ decisions, meetings }),
+    metrics: metricsView(metrics, { tasks })
   };
 }
 function ProjectBoardRows({ view, onOpen }) {
@@ -20307,6 +20320,109 @@ function waitedLabel(ms) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+var METRIC_CARDS = [
+  { key: "prsOpenedToday", label: "PRs opened today", caption: "Natural day in your time zone, by created_at." },
+  { key: "prsMergedToday", label: "PRs merged today", caption: "Natural day in your time zone, by merged_at." },
+  { key: "issuesOpenedToday", label: "Issues opened today", caption: "Natural day in your time zone, by created_at." },
+  { key: "issuesClosedToday", label: "Issues closed today", caption: "Natural day in your time zone, by closed_at." },
+  { key: "prMergeMedianMs", label: "PR merge time", caption: "Median of the last 7 days, opened to merged." },
+  { key: "issueCloseMedianMs", label: "Issue close time", caption: "Median of the last 7 days, opened to closed." },
+  { key: "taskDoneMedianMs", label: "Task completion", caption: "Median of the last 7 days, created to done." }
+];
+var METRIC_DASH = "—";
+var DURATION_KEYS = /* @__PURE__ */ new Set(["prMergeMedianMs", "issueCloseMedianMs", "taskDoneMedianMs"]);
+var RUNNING_OVERDUE_MS = 2 * 60 * 60 * 1e3;
+var metricText = (key, value) => {
+  if (!Number.isFinite(value)) return METRIC_DASH;
+  if (DURATION_KEYS.has(key)) return waitedLabel(value) ?? METRIC_DASH;
+  return String(value);
+};
+function metricsView(metrics, { tasks } = {}) {
+  const source = metrics !== null && typeof metrics === "object" ? metrics : null;
+  const values = source?.metrics !== null && typeof source?.metrics === "object" ? source.metrics : {};
+  const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
+  const running = (Array.isArray(source?.running) ? source.running : []).filter((row) => row !== null && typeof row === "object" && text(row.id) !== "").map((row) => {
+    const id = text(row.id);
+    const task = byId.get(id);
+    return {
+      id,
+      key: "task:" + id,
+      title: text(row.title) || text(task?.title) || text(task?.note) || id,
+      status: text(row.status),
+      who: text(row.who) || null,
+      sinceMs: Number.isFinite(row.sinceMs) ? row.sinceMs : null,
+      source: text(row.source) || null,
+      lastActivityAt: Number.isFinite(row.lastActivityAt) ? row.lastActivityAt : null,
+      overdue: Number.isFinite(row.sinceMs) && row.sinceMs > RUNNING_OVERDUE_MS,
+      board: boardOfRow({ source: text(row.source) }, task)
+    };
+  });
+  return {
+    available: source?.ok === true,
+    reason: text(source?.reason) || null,
+    cards: METRIC_CARDS.map((card) => ({ ...card, value: metricText(card.key, values[card.key]) })),
+    running,
+    empty: source === null,
+    emptyText: "No metrics read yet."
+  };
+}
+function ProjectMetrics({ view }) {
+  return (0, import_react47.createElement)(
+    "section",
+    { className: "bt-project-metrics", "data-available": view.available ? "true" : "false" },
+    view.available || view.reason === null ? null : (0, import_react47.createElement)("p", { className: "bt-project-metrics-note" }, t("Metrics unavailable") + ": " + view.reason),
+    (0, import_react47.createElement)(
+      "div",
+      { className: "bt-project-metric-cards" },
+      view.cards.map((card) => (0, import_react47.createElement)(
+        "div",
+        { key: card.key, className: "bt-project-metric", "data-metric": card.key },
+        (0, import_react47.createElement)("span", { className: "bt-project-metric-value" }, card.value),
+        (0, import_react47.createElement)("span", { className: "bt-project-metric-label" }, t(card.label)),
+        (0, import_react47.createElement)("span", { className: "bt-project-metric-caption" }, t(card.caption))
+      ))
+    )
+  );
+}
+function ProjectRunningTable({ view, onOpen }) {
+  if (view.running.length === 0) return (0, import_react47.createElement)("section", { className: "bt-project-running", "data-running": "0" }, (0, import_react47.createElement)("h4", null, t("Running tasks")), (0, import_react47.createElement)("div", { className: "bt-project-empty" }, t("Nothing is running.")));
+  return (0, import_react47.createElement)(
+    "section",
+    { className: "bt-project-running", "data-running": String(view.running.length) },
+    (0, import_react47.createElement)("h4", null, t("Running tasks")),
+    (0, import_react47.createElement)(
+      "div",
+      { className: "bt-project-running-head" },
+      (0, import_react47.createElement)("span", null, t("Task")),
+      (0, import_react47.createElement)("span", null, t("Status")),
+      (0, import_react47.createElement)("span", null, t("Who")),
+      (0, import_react47.createElement)("span", null, t("Claimed for")),
+      (0, import_react47.createElement)("span", null, t("Source")),
+      (0, import_react47.createElement)("span", null, t("Last activity"))
+    ),
+    view.running.map((row) => {
+      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
+      return (0, import_react47.createElement)(
+        "div",
+        {
+          key: row.key,
+          className: "bt-project-running-row",
+          "data-task-id": row.id,
+          "data-overdue": row.overdue ? "true" : "false",
+          role: open === void 0 ? void 0 : "button",
+          tabIndex: open === void 0 ? void 0 : 0,
+          onClick: open
+        },
+        (0, import_react47.createElement)("span", { className: "bt-project-running-title" }, row.title),
+        (0, import_react47.createElement)("span", { className: "bt-project-running-status" }, t(row.status)),
+        (0, import_react47.createElement)("span", null, row.who ?? METRIC_DASH),
+        (0, import_react47.createElement)("span", null, metricText("since", row.sinceMs)),
+        (0, import_react47.createElement)("span", null, row.source === null ? METRIC_DASH : t(SOURCE_LABELS[row.source] ?? row.source)),
+        (0, import_react47.createElement)("span", null, row.lastActivityAt === null ? METRIC_DASH : new Date(row.lastActivityAt).toLocaleString(dateLocale()))
+      );
+    })
+  );
 }
 function ProjectQueueGroups({ view, onOpen }) {
   return view.queues.map((entry) => (0, import_react47.createElement)(
@@ -20378,8 +20494,8 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows
   );
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen, onSettings, onMembers }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues });
+function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics });
   return (0, import_react47.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
@@ -20402,6 +20518,8 @@ function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings
       (0, import_react47.createElement)("button", { type: "button", "data-action": "project-settings", onClick: () => onSettings?.() }, t("Project settings")),
       (0, import_react47.createElement)("button", { type: "button", "data-action": "project-members", onClick: () => onMembers?.() }, t("Members"))
     ),
+    (0, import_react47.createElement)(ProjectMetrics, { view: view.metrics }),
+    (0, import_react47.createElement)(ProjectRunningTable, { view: view.metrics, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRows, { view, onOpen }),
     (0, import_react47.createElement)(ProjectQueueGroups, { view, onOpen }),
     (0, import_react47.createElement)(ProjectBoardRecord, { record: view.record })
@@ -20571,7 +20689,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       ]);
       const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
-      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues };
+      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
     };
     const refresh = async (first) => {
       try {
@@ -20624,6 +20742,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           decisions: state.decisions,
           meetings: state.meetings,
           queues: state.queues,
+          metrics: state.metrics,
           onSettings: () => setPanel("settings"),
           onMembers: () => setPanel("members"),
           // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and

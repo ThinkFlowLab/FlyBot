@@ -52,7 +52,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView, waitedLabel } = module.exports
+const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView, metricsView, waitedLabel, METRIC_CARDS, METRIC_DASH, RUNNING_OVERDUE_MS } = module.exports
 const render = (component, props) => { index = 0; return component(props) }
 const flush = async () => {
   const queued = effects
@@ -439,4 +439,39 @@ test('#1814: a second read moves one card to stalled and a waiting card in fligh
   assert.match(second, /In flight: 2/, 'the in-flight count followed the same read')
   const stalled = all(tree).filter(node => node && node.props && node.props['data-state'] === 'stalled')
   assert.deepEqual(stalled.map(node => node.props['data-task-id']), ['task-b1'], 'only the expired card carries the stalled edge')
+})
+
+// #1829: the seven metric cards and the running table. A missing read paints the dash on every
+// card, never a zero; a running row past the overdue mark says so and still opens its own board.
+test('the metric cards are the seven the issue fixed, each with a caption', () => {
+  const view = metricsView({ ok: true, metrics: { prsOpenedToday: 3, prsMergedToday: 1, issuesOpenedToday: 2, issuesClosedToday: 0, prMergeMedianMs: 7200000, issueCloseMedianMs: null, taskDoneMedianMs: null } })
+  assert.equal(view.cards.length, 7)
+  assert.equal(METRIC_CARDS.length, 7)
+  for (const card of view.cards) assert.ok(card.caption.length > 0, card.key + ' carries a caption')
+  assert.equal(view.cards.find(card => card.key === 'prsOpenedToday').value, '3')
+  assert.equal(view.cards.find(card => card.key === 'prMergeMedianMs').value, '2h')
+  // An empty window is a dash, never a zero, and a real zero still reads 0.
+  assert.equal(view.cards.find(card => card.key === 'issueCloseMedianMs').value, METRIC_DASH)
+  assert.equal(view.cards.find(card => card.key === 'issuesClosedToday').value, '0')
+})
+
+test('an unavailable read says why and draws no number', () => {
+  const view = metricsView({ ok: false, reason: 'no-credentials', metrics: {}, running: [] })
+  assert.equal(view.available, false)
+  assert.equal(view.reason, 'no-credentials')
+  assert.equal(view.cards.every(card => card.value === METRIC_DASH), true)
+  assert.equal(view.running.length, 0)
+  assert.equal(metricsView(null).empty, true)
+})
+
+test('a running row carries who, claim age, source and activity, and opens its board', () => {
+  const now = Date.now()
+  const view = metricsView({ ok: true, metrics: {}, running: [{ id: 'task-1', title: 'Ship it', status: 'claimed', who: 'Dev', sinceMs: 3 * 60 * 60 * 1000, source: 'group', lastActivityAt: now - 60000 }] })
+  const row = view.running[0]
+  assert.equal(row.who, 'Dev')
+  assert.equal(row.source, 'group')
+  assert.equal(row.overdue, true)
+  assert.ok(row.sinceMs > RUNNING_OVERDUE_MS)
+  assert.equal(row.lastActivityAt, now - 60000)
+  assert.equal(row.title, 'Ship it')
 })

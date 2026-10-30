@@ -3,7 +3,7 @@
 // `row.id` is the underlying task id — so opening one opens that task and nothing is copied here.
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import { call } from './api.js'
-import { hostText, t } from './i18n.js'
+import { dateLocale, hostText, t } from './i18n.js'
 
 export const PROJECT_BOARD_CSS = `
 /* #1750: the board was a short dialog in the page flow — no stylesheet defines 'bt-overlay', so the
@@ -34,6 +34,18 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
+.bt-project-metrics{margin:0 0 14px}
+.bt-project-metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px}
+.bt-project-metric{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid rgba(127,127,127,.24);border-radius:8px}
+.bt-project-metric-value{font-size:18px;font-weight:600}
+.bt-project-metric-label{font-size:12px;font-weight:600}
+.bt-project-metric-caption{font-size:10px;opacity:.6;line-height:1.3}
+.bt-project-metrics-note{margin:0 0 6px;font-size:11px;opacity:.7}
+.bt-project-running{margin:0 0 14px}
+.bt-project-running-head,.bt-project-running-row{display:grid;grid-template-columns:2fr 1fr 1fr .8fr .8fr 1.2fr;gap:8px;font-size:12px;padding:3px 0}
+.bt-project-running-head{opacity:.6;font-size:10px;letter-spacing:.03em}
+.bt-project-running-row[role="button"]{cursor:pointer}
+.bt-project-running-row[data-overdue="true"]{color:#c2410c}
 .bt-project-counts{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.03em;opacity:.8}
 .bt-project-counts b{font-weight:600}
 .bt-project-group[data-queue="waiting"] .bt-project-row{cursor:default}
@@ -149,7 +161,7 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
 // `decisions` and `meetings` are the host's read of the Project's record (#1767), passed through.
 // `queues` is the other half of that same read (#1768): the waiting, in-flight and blocked cards
 // and their counts, as the host answered them.
-export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues } = {}) {
+export function projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
   const list = Array.isArray(rows) ? rows.filter(row => row !== null && typeof row === 'object' && text(row.id) !== '') : []
   const byId = new Map((Array.isArray(tasks) ? tasks : [])
     .filter(task => task !== null && typeof task === 'object' && text(task.id) !== '')
@@ -209,6 +221,7 @@ export function projectBoardView({ project, rows, canManage, tasks, decisions, m
     empty: list.length === 0 && queueGroups.length === 0,
     emptyText: 'No cards yet.',
     record: projectBoardRecord({ decisions, meetings }),
+    metrics: metricsView(metrics, { tasks }),
   }
 }
 
@@ -250,6 +263,100 @@ export function waitedLabel(ms) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h`
   return `${Math.floor(hours / 24)}d`
+}
+
+// The board's seven numbers (#1829). Each card carries its caption: a reader must be able to check
+// what a number counts without opening the host. The order here is the order the issue fixed.
+export const METRIC_CARDS = [
+  { key: 'prsOpenedToday', label: 'PRs opened today', caption: 'Natural day in your time zone, by created_at.' },
+  { key: 'prsMergedToday', label: 'PRs merged today', caption: 'Natural day in your time zone, by merged_at.' },
+  { key: 'issuesOpenedToday', label: 'Issues opened today', caption: 'Natural day in your time zone, by created_at.' },
+  { key: 'issuesClosedToday', label: 'Issues closed today', caption: 'Natural day in your time zone, by closed_at.' },
+  { key: 'prMergeMedianMs', label: 'PR merge time', caption: 'Median of the last 7 days, opened to merged.' },
+  { key: 'issueCloseMedianMs', label: 'Issue close time', caption: 'Median of the last 7 days, opened to closed.' },
+  { key: 'taskDoneMedianMs', label: 'Task completion', caption: 'Median of the last 7 days, created to done.' },
+]
+// A number the host could not read is a dash, never a zero: zero claims "none today" and the
+// host said "cannot read".
+export const METRIC_DASH = '\u2014'
+const DURATION_KEYS = new Set(['prMergeMedianMs', 'issueCloseMedianMs', 'taskDoneMedianMs'])
+export const RUNNING_OVERDUE_MS = 2 * 60 * 60 * 1000
+
+const metricText = (key, value) => {
+  if (!Number.isFinite(value)) return METRIC_DASH
+  if (DURATION_KEYS.has(key)) return waitedLabel(value) ?? METRIC_DASH
+  return String(value)
+}
+
+// Pure: metrics is the host's own read. An unavailable read is a state with a reason, not an empty
+// board — the cards still draw, each value reading the dash.
+export function metricsView(metrics, { tasks } = {}) {
+  const source = metrics !== null && typeof metrics === 'object' ? metrics : null
+  const values = source?.metrics !== null && typeof source?.metrics === 'object' ? source.metrics : {}
+  const byId = new Map((Array.isArray(tasks) ? tasks : [])
+    .filter(task => task !== null && typeof task === 'object' && text(task.id) !== '')
+    .map(task => [text(task.id), task]))
+  const running = (Array.isArray(source?.running) ? source.running : [])
+    .filter(row => row !== null && typeof row === 'object' && text(row.id) !== '')
+    .map((row) => {
+      const id = text(row.id)
+      const task = byId.get(id)
+      return {
+        id,
+        key: 'task:' + id,
+        title: text(row.title) || text(task?.title) || text(task?.note) || id,
+        status: text(row.status),
+        who: text(row.who) || null,
+        sinceMs: Number.isFinite(row.sinceMs) ? row.sinceMs : null,
+        source: text(row.source) || null,
+        lastActivityAt: Number.isFinite(row.lastActivityAt) ? row.lastActivityAt : null,
+        overdue: Number.isFinite(row.sinceMs) && row.sinceMs > RUNNING_OVERDUE_MS,
+        board: boardOfRow({ source: text(row.source) }, task),
+      }
+    })
+  return {
+    available: source?.ok === true,
+    reason: text(source?.reason) || null,
+    cards: METRIC_CARDS.map(card => ({ ...card, value: metricText(card.key, values[card.key]) })),
+    running,
+    empty: source === null,
+    emptyText: 'No metrics read yet.',
+  }
+}
+
+function ProjectMetrics({ view }) {
+  return h('section', { className: 'bt-project-metrics', 'data-available': view.available ? 'true' : 'false' },
+    view.available || view.reason === null ? null : h('p', { className: 'bt-project-metrics-note' }, t('Metrics unavailable') + ': ' + view.reason),
+    h('div', { className: 'bt-project-metric-cards' },
+      view.cards.map(card => h('div', { key: card.key, className: 'bt-project-metric', 'data-metric': card.key },
+        h('span', { className: 'bt-project-metric-value' }, card.value),
+        h('span', { className: 'bt-project-metric-label' }, t(card.label)),
+        h('span', { className: 'bt-project-metric-caption' }, t(card.caption))))))
+}
+
+// The running table (#1829): a claimed card is a row. Every row carries who holds it, how long the
+// claim has run and where the work lives; a row past the overdue mark says so, and a row whose
+// card still exists opens through the same onOpen the board rows use.
+function ProjectRunningTable({ view, onOpen }) {
+  if (view.running.length === 0) return h('section', { className: 'bt-project-running', 'data-running': '0' }, h('h4', null, t('Running tasks')), h('div', { className: 'bt-project-empty' }, t('Nothing is running.')))
+  return h('section', { className: 'bt-project-running', 'data-running': String(view.running.length) },
+    h('h4', null, t('Running tasks')),
+    h('div', { className: 'bt-project-running-head' },
+      h('span', null, t('Task')), h('span', null, t('Status')), h('span', null, t('Who')), h('span', null, t('Claimed for')), h('span', null, t('Source')), h('span', null, t('Last activity'))),
+    view.running.map((row) => {
+      const open = row.board === null ? undefined : () => onOpen?.(row.board)
+      return h('div', {
+        key: row.key, className: 'bt-project-running-row', 'data-task-id': row.id,
+        'data-overdue': row.overdue ? 'true' : 'false',
+        role: open === undefined ? undefined : 'button', tabIndex: open === undefined ? undefined : 0, onClick: open,
+      },
+      h('span', { className: 'bt-project-running-title' }, row.title),
+      h('span', { className: 'bt-project-running-status' }, t(row.status)),
+      h('span', null, row.who ?? METRIC_DASH),
+      h('span', null, metricText('since', row.sinceMs)),
+      h('span', null, row.source === null ? METRIC_DASH : t(SOURCE_LABELS[row.source] ?? row.source)),
+      h('span', null, row.lastActivityAt === null ? METRIC_DASH : new Date(row.lastActivityAt).toLocaleString(dateLocale())))
+    }))
 }
 
 // The three groups beside the columns (#1768): a role queue with its wait, the card a claim holds
@@ -315,8 +422,8 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows)
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen, onSettings, onMembers }) {
-  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues })
+export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues, metrics })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
     // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
@@ -331,6 +438,8 @@ export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, m
     h('div', { className: 'bt-project-actions' },
       h('button', { type: 'button', 'data-action': 'project-settings', onClick: () => onSettings?.() }, t('Project settings')),
       h('button', { type: 'button', 'data-action': 'project-members', onClick: () => onMembers?.() }, t('Members'))),
+    h(ProjectMetrics, { view: view.metrics }),
+    h(ProjectRunningTable, { view: view.metrics, onOpen }),
     h(ProjectBoardRows, { view, onOpen }),
     h(ProjectQueueGroups, { view, onOpen }),
     h(ProjectBoardRecord, { record: view.record }))
@@ -485,7 +594,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
       const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
       // The groups are the same read as the rows, so the header cannot disagree with the cards.
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
-      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues }
+      return { project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
     }
     const refresh = async (first) => {
       try {
@@ -523,7 +632,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
-            decisions: state.decisions, meetings: state.meetings, queues: state.queues,
+            decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics,
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),
             // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
