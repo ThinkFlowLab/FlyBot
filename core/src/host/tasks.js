@@ -16,7 +16,7 @@
 // are terminal, and accepted is reachable only from result-ready. A cancelled or
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
 import { randomBytes } from 'node:crypto'
-import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
+import { columnOf, compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
@@ -925,10 +925,10 @@ export function install(rt) {
     if (expireLeases() > 0) await rt.save()
     const myRole = oneLine(botRecord(botId)?.role ?? '', ROLE_MAX)
     if (myRole === '') throw refuse('not-in-role', 'this Bot has no role to claim with')
-    // WIP = 1: one card in progress fills the member's slot. A blocked card waits on a person,
-    // so counting it would let one unanswered question freeze the member out of the queue.
+    // WIP = 1: one card the member is still working fills its slot. A blocked card waits on a
+    // person and a delivered card waits on its requester, so neither counts (#1247, #1744).
     const holding = Object.values(store())
-      .filter(task => task.ownerBotId === botId && columnOf(task) === 'in-progress' && task.status !== 'blocked')
+      .filter(task => task.ownerBotId === botId && occupiesSlot(task))
     if (holding.length > 0) return { item: null, reason: 'wip', held: holding.sort(compareForWork)[0].id }
     const now = Date.now()
     const offered = task => !(Number.isFinite(task.retryAt) && task.retryAt > now)

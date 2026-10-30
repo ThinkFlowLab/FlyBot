@@ -7726,6 +7726,9 @@ var COLUMN_OF = {
 function columnOf(task) {
   return COLUMN_OF[task?.status] ?? "not-started";
 }
+function occupiesSlot(task) {
+  return task?.status === "claimed" || task?.status === "working";
+}
 function priorityOf(task) {
   return PRIORITIES.includes(task?.priority) ? task.priority : "normal";
 }

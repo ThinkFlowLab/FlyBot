@@ -4,7 +4,7 @@
 // subtask, is a follow-up in that Bot's own chat (#1205). The driver does not
 // open a group Session and does not post the reply into the room. Assigning,
 // progress, and the next assignee are board writes; chat is not the scheduler.
-import { columnOf, compareForQueue, compareForWork, sameRole } from '../shared/task-board.js'
+import { compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
 import { formatRoomBoard } from './room-context.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
@@ -134,12 +134,12 @@ export function install(rt) {
   // say running for that moment; a follow-up queues behind it, so status is not a gate.
   const busy = (sessionId) => rt.liveOf?.(sessionId)?.turn !== undefined
 
-  // WIP = 1, the rule `claimQueued` enforces (#1247): a member already holding a card in progress
-  // cannot take a queued item, and a blocked card waits on a person so it does not count. Waking
-  // that member only spends a turn on the refusal that names its own card, and leaves the item
-  // behind that card, so the offer goes to another member of the role. Same test, one board.
+  // WIP = 1, the rule `claimQueued` enforces (#1247): a member already working a card cannot take a
+  // queued item. A blocked card waits on a person, and a delivered card waits on its requester, so
+  // neither counts (#1744) — waking that member would spend a turn on a refusal it should not get,
+  // and leave the item behind a card that is no longer work. Same predicate, one board.
   const holdsCard = (botId) => Object.values(rt.state.tasks ?? {})
-    .some(task => task.ownerBotId === botId && columnOf(task) === 'in-progress' && task.status !== 'blocked')
+    .some(task => task.ownerBotId === botId && occupiesSlot(task))
 
   // A wake this Session already has: one the pass counted (`inflight`), or one still waiting in
   // the inbox — after a restart the count is gone and the message is not (#1247).

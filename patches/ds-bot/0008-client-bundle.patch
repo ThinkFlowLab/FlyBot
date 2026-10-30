@@ -3829,7 +3829,7 @@ diff --git a/client.js b/client.js
    document.head.appendChild(style);
    return style;
  }
-@@ -2805,1975 +2805,4192 @@ function sheetClassNames(sheet) {
+@@ -2805,1975 +2805,4195 @@ function sheetClassNames(sheet) {
      visit(sheet.cssRules);
    } catch {
    }
@@ -8012,6 +8012,9 @@ diff --git a/client.js b/client.js
 +};
 +function columnOf(task) {
 +  return COLUMN_OF[task?.status] ?? "not-started";
++}
++function occupiesSlot(task) {
++  return task?.status === "claimed" || task?.status === "working";
 +}
 +function priorityOf(task) {
 +  return PRIORITIES.includes(task?.priority) ? task.priority : "normal";

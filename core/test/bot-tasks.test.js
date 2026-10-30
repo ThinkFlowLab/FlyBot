@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
-import { columnOf } from '../src/shared/task-board.js'
+import { columnOf, occupiesSlot } from '../src/shared/task-board.js'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -666,4 +666,18 @@ test('#1252: a Bot-scoped archive page is cut after the Bot filter', async (t) =
   const scope = await list(app.call, alice.sessionToken, { archive: true, limit: 20 })
   assert.equal(scope.length, 20)
   assert.equal(scope.some(task => task.id === 'task-chief-old'), false, 'the unfiltered page spends the budget on the newer Bot')
+})
+
+// The slot predicate beside the column mapping (#1744): only work the member is still doing fills
+// its one WIP slot. A blocked card waits on a person and a delivered card waits on its requester,
+// so neither counts — while the board still reads all three as in progress, because that is where
+// a person finds them.
+test('only a claimed or working card occupies the member\'s WIP slot (#1744)', () => {
+  for (const status of ['claimed', 'working']) assert.equal(occupiesSlot({ status }), true, status)
+  for (const status of ['open', 'blocked', 'result-ready', 'accepted', 'cancelled', 'failed']) {
+    assert.equal(occupiesSlot({ status }), false, status)
+  }
+  assert.equal(occupiesSlot(undefined), false)
+  assert.equal(occupiesSlot({}), false)
+  assert.equal(columnOf({ status: 'result-ready' }), 'in-progress', 'the board reading is unchanged')
 })

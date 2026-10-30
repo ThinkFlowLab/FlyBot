@@ -20,6 +20,14 @@ export function columnOf(task) {
   return COLUMN_OF[task?.status] ?? 'not-started'
 }
 
+// WIP = 1 (#1247) counts the work the member is still doing: a claimed or working card fills its
+// one slot. A blocked card waits on a person, and a delivered card waits on its requester (#1744),
+// so neither counts — one unanswered question or one undecided delivery must not freeze the member
+// out of the queue. The column reading above is unchanged: such a card still shows In progress.
+export function occupiesSlot(task) {
+  return task?.status === 'claimed' || task?.status === 'working'
+}
+
 export function priorityOf(task) {
   return PRIORITIES.includes(task?.priority) ? task.priority : 'normal'
 }

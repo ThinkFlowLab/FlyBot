@@ -164,6 +164,67 @@ test('a member that already holds an in-progress card claims nothing (#1247)', a
   assert.match(await app.track('d2', { claim: true, group: 'War' }), new RegExp(`^Claimed ${id} `))
 })
 
+// A delivered card waits on its requester, not on its member (#1744): handing the result over
+// frees the slot at once, so the member can start the next queued item while the requester
+// decides. Counting the delivery as work in progress stalls a one-member role after every
+// delivery, and the queue cue below never reaches that member either.
+test('a delivered card does not hold the member\'s WIP slot (#1744)', async (t) => {
+  const app = await start(t)
+  const delivered = await app.track('d1', { tasks: [{ group: 'War', title: 'Delivered card', column: 'in-progress' }] })
+  const deliveredId = app.idOf(delivered, 'Delivered card')
+  await app.rt.taskEndpoint('task-return', { id: deliveredId, summary: 'the diff is in the branch' })
+  assert.equal(app.rt.state.tasks[deliveredId].status, 'result-ready')
+
+  const { id } = await app.enqueue({ title: 'Fix the flaky test', role: 'Dev' })
+  const claimed = await app.track('d1', { claim: true, group: 'War' })
+  assert.match(claimed, new RegExp(`^Claimed ${id} `))
+  assert.equal(app.rt.state.tasks[id].claimedBy, 'd1')
+  assert.equal(app.rt.state.tasks[id].status, 'claimed', 'a claim lands at claimed, which the slot rule counts')
+  assert.equal(app.rt.state.tasks[deliveredId].status, 'result-ready', 'a claim accepts or cancels nothing')
+})
+
+test('the wake pass offers the queue to a member whose card was delivered (#1744)', async (t) => {
+  const app = await start(t)
+  const delivered = await app.track('d1', { tasks: [{ group: 'War', title: 'Delivered card', column: 'in-progress' }] })
+  const deliveredId = app.idOf(delivered, 'Delivered card')
+  await app.rt.taskEndpoint('task-return', { id: deliveredId, summary: 'the diff is in the branch' })
+  // The card's own wake was the member's turn: it ended, and the delivered card is all that is left.
+  await app.finishWake('d1')
+  assert.equal(app.calls('d1').length, 1)
+
+  const { id } = await app.enqueue({ title: 'Fix the flaky test', role: 'Dev' })
+  assert.equal(app.calls('d1').length, 2, 'the member whose card was delivered is offered the queue item')
+  assert.match(app.text('d1'), new RegExp(`Take ${id} `))
+  assert.equal(app.calls('d2').length, 0, 'the idle member of the role is not offered an item this member can take')
+  assert.equal(app.rt.state.tasks[id].claimedBy, undefined, 'a wake is not a claim')
+})
+
+// A send-back returns the same card to the member as work, and the send-back itself is never
+// refused (#1720). The cap is enforced at the claim, so two cards in progress are allowed right
+// after a send-back and a third one is refused by name (#1744).
+test('a send-back returns the card as work and the next claim is capped (#1744)', async (t) => {
+  const app = await start(t)
+  const delivered = await app.track('d1', { tasks: [{ group: 'War', title: 'Delivered card', column: 'in-progress' }] })
+  const deliveredId = app.idOf(delivered, 'Delivered card')
+  await app.rt.taskEndpoint('task-return', { id: deliveredId, summary: 'the diff is in the branch' })
+
+  const { id } = await app.enqueue({ title: 'Fix the flaky test', role: 'Dev' })
+  assert.match(await app.track('d1', { claim: true, group: 'War' }), new RegExp(`^Claimed ${id} `))
+  assert.match(await app.track('d1', { tasks: [{ group: 'War', id, column: 'in-progress' }] }), new RegExp(id))
+  assert.equal(app.rt.state.tasks[id].status, 'working')
+
+  const sentBack = await app.rt.taskEndpoint('task-send-back', { id: deliveredId, note: 'add the test' })
+  assert.equal(sentBack.status, 'working', 'the send-back is accepted and returns the card to work')
+  assert.equal(app.rt.state.tasks[deliveredId].status, 'working')
+  assert.equal(app.rt.state.tasks[id].status, 'working', 'the member now holds two cards in progress')
+
+  const { id: third } = await app.enqueue({ title: 'Review the diff', role: 'Dev' })
+  const refused = await app.track('d1', { claim: true, group: 'War' })
+  assert.match(refused, /^No queued item for Dev/)
+  assert.match(refused, /in-progress card \(task-[0-9a-f]+\)/, 'the refusal names a card the member holds')
+  assert.equal(app.rt.state.tasks[third].claimedBy, undefined)
+})
+
 test('enqueuing wakes the idle member of the role and nobody else (#1247)', async (t) => {
   const app = await start(t)
   app.emit('d2', 'turn/start', { turn: 1 }) // Dev2 is mid-turn, so it is not idle
