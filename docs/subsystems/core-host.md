@@ -606,7 +606,10 @@ no second store, no UI-only path and no cron.
 - **Lifecycle.** `open → deliberating → decided | blocked`, bound to one question and, when there is
   one, the issue and Project that triggered it. Recording the first position moves `open` to
   `deliberating`. At most one meeting per question may be open or deliberating: a second one is
-  refused `duplicate`, comparing the question with casing and whitespace flattened.
+  refused `duplicate`, comparing the question with casing and whitespace flattened. A `blocked`
+  meeting records one blocking question and is not a dead end: `resume` takes the answer, keeps the
+  positions, options and evidence, writes the `blockingAnswer`, clears the blocked stamp and moves
+  the meeting back to `deliberating`. `decided` is terminal — `resume` on it is refused `closed`.
 - **Positions.** An invited participant records `agree`, `dissent` or `abstain` with a line of text.
   A name that was not invited is refused `not-invited`; a dissent with text is also kept as the
   meeting's standing dissent, owned by the participant who recorded it. A participant who never
@@ -616,14 +619,22 @@ no second store, no UI-only path and no cron.
   decision names an `owner`, a dissent carries its own `owner`, and the decision states what was
   decided. It answers the reason, or `undefined` when the meeting may close. `blocked` needs one
   one-sentence blocking question, writes no decision file and produces no task.
-- **Archived decision.** `decided` writes exactly one `decisions/<YYYY-MM-DD>-<slug>.md` (Stage 1
-  shape: Date, Decision, Class, Evidence, Participants, Dissent, Status, Links, `Written-by:`), in
-  the Session's working folder, and refuses `exists` rather than rewriting an earlier conclusion.
-  The meeting keeps the file path and its sha256; every evidence `sha`/`pr`/`check` and every
-  participant name is in the file's text.
+- **Archived decision.** `decided` writes one `decisions/<YYYY-MM-DD>-<slug>.md` (Stage 1 shape:
+  Date, Decision, Class, Evidence, Participants, Dissent, Status, Links, `Written-by:`), in the
+  Session's working folder. A day that already holds that name gets the next free suffix
+  (`…-2.md`, `…-3.md`): an earlier conclusion is never rewritten, so the same question can be
+  decided twice in one day and two questions that share a slug both keep a record. The meeting
+  keeps the file path and its sha256; every evidence `sha`/`pr`/`check` and every participant name
+  is in the file's text.
 - **Linked tasks.** Follow-up cards go through `rt.taskEndpoint('task-create', …)` — the one task
   write path — as `taskClass: 'work'`, each carrying the decision file path in its `evidence`. A
-  meeting never keeps tasks of its own.
+  meeting never keeps tasks of its own. The name and every produced task are settled first: each
+  task's title, its Bot and the authorization the create path applies (`rt.taskCanCreate`, the same
+  gate the write uses) are checked before a card is written, so a refused task leaves no card, no
+  temp file and no decision file. A host that carries no such gate refuses the produced task
+  `forbidden` rather than creating it ungated. The decision body is rendered once, after the cards
+  exist, so the `- Tasks:` line names the ids the meeting keeps and the recorded sha256 is the
+  sha256 of the bytes archived.
 - **Who may close.** A Project Assistant (`role: 'Project Assistant'`) may be invited and record a
   position under its own name; it may not write the decision file or close the meeting, which is
   refused `forbidden`.

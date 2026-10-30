@@ -6,7 +6,7 @@
 // meeting writes no file and produces no task. Decisions stay on the existing store
 // (`state.meetings`), so there is no second store.
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
@@ -191,6 +191,52 @@ export function install(rt) {
     return meeting
   }
 
+  // P-196: the second decision of one day takes the next free name — `…-2.md`, `…-3.md` — instead
+  // of rewriting an earlier conclusion. The probe only reads the folder, so a decide that wrote
+  // nothing leaves the name free for its retry.
+  const nextFreeFile = async (root, now, slug) => {
+    const base = decisionsPath(now, slug)
+    for (let n = 1; n <= 999; n += 1) {
+      const file = n === 1 ? base : base.replace(/\.md$/, `-${n}.md`)
+      try {
+        await readFile(join(root, file))
+      } catch (error) {
+        if (error?.code === 'ENOENT') return file
+        throw error
+      }
+    }
+    throw refuse('exists', `no free decision file name left for ${base}`)
+  }
+
+  // P-191: every produced task is read and gated here, before a card exists — its title, the Bot it
+  // names, and the answer `task-create` itself would give this actor (`rt.taskCanCreate` is that
+  // gate, read-only). The body built here is the body the create sends, so the two cannot disagree.
+  // A host without that gate refuses the task; it never falls back to creating it ungated.
+  const planTasks = (tasks, { actor, file, now }) => {
+    if (tasks === undefined || tasks === null) return []
+    if (!Array.isArray(tasks)) throw refuse('invalid', 'tasks must be a list of { botId or assignee, title }')
+    return tasks.map((item) => {
+      const title = oneLine(item?.title, 300)
+      if (title === '') throw refuse('invalid', 'a produced task needs a title')
+      const wanted = oneLine(item?.botId ?? item?.assignee, NAME_MAX)
+      const bot = rt.state.bots?.[wanted]
+      const named = bot ?? Object.values(rt.state.bots ?? {}).find(candidate => candidate?.name === wanted)
+      if (named === undefined) throw refuse('no-bot', `no Bot named ${wanted === '' ? '(nobody)' : wanted} to own the produced task`)
+      const body = {
+        botId: named.id,
+        title,
+        taskClass: 'work',
+        ...(typeof item?.criteria === 'string' && item.criteria.trim() !== '' ? { criteria: item.criteria } : {}),
+        evidence: [{ check: file, at: now }],
+      }
+      // Fail closed: a host that carries no tasks library refuses the produced task, rather than
+      // creating it with no authorization check at all.
+      if (typeof rt.taskCanCreate !== 'function') throw refuse('forbidden', 'You cannot assign a task to that Bot')
+      rt.taskCanCreate(body, actor)
+      return body
+    })
+  }
+
   const decide = async (meeting, args, { now, actor }) => {
     if (!OPEN_STATES.has(meeting.status)) throw refuse('closed', `the meeting is ${meeting.status}`)
     if (actor?.role === ASSISTANT_ROLE) throw refuse('forbidden', 'a Project Assistant takes a position; it does not close the meeting')
@@ -214,16 +260,13 @@ export function install(rt) {
 
     const dir = args.dir ?? workDirFor(rt, args.exec)
     if (typeof dir !== 'string' || dir === '') throw refuse('no-folder', 'the Session has no working folder to archive the decision in')
-    const file = decisionsPath(now, candidate.slug)
-    const target = join(dir, file)
-    await mkdir(join(dir, 'decisions'), { recursive: true })
-    try {
-      await readFile(target)
-      throw refuse('exists', `the decision file already exists: ${file}`)
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
+    const decisions = join(dir, 'decisions')
+    // P-191/P-196: the name and every produced task are settled before anything is written, so a
+    // refusal leaves no card, no file and no temp behind, and a retry picks the same name again.
+    const file = await nextFreeFile(dir, now, candidate.slug)
+    const planned = planTasks(args.tasks, { actor, file, now })
 
+    await mkdir(decisions, { recursive: true })
     const closed = {
       ...candidate,
       status: 'decided',
@@ -232,47 +275,48 @@ export function install(rt) {
       closedBy: actor?.name ?? candidate.owner,
       decisionFile: file,
     }
-    const bytes = Buffer.from(decisionBody(closed, file, now), 'utf8')
-    // The file appears only after every produced task exists: a refused task deletes the temp
-    // file, so `decisions/` stays as it was and the meeting can be closed again.
-    const temp = `${target}.tmp-${randomBytes(4).toString('hex')}`
-    await writeFile(temp, bytes)
-    let taskIds
-    try {
-      taskIds = await produceTasks(closed, args.tasks, { now, actor })
-    } catch (error) {
+    // The cards come first: the decision file appears only once every produced task exists.
+    closed.taskIds = await produceTasks(planned, { actor })
+
+    // One render, and the bytes hashed are the bytes archived. `link` claims the name without
+    // rewriting an existing file; a name lost to a concurrent writer takes the next one, and the
+    // cards follow it so their evidence pointer and the file cannot disagree.
+    let bytes
+    let name = file
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt === 8) throw refuse('exists', `no free decision file name left for ${file}`)
+      closed.decisionFile = name
+      bytes = Buffer.from(decisionBody(closed, name, now), 'utf8')
+      const temp = `${join(dir, name)}.tmp-${randomBytes(4).toString('hex')}`
+      await writeFile(temp, bytes)
+      try {
+        await link(temp, join(dir, name))
+      } catch (error) {
+        await rm(temp, { force: true })
+        if (error?.code !== 'EEXIST') throw error
+        name = await nextFreeFile(dir, now, candidate.slug)
+        await repointTasks(closed.taskIds, name, { now, actor })
+        continue
+      }
       await rm(temp, { force: true })
-      throw error
+      break
     }
-    await rename(temp, target)
     closed.decisionSha256 = createHash('sha256').update(bytes).digest('hex')
-    closed.taskIds = taskIds
     store()[meeting.id] = closed
     return closed
   }
 
+  // A card's evidence names the decision file, so a name taken at publish time moves the cards with
+  // it — through the same task write path that created them.
+  const repointTasks = async (ids, file, { now, actor }) => {
+    for (const id of ids) await rt.taskEndpoint('task-update', { id, evidence: [{ check: file, at: now }] }, actor)
+  }
+
   // Follow-up work goes through the one task write path (`tasks.js`), each card carrying the
   // decision file as its evidence pointer. A meeting does not keep tasks of its own.
-  const produceTasks = async (meeting, tasks, { now, actor }) => {
-    if (tasks === undefined || tasks === null) return []
-    if (!Array.isArray(tasks)) throw refuse('invalid', 'tasks must be a list of { botId or assignee, title }')
+  const produceTasks = async (bodies, { actor }) => {
     const ids = []
-    for (const item of tasks) {
-      const title = oneLine(item?.title, 300)
-      if (title === '') throw refuse('invalid', 'a produced task needs a title')
-      const wanted = oneLine(item?.botId ?? item?.assignee, NAME_MAX)
-      const bot = rt.state.bots?.[wanted]
-      const named = bot ?? Object.values(rt.state.bots ?? {}).find(candidate => candidate?.name === wanted)
-      if (named === undefined) throw refuse('no-bot', `no Bot named ${wanted === '' ? '(nobody)' : wanted} to own the produced task`)
-      const created = await rt.taskEndpoint('task-create', {
-        botId: named.id,
-        title,
-        taskClass: 'work',
-        ...(typeof item?.criteria === 'string' && item.criteria.trim() !== '' ? { criteria: item.criteria } : {}),
-        evidence: [{ check: meeting.decisionFile, at: now }],
-      }, actor)
-      ids.push(created.id)
-    }
+    for (const body of bodies) ids.push((await rt.taskEndpoint('task-create', body, actor)).id)
     return ids
   }
 
@@ -287,12 +331,27 @@ export function install(rt) {
     return meeting
   }
 
+  // P-192: `blocked` records a question, not a dead end — the answer reopens the meeting with its
+  // positions, options and evidence intact. `decided` stays terminal.
+  const resume = (meeting, { answer }, now) => {
+    if (meeting.status === 'decided') throw refuse('closed', 'the meeting is decided')
+    if (meeting.status !== 'blocked') throw refuse('invalid', `the meeting is ${meeting.status}, not blocked`)
+    const text = oneLine(answer, QUESTION_MAX)
+    if (text === '') throw refuse('invalid', 'resuming a blocked meeting states the answer to its blocking question')
+    meeting.status = 'deliberating'
+    meeting.blockingAnswer = text
+    delete meeting.blockedAt
+    meeting.updatedAt = now
+    return meeting
+  }
+
   const summary = meeting => {
     const positions = meeting.participants.filter(p => p.position !== undefined).length
     const head = `${meeting.id} [${meeting.status}] ${meeting.question}`
     const lines = [head, `positions ${positions}/${meeting.participants.length}${meeting.owner ? ` | owner ${meeting.owner}` : ''}`]
     if (meeting.dissent !== undefined) lines.push(`dissent: ${meeting.dissent.text} — ${meeting.dissent.owner}`)
     if (meeting.blockingQuestion !== undefined) lines.push(`blocking: ${meeting.blockingQuestion}`)
+    if (meeting.blockingAnswer !== undefined) lines.push(`answer: ${meeting.blockingAnswer}`)
     if (meeting.decisionFile !== undefined) lines.push(`decision file: ${meeting.decisionFile}`, `tasks: ${meeting.taskIds.join(', ') || 'none'}`)
     for (const participant of meeting.participants) {
       lines.push(`- ${participant.name}: ${participant.position === undefined ? 'silent' : `${participant.position.stance}${participant.position.text ? ` — ${participant.position.text}` : ''}`}`)
@@ -312,6 +371,8 @@ export function install(rt) {
         return summary(await decide(find(body.meeting), { ...body, exec: body.exec }, { now, actor }))
       case 'block':
         return summary(block(find(body.meeting), body, now))
+      case 'resume':
+        return summary(resume(find(body.meeting), body, now))
       case 'read':
         return summary(find(body.meeting))
       case 'list':
@@ -323,9 +384,9 @@ export function install(rt) {
 
   rt.ctx.tools.register(defineTool({
     name: 'meeting',
-    description: 'Open and run a meeting so an unresolved conflict has a record instead of a chat. A meeting moves open → deliberating → decided | blocked, bound to one question and the issue that triggered it. Record every invited participant\'s position, then close it: `decided` needs a position from every participant (or one recorded as silent), a named owner and a dissent with its own owner, writes one decisions/<date>-<slug>.md and creates follow-up tasks; `blocked` states one blocking sentence and writes nothing. At most one open meeting per question.',
+    description: 'Open and run a meeting so an unresolved conflict has a record instead of a chat. A meeting moves open → deliberating → decided | blocked, bound to one question and the issue that triggered it. Record every invited participant\'s position, then close it: `decided` needs a position from every participant (or one recorded as silent), a named owner and a dissent with its own owner, writes one decisions/<date>-<slug>.md (the next free `-2` name when the day already has one) and creates follow-up tasks; `blocked` states one blocking sentence and writes nothing, and `resume` reopens it with the answer. At most one open meeting per question.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['open', 'position', 'decide', 'block', 'read', 'list'], description: 'What to do with the meeting' },
+      action: { type: 'string', required: true, enum: ['open', 'position', 'decide', 'block', 'resume', 'read', 'list'], description: 'What to do with the meeting' },
       meeting: { type: 'string', description: 'The meeting id, from open' },
       question: { type: 'string', description: 'The question the meeting answers (open)' },
       title: { type: 'string', description: 'Optional short title for the decision record (open)' },
@@ -377,6 +438,7 @@ export function install(rt) {
         },
       },
       blocking: { type: 'string', description: 'The blocking question in one sentence (block)' },
+      answer: { type: 'string', description: 'The answer to the blocking question (resume); the meeting moves back to deliberating' },
       dir: { type: 'string', description: 'Optional folder to archive the decision in; defaults to the Session working folder' },
     },
     output,

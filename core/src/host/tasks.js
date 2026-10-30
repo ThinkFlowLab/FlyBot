@@ -1270,6 +1270,18 @@ export function install(rt) {
     await save()
   }
 
+  // What `task-create` decides, without the write: a caller that must know before it creates
+  // anything (a meeting pre-flights every produced task) gets this endpoint's own refusal from the
+  // endpoint's own gate, so the answer and the write cannot disagree.
+  const assertCreate = (body, actor) => {
+    const bot = state.bots?.[String(body?.botId ?? '')]
+    if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+    const roomId = body?.roomId ? String(body.roomId) : undefined
+    if (!mayCreateOn(bot, actor, roomId)) throw forbidden('You cannot assign a task to that Bot')
+    return bot
+  }
+  rt.taskCanCreate = assertCreate
+
   // ---------------------------------------------------------------- channel API
   rt.taskEndpoint = async function taskEndpoint(endpoint, body, actor) {
     switch (endpoint) {
@@ -1312,10 +1324,8 @@ export function install(rt) {
       }
       case 'task-create': {
         const botId = String(body.botId ?? '')
-        const bot = state.bots?.[botId]
-        if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+        assertCreate(body, actor)
         const roomId = body.roomId ? String(body.roomId) : undefined
-        if (!mayCreateOn(bot, actor, roomId)) throw forbidden('You cannot assign a task to that Bot')
         const requesterId = requesterOf(actor)
         const task = {
           id: `task-${randomBytes(8).toString('hex')}`,

@@ -47,6 +47,20 @@ const PRIORITY = new Set(['urgent', 'high', 'normal', 'low'])
 const ROLE_MAX = 24
 const QUEUE_RETRY_DEFAULT_SEC = 60
 const QUEUE_RETRY_MAX_SEC = 7 * 24 * 60 * 60
+// One queue per role, with a stated ceiling (#1729). The default lives here; a graph that knows
+// how many workers a role runs overrides it on the card it enqueues, and a re-offer keeps it.
+const ROLE_QUEUE_CAP = 8
+const QUEUE_CAP_MAX = 64
+// A claim runs in its own worker, and two claims never share one (#1729). Its state is a pair of
+// maps the caller writes; nothing carries over from the previous claim's worker, and returning the
+// card to the queue drops the worker so the next claimant starts clean.
+const WORKERS_KEPT = 64
+const readCap = (value) => {
+    if (value === undefined || value === null || value === '') return undefined
+    const cap = Number(value)
+    if (!Number.isInteger(cap) || cap < 1 || cap > QUEUE_CAP_MAX) throw invalid(`A queue cap must be a whole number from 1 to ${QUEUE_CAP_MAX}`)
+    return cap
+}
 const readRole = (value) => {
   if (value === undefined || value === null) return undefined
   const role = oneLine(value, ROLE_MAX)
@@ -480,6 +494,113 @@ export function install(rt) {
     task.taskClass = 'work'
     return task
   }
+  // ---------------------------------------------------------------- isolated workers (#1729)
+  const workers = new Map()
+  function newWorker() {
+    const id = `worker-${randomBytes(6).toString('hex')}`
+    workers.set(id, { id, files: new Map(), vars: new Map(), claimedAt: Date.now() })
+    while (workers.size > WORKERS_KEPT) workers.delete(workers.keys().next().value)
+    return id
+  }
+  const dropWorker = (workerId) => { if (typeof workerId === 'string') workers.delete(workerId) }
+  // The worker of one claim, or nothing: a caller reaches its own claim's maps only.
+  rt.taskWorkerState = (workerId) => {
+    const worker = workers.get(String(workerId ?? ''))
+    return worker === undefined ? undefined : { id: worker.id, files: worker.files, vars: worker.vars, claimedAt: worker.claimedAt }
+  }
+  // Measured deliveries from the rows themselves (#1729): no second store, the numbers are a
+  // read of the cards. `roles` counts per role, `runs` per run id a card carries.
+  rt.taskCounters = function taskCounters(query = {}) {
+    const roleOf = (task) => {
+      const role = oneLine(task?.queueRole ?? '', ROLE_MAX)
+      if (role !== '') return role
+      return oneLine(botRecord(task?.ownerBotId)?.role ?? '', ROLE_MAX)
+    }
+    const init = () => ({ queued: 0, claimed: 0, working: 0, blocked: 0, accepted: 0, failed: 0, cancelled: 0, deliveries: 0, workerSeconds: 0 })
+    const roles = {}
+    const runs = {}
+    const wanted = oneLine(query?.role ?? '', ROLE_MAX)
+    const wantedRun = query?.run === undefined || query?.run === null ? '' : String(query.run)
+    const all = Object.values(store())
+    // A rework chain is one accepted delivery (#1730): an accepted parent and the `rework` child
+    // that resolved it are two records of the same delivery. The child still counts in
+    // `accepted`; `deliveries` counts the chain once, at its accepted parent. A child whose
+    // parent never landed is a delivery of its own — there is no chain to fold it into.
+    const acceptedIds = new Set(all.filter(task => task?.status === 'accepted').map(task => task.id))
+    const countsAsDelivery = task => task.taskClass !== 'rework' || !acceptedIds.has(task.reworkOf)
+    for (const task of all) {
+      const role = roleOf(task)
+      const run = String(task?.origin?.runId ?? task?.runId ?? '')
+      if (wanted !== '' && role !== wanted) continue
+      if (wantedRun !== '' && run !== wantedRun) continue
+      const bucket = (map, key) => (map[key] ??= init())
+      const row = bucket(roles, role || 'unassigned')
+      if (row[task.status] !== undefined) row[task.status] += 1
+      if (task.status === 'accepted') {
+        if (countsAsDelivery(task)) row.deliveries += 1
+        const lease = leaseOf(task)
+        if (lease !== undefined && Number.isFinite(lease.takenAt)) row.workerSeconds += Math.max(0, Math.round((task.updatedAt - lease.takenAt) / 1000))
+      }
+      if (run !== '') {
+        const runRow = bucket(runs, run)
+        if (runRow[task.status] !== undefined) runRow[task.status] += 1
+        if (task.status === 'accepted' && countsAsDelivery(task)) runRow.deliveries += 1
+      }
+    }
+    return { roles, runs }
+  }
+  // One audit block from the typed rows (#1730). A projection, not a store: every line is read
+  // from fields the write path already validated, so rendering the same rows twice is the same
+  // text. A record stored before the slice carries none of the fields and answers the empty
+  // string — an audit of nothing is not an error.
+  const isoStamp = at => (Number.isFinite(at) ? new Date(at).toISOString() : '')
+  const auditLine = (task) => {
+    const lines = []
+    const handoff = task.handoff !== null && typeof task.handoff === 'object' ? task.handoff : undefined
+    if (handoff !== undefined && handoff.from && handoff.to) {
+      const reason = typeof handoff.reason === 'string' && handoff.reason !== '' ? `: ${handoff.reason}` : ''
+      lines.push(`handoff ${handoff.from} -> ${handoff.to}${reason} @ ${isoStamp(handoff.at)}`)
+    }
+    if (Array.isArray(task.evidence)) {
+      for (const entry of task.evidence) {
+        if (entry === null || typeof entry !== 'object') continue
+        const parts = []
+        if (entry.sha) parts.push(String(entry.sha))
+        if (typeof entry.pr === 'number') parts.push(`pr #${entry.pr}`)
+        if (entry.check) parts.push(String(entry.check))
+        const at = isoStamp(entry.at)
+        if (at !== '') parts.push(`@ ${at}`)
+        if (parts.length > 0) lines.push(`evidence ${parts.join(' ')}`)
+      }
+    }
+    const chain = []
+    const seen = new Set()
+    let cursor = task
+    while (cursor !== undefined && cursor !== null && !seen.has(cursor.id)) {
+      seen.add(cursor.id)
+      chain.push(cursor.id)
+      cursor = typeof cursor.reworkOf === 'string' && cursor.reworkOf !== '' ? find(cursor.reworkOf) : undefined
+    }
+    if (chain.length > 1) lines.push(`rework chain ${chain.reverse().join(' -> ')}`)
+    const lease = leaseOf(task)
+    if (lease !== undefined) {
+      lines.push(`lease ${holderName(lease.holder)} @ ${isoStamp(lease.takenAt)} -> ${isoStamp(lease.expiresAt)}`)
+    }
+    return lines
+  }
+  rt.taskAudit = function taskAudit(id) {
+    const task = find(String(id ?? ''))
+    return task === undefined ? '' : auditLine(task).join('\n')
+  }
+  // The workflow plugin reads a card's lease through the host (#1729), never a copy of its own.
+  rt.taskLease = function taskLease(id) {
+    const task = find(String(id ?? ''))
+    if (task === undefined) return undefined
+    const lease = leaseOf(task)
+    if (lease === undefined) return undefined
+    const now = Date.now()
+    return { ...lease, live: lease.expiresAt > now, heldBy: holderName(lease.holder) }
+  }
   const leaseOf = task => (task?.lease !== null && typeof task?.lease === 'object' ? task.lease : undefined)
   const leaseLive = (task, now = Date.now()) => {
     const lease = leaseOf(task)
@@ -494,14 +615,26 @@ export function install(rt) {
     for (const task of Object.values(store())) {
       const lease = leaseOf(task)
       if (lease === undefined || !Number.isFinite(lease.expiresAt) || lease.expiresAt > now) continue
-      if (!task.queueRole || (task.status !== 'claimed' && task.status !== 'working')) {
-        delete task.lease
-        continue
-      }
-      requeue(task, 'lease expired', 0)
+      // Read once and clear before the requeue: a second read in the same tick sees no lease, so
+      // two expired reads return the card once, not twice (#1729). The recovery is recorded on the
+      // card itself, and the dead worker is dropped so the next claim starts with no state of it.
+      const heldBy = holderName(lease.holder)
       delete task.lease
+      dropWorker(task.worker)
+      delete task.worker
+      if (!task.queueRole || (task.status !== 'claimed' && task.status !== 'working')) continue
+      const entry = { check: `lease expired (held by ${heldBy})`, at: now }
+      task.evidence = [...(Array.isArray(task.evidence) ? task.evidence : []), entry].slice(-EVIDENCE_MAX)
+      requeue(task, 'lease expired', 0)
       expired += 1
     }
+    return expired
+  }
+  // The one owner of lease recovery (#1729): a read here is the same read the claim path makes,
+  // so a restart and a claim cannot both return the same expired card.
+  rt.taskExpireLeases = async (now = Date.now()) => {
+    const expired = expireLeases(now)
+    if (expired > 0) await save()
     return expired
   }
   // A rejection is a handover, not a status flip (#1720): the original's `handoff` names the
@@ -642,6 +775,8 @@ export function install(rt) {
   // blocked → open is the queue's own edge: a member that cannot finish returns the item, and
   // no other path sends a card back to the queue, so the edge is not on TRANSITIONS.
   function requeue(task, reason, retryInSec) {
+    dropWorker(task.worker)
+    delete task.worker
     delete task.waitingFor
     delete task.inputRequest
     delete task.inputApprovalIds
@@ -828,6 +963,8 @@ export function install(rt) {
     delete live.queueReason
     const claimedAt = Date.now()
     live.lease = { holder: botId, takenAt: claimedAt, expiresAt: claimedAt + LEASE_TTL_SEC * 1000 }
+    // Every claim gets a worker nobody else has started (#1729).
+    live.worker = newWorker()
     transition(live, 'claimed', null, { by: 'claimed from the queue' })
     announceClaim(live)
     await save()
@@ -972,8 +1109,17 @@ export function install(rt) {
         if (overall) task.kind = 'group'
         if (queue) {
           if (task.claimedBy) throw invalid('That queued item is already claimed; enqueue a new one')
+          // A graph may state the role's ceiling; otherwise the one constant does (#1729). The
+          // count leaves this card out, so re-offering a queued item keeps its id and is never
+          // refused for the place it already holds.
+          const cap = readCap(item.cap) ?? (Number.isInteger(task.queueCap) ? task.queueCap : ROLE_QUEUE_CAP)
+          const queued = Object.values(store()).filter(other => other.id !== task.id
+            && other.origin?.roomId === roomId && unclaimed(other) && other.status === 'open'
+            && other.queueRole && sameRole(other.queueRole, role))
+          if (queued.length >= cap) throw refuse('queue-full', `the ${role} queue already holds ${queued.length} items, its cap is ${cap}`)
           task.queueRole = role
           task.queueBy = botId
+          task.queueCap = cap
           delete task.retryAt
           delete task.queueReason
         }
@@ -1124,6 +1270,18 @@ export function install(rt) {
     await save()
   }
 
+  // What `task-create` decides, without the write: a caller that must know before it creates
+  // anything (a meeting pre-flights every produced task) gets this endpoint's own refusal from the
+  // endpoint's own gate, so the answer and the write cannot disagree.
+  const assertCreate = (body, actor) => {
+    const bot = state.bots?.[String(body?.botId ?? '')]
+    if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+    const roomId = body?.roomId ? String(body.roomId) : undefined
+    if (!mayCreateOn(bot, actor, roomId)) throw forbidden('You cannot assign a task to that Bot')
+    return bot
+  }
+  rt.taskCanCreate = assertCreate
+
   // ---------------------------------------------------------------- channel API
   rt.taskEndpoint = async function taskEndpoint(endpoint, body, actor) {
     switch (endpoint) {
@@ -1166,10 +1324,8 @@ export function install(rt) {
       }
       case 'task-create': {
         const botId = String(body.botId ?? '')
-        const bot = state.bots?.[botId]
-        if (bot === undefined || bot.remote !== undefined) throw forbidden('No such Bot')
+        assertCreate(body, actor)
         const roomId = body.roomId ? String(body.roomId) : undefined
-        if (!mayCreateOn(bot, actor, roomId)) throw forbidden('You cannot assign a task to that Bot')
         const requesterId = requesterOf(actor)
         const task = {
           id: `task-${randomBytes(8).toString('hex')}`,

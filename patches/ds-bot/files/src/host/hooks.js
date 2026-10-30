@@ -1336,6 +1336,14 @@ export function install(rt) {
       onProjectProvider(fn) {
         return rt.onProjectProvider?.(fn) ?? (() => {})
       },
+      // #1729: a workflow reads a card's lease, and the delivery/resource counts, through the
+      // host — never a copy of its own, so the two cannot disagree about who holds a card.
+      lease(taskId) {
+        return rt.taskLease?.(taskId)
+      },
+      counters(query) {
+        return rt.taskCounters?.(query) ?? { roles: {}, runs: {} }
+      },
     },
     tools,
     api,
