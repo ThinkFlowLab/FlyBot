@@ -81,7 +81,7 @@ test('#1831: a severe card on the board carries the pause reason the host refuse
   assert.equal(severe.advance.allowed, false)
   assert.match(severe.advance.reason, /waits for the Owner/)
   // A record written before this slice carries none of the three keys and reads as ordinary.
-  assert.deepEqual(decisionCardOf({ id: 'meeting-0', status: 'open' }), { level: 'ordinary', recipients: [], advance: { allowed: true } })
+  assert.deepEqual(decisionCardOf({ id: 'meeting-0', status: 'open' }), { level: 'ordinary', recipients: [], participants: [], advance: { allowed: true } })
 })
 
 test('#1831: the board read copies the level, the recipients and the identities it was given', async () => {

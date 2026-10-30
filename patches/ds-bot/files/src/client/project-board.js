@@ -431,6 +431,16 @@ function ProjectBoardRecord({ record }) {
     h('span', { className: 'bt-project-date' }, file.date),
     h('span', { className: 'bt-project-title' }, file.title === '' ? file.name : file.title),
     h('span', { className: 'bt-project-hash', title: file.sha256 }, file.shortHash)))
+  const recipientText = list => (list.length === 0 ? null : list.map(name => `@${name}`).join(', '))
+  // A proxy line reads in the same words a task row already uses for a proxy holder.
+  const proxyText = meeting => meeting.participants
+    .filter(participant => participant.speaksFor !== null)
+    .map(participant => `${participant.name} ${t('for {user}', { user: participant.speaksFor })}`)
+    .join(', ')
+  const proxyRow = meeting => (proxyText(meeting) === ''
+    ? null
+    : h('span', { className: 'bt-project-speaks-for', 'data-speaks-for': meeting.participants.filter(p => p.speaksFor !== null).map(p => p.speaksFor).join(', ') }, proxyText(meeting)))
+  const levelOf = meeting => h('span', { className: 'bt-project-level', 'data-level': meeting.level }, t(meeting.level))
   const decidedRows = meetings.decided.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': 'decided' },
     h('span', { className: 'bt-project-date' }, meeting.date),
     h('span', { className: 'bt-project-title' }, meeting.question),
@@ -444,16 +454,6 @@ function ProjectBoardRecord({ record }) {
   // #1831: a pending decision card carries its level, who it is addressed to, and — for a severe
   // card — the host's own refusal to advance it. The words are the host's; the badge only says
   // which level it is, so a reader can see a severe card without opening it.
-  const recipientText = list => (list.length === 0 ? null : list.map(name => `@${name}`).join(', '))
-  // A proxy line reads in the same words a task row already uses for a proxy holder.
-  const proxyText = meeting => meeting.participants
-    .filter(participant => participant.speaksFor !== null)
-    .map(participant => `${participant.name} ${t('for {user}', { user: participant.speaksFor })}`)
-    .join(', ')
-  const proxyRow = meeting => (proxyText(meeting) === ''
-    ? null
-    : h('span', { className: 'bt-project-speaks-for', 'data-speaks-for': meeting.participants.filter(p => p.speaksFor !== null).map(p => p.speaksFor).join(', ') }, proxyText(meeting)))
-  const levelOf = meeting => h('span', { className: 'bt-project-level', 'data-level': meeting.level }, t(meeting.level))
   const pendingRows = meetings.pending.map(meeting => h('div', { key: meeting.key, className: 'bt-project-meeting', 'data-status': meeting.status, 'data-level': meeting.level },
     h('span', { className: 'bt-project-date' }, meeting.date),
     h('span', { className: 'bt-project-title' }, meeting.blockingQuestion === null ? meeting.question : meeting.blockingQuestion),

@@ -18869,6 +18869,10 @@ diff --git a/client.js b/client.js
 +    (0, import_react47.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
 +    (0, import_react47.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
 +  ));
++  const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
++  const proxyText = (meeting) => meeting.participants.filter((participant) => participant.speaksFor !== null).map((participant) => `${participant.name} ${t("for {user}", { user: participant.speaksFor })}`).join(", ");
++  const proxyRow = (meeting) => proxyText(meeting) === "" ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": meeting.participants.filter((p) => p.speaksFor !== null).map((p) => p.speaksFor).join(", ") }, proxyText(meeting));
++  const levelOf = (meeting) => (0, import_react47.createElement)("span", { className: "bt-project-level", "data-level": meeting.level }, t(meeting.level));
 +  const decidedRows = meetings.decided.map((meeting) => (0, import_react47.createElement)(
 +    "div",
 +    { key: meeting.key, className: "bt-project-meeting", "data-status": "decided" },
@@ -18880,10 +18884,6 @@ diff --git a/client.js b/client.js
 +    // instead of the row disappearing with the file.
 +    meeting.path === "" ? (0, import_react47.createElement)("span", { className: "bt-project-missing" }, "decision file gone") : (0, import_react47.createElement)("span", { className: "bt-project-path" }, meeting.path)
 +  ));
-+  const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
-+  const proxyText = (meeting) => meeting.participants.filter((participant) => participant.speaksFor !== null).map((participant) => `${participant.name} ${t("for {user}", { user: participant.speaksFor })}`).join(", ");
-+  const proxyRow = (meeting) => proxyText(meeting) === "" ? null : (0, import_react47.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": meeting.participants.filter((p) => p.speaksFor !== null).map((p) => p.speaksFor).join(", ") }, proxyText(meeting));
-+  const levelOf = (meeting) => (0, import_react47.createElement)("span", { className: "bt-project-level", "data-level": meeting.level }, t(meeting.level));
 +  const pendingRows = meetings.pending.map((meeting) => (0, import_react47.createElement)(
 +    "div",
 +    { key: meeting.key, className: "bt-project-meeting", "data-status": meeting.status, "data-level": meeting.level },
