@@ -1,0 +1,1 @@
+A retired Bot no longer keeps a task armed in an earlier part of its own chat: archiving now disarms every part it owns, not only the current one ([#1799](https://github.com/ThinkFlowLab/FlyBot/issues/1799)).

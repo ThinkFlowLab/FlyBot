@@ -487,18 +487,22 @@ export function install(rt) {
     return schedulesView()
   }
 
-  // Retiring a Bot disarms what its own chat Session already holds (#1709), with the same
-  // semantics as pausing one task: the record is saved in state.pausedSchedules before DSH
-  // drops the row, so a refusing delete loses nothing and is counted as still armed.
+  // Retiring a Bot disarms what its own chat already holds — every part of it, current and
+  // earlier (#1709, #1799) — with the same semantics as pausing one task: the record is saved
+  // in state.pausedSchedules before DSH drops the row, so a refusing delete loses nothing and
+  // is counted as still armed.
   async function pauseBotSchedules(botId) {
-    const sessionId = rt.chatOf(botId)
-    if (service === null || sessionId === undefined) return { paused: 0, armed: 0, available: false }
-    const rows = (await service.catalog()).filter(entry => entry.sessionId === sessionId && entry.status === 'active')
+    const current = rt.chatOf(botId)
+    if (service === null || current === undefined) return { paused: 0, armed: 0, available: false }
+    // A part hand-off leaves a task on the Session it was made in (#896, #1436), so the Bot's
+    // own chat is every part it owns, not only the one it is on now.
+    const parts = new Set([current, ...(rt.botOf(botId)?.segments ?? []).map(segment => segment.sessionId)])
+    const rows = (await service.catalog()).filter(entry => parts.has(entry.sessionId) && entry.status === 'active')
     const held = []
     for (const row of rows) {
       const request = requestOf(row)
       if (request === null) continue
-      paused()[row.id] = { id: row.id, sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
+      paused()[row.id] = { id: row.id, sessionId: row.sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
       held.push(row)
     }
     // The records are saved before DSH lets the rows go, exactly as pausing one task does.
@@ -507,7 +511,7 @@ export function install(rt) {
     let armed = rows.length - held.length
     for (const row of held) {
       try {
-        const result = await service.delete({ sessionId, id: row.id })
+        const result = await service.delete({ sessionId: row.sessionId, id: row.id })
         if (result?.deleted === false) throw invalid('No such task')
         pausedCount += 1
       } catch {

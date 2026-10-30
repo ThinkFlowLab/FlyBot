@@ -318,6 +318,43 @@ test('#1709 (5d): archiving pauses the active rows of the Bot\'s own chat, and s
   assert.equal(refused.ok, false, JSON.stringify(refused))
 })
 
+// 5d (b). A part hand-off moves the Bot to a fresh Session and leaves the earlier one
+// behind, tasks and all (#896, #1436). Retiring looked only at the current part, so an old
+// row stayed armed and kept firing a retired Bot's turn every day (#1799).
+test('#1799: archiving disarms a task armed in an earlier part of the Bot\'s own chat', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-retired-'))
+  const seeded = team()
+  seeded.bots.b3.segments = [{ sessionId: 'b3-old', endedAt: 5 }]
+  writeFileSync(join(home, 'state.json'), JSON.stringify(seeded))
+  const { call, tool, schedule, activeRows, saved, stop } = start(home)
+  t.after(stop)
+  const made = await call('schedule-create', { target: 'b3', title: 'Current part', prompt: 'Write', when: { kind: 'daily', time: '08:00', timeZone: 'UTC' } })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  // The row the earlier part armed before the hand-off: bound to that Session, the way a
+  // task stays where it was made when the chat moves on.
+  await schedule.create('b3-old', { title: 'Earlier part', prompt: 'Write', daily: { time: '09:00', time_zone: 'UTC' } })
+  assert.equal(activeRows('b3').length, 1)
+  assert.equal(activeRows('b3-old').length, 1)
+
+  const answer = await tool('archive_bot', { bot: 'Coder' }, 'm1')
+  assert.match(answer, /^Archived Coder\./)
+  assert.match(answer, /Paused 2 task\(s\)/, `the count covers every part: ${answer}`)
+  assert.deepEqual(activeRows('b3'), [], 'no row is left armed on the current part')
+  assert.deepEqual(activeRows('b3-old'), [], 'no row is left armed on the earlier part either')
+  assert.equal(schedule.tasks.size, 0, 'DSH holds none of the retired Bot\'s rows')
+  const held = Object.values(saved().pausedSchedules ?? {})
+  assert.deepEqual(held.map(entry => entry.sessionId).sort(), ['b3', 'b3-old'], 'each paused row keeps the part it came from')
+  // The held old-part row stays paused: resuming it would arm a retired Bot's Session again,
+  // which needs the record to carry its own part, not the current one.
+  const listed = await tool('bot_schedules', {}, 'b3-old')
+  assert.match(listed, /"Earlier part".*paused, own chat, earlier part/, `the old part's row reads paused: ${listed}`)
+  const old = held.find(entry => entry.sessionId === 'b3-old')
+  const resumed = await call('schedule-resume', { sessionId: 'b3-old', id: old.id })
+  assert.equal(resumed.ok, false, JSON.stringify(resumed))
+  assert.match(resumed.error.message, /No such Bot or group chat/)
+  assert.deepEqual(activeRows('b3-old'), [], 'no row is armed on the retired Bot\'s earlier part again')
+})
+
 // 5e. schedule-resume — pausing a task and then retiring its Bot put the same row back:
 // Resume re-creates the held record on the retired Bot's chat Session, so the door Part A
 // closes on create/copy/update stayed open one step later (#1709).
