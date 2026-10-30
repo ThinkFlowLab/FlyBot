@@ -39,6 +39,13 @@ const clock = (ms) => {
   const at = new Date(ms)
   return Number.isFinite(at.getTime()) ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : ''
 }
+// Whole local calendar days between two instants: 0 inside one day, 1 across midnight.
+const daysApart = (from, to) => {
+  const day = (ms) => { const at = new Date(ms); return Number.isFinite(at.getTime()) ? new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime() : NaN }
+  const a = day(from)
+  const b = day(to)
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86_400_000) : 0
+}
 
 /**
  * `window` is a `timeline/window` answer. Resolves `{ title, range, live, bots, team, markdown,
@@ -104,7 +111,10 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
 
   const from = clock(window.from)
   const to = clock(window.to)
-  const range = from && to ? `${from}–${to}` : 'the window'
+  // The clock prints HH:MM only, so a range that crosses local midnight would read backwards
+  // (#1787): name the extra days instead (`23:50–00:10 (+1 day)`), and leave a same-day range alone.
+  const days = daysApart(window.from, window.to)
+  const range = from && to ? `${from}–${to}${days > 0 ? ` (+${days} ${days === 1 ? 'day' : 'days'})` : ''}` : 'the window'
   const lines = [`# ${title}`, `Window: ${range}${window.live === true ? ' · live' : ''}`]
 
   if (bots.length === 0) {

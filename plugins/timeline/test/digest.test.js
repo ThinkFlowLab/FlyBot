@@ -216,3 +216,19 @@ test('#1578: a single turn reads as one turn in all three places', () => {
   assert.doesNotMatch(digest.markdown, /1 turns/)
   assert.doesNotMatch(digest.line, /1 turns/)
 })
+
+// The report prints the reader's own clock, HH:MM only. A window that crosses local midnight
+// therefore printed its range backwards — `23:50–00:10` reads as an end before its start (#1787).
+test('#1787: a range that crosses local midnight names the extra day', () => {
+  const from = new Date(2026, 9, 29, 23, 50).getTime()
+  const to = new Date(2026, 9, 30, 0, 10).getTime()
+  const digest = buildDigest(make({ from, to }), { now: to })
+  assert.equal(digest.range, '23:50–00:10 (+1 day)')
+  assert.match(digest.line, /over 23:50–00:10 \(\+1 day\)/)
+})
+
+test('#1787: a range inside one local day reads exactly as before', () => {
+  const from = new Date(2026, 9, 30, 9, 0).getTime()
+  const to = new Date(2026, 9, 30, 9, 15).getTime()
+  assert.equal(buildDigest(make({ from, to }), { now: to }).range, '09:00–09:15')
+})
