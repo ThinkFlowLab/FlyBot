@@ -1,0 +1,1 @@
+The timeline panel no longer prints a duration its own unit cannot hold: a turn that took 59.999 s reads `1m 00s` instead of `60 s`, and 9.999 s reads `10 s` instead of `10.0 s` ([#1783](https://github.com/ThinkFlowLab/FlyBot/issues/1783)).

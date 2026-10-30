@@ -158,13 +158,20 @@ window.__ModuleLoader__.load({
       const d = new Date(t)
       return Number.isFinite(d.getTime()) ? `${pad(d.getHours())}:${pad(d.getMinutes())}${seconds ? `:${pad(d.getSeconds())}` : ''}` : '–'
     }
+    // Round once, then carry into the next unit, so the label never prints a number its own unit
+    // cannot hold (#1783: 59.999 s printed `60 s`, 9.999 s printed `10.0 s`). The digest's
+    // formatMs follows the same rule (#761).
     function fmtDur(ms) {
       if (!Number.isFinite(ms) || ms < 0) return '–'
-      if (ms < 1000) return `${Math.round(ms)} ms`
-      if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`
-      if (ms < 60_000) return `${Math.round(ms / 1000)} s`
-      if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${pad(Math.floor((ms % 60_000) / 1000))}s`
-      return `${Math.floor(ms / 3_600_000)}h ${pad(Math.floor((ms % 3_600_000) / 60_000))}m`
+      const value = Math.round(ms)
+      if (value < 1000) return `${value} ms`
+      const tenths = Math.round(value / 100)
+      if (tenths < 100) return `${(tenths / 10).toFixed(1)} s`
+      const seconds = Math.round(value / 1000)
+      if (seconds < 60) return `${seconds} s`
+      const minutes = Math.round(value / 60_000)
+      if (minutes < 60) return `${Math.floor(seconds / 60)}m ${pad(seconds % 60)}s`
+      return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}m`
     }
     const pct = (part, whole) => (whole > 0 ? Math.round(1000 * part / whole) / 10 : 0)
     const num = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback)
