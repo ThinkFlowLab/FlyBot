@@ -19884,6 +19884,21 @@ var PROJECT_BOARD_CSS = `
 .bt-project-state{font-size:11px;margin-left:auto}
 .bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
 .bt-project-reason{font-size:11px;opacity:.7}
+
+/* #1749: management panels. Same surface as the board, one form row per control, and a status
+   line that quotes the host's own answer — a refused save reads where the reader pressed it. */
+.bt-project-panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.bt-project-panel h3{margin:0}
+.bt-project-field{display:flex;flex-direction:column;gap:4px}
+.bt-project-field label{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-field input,.bt-project-field select,.bt-project-field textarea{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:var(--bt-card,rgba(127,127,127,.08));color:inherit}
+.bt-project-field textarea{min-height:88px;resize:vertical}
+.bt-project-row-actions{display:flex;gap:8px;align-items:center}
+.bt-project-members{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.bt-project-member{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08))}
+.bt-project-member .bt-project-member-kind{margin-left:auto;font-size:11px;opacity:.6}
+.bt-project-status-line{font-size:12px;opacity:.75;min-height:16px}
+.bt-project-note{font-size:12px;opacity:.65;margin:0}
 `;
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
@@ -20119,7 +20134,7 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows
   );
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen }) {
+function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen, onSettings, onMembers }) {
   const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues });
   return (0, import_react46.createElement)(
     "div",
@@ -20134,21 +20149,153 @@ function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings
       (0, import_react46.createElement)("span", null, [t("Blocked"), ": ", (0, import_react46.createElement)("b", { key: "b" }, countText(view.counts.blocked))]),
       (0, import_react46.createElement)("span", null, [t("Done"), ": ", (0, import_react46.createElement)("b", { key: "d" }, countText(view.counts.done))])
     ),
-    // Management affordances are drawn only for the owner; the refusal itself is the host's.
-    view.canManage ? (0, import_react46.createElement)("div", { className: "bt-project-actions" }, (0, import_react46.createElement)("button", { type: "button" }, t("Project settings")), (0, import_react46.createElement)("button", { type: "button" }, t("Members"))) : null,
+    // #1749: both buttons open a panel and neither is hidden from a non-owner. The host refuses
+    // every write a non-owner attempts, so the refusal is an answer the reader sees, not a
+    // control that silently disappeared.
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-actions" },
+      (0, import_react46.createElement)("button", { type: "button", "data-action": "project-settings", onClick: () => onSettings?.() }, t("Project settings")),
+      (0, import_react46.createElement)("button", { type: "button", "data-action": "project-members", onClick: () => onMembers?.() }, t("Members"))
+    ),
     (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen }),
     (0, import_react46.createElement)(ProjectQueueGroups, { view, onOpen }),
     (0, import_react46.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
+function ProjectSettingsPanel({ project, call: request, onClose, onSaved } = {}) {
+  const save = request ?? call;
+  const [kind, setKind] = (0, import_react46.useState)("bot");
+  const [memberId, setMemberId] = (0, import_react46.useState)("");
+  const [note, setNote] = (0, import_react46.useState)("");
+  const [assistantOff, setAssistantOff] = (0, import_react46.useState)(project?.assistant?.off === true);
+  const [status, setStatus] = (0, import_react46.useState)("");
+  const id = text(project?.id);
+  const run = async (endpoint, payload, done) => {
+    try {
+      const result = await save(endpoint, payload);
+      setStatus(done);
+      onSaved?.(result);
+      return result;
+    } catch (error) {
+      setStatus(error?.message ?? String(error));
+      return null;
+    }
+  };
+  return (0, import_react46.createElement)(
+    "div",
+    { className: "bt-project-panel", "data-panel": "project-settings" },
+    (0, import_react46.createElement)("h3", null, t("Project settings")),
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-field" },
+      (0, import_react46.createElement)("label", { htmlFor: "bt-project-member-id" }, t("Bind a member to this Project")),
+      (0, import_react46.createElement)(
+        "div",
+        { className: "bt-project-row-actions" },
+        (0, import_react46.createElement)(
+          "select",
+          { "aria-label": t("Member kind"), value: kind, onChange: (event) => setKind(event.target.value) },
+          (0, import_react46.createElement)("option", { value: "bot" }, t("Bot")),
+          (0, import_react46.createElement)("option", { value: "group" }, t("Group"))
+        ),
+        (0, import_react46.createElement)("input", { id: "bt-project-member-id", value: memberId, placeholder: t("Member id"), onChange: (event) => setMemberId(event.target.value) }),
+        (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-bind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: id }, t("Member bound.")) }, t("Bind")),
+        (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-unbind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: null }, t("Member unbound.")) }, t("Unbind"))
+      )
+    ),
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-field" },
+      (0, import_react46.createElement)("label", null, t("Project Assistant")),
+      (0, import_react46.createElement)(
+        "div",
+        { className: "bt-project-row-actions" },
+        (0, import_react46.createElement)("label", null, (0, import_react46.createElement)("input", { type: "checkbox", "data-action": "assistant-off", checked: assistantOff, onChange: (event) => setAssistantOff(event.target.checked) }), " ", t("Pause the daily digest")),
+        (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-assistant-save", onClick: () => run("project-assistant-owner", { id, settings: { off: assistantOff === true } }, t("Assistant settings saved.")) }, t("Save"))
+      )
+    ),
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-field" },
+      (0, import_react46.createElement)("label", { htmlFor: "bt-project-note" }, t("Add to the assistant memory")),
+      (0, import_react46.createElement)("textarea", { id: "bt-project-note", value: note, onChange: (event) => setNote(event.target.value) }),
+      (0, import_react46.createElement)(
+        "div",
+        { className: "bt-project-row-actions" },
+        (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-memory-save", onClick: () => run("project-memory-write", { id, kind: "note", text: text(note) }, t("Memory saved.")) }, t("Save memory"))
+      )
+    ),
+    (0, import_react46.createElement)("div", { className: "bt-project-status-line", role: "status" }, status),
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-row-actions" },
+      (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
+    )
+  );
+}
+function ProjectMembersPanel({ project, rows, onClose } = {}) {
+  const owners = [];
+  const add = (id) => {
+    const clean = text(id);
+    if (clean !== "" && !owners.includes(clean)) owners.push(clean);
+  };
+  add(project?.ownerUserId);
+  for (const id of Array.isArray(project?.ownerUserIds) ? project.ownerUserIds : []) add(id);
+  const boardMembers = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = text(row?.assignee);
+    if (name !== "" && !boardMembers.includes(name)) boardMembers.push(name);
+  }
+  return (0, import_react46.createElement)(
+    "div",
+    { className: "bt-project-panel", "data-panel": "project-members" },
+    (0, import_react46.createElement)("h3", null, t("Members")),
+    (0, import_react46.createElement)(
+      "ul",
+      { className: "bt-project-members" },
+      owners.map((owner) => (0, import_react46.createElement)(
+        "li",
+        { key: `owner:${owner}`, className: "bt-project-member", "data-member-role": "owner", "data-member-id": owner },
+        (0, import_react46.createElement)("span", null, `@${owner}`),
+        (0, import_react46.createElement)("span", { className: "bt-project-member-kind" }, t("Owner"))
+      )),
+      boardMembers.map((name) => (0, import_react46.createElement)(
+        "li",
+        { key: `board:${name}`, className: "bt-project-member", "data-member-role": "board", "data-member-id": name },
+        (0, import_react46.createElement)("span", null, `@${name}`),
+        (0, import_react46.createElement)("span", { className: "bt-project-member-kind" }, t("On the board"))
+      ))
+    ),
+    owners.length === 0 && boardMembers.length === 0 ? (0, import_react46.createElement)("div", { className: "bt-project-empty" }, t("No member is named yet.")) : null,
+    (0, import_react46.createElement)("p", { className: "bt-project-note" }, t("Member management is not part of this slice; owners and the members their cards name are listed here.")),
+    (0, import_react46.createElement)(
+      "div",
+      { className: "bt-project-row-actions" },
+      (0, import_react46.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
+    )
+  );
+}
 function ProjectBoardOverlay({ actions, call: request } = {}) {
   const read = request ?? call;
   const [state, setState] = (0, import_react46.useState)(null);
+  const [panel, setPanel] = (0, import_react46.useState)(null);
   const [hash, setHash] = (0, import_react46.useState)(() => typeof window === "undefined" ? "" : window.location.hash);
   const close = (0, import_react46.useCallback)(() => {
     if (typeof window !== "undefined") window.location.hash = "";
+    setPanel(null);
     setState(null);
   }, []);
+  (0, import_react46.useEffect)(() => {
+    if (typeof window === "undefined") return void 0;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      if (panel !== null) setPanel(null);
+      else close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panel, close]);
   (0, import_react46.useEffect)(() => {
     if (typeof window === "undefined") return void 0;
     const sync = () => setHash(window.location.hash);
@@ -20215,7 +20362,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
             close();
             actions?.openSettings?.("projects");
           } }, t("Open Projects in Settings"))
-        ) : (0, import_react46.createElement)(ProjectBoardPane, {
+        ) : panel === "settings" ? (0, import_react46.createElement)(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react46.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react46.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
           canManage: state.canManage,
@@ -20223,6 +20370,8 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           decisions: state.decisions,
           meetings: state.meetings,
           queues: state.queues,
+          onSettings: () => setPanel("settings"),
+          onMembers: () => setPanel("members"),
           // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
           // lands on that Bot or group. Nothing here re-decides which board that is.
           onOpen: (board) => {

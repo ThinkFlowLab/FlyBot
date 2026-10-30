@@ -42,6 +42,21 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-state{font-size:11px;margin-left:auto}
 .bt-project-row[data-state="stalled"]{border-left:2px solid #d9822b}
 .bt-project-reason{font-size:11px;opacity:.7}
+
+/* #1749: management panels. Same surface as the board, one form row per control, and a status
+   line that quotes the host's own answer — a refused save reads where the reader pressed it. */
+.bt-project-panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.bt-project-panel h3{margin:0}
+.bt-project-field{display:flex;flex-direction:column;gap:4px}
+.bt-project-field label{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-field input,.bt-project-field select,.bt-project-field textarea{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:var(--bt-card,rgba(127,127,127,.08));color:inherit}
+.bt-project-field textarea{min-height:88px;resize:vertical}
+.bt-project-row-actions{display:flex;gap:8px;align-items:center}
+.bt-project-members{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.bt-project-member{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08))}
+.bt-project-member .bt-project-member-kind{margin-left:auto;font-size:11px;opacity:.6}
+.bt-project-status-line{font-size:12px;opacity:.75;min-height:16px}
+.bt-project-note{font-size:12px;opacity:.65;margin:0}
 `
 
 // Sources in the order the board reads them; a source with no rows is left out so three empty
@@ -300,7 +315,7 @@ function ProjectBoardRecord({ record }) {
     meetings.pending.length === 0 ? null : pendingRows)
 }
 
-export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen }) {
+export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, queues, onOpen, onSettings, onMembers }) {
   const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings, queues })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
@@ -310,11 +325,93 @@ export function ProjectBoardPane({ project, rows, canManage, tasks, decisions, m
       h('span', null, [t('In flight'), ': ', h('b', { key: 'f' }, countText(view.counts.inflight))]),
       h('span', null, [t('Blocked'), ': ', h('b', { key: 'b' }, countText(view.counts.blocked))]),
       h('span', null, [t('Done'), ': ', h('b', { key: 'd' }, countText(view.counts.done))])),
-    // Management affordances are drawn only for the owner; the refusal itself is the host's.
-    view.canManage ? h('div', { className: 'bt-project-actions' }, h('button', { type: 'button' }, t('Project settings')), h('button', { type: 'button' }, t('Members'))) : null,
+    // #1749: both buttons open a panel and neither is hidden from a non-owner. The host refuses
+    // every write a non-owner attempts, so the refusal is an answer the reader sees, not a
+    // control that silently disappeared.
+    h('div', { className: 'bt-project-actions' },
+      h('button', { type: 'button', 'data-action': 'project-settings', onClick: () => onSettings?.() }, t('Project settings')),
+      h('button', { type: 'button', 'data-action': 'project-members', onClick: () => onMembers?.() }, t('Members'))),
     h(ProjectBoardRows, { view, onOpen }),
     h(ProjectQueueGroups, { view, onOpen }),
     h(ProjectBoardRecord, { record: view.record }))
+}
+
+// #1749: the settings panel. It writes through the three paths the host already had — bind or
+// unbind a member (`project-bind`), the assistant's per-owner controls
+// (`project-assistant-owner`) and the assistant's memory (`project-memory-write`) — and adds no
+// fourth. Fields the host has no write path for are not drawn, so every control here can save.
+export function ProjectSettingsPanel({ project, call: request, onClose, onSaved } = {}) {
+  const save = request ?? call
+  const [kind, setKind] = useState('bot')
+  const [memberId, setMemberId] = useState('')
+  const [note, setNote] = useState('')
+  const [assistantOff, setAssistantOff] = useState(project?.assistant?.off === true)
+  const [status, setStatus] = useState('')
+  const id = text(project?.id)
+  const run = async (endpoint, payload, done) => {
+    try {
+      const result = await save(endpoint, payload)
+      setStatus(done)
+      onSaved?.(result)
+      return result
+    } catch (error) {
+      // The host's refusal is the answer the reader acted for; quote it instead of guessing.
+      setStatus(error?.message ?? String(error))
+      return null
+    }
+  }
+  return h('div', { className: 'bt-project-panel', 'data-panel': 'project-settings' },
+    h('h3', null, t('Project settings')),
+    h('div', { className: 'bt-project-field' },
+      h('label', { htmlFor: 'bt-project-member-id' }, t('Bind a member to this Project')),
+      h('div', { className: 'bt-project-row-actions' },
+        h('select', { 'aria-label': t('Member kind'), value: kind, onChange: event => setKind(event.target.value) },
+          h('option', { value: 'bot' }, t('Bot')),
+          h('option', { value: 'group' }, t('Group'))),
+        h('input', { id: 'bt-project-member-id', value: memberId, placeholder: t('Member id'), onChange: event => setMemberId(event.target.value) }),
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-bind', onClick: () => run('project-bind', { kind, id: text(memberId), projectId: id }, t('Member bound.')) }, t('Bind')),
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-unbind', onClick: () => run('project-bind', { kind, id: text(memberId), projectId: null }, t('Member unbound.')) }, t('Unbind')))),
+    h('div', { className: 'bt-project-field' },
+      h('label', null, t('Project Assistant')),
+      h('div', { className: 'bt-project-row-actions' },
+        h('label', null, h('input', { type: 'checkbox', 'data-action': 'assistant-off', checked: assistantOff, onChange: event => setAssistantOff(event.target.checked) }), ' ', t('Pause the daily digest')),
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-assistant-save', onClick: () => run('project-assistant-owner', { id, settings: { off: assistantOff === true } }, t('Assistant settings saved.')) }, t('Save')))),
+    h('div', { className: 'bt-project-field' },
+      h('label', { htmlFor: 'bt-project-note' }, t('Add to the assistant memory')),
+      h('textarea', { id: 'bt-project-note', value: note, onChange: event => setNote(event.target.value) }),
+      h('div', { className: 'bt-project-row-actions' },
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-memory-save', onClick: () => run('project-memory-write', { id, kind: 'note', text: text(note) }, t('Memory saved.')) }, t('Save memory')))),
+    h('div', { className: 'bt-project-status-line', role: 'status' }, status),
+    h('div', { className: 'bt-project-row-actions' },
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
+}
+
+// #1749: who is on this Project, read from the record and the board — never a second member read.
+// The host keeps no membership set beyond a Project's owners and the members its board rows
+// already name, so this panel is read-only and says so instead of offering a control it cannot save.
+export function ProjectMembersPanel({ project, rows, onClose } = {}) {
+  const owners = []
+  const add = (id) => { const clean = text(id); if (clean !== '' && !owners.includes(clean)) owners.push(clean) }
+  add(project?.ownerUserId)
+  for (const id of Array.isArray(project?.ownerUserIds) ? project.ownerUserIds : []) add(id)
+  const boardMembers = []
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = text(row?.assignee)
+    if (name !== '' && !boardMembers.includes(name)) boardMembers.push(name)
+  }
+  return h('div', { className: 'bt-project-panel', 'data-panel': 'project-members' },
+    h('h3', null, t('Members')),
+    h('ul', { className: 'bt-project-members' },
+      owners.map(owner => h('li', { key: `owner:${owner}`, className: 'bt-project-member', 'data-member-role': 'owner', 'data-member-id': owner },
+        h('span', null, `@${owner}`),
+        h('span', { className: 'bt-project-member-kind' }, t('Owner')))),
+      boardMembers.map(name => h('li', { key: `board:${name}`, className: 'bt-project-member', 'data-member-role': 'board', 'data-member-id': name },
+        h('span', null, `@${name}`),
+        h('span', { className: 'bt-project-member-kind' }, t('On the board'))))),
+    owners.length === 0 && boardMembers.length === 0 ? h('div', { className: 'bt-project-empty' }, t('No member is named yet.')) : null,
+    h('p', { className: 'bt-project-note' }, t('Member management is not part of this slice; owners and the members their cards name are listed here.')),
+    h('div', { className: 'bt-project-row-actions' },
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
 }
 
 // The pane entry point (#1710): `#project=<id>` opens one Project's board, `#project` the first.
@@ -323,13 +420,26 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
   // `call` is a seam for the tests only; in the app it is the channel every other view uses.
   const read = request ?? call
   const [state, setState] = useState(null)
+  const [panel, setPanel] = useState(null)
   // The hash is the whole entry point, so it has to be read again every time it changes: an
   // entry that writes `#project=<id>` while this mounts opened nothing when the read was one-shot.
   const [hash, setHash] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash))
   const close = useCallback(() => {
     if (typeof window !== 'undefined') window.location.hash = ''
+    setPanel(null)
     setState(null)
   }, [])
+  // Escape leaves the panel first, then the board — the same two steps the kanban dialog offers.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      if (panel !== null) setPanel(null)
+      else close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [panel, close])
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
     const sync = () => setHash(window.location.hash)
@@ -380,9 +490,13 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { close(); actions?.openSettings?.('projects') } }, t('Open Projects in Settings')))
           // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
           // that hash and lands on the Bot or group the task belongs to.
+          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) })
+          : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, canManage: state.canManage, tasks: state.tasks,
             decisions: state.decisions, meetings: state.meetings, queues: state.queues,
+            onSettings: () => setPanel('settings'),
+            onMembers: () => setPanel('members'),
             // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
             // lands on that Bot or group. Nothing here re-decides which board that is.
             onOpen: (board) => {

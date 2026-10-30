@@ -1,0 +1,1 @@
+Project board: the **Project settings** and **Members** buttons now open panels ([#1749](https://github.com/ThinkFlowLab/FlyBot/issues/1749)). Settings saves bindings, the Project Assistant's digest setting and its memory through the existing host write paths; the Members panel lists the Project's owners and the members its cards name, read-only for now.

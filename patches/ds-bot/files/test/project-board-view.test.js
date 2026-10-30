@@ -103,7 +103,7 @@ test('a Project with nothing under it is an empty state, not an error', () => {
   assert.equal(missing.canManage, false, 'no canManage answer is read as read-only')
 })
 
-test('the pane draws the grouped rows and only the owner sees the management controls', () => {
+test('the pane draws the grouped rows and both management buttons, owner or not (#1749)', () => {
   const owner = all(ProjectBoardPane({ project: { id: 'p', name: 'FlyBot' }, rows, canManage: true }))
   const member = all(ProjectBoardPane({ project: { id: 'p', name: 'FlyBot' }, rows, canManage: false }))
   assert.match(textOf(owner[0]), /FlyBot/)
@@ -114,7 +114,8 @@ test('the pane draws the grouped rows and only the owner sees the management con
   assert.equal(owner.some(node => textOf(node) === 'Project settings'), true)
   const memberRows = member.filter(node => node.props?.['data-task-id'] !== undefined)
   assert.deepEqual(memberRows.map(node => node.props['data-task-id']), ['task-b1', 'task-g1', 'task-w1'], 'a member still reads the board')
-  assert.equal(member.some(node => textOf(node) === 'Project settings'), false)
+  // #1749: a non-owner sees the same two buttons; the host refuses the write and the panel says so.
+  assert.equal(member.some(node => textOf(node) === 'Project settings'), true)
 })
 
 test('an empty Project renders the empty text and no row', () => {
