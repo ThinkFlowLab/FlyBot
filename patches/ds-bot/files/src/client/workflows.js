@@ -145,10 +145,39 @@ export function fitScale(nodes, width) {
   return Math.min(1, Math.max(MIN_FIT, (width / 2) / reach))
 }
 
-function GraphCanvas({ graph, editing, roster, onCommit }) {
+// #1769: the plane is centred on the canvas, so a graph that does not fit spilled out of
+// BOTH edges. The left half of a scroller cannot be reached — `scrollLeft` stops at 0 — so
+// the cards and the frame there were cut off and could not be scrolled back into view.
+// Once the scale hits MIN_FIT the plane is wider than the canvas by design, so the stage
+// reserves that overflow on its left: everything then sits at x >= 0 and the rest of the
+// plane scrolls to the right. A graph that fits keeps the #1752 scale and gets no pad, so
+// its coordinates do not move.
+export function fitLayout(nodes, width) {
+  const reach = Math.max(0, ...(nodes ?? []).map((node) => Math.abs(node.x ?? 0) + FRAME_SIDE))
+  const scale = fitScale(nodes, width)
+  const spare = width > 0 && reach > 0 ? reach * scale - width / 2 : 0
+  const pad = spare > 1e-6 ? Math.ceil(spare) : 0
+  const centre = width > 0 ? pad + width / 2 : 0
+  return {
+    reach, scale, pad,
+    left: centre - reach * scale,
+    right: centre + reach * scale,
+    scrollWidth: Math.max(width + pad, centre + reach * scale),
+  }
+}
+
+// The pad is a padding-box question, and `clientWidth` answers it in the same coordinates as
+// `scrollWidth`: border excluded, padding included. The border box would be 1px wider and
+// would push the whole plane right, so this reads `clientWidth` alone and never mixes the two.
+export function measureCanvasWidth(el) {
+  const width = el?.clientWidth
+  return Number.isFinite(width) && width > 0 ? width : 0
+}
+
+function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }) {
   const gesture = useRef(null)
   const canvasRef = useRef(null)
-  const [canvasWidth, setCanvasWidth] = useState(0)
+  const [measuredWidth, setCanvasWidth] = useState(0)
   const nodes = graph.nodes ?? []
   const edges = graph.edges ?? []
   // A live run names every seat. A definition with no run is idle, the way the
@@ -156,13 +185,16 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
   const status = graph.run?.nodeStatus ?? null
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id))
   const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0)
-  const scale = fitScale(nodes, canvasWidth)
+  // A host that already knows the width (the editor's tests, an embed) seeds it; the
+  // measurement below still wins, so a resize is followed on the next frame.
+  const canvasWidth = measuredWidth || knownWidth
+  const { scale, pad } = fitLayout(nodes, canvasWidth)
   const drawnHeight = Math.round(height * scale)
   useEffect(() => {
     const el = canvasRef.current
     const measure = () => {
-      const width = el?.getBoundingClientRect?.().width
-      if (Number.isFinite(width) && width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width)
+      const width = measureCanvasWidth(el)
+      if (width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width)
     }
     measure()
     if (typeof ResizeObserver !== 'function' || !el) return undefined
@@ -210,7 +242,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
           onCommit?.({ nodes: nodes.map((item) => (item.id === node.id ? { ...item, prompt } : item)), edges })
         },
       })))) : null,
-    h('div', { className: 'bt-wf-stage', style: { height: drawnHeight } },
+    h('div', { className: 'bt-wf-stage', style: pad > 0 ? { height: drawnHeight, paddingLeft: pad } : { height: drawnHeight } },
       h('div', { className: 'bt-wf-fit', style: { height, transform: `scale(${scale})` } },
         h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height, '--bt-wf-wire-span': `${WIRE_SPAN}px` } },
       h('svg', {
@@ -294,7 +326,7 @@ function alertCopy(error) {
   return error || t('Could not read workflows')
 }
 
-export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
+export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, canvasWidth = 0, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
   const graph = phase === 'ready' ? openedGraph(pack, opened) : null
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
@@ -335,7 +367,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
       (graph.nodes ?? []).length === 0
         ? h('p', { className: 'bt-wf-status' }, t('This workflow has no flowchart yet.'))
         : h(GraphCanvas, {
-          graph, roster, onCommit,
+          graph, roster, onCommit, width: canvasWidth,
           editing: opened?.source === 'own' && editing === true,
         })) : null)
 }

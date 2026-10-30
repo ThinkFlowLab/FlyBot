@@ -14877,22 +14877,42 @@ function fitScale(nodes, width) {
   if (!(width > 0) || reach === 0) return 1;
   return Math.min(1, Math.max(MIN_FIT, width / 2 / reach));
 }
-function GraphCanvas({ graph, editing, roster, onCommit }) {
+function fitLayout(nodes, width) {
+  const reach = Math.max(0, ...(nodes ?? []).map((node) => Math.abs(node.x ?? 0) + FRAME_SIDE));
+  const scale = fitScale(nodes, width);
+  const spare = width > 0 && reach > 0 ? reach * scale - width / 2 : 0;
+  const pad2 = spare > 1e-6 ? Math.ceil(spare) : 0;
+  const centre = width > 0 ? pad2 + width / 2 : 0;
+  return {
+    reach,
+    scale,
+    pad: pad2,
+    left: centre - reach * scale,
+    right: centre + reach * scale,
+    scrollWidth: Math.max(width + pad2, centre + reach * scale)
+  };
+}
+function measureCanvasWidth(el) {
+  const width = el?.clientWidth;
+  return Number.isFinite(width) && width > 0 ? width : 0;
+}
+function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }) {
   const gesture = (0, import_react35.useRef)(null);
   const canvasRef = (0, import_react35.useRef)(null);
-  const [canvasWidth, setCanvasWidth] = (0, import_react35.useState)(0);
+  const [measuredWidth, setCanvasWidth] = (0, import_react35.useState)(0);
   const nodes = graph.nodes ?? [];
   const edges = graph.edges ?? [];
   const status = graph.run?.nodeStatus ?? null;
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id));
   const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0);
-  const scale = fitScale(nodes, canvasWidth);
+  const canvasWidth = measuredWidth || knownWidth;
+  const { scale, pad: pad2 } = fitLayout(nodes, canvasWidth);
   const drawnHeight = Math.round(height * scale);
   (0, import_react35.useEffect)(() => {
     const el = canvasRef.current;
     const measure = () => {
-      const width = el?.getBoundingClientRect?.().width;
-      if (Number.isFinite(width) && width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width);
+      const width = measureCanvasWidth(el);
+      if (width > 0 && Math.abs(width - canvasWidth) > 0.5) setCanvasWidth(width);
     };
     measure();
     if (typeof ResizeObserver !== "function" || !el) return void 0;
@@ -14955,7 +14975,7 @@ function GraphCanvas({ graph, editing, roster, onCommit }) {
     ))) : null,
     (0, import_react35.createElement)(
       "div",
-      { className: "bt-wf-stage", style: { height: drawnHeight } },
+      { className: "bt-wf-stage", style: pad2 > 0 ? { height: drawnHeight, paddingLeft: pad2 } : { height: drawnHeight } },
       (0, import_react35.createElement)(
         "div",
         { className: "bt-wf-fit", style: { height, transform: `scale(${scale})` } },
@@ -15102,7 +15122,7 @@ function alertCopy(error) {
   if (error === WORKFLOW_PLUGIN_HINT) return t("The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.");
   return error || t("Could not read workflows");
 }
-function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
+function WorkflowsView({ phase = "loading", pack = null, error = "", opened = null, editing = false, roster = null, canvasWidth = 0, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
   const graph = phase === "ready" ? openedGraph(pack, opened) : null;
   const templates = pack?.templates ?? [];
   const templateIds = new Set(templates.map((item) => item.id));
@@ -15166,6 +15186,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         graph,
         roster,
         onCommit,
+        width: canvasWidth,
         editing: opened?.source === "own" && editing === true
       })
     ) : null
