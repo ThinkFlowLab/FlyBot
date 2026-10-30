@@ -1349,6 +1349,21 @@ export function install(rt) {
         return rt.taskCounters?.(query) ?? { roles: {}, runs: {} }
       },
     },
+    // #1856: a workflow run belongs to a Project, and the plugin cannot write host state. A host
+    // without this seam answers `undefined` and never throws: the run stays unbound and keeps today
+    // behavior. The write goes through the same `bindProject` the endpoint uses, so a run bound
+    // from an assign and a run bound from Settings cannot disagree.
+    projects: {
+      read(id) {
+        return typeof rt.readProject === "function" ? rt.readProject(String(id ?? '')) ?? undefined : undefined
+      },
+      async bindRun(runId, projectId) {
+        if (typeof rt.bindProject !== "function") return undefined
+        const project = rt.bindProject({ kind: 'run', id: String(runId ?? ''), projectId })
+        await rt.save?.()
+        return project ?? undefined
+      },
+    },
     tools,
     api,
     outcomeOf: exchangeId => outcomes.get(exchangeId),

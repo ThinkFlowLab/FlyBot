@@ -1,0 +1,1 @@
+We worked a workflow (a workflow now belongs to a Project: its definition carries projectId, the run is bound when it starts, and Settings shows the Project) — [#1856](https://github.com/ThinkFlowLab/FlyBot/issues/1856).

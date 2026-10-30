@@ -463,3 +463,69 @@ test('delete cleans up runs, logs, and routes', () => {
   assert.equal(deleted.ok, true)
   assert.ok(!deleted.workflows.some(item => item.id === laneId))
 })
+
+// #1856: a run belongs to the Project its workflow names, and the assign call may name another.
+// The binding lands when the run is created, which for a parked task is later than the assign —
+// so the choice travels with the task — and a refusal never keeps the run from starting.
+function projectService() {
+  const bound = []
+  const refusals = []
+  const svc = createWorkflowService({
+    persist: false,
+    now: () => 1_700_000_000_000,
+    bots: () => roster,
+    warn: message => refusals.push(message),
+    readProject: id => (id === 'project-1fe64499' || id === 'project-2' ? { id, name: 'FlyBot 开发' } : null),
+    bindRun: (runId, projectId) => {
+      if (projectId === 'project-unknown') throw new Error(`Unknown Project ${projectId}`)
+      bound.push({ runId, projectId })
+      return { id: projectId }
+    },
+  })
+  return { svc, bound, refusals }
+}
+
+function ownProject(svc, workflowId, projectId) {
+  const saved = svc.saveGraph({ workflowId, ...graphOf(svc, workflowId), projectId })
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+}
+
+function graphOf(svc, workflowId) {
+  const item = svc.state().workflows.find(workflow => workflow.id === workflowId)
+  return { nodes: item.nodes, edges: item.edges }
+}
+
+test('#1856: a workflow carrying a Project binds the run it starts', () => {
+  const { svc, bound } = projectService()
+  ownProject(svc, DELIVERY_ID, 'project-1fe64499')
+  const state = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1856a', title: 'Bind at creation' })
+  assert.equal(state.ok, true, JSON.stringify(state))
+  const run = delivery(state).run
+  assert.deepEqual(bound, [{ runId: run.id, projectId: 'project-1fe64499' }])
+})
+
+test('#1856: the Project named by the assign call wins over the workflow\'s own', () => {
+  const { svc, bound } = projectService()
+  ownProject(svc, DELIVERY_ID, 'project-1fe64499')
+  const state = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1856b', title: 'Call wins', projectId: 'project-2' })
+  assert.equal(state.ok, true, JSON.stringify(state))
+  assert.deepEqual(bound, [{ runId: delivery(state).run.id, projectId: 'project-2' }])
+})
+
+test('#1856: a workflow with no Project binds nothing and behaves as before', () => {
+  const { svc, bound, refusals } = projectService()
+  const state = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1856c', title: 'Unowned' })
+  assert.equal(state.ok, true, JSON.stringify(state))
+  assert.deepEqual(bound, [])
+  assert.deepEqual(refusals, [])
+  assert.equal(delivery(state).run.status, 'running')
+})
+
+test('#1856: a refused binding still starts the run', () => {
+  const { svc, bound, refusals } = projectService()
+  const state = svc.assign({ workflowId: DELIVERY_ID, taskId: '#1856d', title: 'Refused', projectId: 'project-unknown' })
+  assert.equal(state.ok, true, JSON.stringify(state))
+  assert.equal(delivery(state).run.status, 'running', 'the run started despite the refused binding')
+  assert.deepEqual(bound, [])
+  assert.ok(refusals.some(message => /refused Project project-unknown/.test(message)), refusals.join(' | '))
+})

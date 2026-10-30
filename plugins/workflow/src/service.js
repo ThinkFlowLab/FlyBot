@@ -153,6 +153,9 @@ function blankRun(workflow, task, now, history = []) {
 
 export function createWorkflowService({
   dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, tasksWired = false, spawn, release, dispatch,
+  // #1856: the host's Project seam. `readProject(id)` answers the record or null; `bindRun(runId,
+  // projectId)` binds a run at creation. A host without either leaves the run unbound.
+  readProject, bindRun,
   setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = handle => clearTimeout(handle),
 } = {}) {
   const file = dir ? join(dir, FILE) : null
@@ -332,6 +335,8 @@ export function createWorkflowService({
         trigger: item.trigger ?? 'manual',
         scheduleLabel: item.scheduleLabel ?? '',
         model: item.model ?? '',
+        // #1856: unowned is `null`, never a missing key, so the list and the editor agree.
+        projectId: item.projectId ?? null,
         nodes: item.nodes.map(node => publicNode(node, roster)),
         edges: (item.edges ?? []).map(publicEdge),
         layers: item.layers.map(layer => [...layer]),
@@ -733,7 +738,7 @@ export function createWorkflowService({
     }
     if (!best) return null
     const task = laneOf(best.item.id).queue.shift()
-    return { item: best.item, task: { id: task.id, title: task.title, ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}) } }
+    return { item: best.item, task: { id: task.id, title: task.title, ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}), ...(task.projectId ? { projectId: task.projectId } : {}) } }
   }
 
   function noteUnstarted(item, error) {
@@ -805,6 +810,24 @@ export function createWorkflowService({
     return runningOf(lane).some(run => run.task?.id === taskId) || lane.queue.some(task => task.id === taskId)
   }
 
+  // #1856: a run belongs to the Project its workflow names, or to the one the assign call named.
+  // A host without the seam, and a refused binding, leave the run unbound — the run still starts.
+  function bindRunProject(item, task, run) {
+    const projectId = cleanLine(task?.projectId ?? item?.projectId ?? '', 120)
+    if (projectId === '') return
+    if (typeof bindRun !== 'function') {
+      warnOnce('project-seam', 'flybot-workflow: this host has no project seam, so a run stays unbound')
+      return
+    }
+    const onError = error => warnOnce(`project-refused:${run.id}`, `flybot-workflow: run ${run.id} was refused Project ${projectId}: ${String(error?.message ?? error).slice(0, 200)}`)
+    try {
+      const bound = bindRun(run.id, projectId)
+      if (bound && typeof bound.then === 'function') bound.catch(onError)
+    } catch (error) {
+      onError(error)
+    }
+  }
+
   function beginRun(item, task, ephemeral) {
     const holes = missingProviders(item)
     if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
@@ -823,6 +846,7 @@ export function createWorkflowService({
     ], at)
     const stepped = applyOp(item, run, { type: 'start' })
     run = stepped.run
+    bindRunProject(item, task, run)
     laneOf(item.id).active.push(run)
     push(item.id, stepped.lines, at)
     syncTimers(item, run)
@@ -876,6 +900,8 @@ export function createWorkflowService({
       queueSeq: state.queueSeq,
       // #1544: a parked run starts later without its caller in hand; keep it, or the ceiling is lost.
       ...(task.callerBotId ? { callerBotId: task.callerBotId } : {}),
+      // #1856: a parked run keeps the Project it was assigned with.
+      ...(task.projectId ? { projectId: task.projectId } : {}),
     })
     const ahead = lane.queue.length - 1
     push(item.id, [{
@@ -1115,6 +1141,11 @@ export function createWorkflowService({
       // and the API pass none, and the graph's author is the ceiling there.
       const callerBotId = cleanLine(body.callerBotId, 80)
       if (callerBotId) task.callerBotId = callerBotId
+      // #1856: the call's own Project wins over the workflow's; the run is bound when it is
+      // created, which for a parked task is later, so the choice travels with the task.
+      const wanted = body.projectId !== undefined ? body.projectId : item.projectId
+      const projectId = cleanLine(wanted ?? '', 120)
+      if (projectId !== '') task.projectId = projectId
       if (typeof spawn !== 'function') return enqueue(item, task)
       return hostSerial(() => enqueue(item, task))
     },
@@ -1417,6 +1448,17 @@ export function createWorkflowService({
         const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
         if (authoredBy) item.authoredBy = authoredBy
         else delete item.authoredBy
+        // #1856: `null` clears, omitted keeps, and a name must resolve — an unknown Project
+        // refuses the whole save, so nothing half-written is left behind.
+        if (body.projectId !== undefined) {
+          const wantedId = body.projectId === null ? '' : cleanLine(body.projectId, 120)
+          if (wantedId === '') delete item.projectId
+          else {
+            const project = typeof readProject === 'function' ? readProject(wantedId) : null
+            if (!project || typeof project !== 'object') throw new Error(`Unknown Project ${wantedId}`)
+            item.projectId = wantedId
+          }
+        }
         const seated = seat(body.nodes, bots() ?? [])
         const seenBots = new Set()
         for (const node of seated) {

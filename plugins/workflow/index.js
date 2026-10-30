@@ -96,6 +96,10 @@ export function apply(ctx, config = {}) {
     readOnly: () => fb.readOnly?.() === true,
     warn: (...args) => fb.warn?.(...args),
     tasksWired,
+    // #1856: the host owns the Project record and the run binding; a host without the seam answers
+    // undefined and the service leaves the run unbound.
+    readProject: id => fb.projects?.read?.(id),
+    bindRun: (runId, projectId) => fb.projects?.bindRun?.(runId, projectId),
     ...lifecycle,
   })
   void service.reap?.().catch(error => fb.warn?.('flybot-workflow: reap failed: %s', error))
