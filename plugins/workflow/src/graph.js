@@ -560,6 +560,22 @@ function takenFrom(graph, nodeId, outputs) {
   return fired
 }
 
+// #1773: the outputs a gate reads are verdicts, not prose. A `when`/`else` or `until`
+// edge decides from them, so a reply that leaves one blank is silence, and the gate
+// would take it for "not this branch". A step must not settle on that: name what it
+// owes and let the caller fail the step.
+export function missingVerdicts(graph, nodeId, outputs) {
+  ensure(graph)
+  if (!nodeById(graph, nodeId)) return []
+  const read = new Set()
+  for (const edge of graph.edges) {
+    if (edge.from !== nodeId) continue
+    if (edge.when && edge.when.else !== true && edge.when.output) read.add(edge.when.output)
+    if (edge.until?.output) read.add(edge.until.output)
+  }
+  return [...read].filter(name => String(outputs?.[name] ?? '').trim() === '')
+}
+
 function loopDecision(graph, nodeId, outputs, loops, text) {
   // Do not take a success-path loop when the completion already signals stop.
   if (checkEarlyEnd(outputs, text).shouldEnd) return null

@@ -3,6 +3,7 @@
 // never be read from it, and the run must not close as done.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { missingVerdicts, normalizeGraph } from '../src/graph.js'
 import { createWorkflowService } from '../src/service.js'
 
 const NOW = 1_700_000_000_000
@@ -92,4 +93,25 @@ test('#1773: a non-matching verdict is a skip, not a missing one', async () => {
   assert.equal(run.nodeStatus.check, 'done', 'a real verdict completes the step')
   assert.equal(run.nodeStatus.merge, 'skipped', 'the gate answered FAIL')
   assert.equal(run.status, 'done')
+})
+
+test('#1773: only the outputs a gate reads are required, and silence names each one', () => {
+  const graph = normalizeGraph({
+    nodes: [
+      { id: 'check', name: 'Check', outputs: [{ name: 'summary' }, { name: 'verdict' }, { name: 'detail' }] },
+      { id: 'merge', name: 'Merge' },
+    ],
+    edges: [{ from: 'check', to: 'merge', when: { output: 'verdict', eq: 'PASS' } }],
+  })
+  assert.deepEqual(missingVerdicts(graph, 'check', {}), ['verdict'])
+  assert.deepEqual(missingVerdicts(graph, 'check', { summary: 'green' }), ['verdict'])
+  assert.deepEqual(missingVerdicts(graph, 'check', { verdict: 'FAIL' }), [])
+  const plain = normalizeGraph({
+    nodes: [
+      { id: 'plan', name: 'Plan', outputs: [{ name: 'plan' }] },
+      { id: 'code', name: 'Code' },
+    ],
+    edges: [{ from: 'plan', to: 'code' }],
+  })
+  assert.deepEqual(missingVerdicts(plain, 'plan', {}), [], 'an output no gate reads stays optional')
 })

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
   chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
-  missingProviders, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
+  missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
   rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask, namedTarget } from './match.js'
@@ -932,6 +932,14 @@ export function createWorkflowService({
     const run = runFor(workflowId, op.runId, op.nodeId)
     if (!run || run.status === 'idle') return { ok: false, error: 'This workflow has no running task' }
     if (run.status === 'done' || run.status === 'failed') return { ok: false, error: 'This run is already finished' }
+    // #1773: a step whose gate reads a declared OUTPUT has to deliver it. Completing on
+    // silence skips every branch the gate guards and the run still closed as done, so the
+    // missing verdict fails the step here — the gate never runs, and the run's `failure`
+    // names the node and the OUTPUT it did not print.
+    if (op.type === 'complete') {
+      const missing = missingVerdicts(item, op.nodeId, op.outputs ?? run.produced?.[op.nodeId] ?? {})
+      if (missing.length > 0) op = { ...op, type: 'fail', text: `Missing OUTPUT ${missing.join(', ')}` }
+    }
     try {
       let stepped = applyOp(item, run, op)
       if (op.type === 'fail' && nodeById(item, op.nodeId)?.failOnce === true && stepped.run.status === 'running') {
