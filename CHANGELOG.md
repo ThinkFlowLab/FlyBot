@@ -6,6 +6,20 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-10-30
+
+### Added
+
+- A task card now carries a typed contract: `taskClass` (`work`, `rework`, `release`, `triage`, `meeting`), `reworkOf` for a card that fixes a rejected one, `handoff` naming the roles it moved between and why, `evidence` for the sha/PR/check pointers that prove the work, and `lease` for the claim on it. Every field is validated on write and refused by name, a review rejection opens exactly one rework card beside the original instead of flipping its status, an expired lease returns a queued card to the queue while a live one refuses a second claim naming the holder, and the Project board reads the same row without a second copy. A card stored before this slice reads back unchanged ([#1720](https://github.com/ThinkFlowLab/FlyBot/issues/1720)).
+- Role queues now carry a stated cap (8 by default, override per graph), every claim runs in its own worker with no shared state, and one owner recovers an expired lease — once — recording it on the card's evidence.
+- A Project board card now carries an `audit` block: the handoff, the evidence, the rework chain and the current lease rendered from the task record itself, with no new endpoint or page. A rework cycle is counted as one accepted delivery instead of two, so the counters no longer double after a rejection.
+- Meetings are now recorded in FlyBot: a meeting moves `open → deliberating → decided | blocked`, requires a position from every invited participant and a named decision owner, archives one `decisions/<date>-<slug>.md` on `decided` (and nothing on `blocked`), and creates the follow-up tasks with that file as evidence ([#1731](https://github.com/ThinkFlowLab/FlyBot/issues/1731)).
+- Each owner of one Project now gets their own 09:00 digest, built from one board read with their own memory and their own decisions list, with a per-owner quiet window that holds a due digest and delivers it once when the window ends, an opt-out that stops generation and pauses the 09:00 task until it is turned back on, a refusal that names the boundary when one owner asks for another's memory, and failure isolation so one owner's broken render still leaves the other owner's digest delivered ([#1733](https://github.com/ThinkFlowLab/FlyBot/issues/1733)).
+
+### Fixed
+
+- The Inbox no longer shows a task that was never started as "In progress", and no longer ages it from its creation: the Inbox and the Board now read one task row, so the status label and the counter agree and a card's age comes from the moment the row started.
+
 ## [0.2.14] - 2026-10-30
 
 ### Added

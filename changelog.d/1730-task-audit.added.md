@@ -1,1 +1,0 @@
-A Project board card now carries an `audit` block: the handoff, the evidence, the rework chain and the current lease rendered from the task record itself, with no new endpoint or page. A rework cycle is counted as one accepted delivery instead of two, so the counters no longer double after a rejection.

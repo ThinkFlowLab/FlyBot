@@ -1,1 +1,0 @@
-The Inbox no longer shows a task that was never started as "In progress", and no longer ages it from its creation: the Inbox and the Board now read one task row, so the status label and the counter agree and a card's age comes from the moment the row started.
