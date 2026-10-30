@@ -21154,7 +21154,7 @@ diff --git a/client.js b/client.js
      shadow("conversation.input.right", { id: "bot-voice", order: 100, inject: face }, ComposerVoice),
      shadow("conversation.composer", {
        priority: -10,
-@@ -14074,8 +21116,17 @@
+@@ -14074,9 +21116,18 @@
      shadow("conversation.input.dock", { id: "bot-members", order: -120, inject: face }, MemberDock),
      shadow("conversation.input.dock", { id: "bot-model", order: -110, inject: face }, ModelChoiceDock),
      shadow("conversation.input.dock", { id: "bot-question", order: -100, inject: face }, QuestionDock),
@@ -21173,4 +21173,4 @@ diff --git a/client.js b/client.js
    ctx.effect(() => {
      const style = installStyles(RETURN_CSS, "return");
      return () => style.remove();
-
+   }, "ds-bot: return styles");
