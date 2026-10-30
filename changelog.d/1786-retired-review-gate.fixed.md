@@ -1,1 +1,0 @@
-A retired Bot is no longer billed a memory review or have its archived memory rewritten when another member's turn ends; a live lagging member is still reviewed ([#1786](https://github.com/ThinkFlowLab/FlyBot/issues/1786)).

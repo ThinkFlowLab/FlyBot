@@ -1,1 +1,0 @@
-A Bot retired with `archive_bot` now leaves the tree panel the way it already left the sidebar's own tree, and it is listed in the Archived section with a `retired` tag, so its chat stays reachable instead of the retirement looking like it did nothing ([#1793](https://github.com/ThinkFlowLab/FlyBot/issues/1793)).

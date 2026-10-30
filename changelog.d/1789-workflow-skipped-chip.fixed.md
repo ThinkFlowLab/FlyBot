@@ -1,1 +1,0 @@
-Settings → Workflows no longer draws a node the run skipped as **Queued**: the chip now says **Skipped**, the same word the Room's Flow panel uses for that node, so a run with an untaken branch no longer reads as stuck ([#1789](https://github.com/ThinkFlowLab/FlyBot/issues/1789)).

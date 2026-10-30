@@ -1,1 +1,0 @@
-The timeline report no longer prints its own window backwards when the range crosses local midnight: `Window: 23:50–00:10` and the one-line summary now read `23:50–00:10 (+1 day)`, while a range inside one local day keeps exactly the text it had ([#1787](https://github.com/ThinkFlowLab/FlyBot/issues/1787)).

@@ -1,1 +1,0 @@
-The Project board now opens as a real modal: a dimming scrim sits in front of the board and covers the shell, so the bot tree and workflows no longer read as extra board rows, and a click beside the board closes it ([#1750](https://github.com/ThinkFlowLab/FlyBot/issues/1750)).

@@ -1,1 +1,0 @@
-A member keeps its one work slot free once its result is delivered for acceptance, so the next queued item is offered to it instead of stalling a one-member role; a `result-ready` (or blocked) card no longer counts as work in progress ([#1744](https://github.com/ThinkFlowLab/FlyBot/issues/1744)).
