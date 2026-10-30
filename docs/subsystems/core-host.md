@@ -752,3 +752,7 @@ the host side only, so the tier stays T2 and `core/src/shared/` is untouched.
 - Endpoint `project-assistant-owner` (`{ id, ownerId, settings }`) exposes the controls: dispatched
   by `channel.js` and in `authz.js`'s `TASK_ENDPOINTS` since #1759, with `requireProjectOwner`
   refusing a non-owner with `bot/forbidden` before any record is written.
+
+## Project metrics (#1829)
+
+`core/src/host/project-metrics.js` answers the Project board's seven numbers: PRs opened and merged today, issues opened and closed today, and the seven-day medians of PR merge, issue close and task completion durations. The four day counts compare `created_at` / `merged_at` / `closed_at` against the reader's own time zone (`Intl.DateTimeFormat`), not the host clock, and the local task half reads `createdAt` / `completedAt` from `state.tasks`. The `project-metrics` endpoint in `store.js` passes the GitHub token from the environment, requires the Project, and answers `ok: false` with `null` values when the credential is missing or a read fails — the client paints `—`, never `0`. One five-minute in-process cache keys on repository, time zone and window, so a hit spends no source call; a failed read is not cached. `runningOf` projects a claimed card into the running table's row (who, claim age, source, last activity).

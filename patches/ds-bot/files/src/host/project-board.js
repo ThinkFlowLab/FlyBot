@@ -20,6 +20,7 @@ import { open, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
 import { DECISIONS_DIR, listProjectState, sha256 } from './project-state.js'
+import { readMetrics } from './project-metrics.js'
 
 // #1828: a Project's roles. The record stores only `roles: { maintainers, members }`; the owner
 // is read from `ownerUserIds`, never stored twice, so the two cannot disagree. A record written
@@ -344,6 +345,7 @@ export function install(rt) {
       counts: { waiting: 0, inflight: 0, blocked: 0, done: 0 },
       decisions: { dir: null, files: [], reason: 'no Project: nothing to read' },
       meetings: { decided: [], pending: [], reason: 'no Project: nothing to read' },
+      metrics: { ok: false, reason: 'no Project: nothing to read', metrics: {}, running: [] },
     }
     if (id === '') return empty
     const project = rt.readProject?.(id)
@@ -409,7 +411,17 @@ export function install(rt) {
       ? { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } }
       : buildQueues(mine, done)
     const decisions = await decisionsOf(project)
-    return { rows, ...queues, decisions, meetings: meetingsOf(project, decisions) }
+    // #1829: the seven numbers ride on the same read as the rows, so the board and its header
+    // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
+    const metrics = await readMetrics({
+      repo: text(rt.githubRepo) || 'ThinkFlowLab/FlyBot',
+      token: text(rt.githubToken),
+      fetchImpl: globalThis.fetch,
+      timeZone: text(rt.timeZone) || 'UTC',
+      now: typeof rt.now === 'function' ? rt.now() : Date.now(),
+      tasks,
+    })
+    return { rows, ...queues, decisions, meetings: meetingsOf(project, decisions), metrics }
   }
   const buildQueues = (mine, done) => {
     const now = typeof rt.now === 'function' ? rt.now() : Date.now()
