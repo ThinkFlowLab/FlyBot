@@ -34,6 +34,7 @@ const ZH = {
   'This workflow has no flowchart yet.': '这个工作流还没有流程图。',
   Queued: '排队中',
   Running: '运行中',
+  Skipped: '跳过',
   Idle: '空闲',
   'project default': '项目默认',
   Customize: '定制一份',

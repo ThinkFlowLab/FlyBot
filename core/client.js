@@ -69,6 +69,7 @@ var ZH = {
   "This workflow has no flowchart yet.": "这个工作流还没有流程图。",
   Queued: "排队中",
   Running: "运行中",
+  Skipped: "跳过",
   Idle: "空闲",
   "project default": "项目默认",
   Customize: "定制一份",
@@ -14868,6 +14869,7 @@ function statusLabel2(status) {
   if (status === "done") return t("Done");
   if (status === "failed") return t("Failed");
   if (status === "idle") return t("Idle");
+  if (status === "skipped") return t("Skipped");
   return t("Queued");
 }
 function hitNode(event) {

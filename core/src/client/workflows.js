@@ -105,6 +105,7 @@ function statusLabel(status) {
   if (status === 'done') return t('Done')
   if (status === 'failed') return t('Failed')
   if (status === 'idle') return t('Idle')
+  if (status === 'skipped') return t('Skipped')
   return t('Queued')
 }
 

@@ -148,6 +148,35 @@ test('a settled read lists factory pipelines and your own, and opens the flowcha
   assert.equal(all(coder).some((entry) => entry.props?.['data-remove'] === 'coder'), true)
 })
 
+test('#1789: a node the run skipped is named Skipped, the word the Room uses', () => {
+  const branchy = {
+    id: 'wf-branchy',
+    name: 'Branchy lane',
+    chain: 'Planner → Coder',
+    nodes: [
+      { id: 'planner', name: 'Planner', role: '计划', x: 0, y: 0 },
+      { id: 'coder', name: 'Coder', role: '实现', x: 0, y: 108 },
+    ],
+    edges: [{ from: 'planner', to: 'coder' }],
+    layers: [['planner'], ['coder']],
+    run: { status: 'done', nodeStatus: { planner: 'done', coder: 'skipped' } },
+  }
+  const view = () => renderView({
+    phase: 'ready', pack: { ok: true, templates: [], workflows: [branchy] },
+    opened: { source: 'own', id: 'wf-branchy' }, error: '', roster: { bots: [] },
+  })
+  const chipOf = (tree) => all(tree).find((entry) => typeof entry.props?.className === 'string' && entry.props.className.startsWith('bt-wf-chip skipped'))
+  const chip = chipOf(view())
+  assert.ok(chip, 'the skipped node is drawn on the canvas')
+  assert.equal(text(chip), 'Skipped')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(text(chipOf(view())), '跳过')
+  } finally {
+    off()
+  }
+})
+
 test('an empty list and a failed read are settled states, not a permanent reading line', () => {
   const empty = renderView({ phase: 'empty', pack: { templates: [], workflows: [] }, error: '' })
   assert.match(text(empty), /No workflows yet/)
