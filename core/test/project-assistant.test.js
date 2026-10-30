@@ -52,11 +52,18 @@ function scheduleService() {
   }
 }
 
-async function start({ github = 'Birfy' } = {}) {
+async function start({ github = 'Birfy', schedule = true } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-assistant-'))
   if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
   const service = scheduleService()
-  const ctx = fakeContext({ services: { schedule: service } })
+  const ctx = fakeContext({ services: schedule ? { schedule: service } : {} })
+  // `schedule: false` leaves the service off at install and keeps the host's own attach callback, so
+  // a test can switch automation tasks on later exactly as the Plugins page does.
+  const pendingAttach = []
+  if (!schedule) {
+    ctx.inject = (names, attach) => { pendingAttach.push(() => attach({ schedule: service, effect: (execute, label) => ctx.effect(execute, label) })) }
+  }
+  const attachSchedule = () => { for (const run of pendingAttach.splice(0)) run() }
   const agents = new Map()
   const agentOf = (sessionId) => {
     if (!agents.has(sessionId)) agents.set(sessionId, { session: { id: sessionId }, followup() {}, steer() {}, inject() {}, cancel() {}, whenIdle() {}, inbox: { nextStep: [], nextTurn: [], remove() {} } })
@@ -79,7 +86,7 @@ async function start({ github = 'Birfy' } = {}) {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { rt, service, delivered, stop }
+  return { rt, service, delivered, attachSchedule, stop }
 }
 
 const created = async (rt, body) => (await rt.projectEndpoint('project-create', body)).project
@@ -215,6 +222,71 @@ test('project-create makes exactly one 09:00 Asia/Shanghai task and project-dele
     assert.equal(rt.readProject(project.id), null)
     assert.equal(service.tasks.size, 0)
     assert.equal(rt.projectMemoryOf(project.id), null)
+  } finally {
+    await stop()
+  }
+})
+
+test('a Project created while automation is off gets its 09:00 digest when the service appears (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Late', ownerUserId: 'owner-1' })
+    assert.equal(project.assistant.scheduleId, undefined, 'no task is written while the service is off')
+    assert.match(project.assistant.error, /Automation tasks are off in DSH/)
+    assert.equal(service.tasks.size, 0)
+
+    // The host's own attach path: the service appears on the ctx and schedules.attach runs, which
+    // asks the assistant to reconcile. The digest is the only task it may write.
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+    assert.equal(service.created.length, 1)
+    const request = service.created[0].request
+    assert.equal(request.title, '09:00 Project digest')
+    assert.deepEqual(request.daily, { time: '09:00:00', time_zone: 'Asia/Shanghai' })
+    assert.equal(service.tasks.size, 1)
+
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, 'schedule-1')
+    assert.equal(saved.error, undefined, 'the recorded error is cleared by the successful retry')
+
+    // A second pass over the same Project is not a second task.
+    await rt.projectAssistant.reconcile()
+    assert.equal(service.created.length, 1)
+    assert.equal(service.tasks.size, 1)
+
+    // `project-create` on a Project that already has its assistant answers `created:false` and adds
+    // nothing; with the schedule in place there is nothing to retry.
+    const again = await rt.projectAssistant.create(project.id)
+    assert.equal(again.created, false)
+    assert.equal(again.assistant.scheduleId, 'schedule-1')
+    assert.equal(service.tasks.size, 1)
+  } finally {
+    await stop()
+  }
+})
+
+test('project-create retries the digest for an assistant it did not create (#1751)', async () => {
+  const { rt, service, stop } = await start()
+  try {
+    // The service is mounted but its first write fails, which is how "automation tasks are off"
+    // reaches the assistant: the endpoint exists and the task is refused.
+    const realCreate = service.create
+    service.create = async () => { throw new Error('Automation tasks are off in DSH') }
+    const project = await created(rt, { name: 'Retry', ownerUserId: 'owner-1' })
+    assert.equal(project.assistant.scheduleId, undefined)
+    assert.match(project.assistant.error, /Automation tasks are off in DSH/)
+    assert.equal(service.tasks.size, 0)
+
+    service.create = realCreate
+    const again = await rt.projectAssistant.create(project.id)
+    assert.equal(again.created, false)
+    assert.equal(again.assistant.scheduleId, 'schedule-1')
+    assert.equal(again.assistant.error, undefined)
+    assert.equal(service.tasks.size, 1, 'exactly one 09:00 task, and it is the retried one')
+
+    const third = await rt.projectAssistant.create(project.id)
+    assert.equal(third.created, false)
+    assert.equal(service.tasks.size, 1)
   } finally {
     await stop()
   }
@@ -522,7 +594,8 @@ test('a card lists for the owner of the Bot that owns it, through the real task 
     }
     await rt.taskEndpoint('task-accept', { id: moving }, null)
     await rt.taskEndpoint('task-start', { id: moving }, null)
-    const rows = rt.projectBoard(project.id)
+    // #1767: the same call now answers the record beside the rows, so the rows are read off it.
+    const rows = (await rt.projectBoard(project.id)).rows
     assert.equal(rows.length, 3)
     assert.ok(rows.every(row => row.assignee === null), 'the board carries a Bot name or null, never a member id')
     assert.equal(actionableFor(rows, 'owner-1').length, 0, 'the raw helper sees no owner without a resolver')

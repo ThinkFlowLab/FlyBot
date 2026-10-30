@@ -1357,6 +1357,11 @@ var ZH = {
   "Project settings": "项目设置",
   "Project board": "项目看板",
   "No Project here.": "这里没有项目。",
+  // The record beside the cards (#1767): the folder was read, and what it holds.
+  Decisions: "决策",
+  Meetings: "会议",
+  "Not decided": "未决定",
+  "decision file gone": "决策文件已不在",
   // The Project board names its columns with the same keys the task record uses.
   "not-started": "未开始",
   "in-progress": "进行中",
@@ -19832,6 +19837,18 @@ var PROJECT_BOARD_CSS = `
 .bt-project-audit{font-size:11px;line-height:1.45;white-space:pre-wrap;opacity:.65;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-row .bt-project-ref{margin-left:auto;font-size:11px;opacity:.6}
 .bt-project-empty{padding:22px 4px;opacity:.7}
+/* #1767: the record beside the cards. The same surface as a row, one step quieter, and no new
+   component language: a heading, a list, and a monospace hash the reader can compare. */
+.bt-project-record{margin:18px 0 0;border-top:1px solid var(--bt-line,rgba(127,127,127,.22));padding:12px 0 0}
+.bt-project-record h4{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-record h5{margin:10px 0 4px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.55}
+.bt-project-decision,.bt-project-meeting{display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));margin:0 0 6px}
+.bt-project-decision .bt-project-date,.bt-project-meeting .bt-project-date{font-size:11px;opacity:.6;min-width:76px;font-variant-numeric:tabular-nums}
+.bt-project-decision .bt-project-hash{margin-left:auto;font-size:11px;opacity:.55;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-decision .bt-project-title,.bt-project-meeting .bt-project-title{min-width:0}
+.bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-missing{font-size:11px;opacity:.6}
+.bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
 .bt-project-actions{display:flex;gap:8px;margin:0 0 14px}
 `;
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
@@ -19849,7 +19866,59 @@ var boardOfRow = (row, task) => {
   }
   return null;
 };
-function projectBoardView({ project, rows, canManage, tasks } = {}) {
+var decisionOf = (file) => {
+  if (file === null || typeof file !== "object") return null;
+  const path = text(file.path);
+  if (path === "") return null;
+  return {
+    key: `decision:${path}`,
+    path,
+    name: text(file.name) || path.slice(path.lastIndexOf("/") + 1),
+    date: text(file.date),
+    title: text(file.title),
+    sha256: text(file.sha256),
+    shortHash: text(file.sha256).slice(0, 12)
+  };
+};
+var meetingOf = (meeting, status) => {
+  if (meeting === null || typeof meeting !== "object") return null;
+  const id = text(meeting.id);
+  if (id === "") return null;
+  return {
+    key: `meeting:${id}`,
+    id,
+    date: text(meeting.date),
+    question: text(meeting.question) || text(meeting.title),
+    owner: text(meeting.owner) || null,
+    status,
+    path: text(meeting.path),
+    blockingQuestion: text(meeting.blockingQuestion) || null
+  };
+};
+var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
+function projectBoardRecord({ decisions, meetings } = {}) {
+  const dir = text(decisions?.dir) || null;
+  const files = listOf(decisions?.files);
+  const decided = Array.isArray(meetings?.decided) ? meetings.decided.map((item) => meetingOf(item, "decided")).filter((item) => item !== null) : [];
+  const pending = Array.isArray(meetings?.pending) ? meetings.pending.map((item) => meetingOf(item, item?.status ?? "deliberating")).filter((item) => item !== null) : [];
+  return {
+    decisions: {
+      dir,
+      files,
+      count: files.length,
+      empty: files.length === 0,
+      emptyText: text(decisions?.reason) || (dir === null ? "This Project names no working folder." : `No decision file in ${dir}/decisions.`)
+    },
+    meetings: {
+      decided,
+      pending,
+      count: decided.length + pending.length,
+      empty: decided.length === 0 && pending.length === 0,
+      emptyText: text(meetings?.reason) || "No meeting of this Project is recorded."
+    }
+  };
+}
+function projectBoardView({ project, rows, canManage, tasks, decisions, meetings } = {}) {
   const list = Array.isArray(rows) ? rows.filter((row) => row !== null && typeof row === "object" && text(row.id) !== "") : [];
   const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
   const groups = PROJECT_SOURCES.map((source) => ({
@@ -19878,7 +19947,8 @@ function projectBoardView({ project, rows, canManage, tasks } = {}) {
     groups,
     count: list.length,
     empty: list.length === 0,
-    emptyText: "No cards yet."
+    emptyText: "No cards yet.",
+    record: projectBoardRecord({ decisions, meetings })
   };
 }
 function ProjectBoardRows({ view, onOpen }) {
@@ -19919,15 +19989,53 @@ function ProjectBoardRows({ view, onOpen }) {
     })
   ));
 }
-function ProjectBoardPane({ project, rows, canManage, tasks, onOpen }) {
-  const view = projectBoardView({ project, rows, canManage, tasks });
+function ProjectBoardRecord({ record }) {
+  const { decisions, meetings } = record;
+  const decisionRows = decisions.files.map((file) => (0, import_react46.createElement)(
+    "div",
+    { key: file.key, className: "bt-project-decision", "data-path": file.path, "data-sha256": file.sha256 },
+    (0, import_react46.createElement)("span", { className: "bt-project-date" }, file.date),
+    (0, import_react46.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
+    (0, import_react46.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
+  ));
+  const decidedRows = meetings.decided.map((meeting) => (0, import_react46.createElement)(
+    "div",
+    { key: meeting.key, className: "bt-project-meeting", "data-status": "decided" },
+    (0, import_react46.createElement)("span", { className: "bt-project-date" }, meeting.date),
+    (0, import_react46.createElement)("span", { className: "bt-project-title" }, meeting.question),
+    meeting.owner === null ? null : (0, import_react46.createElement)("span", { className: "bt-project-owner" }, `@${meeting.owner}`),
+    // A decided meeting whose file is gone still reads as decided; the missing path says so
+    // instead of the row disappearing with the file.
+    meeting.path === "" ? (0, import_react46.createElement)("span", { className: "bt-project-missing" }, "decision file gone") : (0, import_react46.createElement)("span", { className: "bt-project-path" }, meeting.path)
+  ));
+  const pendingRows = meetings.pending.map((meeting) => (0, import_react46.createElement)(
+    "div",
+    { key: meeting.key, className: "bt-project-meeting", "data-status": meeting.status },
+    (0, import_react46.createElement)("span", { className: "bt-project-date" }, meeting.date),
+    (0, import_react46.createElement)("span", { className: "bt-project-title" }, meeting.blockingQuestion === null ? meeting.question : meeting.blockingQuestion),
+    (0, import_react46.createElement)("span", { className: "bt-project-status" }, meeting.status)
+  ));
+  return (0, import_react46.createElement)(
+    "section",
+    { className: "bt-project-record", "data-decisions": String(decisions.count), "data-meetings": String(meetings.count) },
+    (0, import_react46.createElement)("h4", null, t("Decisions")),
+    decisions.empty ? (0, import_react46.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(decisions.emptyText)) : decisionRows,
+    (0, import_react46.createElement)("h4", null, t("Meetings")),
+    meetings.empty ? (0, import_react46.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(meetings.emptyText)) : decidedRows,
+    meetings.pending.length === 0 ? null : (0, import_react46.createElement)("h5", null, t("Not decided")),
+    meetings.pending.length === 0 ? null : pendingRows
+  );
+}
+function ProjectBoardPane({ project, rows, canManage, tasks, decisions, meetings, onOpen }) {
+  const view = projectBoardView({ project, rows, canManage, tasks, decisions, meetings });
   return (0, import_react46.createElement)(
     "div",
     { className: "bt-project-board", "data-can-manage": view.canManage ? "true" : "false" },
     (0, import_react46.createElement)("h3", null, view.title),
     // Management affordances are drawn only for the owner; the refusal itself is the host's.
     view.canManage ? (0, import_react46.createElement)("div", { className: "bt-project-actions" }, (0, import_react46.createElement)("button", { type: "button" }, t("Project settings")), (0, import_react46.createElement)("button", { type: "button" }, t("Members"))) : null,
-    (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen })
+    (0, import_react46.createElement)(ProjectBoardRows, { view, onOpen }),
+    (0, import_react46.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
 function ProjectBoardOverlay({ actions, call: request } = {}) {
@@ -19968,7 +20076,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           read("tasks", {})
         ]);
         const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
-        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks });
+        if (live) setState({ project: record?.project ?? project, rows: board?.tasks ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings });
       } catch {
         if (live) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
@@ -20008,6 +20116,8 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           rows: state.rows,
           canManage: state.canManage,
           tasks: state.tasks,
+          decisions: state.decisions,
+          meetings: state.meetings,
           // The task's own board is where a row leads: the Tasks dialog reads `#task=` on mount and
           // lands on that Bot or group. Nothing here re-decides which board that is.
           onOpen: (board) => {

@@ -225,7 +225,7 @@ test('a pre-slice record reads back and renders without the new fields (#1720)',
   assert.match(formatRoomBoard(app.rt.state.tasks, { roomId: 'war', now: 10, nameOf: () => 'Dev1' }), /An old card/)
 })
 
-test('the Project board reads the typed fields from the same row (#1720)', () => {
+test('the Project board reads the typed fields from the same row (#1720)', async () => {
   const tasks = {
     'task-old': { id: 'task-old', status: 'working', ownerBotId: 'b1', title: 'Old', createdAt: 1, updatedAt: 2 },
     'task-new': {
@@ -238,7 +238,7 @@ test('the Project board reads the typed fields from the same row (#1720)', () =>
   }
   const rt = { state: { tasks }, readProject: id => ({ id }), projectOfMember: () => ({ id: 'p' }), taskVisible: () => true }
   installProjectBoard(rt)
-  const rows = rt.projectBoard('p')
+  const rows = (await rt.projectBoard('p')).rows
   const old = rows.find(row => row.id === 'task-old')
   const fresh = rows.find(row => row.id === 'task-new')
   assert.equal(old.taskClass, undefined, 'a pre-slice row keeps its old shape')

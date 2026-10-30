@@ -10,6 +10,7 @@ import { currentParticipants } from './room-membership.js'
 import { questionReply, replyText } from './parts.js'
 import { OTHER, settled } from './turn-origin.js'
 import { cleanName } from './delivery.js'
+import { retiredBot } from './store.js'
 
 // A run Bot (ephemeral) is not a team member: every tool below has an effect that reaches past
 // the run Bot's own Session — it messages, stops or edits another Bot, edits a group, writes or
@@ -208,10 +209,6 @@ export function install(rt) {
   const refuse = (message) => { throw new Error(message) }
   // A run Bot keeps its name (findBot still sees it) but no team tool can address it (#1373).
   const teamBot = bot => bot !== undefined && bot.remote === undefined && bot.ephemeral === undefined
-  // Retired (#638): the tree no longer counts it and the default Bot list leaves it out.
-  // Retirement is terminal, so no team tool addresses it either (#1700): every tool that takes
-  // a Bot name resolves through findTeamBot, which is where the rule belongs.
-  const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
   const findTeamBot = (name) => {
     const bot = rt.findBot(name)
     return teamBot(bot) && !retiredBot(bot) ? bot : undefined
@@ -405,12 +402,16 @@ export function install(rt) {
       const target = findTeamBot(args.bot)
       if (target === undefined) return `No Bot named ${args.bot}. Team: ${teamNames()}`
       if (target.id === sender.id) return 'You cannot archive yourself.'
+      let freed
       try {
-        await rt.archiveBot(target.id, { reason: args.reason })
+        ;({ freed } = await rt.archiveBot(target.id, { reason: args.reason }))
       } catch (error) {
         return `Could not archive the Bot: ${error.message}`
       }
-      return `Archived ${target.name}. It is out of the tree and the default Bot list; its chats and history stay readable, and it is not deleted.`
+      // A timer left armed is a Bot that still wakes on its own, so the answer counts them.
+      const paused = freed?.available === true && freed.paused > 0 ? ` Paused ${freed.paused} task(s) in its own chat.` : ''
+      const armed = freed?.available === true && freed.armed > 0 ? ` ${freed.armed} task(s) in its own chat are still armed.` : ''
+      return `Archived ${target.name}. It is out of the tree and the default Bot list; its chats and history stay readable, and it is not deleted.${paused}${armed}`
     },
   }))
 

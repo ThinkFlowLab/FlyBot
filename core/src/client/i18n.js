@@ -1310,6 +1310,11 @@ const ZH = {
   'Project settings': '项目设置',
   'Project board': '项目看板',
   'No Project here.': '这里没有项目。',
+  // The record beside the cards (#1767): the folder was read, and what it holds.
+  Decisions: '决策',
+  Meetings: '会议',
+  'Not decided': '未决定',
+  'decision file gone': '决策文件已不在',
   // The Project board names its columns with the same keys the task record uses.
   'not-started': '未开始',
   'in-progress': '进行中',

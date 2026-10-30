@@ -139,3 +139,64 @@ test('a Project-less entry offers the page that creates one (#1766)', async () =
   button.props.onClick()
   assert.deepEqual(opened, ['projects'])
 })
+
+// #1767: the record beside the cards. The view passes through what the host read — a decision
+// with its hash, the meetings that reached one, and the ones still open listed apart — and an
+// empty section says which folder was read instead of drawing an empty box.
+const decisions = {
+  dir: '/team/flybot',
+  files: [
+    { path: 'decisions/2026-10-30-adopt.md', name: '2026-10-30-adopt.md', date: '2026-10-30', title: 'Adopt the board record', sha256: 'a'.repeat(64), mtime: '2026-10-30T01:00:00.000Z' },
+    { path: 'decisions/2026-10-31-second.md', name: '2026-10-31-second.md', date: '2026-10-31', title: 'Keep decisions small', sha256: 'b'.repeat(64), mtime: '2026-10-31T01:00:00.000Z' },
+  ],
+  reason: '',
+}
+const meetings = {
+  decided: [{ id: 'meeting-d', date: '2026-10-30', question: 'Which board carries the record?', owner: 'Chief', path: 'decisions/2026-10-30-adopt.md' }],
+  pending: [{ id: 'meeting-o', date: '2026-10-30', question: 'Should the board page?', status: 'deliberating' }],
+  reason: '',
+}
+
+test('#1767: the view carries the decisions with their hash and the meetings apart', () => {
+  const view = plain(projectBoardView({ project: { id: 'project-1', name: 'FlyBot' }, rows, decisions, meetings, canManage: false }))
+  assert.equal(view.record.decisions.count, 2)
+  assert.equal(view.record.decisions.empty, false)
+  assert.equal(view.record.decisions.files[0].shortHash, 'a'.repeat(12))
+  assert.equal(view.record.decisions.files[0].title, 'Adopt the board record')
+  assert.equal(view.record.meetings.decided.length, 1)
+  assert.equal(view.record.meetings.decided[0].path, 'decisions/2026-10-30-adopt.md')
+  assert.equal(view.record.meetings.pending.length, 1)
+  assert.equal(view.record.meetings.pending[0].status, 'deliberating')
+})
+
+test('#1767: the pane draws the record under the cards, and a deliberating meeting is never a decision', () => {
+  const tree = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, decisions, meetings, canManage: false }))
+  const text = tree.map(textOf).join(' | ')
+  assert.match(text, /Adopt the board record/)
+  assert.match(text, /aaaaaaaaaaaa/, 'the hash the reader can compare is on screen')
+  assert.match(text, /Which board carries the record\?/)
+  assert.match(text, /Should the board page\?/)
+  const sections = tree.filter(node => node.props?.className === 'bt-project-record')
+  assert.equal(sections.length, 1)
+  assert.equal(sections[0].props['data-decisions'], '2')
+  assert.equal(sections[0].props['data-meetings'], '2')
+  const statuses = tree.filter(node => node.props?.['data-status'] !== undefined).map(node => node.props['data-status'])
+  assert.deepEqual(statuses.sort(), ['decided', 'deliberating'])
+})
+
+test('#1767: an empty record names the folder it read and the missing decision file', () => {
+  const view = plain(projectBoardView({
+    project: { id: 'project-1', name: 'FlyBot' }, rows: [], canManage: false,
+    decisions: { dir: '/team/flybot', files: [], reason: 'no decision file in /team/flybot/decisions' },
+    meetings: { decided: [], pending: [], reason: 'no meeting of this Project is recorded' },
+  }))
+  assert.equal(view.record.decisions.empty, true)
+  assert.equal(view.record.decisions.emptyText, 'no decision file in /team/flybot/decisions')
+  assert.equal(view.record.meetings.empty, true)
+  assert.equal(view.record.meetings.emptyText, 'no meeting of this Project is recorded')
+  // The view before this slice still answers: a caller passing no sections reads an empty record,
+  // not a thrown one.
+  const bare = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [] }))
+  assert.equal(bare.record.decisions.count, 0)
+  assert.match(bare.record.decisions.emptyText, /no working folder/)
+})

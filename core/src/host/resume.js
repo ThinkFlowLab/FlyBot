@@ -10,6 +10,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SOURCE_KIND } from './constants.js'
 import { OTHER, settled } from './turn-origin.js'
+import { retiredBot } from './store.js'
 
 // Long enough for DSH to finish opening its workspaces after a start.
 const RESUME_DELAY_MS = 3000
@@ -181,7 +182,9 @@ export function install(rt) {
 
   async function resumeTurn(sessionId, record) {
     const bot = rt.botOf(record.botId)
-    if (bot === undefined) return
+    // A retired Bot is not woken by a restart (#1709): its chat Session outlives it, so the
+    // pickup would deliver to a Bot that no longer runs.
+    if (bot === undefined || retiredBot(bot)) return
     const text = resumeText(record)
     if (record.roomId !== undefined) {
       const room = rt.roomOf(record.roomId)
@@ -287,7 +290,16 @@ export function install(rt) {
     firstTurn = undefined
     for (const [sessionId, list] of Object.entries(dropped)) {
       if (!Array.isArray(list)) { delete queued[sessionId]; continue }
-      await resendQueued(sessionId, list).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
+      // A delivery queued for a Bot that has since been retired is not sent again (#1709),
+      // exactly as the turn above is not picked up: its note goes with the decision.
+      const kept = list.filter(item => !retiredBot(rt.botOf(item.args?.toId)))
+      if (kept.length !== list.length) {
+        if (kept.length === 0) delete queued[sessionId]
+        else queued = { ...queued, [sessionId]: kept }
+        persist()
+      }
+      if (kept.length === 0) continue
+      await resendQueued(sessionId, kept).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
     }
     taken = undefined
     for (const [sessionId, record] of cut) {

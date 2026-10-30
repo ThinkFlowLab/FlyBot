@@ -29,6 +29,7 @@ import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { splitRef, unquote } from './text.js'
 import { output } from './tools.js'
+import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
 
 // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
@@ -514,7 +515,7 @@ export function install(rt) {
     if (/^(own|me|mine|self|yours?|自己|我)$/i.test(value)) return { scope: ownScope(botId) }
     if (/^(team|团队|共享)$/i.test(value)) return { scope: TEAM }
     const bot = rt.findBot(value)
-    if (bot === undefined) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
+    if (bot === undefined || retiredBot(bot)) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
     return { scope: ownScope(bot.id) }
   }
   function writeDenied(scope, botId) {

@@ -239,10 +239,45 @@ export function install(rt) {
     }
   }
 
+  // A Project whose assistant exists without a `scheduleId` — created while DSH's automation tasks
+  // were off, or whose task was never written — gets its 09:00 digest on the first moment the
+  // service exists (#1751). A success clears the recorded error, so a later `project-create`
+  // answers `created:false` with nothing left to retry. One run at a time: a caller that arrives
+  // while one is in flight joins it instead of putting a second task on the Session.
+  let reconciling = null
+  const reconcile = () => {
+    if (reconciling !== null) return reconciling
+    reconciling = (async () => {
+      if (typeof rt.scheduleEndpoint !== 'function') return { scheduled: [] }
+      const scheduled = []
+      for (const project of rt.listProjects?.() ?? []) {
+        const assistant = assistantOf(project)
+        // No assistant, or one whose digest is already scheduled: nothing to retry.
+        if (assistant === null || typeof assistant.scheduleId === 'string') continue
+        const schedule = await scheduleDigest(project, assistant.botId)
+        if (typeof schedule.scheduleId !== 'string') {
+          if (typeof schedule.error === 'string') assistant.error = schedule.error
+          continue
+        }
+        assistant.scheduleId = schedule.scheduleId
+        delete assistant.error
+        scheduled.push(project.id)
+      }
+      if (scheduled.length > 0) await rt.save?.()
+      return { scheduled }
+    })().finally(() => { reconciling = null })
+    return reconciling
+  }
+
   const create = async (projectId) => {
     const project = activeProject(projectId)
     const existing = assistantOf(project)
-    if (existing !== null) return { project, assistant: existing, created: false }
+    if (existing !== null) {
+      // An assistant that exists but never got its digest is offered the retry here, and the
+      // answer still says `created:false`: this call did not create anything.
+      if (typeof existing.scheduleId !== 'string') await reconcile()
+      return { project, assistant: assistantOf(project) ?? existing, created: false }
+    }
     const bot = await rt.createBot({
       name: assistantName(project),
       role: ASSISTANT_ROLE,
@@ -438,7 +473,10 @@ export function install(rt) {
     const listed = text(ownerId) === '' ? ownersOf(project) : [text(ownerId)]
     const owners = listed.length === 0 ? [''] : listed
     const who = identity(project.id)
-    const rows = rt.projectBoard?.(project.id) ?? []
+    // The board read is the same one the page uses (#1767): the digest wants its cards, not the
+    // decisions and meetings that answer beside them.
+    const board = (await rt.projectBoard?.(project.id)) ?? []
+    const rows = Array.isArray(board) ? board : (board.rows ?? [])
     const state = project.workDir === undefined ? null : await listProjectState(project.workDir).catch(() => null)
     const files = state?.ok === true ? state.files : []
     const results = []
@@ -467,7 +505,7 @@ export function install(rt) {
     }
   }
 
-  rt.projectAssistant = { create, remove, read, write, identity, digest, buildDigest, setOwner, ownersOf, actionableFor, MAX_ACTIONABLE }
+  rt.projectAssistant = { create, reconcile, remove, read, write, identity, digest, buildDigest, setOwner, ownersOf, actionableFor, MAX_ACTIONABLE }
 
   // The assistant's own Session calls this. The Project comes from the Session's bound Bot, never
   // from the arguments, so one Project's assistant cannot reach another Project's memory.

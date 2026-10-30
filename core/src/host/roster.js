@@ -529,8 +529,14 @@ export function install(rt) {
       bot.fields['flybot-tree'].retired = true
     }
     bot.hidden = true
+    // A retired Bot means what a deleted one does to the board (#1709): the cards it holds fail
+    // instead of waiting for a Bot that will not run again. `hooks` does this for deletion.
+    await rt.taskBotDeleted?.(id, 'the responsible Bot was retired')
+    // Retiring disarms its own chat Session (#1709): `schedules` installs after `roster`, and a
+    // host without the module (a test that mounts only the roster) simply has nothing to pause.
+    const freed = typeof rt.pauseBotSchedules === 'function' ? await rt.pauseBotSchedules(id) : undefined
     await rt.save()
-    return bot
+    return { bot, freed }
   }
 
   async function deleteBot(id) {

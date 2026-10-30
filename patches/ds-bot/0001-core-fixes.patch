@@ -1413,13 +1413,18 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +1307,27 @@
+@@ -838,6 +1307,32 @@
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
 +  'Project settings': '项目设置',
 +  'Project board': '项目看板',
 +  'No Project here.': '这里没有项目。',
++  // The record beside the cards (#1767): the folder was read, and what it holds.
++  Decisions: '决策',
++  Meetings: '会议',
++  'Not decided': '未决定',
++  'decision file gone': '决策文件已不在',
 +  // The Project board names its columns with the same keys the task record uses.
 +  'not-started': '未开始',
 +  'in-progress': '进行中',
@@ -1441,7 +1446,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  
  // Host errors stay English, since Bots read them too; they are translated where the
-@@ -853,8 +1343,11 @@
+@@ -853,8 +1348,11 @@
    [/^Only the user, a Main Bot, or the admin of "(.+)" can change it$/, '只有你、主 Bot 或「$1」的管理员可以修改'],
    [/^A key must have at least (\d+) characters$/, '密钥至少 $1 个字符'],
    [/^A key can have at most (\d+) characters$/, '密钥最多 $1 个字符'],
@@ -1453,7 +1458,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -883,6 +1376,20 @@
+@@ -883,6 +1381,20 @@
    'Unknown Bot': '找不到这个 Bot',
    'Unknown conversation': '找不到这个对话',
    'A group chat needs at least two Bots': '群聊至少要两个 Bot',
@@ -1474,7 +1479,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +1412,8 @@
+@@ -905,6 +1417,8 @@
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -1483,6 +1488,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  Object.assign(ZH, HOST_ZH)
  
+
 diff --git a/src/client/member-status.js b/src/client/member-status.js
 --- a/src/client/member-status.js
 +++ b/src/client/member-status.js
@@ -3018,11 +3024,11 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 @@ -1,4 +1,6 @@
  import { createHash } from 'node:crypto'
 +import { RESERVED_NAMES } from './connectors.js'
-+import { ownEntry } from './store.js'
++import { ownEntry, retiredBot } from './store.js'
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-@@ -7,8 +7,8 @@
+@@ -7,8 +7,8 @@ const ENSURE_TIMEOUT_MS = 15_000
  
  export function validateCapabilityName(value) {
    const name = String(value ?? '').trim()
@@ -3033,7 +3039,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
-@@ -139,7 +139,7 @@
+@@ -139,7 +139,7 @@ export function install(rt) {
      await rt.load()
      writeCheck()
      const items = ensureLibrary()
@@ -3042,16 +3048,20 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
      if (!item) throw new Error(`No capability named ${name}.`)
      if (!ui) editCheck(item, botId, 'delete')
      delete items[item.name]
-@@ -156,7 +156,7 @@
+@@ -154,9 +154,10 @@ export function install(rt) {
+     const caller = rt.botOf(callerId)
+     if (!caller) throw new Error('Only Bots on the team can change capabilities.')
      const target = targetRef ? rt.findBot(targetRef) : caller
-     if (!target) throw new Error(`No Bot named ${targetRef}.`)
+-    if (!target) throw new Error(`No Bot named ${targetRef}.`)
++    // A retired Bot is not addressable (#1709): it resolves exactly like an unknown name.
++    if (!target || (targetRef && retiredBot(target))) throw new Error(`No Bot named ${targetRef}.`)
      if (target.id !== caller.id && !rt.isMain(callerId)) throw new Error('Only a Main Bot can change another Bot’s capabilities.')
 -    const item = ensureLibrary()[String(name ?? '')]
 +    const item = ownEntry(ensureLibrary(), String(name ?? ''))
      if (!item) throw new Error(`No capability named ${name}.`)
      await setAttached(target, item.name, endpoint === 'attach')
      return { bot: target.name, attached: endpoint === 'attach' }
-@@ -264,7 +264,7 @@
+@@ -264,7 +264,7 @@ export function install(rt) {
      return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
    }
    const disposeMount = async mount => {
@@ -3060,7 +3070,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    const mountOne = async (agent, bot, agentMounts, name) => {
      const sessionId = agent.session.id
-@@ -454,7 +454,7 @@
+@@ -454,7 +454,7 @@ export function install(rt) {
      if (endpoint === 'capability-approve') {
        await rt.load()
        writeCheck()
@@ -3069,7 +3079,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
        if (!item || item.kind !== 'mcp' || item.transport !== 'stdio') throw new Error(`No unapproved stdio MCP named ${body.name}.`)
        item.approved = true
        item.updatedAt = Date.now()
-@@ -467,7 +467,7 @@
+@@ -467,7 +467,7 @@ export function install(rt) {
        const bot = rt.botOf(String(body.botId ?? ''))
        if (!bot) throw new Error('Unknown Bot')
        const name = String(body.name ?? '')
@@ -4405,7 +4415,7 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,9 +25,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
+@@ -25,9 +25,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
@@ -4414,6 +4424,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +import { defineTool } from './tool-schema.js'
  import { splitRef, unquote } from './text.js'
  import { output } from './tools.js'
++import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
  
  // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
@@ -4471,6 +4482,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
    // `raw` names a scope: "own", "team", or a Bot. Undefined for the default.
    function namedScope(raw, botId) {
+@@ -495,7 +495,7 @@ export function install(rt) {
+     if (/^(own|me|mine|self|yours?|自己|我)$/i.test(value)) return { scope: ownScope(botId) }
+     if (/^(team|团队|共享)$/i.test(value)) return { scope: TEAM }
+     const bot = rt.findBot(value)
+-    if (bot === undefined) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
++    if (bot === undefined || retiredBot(bot)) return { error: `No Bot named ${value}. scope is "own", "team", or a Bot's name.` }
+     return { scope: ownScope(bot.id) }
+   }
+   function writeDenied(scope, botId) {
 @@ -632,7 +632,7 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
@@ -4916,11 +4936,12 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
-@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
+@@ -9,6 +9,8 @@ import { readFileSync } from 'node:fs'
  import { mkdir, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
  import { SOURCE_KIND } from './constants.js'
 +import { OTHER, settled } from './turn-origin.js'
++import { retiredBot } from './store.js'
  
  // Long enough for DSH to finish opening its workspaces after a start.
  const RESUME_DELAY_MS = 3000
@@ -5015,6 +5036,17 @@ diff --git a/src/host/resume.js b/src/host/resume.js
          update(id, () => undefined)
          break
        }
+@@ -164,7 +164,9 @@ export function install(rt) {
+ 
+   async function resumeTurn(sessionId, record) {
+     const bot = rt.botOf(record.botId)
+-    if (bot === undefined) return
++    // A retired Bot is not woken by a restart (#1709): its chat Session outlives it, so the
++    // pickup would deliver to a Bot that no longer runs.
++    if (bot === undefined || retiredBot(bot)) return
+     const text = resumeText(record)
+     if (record.roomId !== undefined) {
+       const room = rt.roomOf(record.roomId)
 @@ -173,17 +173,17 @@ export function install(rt) {
        // A turn already picked up once and cut off again stays stopped: a restart loop
        // must not run it forever.
@@ -5089,7 +5121,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      }
    }
  
-@@ -211,26 +211,41 @@ export function install(rt) {
+@@ -211,26 +211,50 @@ export function install(rt) {
      if (rt.readOnly() !== undefined) return
      const { turns: noted, queued: dropped } = interrupted
      interrupted = { turns: {}, queued: {} }
@@ -5119,8 +5151,18 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      firstTurn = undefined
      for (const [sessionId, list] of Object.entries(dropped)) {
 -      if (!Array.isArray(list)) continue
+-      await resendQueued(sessionId, list).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
 +      if (!Array.isArray(list)) { delete queued[sessionId]; continue }
-       await resendQueued(sessionId, list).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
++      // A delivery queued for a Bot that has since been retired is not sent again (#1709),
++      // exactly as the turn above is not picked up: its note goes with the decision.
++      const kept = list.filter(item => !retiredBot(rt.botOf(item.args?.toId)))
++      if (kept.length !== list.length) {
++        if (kept.length === 0) delete queued[sessionId]
++        else queued = { ...queued, [sessionId]: kept }
++        persist()
++      }
++      if (kept.length === 0) continue
++      await resendQueued(sessionId, kept).catch(error => rt.warn('ds-bot: sending again what %s was sent failed: %s', sessionId, error))
      }
      taken = undefined
      for (const [sessionId, record] of cut) {
@@ -5142,7 +5184,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
-@@ -5,8 +5,42 @@
+@@ -5,8 +5,43 @@
  // them. A group chat's task lives on the group's own Session, so the reminder reaches
  // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
  // the service is optional and every endpoint reports whether it is there.
@@ -5174,6 +5216,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +import { defineTool } from './tool-schema.js'
 +import { textOf } from './text.js'
 +import { output } from './tools.js'
++import { retiredBot } from './store.js'
  
  const MAX_TITLE = 120
 +// How long a due task may stay undelivered while the app runs before it counts as failed.
@@ -5258,7 +5301,22 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
      }
      default:
        throw invalid('Pick when it runs')
-@@ -89,63 +89,502 @@ export function install(rt) {
+@@ -75,7 +75,14 @@ export function install(rt) {
+   const attach = (sub) => {
+     const own = sub.schedule
+     service = own
+     sub.effect(() => () => { if (service === own) service = null }, 'ds-bot: schedule service')
++    // The service appearing — at startup, or when the automation bundle is switched on later — is
++    // the moment a Project Assistant that never got its 09:00 digest can schedule it (#1751). The
++    // assistant module installs after this one, so an install-time attach finds nothing to call and
++    // a later attach finds the hook; either way a Project created before the service existed keeps
++    // its retry on `project-create`.
++    rt.projectAssistant?.reconcile?.()
++      ?.catch?.(error => rt.warn?.('ds-bot: re-scheduling Project digests failed: %s', error?.message ?? error))
+   }
+   if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
+   else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
+@@ -89,63 +89,543 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5413,7 +5471,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  function contentOf(body) {
 +    const bot = state.bots[body.target]
 +    const room = state.rooms[body.target]
++    // A retired Bot answers as an unknown target (#1709): its chat Session is still alive, so a
++    // row armed here would wake it on a timer.
 +    if (bot === undefined && room === undefined) throw invalid('No such Bot or group chat')
++    if (retiredBot(bot)) throw invalid('No such Bot or group chat')
 +    const title = String(body.title ?? '').trim()
 +    const prompt = String(body.prompt ?? '').trim()
 +    if (title === '') throw invalid('Give the task a name')
@@ -5444,6 +5505,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const targetBot = state.bots[body.target]
 +    const targetRoom = state.rooms[body.target]
 +    if (targetBot === undefined && targetRoom === undefined) throw invalid('No such Bot or group chat')
++    if (retiredBot(targetBot)) throw invalid('No such Bot or group chat')
 +    const same = owner.botId !== undefined ? targetBot?.id === owner.botId : targetRoom?.id === owner.roomId
 +    if (same) throw invalid('Pick a different Bot or group chat to copy it to')
 +    const request = requestOf(source)
@@ -5499,13 +5561,14 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (!known(owner)) continue
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
-+    }
+     }
+-    return { available: true, tasks }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
 +    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
-+  }
-+
+   }
+ 
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
 +  // place on the same Session, otherwise created anew before the old one is deleted.
 +  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
@@ -5570,6 +5633,39 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    return schedulesView()
 +  }
 +
++  // Retiring a Bot disarms what its own chat Session already holds (#1709), with the same
++  // semantics as pausing one task: the record is saved in state.pausedSchedules before DSH
++  // drops the row, so a refusing delete loses nothing and is counted as still armed.
++  async function pauseBotSchedules(botId) {
++    const sessionId = rt.chatOf(botId)
++    if (service === null || sessionId === undefined) return { paused: 0, armed: 0, available: false }
++    const rows = (await service.catalog()).filter(entry => entry.sessionId === sessionId && entry.status === 'active')
++    const held = []
++    for (const row of rows) {
++      const request = requestOf(row)
++      if (request === null) continue
++      paused()[row.id] = { id: row.id, sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
++      held.push(row)
++    }
++    // The records are saved before DSH lets the rows go, exactly as pausing one task does.
++    if (held.length > 0) await rt.save()
++    let pausedCount = 0
++    let armed = rows.length - held.length
++    for (const row of held) {
++      try {
++        const result = await service.delete({ sessionId, id: row.id })
++        if (result?.deleted === false) throw invalid('No such task')
++        pausedCount += 1
++      } catch {
++        delete paused()[row.id]
++        armed += 1
++      }
++    }
++    // A row DSH refused to drop is not paused either, so the saved state says so.
++    if (armed > 0) await rt.save()
++    return { paused: pausedCount, armed, available: true }
++  }
++
 +  // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
 +  // the paused copy. A one-time task whose time has passed waits for an edit.
 +  async function resumeSchedule(body) {
@@ -5578,6 +5674,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const held = pausedEntry(sessionId, String(body.id ?? ''))
 +    const owner = ownerOf(sessionId)
 +    if (held === undefined || !known(owner)) throw invalid('No such task')
++    // A paused task of a retired Bot stays paused (#1709): resuming it would arm that Bot's
++    // chat Session again, the door create, copy and update refuse.
++    if (owner.botId !== undefined && retiredBot(state.bots[owner.botId])) throw invalid('No such Bot or group chat')
 +    const request = requestOf(held.record)
 +    if (request === null) throw invalid('No such task')
 +    if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Its time has passed. Edit the task to pick a new one')
@@ -5614,11 +5713,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        void rt.save().catch(() => {})
 +      }
 +      throw error
-     }
--    return { available: true, tasks }
++    }
 +    return schedulesView()
-   }
- 
++  }
++
 +  // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
 +  // earlier part), or a group chat it speaks in (now, or an earlier part).
 +  const placeOf = (sessionId, botId) => {
@@ -5785,6 +5883,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -  Object.assign(rt, { scheduleEndpoint: (endpoint, body) => endpoints[endpoint](body ?? {}), moveSchedules })
 +  Object.assign(rt, {
 +    scheduleEndpoint: (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor),
++    pauseBotSchedules,
 +    moveSchedules,
 +    scheduleRunStarted: runStarted,
 +    scheduleRunEnded: runEnded,

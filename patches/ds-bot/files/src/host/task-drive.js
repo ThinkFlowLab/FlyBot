@@ -6,6 +6,7 @@
 // progress, and the next assignee are board writes; chat is not the scheduler.
 import { compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
 import { formatRoomBoard } from './room-context.js'
+import { retiredBot } from './store.js'
 
 // A no-op track_tasks call still bumps updatedAt. The hash leaves that stamp out,
 // so a wake that did not move the board waits before the next one.
@@ -90,6 +91,9 @@ export function install(rt) {
     if (!botId) return []
     const bot = rt.botOf(botId)
     if (!bot || bot.remote !== undefined) return []
+    // A retired Bot is not driven (#1709). Its cards stay on the board in the column and status
+    // they had: retiring stops the delivery, it invents no new state.
+    if (retiredBot(bot)) return []
     return Object.values(rt.state.tasks ?? {}).filter((task) => {
       if (task.ownerBotId !== botId || task.waitingFor === 'input') return false
       // An item with a role and no claimer belongs to the room, not to this Bot: the enqueuer
