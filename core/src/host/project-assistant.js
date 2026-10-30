@@ -70,8 +70,12 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
   const line = (head, entries) => [head, ...entries.map(entry => `- ${entry}`)]
   // The personal block comes last: the same rows answer the same four sections for every owner,
   // and only this one names the cards that wait on the person reading it.
-  const asks = owner === null ? [] : actionable.slice(0, MAX_ACTIONABLE).map(item => `${item.id} — ${item.ask}`)
-  const personal = asks.length === 0 ? [] : line(`Needs ${owner}'s decision:`, asks)
+  const shown = owner === null ? [] : actionable.slice(0, MAX_ACTIONABLE).map(item => `${item.id} — ${item.ask}`)
+  // The block stays five cards: a person with seven waiting is told how many are left over instead
+  // of being handed the whole board (#P-197). Five or fewer print exactly as they did before.
+  const rest = owner === null ? 0 : actionable.length - MAX_ACTIONABLE
+  if (rest > 0) shown.push(`… and ${rest} more waiting on you`)
+  const personal = shown.length === 0 ? [] : line(`Needs ${owner}'s decision:`, shown)
   const sections = [
     ...(merged.length === 0 ? [] : line('Merged since the previous digest:', merged.map(row => `${row.id} (${row.source})`))),
     ...(closed.length === 0 ? [] : line('Closed:', closed.map(row => `${row.id} (${row.source})`))),
@@ -87,26 +91,42 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
   return { changed: true, day: dayIn(at), text: [head, stateLine, ...sections].join('\n') }
 }
 
-// The cards that need *this* owner's decision: still open, and owned by that owner. A card
-// somebody else owns is their decision, and never appears in this owner's digest. The board's
-// `assignee` is a Bot name or null, never a member id (#1733), so the owner comes from `ownerOf`:
-// the host resolves it from the card's own Bot, and a hand-built row may carry `ownerId` itself.
+// The cards that need *this* owner's decision: owned by that owner, and stopped where only the
+// reader can move them. A card somebody else owns is their decision, and never appears in this
+// owner's digest. The board's `assignee` is a Bot name or null, never a member id (#1733), so the
+// owner comes from `ownerOf`: the host resolves it from the card's own Bot, and a hand-built row
+// may carry `ownerId` itself.
+const WAITING_STATUS = new Set(['blocked', 'result-ready'])
 export function actionableFor(rows, ownerId, ownerOf = row => text(row?.ownerId)) {
   const owner = text(ownerId)
   if (owner === '') return []
   return (rows ?? [])
     .filter(row => row?.column !== 'done' && ownerOf(row) === owner)
+    // A row that carries no status keeps the older answer: absence is not evidence that the card
+    // is moving, and reading it as "not waiting" would silently delete a card from the digest.
+    .filter((row) => {
+      const status = text(row?.status)
+      return status === '' || WAITING_STATUS.has(status)
+    })
     .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0) || String(a.id).localeCompare(String(b.id)))
     .map(row => ({ id: String(row.id), ask: askOf(row) }))
 }
 
-// One line, because the block is a list of decisions and a card description may be long.
+// One line, because the block is a list of decisions and a card description may be long. What the
+// card is waiting for is its own status, not its column: a blocked card wants a call, a finished
+// result wants acceptance, and anything else the caller chose to list is still a decision to make.
+const waitOf = (row) => {
+  const status = text(row?.status)
+  if (status === 'blocked') return 'needs your call'
+  if (status === 'result-ready') return 'ready for your acceptance'
+  return 'decide what happens next'
+}
 const askOf = (row) => {
   const title = text(row.title).replace(/\s+/g, ' ')
   const where = text(row.column) === '' ? 'open' : `still ${text(row.column)}`
-  if (title === '') return `decide what happens next — ${where}`
+  if (title === '') return `${waitOf(row)} — ${where}`
   const short = title.length > 80 ? `${title.slice(0, 77)}…` : title
-  return `decide what happens next — ${short} (${where})`
+  return `${waitOf(row)} — ${short} (${where})`
 }
 
 // A write is attributed by text, because one shared GitHub login makes it impossible to tell
@@ -314,8 +334,13 @@ export function install(rt) {
   // A board row carries the card's identity and its column, not its title; the ask line needs a
   // subject, so the card's own record supplies it.
   const withTitles = rows => rows.map((row) => {
-    const title = text(rt.state?.tasks?.[String(row?.id ?? '')]?.title)
-    return title === '' ? row : { ...row, title }
+    const task = rt.state?.tasks?.[String(row?.id ?? '')]
+    const title = text(task?.title)
+    // The card's status comes from its own record here, not from a second read further down: a
+    // card that is still moving waits on nobody, and the digest decides that from this row (#P-195).
+    const status = text(task?.status)
+    const shaped = title === '' ? row : { ...row, title }
+    return status === '' ? shaped : { ...shaped, status }
   })
 
   // A card's owner is the owner of the Bot that owns the card: the board names the Bot, and the
@@ -356,23 +381,29 @@ export function install(rt) {
   const bodyFor = (project, built, who) => (who.ok === true ? [attribution(project, who.login), built.text].join('\n\n') : built.text)
 
   // One owner's digest. Generation may proceed while a quiet window holds delivery; a window that
-  // covers 09:00 delivers nothing that day at all, and that is the expected outcome, not a failure.
+  // covers the due instant delivers nothing that day at all, and that is the expected outcome, not a
+  // failure.
   const digestForOwner = async ({ project, owner, rows, cards, files, at, force, who }) => {
     const assistant = assistantOf(project) ?? project.assistant ?? null
     const record = assistant === null ? { } : ownerRecord(assistant, owner)
     const quiet = quietOf(assistant, owner)
-    const clock = clockIn(quiet.zone, at)
-    const coversDue = inQuietHours(quiet, DIGEST_TIME)
-    const memory = memoryOf(project, owner)
     const day = dayIn(at)
+    // 09:00 in the digest's own zone is an instant, and a window is wall clock in the owner's own
+    // zone: two zones' wall clocks are not comparable (#P-194). Asia/Shanghai has no DST, so the
+    // due instant is today's date at 09:00+08:00, read back as a clock in the owner's zone.
+    const due = clockIn(quiet.zone, Date.parse(`${day}T${DIGEST_TIME}:00+08:00`))
+    const clock = clockIn(quiet.zone, at)
+    const coversDue = inQuietHours(quiet, due)
+    const memory = memoryOf(project, owner)
     if (record.off === true) {
       return { owner, ok: true, skipped: true, optedOut: true, delivered: false, day, reason: 'this owner turned the digest off, so nothing is generated' }
     }
-    // A digest held earlier today goes out once, when the window ends, labelled as held.
+    // A digest held earlier today goes out once, when the window ends, labelled as held from the
+    // instant it was held at — not from 09:00, which is another zone's wall clock.
     const held = typeof record.held === 'object' && record.held !== null ? record.held : null
     if (held !== null && held.day === day && coversDue === false && inQuietHours(quiet, clock) === false) {
       delete record.held
-      const label = `held from ${DIGEST_TIME} to ${clock} by quiet hours ${quiet.from}–${quiet.to}`
+      const label = `held from ${clockIn(quiet.zone, held.at ?? at)} to ${clock} by quiet hours ${quiet.from}–${quiet.to}`
       const body = [bodyFor(project, { text: text(held.text) }, who), `(${label})`].join('\n')
       const sent = await deliverTo(project, owner, body)
       await rt.save?.()
@@ -385,7 +416,7 @@ export function install(rt) {
     const note = { day: built.day, at, text: built.text, ...(who.ok === true ? {} : { error: `GitHub write refused: ${who.reason}` }) }
     rt.setProjectDigest?.(project.id, note, owner)
     if (coversDue) {
-      return { owner, ok: true, skipped: false, delivered: false, held: true, dropped: true, day: built.day, changed: built.changed, text: built.text, reason: `quiet hours ${quiet.from}–${quiet.to} cover ${DIGEST_TIME}, so nothing is delivered — the expected outcome` }
+      return { owner, ok: true, skipped: false, delivered: false, held: true, dropped: true, day: built.day, changed: built.changed, text: built.text, reason: `quiet hours ${quiet.from}–${quiet.to} cover ${due}, so nothing is delivered — the expected outcome` }
     }
     if (inQuietHours(quiet, clock)) {
       record.held = { day: built.day, at, text: built.text, from: quiet.from, to: quiet.to }

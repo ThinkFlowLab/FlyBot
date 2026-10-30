@@ -322,7 +322,7 @@ test('a quiet window holds the digest and delivers it once, labelled, when it en
 
     const once = await rt.projectAssistant.digest(project.id, { at: after })
     assert.equal(once.delivered, 1)
-    assert.match(delivered[0].text, /held from 09:00 to 08:45 by quiet hours 07:00\u201308:30/)
+    assert.match(delivered[0].text, /held from 08:00 to 08:45 by quiet hours 07:00\u201308:30/)
     const twice = await rt.projectAssistant.digest(project.id, { at: after + 60_000 })
     assert.equal(twice.delivered, 0, 'delivered once, not again')
     assert.equal(delivered.length, 1)
@@ -347,6 +347,92 @@ test('a quiet window that covers 09:00 delivers nothing, and that is the expecte
   } finally {
     await stop()
   }
+})
+
+// P-194: the due instant is 09:00 Asia/Shanghai; a quiet window is wall clock in the owner's own
+// zone. Two different zones' wall clocks are not comparable, so the window is tested against the
+// due instant read in the owner's zone. Red first drives this through setOwner directly: the
+// `project-assistant-owner` endpoint has no channel case, so no product-level path exists today
+// and the trigger arrives with P-198. Until then this is a latent defect: the digest would be
+// dropped silently once a UTC owner's window is set.
+test('#P-194: a quiet window in the owner\'s zone is compared with the due instant, not with 09:00', async () => {
+  const { rt, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'UtcWindow', ownerUserId: 'owner-1' })
+    rt.projectBoard = () => [{ id: 't-utc', source: 'bot', column: 'in-progress', assignee: 'Owner One Bot', ownerId: 'owner-1', updatedAt: 1 }]
+    // 08:00–10:00 UTC does not contain the due instant (01:00Z = 09:00 Asia/Shanghai).
+    await rt.projectAssistant.setOwner(project.id, 'owner-1', { quiet: { on: true, from: '08:00', to: '10:00' }, zone: 'UTC' })
+    const result = await rt.projectAssistant.digest(project.id, { at: AT }) // 01:00Z
+    const owner = result.owners[0]
+    assert.equal(result.delivered, 1, 'the window does not cover the due instant, so the digest goes out')
+    assert.notEqual(owner.dropped, true, 'nothing was dropped')
+    assert.doesNotMatch(String(owner.reason ?? ''), /cover/, 'no drop reason is recorded')
+    assert.notEqual(owner.held, true, 'nothing was held either')
+  } finally {
+    await stop()
+  }
+})
+
+test('#P-194: a window that really covers the due instant still drops the digest', async () => {
+  const { rt, delivered, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'UtcCovered', ownerUserId: 'owner-1' })
+    rt.projectBoard = () => []
+    await rt.projectAssistant.setOwner(project.id, 'owner-1', { quiet: { on: true, from: '00:30', to: '01:30' }, zone: 'UTC' })
+    const result = await rt.projectAssistant.digest(project.id, { at: AT }) // 01:00Z is inside it
+    const owner = result.owners[0]
+    assert.equal(result.delivered, 0, 'a window covering the due instant delivers nothing')
+    assert.equal(owner.dropped, true)
+    assert.match(owner.reason, /cover 01:00, so nothing is delivered — the expected outcome/)
+    assert.equal(delivered.length, 0)
+  } finally {
+    await stop()
+  }
+})
+
+// P-197: the personal block stays five cards, and says how many are left over; five or fewer
+// print exactly as they did before.
+test('#P-197: more than five decisions say how many are still waiting', () => {
+  const rows = Array.from({ length: MAX_ACTIONABLE + 2 }, (_, index) => ({ id: `t-${index}`, source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: index, title: `card ${index}`, status: 'blocked' }))
+  const items = actionableFor(rows, 'owner-1')
+  assert.equal(items.length, MAX_ACTIONABLE + 2, 'the helper keeps them all')
+  const built = buildDigest({ project: { id: 'p', name: 'More' }, rows, owner: 'owner-1', actionable: items, at: AT })
+  const personal = built.text.slice(built.text.indexOf("Needs owner-1's decision:"))
+  const listed = personal.split('\n').filter(line => /^- t-\d/.test(line))
+  assert.equal(listed.length, MAX_ACTIONABLE, 'the digest still lists at most MAX_ACTIONABLE cards')
+  assert.match(built.text, /^- … and 2 more waiting on you$/m)
+})
+
+test('#P-197: five or fewer decisions print exactly as before', () => {
+  const rows = Array.from({ length: MAX_ACTIONABLE }, (_, index) => ({ id: `t-${index}`, source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: index, title: `card ${index}`, status: 'blocked' }))
+  const built = buildDigest({ project: { id: 'p', name: 'Five' }, rows, owner: 'owner-1', actionable: actionableFor(rows, 'owner-1'), at: AT })
+  assert.doesNotMatch(built.text, /more waiting on you/)
+  const personal = built.text.slice(built.text.indexOf("Needs owner-1's decision:"))
+  const listed = personal.split('\n').filter(line => /^- t-\d/.test(line))
+  assert.equal(listed.length, MAX_ACTIONABLE)
+})
+
+// P-195: the personal block is what waits on the reader, not the whole board: a card still being
+// worked on is somebody's move, a blocked card needs this reader's call, and a finished result
+// needs their acceptance.
+test('#P-195: only the cards that wait on the reader reach the personal block', () => {
+  const rows = [
+    { id: 't-working', source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: 1, title: 'Still moving', status: 'working' },
+    { id: 't-blocked', source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: 2, title: 'Stopped on a question', status: 'blocked' },
+    { id: 't-ready', source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: 3, title: 'Back for acceptance', status: 'result-ready' },
+  ]
+  const items = actionableFor(rows, 'owner-1')
+  assert.deepEqual(items.map(item => item.id), ['t-blocked', 't-ready'], 'a card that is still moving is nobody else\'s decision to make')
+  const built = buildDigest({ project: { id: 'p', name: 'Waiting' }, rows, owner: 'owner-1', actionable: items, at: AT })
+  const personal = built.text.slice(built.text.indexOf("Needs owner-1's decision:"))
+  assert.match(personal, /Stopped on a question/)
+  assert.match(personal, /needs your call/)
+  assert.match(personal, /Back for acceptance/)
+  assert.match(personal, /ready for your acceptance/)
+  assert.doesNotMatch(personal, /Still moving/, 'a card still in progress is not a decision waiting on the reader')
+  const shared = built.text.slice(0, built.text.indexOf("Needs owner-1's decision:"))
+  assert.match(shared, /In progress, waiting on:/)
+  assert.match(shared, /t-working — Worker/, 'the shared section still lists it')
 })
 
 test('opting out stops generation and pauses the 09:00 task, and re-enabling restores both', async () => {
@@ -424,16 +510,27 @@ test('a card lists for the owner of the Bot that owns it, through the real task 
     rt.state.bots.worker = { id: 'worker', name: 'Worker', role: 'Dev', sessionId: 'w', createdAt: 3, ownerId: 'owner-2' }
     await rt.projectEndpoint('project-bind', { kind: 'bot', id: 'a', projectId: project.id })
     await rt.projectEndpoint('project-bind', { kind: 'bot', id: 'worker', projectId: project.id })
-    await rt.taskEndpoint('task-create', { botId: 'worker', title: 'Pick the release date' }, null)
-    await rt.taskEndpoint('task-create', { botId: 'a', title: 'Rotate the deploy key' }, null)
+    const pick = (await rt.taskEndpoint('task-create', { botId: 'worker', title: 'Pick the release date' }, null)).id
+    const rotate = (await rt.taskEndpoint('task-create', { botId: 'a', title: 'Rotate the deploy key' }, null)).id
+    const moving = (await rt.taskEndpoint('task-create', { botId: 'a', title: 'Still moving' }, null)).id
+    // A card waits on its reader only once it has stopped: drive both to `blocked`, which the
+    // digest reads from the task store itself, and leave one of the owner's cards `working`.
+    for (const id of [pick, rotate]) {
+      await rt.taskEndpoint('task-accept', { id }, null)
+      await rt.taskEndpoint('task-start', { id }, null)
+      await rt.taskEndpoint('task-wait-input', { id, question: 'Which one?' }, null)
+    }
+    await rt.taskEndpoint('task-accept', { id: moving }, null)
+    await rt.taskEndpoint('task-start', { id: moving }, null)
     const rows = rt.projectBoard(project.id)
-    assert.equal(rows.length, 2)
+    assert.equal(rows.length, 3)
     assert.ok(rows.every(row => row.assignee === null), 'the board carries a Bot name or null, never a member id')
     assert.equal(actionableFor(rows, 'owner-1').length, 0, 'the raw helper sees no owner without a resolver')
     const result = await rt.projectAssistant.digest(project.id, { at: AT })
     const [one, two] = result.owners
     assert.match(one.text, /Rotate the deploy key/, 'the card of the primary owner\'s Bot is theirs')
     assert.doesNotMatch(one.text, /Pick the release date/, 'another owner\'s card never appears in this digest')
+    assert.doesNotMatch(one.text, /Still moving/, 'a card the owner\'s Bot is still working on waits on nobody')
     assert.match(two.text, /Pick the release date/, 'the card of the second owner\'s Bot is theirs')
     assert.doesNotMatch(two.text, /Rotate the deploy key/)
   } finally {

@@ -654,16 +654,26 @@ the host side only, so the tier stays T2 and `core/src/shared/` is untouched.
   `listProjectState(project.workDir)` once, then renders once per owner with that owner's memory and
   that owner's actionable block. Shared facts are identical in both texts; a card assigned to
   somebody else never appears in the "Needs <owner>'s decision:" block, and `MAX_ACTIONABLE` (5)
-  caps that block, each item carrying the task id and a one-line ask. A prompt-injected line cannot
+  caps that block, each item carrying the task id and a one-line ask. A sixth line,
+  `… and N more waiting on you`, counts what the cap left out; five or fewer print exactly the
+  lines they printed before (#P-197). The block holds the cards that wait on the reader and no
+  others: `blocked` ("needs your call") and `result-ready` ("ready for your acceptance"), read from
+  the card's own status through `withTitles`, so a card still `open`, `claimed` or `working` stays
+  only in the shared "In progress, waiting on:" section, and a row that carries no status keeps the
+  older answer rather than being dropped (#P-195). A prompt-injected line cannot
   cross: digest A carries no entry from B's memory because A's render is handed only A's entries.
 - **Quiet window per owner.** `rt.projectAssistant.setOwner(projectId, ownerId, { quiet, zone, off })`
   stores `{ quiet: { on, from, to }, zone, off }` on `project.assistant.owners[ownerId]`, never in
   `state.prefs` (the host-wide #1166 window keeps its own job, refusing a new or edited task). The
-  window is read in the owner's zone with `clockIn`, and:
+  window is wall clock in the owner's zone, so it is compared with the **due instant** — today's
+  09:00 Asia/Shanghai, read back as a clock in the owner's zone with `clockIn` (#P-194) — never with
+  the string `09:00`, which is another zone's wall clock. Then:
   a digest due inside it is **held** — still generated and stored, then delivered once when the
-  window ends, labelled `held from 09:00 to <clock> by quiet hours <from>–<to>`;
-  a window that covers 09:00 delivers **nothing** that day, and that is the expected outcome, not a
-  failure (the note is still written, so the next day is still one a day).
+  window ends, labelled `held from <the clock it was held at> to <clock> by quiet hours <from>–<to>`;
+  a window that covers the due instant delivers **nothing** that day, and that is the expected
+  outcome, not a failure (the note is still written, so the next day is still one a day).
+  `setOwner` has no channel case yet, so no product-level path reaches these controls today; the
+  window matters once that endpoint is wired (P-198).
 - **Opt-out.** `off: true` on the owner record stops generation for that owner (no note, no
   message) and the 09:00 task is **paused** through `rt.scheduleEndpoint('schedule-pause')` once
   every owner is off — the task is shared, so one owner turning back on **resumes** it
