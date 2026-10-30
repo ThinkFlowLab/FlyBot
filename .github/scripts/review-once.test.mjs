@@ -1,0 +1,80 @@
+// One conclusion per tip (#1798). Three cases, and the middle one is the defect: a review node
+// entered twice at an unchanged tip must reuse the conclusion already there instead of writing a
+// second `Verdict:` — #1772 took two `Verdict: PASS` comments at `5ea9acbb…`. The other two protect
+// the normal path, so the guard cannot pass by never posting.
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { alreadyConcluded, postOnce, main } from './review-once.mjs'
+
+const tip = '5ea9acbb023a3e119c353437cfb87d021cf5765e'
+const other = '6a6f22bbb6e89beb19e475fc8fc7eb528bb9ad84'
+
+const conclusion = (sha = tip) => `Verdict: PASS at ${sha}
+Written-by: Reviewer
+
+## What I ran
+- \`node --test .github/scripts/review-once.test.mjs\` → 3/3
+
+## Risk
+T1.`
+
+const comment = (body) => ({ id: 6515589279, user: { login: 'Birfy', type: 'User' }, body })
+
+// A stand-in for the GitHub API: it answers the comment list and records every write.
+function api(comments = [], { failGet = false } = {}) {
+  const calls = []
+  const request = async ({ method, url, body }) => {
+    calls.push({ method, url, body })
+    if (method === 'GET') return { status: failGet ? 500 : 200, json: comments }
+    return { status: 201, json: { id: 1234 } }
+  }
+  return { calls, request, posts: () => calls.filter((c) => c.method === 'POST') }
+}
+
+test('#1798: no conclusion at the tip posts exactly once', async () => {
+  const seen = api([{ id: 1, user: { login: 'Birfy', type: 'User' }, body: 'LGTM, running the gate now.' }])
+  const lines = []
+  const result = await postOnce({ pr: 1772, tip, body: conclusion(), request: seen.request, token: 'stub', log: (line) => lines.push(line) })
+  assert.equal(result.posted, true)
+  assert.equal(result.reused, false)
+  assert.equal(seen.posts().length, 1)
+  assert.equal(seen.posts()[0].body.body, conclusion())
+  assert.deepEqual(lines, [`posted conclusion at ${tip}`])
+})
+
+test('#1798: a conclusion already naming this tip posts nothing and reports one reused line', async () => {
+  const seen = api([comment(conclusion()), { id: 2, user: { login: 'Birfy', type: 'User' }, body: 'unrelated' }])
+  const lines = []
+  const code = await main({ argv: ['--pr', '1772', '--tip', tip], body: conclusion(), request: seen.request, token: 'stub', log: (line) => lines.push(line) })
+  assert.equal(code, 0, 'a reuse is the good outcome, so the node exits 0')
+  assert.equal(seen.posts().length, 0, 'no second conclusion at an unchanged tip')
+  assert.deepEqual(lines, [`reused conclusion at ${tip}`], 'exactly one line says the conclusion was reused')
+})
+
+test('#1798: a conclusion naming another tip does not block the post', async () => {
+  const seen = api([comment(conclusion(other))])
+  const lines = []
+  const result = await postOnce({ pr: 1772, tip, body: conclusion(), request: seen.request, token: 'stub', log: (line) => lines.push(line) })
+  assert.equal(result.posted, true)
+  assert.equal(seen.posts().length, 1, 'a new commit is a new conclusion')
+  assert.equal(seen.posts()[0].body.body, conclusion())
+})
+
+test('#1798: a prefix of the tip is not the tip', () => {
+  assert.equal(alreadyConcluded({ comments: [comment(conclusion(tip.slice(0, 12)))], tip }), null, 'a 12-character prefix names every head that starts that way (#1112)')
+  assert.ok(alreadyConcluded({ comments: [comment(conclusion())], tip }))
+  assert.equal(alreadyConcluded({ comments: [comment(conclusion())], tip: other }), null)
+})
+
+test('#1798: a bot account or an untyped account is not a conclusion', () => {
+  const bot = { id: 3, user: { login: 'cursor[bot]', type: 'Bot' }, body: conclusion() }
+  const untyped = { id: 4, user: {}, body: conclusion() }
+  assert.equal(alreadyConcluded({ comments: [bot], tip }), null, 'a bot account is never a conclusion (#943, #1344)')
+  assert.equal(alreadyConcluded({ comments: [untyped], tip }), null)
+})
+
+test('#1798: an API failure is loud, never a silent non-post', async () => {
+  const seen = api([], { failGet: true })
+  await assert.rejects(postOnce({ pr: 1772, tip, body: conclusion(), request: seen.request, token: 'stub', log: () => {} }), /answered 500/)
+  assert.equal(seen.posts().length, 0)
+})
