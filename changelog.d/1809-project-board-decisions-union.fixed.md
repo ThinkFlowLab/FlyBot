@@ -1,1 +1,0 @@
-A Project board lists a decision file archived in the Session's working folder, not only a file in the Project's own folder: the meeting record now names the folder it wrote to, and the board reads the union of the Project folder and each decided meeting's file ([#1809](https://github.com/ThinkFlowLab/FlyBot/issues/1809)).

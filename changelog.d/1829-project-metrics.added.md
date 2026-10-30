@@ -1,1 +1,0 @@
-Project board: seven metrics (today's opened/merged PRs and issues, 7-day medians) and a running-task table, read from GitHub REST plus the local tasks behind a 5-minute cache. A missing credential or a failed read renders \`—\`, never \`0\`.

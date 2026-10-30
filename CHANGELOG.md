@@ -6,6 +6,23 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-10-31
+
+### Added
+
+- Projects gain the three roles the governance matrix names, and a way in: the Owner is derived from `ownerUserIds` (an older record without `roles` reads owner-only), `project-role` sets a Maintainer or Member only after the host re-checks who may re-role whom, refusing `not-owner` / `cannot-self-promote` / `last-owner` without touching the record. The sidebar's **Projects** row now expands to the Projects you can see with your role there and opens that board straight, and its right-click **My role** menu offers only the ranks the host says you may switch to.
+- Project board: seven metrics (today's opened/merged PRs and issues, 7-day medians) and a running-task table, read from GitHub REST plus the local tasks behind a 5-minute cache. A missing credential or a failed read renders \`—\`, never \`0\`.
+- Decision cards carry a level (ordinary, major, severe) and the people they are addressed to; a severe card never advances on its own and says why. The Project board shows the level badge and recipients, and a card row names its claim holder and the user the Assistant speaks for.
+
+### Fixed
+
+- A Bot Social read served from the channel answers only for the Bot the actor owns: a `body.botId` the actor does not own is refused with `bot/forbidden` before the handler registers that Bot's identity or syncs its grants ([#1788](https://github.com/ThinkFlowLab/FlyBot/issues/1788)).
+- A Project board lists a decision file archived in the Session's working folder, not only a file in the Project's own folder: the meeting record now names the folder it wrote to, and the board reads the union of the Project folder and each decided meeting's file ([#1809](https://github.com/ThinkFlowLab/FlyBot/issues/1809)).
+- The Project board now reads itself again every five seconds while it is open: a lease that expires during the visit turns its card `stalled` and a card that moves from waiting to in flight moves too, without closing and reopening the page; a poll that fails keeps the last good board on screen, and reads pause while the tab is hidden or a row's own board is open ([#1814](https://github.com/ThinkFlowLab/FlyBot/issues/1814)).
+- Retiring a Bot now disarms the tasks armed in the group Sessions it speaks through as well as those in its own chat; a group's own reminders are left untouched ([#1816](https://github.com/ThinkFlowLab/FlyBot/issues/1816)).
+- The Project settings panel's **Save memory** button now saves: it sends one of the two memory kinds the host knows (the free text is recorded as a decision) instead of a `note` kind the host refused, so the success line appears and the entry reaches the Project Assistant's memory. A refusal the panel can surface is shown in the interface language instead of the host's English sentence ([#1820](https://github.com/ThinkFlowLab/FlyBot/issues/1820)).
+- A line typed in a Bot's own chat while its turn is running now reaches that turn at its next step instead of waiting as a separate queued turn, so a mid-run correction changes what the Bot does next ([#707](https://github.com/ThinkFlowLab/FlyBot/issues/707)).
+
 ## [0.2.16] - 2026-10-30
 
 ### Added
