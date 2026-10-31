@@ -3,7 +3,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
-import { currentColor, isColor, unquote } from './text.js'
+import { currentColor, cut, isColor, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
 import { ownEntry } from './store.js'
@@ -61,7 +61,7 @@ export function install(rt) {
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
   // Bot made when no model is served.
   async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
-    const cleanName = String(botName ?? '').trim().slice(0, 40)
+    const cleanName = cut(String(botName ?? '').trim(), 40).text
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
     // team names never clash with it and creating it starts no turn.
     const isRemote = typeof remote?.handle === 'string'
@@ -106,7 +106,7 @@ export function install(rt) {
       state.bots[id] = {
         id,
         name: cleanName,
-        role: String(role).trim().slice(0, 24),
+        role: cut(String(role).trim(), 24).text,
         // A color is only stored when the user picks one; otherwise the id picks it.
         ...(isColor(currentColor(color)) ? { color: currentColor(color) } : {}),
         ...(cleanAvatarValue ? { avatar: cleanAvatarValue } : {}),
@@ -189,7 +189,7 @@ export function install(rt) {
     const moving = patch.workDir !== undefined
     const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
     if (patch.name !== undefined) {
-      const next = String(patch.name).trim().slice(0, 40)
+      const next = cut(String(patch.name).trim(), 40).text
       const clash = rt.findBot(next)
       if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
       // A name saved before the rule stays usable until it changes.
@@ -200,7 +200,7 @@ export function install(rt) {
       await ctx.sessionTitle.rename(agent.session, next)
       await followMemberNames(Object.values(state.rooms).filter(room => room.members.includes(id)))
     }
-    if (patch.role !== undefined) bot.role = String(patch.role).trim().slice(0, 24)
+    if (patch.role !== undefined) bot.role = cut(String(patch.role).trim(), 24).text
     if (patch.instructions !== undefined) bot.instructions = String(patch.instructions).trim()
     let modelChanged = false
     if (patch.color !== undefined) {

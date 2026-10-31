@@ -144,6 +144,15 @@ test('a Bot made by the Main Bot starts on the Main Bot\'s model and level befor
   assert.equal(typed.model, 'deepseek/deepseek-v4-flash')
 })
 
+// P-275: a Bot's name is bounded at 40 and its role at 24, and both bounds cut UTF-16 units.
+// A bound that lands inside an emoji stores half of a surrogate pair, so the sidebar, the
+// session title and the store's JSON carry U+FFFD instead of the character.
+const bounded = (actual, source, max) => {
+  assert.ok(actual.length <= max, `${actual.length} code units, over ${max}`)
+  assert.equal(actual.isWellFormed(), true, `not well formed: ${actual}`)
+  assert.equal(Buffer.from(actual, 'utf8').equals(Buffer.from(source, 'utf8').subarray(0, Buffer.byteLength(actual))), true, 'the value is a UTF-8 byte prefix of what was typed')
+}
+
 test('a new name must be one "@" can call; a name saved before the rule still saves', async (t) => {
   const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
   t.after(stop)
@@ -152,6 +161,29 @@ test('a new name must be one "@" can call; a name saved before the rule still sa
   const writer = (await call('create-bot', { name: 'Writer 2' })).value
   assert.equal((await call('update-bot', { id: writer.id, name: 'Writer@home' })).ok, false)
   assert.equal((await call('update-bot', { id: writer.id, name: '新 Writer' })).ok, true)
+})
+
+test('a name and a role stop their bound before a split surrogate pair', async (t) => {
+  const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
+  t.after(stop)
+  await call('state', {})
+  const name = `${'a'.repeat(39)}\u{1F600}tail`
+  const role = `${'b'.repeat(23)}\u{1F600}tail`
+  const writer = (await call('create-bot', { name, role })).value
+  assert.equal(writer.name, 'a'.repeat(39), 'the bound retracts one unit instead of splitting the pair')
+  bounded(writer.name, name, 40)
+  assert.equal(writer.role, 'b'.repeat(23))
+  bounded(writer.role, role, 24)
+  // A rename and a role edit take the same two bounds.
+  const renamed = `${'c'.repeat(39)}\u{1F600}tail`
+  const reRole = `${'d'.repeat(23)}\u{1F600}tail`
+  assert.equal((await call('update-bot', { id: writer.id, name: renamed })).ok, true)
+  assert.equal((await call('update-bot', { id: writer.id, role: reRole })).ok, true)
+  const saved = (await call('state', {})).value.bots.find(entry => entry.id === writer.id)
+  assert.equal(saved.name, 'c'.repeat(39))
+  bounded(saved.name, renamed, 40)
+  assert.equal(saved.role, 'd'.repeat(23))
+  bounded(saved.role, reRole, 24)
 })
 
 // Creation is silent (#645): no path that makes a Bot opens a turn, and only a brief from a
