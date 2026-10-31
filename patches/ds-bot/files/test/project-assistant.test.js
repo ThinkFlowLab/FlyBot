@@ -111,6 +111,38 @@ test('memory is private to one Project and an unknown id is refused', async () =
   }
 })
 
+// #1886: the assistant writer and the store's `appendProjectMemory` must count the bound on the
+// same unit. Both now count code points, so the same emoji note is accepted by both and the same
+// 601-code-point one refused by both — the old `String#length` made a 350-emoji note look like 700.
+test('the assistant writer and the store count the memory bound in code points alike', async () => {
+  const { rt, stop } = await start()
+  try {
+    const project = await created(rt, { name: 'Points', ownerUserId: 'owner-1' })
+    const atCap = '😀'.repeat(600)
+    rt.projectAssistant.write(project.id, { kind: 'decision', text: atCap })
+    let memory = (await rt.projectEndpoint('project-memory', { id: project.id })).memory
+    assert.equal(memory.decisions.length, 1, 'the assistant writer accepts 600 code points')
+    assert.equal(memory.decisions[0].text, atCap, 'and the store keeps the entry whole')
+
+    const over = '😀'.repeat(601)
+    assert.throws(() => rt.projectAssistant.write(project.id, { kind: 'decision', text: over }),
+      error => error.code === 'bot/invalid' && error.message === 'A Project memory entry is at most 600 characters')
+    await assert.rejects(() => rt.projectEndpoint('project-memory-write', { id: project.id, kind: 'decision', text: over }),
+      error => error.code === 'bot/invalid' && error.message === 'A Project memory entry is at most 600 characters')
+    memory = (await rt.projectEndpoint('project-memory', { id: project.id })).memory
+    assert.equal(memory.decisions.length, 1, 'neither refusal adds a row')
+
+    const short = '😀'.repeat(350)
+    rt.projectAssistant.write(project.id, { kind: 'question', text: short })
+    await rt.projectEndpoint('project-memory-write', { id: project.id, kind: 'decision', text: short })
+    memory = (await rt.projectEndpoint('project-memory', { id: project.id })).memory
+    assert.deepEqual(memory.questions.map(entry => entry.text), [short], 'the assistant writer stores 350 emoji')
+    assert.deepEqual(memory.decisions.map(entry => entry.text), [atCap, short], 'and the store stores them too')
+  } finally {
+    await stop()
+  }
+})
+
 test('the assistant refuses an unknown Project and an archived one', async () => {
   const { rt, stop } = await start()
   try {

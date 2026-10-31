@@ -23,6 +23,9 @@ export const ROUTE = '/api/bot'
 export const MAX_HOPS = 6
 // The bound on one Project memory entry (#1847): one value, shared by the assistant writer and the
 // store's `appendProjectMemory`, so no writer can store a blank entry or silently cut a long one.
+// It counts code points (#1886), not UTF-16 units: `String#length` charges an emoji two, so a 350
+// character note was refused as "over 600 characters". Count with `[...text].length`, as
+// `chat-index.js` and `busy-ack.js` already do, and keep both writers on that same unit.
 export const MAX_ENTRY = 600
 // Bot requests a Bot's own chat may hold unread; past this the Bot is most likely
 // stuck, and more messages only pile up behind it.

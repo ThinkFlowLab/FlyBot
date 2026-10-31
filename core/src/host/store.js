@@ -518,7 +518,9 @@ export function install(rt) {
     // they were.
     const entryText = projectText(entry.text)
     if (entryText === '') throw projectRefusal('A Project memory entry needs text')
-    if (entryText.length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
+    // #1886: the bound counts code points, not UTF-16 units (`MAX_ENTRY` says why), so the emoji
+    // note the assistant writer accepts at 600 characters is accepted here too.
+    if ([...entryText].length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
     const table = memoryTable(project)
     const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
     const record = ownerRow(table, ownerId, project)

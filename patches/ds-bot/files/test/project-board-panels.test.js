@@ -376,6 +376,48 @@ test('#1847: the panel shows the Chinese refusal when the host refuses the memor
   }
 })
 
+// #1886: the bound was compared against `String#length`, which counts UTF-16 code units, so a 350
+// character emoji note — 700 units — was refused as "over 600 characters" even though the sentence
+// counts characters. The bound now counts code points, the unit the repo already uses for a
+// message's own length (`chat-index.js`, `busy-ack.js`).
+test('#1886: the memory bound counts code points, so an emoji note keeps its full 600 characters', async (t) => {
+  const rt = await startHost(t)
+  const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
+  const write = text => call('project-memory-write', { id: 'project-1', kind: 'decision', text })
+  const kept = async () => (await call('project-memory', { id: 'project-1' })).memory.decisions
+
+  assert.equal([...'😀'].length, 1, 'one emoji is one code point')
+  assert.equal('😀'.length, 2, 'and two UTF-16 units, which is what the bound used to count')
+
+  // The user-visible case: 350 characters is well short of 600, and 350 emoji are 700 units.
+  const short = '😀'.repeat(350)
+  await write(short)
+  let rows = await kept()
+  assert.equal(rows.length, 1, 'a 350-character emoji note is accepted')
+  assert.equal(rows[0].text, short, 'and stored whole, not cut')
+
+  // The cap is 600 code points: accepted, and 601 refused in the sentence the panel quotes.
+  const exact = '😀'.repeat(600)
+  await write(exact)
+  rows = await kept()
+  assert.deepEqual(rows.map(entry => entry.text), [short, exact], 'the entry at the cap is accepted')
+  await assert.rejects(() => write('😀'.repeat(601)),
+    error => error.code === 'bot/invalid' && error.message === 'A Project memory entry is at most 600 characters')
+  rows = await kept()
+  assert.equal(rows.length, 2, 'the refusal leaves no row behind')
+
+  // ASCII was already counted right; the new unit must leave it exactly as it was.
+  const ascii = 'x'.repeat(600)
+  await write(ascii)
+  rows = await kept()
+  assert.equal(rows.length, 3, 'an ASCII entry at the cap is still accepted')
+  assert.equal(rows[2].text, ascii, 'and still stored whole')
+  await assert.rejects(() => write('x'.repeat(601)),
+    error => error.code === 'bot/invalid' && error.message === 'A Project memory entry is at most 600 characters')
+  rows = await kept()
+  assert.equal(rows.length, 3, 'and ASCII over the cap still leaves nothing behind')
+})
+
 test("the settings panel shows the host's refusal instead of pretending the save landed", async () => {
   resetSlots()
   const refused = Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' })

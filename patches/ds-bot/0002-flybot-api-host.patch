@@ -89,12 +89,15 @@ diff --git a/index.js b/index.js
 diff --git a/src/host/constants.js b/src/host/constants.js
 --- a/src/host/constants.js
 +++ b/src/host/constants.js
-@@ -21,6 +21,9 @@ export const OCR_CACHE_MAX = 500
+@@ -21,6 +21,12 @@ export const OCR_CACHE_MAX = 500
  export const MAX_AVATAR_IMAGE = 160_000
  export const ROUTE = '/api/bot'
  export const MAX_HOPS = 6
 +// The bound on one Project memory entry (#1847): one value, shared by the assistant writer and the
 +// store's `appendProjectMemory`, so no writer can store a blank entry or silently cut a long one.
++// It counts code points (#1886), not UTF-16 units: `String#length` charges an emoji two, so a 350
++// character note was refused as "over 600 characters". Count with `[...text].length`, as
++// `chat-index.js` and `busy-ack.js` already do, and keep both writers on that same unit.
 +export const MAX_ENTRY = 600
  // Bot requests a Bot's own chat may hold unread; past this the Bot is most likely
  // stuck, and more messages only pile up behind it.
@@ -897,7 +900,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,476 @@ export function install(rt) {
+@@ -161,12 +161,478 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1108,7 +1111,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    // they were.
 +    const entryText = projectText(entry.text)
 +    if (entryText === '') throw projectRefusal('A Project memory entry needs text')
-+    if (entryText.length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
++    // #1886: the bound counts code points, not UTF-16 units (`MAX_ENTRY` says why), so the emoji
++    // note the assistant writer accepts at 600 characters is accepted here too.
++    if ([...entryText].length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
 +    const table = memoryTable(project)
 +    const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
 +    const record = ownerRow(table, ownerId, project)

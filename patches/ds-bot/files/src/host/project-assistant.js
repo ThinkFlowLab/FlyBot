@@ -188,7 +188,9 @@ export function install(rt) {
     if (!MEMORY_KINDS.includes(kind)) throw refusal(`Unknown Project memory kind ${kind}`)
     const entry = text(body.text)
     if (entry === '') throw refusal('A Project memory entry needs text')
-    if (entry.length > MAX_ENTRY) throw refusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
+    // #1886: count code points, the same unit `appendProjectMemory` counts, so the two writers
+    // cannot disagree about which note fits (`String#length` charged an emoji two units).
+    if ([...entry].length > MAX_ENTRY) throw refusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
     const ownerId = text(body.ownerId) || ownersOf(project)[0] || ''
     if (text(body.ownerId) !== '' && !ownersOf(project).includes(text(body.ownerId))) throw outsideBoundary(project, body.ownerId)
     rt.appendProjectMemory?.(project.id, kind, { text: entry, at: Date.now(), ownerId, ...(text(body.by) === '' ? {} : { by: text(body.by) }) })
