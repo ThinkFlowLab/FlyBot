@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
+import { readMetrics } from '../src/host/project-metrics.js'
 import { fakeContext } from './fake-ctx.js'
 
 const HOUR = 60 * 60 * 1000
@@ -168,5 +169,110 @@ test('#1848: the done-task median is this board\'s cards, not the deployment\'s'
     globalThis.fetch = realFetch
     rt.secretValue = realSecret
     await stop()
+  }
+})
+
+// #1880: the metrics cache is keyed by repository, time zone and five-minute bucket only, so a hit
+// is shared by every reader of that repo. The done-task median is computed from the reader's own
+// cards, like the running table, so a hit must re-project it and never answer with the cards of
+// whoever filled the entry first.
+test('#1880: a cache hit projects the done-task median from the reader\'s own cards', async () => {
+  const { rt, stop } = await start()
+  const realFetch = globalThis.fetch
+  const realSecret = rt.secretValue
+  rt.githubRepo = 'test/scope-5'
+  rt.secretValue = name => (name === 'GITHUB_TOKEN' ? 'tok' : undefined)
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] })
+  try {
+    // The other board fills this bucket: one card, nine hours from start to done.
+    const other = await rt.projectBoard('project-p2', { memberId: 'owner-2' })
+    assert.equal(other.metrics.cache, 'miss')
+    assert.equal(other.metrics.metrics.taskDoneMedianMs, 9 * HOUR)
+    // Same repo, same bucket, a different board: the read is a hit, and the median is this board's
+    // hour — not the nine hours the first reader's cards produced.
+    const mine = await rt.projectBoard('project-p1', { memberId: 'owner-1' })
+    assert.equal(mine.metrics.cache, 'hit')
+    assert.equal(mine.metrics.metrics.taskDoneMedianMs, HOUR)
+    // A hit belongs to its reader, not to whoever filled the entry: back on the other board the
+    // nine hours return.
+    const back = await rt.projectBoard('project-p2', { memberId: 'owner-2' })
+    assert.equal(back.metrics.cache, 'hit')
+    assert.equal(back.metrics.metrics.taskDoneMedianMs, 9 * HOUR)
+  } finally {
+    globalThis.fetch = realFetch
+    rt.secretValue = realSecret
+    await stop()
+  }
+})
+
+test('#1880: a cache hit\'s running rows and done median come from the same board', async () => {
+  const { rt, stop } = await start()
+  const realFetch = globalThis.fetch
+  const realSecret = rt.secretValue
+  rt.githubRepo = 'test/scope-6'
+  rt.secretValue = name => (name === 'GITHUB_TOKEN' ? 'tok' : undefined)
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] })
+  try {
+    const miss = await rt.projectBoard('project-p1', { memberId: 'owner-1' })
+    assert.equal(miss.metrics.cache, 'miss')
+    const hit = await rt.projectBoard('project-p2', { memberId: 'owner-2' })
+    assert.equal(hit.metrics.cache, 'hit')
+    // One projection, one source: the rows are this board's card and the median beside it is this
+    // board's nine hours, never a row from one reader with a number from the other.
+    assert.deepEqual(hit.metrics.running.map(row => row.id), ['task-foreign'])
+    assert.equal(hit.metrics.metrics.taskDoneMedianMs, 9 * HOUR)
+    assert.equal(miss.metrics.metrics.taskDoneMedianMs, HOUR)
+  } finally {
+    globalThis.fetch = realFetch
+    rt.secretValue = realSecret
+    await stop()
+  }
+})
+
+// The shape, not only this afternoon's behaviour: the entry is shared by every Project on the repo,
+// so a caller-scoped field in it is the same leak waiting for the next writer. The whitelist is the
+// repository-level numbers and the three stamps beside them, and nothing computed from `tasks`.
+test('#1880: the metrics cache holds repository-level numbers only', async () => {
+  const entries = new Map()
+  const cacheStore = { get: key => entries.get(key), set: (key, value) => entries.set(key, value) }
+  const tasks = Object.values(seed().tasks)
+  await readMetrics({
+    repo: 'test/scope-7',
+    token: 'tok',
+    fetchImpl: async () => ({ ok: true, json: async () => [] }),
+    timeZone: 'UTC',
+    now: NOW,
+    tasks,
+    cacheStore,
+  })
+  const [[key, entry]] = [...entries]
+  assert.equal(key, `test/scope-7|UTC|${Math.floor(NOW / (5 * 60 * 1000))}`, 'the key stays repo, time zone and bucket')
+  assert.deepEqual(Object.keys(entry.value).sort(), ['generatedAt', 'metrics', 'ok', 'timeZone'])
+  assert.deepEqual(Object.keys(entry.value.metrics).sort(), [
+    'issueCloseMedianMs', 'issuesClosedToday', 'issuesOpenedToday',
+    'prMergeMedianMs', 'prsMergedToday', 'prsOpenedToday',
+  ])
+  assert.equal(JSON.stringify(entry.value).includes('running'), false, 'the caller\'s rows are never cached')
+  assert.equal(JSON.stringify(entry.value).includes('taskDoneMedianMs'), false, 'nor the median computed from them')
+})
+
+// #1880: the projection that re-reads the caller's numbers on every read must not reach the
+// unavailable branches. "Read it, could not" is answered with nulls, never with a zero that reads
+// as "no card ever finished here" — the one thing #1848 and #1849 both keep.
+test('#1880: an unavailable source keeps the done median null, never zero', async () => {
+  const tasks = Object.values(seed().tasks).filter(task => task.origin.roomId === 'r1')
+  const cacheStore = { get: () => undefined, set: () => {} }
+  const base = { repo: 'test/scope-8', timeZone: 'UTC', now: NOW, tasks, cacheStore }
+  const cases = [
+    ['no-credentials', { ...base, token: '' }],
+    ['no-fetch', { ...base, token: 'tok' }],
+    ['read-failed', { ...base, token: 'tok', fetchImpl: async () => { throw new Error('socket hang up') } }],
+  ]
+  for (const [label, args] of cases) {
+    const read = await readMetrics(args)
+    assert.equal(read.ok, false, `${label} answers not ok`)
+    assert.match(read.reason, label === 'read-failed' ? /^read-failed: / : new RegExp(`^${label}$`))
+    assert.equal(read.metrics.taskDoneMedianMs, null, `${label}: an unreadable source is not a zero median`)
+    assert.deepEqual(read.running.map(row => row.id), ['task-group'], `${label}: the local rows are still the board's`)
   }
 })
