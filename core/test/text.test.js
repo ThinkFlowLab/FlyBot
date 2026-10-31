@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clip, createClock, escapeRegExp, estimateTokens, excerpt, isColor, normalize, splitRef, textOf, unquote } from '../src/host/text.js'
+import { clip, codePoints, createClock, escapeRegExp, estimateTokens, excerpt, isColor, normalize, splitRef, textOf, unquote } from '../src/host/text.js'
+
+// #1895: the one helper every host limit counts with, so a character outside the BMP is
+// one character and never two.
+test('codePoints counts one character as one whatever its UTF-16 width (#1895)', () => {
+  assert.equal(codePoints(''), 0)
+  assert.equal(codePoints('abc'), 3)
+  assert.equal(codePoints('😀'), 1, 'an emoji is one, though its UTF-16 length is 2')
+  assert.equal('😀'.length, 2, 'the unit the limits used to count it in')
+  assert.equal(codePoints('a😀b'), 3)
+  assert.equal(codePoints('旅行'), 2)
+  assert.equal(codePoints(`a${'😀'.repeat(4)}`), 5)
+})
 
 test('textOf joins the text blocks only', () => {
   assert.equal(textOf([{ type: 'text', text: ' a ' }, { type: 'image' }, { type: 'text', text: 'b' }, { type: 'text', text: 3 }]), 'a \nb')

@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
-import { splitRef, unquote } from './text.js'
+import { codePoints, splitRef, unquote } from './text.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -530,7 +530,10 @@ export function install(rt) {
   const secretEntry = text => (rt.redactSecrets?.(text) ?? text) !== text || looksSecret(text)
   function entryProblem(text) {
     if (text === '') return 'Write the entry to save.'
-    if (text.length > MEMORY_LIMITS.entry) return `An entry holds at most ${MEMORY_LIMITS.entry} characters; this one has ${text.length}. Keep one fact per entry, or save the details as several entries in a topic.`
+    // #1895: one character costs one whatever its UTF-16 width, and the number the refusal
+    // prints is the one a reader would count.
+    const size = codePoints(text)
+    if (size > MEMORY_LIMITS.entry) return `An entry holds at most ${MEMORY_LIMITS.entry} characters; this one has ${size}. Keep one fact per entry, or save the details as several entries in a topic.`
     if (secretEntry(text)) return 'This looks like a key, token, password, or ID number, which memory never keeps. Keys go to request_secret.'
     return undefined
   }
@@ -540,14 +543,17 @@ export function install(rt) {
 
   function checkSize(file, next, label) {
     const limit = limitOf(file)
+    const size = codePoints(next)
     // A file already past its size (edited by hand) may still shrink.
-    if (next.length <= limit || next.length <= file.content.length) return
+    if (size <= limit || size <= codePoints(file.content)) return
     throw new Error(file.topic === undefined
-      ? `${capital(label)}'s MEMORY.md would have ${next.length} of its ${limit} characters. Make room first: move details into a topic (remember with topic, then forget them here), merge entries with replace, or forget what no longer matters.`
-      : `The topic [[${file.topic}]] in ${label} would have ${next.length} of its ${limit} characters. Put the rest in another topic, or forget old entries.`)
+      ? `${capital(label)}'s MEMORY.md would have ${size} of its ${limit} characters. Make room first: move details into a topic (remember with topic, then forget them here), merge entries with replace, or forget what no longer matters.`
+      : `The topic [[${file.topic}]] in ${label} would have ${size} of its ${limit} characters. Put the rest in another topic, or forget old entries.`)
   }
   const capital = text => text[0].toUpperCase() + text.slice(1)
-  const sizeNote = (file, size) => `${file.file}: ${size} of ${limitOf(file)} characters`
+  // #1895: both the bound and the number it prints count code points, so a file of emoji is
+  // measured the way a reader sees it.
+  const sizeNote = (file, text) => `${file.file}: ${codePoints(text)} of ${limitOf(file)} characters`
   const allEntries = files => files.flatMap(file => file.entries.map(entry => ({ ...entry, file })))
   const actorOf = actor => ({ actor: actor.id, actorName: actor.name, ...(actor.auto ? { auto: true } : {}) })
 
@@ -589,7 +595,7 @@ export function install(rt) {
       await journal({ op: 'add', scope: scopeKey(scope), file: target.file, ...actorOf(actor), after: line })
       noteNews(scope, actor, 'add', line)
       const where = topic === undefined ? MAIN : fresh ? `the new topic [[${topic}]], linked from MEMORY.md` : `topic [[${topic}]]`
-      return { changed: true, file: target, message: `Saved to ${label}, in ${where} (${sizeNote(target, next.length)}).` }
+      return { changed: true, file: target, message: `Saved to ${label}, in ${where} (${sizeNote(target, next)}).` }
     })
   }
 
@@ -879,7 +885,7 @@ export function install(rt) {
         const topic = cleanTopic(args.topic)
         for (const { label, files } of loaded) {
           const file = files.find(item => item.topic === topic)
-          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content.length)}):\n${file.content.trim() || '(empty)'}`
+          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
         }
         const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
         return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
@@ -904,7 +910,7 @@ export function install(rt) {
         return loaded.map(({ tag, label, files }) => {
           const [main, ...topics] = files
           return [
-            `${capital(label)}: ${MAIN} has ${main.entries.length} entries (${sizeNote(main, main.content.length)})${topics.length > 0 ? `; topics ${topics.map(file => `[[${file.topic}]] (${file.entries.length})`).join(', ')}` : '; no topics'}.`,
+            `${capital(label)}: ${MAIN} has ${main.entries.length} entries (${sizeNote(main, main.content)})${topics.length > 0 ? `; topics ${topics.map(file => `[[${file.topic}]] (${file.entries.length})`).join(', ')}` : '; no topics'}.`,
             ...main.entries.map(entry => `[${where(tag, main)}] ${formatEntry(entry.text, entry.meta).slice(2)}`),
           ].join('\n')
         }).join('\n\n')
@@ -1062,7 +1068,7 @@ export function install(rt) {
     return {
       botId: bot.id,
       entries,
-      sizes: { own: own[0].content.length, team: team[0].content.length },
+      sizes: { own: codePoints(own[0].content), team: codePoints(team[0].content) },
       limits: MEMORY_LIMITS,
       summary: entries.length > 0 && saved !== undefined ? { text: saved.text, at: saved.at } : null,
       fresh: entries.length === 0 || saved?.hash === hash,
@@ -1324,7 +1330,7 @@ export function install(rt) {
       const teamFiles = loadScope(TEAM)
       const said = read.filter(line => line.who === 'user').map(line => line.text).join('\n')
       const { numbered, left } = reviewEntries(ownFiles, teamFiles, REVIEW_MEMORY_MAX, said)
-      const sizes = { own: ownFiles[0].content.length, team: teamFiles[0].content.length }
+      const sizes = { own: codePoints(ownFiles[0].content), team: codePoints(teamFiles[0].content) }
       const earlier = batch.earlier.map(line => reviewLine(line.who, line.text, bot))
       const language = writtenIn(read.filter(line => line.who === 'user').map(line => line.text.replace(/^User: /, '')), languageNow())
       const reply = await botShot(bot, reviewSystem(writesTeam(bot.id)), reviewRequest({ bot, numbered, left, sizes, where: batch.where, earlier, fresh: fresh.texts, more, language }), { sessionId: rt.chatOf(bot.id), kind: 'memory' })

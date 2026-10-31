@@ -687,9 +687,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 -import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 +import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
  import { homeLock } from './home-lock.js'
+-import { currentColor, normalize, unquote } from './text.js'
 +import { openJournal } from './journal.js'
- import { currentColor, normalize, unquote } from './text.js'
- 
++import { codePoints, currentColor, normalize, unquote } from './text.js'
++
 +// The saved team's format version. Version 2 (#47) adds the identity schema: member
 +// records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
 +// is migrated on load (after a one-time `state.json.v1` backup); a file written by a
@@ -709,7 +710,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +// because every such path imports it rather than growing its own copy.
 +export const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
 +
-+
+ 
  export function install(rt) {
 -  const { ctx, home, statePath } = rt
 +  const { ctx, home, statePath, config = {} } = rt
@@ -900,7 +901,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,478 @@ export function install(rt) {
+@@ -161,12 +161,479 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1112,8 +1113,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    const entryText = projectText(entry.text)
 +    if (entryText === '') throw projectRefusal('A Project memory entry needs text')
 +    // #1886: the bound counts code points, not UTF-16 units (`MAX_ENTRY` says why), so the emoji
-+    // note the assistant writer accepts at 600 characters is accepted here too.
-+    if ([...entryText].length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
++    // note the assistant writer accepts at 600 characters is accepted here too. #1895: both
++    // writers count through the one `codePoints` helper.
++    if (codePoints(entryText) > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
 +    const table = memoryTable(project)
 +    const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
 +    const record = ownerRow(table, ownerId, project)

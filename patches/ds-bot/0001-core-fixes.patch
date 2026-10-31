@@ -4524,9 +4524,10 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  import { dirname, join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 -import { defineTool } from '@deepseek-ai/dsh-tools'
+-import { splitRef, unquote } from './text.js'
 +import { currentParticipants } from './room-membership.js'
 +import { defineTool } from './tool-schema.js'
- import { splitRef, unquote } from './text.js'
++import { codePoints, splitRef, unquote } from './text.js'
  import { output } from './tools.js'
 +import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -4603,6 +4604,49 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return { scope: ownScope(bot.id) }
    }
    function writeDenied(scope, botId) {
+@@ -509,7 +509,10 @@ export function install(rt) {
+   const secretEntry = text => (rt.redactSecrets?.(text) ?? text) !== text || looksSecret(text)
+   function entryProblem(text) {
+     if (text === '') return 'Write the entry to save.'
+-    if (text.length > MEMORY_LIMITS.entry) return `An entry holds at most ${MEMORY_LIMITS.entry} characters; this one has ${text.length}. Keep one fact per entry, or save the details as several entries in a topic.`
++    // #1895: one character costs one whatever its UTF-16 width, and the number the refusal
++    // prints is the one a reader would count.
++    const size = codePoints(text)
++    if (size > MEMORY_LIMITS.entry) return `An entry holds at most ${MEMORY_LIMITS.entry} characters; this one has ${size}. Keep one fact per entry, or save the details as several entries in a topic.`
+     if (secretEntry(text)) return 'This looks like a key, token, password, or ID number, which memory never keeps. Keys go to request_secret.'
+     return undefined
+   }
+@@ -519,14 +519,17 @@ export function install(rt) {
+ 
+   function checkSize(file, next, label) {
+     const limit = limitOf(file)
++    const size = codePoints(next)
+     // A file already past its size (edited by hand) may still shrink.
+-    if (next.length <= limit || next.length <= file.content.length) return
++    if (size <= limit || size <= codePoints(file.content)) return
+     throw new Error(file.topic === undefined
+-      ? `${capital(label)}'s MEMORY.md would have ${next.length} of its ${limit} characters. Make room first: move details into a topic (remember with topic, then forget them here), merge entries with replace, or forget what no longer matters.`
+-      : `The topic [[${file.topic}]] in ${label} would have ${next.length} of its ${limit} characters. Put the rest in another topic, or forget old entries.`)
++      ? `${capital(label)}'s MEMORY.md would have ${size} of its ${limit} characters. Make room first: move details into a topic (remember with topic, then forget them here), merge entries with replace, or forget what no longer matters.`
++      : `The topic [[${file.topic}]] in ${label} would have ${size} of its ${limit} characters. Put the rest in another topic, or forget old entries.`)
+   }
+   const capital = text => text[0].toUpperCase() + text.slice(1)
+-  const sizeNote = (file, size) => `${file.file}: ${size} of ${limitOf(file)} characters`
++  // #1895: both the bound and the number it prints count code points, so a file of emoji is
++  // measured the way a reader sees it.
++  const sizeNote = (file, text) => `${file.file}: ${codePoints(text)} of ${limitOf(file)} characters`
+   const allEntries = files => files.flatMap(file => file.entries.map(entry => ({ ...entry, file })))
+   const actorOf = actor => ({ actor: actor.id, actorName: actor.name, ...(actor.auto ? { auto: true } : {}) })
+ 
+@@ -568,7 +568,7 @@ export function install(rt) {
+       await journal({ op: 'add', scope: scopeKey(scope), file: target.file, ...actorOf(actor), after: line })
+       noteNews(scope, actor, 'add', line)
+       const where = topic === undefined ? MAIN : fresh ? `the new topic [[${topic}]], linked from MEMORY.md` : `topic [[${topic}]]`
+-      return { changed: true, file: target, message: `Saved to ${label}, in ${where} (${sizeNote(target, next.length)}).` }
++      return { changed: true, file: target, message: `Saved to ${label}, in ${where} (${sizeNote(target, next)}).` }
+     })
+   }
+ 
 @@ -632,7 +632,7 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
@@ -4627,7 +4671,13 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -861,6 +861,20 @@ export function install(rt) {
+@@ -856,22 +856,51 @@ export function install(rt) {
+         const topic = cleanTopic(args.topic)
+         for (const { label, files } of loaded) {
+           const file = files.find(item => item.topic === topic)
+-          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content.length)}):\n${file.content.trim() || '(empty)'}`
++          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
+         }
          const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
          return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
        }
@@ -4648,7 +4698,12 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
        const query = String(args.query ?? '').trim().slice(0, 120)
        if (query === '') {
-@@ -872,6 +872,21 @@ export function install(rt) {
+         return loaded.map(({ tag, label, files }) => {
+           const [main, ...topics] = files
+           return [
+-            `${capital(label)}: ${MAIN} has ${main.entries.length} entries (${sizeNote(main, main.content.length)})${topics.length > 0 ? `; topics ${topics.map(file => `[[${file.topic}]] (${file.entries.length})`).join(', ')}` : '; no topics'}.`,
++            `${capital(label)}: ${MAIN} has ${main.entries.length} entries (${sizeNote(main, main.content)})${topics.length > 0 ? `; topics ${topics.map(file => `[[${file.topic}]] (${file.entries.length})`).join(', ')}` : '; no topics'}.`,
+             ...main.entries.map(entry => `[${where(tag, main)}] ${formatEntry(entry.text, entry.meta).slice(2)}`),
            ].join('\n')
          }).join('\n\n')
        }
@@ -4679,7 +4734,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
-@@ -1004,7 +1004,7 @@ export function install(rt) {
+@@ -1004,11 +1004,11 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -4688,6 +4743,11 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return {
        botId: bot.id,
        entries,
+-      sizes: { own: own[0].content.length, team: team[0].content.length },
++      sizes: { own: codePoints(own[0].content), team: codePoints(team[0].content) },
+       limits: MEMORY_LIMITS,
+       summary: entries.length > 0 && saved !== undefined ? { text: saved.text, at: saved.at } : null,
+       fresh: entries.length === 0 || saved?.hash === hash,
 @@ -1123,17 +1123,28 @@ export function install(rt) {
  
    // What is new in a group, from its log: the member's Session holds the same
@@ -4749,6 +4809,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const live = owner.roomId === undefined ? undefined : rt.roomOf(owner.roomId)
      const kept = seen?.roomId === owner.roomId ? seen?.room : undefined
      const member = live?.members?.includes(bot.id) === true
+@@ -1256,7 +1256,7 @@ export function install(rt) {
+       const teamFiles = loadScope(TEAM)
+       const said = read.filter(line => line.who === 'user').map(line => line.text).join('\n')
+       const { numbered, left } = reviewEntries(ownFiles, teamFiles, REVIEW_MEMORY_MAX, said)
+-      const sizes = { own: ownFiles[0].content.length, team: teamFiles[0].content.length }
++      const sizes = { own: codePoints(ownFiles[0].content), team: codePoints(teamFiles[0].content) }
+       const earlier = batch.earlier.map(line => reviewLine(line.who, line.text, bot))
+       const language = writtenIn(read.filter(line => line.who === 'user').map(line => line.text.replace(/^User: /, '')), languageNow())
+       const reply = await botShot(bot, reviewSystem(writesTeam(bot.id)), reviewRequest({ bot, numbered, left, sizes, where: batch.where, earlier, fresh: fresh.texts, more, language }), { sessionId: rt.chatOf(bot.id), kind: 'memory' })
 @@ -1272,7 +1272,7 @@ export function install(rt) {
        const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
        if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
@@ -5364,7 +5433,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
 +import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 +import { defineTool } from './tool-schema.js'
-+import { textOf } from './text.js'
++import { codePoints, textOf } from './text.js'
 +import { output } from './tools.js'
 +import { retiredBot } from './store.js'
  
@@ -5465,7 +5534,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
    }
    if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
    else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
-@@ -89,63 +89,554 @@ export function install(rt) {
+@@ -89,63 +89,555 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -5627,7 +5696,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const title = String(body.title ?? '').trim()
 +    const prompt = String(body.prompt ?? '').trim()
 +    if (title === '') throw invalid('Give the task a name')
-+    if (title.length > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
++    // #1895: the bound counts code points, so a name of emoji is measured as a reader counts it.
++    if (codePoints(title) > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
 +    if (prompt === '') throw invalid('Say what the Bot should do')
 +    return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
 +  }
@@ -6065,6 +6135,27 @@ diff --git a/src/host/steward.js b/src/host/steward.js
  // Context sizes between requests are estimates, so the hard line stays a little
  // below what the model can actually take.
  const HARD_SHARE = 0.95
+diff --git a/src/host/text.js b/src/host/text.js
+--- a/src/host/text.js
++++ b/src/host/text.js
+@@ -23,6 +23,17 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
+ 
+ export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+ 
++// The host bounds this change counts go through it (#1895): one character costs one
++// whatever its UTF-16 width, so an emoji inside a 300-character bound is one character,
++// not two.
++export const codePoints = (text) => {
++  const value = String(text)
++  let n = 0
++  // A code point is one or two UTF-16 units; step by that width so no array is built.
++  for (let i = 0; i < value.length; n += 1) i += value.codePointAt(i) > 0xffff ? 2 : 1
++  return n
++}
++
+ // The part of a long message around the first match, so a search hit stays visible.
+ export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
+   if (text.length <= max) return text
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -9969,7 +10060,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,94 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,129 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -10063,6 +10154,41 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.match(out, /^Near \[\[travel\]\] in your memory and the team memory:/)
 +  assert.match(out, /- \[\[memory\]\] — linked/)
 +  assert.match(await tool('recall', { related: 'nothinghere' }, 'b2'), /Nothing in your memory and the team memory links "nothinghere"/)
++})
++
++// #1895: a character outside the BMP is one character, not two. The entry bound counts
++// code points, and a refusal prints the number a reader would count.
++test('the entry bound counts code points (#1895)', async (t) => {
++  const { tool, stop } = start()
++  t.after(() => stop())
++  const atCap = '😀'.repeat(MEMORY_LIMITS.entry)
++  assert.match(await tool('remember', { text: atCap }, 'b2'), /^Saved to your memory/, '300 emoji is 300 characters')
++  const over = '😀'.repeat(MEMORY_LIMITS.entry + 1)
++  assert.match(await tool('remember', { text: over }, 'b2'), /at most 300 characters; this one has 301\./, 'the refusal counts code points')
++})
++
++// #1895: a MEMORY.md at its 4,000-character size is measured in code points too, and the
++// size note prints what a reader would count — not twice the emoji count.
++test('a MEMORY.md size and its note count code points (#1895)', async (t) => {
++  const { tool, read, stop, home } = start()
++  t.after(() => stop())
++  const dir = join(home, 'memory', 'bots', 'b2')
++  const file = join(dir, 'MEMORY.md')
++  const withEmoji = count => `# Memory\n\n- ${'😀'.repeat(count)}\n`
++  mkdirSync(dir, { recursive: true })
++
++  // A hand-written file of 3,943 code points (about 7,900 UTF-16 units) takes one more entry.
++  writeFileSync(file, withEmoji(3930))
++  const savedMessage = await tool('remember', { text: 'One more' }, 'b2')
++  assert.match(savedMessage, /^Saved to your memory/, 'a file under 4,000 code points takes an entry')
++  const saved = [...read('bots', 'b2', 'MEMORY.md')].length
++  const added = saved - [...withEmoji(3930)].length
++  assert.ok(saved <= 4000, String(saved))
++  assert.match(savedMessage, new RegExp(`MEMORY\\.md: ${saved} of 4000 characters`), 'the note prints the code-point count')
++  // Then one code point more in the file puts the next entry one over the bound, and the
++  // refusal prints that code-point number rather than twice it.
++  writeFileSync(file, withEmoji(4001 - added - 13))
++  assert.match(await tool('remember', { text: 'One more' }, 'b2'), /MEMORY\.md would have 4001 of its 4000 characters/, 'one code point over is refused with the code-point count')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
@@ -10583,7 +10709,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,712 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,728 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -11296,6 +11422,22 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  assert.equal(copied.ok, true, JSON.stringify(copied))
 +  assert.equal([...schedule.tasks.values()].at(-1).sessionId, 'b1')
 +})
++
++// #1895: a task name's 120-character bound counts code points, so a name of emoji is
++// measured the way a reader sees it instead of at double length.
++test('a task name counts code points against its 120-character bound (#1895)', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const atCap = '😀'.repeat(120)
++  const made = await call('schedule-create', { target: 'm1', title: atCap, prompt: 'Go', when: { kind: 'every', minutes: 5 } })
++  assert.equal(made.ok, true, JSON.stringify(made))
++  assert.equal([...schedule.tasks.values()].at(-1).record.title, atCap, 'the whole 120-emoji name reaches DSH')
++  const over = '😀'.repeat(121)
++  const refused = await call('schedule-create', { target: 'm1', title: over, prompt: 'Go', when: { kind: 'every', minutes: 5 } })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Keep the name under 120 characters/)
++})
 diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 --- a/test/session-identity.test.js
 +++ b/test/session-identity.test.js
@@ -11454,6 +11596,29 @@ diff --git a/test/steward.test.js b/test/steward.test.js
    }
    // The check line never passes the hard line.
    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)
+diff --git a/test/text.test.js b/test/text.test.js
+--- a/test/text.test.js
++++ b/test/text.test.js
+@@ -1,6 +1,18 @@
+ import assert from 'node:assert/strict'
+ import { test } from 'node:test'
+-import { clip, createClock, escapeRegExp, estimateTokens, excerpt, isColor, normalize, splitRef, textOf, unquote } from '../src/host/text.js'
++import { clip, codePoints, createClock, escapeRegExp, estimateTokens, excerpt, isColor, normalize, splitRef, textOf, unquote } from '../src/host/text.js'
++
++// #1895: the one helper every host limit counts with, so a character outside the BMP is
++// one character and never two.
++test('codePoints counts one character as one whatever its UTF-16 width (#1895)', () => {
++  assert.equal(codePoints(''), 0)
++  assert.equal(codePoints('abc'), 3)
++  assert.equal(codePoints('😀'), 1, 'an emoji is one, though its UTF-16 length is 2')
++  assert.equal('😀'.length, 2, 'the unit the limits used to count it in')
++  assert.equal(codePoints('a😀b'), 3)
++  assert.equal(codePoints('旅行'), 2)
++  assert.equal(codePoints(`a${'😀'.repeat(4)}`), 5)
++})
+ 
+ test('textOf joins the text blocks only', () => {
+   assert.equal(textOf([{ type: 'text', text: ' a ' }, { type: 'image' }, { type: 'text', text: 'b' }, { type: 'text', text: 3 }]), 'a \nb')
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js

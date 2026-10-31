@@ -23,6 +23,17 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「�
 
 export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+// The host bounds this change counts go through it (#1895): one character costs one
+// whatever its UTF-16 width, so an emoji inside a 300-character bound is one character,
+// not two.
+export const codePoints = (text) => {
+  const value = String(text)
+  let n = 0
+  // A code point is one or two UTF-16 units; step by that width so no array is built.
+  for (let i = 0; i < value.length; n += 1) i += value.codePointAt(i) > 0xffff ? 2 : 1
+  return n
+}
+
 // The part of a long message around the first match, so a search hit stays visible.
 export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
   if (text.length <= max) return text

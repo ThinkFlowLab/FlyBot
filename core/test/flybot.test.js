@@ -1037,3 +1037,13 @@ test('#587: list_bots marks a Bot whose send waits on the owner with a count, ne
   const after = await tool('list_bots', {}, 'a')
   assert.ok(!after.includes('to approve'), 'a decided hold leaves no tag')
 })
+
+// #1895: a message's 20,000-character bound counts code points, so an emoji message is
+// measured the way a reader sees it instead of at double length.
+test('a message counts code points against its 20,000-character bound (#1895)', async (t) => {
+  const { fb, stop } = await start()
+  t.after(stop)
+  const atCap = '😀'.repeat(20_000)
+  assert.equal((await fb.bot.send({ from: 'a', to: 'b', text: atCap })).action, 'allow', '20,000 emoji is 20,000 characters')
+  await assert.rejects(fb.bot.send({ from: 'a', to: 'b', text: '😀'.repeat(20_001) }), /a message is at most 20000 characters/, 'one code point over is refused')
+})

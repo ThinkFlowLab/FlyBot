@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
-import { currentColor, normalize, unquote } from './text.js'
+import { codePoints, currentColor, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
 // records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
@@ -519,8 +519,9 @@ export function install(rt) {
     const entryText = projectText(entry.text)
     if (entryText === '') throw projectRefusal('A Project memory entry needs text')
     // #1886: the bound counts code points, not UTF-16 units (`MAX_ENTRY` says why), so the emoji
-    // note the assistant writer accepts at 600 characters is accepted here too.
-    if ([...entryText].length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
+    // note the assistant writer accepts at 600 characters is accepted here too. #1895: both
+    // writers count through the one `codePoints` helper.
+    if (codePoints(entryText) > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
     const table = memoryTable(project)
     const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
     const record = ownerRow(table, ownerId, project)

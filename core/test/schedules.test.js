@@ -921,3 +921,19 @@ test('#1321: with nobody signed in the single-human path still copies across Bot
   assert.equal(copied.ok, true, JSON.stringify(copied))
   assert.equal([...schedule.tasks.values()].at(-1).sessionId, 'b1')
 })
+
+// #1895: a task name's 120-character bound counts code points, so a name of emoji is
+// measured the way a reader sees it instead of at double length.
+test('a task name counts code points against its 120-character bound (#1895)', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const atCap = '😀'.repeat(120)
+  const made = await call('schedule-create', { target: 'm1', title: atCap, prompt: 'Go', when: { kind: 'every', minutes: 5 } })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  assert.equal([...schedule.tasks.values()].at(-1).record.title, atCap, 'the whole 120-emoji name reaches DSH')
+  const over = '😀'.repeat(121)
+  const refused = await call('schedule-create', { target: 'm1', title: over, prompt: 'Go', when: { kind: 'every', minutes: 5 } })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /Keep the name under 120 characters/)
+})

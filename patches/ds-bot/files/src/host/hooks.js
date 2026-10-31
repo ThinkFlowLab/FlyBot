@@ -23,6 +23,7 @@ import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
+import { codePoints } from './text.js'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 
 export const FLYBOT_API_VERSION = 1
@@ -728,7 +729,8 @@ export function install(rt) {
   async function send({ from, to, text, role = 'request', hop = 0, via = SHARED, meta, attachments } = {}) {
     await rt.load()
     if (typeof text !== 'string' || text.trim() === '') throw new Error('flybot: send needs text')
-    if (text.length > MAX_SEND_TEXT) throw new Error(`flybot: a message is at most ${MAX_SEND_TEXT} characters`)
+    // #1895: the bound counts code points, so a message of emoji is measured as a reader counts it.
+    if (codePoints(text) > MAX_SEND_TEXT) throw new Error(`flybot: a message is at most ${MAX_SEND_TEXT} characters`)
     if (role !== 'request' && role !== 'reply') throw new Error(`flybot: unsupported role ${role}`)
     if (!isRemote(from) && rt.botOf(from) === undefined) throw new Error(`flybot: unknown sender ${from}`)
     if (!isRemote(to) && rt.botOf(to) === undefined) throw new Error(`flybot: unknown Bot ${to}`)

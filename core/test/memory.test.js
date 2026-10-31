@@ -1176,3 +1176,38 @@ test('recall related lists what a topic links to', async (t) => {
   assert.match(out, /- \[\[memory\]\] — linked/)
   assert.match(await tool('recall', { related: 'nothinghere' }, 'b2'), /Nothing in your memory and the team memory links "nothinghere"/)
 })
+
+// #1895: a character outside the BMP is one character, not two. The entry bound counts
+// code points, and a refusal prints the number a reader would count.
+test('the entry bound counts code points (#1895)', async (t) => {
+  const { tool, stop } = start()
+  t.after(() => stop())
+  const atCap = '😀'.repeat(MEMORY_LIMITS.entry)
+  assert.match(await tool('remember', { text: atCap }, 'b2'), /^Saved to your memory/, '300 emoji is 300 characters')
+  const over = '😀'.repeat(MEMORY_LIMITS.entry + 1)
+  assert.match(await tool('remember', { text: over }, 'b2'), /at most 300 characters; this one has 301\./, 'the refusal counts code points')
+})
+
+// #1895: a MEMORY.md at its 4,000-character size is measured in code points too, and the
+// size note prints what a reader would count — not twice the emoji count.
+test('a MEMORY.md size and its note count code points (#1895)', async (t) => {
+  const { tool, read, stop, home } = start()
+  t.after(() => stop())
+  const dir = join(home, 'memory', 'bots', 'b2')
+  const file = join(dir, 'MEMORY.md')
+  const withEmoji = count => `# Memory\n\n- ${'😀'.repeat(count)}\n`
+  mkdirSync(dir, { recursive: true })
+
+  // A hand-written file of 3,943 code points (about 7,900 UTF-16 units) takes one more entry.
+  writeFileSync(file, withEmoji(3930))
+  const savedMessage = await tool('remember', { text: 'One more' }, 'b2')
+  assert.match(savedMessage, /^Saved to your memory/, 'a file under 4,000 code points takes an entry')
+  const saved = [...read('bots', 'b2', 'MEMORY.md')].length
+  const added = saved - [...withEmoji(3930)].length
+  assert.ok(saved <= 4000, String(saved))
+  assert.match(savedMessage, new RegExp(`MEMORY\\.md: ${saved} of 4000 characters`), 'the note prints the code-point count')
+  // Then one code point more in the file puts the next entry one over the bound, and the
+  // refusal prints that code-point number rather than twice it.
+  writeFileSync(file, withEmoji(4001 - added - 13))
+  assert.match(await tool('remember', { text: 'One more' }, 'b2'), /MEMORY\.md would have 4001 of its 4000 characters/, 'one code point over is refused with the code-point count')
+})

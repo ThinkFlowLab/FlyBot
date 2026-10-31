@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 import { defineTool } from './tool-schema.js'
-import { textOf } from './text.js'
+import { codePoints, textOf } from './text.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 
@@ -335,7 +335,8 @@ export function install(rt) {
     const title = String(body.title ?? '').trim()
     const prompt = String(body.prompt ?? '').trim()
     if (title === '') throw invalid('Give the task a name')
-    if (title.length > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
+    // #1895: the bound counts code points, so a name of emoji is measured as a reader counts it.
+    if (codePoints(title) > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
     if (prompt === '') throw invalid('Say what the Bot should do')
     return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
   }
