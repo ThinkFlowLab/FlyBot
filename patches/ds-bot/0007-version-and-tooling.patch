@@ -834,7 +834,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
    const again = host(home)
    assert.deepEqual((await again.diagnostics.entries()).map(entry => entry.code), ['EACCES', 'RATE_LIMIT'])
    assert.match(await again.diagnostics.logText(), /\n {4}at TestContext/)
-@@ -84,6 +84,41 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
+@@ -84,6 +84,60 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
    quiet.mock.restore()
  })
  
@@ -861,16 +861,35 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
 +  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
 +  const rt = host(home, { config: { diagnosticsFile: false } })
++  const stack = 'Error: x\n    at fake (/tmp/x.js:1:1)'
 +  const text = `${'a'.repeat(79)}\u{1F600}tail`
-+  rt.noteFailure({ source: 'host', text, stack: 'Error: x\n    at fake (/tmp/x.js:1:1)' })
++  rt.noteFailure({ source: 'host', text, stack })
 +  const report = await rt.diagnostics.report({})
-+  const line = report.markdown.split('\n').find(item => item.includes('<details><summary>Stack:')) ?? ''
-+  assert.notEqual(line, '')
-+  const shown = line.replace(/^<details><summary>Stack: /, '').replace(/<\/summary>$/, '')
++  const lines = report.markdown.split('\n')
++  const at = lines.findIndex(item => item.startsWith('<details><summary>Stack:'))
++  assert.notEqual(at, -1)
++  const shown = lines[at].replace(/^<details><summary>Stack: /, '').replace(/<\/summary>$/, '')
++  // The bound itself: on this input the boundary backs off one unit, so the summary is
++  // the 79 characters before the pair. A smaller bound changes this string.
++  assert.equal(shown, 'a'.repeat(79))
++  assert.ok(shown.length <= 80, `summary is ${shown.length} code units`)
 +  assert.equal(shown.isWellFormed(), true, `the summary is not well formed: ${shown}`)
 +  assert.equal(shown.includes('\ufffd'), false)
-+  assert.ok(shown.length <= 80, `summary is ${shown.length} code units`)
 +  assert.equal(Buffer.from(shown, 'utf8').equals(Buffer.from(text, 'utf8').subarray(0, Buffer.byteLength(shown))), true, 'the summary is a byte prefix of the message')
++  // Everything below the summary is the entry's stack, unchanged.
++  assert.deepEqual(lines.slice(at + 1, at + 6), ['', '```', 'at fake (/tmp/x.js:1:1)', '```', '</details>'])
++  assert.equal((await rt.diagnostics.entries()).at(-1).stack, 'at fake (/tmp/x.js:1:1)')
++
++  // `<` is escaped after the cut, on the same text the summary shows.
++  const marked = `${'<'.repeat(3)}${'c'.repeat(200)}`
++  rt.noteFailure({ source: 'host', text: marked, stack })
++  const second = (await rt.diagnostics.report({})).markdown.split('\n')
++  const escapedAt = second.findIndex(item => item.startsWith('<details><summary>Stack:') && item.includes('&lt;'))
++  assert.notEqual(escapedAt, -1)
++  const escaped = second[escapedAt].replace(/^<details><summary>Stack: /, '').replace(/<\/summary>$/, '')
++  assert.equal(escaped, `${'&lt;'.repeat(3)}${'c'.repeat(77)}`, 'the cut comes first, then the escaping')
++  assert.equal(escaped.includes('<'), false)
++  assert.equal(escaped.replaceAll('&lt;', '<').length, 80)
 +})
 +
  test('warnings send only cleaned text to the logger and stderr', (t) => {
