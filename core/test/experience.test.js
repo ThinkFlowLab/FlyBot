@@ -256,3 +256,16 @@ test('the CLI writes one new entry file and refuses to overwrite it', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('the experience text bound counts code points, not UTF-16 units', () => {
+  const emoji = '\u{1F600}'
+  const base = { id: 'bound', repo: 'Alpha/One', techStacks: [], date: '2026-10-31', trigger: 'a', wrong: 'b', right: 'c' }
+  for (const key of ['trigger', 'wrong', 'right']) {
+    for (const text of ['x'.repeat(599), 'x'.repeat(600), emoji.repeat(599), emoji.repeat(600), `${emoji.repeat(599)}x`]) {
+      assert.doesNotThrow(() => prepareExperienceEntry({ ...base, [key]: text }), `${key}: ${text.length} units is within 600 characters`)
+    }
+    for (const text of ['x'.repeat(601), emoji.repeat(601), `${emoji.repeat(600)}x`]) {
+      assert.throws(() => prepareExperienceEntry({ ...base, [key]: text }), new RegExp(`^Error: ${key}$`), `${key}: over 600 characters is refused`)
+    }
+  }
+})

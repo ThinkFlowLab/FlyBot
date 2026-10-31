@@ -10,6 +10,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { codePoints } from './text.js'
 
 export const DEFAULT_EXPERIENCE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../dev/experience')
 
@@ -97,7 +98,8 @@ function validateEntry(entry, expected) {
   if (entry.seen !== undefined && (!Number.isInteger(entry.seen) || entry.seen < 1)) throw new Error('seen')
   for (const key of ['trigger', 'wrong', 'right']) {
     const text = entry[key]
-    if (typeof text !== 'string' || text.trim() === '' || text.length > TEXT_MAX) throw new Error(key)
+    // #1899: a code point costs one whatever its UTF-16 width, so 600 emoji fill 600.
+    if (typeof text !== 'string' || text.trim() === '' || codePoints(text) > TEXT_MAX) throw new Error(key)
   }
   if (entry.refs !== undefined) {
     if (!Array.isArray(entry.refs) || entry.refs.length > 20 || entry.refs.some(ref => typeof ref !== 'string' || !REF.test(ref))) {
