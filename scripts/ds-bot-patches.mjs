@@ -8,6 +8,11 @@
 //   node scripts/ds-bot-patches.mjs generate   rewrite patches/ds-bot/ from core/ vs ds-bot/ (after editing
 //                                              core/): *.patch for edits to upstream files, split by
 //                                              topics.json; files/ for files upstream does not have
+//   node scripts/ds-bot-patches.mjs canonical  CI gate (#1890): fail when generate would change
+//                                              patches/ds-bot/, i.e. when the committed split drifted.
+//                                              `check` cannot answer this — a re-split series still
+//                                              reproduces core/ — and that gap landed #1883..#1889 green.
+//                                              Changes nothing on disk: generate writes to a scratch copy.
 //
 // The format is chosen so that two branches editing the same core file merge without conflicts in
 // the generated output (see patches/ds-bot/README.md): no `index <hash>` lines, hunk headers that
@@ -26,7 +31,7 @@
 // git keeps the git path: CI is the reference, and the test compares both appliers on every patch.
 // `generate` needs git either way, because it asks git for the diff.
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,13 +44,23 @@ const PATCHES = join(ROOT, 'patches', 'ds-bot')
 const FILES = join(PATCHES, 'files') // whole files FlyBot adds (or replaces, when binary): copied over ds-bot/ before the patches apply
 const git = (args, opts = {}) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, ...opts })
 const hasGit = (() => { try { execFileSync('git', ['--version'], { stdio: 'ignore' }); return true } catch { return false } })()
+// `git ls-files` and `git write-tree` answer only when this directory is the root of its own
+// repository. A copy of the tree inside another checkout answers with the outer repository's index
+// and says nothing about these files (it produced a phantom drift on a copied tree while #1890 was
+// built), so the root has to be the repository's top level; anything else uses the walk below.
+const inRepo = hasGit && (() => {
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return realpathSync(top) === realpathSync(ROOT)
+  } catch { return false }
+})()
 const series = () => readdirSync(PATCHES).filter(f => /^\d{4}-.*\.patch$/.test(f)).sort()
 const fail = (message) => { console.error(`ds-bot-patches: ${message}`); process.exit(1) }
 
 // The tracked files of a directory. git answers on a machine that has it; without git the walk below
 // answers, and the root .gitignore decides what is not in the repository. The walk is a list of what
 // is on disk, which is what `ls-files` reports too before a commit, apart from ignored files.
-const tracked = dir => (hasGit ? git(['ls-files', '-z', '--', dir]).split('\0').filter(Boolean).map(f => relative(dir, f)) : walkTracked(dir))
+const tracked = dir => (inRepo ? git(['ls-files', '-z', '--', dir]).split('\0').filter(Boolean).map(f => relative(dir, f)) : walkTracked(dir))
 
 const globToRegExp = glob => new RegExp(`^${glob.split('*').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`)
 
@@ -228,7 +243,7 @@ function build(out) {
     cpSync(join(FILES, file), join(ROOT, out, file))
   }
   for (const patch of series()) {
-    if (!hasGit) {
+    if (!inRepo) {
       try { applyPatchText(readFileSync(join(PATCHES, patch), 'utf8'), join(ROOT, out)) } catch (error) { fail(`${patch} does not apply cleanly:\n${error.message}`) }
       continue
     }
@@ -239,9 +254,9 @@ function build(out) {
 }
 
 function checkPin() {
-  if (!hasGit) {
+  if (!inRepo) {
     // Not a pass: the tree hash cannot be computed here, so say what was skipped (#978).
-    console.log(`skipped pin (no git): the tree hash cannot be computed here`)
+    console.log(hasGit ? 'skipped pin (not a git checkout at the root): the tree hash cannot be computed here' : 'skipped pin (no git): the tree hash cannot be computed here')
     return
   }
   // The tree of ds-bot/ as staged (equals HEAD in CI), so the check also works before a commit.
@@ -329,11 +344,14 @@ function diffReproduces(file, diff, hadUpstream) {
   } catch { return false } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
-function generate() {
+// `dest` is patches/ds-bot/ itself, or a scratch copy of it for `canonical` (#1890); `quiet` keeps
+// that gate's output down to its one pass line.
+function generate(dest = PATCHES, { quiet = false } = {}) {
   // The diff itself comes from git. Without git there is nothing to ask for it: the git-free applier
   // (#978) is a validator, not a diff writer.
   if (!hasGit) fail('generate needs git: it asks git for the diff of ds-bot/ against core/. Without git, edit core/ and patches/ds-bot/ together and run check.')
-  const topics = JSON.parse(readFileSync(join(PATCHES, 'topics.json'), 'utf8'))
+  const say = quiet ? () => {} : console.log
+  const topics = JSON.parse(readFileSync(join(dest, 'topics.json'), 'utf8'))
   const upstream = new Set(tracked(UPSTREAM))
   const core = new Set(tracked(CORE))
   const changed = [...new Set([...upstream, ...core])].sort().filter(f => !upstream.has(f) || !core.has(f) ||
@@ -356,21 +374,47 @@ function generate() {
     return fail(`the diff of ${f} does not reproduce core/${f} when applied to ds-bot/${f}`)
   }
   const texts = new Map(edited.map(f => [f, textOf(f)]))
-  rmSync(FILES, { recursive: true, force: true })
-  for (const old of series()) rmSync(join(PATCHES, old))
+  const filesOut = join(dest, 'files')
+  rmSync(filesOut, { recursive: true, force: true })
+  for (const old of readdirSync(dest)) if (/^\d{4}-.*\.patch$/.test(old)) rmSync(join(dest, old))
   for (const f of whole) {
-    mkdirSync(dirname(join(FILES, f)), { recursive: true })
-    cpSync(join(ROOT, CORE, f), join(FILES, f))
+    mkdirSync(dirname(join(filesOut, f)), { recursive: true })
+    cpSync(join(ROOT, CORE, f), join(filesOut, f))
   }
-  if (whole.length) console.log(`wrote patches/ds-bot/files/ (${whole.length} files)`)
+  if (whole.length) say(`wrote patches/ds-bot/files/ (${whole.length} files)`)
   for (const topic of Object.keys(topics)) {
     const files = edited.filter(f => topicOf(f) === topic)
     if (!files.length) continue
     let text = `FlyBot patch ${topic} on ${PIN.repo}@${PIN.commit.slice(0, 7)} (${UPSTREAM}/). Generated by scripts/ds-bot-patches.mjs; edits to upstream files only (files FlyBot adds are in files/).\n\n`
     for (const f of files) text += texts.get(f)
-    writeFileSync(join(PATCHES, `${topic}.patch`), text)
-    console.log(`wrote patches/ds-bot/${topic}.patch (${files.length} files)`)
+    writeFileSync(join(dest, `${topic}.patch`), text)
+    say(`wrote patches/ds-bot/${topic}.patch (${files.length} files)`)
   }
+}
+
+// The gate #1890 asked for: is the committed series what `generate` writes? It regenerates into a
+// scratch copy of patches/ds-bot/ — never into the working tree — and compares the two file for file,
+// so a drift that still reproduces core/ (a re-split topic, a patch folded away) fails here and not
+// in the merge queue. Only the files generate owns are compared; topics.json is hand-written.
+function canonical() {
+  if (!hasGit) fail('canonical needs git: it compares the committed series with what generate writes, and generate asks git for the diff')
+  const scratch = mkdtempSync(join(tmpdir(), 'ds-bot-canonical-'))
+  try {
+    const staged = join(scratch, 'patches')
+    cpSync(PATCHES, staged, { recursive: true })
+    generate(staged, { quiet: true })
+    const owned = dir => readdirTree(dir).filter(f => /^\d{4}-.*\.patch$/.test(f) || f.split(/[\\/]/)[0] === 'files')
+    const committed = new Set(owned(PATCHES))
+    const produced = new Set(owned(staged))
+    const drift = []
+    for (const file of [...committed].sort()) {
+      if (!produced.has(file)) drift.push(`D patches/ds-bot/${file}`)
+      else if (!readFileSync(join(PATCHES, file)).equals(readFileSync(join(staged, file)))) drift.push(`M patches/ds-bot/${file}`)
+    }
+    for (const file of [...produced].sort()) if (!committed.has(file)) drift.push(`A patches/ds-bot/${file}`)
+    if (drift.length) fail(`patches/ds-bot/ is not what generate writes — the committed series drifted:\n  ${drift.join('\n  ')}\nrun \`node scripts/ds-bot-patches.mjs generate\` and commit its output`)
+    console.log('ok   patches/ds-bot/ is what generate writes (generate is a no-op)')
+  } finally { rmSync(scratch, { recursive: true, force: true }) }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -379,6 +423,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (command === 'apply') { build(CORE); console.log(`core/ rebuilt from ${UPSTREAM}/ + files/ + ${series().length} patches`) }
   else if (command === 'check') check()
   else if (command === 'generate') generate()
+  else if (command === 'canonical') canonical()
   else if (command === 'pin') checkPin()
-  else fail('usage: node scripts/ds-bot-patches.mjs apply|check|generate|pin')
+  else fail('usage: node scripts/ds-bot-patches.mjs apply|check|generate|canonical|pin')
 }

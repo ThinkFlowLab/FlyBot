@@ -234,3 +234,47 @@ if (gitAvailable) {
     }
   })
 }
+
+// #1890: `check` answers "does the committed series apply and reproduce core/", not "would a fresh
+// generate change anything", so a drifted split lands green — it did between #1883 and #1889, where
+// generate rewrote 0001/0002/0005/0008/0012 and deleted 0018 while check stayed ok. The gate is a
+// pair on purpose: the drifted case proves it catches the shape, and the clean case proves it runs at
+// all and says nothing but a pass line, so a gate removed or skipped cannot hide as silence.
+if (gitAvailable) {
+  const scratchRepo = () => {
+    const root = join(import.meta.dirname, '..', '..')
+    const dir = mkdtempSync(join(tmpdir(), 'ds-bot-canonical-'))
+    for (const entry of ['scripts', 'ds-bot', 'ds-bot.pin.json', 'patches', 'core', '.gitignore']) {
+      cpSync(join(root, entry), join(dir, entry), { recursive: true, verbatimSymlinks: true })
+    }
+    return dir
+  }
+  const runCanonical = dir => {
+    try {
+      const out = execFileSync(process.execPath, [join(dir, 'scripts', 'ds-bot-patches.mjs'), 'canonical'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      return { code: 0, out }
+    } catch (error) { return { code: error.status ?? 1, out: `${error.stdout ?? ''}${error.stderr ?? ''}` } }
+  }
+
+  test('#1890: a drifted patch series fails the gate, naming what generate would rewrite', () => {
+    const dir = scratchRepo()
+    try {
+      writeFileSync(join(dir, 'patches', 'ds-bot', '0002-flybot-api-host.patch'), '\n# drifted by the test\n', { flag: 'a' })
+      const { code, out } = runCanonical(dir)
+      assert.notEqual(code, 0, 'a drifted series must not pass the gate')
+      assert.match(out, /not what generate writes/)
+      assert.match(out, /0002-flybot-api-host\.patch/)
+      assert.doesNotMatch(out, /^ok /m, 'a drifted series cannot print the pass line')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  test('#1890: a clean tree passes the gate, and the gate prints no diff', () => {
+    const dir = scratchRepo()
+    try {
+      const { code, out } = runCanonical(dir)
+      assert.equal(code, 0, out)
+      assert.match(out, /^ok /m)
+      assert.doesNotMatch(out, /^(diff --git |--- a\/|\+\+\+ b\/|@@ )/m, 'a clean tree prints no diff')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+}

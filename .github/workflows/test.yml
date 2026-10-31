@@ -100,6 +100,8 @@ jobs:
           node-version: 24
       - name: ds-bot/ matches the pin, patches apply, core/ is ds-bot/ + patches (#34)
         run: node scripts/ds-bot-patches.mjs check
+      - name: generate is a no-op on the committed patch split (#1890)
+        run: node scripts/ds-bot-patches.mjs canonical
       - name: Pack and check core (ds-bot), plugins/social, plugins/tree, plugins/timeline, plugins/workflow
         run: node .github/scripts/check-pack.mjs
       - name: Typecheck the plugin API (types/*.d.ts, strict)
