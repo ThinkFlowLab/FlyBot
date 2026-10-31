@@ -3,6 +3,8 @@
 // `unavailable` and every value reads `null`, never `0`: a zero claims "none today" and the board
 // must not turn "cannot read" into a number. The reads are injected, so a test counts calls without
 // a network, and the day boundary is the reader's own time zone, not the host's UTC clock.
+import { columnOf } from '../shared/task-board.js'
+
 export const METRICS_TTL_MS = 5 * 60 * 1000
 export const METRIC_KEYS = [
   'prsOpenedToday', 'prsMergedToday', 'issuesOpenedToday', 'issuesClosedToday',
@@ -67,13 +69,27 @@ const durationInWindow = (items, from, to, now) => items.reduce((values, item) =
 // as a map, so a caller handing the whole store keeps its old answer.
 const taskList = tasks => (Array.isArray(tasks) ? tasks : Object.values(tasks ?? {}))
 
-// The task half: a card that reached `done` inside the window. `completedAt` is the store's own
-// stamp; a record written before the stamp reads `updatedAt` and is not counted as a duration the
-// store never recorded.
+// The task half: a card that really completed. The board's own reading decides that column
+// (`columnOf`, so no second status table exists here), and `accepted` is the one column value that
+// means "finished": a cancelled or failed card is in the done column but has no completion moment,
+// so timing it from its cancellation would only stretch the median. A card finishes with
+// `transition(task, 'accepted')`, which writes `status` and pushes a terminal entry onto `actors`;
+// `completedAt` is not a field that path ever writes, so it is only a fallback for older records,
+// after the last terminal actor's `at`.
+const finished = task => columnOf(task) === 'done' && task.status === 'accepted'
+const finishedAt = task => {
+  const actors = Array.isArray(task.actors) ? task.actors : []
+  for (let index = actors.length - 1; index >= 0; index -= 1) {
+    const entry = actors[index]
+    if (entry !== null && typeof entry === 'object' && finished(entry) && Number.isFinite(entry.at)) return entry.at
+  }
+  if (Number.isFinite(task.completedAt)) return task.completedAt
+  return Number.isFinite(task.updatedAt) ? task.updatedAt : null
+}
 const doneTaskDurations = (tasks, now) => taskList(tasks).reduce((values, task) => {
-  if (task === null || typeof task !== 'object' || task.status !== 'done') return values
+  if (task === null || typeof task !== 'object' || !finished(task)) return values
   const start = Number.isFinite(task.createdAt) ? task.createdAt : null
-  const end = Number.isFinite(task.completedAt) ? task.completedAt : null
+  const end = finishedAt(task)
   if (start === null || end === null || end < start) return values
   if (now - end > RECENT_MS) return values
   values.push(end - start)

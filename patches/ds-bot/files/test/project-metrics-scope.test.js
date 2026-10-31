@@ -40,10 +40,10 @@ const seed = () => ({
   tasks: {
     // This board: one card in flight, one finished an hour after it started.
     'task-group': { id: 'task-group', kind: 'group', status: 'claimed', claimedBy: 'Writer', claimedAt: NOW - 2 * HOUR, origin: { roomId: 'r1' }, ownerBotId: 'a', assignee: 'Writer', title: 'Ship it', createdAt: 5, updatedAt: NOW - HOUR },
-    'task-done-a': { id: 'task-done-a', kind: 'group', status: 'done', origin: { roomId: 'r1' }, ownerBotId: 'a', title: 'Closed on p1', createdAt: NOW - 2 * HOUR, completedAt: NOW - HOUR, updatedAt: NOW - HOUR },
+    'task-done-a': { id: 'task-done-a', kind: 'group', status: 'accepted', origin: { roomId: 'r1' }, ownerBotId: 'a', title: 'Closed on p1', createdAt: NOW - 2 * HOUR, completedAt: NOW - HOUR, updatedAt: NOW - HOUR },
     // The other Project: same shapes, and nine hours from start to done.
     'task-foreign': { id: 'task-foreign', kind: 'group', status: 'claimed', claimedBy: 'Foreigner', claimedAt: NOW - 2 * HOUR, origin: { roomId: 'r2' }, ownerBotId: 'foreign', title: 'Secret salary review', createdAt: 5, updatedAt: NOW - HOUR },
-    'task-foreign-done': { id: 'task-foreign-done', kind: 'group', status: 'done', origin: { roomId: 'r2' }, ownerBotId: 'foreign', title: 'Foreign closed', createdAt: NOW - 10 * HOUR, completedAt: NOW - HOUR, updatedAt: NOW - HOUR },
+    'task-foreign-done': { id: 'task-foreign-done', kind: 'group', status: 'accepted', origin: { roomId: 'r2' }, ownerBotId: 'foreign', title: 'Foreign closed', createdAt: NOW - 10 * HOUR, completedAt: NOW - HOUR, updatedAt: NOW - HOUR },
   },
 })
 

@@ -3,7 +3,7 @@
 // a failed read answers `null` (painted `—`), never `0`.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { METRICS_TTL_MS, dayKey, median, readMetrics, runningOf, summarizeMetrics } from '../src/host/project-metrics.js'
+import { METRIC_KEYS, METRICS_TTL_MS, dayKey, median, readMetrics, runningOf, summarizeMetrics } from '../src/host/project-metrics.js'
 
 const HOUR = 60 * 60 * 1000
 const NOW = Date.parse('2026-10-30T12:00:00Z')
@@ -116,9 +116,9 @@ test('a running row carries who, how long and where from', () => {
 
 test('the task median reads the store stamps only', () => {
   const tasks = {
-    a: { status: 'done', createdAt: NOW - 10 * HOUR, completedAt: NOW - 8 * HOUR },
-    b: { status: 'done', createdAt: NOW - 6 * HOUR, completedAt: NOW - 4 * HOUR },
-    c: { status: 'done', createdAt: NOW - 6 * HOUR },
+    a: { status: 'accepted', createdAt: NOW - 10 * HOUR, completedAt: NOW - 8 * HOUR },
+    b: { status: 'accepted', createdAt: NOW - 6 * HOUR, completedAt: NOW - 4 * HOUR },
+    c: { status: 'accepted', createdAt: NOW - 6 * HOUR },
     d: { status: 'open', createdAt: NOW - 6 * HOUR },
   }
   const out = summarizeMetrics({ now: NOW, timeZone: 'UTC', source: { ok: true, pullRequests: [], issues: [] }, tasks })
@@ -183,4 +183,42 @@ test('#1849: a valid zone keeps the day boundary and the answer it had', () => {
   })
   // A zone `Intl` accepts but the host would never guess stays as sent, and UTC still reads one day.
   assert.equal(summarizeMetrics({ now: NOW, timeZone: 'UTC', source }).metrics.prsOpenedToday, 1)
+})
+
+// #1884: a card finishes by `transition(task, 'accepted')` (core/src/host/tasks.js:269-279), which
+// writes `status`, `updatedAt` and one `actors[]` row — never `completedAt`. So the duration is
+// `createdAt` → the last terminal `actors[].at` (9h here), not a field the store never writes.
+const finished = (id, createdAt, acceptedAt) => ({
+  id,
+  title: id,
+  status: 'accepted',
+  createdAt,
+  updatedAt: acceptedAt,
+  actors: [
+    { status: 'open', at: createdAt },
+    { status: 'claimed', at: createdAt + HOUR },
+    { status: 'accepted', at: acceptedAt },
+  ],
+})
+
+test('a card that finished the way the host finishes cards is a done duration', () => {
+  const tasks = [
+    finished('t-9h', NOW - 10 * HOUR, NOW - 1 * HOUR),
+    { id: 't-cancelled', status: 'cancelled', createdAt: NOW - 10 * HOUR, updatedAt: NOW - 2 * HOUR, actors: [{ status: 'cancelled', at: NOW - 2 * HOUR }] },
+  ]
+  const out = summarizeMetrics({ now: NOW, timeZone: 'UTC', source: { ok: true, pullRequests: [], issues: [] }, tasks })
+  assert.equal(out.metrics.taskDoneMedianMs, 9 * HOUR)
+  assert.deepEqual(Object.keys(out.metrics).sort(), [...METRIC_KEYS].sort())
+})
+
+// A board whose only finished cards were abandoned was never completed on: `—`, never `0`. This one
+// passes on main today only because no card is counted at all, so it is the non-regression half of
+// the pair — it starts guarding the `accepted`-only rule the moment the first test goes green.
+test('only cancelled and failed cards is null, never zero', () => {
+  const tasks = [
+    { id: 't-cancelled', status: 'cancelled', createdAt: NOW - 10 * HOUR, updatedAt: NOW - 2 * HOUR, actors: [{ status: 'cancelled', at: NOW - 2 * HOUR }] },
+    { id: 't-failed', status: 'failed', createdAt: NOW - 8 * HOUR, updatedAt: NOW - 3 * HOUR, actors: [{ status: 'failed', at: NOW - 3 * HOUR }] },
+  ]
+  const out = summarizeMetrics({ now: NOW, timeZone: 'UTC', source: { ok: true, pullRequests: [], issues: [] }, tasks })
+  assert.equal(out.metrics.taskDoneMedianMs, null)
 })
