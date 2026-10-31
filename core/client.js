@@ -1727,7 +1727,7 @@ var cut = (text2, max) => ({ text: text2.slice(0, codePointEnd(text2, max)), cut
 
 // src/shared/remote-label.js
 function cleanPeerName(name, fallback = "") {
-  const text2 = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim();
+  const text2 = String(name ?? "").toWellFormed().replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim();
   const label = cut(text2, 60).text;
   return label || fallback;
 }

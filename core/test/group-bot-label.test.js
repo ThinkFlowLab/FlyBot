@@ -125,3 +125,28 @@ test('a peer name cut at 60 never splits a surrogate pair (#1916)', () => {
   assert.equal(labels.cleanPeerName(`${'b'.repeat(58)}\u{1F600}tail`), `${'b'.repeat(58)}\u{1F600}`)
   assert.equal(labels.cleanPeerName(`${'b'.repeat(59)}\u{1F600}tail`, 'fallback').isWellFormed(), true)
 })
+
+// #1940: `cleanPeerName` builds the label for peer strings that never pass through the room-share
+// envelope (roster name/lead/owner, inviter name, a face seat), and it cleaned a name without first
+// making it well formed: half a surrogate pair — a string JSON accepts but that is not well formed —
+// stayed half, reached visible text and did not survive a UTF-8 round trip. One `toWellFormed()` at
+// the entry repairs it; the 60-unit bound and `cut`'s never-split-a-whole-pair behaviour do not move.
+test('a peer display name that arrives as half a surrogate pair is made well formed (#1940)', () => {
+  const repaired = labels.cleanPeerName('Ann\ud83dX')
+  assert.equal(repaired, 'Ann\uFFFDX')
+  assert.equal(repaired.isWellFormed(), true)
+  assert.equal(repaired.length, 5) // one unit in, one U+FFFD out: no length bound moves
+  assert.equal(/\p{Cc}/u.test(repaired), false)
+  assert.equal(Buffer.from(repaired, 'utf8').toString('utf8'), repaired)
+  // Half a pair right at the bound: 59 units plus a lone high surrogate is still 60 units.
+  const atBound = labels.cleanPeerName(`${'a'.repeat(59)}\ud83d`)
+  assert.equal(atBound, `${'a'.repeat(59)}\uFFFD`)
+  assert.equal(atBound.length, 60)
+  assert.equal(atBound.isWellFormed(), true)
+  assert.equal(Buffer.from(atBound, 'utf8').toString('utf8'), atBound)
+  // The bound still never cuts a whole pair in half — a pair straddling 60 is dropped whole — and
+  // input that is already well formed comes back exactly as it was.
+  assert.equal(labels.cleanPeerName(`${'a'.repeat(59)}\u{1F600}tail`), 'a'.repeat(59))
+  assert.equal(labels.cleanPeerName('Coder · Bob'), 'Coder · Bob')
+  assert.equal(labels.cleanPeerName('  Ann  \u{1F600}  '), 'Ann \u{1F600}')
+})
