@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, remoteCallName, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
-import { HISTORY_MAX, HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
+import { HISTORY_MAX, HISTORY_TEXT, NOTICE_MAX, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
 import { cut } from '../shared/text-boundary.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted, unwrapUntrusted } from './delivery.js'
@@ -1093,7 +1093,7 @@ export function install(rt) {
   // from that room's own inviter; a present empty value clears the notice, an absent field leaves it.
   function noticeOf(data, room, event) {
     if (data?.op !== 'join' || typeof data.notice !== 'string') return undefined
-    const text = data.notice.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, 2000)
+    const text = cut(data.notice.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim(), NOTICE_MAX).text
     const bound = room?.sharedFrom ?? {}
     const same = (a, b) => {
       const left = String(a ?? '').trim().toLowerCase()
@@ -1189,7 +1189,7 @@ export function install(rt) {
       }))
       await showShareLine(room, {
         who,
-        text: entry.text,
+        text: cut(String(entry.text), HISTORY_TEXT).text,
         remoteSeq: entry.seq,
         via: `${data.roomId}:${fromHandle}`,
         senderSessionId: handle || fromHandle,

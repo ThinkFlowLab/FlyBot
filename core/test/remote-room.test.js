@@ -974,6 +974,66 @@ test('a guest bounds a copied history line on a code point boundary', async (t) 
   assert.equal(copied.text.includes('\uFFFD'), false, 'the guest shows no replacement character')
 })
 
+// The join's notice is stranger-written text too, and the guest keeps it without trusting the sender's
+// own clip: a notice whose 2,000th unit is half of a surrogate pair used to be stored with the lone
+// high surrogate, so every read of the notice carried U+FFFD.
+test('a joined notice is kept on a code point boundary', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const notice = `${'a'.repeat(1999)}\u{1F600}${'b'.repeat(400)}`
+  const join = `FLYBOT-ROOM-SHARE\n${JSON.stringify({
+    v: 1, op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 1, notice,
+  })}`
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  const kept = rt.state.rooms[first.room.id].notice
+  assert.equal(typeof kept, 'string', `the notice rode the join: ${JSON.stringify(kept)}`)
+  assert.equal(kept.isWellFormed(), true, `not well formed: ${JSON.stringify(kept.slice(-2))}`)
+  assert.equal(kept.includes('\uFFFD'), false, 'reading the notice back finds no replacement character')
+  assert.equal(kept, 'a'.repeat(1999), 'the bound retracts the whole pair instead of half of it')
+  assert.ok(kept.length <= 2000, `${kept.length} code units, over the notice bound`)
+  assert.equal(Buffer.from(kept, 'utf8').equals(Buffer.from(notice, 'utf8').subarray(0, Buffer.byteLength(kept))), true, 'the notice is a UTF-8 byte prefix of what the host sent')
+})
+
+// A copied history line is stored on a code point boundary, but the pane was shown the raw
+// `entry.text` the sender wrote: the guest read a longer line than its own log kept, past the whole
+// pair the stored bound had retracted.
+test('a copied history line is shown as the same bounded prefix it is stored as', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const shown = []
+  rt.showSharedLine = async (room, spec) => { shown.push({ roomId: room.id, ...spec }) }
+  const long = `${'a'.repeat(1999)}\u{1F600}${'b'.repeat(400)}`
+  const join = `FLYBOT-ROOM-SHARE\n${JSON.stringify({
+    v: 1, op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 1, history: [{ who: 'Ann', text: long, seq: 7 }],
+  })}`
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  const copied = rt.roomHistory(first.room.id, actorB).find(entry => entry.who === 'Ann')
+  assert.ok(copied, `the guest copies the line: ${JSON.stringify(rt.roomHistory(first.room.id, actorB).map(entry => entry.who))}`)
+  const drawn = shown.find(item => item.roomId === first.room.id && item.who === 'Ann')
+  assert.ok(drawn, `the guest draws the copied line: ${JSON.stringify(shown.map(item => item.roomId))}`)
+  assert.equal(drawn.text, 'a'.repeat(1999), 'the shown line retracts the whole pair instead of half of it')
+  assert.equal(copied.text.includes(drawn.text), true, 'the pane shows the line the log kept, not a longer one')
+  assert.equal(drawn.text.includes('\u{1F600}'), false, 'the pair the stored bound retracted is not drawn past it')
+  assert.equal(drawn.text.isWellFormed(), true, `not well formed: ${JSON.stringify(drawn.text.slice(-2))}`)
+  assert.equal(drawn.text.includes('\uFFFD'), false, 'the pane carries no replacement character')
+  assert.ok(drawn.text.length <= HISTORY_TEXT, `${drawn.text.length} code units, over ${HISTORY_TEXT}`)
+  assert.equal(Buffer.from(drawn.text, 'utf8').equals(Buffer.from(long, 'utf8').subarray(0, Buffer.byteLength(drawn.text))), true, 'the shown line is a UTF-8 byte prefix of what the host typed')
+})
+
 test('applyInboundRoomShare projects a join with no chat line, then a leave hides it', async (t) => {
   const { rt } = host(t, TEAM)
   await rt.load()
