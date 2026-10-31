@@ -48,7 +48,7 @@ export function claimCueText(task) {
   const title = claimLine(task?.title, 300)
   if (title === '') return ''
   const found = title.match(/^#(\d{1,7})\b/) ?? title.match(/#(\d{1,7})\b/)
-  const ref = found ? `#${found[1]}` : title.slice(0, CLAIM_CUE_REF_MAX)
+  const ref = found ? `#${found[1]}` : cut(title, CLAIM_CUE_REF_MAX).text
   const rest = found ? title.slice(title.indexOf(found[0]) + found[0].length).trim() : ''
   const step = claimLine(task?.note, CLAIM_CUE_STEP_MAX) || claimLine(rest, CLAIM_CUE_STEP_MAX)
   return step === '' ? `接了 ${ref}` : `接了 ${ref}，第一步是 ${step}`
@@ -327,7 +327,7 @@ export function install(rt) {
     if (leadId === member.id) {
       return 'You are this room\'s task lead (总负责人) for the board. When the group is given a job, assign it on the board with track_tasks: one overall task, and a subtask for each part (assignee is that Bot\'s name). Nobody else plans. A chat line does not assign. A card you assign is claimed: that Bot starts the work in its own chat and does not wait for a confirmation. Progress is that card\'s column and progress. A question a person has to decide is one short post in this group; do not @ a Bot to hand the work on.'
     }
-    const name = String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' ').slice(0, 80)
+    const name = cut(String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' '), 80).text
     return `${name} is this room's task lead (总负责人) for the board: it assigns the parts on the board. Claim the card it assigns you by setting its column to in-progress with track_tasks, and update that card's column and progress as the work moves. Do not record a new plan, assign work, or post a status in the group. @Name only wakes someone; it does not assign. Start the work in your own chat; do not wait for a confirmation. A question a person has to decide is one short post in this group; do not @ a Bot to hand the work on.`
   }
 
@@ -719,7 +719,7 @@ export function install(rt) {
         round.speaking = null
         slot.status = 'failed'
         round.failed.push(member.name)
-        round.replies.push({ kind: 'failed', botId: member.id, name: member.name, color: member.color, code: 'SESSION', text: String(error?.message ?? error).slice(0, 300), time: Date.now() })
+        round.replies.push({ kind: 'failed', botId: member.id, name: member.name, color: member.color, code: 'SESSION', text: cut(String(error?.message ?? error), 300).text, time: Date.now() })
         continue
       }
       const prompt = roomPrompt(room, member, round)
@@ -961,8 +961,8 @@ export function install(rt) {
       if (botId === undefined) return 'Only Bots on the team can use read_own_chat.'
       const member = rt.botOf(botId)
       const room = rt.roomOf(owner?.roomId)
-      const query = String(args.query ?? '').trim().slice(0, 80)
-      const around = String(args.around ?? '').trim().slice(0, 40)
+      const query = cut(String(args.query ?? '').trim(), 80).text
+      const around = cut(String(args.around ?? '').trim(), 40).text
       const parts = rt.partsOf(botId)
       const number = Number.isInteger(args.part) ? args.part : undefined
       if (room !== undefined && member !== undefined) {

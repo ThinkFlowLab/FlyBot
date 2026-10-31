@@ -1718,10 +1718,18 @@ var call = async (endpoint, payload, signal) => {
   return result.value;
 };
 
+// src/shared/text-boundary.js
+var isHighSurrogate = (code) => code >= 55296 && code <= 56319;
+var isLowSurrogate = (code) => code >= 56320 && code <= 57343;
+var codePointStart = (text2, at) => at > 0 && isLowSurrogate(text2.charCodeAt(at)) && isHighSurrogate(text2.charCodeAt(at - 1)) ? at - 1 : at;
+var codePointEnd = (text2, end) => end > 0 && isHighSurrogate(text2.charCodeAt(end - 1)) && isLowSurrogate(text2.charCodeAt(end)) ? end - 1 : end;
+var cut = (text2, max) => ({ text: text2.slice(0, codePointEnd(text2, max)), cut: text2.length > max });
+
 // src/shared/remote-label.js
 function cleanPeerName(name, fallback = "") {
-  const text2 = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
-  return text2 || fallback;
+  const text2 = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim();
+  const label = cut(text2, 60).text;
+  return label || fallback;
 }
 function normRemoteHandle(handle) {
   return `@${String(handle ?? "").trim().replace(/^@+/, "").toLowerCase()}`;

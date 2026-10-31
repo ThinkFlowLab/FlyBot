@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createBrowserChannel, pageText, partEnd } from '../src/host/browser.js'
+import { createBrowserChannel, install, pageText, partEnd } from '../src/host/browser.js'
 
 const ids = items => items.map(item => item.id)
 
@@ -140,4 +140,28 @@ test('partEnd prefers a blank line, then a line break, and cuts hard only withou
   assert.equal(partEnd('aaaaaa\nbbbbbbbbbb', 0, 10), 7)
   assert.equal(partEnd('a\n' + 'b'.repeat(20), 0, 10), 10)
   assert.equal(partEnd('short', 0, 10), 5)
+})
+
+// #1916: the open-page snapshot is what a Bot reads back from outside the team, and both bounds
+// are code-unit ones: 2000 for an address and 300 for a title must not land inside an emoji.
+test('the open-page snapshot never cuts a title or an address in half (#1916)', () => {
+  const registered = []
+  const rt = {
+    ctx: { get: () => ({ name: 'desktop' }), effect: () => {}, tools: { register: (tool) => registered.push(tool) } },
+    config: {},
+    botOf: () => ({ id: 'a' }),
+  }
+  install(rt)
+  const open = rt.browserOpen({
+    a: { url: `${'a'.repeat(1999)}\u{1F600}tail`, title: `${'b'.repeat(299)}\u{1F600}tail` },
+  })
+  assert.equal(open.a.url.isWellFormed(), true)
+  assert.equal(open.a.title.isWellFormed(), true)
+  assert.equal(open.a.url, 'a'.repeat(1999))
+  assert.equal(open.a.title, 'b'.repeat(299))
+  // A cut that lands on a whole character keeps it.
+  const roomy = rt.browserOpen({ a: { url: `${'a'.repeat(1998)}\u{1F600}`, title: `${'b'.repeat(298)}\u{1F600}` } })
+  assert.equal(roomy.a.url, `${'a'.repeat(1998)}\u{1F600}`)
+  assert.equal(roomy.a.title, `${'b'.repeat(298)}\u{1F600}`)
+  assert.equal(registered.length > 0, true)
 })

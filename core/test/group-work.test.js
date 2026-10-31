@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 import { ROOM_LATE_ROUNDS, ROOM_WORK_GRACE_MS } from '../src/host/constants.js'
 import { compactStatus, prepareRoomLine } from '../src/host/room-context.js'
@@ -71,7 +71,8 @@ async function start(t, room, history = {}) {
   let route
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (options) => { route = options; return register(options) }
-  apply(ctx, { home })
+  const rt = createRuntime(ctx, { home })
+  provideFlyBot(ctx, rt.flybot)
   t.after(async () => {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
@@ -116,7 +117,7 @@ async function start(t, room, history = {}) {
     return { content: post.content, source: post.source }
   }
   await tool('list_bots', {}, 'a')
-  return { home, agentOf, emit, tool, call, begin, finish, round, say, takePost }
+  return { home, ctx, rt, agentOf, emit, tool, call, begin, finish, round, say, takePost }
 }
 
 const settle = async (check) => {
@@ -464,6 +465,55 @@ test('a kind-carrying room line stays verbatim in the store (#1251)', async (t) 
   // before this exemption (room-context.js). So the exemption itself is pinned on the gate's own decision.
   const long = { who: 'Writer', botId: 'b', kind: 'notice', text: STATUS_ESSAY }
   assert.equal(prepareRoomLine(long), long)
+})
+
+// #1916: the lookup line goes into the room log and is also what the search matches, so a bound
+// that lands inside an emoji would store an ill-formed string and make the character unsearchable.
+const utf8Prefix = (whole, part) => Buffer.from(part, 'utf8').equals(Buffer.from(whole, 'utf8').subarray(0, Buffer.byteLength(part)))
+
+test('a read_own_chat query or anchor cut at its bound never splits a surrogate pair (#1916)', async (t) => {
+  const host = await start(t)
+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
+  const query = `${'a'.repeat(79)}\u{1F600}permalink`
+  await host.tool('read_own_chat', { query }, 'gb')
+  await settle(() => log().length === 1)
+  assert.equal(log()[0].text.isWellFormed(), true)
+  assert.ok(log()[0].text.length <= 80, `query is ${log()[0].text.length} units`)
+  assert.equal(utf8Prefix(query, log()[0].text), true, 'the stored query is a byte prefix of the input')
+  const around = `${'b'.repeat(39)}\u{1F600}anchor`
+  await host.tool('read_own_chat', { around }, 'gb')
+  await settle(() => log().length === 2)
+  assert.equal(log()[1].text.isWellFormed(), true)
+  assert.ok(log()[1].text.length <= `around ${'b'.repeat(39)}`.length, `anchor is ${log()[1].text.length} units`)
+  assert.equal(utf8Prefix(`around ${around}`, log()[1].text), true, 'the stored anchor is a byte prefix of the input')
+})
+
+// #1916: the task lead's name goes into every other member's system prompt, and a Bot name is the
+// owner's to set, emoji included (#1182).
+test('the task lead name in a member prompt never splits a surrogate pair (#1916)', async (t) => {
+  const host = await start(t, { taskLead: 'a' })
+  const name = `${'l'.repeat(79)}\u{1F600}tail`
+  host.rt.state.bots.a.name = name
+  const prompt = host.ctx.sections.get('bot-room').text({ agent: { id: 'gb' } })
+  assert.equal(prompt.isWellFormed(), true, 'the room prompt is well formed')
+  assert.equal(prompt.includes('\uFFFD'), false)
+  assert.ok(prompt.includes('l'.repeat(79)), 'the whole-character prefix is kept')
+})
+
+// #1916: a group Session that cannot be opened reports its error into the room (#1253 notice path),
+// so the 300-unit bound on that text must not land inside an emoji.
+test('a failed group Session reports its error without splitting a surrogate pair (#1916)', async (t) => {
+  const host = await start(t)
+  // No Session for Writer yet: the next round has to open one, and opening it fails.
+  delete host.rt.state.rooms.r1.sessions.b
+  host.ctx.sessionController.create = async () => { throw new Error(`${'e'.repeat(299)}\u{1F600}tail`) }
+  const result = host.round('c1', host.say('@Writer 汇报'))
+  await settle(() => result() !== undefined)
+  const failed = result().replies.find(reply => reply.kind === 'failed')
+  assert.ok(failed, `no failed reply: ${JSON.stringify(result())}`)
+  assert.equal(failed.text.isWellFormed(), true)
+  assert.equal(failed.text.includes('\uFFFD'), false)
+  assert.ok(failed.text.length <= 300, `text is ${failed.text.length} units`)
 })
 
 // #1906: a search shows its best 20 hits and a bare read the latest 12, and neither said

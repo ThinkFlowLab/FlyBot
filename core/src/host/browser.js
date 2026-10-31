@@ -251,7 +251,7 @@ export function install(rt) {
     if (value === null || typeof value !== 'object') return open
     for (const [botId, page] of Object.entries(value).slice(0, OPEN_MAX)) {
       if (rt.botOf(botId) === undefined || typeof page?.url !== 'string') continue
-      open[botId] = { url: page.url.slice(0, 2000), title: String(page.title ?? '').slice(0, 300) }
+      open[botId] = { url: cut(page.url, 2000).text, title: cut(String(page.title ?? ''), 300).text }
     }
     return open
   }

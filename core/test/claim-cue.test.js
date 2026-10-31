@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { CLAIM_CUE_REPEAT_MS } from '../src/host/groups.js'
+import { CLAIM_CUE_REPEAT_MS, claimCueText } from '../src/host/groups.js'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -179,4 +179,21 @@ test('a claim outside a room posts no line (#1253)', async (t) => {
 
 test('the repeat window is a stated number of minutes, not forever (#1253)', () => {
   assert.equal(CLAIM_CUE_REPEAT_MS, 30 * 60 * 1000)
+})
+
+// #1916: the reference of a title with no issue number is a bounded prefix, and the bound is a
+// code-unit one: 60 must not land between the halves of an emoji, or the room notice and the
+// room log both keep an ill-formed string.
+const utf8Prefix = (whole, part) => Buffer.from(part, 'utf8').equals(Buffer.from(whole, 'utf8').subarray(0, Buffer.byteLength(part)))
+
+test('a claim cue reference cut at 60 never splits a surrogate pair (#1916)', () => {
+  const title = `${'a'.repeat(59)}\u{1F600}tail`
+  const ref = claimCueText({ title }).replace(/^接了 /, '')
+  assert.equal(ref.isWellFormed(), true)
+  assert.equal(ref.includes('\uFFFD'), false)
+  assert.ok(ref.length <= 60, `ref is ${ref.length} units`)
+  assert.equal(utf8Prefix(title, ref), true, 'the ref is a byte prefix of the title')
+  // A cut that lands on a whole character keeps the whole character.
+  const roomy = claimCueText({ title: `${'a'.repeat(58)}\u{1F600}tail` }).replace(/^接了 /, '')
+  assert.equal(roomy, `${'a'.repeat(58)}\u{1F600}`)
 })

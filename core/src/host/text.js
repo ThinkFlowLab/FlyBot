@@ -1,6 +1,9 @@
 // Pure text helpers shared by the host modules: message text, names, model refs,
 // cutting and estimating text, and the clock format of chat anchors.
 import { COLORS, EXTRA_COLORS, LEGACY_COLORS, OWN_CHAT_LINE_MAX } from './constants.js'
+import { codePointEnd, codePointStart, cut } from '../shared/text-boundary.js'
+
+export { cut }
 
 // A color id saved under its legacy name reads as the current one.
 export const currentColor = color => (typeof color === 'string' && Object.hasOwn(LEGACY_COLORS, color) ? LEGACY_COLORS[color] : color)
@@ -34,18 +37,10 @@ export const codePoints = (text) => {
   return n
 }
 
-const isHighSurrogate = code => code >= 0xd800 && code <= 0xdbff
-const isLowSurrogate = code => code >= 0xdc00 && code <= 0xdfff
-
-// A cut moves back onto a code point boundary: half of a surrogate pair reaches a UTF-8 encoder as
-// U+FFFD, so a clipped emoji would show up as a replacement character at every exit (#1642 for the
-// client side, here for the host).
-const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charCodeAt(at)) && isHighSurrogate(text.charCodeAt(at - 1)) ? at - 1 : at)
-const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
-
-// A bounded prefix that never splits a surrogate pair (#1912): every other host module cuts its own
-// archive text, and a half pair is stored as U+FFFD. `cut` says whether anything was dropped.
-export const cut = (text, max) => ({ text: text.slice(0, codePointEnd(text, max)), cut: text.length > max })
+// A cut moves back onto a code point boundary (#1642 client side, #1912 here, #1916 shared): half of
+// a surrogate pair reaches a UTF-8 encoder as U+FFFD, so a clipped emoji shows up as a replacement
+// character at every exit. The boundary rule itself lives in `shared/text-boundary.js`, because a
+// shared label (`shared/remote-label.js`) bounds a peer name too and must not import this module.
 
 // The part of a long message around the first match, so a search hit stays visible.
 export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {

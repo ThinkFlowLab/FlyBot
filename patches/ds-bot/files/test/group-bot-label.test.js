@@ -117,3 +117,11 @@ test('#526: real names stay as they are', () => {
   const view = roster([seatMine, { ...reviewer, label: undefined }], 'group')
   assert.equal(remoteSpeaker({ remote: { handle }, senderName: 'Reviewer' }, view, 'r').name, 'Reviewer (flybot682b8a43)')
 })
+
+// #1916: a friend's Bot or room name reaches a display label, and its 60-unit bound must not land
+// inside an emoji: the half pair would show as U+FFFD wherever the label is drawn.
+test('a peer name cut at 60 never splits a surrogate pair (#1916)', () => {
+  assert.equal(labels.cleanPeerName(`${'b'.repeat(59)}\u{1F600}tail`), 'b'.repeat(59))
+  assert.equal(labels.cleanPeerName(`${'b'.repeat(58)}\u{1F600}tail`), `${'b'.repeat(58)}\u{1F600}`)
+  assert.equal(labels.cleanPeerName(`${'b'.repeat(59)}\u{1F600}tail`, 'fallback').isWellFormed(), true)
+})

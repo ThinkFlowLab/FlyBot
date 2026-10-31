@@ -208,7 +208,7 @@ export function install(rt) {
   }
 
   const sanitizeClient = (client) => {
-    const pick = (value, max) => (typeof value === 'string' ? clean(value.slice(0, max)) : undefined)
+    const pick = (value, max) => (typeof value === 'string' ? clean(cut(value, max).text) : undefined)
     return {
       surface: pick(client?.surface, 40),
       language: pick(client?.language, 20),
@@ -217,7 +217,7 @@ export function install(rt) {
   }
   const sanitizeClientEntries = list => (Array.isArray(list) ? list : []).slice(-20).flatMap((item) => {
     if (typeof item?.text !== 'string' || typeof item.time !== 'number') return []
-    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: clean(item.text.slice(0, 500)), ...(typeof item.code === 'string' ? { code: clean(item.code.slice(0, 40)) } : {}) }]
+    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: clean(cut(item.text, 500).text), ...(typeof item.code === 'string' ? { code: clean(cut(item.code, 40).text) } : {}) }]
   })
 
   async function report(body = {}) {

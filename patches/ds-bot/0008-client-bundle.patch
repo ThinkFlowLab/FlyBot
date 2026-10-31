@@ -1104,14 +1104,22 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,388 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,396 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
++// src/shared/text-boundary.js
++var isHighSurrogate = (code) => code >= 55296 && code <= 56319;
++var isLowSurrogate = (code) => code >= 56320 && code <= 57343;
++var codePointStart = (text2, at) => at > 0 && isLowSurrogate(text2.charCodeAt(at)) && isHighSurrogate(text2.charCodeAt(at - 1)) ? at - 1 : at;
++var codePointEnd = (text2, end) => end > 0 && isHighSurrogate(text2.charCodeAt(end - 1)) && isLowSurrogate(text2.charCodeAt(end)) ? end - 1 : end;
++var cut = (text2, max) => ({ text: text2.slice(0, codePointEnd(text2, max)), cut: text2.length > max });
++
 +// src/shared/remote-label.js
 +function cleanPeerName(name, fallback = "") {
-+  const text2 = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
-+  return text2 || fallback;
++  const text2 = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/[[\]"`<>]/g, "").replace(/\s+/g, " ").trim();
++  const label = cut(text2, 60).text;
++  return label || fallback;
 +}
 +function normRemoteHandle(handle) {
 +  return `@${String(handle ?? "").trim().replace(/^@+/, "").toLowerCase()}`;
@@ -1760,16 +1768,7 @@ diff --git a/client.js b/client.js
 -    else delete SHAPES[id];
 -    refresh();
 -  };
-+// src/client/cluster-order.js
-+function clusterOrder(people2) {
-+  const list = Array.isArray(people2) ? people2 : [];
-+  const remote = (bot) => Boolean(bot?.remote);
-+  if (!list.some(remote)) return list;
-+  const locals = list.filter((bot) => !remote(bot));
-+  const remotes = list.filter(remote);
-+  if (list.length <= 4) return [...remotes, ...locals];
-+  return [...locals, ...remotes];
- }
+-}
 -function registerTheme(id, theme) {
 -  if (typeof id !== "string" || !/^[a-z][\w-]{0,31}$/.test(id)) throw new Error("Theme ids are lowercase words");
 -  for (const mode of ["light", "dark"]) {
@@ -1783,7 +1782,16 @@ diff --git a/client.js b/client.js
 -    else delete customThemes[id];
 -    registry.set((value) => value + 1);
 -  };
--}
++// src/client/cluster-order.js
++function clusterOrder(people2) {
++  const list = Array.isArray(people2) ? people2 : [];
++  const remote = (bot) => Boolean(bot?.remote);
++  if (!list.some(remote)) return list;
++  const locals = list.filter((bot) => !remote(bot));
++  const remotes = list.filter(remote);
++  if (list.length <= 4) return [...remotes, ...locals];
++  return [...locals, ...remotes];
+ }
 -var allThemes = () => ({ ...THEMES, ...customThemes });
  
  // src/shared/mentions.js
@@ -1834,9 +1842,6 @@ diff --git a/client.js b/client.js
  }
 -
 -// src/client/text.js
--var MENTION_ORIGIN = "https://bots.local/";
--function linkMentions(text, bots, selfId) {
--  if (!text || !text.includes("@")) return text;
 +function unmatchedMentions(text2, bots, { references = [] } = {}) {
 +  const value = String(text2 ?? "");
 +  const skip = [
@@ -1886,7 +1891,9 @@ diff --git a/client.js b/client.js
 +}
 +
 +// src/client/text.js
-+var MENTION_ORIGIN = "https://bots.local/";
+ var MENTION_ORIGIN = "https://bots.local/";
+-function linkMentions(text, bots, selfId) {
+-  if (!text || !text.includes("@")) return text;
 +function linkMentions(text2, bots, selfId) {
 +  if (!text2 || !text2.includes("@")) return text2;
 +  const ordered = [...bots ?? []].sort((a, b) => Number(Boolean(a?.remote)) - Number(Boolean(b?.remote)));
@@ -2124,7 +2131,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,901 +1624,1981 @@ function usageOf(list, ids) {
+@@ -1624,902 +1624,1982 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -3969,6 +3976,7 @@ diff --git a/client.js b/client.js
 -.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 -.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 -.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
+-@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
 +// src/client/motion.js
 +var import_react4 = require("react");
 +var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -4970,9 +4978,10 @@ diff --git a/client.js b/client.js
 +.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 +.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 +.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
- @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
++@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
+ .bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
 @@ -2574,2206 +2574,4679 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}

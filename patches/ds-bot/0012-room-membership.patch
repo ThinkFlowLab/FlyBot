@@ -884,7 +884,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  const title = claimLine(task?.title, 300)
 +  if (title === '') return ''
 +  const found = title.match(/^#(\d{1,7})\b/) ?? title.match(/#(\d{1,7})\b/)
-+  const ref = found ? `#${found[1]}` : title.slice(0, CLAIM_CUE_REF_MAX)
++  const ref = found ? `#${found[1]}` : cut(title, CLAIM_CUE_REF_MAX).text
 +  const rest = found ? title.slice(title.indexOf(found[0]) + found[0].length).trim() : ''
 +  const step = claimLine(task?.note, CLAIM_CUE_STEP_MAX) || claimLine(rest, CLAIM_CUE_STEP_MAX)
 +  return step === '' ? `接了 ${ref}` : `接了 ${ref}，第一步是 ${step}`
@@ -1153,7 +1153,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 -    await rt.save()
 -    await rt.ensureCapabilities(id)
 -    return { id, brief: await rt.ownChatBrief(member) }
-+    const name = String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' ').slice(0, 80)
++    const name = cut(String(rt.botOf(leadId)?.name ?? 'The task lead').replace(/[\r\n]+/g, ' '), 80).text
 +    return `${name} is this room's task lead (总负责人) for the board: it assigns the parts on the board. Claim the card it assigns you by setting its column to in-progress with track_tasks, and update that card's column and progress as the work moves. Do not record a new plan, assign work, or post a status in the group. @Name only wakes someone; it does not assign. Start the work in your own chat; do not wait for a confirmation. A question a person has to decide is one short post in this group; do not @ a Bot to hand the work on.`
    }
  
@@ -1603,7 +1603,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        slot.status = 'speaking'
        round.speaking = member.id
        round.turns += 1
-@@ -339,8 +339,23 @@ export function install(rt) {
+@@ -333,14 +333,29 @@ export function install(rt) {
+         round.speaking = null
+         slot.status = 'failed'
+         round.failed.push(member.name)
+-        round.replies.push({ kind: 'failed', botId: member.id, name: member.name, color: member.color, code: 'SESSION', text: String(error?.message ?? error).slice(0, 300), time: Date.now() })
++        round.replies.push({ kind: 'failed', botId: member.id, name: member.name, color: member.color, code: 'SESSION', text: cut(String(error?.message ?? error), 300).text, time: Date.now() })
+         continue
+       }
        const prompt = roomPrompt(room, member, round)
        round.shown?.push(member.id)
        const text = session.brief === undefined ? prompt : `${session.brief}\n\n${prompt}`
@@ -1814,6 +1821,17 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // Private context enters a group only through this tool, and the group sees each use.
    ctx.tools.register(defineTool({
      name: 'read_own_chat',
+@@ -489,8 +489,8 @@ export function install(rt) {
+       if (botId === undefined) return 'Only Bots on the team can use read_own_chat.'
+       const member = rt.botOf(botId)
+       const room = rt.roomOf(owner?.roomId)
+-      const query = String(args.query ?? '').trim().slice(0, 80)
+-      const around = String(args.around ?? '').trim().slice(0, 40)
++      const query = cut(String(args.query ?? '').trim(), 80).text
++      const around = cut(String(args.around ?? '').trim(), 40).text
+       const parts = rt.partsOf(botId)
+       const number = Number.isInteger(args.part) ? args.part : undefined
+       if (room !== undefined && member !== undefined) {
 @@ -517,13 +517,17 @@ export function install(rt) {
          return `Part ${number} of your own chat (${rt.clock(part.startedAt)} – ${rt.clock(part.endedAt)}). The handoff note that closed it:\n${rt.noteText(part) ?? '(none: the part ended on a context overflow)'}${partsNote}`
        }

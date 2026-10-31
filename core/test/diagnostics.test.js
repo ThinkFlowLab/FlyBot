@@ -92,6 +92,23 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
   quiet.mock.restore()
 })
 
+// #1916: the browser-log lines in the report are bounded, and those bounds are code-unit ones:
+// a line cut inside an emoji is stored and shown as U+FFFD in a report meant for a public issue.
+test('a browser-log line cut at its bound never splits a surrogate pair (#1916)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const rt = host(home, { config: { diagnosticsFile: false } })
+  const report = await rt.diagnostics.report({
+    clientErrors: [{ time: 1, text: `${'x'.repeat(499)}\u{1F600}tail`, code: `${'y'.repeat(39)}\u{1F600}tail` }],
+  })
+  const line = report.markdown.split('\n').find(item => item.includes('ERROR browser')) ?? ''
+  assert.notEqual(line, '')
+  assert.equal(line.isWellFormed(), true)
+  assert.equal(line.includes('\ufffd'), false)
+  assert.ok(line.includes('x'.repeat(499)), 'the text keeps its whole-character prefix')
+  assert.ok(line.includes(`[${'y'.repeat(39)}]`), `expected the code prefix, got ${line}`)
+})
+
 test('warnings send only cleaned text to the logger and stderr', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))

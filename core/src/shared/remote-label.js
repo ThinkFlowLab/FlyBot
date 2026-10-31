@@ -1,10 +1,12 @@
 // Display labels for a friend's published Bot and for a room the owner did not start.
 // Peer-controlled strings (names, homes, handles) are untrusted: strip controls and
 // markup so a name cannot look like instructions when it later reaches a model.
+import { cut } from './text-boundary.js'
 
 export function cleanPeerName(name, fallback = '') {
-  const text = String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"`<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60)
-  return text || fallback
+  const text = String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"`<>]/g, '').replace(/\s+/g, ' ').trim()
+  const label = cut(text, 60).text
+  return label || fallback
 }
 
 export function normRemoteHandle(handle) {
