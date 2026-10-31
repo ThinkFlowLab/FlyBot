@@ -55,7 +55,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel, hostText, installLocale } = module.exports
+const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel, ProjectDossierPanel, ProjectAgentEntry, projectAgentFor, readProjectBoard, hostText, installLocale } = module.exports
 
 const render = (component, props) => { index = 0; return component(props) }
 const all = (node, out = []) => {
@@ -449,4 +449,90 @@ test('a Project with no Chief keeps the row and reads "not set"', () => {
   assert.equal(drawn.props['data-team-state'], 'not-set')
   assert.match(text(drawn), /Not set/)
   assert.deepEqual(opened, [])
+})
+
+// #1864: the dossier. The board's team block now carries a Dossier control on every row, the panel
+// draws Persona / Memory / Skills from the one `project-team` answer, and the owner's own chat
+// header has an entry that opens the Project assistant's Session.
+const dossier = () => ({
+  botId: 'bot-chief', name: 'Project Chief (FlyBot)', role: 'Project Chief',
+  persona: 'You are the Project Chief of FlyBot.', model: 'deepseek-chat', color: '#112233', createdAt: 1,
+  memory: { head: 'The Chief remembers the Project.', topics: ['travel', 'work'] },
+  skills: ['ship-it'], rooms: [{ id: 'r1', name: 'FlyBot dev' }],
+})
+
+const projectRecord = () => ({
+  id: 'project-1', name: 'FlyBot', ownerUserId: 'owner-1',
+  chief: { botId: 'bot-chief', sessionId: 'bot-chief', createdAt: 1 },
+  assistant: { botId: 'bot-assistant', sessionId: 'bot-assistant', createdAt: 1 },
+  roles: { maintainers: ['bot-dev'], members: [] },
+})
+
+const boardAnswer = () => ({ tasks: [], done: [], decisions: {}, meetings: {}, waiting: [], inflight: [], blocked: [], counts: null, metrics: null })
+
+test('the board reads the dossier from exactly one project-team call', async () => {
+  resetSlots()
+  const calls = []
+  const read = async (endpoint) => {
+    calls.push(endpoint)
+    if (endpoint === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot', role: 'owner', choices: [] }] }
+    if (endpoint === 'project-read') return { project: projectRecord(), canManage: true }
+    if (endpoint === 'project-board') return boardAnswer()
+    if (endpoint === 'tasks') return []
+    if (endpoint === 'project-team') return { rows: [dossier(), null, { ...dossier(), botId: 'bot-dev', name: 'Dev' }] }
+    throw new Error(`unexpected endpoint ${endpoint}`)
+  }
+  const state = await readProjectBoard(read, 'project-1')
+  assert.equal(calls.filter(endpoint => endpoint === 'project-team').length, 1, 'one call feeds the whole dossier')
+  assert.equal(state.team.rows.length, 3, 'the null row survives the read so the panel can stay empty')
+  assert.equal(state.team.rows[0].botId, 'bot-chief')
+
+  const tree = render(ProjectBoardPane, { project: state.project, rows: state.rows, team: state.team, canManage: true })
+  const chief = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  assert.ok(chief, 'the Chief row carries the dossier control')
+  const opened = []
+  const drawn = render(ProjectBoardPane, { project: state.project, rows: state.rows, team: state.team, canManage: true, onOpenDossier: value => opened.push(value) })
+  const control = all(drawn).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  control.props.onClick()
+  assert.deepEqual(opened.map(entry => entry.botId), ['bot-chief'])
+})
+
+test('the dossier panel draws Persona, Memory and Skills, and stays empty for a null row', () => {
+  resetSlots()
+  const drawn = text(render(ProjectDossierPanel, { row: dossier(), label: 'Project Chief' }))
+  assert.match(drawn, /Persona/, 'the Persona section is drawn')
+  assert.match(drawn, /Project Chief of FlyBot/, 'the persona text is the host answer')
+  assert.match(drawn, /deepseek-chat/, 'the model is shown with the persona')
+  assert.match(drawn, /Memory/, 'the Memory section is drawn')
+  assert.match(drawn, /The Chief remembers the Project\./, 'the memory head is shown')
+  assert.match(drawn, /travel/, 'the topic names are listed')
+  assert.match(drawn, /Skills/, 'the Skills section is drawn')
+  assert.match(drawn, /ship-it/, 'the attached skill is listed')
+
+  const empty = text(render(ProjectDossierPanel, { row: null, label: 'Project Chief' }))
+  assert.match(empty, /Not set/, 'an unset Bot reads "not set"')
+  assert.doesNotMatch(empty, /deepseek-chat/, 'and the panel draws no invented persona')
+})
+
+test('the owner\'s chat entry opens the Project assistant, and only the owner\'s own Bot offers it', async () => {
+  resetSlots()
+  const calls = []
+  const opened = []
+  const read = async (endpoint, payload) => {
+    calls.push({ endpoint, payload })
+    return { project: { assistant: { botId: 'bot-assistant' } } }
+  }
+  let tree = render(ProjectAgentEntry, { projectId: 'project-1', read, onOpen: id => opened.push(id) })
+  const entry = all(tree).find(node => node.props?.['data-project-agent'] === 'project-1')
+  entry.props.onClick()
+  await waitFor(() => (opened.length > 0 ? true : undefined))
+  assert.deepEqual(opened, ['bot-assistant'], 'the entry opens the assistant Session')
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ endpoint: 'project-read', payload: { id: 'project-1' } }], 'one project-read answers the assistant id')
+  tree = render(ProjectAgentEntry, { projectId: 'project-1', read, onOpen: id => opened.push(id) })
+  assert.equal(all(tree).find(node => node.props?.['data-open-bot']).props['data-open-bot'], 'bot-assistant', 'the resolved entry names the Bot it opens')
+
+  assert.deepEqual(JSON.parse(JSON.stringify(projectAgentFor({ projectId: 'project-1', ownerId: 'owner-1' }, 'owner-1'))), { projectId: 'project-1' })
+  assert.equal(projectAgentFor({ projectId: 'project-1', ownerId: 'other' }, 'owner-1'), null, "another owner's Bot offers no entry")
+  assert.equal(projectAgentFor({ ownerId: 'owner-1' }, 'owner-1'), null, 'a Bot outside a Project offers no entry')
+  assert.equal(projectAgentFor({ projectId: 'project-1', ownerId: 'owner-1', remote: {} }, 'owner-1'), null, "a friend's Bot offers no entry")
 })

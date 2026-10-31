@@ -411,6 +411,7 @@ export function install(rt) {
       memoryEndpoint: async () => { throw new Error('Memory is turned off on this host') },
       memoryNews: () => ({}),
       memoryReviews: () => 0,
+      memoryDigest: () => ({ head: '', topics: [] }),
     })
     return
   }
@@ -1469,9 +1470,22 @@ export function install(rt) {
     })
   }
 
+  // The Project board's dossier (#1864) reads the head and the topic names only: never an entry
+  // body from a topic, and never another scope. It is a read seam, so the panel adds no second
+  // memory file reader beside this one and cannot drift from where `remember` writes.
+  function memoryDigest(botId, limits = {}) {
+    const scope = ownScope(String(botId ?? ''))
+    const head = Number.isFinite(limits.head) ? limits.head : 4000
+    const topics = Number.isFinite(limits.topics) ? limits.topics : 64
+    return {
+      head: readText(join(dirOf(scope), MAIN)).slice(0, head),
+      topics: topicNames(scope).slice(0, topics),
+    }
+  }
+
   Object.assign(rt, {
     memoryEnabled: true, renewMemory, archiveBotMemory, memoryEndpoint, memoryReviews,
     memoryNews: () => Object.fromEntries(news),
-    botMemoryRead, botMemoryAppend,
+    botMemoryRead, botMemoryAppend, memoryDigest,
   })
 }

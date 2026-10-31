@@ -7,6 +7,8 @@ import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { ActivityIndicator } from './activity-row.js'
 import { BusyAckBubble } from './busy-ack.js'
 import { t } from './i18n.js'
+import { call } from './api.js'
+import { ProjectAgentEntry, projectAgentFor } from './project-board.js'
 import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
 
 // -------------------------------------------------------------------------
@@ -69,6 +71,9 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const owner = roster.byId[sessionId]?.id ?? sessionId
   const doing = useActivity(map => map[owner])
   const bot = roster.byId[sessionId]
+  // #1864: an owner's Bot that belongs to a Project gets the entry to that Project's assistant in
+  // its own chat header. The roster already carries the binding, so nothing else is read here.
+  const projectAgent = projectAgentFor(bot, roster.self?.memberId)
   const room = roster.roomsById[sessionId]
   const detailsOpen = useUi(state => state.details === sessionId)
   const full = bot?.remote
@@ -96,6 +101,9 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     h(MemoryNotice, { shown: memoryNotice }),
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
+    projectAgent === null ? null : h(ProjectAgentEntry, {
+      projectId: projectAgent.projectId, read: call, onOpen: id => actions?.openSession?.(id),
+    }),
     h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
     h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }))

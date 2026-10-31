@@ -147,5 +147,14 @@
   ],
   "0017-handoff-route": [
     "src/host/tools.js"
+  ],
+  "0018-project-dossier": [
+    "client.js",
+    "index.js",
+    "src/client/header.js",
+    "src/client/i18n.js",
+    "src/host/channel.js",
+    "src/host/memory.js",
+    "src/host/store.js"
   ]
 }

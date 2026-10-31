@@ -719,6 +719,10 @@ export function install(rt) {
         return { project: readProject(project.id), ...(result ?? {}) }
       }
       case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
+      // The read-only team dossier (#1864): the Project's Chief, its assistant and its pool, each
+      // with persona, memory head/topics and skills. The read lives in project-team.js; a missing
+      // Bot is a `null` row there, never an error for the whole answer.
+      case 'project-team': return rt.projectTeam?.(projectText(body.id, 200)) ?? { rows: [] }
       // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
       // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
       // so the board applies the same visibility rule `tasks` does (#1723).

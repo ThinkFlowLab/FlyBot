@@ -101,6 +101,20 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-team-roles{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;opacity:.75}
 .bt-project-team-role{font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-team-myrole{margin-left:auto;font-size:11px;opacity:.65}
+
+/* #1864: the team dossier. A Dossier control on each team row opens one read-only panel; the
+   owner's own chat header carries the same entry to the Project assistant's chat. */
+.bt-project-team-dossier{margin-left:auto;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:transparent;color:inherit;cursor:pointer}
+.bt-project-team-dossier:hover{background:var(--bt-hover,rgba(127,127,127,.14))}
+.bt-project-dossier{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.bt-project-dossier-section{display:flex;flex-direction:column;gap:4px}
+.bt-project-dossier-section h4{margin:0;font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.bt-project-dossier-text{margin:0;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.bt-project-dossier-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;opacity:.7}
+.bt-project-dossier-topics{display:flex;gap:6px;flex-wrap:wrap}
+.bt-project-dossier-topic{font-size:11px;padding:1px 6px;border-radius:999px;background:var(--bt-card,rgba(127,127,127,.08))}
+.bt-project-agent-entry{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:transparent;color:inherit;cursor:pointer}
+.bt-project-agent-entry:hover{background:var(--bt-hover,rgba(127,127,127,.14))}
 `
 
 // Sources in the order the board reads them; a source with no rows is left out so three empty
@@ -558,7 +572,7 @@ export function projectTeamView(project) {
   }
 }
 
-const teamRow = (role, label, botId, onOpenBot) => h('div', {
+const teamRow = (role, label, botId, onOpenBot, onOpenDossier) => h('div', {
   key: role, className: 'bt-project-team-row', 'data-team-role': role,
   // A row with no Bot is the fallback the slice specifies: still drawn, with nothing to open.
   ...(botId === ''
@@ -573,23 +587,38 @@ const teamRow = (role, label, botId, onOpenBot) => h('div', {
 h('span', { key: 'label', className: 'bt-project-team-label' }, label),
 botId === ''
   ? h('span', { key: 'value', className: 'bt-project-missing' }, t('Not set'))
-  : h('span', { key: 'value', className: 'bt-project-team-bot' }, `@${botId}`))
+  : h('span', { key: 'value', className: 'bt-project-team-bot' }, `@${botId}`),
+// #1864: the dossier control sits inside the row, so the row still opens the chat (#1860) and a
+// reader can look a Bot up first. A row with no Bot keeps the control: its panel reads "not set".
+h('button', {
+  key: 'dossier', type: 'button', className: 'bt-project-team-dossier',
+  'data-dossier-role': role, ...(botId === '' ? {} : { 'data-dossier-bot': botId }),
+  'aria-label': t('Open {name}\'s dossier', { name: botId === '' ? label : botId }),
+  onClick: (event) => { event?.stopPropagation(); onOpenDossier?.({ role, label, botId }) },
+  onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event?.stopPropagation(); onOpenDossier?.({ role, label, botId }) } },
+}, t('Dossier')))
 
 const POOL_RANKS = [['owner', 'owner'], ['maintainer', 'maintainers'], ['member', 'members']]
 
-export function ProjectTeam({ project, onOpenBot }) {
+export function ProjectTeam({ project, onOpenBot, onOpenDossier }) {
   const view = projectTeamView(project)
+  const poolId = (id) => h('button', {
+    key: id, type: 'button', className: 'bt-project-team-dossier',
+    'data-dossier-role': 'pool', 'data-dossier-bot': id,
+    'aria-label': t('Open {name}\'s dossier', { name: id }),
+    onClick: (event) => { event?.stopPropagation(); onOpenDossier?.({ role: 'pool', label: t('Role pool'), botId: id }) },
+  }, `@${id}`)
   const ranks = view.empty
     ? h('span', { className: 'bt-project-missing' }, t('No one in this pool yet.'))
     : h('span', { className: 'bt-project-team-roles' },
       POOL_RANKS.map(([role, key]) => (view.roles[key].length === 0
         ? null
         : h('span', { key: role, className: 'bt-project-team-role', 'data-pool-role': role },
-          `${roleText(role)}: ${view.roles[key].map(id => `@${id}`).join(', ')}`))))
+          `${roleText(role)}: `, view.roles[key].map(id => poolId(id))))))
   return h('section', { className: 'bt-project-team', 'data-team': 'chief,agent,pool' },
     h('h4', null, t('Project team')),
-    teamRow('chief', t('Project Chief'), view.chief, onOpenBot),
-    teamRow('agent', t('My agent'), view.agent, onOpenBot),
+    teamRow('chief', t('Project Chief'), view.chief, onOpenBot, onOpenDossier),
+    teamRow('agent', t('My agent'), view.agent, onOpenBot, onOpenDossier),
     h('div', { key: 'pool', className: 'bt-project-team-row', 'data-team-role': 'pool' },
       h('span', { key: 'label', className: 'bt-project-team-label' }, t('Role pool')),
       ranks,
@@ -602,11 +631,99 @@ export function ProjectTeam({ project, onOpenBot }) {
             view.choices.length === 0 ? null : ` · ${t('Can switch to {roles}', { roles: view.choices.map(roleText).join(', ') })}`])))
 }
 
-export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot }) {
+// #1864: the dossier panel. It draws only the answer it was handed — persona, the memory head and
+// topic names, and the skill names — so it cannot re-fetch per section. A `null` row is the host's
+// "this Bot is gone" answer: the panel says "not set" and draws no invented persona.
+export function dossierRowOf(team, botId) {
+  const id = text(botId)
+  if (id === '') return null
+  const rows = Array.isArray(team?.rows) ? team.rows : []
+  return rows.find(row => row !== null && typeof row === 'object' && text(row.botId) === id) ?? null
+}
+
+const dossierSection = (title, children) => h('div', { key: title, className: 'bt-project-dossier-section' },
+  h('h4', null, title), children)
+
+export function ProjectDossierPanel({ row, label, onClose, onOpenBot } = {}) {
+  const known = row !== null && typeof row === 'object'
+  const botId = known ? text(row.botId) : ''
+  const topics = known && Array.isArray(row.memory?.topics) ? row.memory.topics.map(name => text(name)).filter(name => name !== '') : []
+  const skills = known && Array.isArray(row.skills) ? row.skills.map(name => text(name)).filter(name => name !== '') : []
+  const meta = known
+    ? [text(row.role), text(row.model)].filter(value => value !== '')
+    : []
+  return h('div', { className: 'bt-project-panel bt-project-dossier', 'data-panel': 'project-dossier', 'data-dossier-bot': botId === '' ? undefined : botId },
+    h('h3', null, label === '' || label === undefined ? t('Dossier') : `${label} · ${t('Dossier')}`),
+    known
+      ? [
+        dossierSection(t('Persona'), [
+          meta.length === 0 ? null : h('div', { key: 'meta', className: 'bt-project-dossier-meta' }, meta.map(value => h('span', { key: value }, value))),
+          h('p', { key: 'persona', className: 'bt-project-dossier-text' }, text(row.persona) || t('Not set')),
+        ]),
+        dossierSection(t('Memory'), [
+          h('p', { key: 'head', className: 'bt-project-dossier-text' }, text(row.memory?.head) || t('No memory yet.')),
+          topics.length === 0
+            ? null
+            : h('div', { key: 'topics', className: 'bt-project-dossier-topics' }, topics.map(topic => h('span', { key: topic, className: 'bt-project-dossier-topic' }, topic))),
+        ]),
+        dossierSection(t('Skills'), h('p', { key: 'skills', className: 'bt-project-dossier-text' }, skills.length === 0 ? t('No skills attached.') : skills.join(', '))),
+      ]
+      : h('p', { className: 'bt-project-missing' }, t('Not set')),
+    botId === '' || !known
+      ? null
+      : h('div', { key: 'actions', className: 'bt-project-row-actions' },
+        h('button', {
+          type: 'button', className: 'bt-soft bt-soft-sm', 'data-open-bot': botId,
+          onClick: () => onOpenBot?.(botId),
+        }, t('Open chat'))),
+    h('div', { className: 'bt-project-row-actions' },
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
+}
+
+// #1864: the entry in the owner's own Bot chat. The roster already carries a Bot's `projectId`
+// (the binding writes it on the record), so the header needs no second list read; the assistant id
+// comes from the Project record when the reader presses the entry.
+export function projectAgentFor(bot, selfId) {
+  if (bot === null || typeof bot !== 'object' || bot.remote !== undefined) return null
+  const projectId = text(bot.projectId)
+  if (projectId === '') return null
+  const owner = text(bot.ownerId)
+  const self = text(selfId)
+  if (self !== '' && owner !== '' && owner !== self) return null
+  return { projectId }
+}
+
+export function ProjectAgentEntry({ projectId, read, onOpen } = {}) {
+  const [agentId, setAgentId] = useState('')
+  const id = text(projectId)
+  const open = async () => {
+    let target = agentId
+    if (target === '') {
+      try {
+        const record = await (read ?? call)('project-read', { id })
+        target = botIdOf(record?.project?.assistant)
+      } catch {
+        // A Project that cannot be read offers no agent; the chat is unchanged.
+        target = ''
+      }
+      if (target !== '') setAgentId(target)
+    }
+    if (target !== '') onOpen?.(target)
+  }
+  if (id === '') return null
+  return h('button', {
+    type: 'button', className: 'bt-project-agent-entry',
+    'data-project-agent': id, 'data-open-bot': agentId === '' ? undefined : agentId,
+    title: t('Open my agent'), 'aria-label': t('Open my agent'),
+    onClick: open,
+  }, t('My agent'))
+}
+
+export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier }) {
   const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
-    h(ProjectTeam, { project, onOpenBot }),
+    h(ProjectTeam, { project, onOpenBot, onOpenDossier }),
     // Header counts (#1768): four numbers read from the host, an unreadable one shown as unknown.
     view.counts === null ? null : h('div', { className: 'bt-project-counts', 'data-counts': 'waiting,inflight,blocked,done' },
       h('span', null, [t('Waiting'), ': ', h('b', { key: 'w' }, countText(view.counts.waiting))]),
@@ -718,6 +835,37 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
 }
 
+// #1864: one read for the whole board, exported so a test can prove the dossier comes from a single
+// `project-team` call. `read` is the channel seam (`call` in the app).
+export async function readProjectBoard(read, wanted) {
+  const listing = await read('projects')
+  const projects = Array.isArray(listing?.projects) ? listing.projects : []
+  const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
+  if (project === undefined) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] } }
+  const zone = typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function'
+    ? undefined
+    : Intl.DateTimeFormat().resolvedOptions().timeZone
+  const [record, board, taskList, team] = await Promise.all([
+    read('project-read', { id: project.id }),
+    read('project-board', { id: project.id, timeZone: zone }),
+    read('tasks', {}),
+    read('project-team', { id: project.id }),
+  ])
+  const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
+  // The groups are the same read as the rows, so the header cannot disagree with the cards.
+  const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
+  // #1860: `project-read` answers the stored record, which carries no caller rank — `role` and
+  // `choices` are the `projects` listing's answer (#1828). They stay on the record the pane
+  // reads, so the team block prints the rank without a second listing read.
+  const base = record?.project ?? project
+  const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] }
+  return {
+    project: withRole, assistantMine: record?.assistantMine ?? null, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true,
+    tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null,
+    team: team !== null && typeof team === 'object' ? team : { rows: [] },
+  }
+}
+
 // #1814: what a card has waited (`waitedMs`) and whether the lease it holds is live are computed by
 // the host at read time — a lease lasts 30 minutes (`tasks.js` `LEASE_TTL_SEC`) — so a board that
 // reads once freezes: an expiry that happens while the page is open never turns the card `stalled`
@@ -740,6 +888,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
   const read = request ?? call
   const [state, setState] = useState(null)
   const [panel, setPanel] = useState(null)
+  const [dossier, setDossier] = useState(null)
   // The hash is the whole entry point, so it has to be read again every time it changes: an
   // entry that writes `#project=<id>` while this mounts opened nothing when the read was one-shot.
   const [hash, setHash] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash))
@@ -771,28 +920,9 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     if (!hash.startsWith('#project')) { setState(null); return undefined }
     const wanted = hash.slice('#project'.length).replace(/^=/, '')
     let gone = false
-    // Four reads of one board: the Project, its record, its rows, and the task texts the rows are
-    // joined against. Nothing here asks a Bot by Bot.
-    const loadBoard = async () => {
-      const listing = await read('projects')
-      const projects = listing?.projects ?? []
-      const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
-      if (project === undefined) return { project: null, rows: [], canManage: false, tasks: [] }
-      const [record, board, taskList] = await Promise.all([
-        read('project-read', { id: project.id }),
-        read('project-board', { id: project.id, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-        read('tasks', {}),
-      ])
-      const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
-      // The groups are the same read as the rows, so the header cannot disagree with the cards.
-      const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null }
-      // #1860: `project-read` answers the stored record, which carries no caller rank — `role` and
-      // `choices` are the `projects` listing's answer (#1828). They stay on the record the pane
-      // reads, so the team block prints the rank without a second listing read.
-      const base = record?.project ?? project
-      const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] }
-      return { project: withRole, assistantMine: record?.assistantMine ?? null, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
-    }
+    // #1864: the board, its record, its rows, the task texts and the team dossier are one read path,
+    // and the dossier comes from the single `project-team` call that read makes.
+    const loadBoard = () => readProjectBoard(read, wanted)
     const refresh = async (first) => {
       try {
         const next = await loadBoard()
@@ -825,13 +955,21 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { close(); actions?.openSettings?.('projects') } }, t('Open Projects in Settings')))
           // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
           // that hash and lands on the Bot or group the task belongs to.
+          : panel === 'dossier' ? h(ProjectDossierPanel, {
+            row: dossierRowOf(state.team, dossier?.botId),
+            label: dossier?.label ?? '',
+            onClose: () => setPanel(null),
+            onOpenBot: (id) => { close(); actions?.openSession?.(id) },
+          })
           : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) })
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,
-            decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics,
+            decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics, team: state.team,
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),
+            // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.
+            onOpenDossier: (value) => { setDossier(value); setPanel('dossier') },
             // #1860: a team row opens that Bot's chat. The board is a modal over the conversation,
             // so it closes first — otherwise the chat opens behind it.
             onOpenBot: (id) => { close(); actions?.openSession?.(id) },

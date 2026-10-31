@@ -312,6 +312,19 @@ spawn failed — stays drawn and reads *Not set*, so this slice never waits on #
 live in `src/client/role-labels.js`, which the sidebar and this block both print. Tests:
 `core/test/project-board-panels.test.js`.
 
+The **dossier** (#1864) is the read-only half beside those rows. Each team row carries a `Dossier`
+control (`data-dossier-bot`, also for a pool member), and `ProjectDossierPanel` draws three sections
+from the one `project-team` answer the overlay reads with the board: **Persona** (the Bot's
+instructions, role and model), **Memory** (the `MEMORY.md` head and the topic names) and **Skills**
+(the attached `skill` capability names). The panel never re-fetches per section, and a `null` row —
+the host's answer for a deleted Bot — shows *Not set* with nothing invented. `readProjectBoard`
+keeps the dossier on the same read as the rows, so the board and the panel cannot disagree, and the
+"my agent" row uses the same panel. The entry in the owner's own Bot chat is
+`ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads
+`project-read` once for `assistant.botId` and opens that Session through `actions.openSession`; the
+assistant is not a special case of the board, and the Project page keeps its own row. Tests:
+`core/test/project-board-panels.test.js` and `core/test/project-team.test.js`.
+
 The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
 the board. The sidebar is the only entry (#1854): the **Project board** button #1701 put in

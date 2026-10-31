@@ -193,10 +193,11 @@ if (gitAvailable) {
     const root = join(import.meta.dirname, '..', '..')
     const patchesDir = join(root, 'patches', 'ds-bot')
     const stored = readdirSync(patchesDir).filter(name => /^\d{4}-.*\.patch$/.test(name)).sort()
-    // 10, not 11: `0017-task-pool-role-queues.patch` only edited whole-file mirrors
+    // 11: `0017-task-pool-role-queues.patch` only edited whole-file mirrors
     // (`src/host/tasks.js`, `src/host/hooks.js`) plus one `tools.js` line that lives in `0002`,
-    // so the generator folds it away instead of storing a patch that applies nothing.
-    assert.equal(stored.length, 10)
+    // so the generator folds it away instead of storing a patch that applies nothing. The count is
+    // 11 since `0018-project-dossier.patch`, which edits upstream files and so is stored.
+    assert.equal(stored.length, 11)
     const viaGit = mkdtempSync(join(tmpdir(), 'patch-git-'))
     const viaOurs = mkdtempSync(join(tmpdir(), 'patch-ours-'))
     try {

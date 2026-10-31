@@ -1403,6 +1403,15 @@ const ZH = {
   'Role pool': '角色池',
   'Can switch to {roles}': '可切换为 {roles}',
   'No one in this pool yet.': '角色池里还没有人。',
+  // #1864: the Project team's dossier — persona, memory and skills are read-only in this slice.
+  'Dossier': '档案',
+  'Persona': '人设',
+  'Skills': '技能',
+  'No memory yet.': '还没有记忆。',
+  'No skills attached.': '还没有附加技能。',
+  'Open chat': '打开对话',
+  'Open my agent': '打开我的项目助手',
+  "Open {name}'s dossier": '打开 {name} 的档案',
   'No cards yet.': '还没有卡片。',
   'Open Projects in Settings': '在设置中打开项目',
 }
