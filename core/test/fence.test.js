@@ -48,3 +48,30 @@ test('a peer name at the 60 bound keeps the whole character (#P282b)', () => {
   assert.ok(fenced.isWellFormed(), 'the fence header is not well formed')
   assert.ok(fenced.startsWith(`<untrusted-message from="${'a'.repeat(59)}">`))
 })
+
+// A name from outside arrives through JSON, where "\ud83d" is a legal string that is not well
+// formed: the lone half used to travel through cleanName into the header a person reads.
+test('a peer name that arrives with a lone surrogate is made well formed', () => {
+  const broken = 'Ann\ud83dX'
+  assert.equal(broken.isWellFormed(), false, 'the fixture is the broken input')
+  const name = cleanName(broken)
+  assert.equal(name.isWellFormed(), true, `not well formed: ${JSON.stringify(name)}`)
+  assert.equal(name, 'Ann\uFFFDX', 'the lone half becomes the replacement character, in place')
+  assert.ok(name.length <= 60)
+  assert.doesNotMatch(name, /\p{Cc}/u, 'no control character survives the clean')
+})
+
+test('the line a broken peer name reaches stays well formed on every byte', () => {
+  const broken = 'Ann\ud83dX'
+  const fenced = fenceUntrusted(broken, 'hello')
+  const header = fenced.split('\n')[0]
+  assert.equal(header.isWellFormed(), true, `not well formed: ${JSON.stringify(header)}`)
+  assert.equal(header, '<untrusted-message from="Ann\uFFFDX">')
+  assert.equal(Buffer.from(header, 'utf8').toString('utf8'), header, 'the header survives a UTF-8 round trip')
+  // The first line a message is shown with, and the source name beside it, both read from the
+  // same cleanName, so neither can carry the lone half.
+  const shown = `[Message from ${cleanName(broken)}]`
+  assert.equal(shown.isWellFormed(), true, `not well formed: ${JSON.stringify(shown)}`)
+  assert.equal(shown, '[Message from Ann\uFFFDX]')
+  assert.equal(Buffer.from(shown, 'utf8').toString('utf8'), shown)
+})

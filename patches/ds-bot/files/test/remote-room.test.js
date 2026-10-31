@@ -890,6 +890,53 @@ test('a room-share envelope clips peer names on a code point boundary (#1923)', 
   }
 })
 
+// #1937: the envelope carries a peer's own words — the room's notice, a roster entry's name and its
+// owner's name, and the chat lines a join copies. JSON accepts a lone surrogate escape, so a peer can
+// put one in each of those strings, and JSON.parse hands them back in the same broken shape; the
+// notice then reaches the room's standing prompt and a line reaches the guest's copy. The parser
+// repairs what it hands on, in place: one unit in, one unit out, no bound moved.
+test('a room-share envelope hands on well formed notice, roster and history text (#1937)', () => {
+  const notice = `${'a'.repeat(19)}\ud83d tail`
+  const name = 'Ann\ud83dX'
+  const ownerName = 'Owner\ud83dY'
+  const who = 'W\ud83dho'
+  const line = 'hello \ud83d world'
+  const packed = encodeRoomShare({
+    op: 'join', roomId: 'war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 6,
+    roster: [{ handle: '@ann.home', name, ownerName }],
+    notice,
+    history: [{ who, text: line, seq: 2 }],
+  })
+  // The wire text is well formed already: JSON.stringify escapes an unpaired surrogate. The break
+  // happens on the receiving side, in JSON.parse — this test pins the string the parser hands on.
+  assert.equal(packed.isWellFormed(), true, 'the wire text is well formed')
+  assert.equal(packed.includes('\ud83d'), false, 'the lone surrogate travels as an escape, not as a bare unit')
+  const parsed = parseRoomShare(packed)
+  assert.equal(parsed.op, 'join')
+  const cases = [
+    ['notice', parsed.notice, notice],
+    ['roster[0].name', parsed.roster[0].name, name],
+    ['roster[0].ownerName', parsed.roster[0].ownerName, ownerName],
+    ['history[0].who', parsed.history[0].who, who],
+    ['history[0].text', parsed.history[0].text, line],
+  ]
+  for (const [field, kept, sent] of cases) {
+    assert.equal(typeof kept, 'string', `${field} is in the envelope: ${JSON.stringify(parsed)}`)
+    assert.equal(kept.isWellFormed(), true, `${field} is not well formed: ${JSON.stringify(kept)}`)
+    assert.equal(kept, sent.replace(/\ud83d/g, '\uFFFD'), `${field} replaces the lone surrogate with U+FFFD and keeps everything else`)
+    assert.equal(kept.length, sent.length, `${field} keeps the length it arrived with: ${kept.length} vs ${sent.length}`)
+  }
+  // A receiving home re-sends what it read: a second pass changes nothing.
+  const again = parseRoomShare(encodeRoomShare(parsed))
+  assert.equal(again.notice, notice.replace(/\ud83d/g, '\uFFFD'))
+  assert.equal(again.notice.isWellFormed(), true)
+  // The shortest shape of the same arrival: one unpaired half between two letters.
+  const repaired = parseRoomShare(encodeRoomShare({ op: 'join', roomId: 'war', seq: 8, notice: 'Ann\ud83dX' }))
+  assert.equal(repaired.notice, 'Ann\uFFFDX')
+  assert.equal(repaired.notice.isWellFormed(), true)
+})
+
 // A join copies chat lines into the envelope it sends to another owner, and its own bound is a
 // code-unit one: a line whose 2,000th unit is half of a surrogate pair reached the guest as half of
 // a character. The copied line stops before the pair instead.

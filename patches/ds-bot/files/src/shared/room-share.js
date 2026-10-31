@@ -222,6 +222,25 @@ export function roomInviteUrl(handle, ticket, origin = 'https://social.botawaken
   return `${String(origin || '').replace(/\/+$/, '')}/r/${who}/${clean}`
 }
 
+// #1937: the strings a peer sends in here are its own words — the room's notice, a roster entry's
+// names, the chat lines a join copies — and JSON carries an unpaired surrogate escape through as it
+// came, so JSON.parse hands back a string that is not well formed and the notice reaches the room's
+// standing prompt in that shape. Repair the fields this parser passes on, in place: one unit becomes
+// one U+FFFD, so no bound, cut or path around them moves.
+function wellFormedFields(entry, keys) {
+  if (!entry || typeof entry !== 'object') return
+  for (const key of keys) {
+    if (typeof entry[key] === 'string') entry[key] = entry[key].toWellFormed()
+  }
+}
+
+function wellFormedShare(data) {
+  wellFormedFields(data, ['notice'])
+  if (Array.isArray(data.roster)) data.roster.forEach(entry => wellFormedFields(entry, ['name', 'ownerName']))
+  if (Array.isArray(data.history)) data.history.forEach(line => wellFormedFields(line, ['who', 'text']))
+  return data
+}
+
 export function parseRoomShare(text) {
   const raw = String(text ?? '')
   const at = raw.indexOf(ROOM_SHARE_MARK)
@@ -246,7 +265,7 @@ export function parseRoomShare(text) {
     if (data.op === 'ask') return TICKET_SHAPE.test(String(data.ticket ?? '')) ? data : undefined
     if (data.op === 'invite') return TICKET_SHAPE.test(String(data.ticket ?? '')) && data.roomId ? data : undefined
     if (!data.roomId) return undefined
-    return data
+    return wellFormedShare(data)
   } catch {
     return undefined
   }

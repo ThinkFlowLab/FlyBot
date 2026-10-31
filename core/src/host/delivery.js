@@ -34,9 +34,11 @@ export const unwrapUntrusted = (text) => {
   return match ? match[1] : value
 }
 // A name from outside the team, safe on one line of trusted text: no control characters,
-// newlines, brackets or quotes, at most 60 characters.
+// newlines, brackets or quotes, at most 60 characters. JSON admits a lone surrogate, so the
+// input is made well formed first: a name that arrives with half a pair would otherwise reach
+// the header a person reads, where it renders as U+FFFD and cannot survive a UTF-8 round trip.
 export const cleanName = (name, fallback = 'a remote Bot') => {
-  const text = cut(String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim(), 60).text
+  const text = cut(String(name ?? '').toWellFormed().replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim(), 60).text
   return text || fallback
 }
 export const fenceUntrusted = (name, text) => `<untrusted-message from="${cleanName(name)}">\n${stripUntrusted(text ?? '')}\n</untrusted-message>`
