@@ -60,16 +60,30 @@ function fitJoin(body) {
     trimmedHistory = true
   }
   if (trimmedHistory && body.history.length === 0) delete body.history
-  if (typeof body.notice === 'string' && wire().length > ROOM_SHARE_TEXT_MAX) {
-    while (body.notice.length > 0 && wire().length > ROOM_SHARE_TEXT_MAX) {
-      const extra = wire().length - ROOM_SHARE_TEXT_MAX
-      body.notice = body.notice.slice(0, Math.max(0, body.notice.length - extra))
+  // #1932: the roster is display data and the only part that may be dropped a row at a time, so it
+  // pays its own cost first: a row goes while the envelope overflows even with the notice taken out.
+  // A roster overflow therefore never empties the notice, and a present empty notice — the host
+  // clearing it — is not a placeholder to delete while a row can still give.
+  if (Array.isArray(body.roster) && body.roster.length > 0) {
+    const keptNotice = body.notice
+    const overWithoutNotice = () => {
+      if (typeof keptNotice === 'string') delete body.notice
+      const over = wire().length > ROOM_SHARE_TEXT_MAX
+      if (typeof keptNotice === 'string') body.notice = keptNotice
+      return over
     }
-    if (body.notice.length === 0) delete body.notice
-  }
-  if (Array.isArray(body.roster) && body.roster.length > 0 && wire().length > ROOM_SHARE_TEXT_MAX) {
-    while (body.roster.length > 0 && wire().length > ROOM_SHARE_TEXT_MAX) body.roster.pop()
+    while (body.roster.length > 0 && overWithoutNotice()) body.roster.pop()
     if (body.roster.length === 0) delete body.roster
+  }
+  // The notice pays only what is left over once the roster has given all it can, so a notice that is
+  // the whole overflow is still a bounded notice rather than a dropped one.
+  if (typeof body.notice === 'string' && wire().length > ROOM_SHARE_TEXT_MAX) {
+    const was = body.notice
+    const extra = wire().length - ROOM_SHARE_TEXT_MAX
+    body.notice = cut(was, Math.max(0, was.length - extra)).text
+    // A notice cut down to nothing says "change nothing" rather than "the host cleared it".
+    if (body.notice.length === 0 && was.length > 0) delete body.notice
+    else if (wire().length > ROOM_SHARE_TEXT_MAX) delete body.notice
   }
 }
 

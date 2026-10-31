@@ -22,7 +22,7 @@ import {
 } from '../src/host/room-membership.js'
 import { install as installReach, reach, ticketPeers } from '../src/host/reach.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
-import { HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
+import { HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
 import { ROOM_CONTEXT_BUDGET, compactStatus, fitRoomLines, prepareRoomLine } from '../src/host/room-context.js'
 import { mentionRows } from '../src/client/at-menu.js'
@@ -2352,6 +2352,57 @@ test('#904: the membership notice carries the room\'s own Bots, and one without 
   // A leave says only that someone left; it carries no roster.
   await rt.notifyRoomShare(room, { op: 'leave', handle: '@coder.bob.home' })
   assert.equal(parseRoomShare(sent.at(-1).text).roster, undefined)
+})
+
+// #1932: a join has to fit 4,000 characters and the roster is the part with the most to give. The
+// notice used to be cut by the whole envelope's overflow, so an overflow that came from the roster
+// emptied it — the guest never heard the host's notice change, and an explicit clear (a present
+// empty field) was deleted exactly as if the host had said nothing at all.
+//
+// The roster now pays its own cost first: a row goes while the envelope still overflows with the
+// notice taken out. Only then does the notice give, and only by what is left over, so a notice that
+// is the whole cause of the overflow is still a bounded notice rather than a dropped one.
+test('#1932: a roster that had to shrink leaves the notice alone, and a cleared notice still rides the join', () => {
+  const roster = count => Array.from({ length: count }, (_, i) => ({
+    name: `Coder ${String(i + 1).padStart(2, '0')}`,
+    handle: `@coder${String(i + 1).padStart(2, '0')}`,
+    home: `@h${i + 1}.test`,
+    ownerName: 'O'.repeat(60),
+  }))
+  const join = (count, extra = {}) => encodeRoomShare({
+    op: 'join',
+    roomId: 'war',
+    name: 'War room',
+    inviterName: 'Alice',
+    inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home',
+    invitedHandle: '@coder01',
+    seq: 1,
+    roster: roster(count),
+    ...extra,
+  })
+
+  // 29 rows are already over the transport on their own, so the roster is what gives: the notice
+  // still rides the join instead of being emptied by an overflow it did not cause.
+  const carried = join(29, { notice: 'x' })
+  assert.ok(carried.length <= ROOM_SHARE_TEXT_MAX, `the join fits the transport, got ${carried.length}`)
+  assert.equal(parseRoomShare(carried).notice, 'x', 'a one-character notice survives a roster that had to shrink')
+
+  // A present empty notice is the host clearing it. It occupies nothing, so nothing is gained by
+  // dropping the field: the guest has to hear the clear even when the roster had to shrink.
+  const cleared = join(29, { notice: '' })
+  assert.ok(cleared.length <= ROOM_SHARE_TEXT_MAX, `the cleared join fits the transport, got ${cleared.length}`)
+  assert.equal(parseRoomShare(cleared).notice, '', 'a cleared notice is still carried when the roster shrinks')
+
+  // The other way round: a notice that is itself the overflow is cut to fit, at a code point
+  // boundary, and the roster it fits next to stays.
+  const long = join(26, { notice: '\u{1F600}'.repeat(1000) })
+  const back = parseRoomShare(long)
+  assert.ok(long.length <= ROOM_SHARE_TEXT_MAX, `the long-notice join fits the transport, got ${long.length}`)
+  assert.ok(long.isWellFormed(), 'the join never carries half a surrogate pair')
+  assert.ok(back.notice.length > 0 && back.notice.length < 2000, `the long notice is cut, got ${back.notice.length}`)
+  assert.equal(back.notice.isWellFormed(), true, 'the cut notice never carries half a surrogate pair')
+  assert.equal(back.roster.length, 26, 'a roster that was not the cause keeps its rows')
 })
 
 // #904: the seat path attributes a line to the seat that carried it and never to the envelope's own
