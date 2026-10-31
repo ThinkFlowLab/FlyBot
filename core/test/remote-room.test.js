@@ -2929,3 +2929,54 @@ test('an inbound line body that arrives ill formed is made well formed where it 
   assert.equal(shown.at(-1).text, 'hi \u{1F600} there')
   assert.equal(turns.at(-1).text, 'hi \u{1F600} there', 'a real pair is not replaced')
 })
+
+// The other way a peer's text enters this home (#884): a remote seat writes a line into a room of
+// mine, and `ingestSeatShare` took `data.text` exactly as the envelope carried it — to the log, to the
+// pane and to the Bot the line calls. #1943 repaired the projected-mirror branch alone; this is the
+// sibling path, where the same string JSON accepts but does not make well formed arrives intact.
+test('a seat line body that arrives ill formed is made well formed where it is used', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  const shown = []
+  rt.showSharedLine = async (room, spec) => { shown.push({ roomId: room.id, ...spec }) }
+  const turns = []
+  rt.startInboundTurn = async args => { turns.push(args) }
+  const line = (seq, extra = {}) => 'FLYBOT-ROOM-SHARE\n' + JSON.stringify({
+    v: 1, op: 'line', roomId: 'war', seq, who: 'W\ud83dho', authorKind: 'human', authorId: 'alice',
+    text: 'seat \ud83d body', calls: ['chief-a'], ...extra,
+  })
+  const out = await rt.applyInboundRoomShare({ fromHandle: '@coder.bob.home', fromHome: '@bob.home', fromName: 'Coder', text: line(5) }, actorA)
+  assert.equal(out.handled, true, 'an ill-formed body is repaired, not refused')
+  assert.equal('refused' in out, false, 'the line is not refused')
+  assert.deepEqual(out.called, ['chief-a'], 'the line still calls the Bot it names')
+
+  const stored = rt.roomHistory('war', actorA).at(-1)
+  assert.ok(stored, 'the line is stored')
+  assert.equal(stored.text.isWellFormed(), true, `the stored row is not well formed: ${JSON.stringify(stored.text)}`)
+  assert.equal(stored.text.includes('seat \uFFFD body'), true, 'the stored body carries one U+FFFD for the lone half')
+  assert.equal(stored.who, 'W\uFFFDho', 'the author was already cleaned, in the same shape')
+
+  assert.equal(shown.length, 1, 'the pane is drawn once')
+  assert.equal(shown[0].text, 'seat \uFFFD body')
+  assert.equal(shown[0].text.isWellFormed(), true, `the pane is not well formed: ${JSON.stringify(shown[0].text)}`)
+
+  assert.equal(turns.length, 1, 'the named Bot is called')
+  assert.equal(turns[0].botId, 'chief-a')
+  assert.equal(turns[0].text, 'seat \uFFFD body')
+  assert.equal(turns[0].text.isWellFormed(), true, `the turn is not well formed: ${JSON.stringify(turns[0].text)}`)
+  assert.equal(turns[0].text.length, 'seat \ud83d body'.length, 'one unit in, one U+FFFD out: the length does not move')
+
+  // A body that is already well formed is passed through untouched, and a real pair keeps its code point.
+  const ok = await rt.applyInboundRoomShare({ fromHandle: '@coder.bob.home', fromHome: '@bob.home', fromName: 'Coder', text: line(6, { who: 'Ann', text: 'hi \u{1F600} there' }) }, actorA)
+  assert.equal(ok.handled, true)
+  const kept = rt.roomHistory('war', actorA).at(-1)
+  assert.equal(kept.text, '<untrusted-message from="Ann">\nhi \u{1F600} there\n</untrusted-message>', 'a well-formed body is stored exactly as it arrived')
+  assert.equal(shown.at(-1).text, 'hi \u{1F600} there')
+  assert.equal(turns.at(-1).text, 'hi \u{1F600} there', 'a real pair is not replaced')
+})

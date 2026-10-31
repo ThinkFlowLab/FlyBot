@@ -1980,6 +1980,10 @@ export function install(rt) {
     }
     if (data.op !== 'line') return { handled: true, room }
     const who = cleanPeerName(data.who, remoteBotTitle(seat))
+    // The seat path carries a peer's body exactly as the projected-mirror branch does (#1943):
+    // JSON.parse hands back an unpaired surrogate escape as half a character, and this body is
+    // stored, drawn and handed to a model. Repair it once, where the line is read.
+    const text = typeof data.text === 'string' ? data.text.toWellFormed() : (data.text || '')
     const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
     const human = data.authorKind !== 'bot'
     // #904: this path never reads the envelope's `authorId`: `ownSeatOf` matched the seat by the
@@ -1987,7 +1991,7 @@ export function install(rt) {
     // claim inside the envelope is only the guest's word. A guest cannot speak as another Bot here.
     const posted = append(room, rt.authoredRoomLine(room, {
       who,
-      text: data.text || '',
+      text,
       // A guest person's id is theirs, not this home's: it is kept apart from the members here.
       authorId: human ? `${seat.handle}#${String(data.authorId || 'person').slice(0, 40)}` : seat.handle,
       authorKind: human ? 'human' : 'bot',
@@ -2000,7 +2004,7 @@ export function install(rt) {
     }))
     await showShareLine(room, {
       who,
-      text: data.text || '',
+      text,
       remoteSeq: data.seq,
       via: seat.handle,
       senderSessionId: seat.handle,
@@ -2019,7 +2023,7 @@ export function install(rt) {
         if (room.answered.includes(key)) continue
         room.answered = [...room.answered, key].slice(-ANSWERED_KEPT)
         called.push(botId)
-        void Promise.resolve(rt.startInboundTurn({ room, botId, seq: posted.seq, hop, who, text: data.text || '' }))
+        void Promise.resolve(rt.startInboundTurn({ room, botId, seq: posted.seq, hop, who, text }))
           .catch(error => rt.warn?.('ds-bot: a guest\'s call in %s failed: %s', room.name, error))
       }
     }
