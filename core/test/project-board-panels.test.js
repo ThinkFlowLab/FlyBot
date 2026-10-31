@@ -537,6 +537,53 @@ test('the board reads the dossier from exactly one project-team call', async () 
   assert.deepEqual(opened.map(entry => entry.botId), ['bot-chief'])
 })
 
+// #1900: the dossier only changes when someone edits a persona or a memory file, so it is read
+// once, when the board opens, and the five-second poll (#1814/#1824) draws that answer instead of
+// asking again. The poll was re-reading the whole team dossier — host side a `memoryDigest` per row,
+// ~16 KB every 5 s — to receive an answer that had not changed.
+test('#1900: the five-second poll reuses the dossier answer the open read took', async () => {
+  resetSlots()
+  const calls = []
+  const read = async (endpoint) => {
+    calls.push(endpoint)
+    if (endpoint === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot', role: 'owner', choices: [] }] }
+    if (endpoint === 'project-read') return { project: projectRecord(), canManage: true }
+    if (endpoint === 'project-board') return boardAnswer()
+    if (endpoint === 'tasks') return []
+    if (endpoint === 'project-team') return { rows: [dossier(), null, { ...dossier(), botId: 'bot-dev', name: 'Dev' }] }
+    throw new Error(`unexpected endpoint ${endpoint}`)
+  }
+  const count = () => calls.filter(endpoint => endpoint === 'project-team').length
+  const opened = await readProjectBoard(read, 'project-1')
+  assert.equal(count(), 1, 'opening the board reads the dossier once')
+  const polled = await readProjectBoard(read, 'project-1', { team: opened.team })
+  assert.equal(count(), 1, 'the poll does not ask for the dossier again')
+  assert.equal(polled.team.rows.length, 3, 'the poll keeps drawing the one answer')
+  assert.deepEqual(polled.team.rows.map(row => row?.botId), opened.team.rows.map(row => row?.botId))
+})
+
+// #1900: a dossier that fails is not the board failing. It keeps its rows, its `done` group and its
+// tasks, and the team area draws empty — the empty-project answer (`project-board.js:873`) stays
+// reserved for a Project that really is absent, so a broken dossier cannot paint "No Project yet".
+test('#1900: a dossier read that throws leaves the board drawn and the team empty', async () => {
+  resetSlots()
+  const read = async (endpoint) => {
+    if (endpoint === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot', role: 'owner', choices: [] }] }
+    if (endpoint === 'project-read') return { project: projectRecord(), canManage: true }
+    if (endpoint === 'project-board') return { ...boardAnswer(), tasks: [{ id: 'row-1' }], done: [{ id: 'done-1' }] }
+    if (endpoint === 'tasks') return [{ id: 'task-1' }]
+    if (endpoint === 'project-team') throw new Error('the dossier is unreadable this tick')
+    throw new Error(`unexpected endpoint ${endpoint}`)
+  }
+  const state = await readProjectBoard(read, 'project-1')
+  assert.equal(state.project?.id, 'project-1', 'the Project still draws: no empty state')
+  assert.equal(state.rows.length, 1)
+  assert.equal(state.done.length, 1)
+  assert.equal(state.tasks.length, 1)
+  assert.deepEqual(Object.keys(state.team).sort(), ['rows'], 'the team area is the one thing that gives up')
+  assert.equal(state.team.rows.length, 0)
+})
+
 // #1892: the role pool is a rank list, not a Bot the board holds a dossier answer for.
 // `project-team` answers rows keyed by the Project's own Bots, so a pool click asked for a row the
 // host never sent and drew an empty panel. A pool entry now reads `@id` beside its rank; the Chief

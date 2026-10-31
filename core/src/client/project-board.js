@@ -866,7 +866,11 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
 
 // #1864: one read for the whole board, exported so a test can prove the dossier comes from a single
 // `project-team` call. `read` is the channel seam (`call` in the app).
-export async function readProjectBoard(read, wanted) {
+// #1900: the dossier is the one answer in that read which does not change on a five-second clock, so
+// the caller hands back the answer it already has (`cached.team`) and the read skips the call: the
+// board reads it once when it opens and every poll after that draws that same answer. The other
+// three channels are read every time — they are the reason a poll exists.
+export async function readProjectBoard(read, wanted, cached) {
   const listing = await read('projects')
   const projects = Array.isArray(listing?.projects) ? listing.projects : []
   const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
@@ -874,11 +878,20 @@ export async function readProjectBoard(read, wanted) {
   const zone = typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function'
     ? undefined
     : Intl.DateTimeFormat().resolvedOptions().timeZone
+  const seeded = cached !== null && typeof cached === 'object' && cached.team !== undefined
+  // #1900: a dossier that throws is the team area's loss, not the board's. The rejection used to
+  // reject the whole `Promise.all`, and the first paint turned that into the empty state — a broken
+  // persona file made a Project that exists read as "No Project yet", which is the one answer
+  // `:873` reserves for a Project that really is gone. Rows, `done`, tasks and queues still draw;
+  // only `team` gives up, as `{ rows: [] }` below.
+  const teamAnswer = seeded
+    ? Promise.resolve(cached.team)
+    : Promise.resolve().then(() => read('project-team', { id: project.id })).catch(() => null)
   const [record, board, taskList, team] = await Promise.all([
     read('project-read', { id: project.id }),
     read('project-board', { id: project.id, timeZone: zone }),
     read('tasks', {}),
-    read('project-team', { id: project.id }),
+    teamAnswer,
   ])
   const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
   // The groups are the same read as the rows, so the header cannot disagree with the cards.
@@ -951,7 +964,17 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     let gone = false
     // #1864: the board, its record, its rows, the task texts and the team dossier are one read path,
     // and the dossier comes from the single `project-team` call that read makes.
-    const loadBoard = () => readProjectBoard(read, wanted)
+    // #1900: that one dossier answer is held for as long as this board is open. The effect re-runs
+    // per `#project` entry, so re-opening the board reads the dossier again and a persona or memory
+    // edit lands then; the five-second poll only draws the answer the open read already took.
+    let teamAnswer
+    const loadBoard = async () => {
+      const next = await readProjectBoard(read, wanted, teamAnswer === undefined ? undefined : { team: teamAnswer })
+      // A board with no Project took no dossier read at all, so it seeds nothing: the first poll
+      // that does find the Project reads the dossier itself instead of caching the empty answer.
+      if (next.project !== null) teamAnswer = next.team
+      return next
+    }
     const refresh = async (first) => {
       try {
         const next = await loadBoard()

@@ -11260,17 +11260,19 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
     )
   );
 }
-async function readProjectBoard(read, wanted) {
+async function readProjectBoard(read, wanted, cached) {
   const listing = await read("projects");
   const projects = Array.isArray(listing?.projects) ? listing.projects : [];
   const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
   if (project === void 0) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] } };
   const zone = typeof Intl === "undefined" || typeof Intl.DateTimeFormat !== "function" ? void 0 : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const seeded = cached !== null && typeof cached === "object" && cached.team !== void 0;
+  const teamAnswer = seeded ? Promise.resolve(cached.team) : Promise.resolve().then(() => read("project-team", { id: project.id })).catch(() => null);
   const [record, board, taskList, team] = await Promise.all([
     read("project-read", { id: project.id }),
     read("project-board", { id: project.id, timeZone: zone }),
     read("tasks", {}),
-    read("project-team", { id: project.id })
+    teamAnswer
   ]);
   const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
   const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
@@ -11328,7 +11330,12 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
     }
     const wanted = hash.slice("#project".length).replace(/^=/, "");
     let gone = false;
-    const loadBoard = () => readProjectBoard(read, wanted);
+    let teamAnswer;
+    const loadBoard = async () => {
+      const next = await readProjectBoard(read, wanted, teamAnswer === void 0 ? void 0 : { team: teamAnswer });
+      if (next.project !== null) teamAnswer = next.team;
+      return next;
+    };
     const refresh = async (first) => {
       try {
         const next = await loadBoard();
