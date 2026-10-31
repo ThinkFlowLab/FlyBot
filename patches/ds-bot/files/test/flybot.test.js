@@ -815,6 +815,71 @@ test('cleanPublishedName strips @, controls and newlines, and caps at 60 (#75)',
   assert.equal(cleanPublishedName('Owner\u0000@chief.home'), 'Owner chief.home')
   assert.equal(cleanPublishedName('@@@'), '')
   assert.equal(cleanPublishedName('x'.repeat(80)), 'x'.repeat(60))
+  // #1923: the 60 cap is a UTF-16 cut, and `'a'.repeat(59) + '😀tail'` used to split the emoji.
+  const straddle = 'a'.repeat(59) + '😀tail'
+  const kept = cleanPublishedName(straddle)
+  assert.equal(kept.isWellFormed(), true, `the kept name is not well formed: ${JSON.stringify(kept.slice(-2))}`)
+  assert.equal(kept, 'a'.repeat(59), 'the straddling emoji is dropped whole, never split')
+  assert.ok(kept.length <= 60, `the cap still holds: ${kept.length}`)
+  assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(straddle, 'utf8').subarray(0, Buffer.byteLength(kept))), 'the kept name is a prefix of the input, byte for byte')
+})
+
+// #1923: the same bound at the record boundary the name is stored through (hooks.js:947-949).
+test('a published peer name, homeName and owner keep whole characters at the 60 bound (#1923)', async (t) => {
+  const { ctx, fb, stop, grantTo } = await start()
+  t.after(stop)
+  await grantTo('a', '@eve.friend.home')
+  ctx.llm.listProviders = () => [{ id: 'flybot-remote', name: 'Friends\' Bots' }]
+  ctx.llm.listModels = async () => [{ id: '@eve.friend.home', name: 'Eve' }]
+  ctx.sessionController.create = async () => ({ sessionId: 'remote-1' })
+  const straddle = 'a'.repeat(59) + '😀tail'
+  const ownerStraddle = 'o'.repeat(59) + '😀tail'
+  const social = fb.scope('social')
+  social.remote.publish([{ handle: '@eve.friend.home', name: straddle, home: '@friend.home', homeName: straddle, owner: ownerStraddle }])
+  const [member] = social.remote.list()
+  // All three share cleanPublishedName's 60 bound; tools.js applies the tighter 40 to the owner name it shows.
+  const cases = [['name', member.name, straddle, 60], ['homeName', member.homeName, straddle, 60], ['owner', member.owner, ownerStraddle, 60]]
+  for (const [field, kept, source, max] of cases) {
+    assert.equal(typeof kept, 'string', `${field} is stored: ${JSON.stringify(member)}`)
+    assert.equal(kept.isWellFormed(), true, `${field} is not well formed: ${JSON.stringify(kept.slice(-2))}`)
+    assert.ok(kept.length <= max, `${field} keeps the ${max} cap: ${kept.length}`)
+    assert.ok(kept.length > max - 10, `${field} does not drop the whole name for one character: ${kept.length}`)
+    assert.equal(kept.includes('😀'), false, `${field} drops the straddling emoji whole`)
+    assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(source, 'utf8').subarray(0, Buffer.byteLength(kept))), `${field} is a prefix of the published name, byte for byte`)
+  }
+})
+
+// #1923: the group member line (tools.js:84) carries a peer display name at 60 and an owner name at 40.
+test('list_bots keeps whole characters in a peer display name and owner name (#1923)', async (t) => {
+  const displayName = 'a'.repeat(59) + '😀tail'
+  const ownerName = 'o'.repeat(39) + '😀tail'
+  const { tool, stop } = await start({
+    rooms: {
+      g: {
+        id: 'g', name: 'Group', members: ['a'],
+        participants: [{ kind: 'bot', remote: true, id: '@peer.bob.home', handle: '@peer.bob.home', displayName, ownerName }],
+      },
+    },
+  })
+  t.after(stop)
+  const listed = await tool('list_bots', {}, 'a')
+  assert.equal(listed.isWellFormed(), true, `the member line is not well formed: ${JSON.stringify(listed.slice(0, 80))}`)
+  const line = listed.split('\n').find(l => l.includes('members: ') && l.includes("'s Bot)"))
+  assert.ok(line, `the room line is listed: ${JSON.stringify(listed)}`)
+  // The peer entry is last on the member line: `<displayName> (<ownerName>'s Bot)`.
+  const members = line.split('members: ')[1].split(';')[0]
+  const peer = members.slice(members.lastIndexOf(', ') + 2)
+  const atOwner = peer.lastIndexOf(' (')
+  const keptDisplay = peer.slice(0, atOwner)
+  const keptOwner = peer.slice(atOwner + 2, peer.lastIndexOf('\'s Bot)'))
+  assert.equal(keptDisplay.isWellFormed(), true, `the display name is not well formed: ${JSON.stringify(keptDisplay)}`)
+  assert.equal(keptDisplay.includes('😀'), false, 'the display name drops the straddling emoji whole')
+  assert.ok(keptDisplay.length <= 60 && keptDisplay.length > 50, `the display name keeps the 60 bound: ${keptDisplay.length}`)
+  assert.ok(Buffer.from(keptDisplay, 'utf8').equals(Buffer.from(displayName, 'utf8').subarray(0, Buffer.byteLength(keptDisplay))), 'the display name is a prefix of what the peer published, byte for byte')
+  assert.equal(keptOwner.isWellFormed(), true, `the owner name is not well formed: ${JSON.stringify(keptOwner)}`)
+  assert.equal(keptOwner.includes('😀'), false, 'the owner name drops the straddling emoji whole')
+  assert.ok(keptOwner.length <= 40 && keptOwner.length > 30, `the owner name keeps the 40 bound: ${keptOwner.length}`)
+  assert.ok(Buffer.from(keptOwner, 'utf8').equals(Buffer.from(ownerName, 'utf8').subarray(0, Buffer.byteLength(keptOwner))), 'the owner name is a prefix of what the peer published, byte for byte')
 })
 
 test('cleanRemote sanitizes peer name, homeName and owner at the record boundary (#75)', async (t) => {

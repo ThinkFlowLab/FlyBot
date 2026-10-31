@@ -27,6 +27,7 @@ import { ownEntry } from './store.js'
 //   no sender         the owner or the system: allowed
 
 import { currentParticipants, homesOf } from './room-membership.js'
+import { cut } from '../shared/text-boundary.js'
 
 export const POLICY = 'owner-policy'
 
@@ -154,7 +155,7 @@ export function mayShareRoom(state, room, botId) {
   return false
 }
 
-const label = value => String(value ?? '').replace(/\p{Cc}/gu, ' ').trim().slice(0, 60)
+const label = value => cut(String(value ?? '').replace(/\p{Cc}/gu, ' ').trim(), 60).text
 
 // The people and Bots in one room that are not the Bot's owner's own (a friend's Bot, a person who
 // is not its owner, a Bot of another owner, a room joined by code), as short labels.

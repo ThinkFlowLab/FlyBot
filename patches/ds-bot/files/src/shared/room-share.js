@@ -2,6 +2,8 @@
 // Bot Social has no FlyBot-group record: the owner's FlyBot parses this on inbox receive
 // and projects an inbound-share room. Keep the marker unique so ordinary chat never matches.
 
+import { cut } from './text-boundary.js'
+
 export const ROOM_SHARE_MARK = 'FLYBOT-ROOM-SHARE'
 
 // #852: `ask` is the invitee knocking at a local room's link (or accepting it with `accept: true`);
@@ -11,7 +13,7 @@ const OPS = new Set(['join', 'leave', 'line', 'ask', 'invite'])
 const TICKET_SHAPE = /^[A-Za-z0-9_-]{16,64}$/
 
 function clip(value, max = 60) {
-  return String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, max)
+  return cut(String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim(), max).text
 }
 
 // #904: a room's roster entry. A Bot inside a real room is a handful, not a crowd; the cap keeps one

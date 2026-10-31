@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
-import { hasAnyGrant, hasGrant, reach } from '../src/host/reach.js'
+import { hasAnyGrant, hasGrant, othersInRoom, reach } from '../src/host/reach.js'
 
 const bot = (id, ownerId, extra = {}) => ({ id, sessionId: id, name: id.toUpperCase(), instructions: '', createdAt: 1, ownerId, ...extra })
 
@@ -374,4 +374,21 @@ test('replacing the designated Chief does not grant the new one', async (t) => {
   assert.equal(fb.bot.hasAnyGrant('a2'), false)
   assert.equal(fb.bot.hasAnyGrant('a'), false)
   assert.deepEqual(events, [])
+})
+
+// #1923: `othersInRoom` labels a friend's Bot for the model, so the 60 bound must not split a character.
+test('a peer label for a room is cut on a code point boundary (#1923)', () => {
+  const straddle = 'a'.repeat(59) + '😀tail'
+  const state = team()
+  state.rooms = {
+    r: {
+      id: 'r', members: ['a'],
+      participants: [{ kind: 'bot', remote: true, id: '@peer.bob.home', handle: '@peer.bob.home', displayName: straddle }],
+    },
+  }
+  const [label] = othersInRoom(state, state.rooms.r, state.bots.a)
+  assert.equal(label.isWellFormed(), true, `the label is not well formed: ${JSON.stringify(label.slice(-2))}`)
+  assert.equal(label.includes('😀'), false, 'the straddling emoji is dropped whole')
+  assert.ok(label.length <= 60 && label.length > 50, `the label keeps the 60 bound: ${label.length}`)
+  assert.ok(Buffer.from(label, 'utf8').equals(Buffer.from(straddle, 'utf8').subarray(0, Buffer.byteLength(label))), 'the label is a prefix of the published name, byte for byte')
 })

@@ -863,6 +863,33 @@ test('room-share envelope round-trips join, line and leave', () => {
   assert.equal(parseRoomShare('hello there'), undefined)
 })
 
+// #1923: these fields cross an owner boundary, so the envelope's own bounds must never split a character.
+test('a room-share envelope clips peer names on a code point boundary (#1923)', () => {
+  const name = 'a'.repeat(59) + '😀tail'
+  const handle = '@' + 'b'.repeat(118) + '😀tail'
+  const packed = encodeRoomShare({
+    op: 'join', roomId: 'war', name, inviterName: name,
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home', seq: 1,
+    roster: [{ handle, name }],
+  })
+  const parsed = parseRoomShare(packed)
+  assert.equal(parsed.op, 'join')
+  const cases = [
+    ['name', parsed.name, name, 60],
+    ['inviterName', parsed.inviterName, name, 60],
+    ['roster[0].handle', parsed.roster[0].handle, handle, 120],
+    ['roster[0].name', parsed.roster[0].name, name, 60],
+  ]
+  for (const [field, kept, source, max] of cases) {
+    assert.equal(typeof kept, 'string', `${field} is in the envelope: ${JSON.stringify(parsed)}`)
+    assert.equal(kept.isWellFormed(), true, `${field} is not well formed: ${JSON.stringify(kept.slice(-2))}`)
+    assert.equal(kept.includes('😀'), false, `${field} drops the straddling emoji whole`)
+    assert.ok(kept.length <= max, `${field} keeps the ${max} bound: ${kept.length}`)
+    assert.ok(kept.length > max - 10, `${field} does not drop the whole field for one character: ${kept.length}`)
+    assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(source, 'utf8').subarray(0, Buffer.byteLength(kept))), `${field} is a prefix of what the sender meant, byte for byte`)
+  }
+})
+
 test('applyInboundRoomShare projects a join with no chat line, then a leave hides it', async (t) => {
   const { rt } = host(t, TEAM)
   await rt.load()

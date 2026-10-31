@@ -10,6 +10,7 @@ import { currentParticipants } from './room-membership.js'
 import { questionReply, replyText } from './parts.js'
 import { OTHER, settled } from './turn-origin.js'
 import { cleanName } from './delivery.js'
+import { cut } from '../shared/text-boundary.js'
 import { retiredBot } from './store.js'
 
 // A run Bot (ephemeral) is not a team member: every tool below has an effect that reaches past
@@ -81,7 +82,7 @@ export function install(rt) {
     const members = room.members.map(rt.botOf).filter(Boolean)
       .map(bot => `${bot.name}${bot.id === room.admin ? ' (admin)' : ''}${bot.id === self ? ' (you)' : ''}`)
     const remotes = (room.participants ?? []).filter(p => p.remote && p.leftSeq === undefined)
-      .map(p => `${String(p.displayName ?? p.handle).replace(/[\u0000-\u001f\u007f-\u009f[\]"<>`]/g, '').slice(0, 60)} (${String(p.ownerName ?? p.ownerHome ?? 'friend').replace(/[\u0000-\u001f\u007f-\u009f[\]"<>`]/g, '').slice(0, 40)}'s Bot)`)
+      .map(p => `${cut(String(p.displayName ?? p.handle).replace(/[\u0000-\u001f\u007f-\u009f[\]"<>`]/g, ''), 60).text} (${cut(String(p.ownerName ?? p.ownerHome ?? 'friend').replace(/[\u0000-\u001f\u007f-\u009f[\]"<>`]/g, ''), 40).text}'s Bot)`)
     const parts = [
       `members: ${[...members, ...remotes].join(', ')}`,
       room.mode === 'admin' && room.admin ? 'plain messages go to the admin first' : 'every member replies in turn',

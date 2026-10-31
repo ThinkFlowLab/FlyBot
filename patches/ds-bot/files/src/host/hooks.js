@@ -24,6 +24,7 @@ import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
 import { codePoints } from './text.js'
+import { cut } from '../shared/text-boundary.js'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 
 export const FLYBOT_API_VERSION = 1
@@ -44,7 +45,7 @@ const clone = value => (value === undefined ? undefined : JSON.parse(JSON.string
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 // Peer-controlled labels (display name, home, owner): strip @ so they cannot look
 // like a mention of another Bot, strip controls/newlines, keep a 60-char cap (#75).
-export const cleanPublishedName = (value) => String(value ?? '').replace(/@/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
+export const cleanPublishedName = (value) => cut(String(value ?? '').replace(/@/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim(), 60).text
 // A remote address: { kind: 'remote', handle, home? } or a '@handle' string. Remote Bots
 // are never in bot.list(); their handle is '@<bot>.<home>' (home '@<home>') or a plain
 // per-bot identity.
