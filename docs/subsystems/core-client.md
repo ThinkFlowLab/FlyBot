@@ -288,8 +288,12 @@ box reads the caller's own `assistantMine.off` from `project-read` (#1845), neve
 and a Save that changes nothing leaves the stored value and the 09:00 task alone. Its memory box sends one of
 the two kinds the host knows: the free text is recorded as a `decision`, never as a third kind
 `project-memory-write` would refuse, so the success line (`Memory saved.`) is reachable. The status line
-quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese. Tests:
-`core/test/project-board-panels.test.js`.
+quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese: since
+#1847 the host refuses an empty entry and one over 600 characters at that write door, and `i18n.js`
+carries both sentences — the exact key for `A Project memory entry needs text` and the number-carrying
+`[/^A Project memory entry is at most (\d+) characters$/, …]` — so a zh box that was empty or over the
+cap reads 项目记忆条目需要文字 / 项目记忆条目最多 600 个字符 instead of `Memory saved.`, with no row
+added. Tests: `core/test/project-board-panels.test.js`.
 
 The **Members** panel lists every owner and every member the board names, and since #1859 also the
 Project's own Chief as its own row (`data-member-role="chief"`), read from `chief` on the `project-read`

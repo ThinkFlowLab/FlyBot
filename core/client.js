@@ -1488,10 +1488,13 @@ var HOST_ERRORS = [
   [/^Memory cannot change now: [\s\S]*$/, "现在不能修改记忆：另一个 dsh 正在使用这个 Bot 团队"],
   // The Project settings panel quotes the host's refusal as it is, so a zh reader reads it in
   // Chinese. Only refusals that panel's three write paths can reach are here (#1820): the owner
-  // gate on all three, an empty member id on Bind/Unbind, and a stale Project id. The id rule is
-  // last and takes one token, so it can never claim a longer "Unknown Project …" sentence.
+  // gate on all three, an empty member id on Bind/Unbind, a stale Project id, and — since #1847 —
+  // the memory box's two bounds. The id rule is last and takes one token, so it can never claim a
+  // longer "Unknown Project …" sentence.
   [/^Only the owner of this Project may change it$/, "只有这个项目的主人可以修改"],
   [/^A binding needs the member id$/, "绑定需要 member id"],
+  [/^A Project memory entry needs text$/, "项目记忆条目需要文字"],
+  [/^A Project memory entry is at most (\d+) characters$/, "项目记忆条目最多 $1 个字符"],
   [/^Unknown Project (\S+)$/, "找不到项目 $1"]
 ];
 var HOST_ZH = {

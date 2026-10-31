@@ -15,6 +15,7 @@
 // on the assistant Session through the host's schedule path, and `project-delete` removes it with
 // the Project. A missed beat is DSH's, and it posts nothing.
 import { defineTool } from './tool-schema.js'
+import { MAX_ENTRY } from './constants.js'
 import { listProjectState } from './project-state.js'
 import { output } from './tools.js'
 import { inQuietHours, clockIn, quietHoursOf, readQuietHours } from '../shared/quiet-hours.js'
@@ -24,7 +25,9 @@ export const DIGEST_ZONE = 'Asia/Shanghai'
 export const DIGEST_TIME = '09:00'
 export const DIGEST_TITLE = '09:00 Project digest'
 export const DIGEST_PROMPT = 'Build today\'s Project digest: call project_digest once. It answers whether today already has one.'
-export const MAX_ENTRY = 600
+// The bound itself is in `constants.js` (#1847), beside the other limits host modules share,
+// because the store's write door enforces it too; this re-export keeps the assistant's own name.
+export { MAX_ENTRY }
 export const MEMORY_KINDS = ['decision', 'question']
 // At most this many cards that need one owner's decision in one digest (#1733): a digest is a
 // short list of things to decide, not the board. One constant, not a setting.

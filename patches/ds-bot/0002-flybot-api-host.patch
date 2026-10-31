@@ -88,6 +88,16 @@ diff --git a/index.js b/index.js
 diff --git a/src/host/constants.js b/src/host/constants.js
 --- a/src/host/constants.js
 +++ b/src/host/constants.js
+@@ -21,6 +21,9 @@ export const OCR_CACHE_MAX = 500
+ export const MAX_AVATAR_IMAGE = 160_000
+ export const ROUTE = '/api/bot'
+ export const MAX_HOPS = 6
++// The bound on one Project memory entry (#1847): one value, shared by the assistant writer and the
++// store's `appendProjectMemory`, so no writer can store a blank entry or silently cut a long one.
++export const MAX_ENTRY = 600
+ // Bot requests a Bot's own chat may hold unread; past this the Bot is most likely
+ // stuck, and more messages only pile up behind it.
+ export const MAX_UNREAD_REQUESTS = 10
 @@ -48,15 +48,14 @@ export const AGENT_SESSION_TITLE_MAX = 80
  // Every tool this plugin registers for Bots. `read_browser` only exists in the
  // Desktop profile, so a restriction filters this list down to registered names.
@@ -670,7 +680,8 @@ diff --git a/src/host/store.js b/src/host/store.js
 +import { constants, mkdirSync, statSync } from 'node:fs'
  import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
- import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
+-import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
++import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
  import { homeLock } from './home-lock.js'
 +import { openJournal } from './journal.js'
  import { currentColor, normalize, unquote } from './text.js'
@@ -885,7 +896,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,465 @@ export function install(rt) {
+@@ -161,12 +161,472 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1090,11 +1101,18 @@ diff --git a/src/host/store.js b/src/host/store.js
 +  const appendProjectMemory = (id, kind, entry = {}) => {
 +    const project = requireProject(id)
 +    if (kind !== 'decision' && kind !== 'question') throw projectRefusal(`Unknown Project memory kind ${String(kind ?? '')}`)
++    // #1847: this is the one door into a Project's memory, so the bound the assistant writer states
++    // is enforced here too. Before this, an endpoint caller could store an empty entry or have a
++    // long one cut to `MAX_ENTRY` without being told; a refusal leaves the table and `updatedAt` as
++    // they were.
++    const entryText = projectText(entry.text)
++    if (entryText === '') throw projectRefusal('A Project memory entry needs text')
++    if (entryText.length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
 +    const table = memoryTable(project)
 +    const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
 +    const record = ownerRow(table, ownerId, project)
 +    const list = kind === 'decision' ? record.decisions : record.questions
-+    list.push({ text: projectText(entry.text, 600), at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
++    list.push({ text: entryText, at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
 +    mirrorOwner(table, project, ownerId, record)
 +    project.updatedAt = Math.max(project.updatedAt, Date.now())
 +    return ownerView(record)

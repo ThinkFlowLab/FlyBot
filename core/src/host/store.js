@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { constants, mkdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
+import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
 import { currentColor, normalize, unquote } from './text.js'
@@ -512,11 +512,18 @@ export function install(rt) {
   const appendProjectMemory = (id, kind, entry = {}) => {
     const project = requireProject(id)
     if (kind !== 'decision' && kind !== 'question') throw projectRefusal(`Unknown Project memory kind ${String(kind ?? '')}`)
+    // #1847: this is the one door into a Project's memory, so the bound the assistant writer states
+    // is enforced here too. Before this, an endpoint caller could store an empty entry or have a
+    // long one cut to `MAX_ENTRY` without being told; a refusal leaves the table and `updatedAt` as
+    // they were.
+    const entryText = projectText(entry.text)
+    if (entryText === '') throw projectRefusal('A Project memory entry needs text')
+    if (entryText.length > MAX_ENTRY) throw projectRefusal(`A Project memory entry is at most ${MAX_ENTRY} characters`)
     const table = memoryTable(project)
     const ownerId = projectText(entry.ownerId, 120) || primaryOwner(project)
     const record = ownerRow(table, ownerId, project)
     const list = kind === 'decision' ? record.decisions : record.questions
-    list.push({ text: projectText(entry.text, 600), at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
+    list.push({ text: entryText, at: Number(entry.at) || Date.now(), ...(projectText(entry.by, 120) === '' ? {} : { by: projectText(entry.by, 120) }) })
     mirrorOwner(table, project, ownerId, record)
     project.updatedAt = Math.max(project.updatedAt, Date.now())
     return ownerView(record)

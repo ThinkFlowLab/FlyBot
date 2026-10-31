@@ -318,6 +318,68 @@ test('a memory kind the host does not know writes nothing, and the panel quotes 
   }
 })
 
+// #1847: the panel is not the only writer of a Project's memory. The endpoint used to store a
+// blank entry and silently cut one over 600 characters, while the assistant writer refused both.
+// The bound now lives at `appendProjectMemory`, the one door every writer goes through.
+test('#1847: the memory write door refuses empty and over-long text and stores 600 exactly', async (t) => {
+  const rt = await startHost(t)
+  const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
+  const before = (await call('project-read', { id: 'project-1' })).project
+
+  await assert.rejects(() => call('project-memory-write', { id: 'project-1', kind: 'decision', text: '' }),
+    error => error.code === 'bot/invalid' && error.message === 'A Project memory entry needs text')
+  await assert.rejects(() => call('project-memory-write', { id: 'project-1', kind: 'decision', text: 'x'.repeat(601) }),
+    error => error.code === 'bot/invalid' && error.message === 'A Project memory entry is at most 600 characters')
+
+  let memory = (await call('project-memory', { id: 'project-1' })).memory
+  assert.deepEqual(memory.decisions, [], 'a refused write leaves no entry behind')
+  assert.deepEqual(memory.questions, [], 'and it does not land in the other list either')
+  const after = (await call('project-read', { id: 'project-1' })).project
+  assert.equal(after.updatedAt, before.updatedAt, 'a refused write does not touch the Project')
+
+  const exact = 'x'.repeat(600)
+  await call('project-memory-write', { id: 'project-1', kind: 'decision', text: exact })
+  memory = (await call('project-memory', { id: 'project-1' })).memory
+  assert.equal(memory.decisions.length, 1, 'the entry at the cap is accepted')
+  assert.equal(memory.decisions[0].text.length, 600, 'and stored whole, not cut')
+  assert.equal(memory.decisions[0].text, exact, 'the text is what was sent')
+})
+
+// The other half of #1847: the panel quotes the host's new refusals in Chinese, so the reader sees
+// why Save did nothing instead of a success line, and no row is added.
+test('#1847: the panel shows the Chinese refusal for an empty or over-long memory box', async (t) => {
+  const rt = await startHost(t)
+  const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    // The hook slots outlive a render, so the box starts where the previous test left it; empty it
+    // explicitly before pressing Save.
+    let tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    all(tree).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value: '' } })
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    byAction(tree, 'project-memory-save').props.onClick()
+    await settle()
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    let status = all(tree).find(node => node.props?.role === 'status')
+    assert.equal(text(status), '项目记忆条目需要文字')
+    assert.ok(!text(status).includes('Memory saved.'), 'a refusal is never painted as a success')
+
+    const note = all(tree).find(node => node.props?.id === 'bt-project-note')
+    note.props.onChange({ target: { value: 'x'.repeat(601) } })
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    byAction(tree, 'project-memory-save').props.onClick()
+    await settle()
+    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    status = all(tree).find(node => node.props?.role === 'status')
+    assert.equal(text(status), '项目记忆条目最多 600 个字符')
+
+    const memory = (await call('project-memory', { id: 'project-1' })).memory
+    assert.deepEqual(memory.decisions, [], 'neither refusal adds a row')
+  } finally {
+    off()
+  }
+})
+
 test("the settings panel shows the host's refusal instead of pretending the save landed", async () => {
   resetSlots()
   const refused = Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' })
