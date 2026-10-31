@@ -384,6 +384,12 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 - A line arriving while a turn runs is not held: it is delivered into that run as a **steer** (`mode: 'steer'`, #707) so the running turn reads it at its next step and can change direction. The window flushes what it holds first, in arrival order, and those held lines steer too once a turn is running, so a line can never overtake an older one into the same run; the new line opens its own turn only when no turn runs (`mode: 'queue'`). A Bot-to-Bot `deliver` never waits behind the window — it has its own queue and dedupe (#641).
 - A group room is not collected: its line must reach the Session at once so a running round can drain it (`group_relay`, #299), so `settleLine` is only reached when `rt.roomOf(sessionId)` is undefined. The pending timer is cleared on dispose. Covered by `core/test/settle.test.js`.
 
+### Own-chat reads say what a cap left out (#1906)
+
+- `read_own_chat` shows at most `OWN_CHAT_SEARCH` (20) search hits, and `OWN_CHAT_READ` (12) latest messages on a bare read. Both caps stay where they are, but the answer now says what it left out: a capped search ends with `N more not shown; search with narrower words, or read around one of these anchors.`, and a capped bare read's header reads `Your own chat (newest 12 of 15, oldest first)`. Exactly at the cap nothing was left out, so nothing is added.
+- `chat-index.js` returns the count next to the lines — `searchOwnChat` answers `{ lines, every, more }`, `latestOwnChat` `{ lines, more }` — instead of the lines alone. A search counts the same match in all only once its limit was filled (`termCountQuery`; the per-term fallback uses `anyTermCountQuery`, which unions one branch per term so a line matching two counts once), and a latest read counts the part's visible lines (`countAll` / `countVisible`, the latter leaving out the asking turn). Without the SQLite index the log scan counts every match while it reads, because that count is the only way to say what was left out.
+- Covered by `core/test/group-work.test.js`; `core/test/history.test.js` still pins `termQuery`'s SQL.
+
 ### Out-of-app delivery, first half (#355)
 
 - A reminder has to reach the owner with the desktop app closed, so its delivery cannot be a client toast. `src/host/notify.js` is the adapter that half needs, and nothing calls it yet: `schedules.js` wiring is the second half, once a real channel exists.

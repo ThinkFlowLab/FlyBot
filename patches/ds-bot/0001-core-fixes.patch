@@ -3195,6 +3195,48 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 --- a/src/host/chat-index.js
 +++ b/src/host/chat-index.js
+@@ -21,8 +21,9 @@ const INDEX_TIMEOUT_MS = 120_000
+ const SEAL_AFTER_MS = 60_000
+ 
+ const likeOf = term => `%${term.replace(/[\\%_]/g, char => `\\${char}`)}%`
+-// Each term is a quoted FTS5 phrase when trigrams can match it, else a LIKE filter.
+-export function termQuery(terms, sessions, limit, hidden) {
++// The WHERE clause a term query and its count share. Each term is a quoted FTS5 phrase
++// when trigrams can match it, else a LIKE filter.
++function termWhere(terms, sessions, hidden) {
+   const long = terms.filter(term => [...term].length >= 3)
+   const short = terms.filter(term => [...term].length < 3)
+   const where = ['session IN (SELECT value FROM json_each(?))']
+@@ -39,7 +39,28 @@ export function termQuery(terms, sessions, limit, hidden) {
+     where.push("text LIKE ? ESCAPE '\\'")
+     args.push(likeOf(term))
+   }
+-  return { sql: `SELECT text, session, seq, time, who FROM lines WHERE ${where.join(' AND ')} ORDER BY ${long.length > 0 ? 'rank' : 'time DESC'} LIMIT ${limit}`, args }
++  return { where, args, ranked: long.length > 0 }
++}
++
++export function termQuery(terms, sessions, limit, hidden) {
++  const { where, args, ranked } = termWhere(terms, sessions, hidden)
++  return { sql: `SELECT text, session, seq, time, who FROM lines WHERE ${where.join(' AND ')} ORDER BY ${ranked ? 'rank' : 'time DESC'} LIMIT ${limit}`, args }
++}
++
++// How many lines the same query matches in all, so a capped read can say what it left out (#1906).
++export function termCountQuery(terms, sessions, hidden) {
++  const { where, args } = termWhere(terms, sessions, hidden)
++  return { sql: `SELECT COUNT(*) AS n FROM lines WHERE ${where.join(' AND ')}`, args }
++}
++
++// The same count where no line holds every term and the read falls back to the terms a
++// line has most of: one branch per term, unioned so a line matching two counts once (#1906).
++export function anyTermCountQuery(terms, sessions, hidden) {
++  const branches = terms.map(term => termWhere([term], sessions, hidden))
++  return {
++    sql: `SELECT COUNT(*) AS n FROM (${branches.map(branch => `SELECT session, seq FROM lines WHERE ${branch.where.join(' AND ')}`).join(' UNION ')})`,
++    args: branches.flatMap(branch => branch.args),
++  }
+ }
+ 
+ export function install(rt) {
 @@ -82,7 +82,7 @@ export function install(rt) {
        // A damaged file is rebuilt from the logs once.
        for (const fresh of [false, true]) {
@@ -3204,6 +3246,101 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
            return createIndex(new DatabaseSync(indexPath))
          } catch (error) {
            if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
+@@ -118,6 +118,8 @@ export function install(rt) {
+         insert: db.prepare('INSERT INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
+         before: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq < ? ORDER BY seq DESC LIMIT ?'),
+         from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
++        countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
++        countVisible: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?)'),
+       }
+     } catch (error) {
+       db.close()
+@@ -202,19 +202,21 @@ export function install(rt) {
+   }
+ 
+   // Messages with all the words, best first; with none of them having all, those with
+-  // the most of them. Shown oldest first.
++  // the most of them. Shown oldest first. `more` is how many hits the cap left out (#1906).
+   async function searchOwnChat(botId, query, { askingId, limit = OWN_CHAT_SEARCH } = {}) {
+     const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
+     const { index, parts, hidden } = await indexedParts(botId, askingId)
+-    if (index === null) return { lines: await scanOwnChat(botId, query, limit), every: true }
++    if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
+     const sessions = parts.map(part => part.sessionId)
+     const run = (wanted, max) => {
+       const { sql, args } = termQuery(wanted, sessions, max, hidden)
+       return index.db.prepare(sql).all(...args)
+     }
++    const count = query => index.db.prepare(query.sql).get(...query.args).n
+     const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
+     let rows = run(terms, limit)
+     let every = true
++    let total
+     if (rows.length === 0 && terms.length > 1) {
+       every = false
+       const found = new Map()
+@@ -227,11 +227,15 @@ export function install(rt) {
+         }
+       }
+       rows = [...found.values()].sort((a, b) => (b.count - a.count) || (b.row.time - a.row.time)).slice(0, limit).map(hit => hit.row)
++      if (rows.length === limit) total = count(anyTermCountQuery(terms, sessions, hidden))
++    } else if (rows.length === limit) {
++      total = count(termCountQuery(terms, sessions, hidden))
+     }
+-    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every }
++    const more = total === undefined ? 0 : Math.max(0, total - rows.length)
++    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every, more }
+   }
+ 
+-  // The latest messages across all parts, oldest first.
++  // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
+   async function latestOwnChat(botId, { askingId, limit = OWN_CHAT_READ } = {}) {
+     const { index, parts, hidden } = await indexedParts(botId, askingId)
+     if (index === null) return scanOwnChat(botId, '', limit)
+@@ -241,7 +241,11 @@ export function install(rt) {
+       rows.push(...index.before.all(part.sessionId, below, limit - rows.length))
+       if (rows.length >= limit) break
+     }
+-    return rows.reverse().map(row => rowLine(parts, row))
++    const sessions = parts.map(part => part.sessionId)
++    const total = hidden === undefined
++      ? index.countAll.get(JSON.stringify(sessions)).n
++      : index.countVisible.get(JSON.stringify(sessions), hidden.session, hidden.from).n
++    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length) }
+   }
+ 
+   // The messages around an anchor, in its part.
+@@ -265,15 +265,18 @@ export function install(rt) {
+     const parts = rt.partsOf(botId)
+     const signal = AbortSignal.timeout(HISTORY_TIMEOUT_MS)
+     const lines = []
++    let total = 0
+     for (const part of [...parts].reverse()) {
+       for await (const line of rt.partLines(part.sessionId, signal)) {
+         if (wanted !== '' && !line.text.toLowerCase().includes(wanted)) continue
++        // The rest of the log is still read, because only the count of what was left out
++        // lets a capped read say so (#1906).
++        total += 1
++        if (lines.length >= limit) continue
+         lines.push(`[${parts.length > 1 ? `part ${part.number} · ` : ''}${rt.clock(line.time)}] ${excerpt(line.text, wanted)}`)
+-        if (lines.length >= limit) break
+       }
+-      if (lines.length >= limit) break
+     }
+-    return lines.reverse()
++    return { lines: lines.reverse(), more: Math.max(0, total - lines.length) }
+   }
+ 
+   // The parts of a Bot's own chat, for the model: when each ran.
+@@ -281,7 +281,7 @@ export function install(rt) {
+ 
+   async function ownChatBrief(member) {
+     let lines = []
+-    try { lines = await latestOwnChat(member.id, { limit: OWN_CHAT_BRIEF }) } catch (error) { rt.warn('ds-bot: brief for %s failed: %s', member.name, error) }
++    try { lines = (await latestOwnChat(member.id, { limit: OWN_CHAT_BRIEF })).lines } catch (error) { rt.warn('ds-bot: brief for %s failed: %s', member.name, error) }
+     return [
+       'Your own chat with the user so far (latest messages, oldest first; private, so share only what the group needs):',
+       lines.length > 0 ? lines.join('\n') : 'Nothing yet.',
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
@@ -9193,6 +9330,42 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  
  // Chief, the admin of group 'r1', speaks there from 'ga'; Writer from 'gb'; Tester from 'gc'.
  const seed = (room = {}) => ({
+@@ -25,7 +25,7 @@ const seed = (room = {}) => ({
+   revision: 0,
+ })
+ 
+-async function start(t, room) {
++async function start(t, room, history = {}) {
+   const home = mkdtempSync(join(tmpdir(), 'ds-bot-work-'))
+   writeFileSync(join(home, 'state.json'), JSON.stringify(seed(room)))
+   const ctx = fakeContext()
+@@ -46,14 +46,24 @@ async function start(t, room) {
+         },
+       }
+       const keep = (message) => { calls.push(message); held.push(message) }
+-      agents.set(sessionId, { session: { id: sessionId }, calls, cancelled, inbox, followup: keep, steer: keep, cancel(reason) { cancelled.push(reason) } })
++      agents.set(sessionId, { session: { id: sessionId, seq: (history[sessionId]?.at(-1)?.seq ?? -1) + 1 }, calls, cancelled, inbox, followup: keep, steer: keep, cancel(reason) { cancelled.push(reason) } })
+     }
+     return agents.get(sessionId)
+   }
+   Object.assign(ctx, {
+     llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
+     workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
+-    sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async sessionId => ({ agent: agentOf(sessionId) }), selectModel: async () => {} },
++    sessionController: {
++      create: async () => ({ sessionId: 's1' }),
++      resolveAgent: async sessionId => ({ agent: agentOf(sessionId) }),
++      selectModel: async () => {},
++      // What the durable log holds for a Session: `history` seeds it, oldest first.
++      page: async ({ address, beforeSeq, maxMessages } = {}) => {
++        const all = (history[address?.sessionId] ?? []).filter(event => beforeSeq === undefined || event.seq < beforeSeq)
++        const records = maxMessages === undefined ? all : all.slice(-maxMessages)
++        return { records: records.map(event => ({ event })), hasMore: records.length < all.length }
++      },
++    },
+     sessionTitle: { rename: async () => {} },
+     sessions: { flush: async () => {} },
+   })
 @@ -113,6 +113,7 @@ const settle = async (check) => {
    while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
    assert.ok(check(), 'condition not reached')
@@ -9201,7 +9374,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
  
-@@ -287,3 +287,169 @@ test('members still at work show in the team view and in the prompts of the othe
+@@ -287,3 +287,205 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
@@ -9370,6 +9543,42 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  // before this exemption (room-context.js). So the exemption itself is pinned on the gate's own decision.
 +  const long = { who: 'Writer', botId: 'b', kind: 'notice', text: STATUS_ESSAY }
 +  assert.equal(prepareRoomLine(long), long)
++})
++
++// #1906: a search shows its best 20 hits and a bare read the latest 12, and neither said
++// how much it left out, so a user asking "didn't we decide X?" could think the deciding
++// message was gone. The caps stay; the answer says what it did not show.
++const chatLine = (seq, text) => ({ type: 'user/message', seq, time: 1_000 + seq, data: { content: [{ type: 'text', text }], source: { kind: 'user' } } })
++const shownLines = out => out.split('\n').filter(line => line.startsWith('['))
++
++test('a search that hits its cap says how many hits it did not show (#1906)', async (t) => {
++  const many = { b: Array.from({ length: 25 }, (_, seq) => chatLine(seq, `message ${seq}: the merge queue slipped again`)) }
++  const host = await start(t, undefined, many)
++  const out = await host.tool('read_own_chat', { query: 'merge' }, 'b')
++  assert.equal(shownLines(out).length, 20)
++  assert.match(out, /5 more not shown/)
++
++  // Exactly at the cap, nothing was left out: no extra clause.
++  const exact = { b: Array.from({ length: 20 }, (_, seq) => chatLine(seq, `message ${seq}: the merge queue slipped again`)) }
++  const atCap = await start(t, undefined, exact)
++  const capOut = await atCap.tool('read_own_chat', { query: 'merge' }, 'b')
++  assert.equal(shownLines(capOut).length, 20)
++  assert.doesNotMatch(capOut, /more not shown/)
++})
++
++test('a bare read that hits its cap says newest 12 of 15 (#1906)', async (t) => {
++  const history = { b: Array.from({ length: 15 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
++  const host = await start(t, undefined, history)
++  const out = await host.tool('read_own_chat', {}, 'b')
++  assert.equal(shownLines(out).length, 12)
++  assert.match(out, /newest 12 of 15/)
++
++  // Exactly at the cap, the whole part was shown: no extra clause.
++  const exact = { b: Array.from({ length: 12 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
++  const atCap = await start(t, undefined, exact)
++  const capOut = await atCap.tool('read_own_chat', {}, 'b')
++  assert.equal(shownLines(capOut).length, 12)
++  assert.doesNotMatch(capOut, /newest 12 of/)
 +})
 diff --git a/test/history.test.js b/test/history.test.js
 --- a/test/history.test.js

@@ -21,8 +21,9 @@ const INDEX_TIMEOUT_MS = 120_000
 const SEAL_AFTER_MS = 60_000
 
 const likeOf = term => `%${term.replace(/[\\%_]/g, char => `\\${char}`)}%`
-// Each term is a quoted FTS5 phrase when trigrams can match it, else a LIKE filter.
-export function termQuery(terms, sessions, limit, hidden) {
+// The WHERE clause a term query and its count share. Each term is a quoted FTS5 phrase
+// when trigrams can match it, else a LIKE filter.
+function termWhere(terms, sessions, hidden) {
   const long = terms.filter(term => [...term].length >= 3)
   const short = terms.filter(term => [...term].length < 3)
   const where = ['session IN (SELECT value FROM json_each(?))']
@@ -39,7 +40,28 @@ export function termQuery(terms, sessions, limit, hidden) {
     where.push("text LIKE ? ESCAPE '\\'")
     args.push(likeOf(term))
   }
-  return { sql: `SELECT text, session, seq, time, who FROM lines WHERE ${where.join(' AND ')} ORDER BY ${long.length > 0 ? 'rank' : 'time DESC'} LIMIT ${limit}`, args }
+  return { where, args, ranked: long.length > 0 }
+}
+
+export function termQuery(terms, sessions, limit, hidden) {
+  const { where, args, ranked } = termWhere(terms, sessions, hidden)
+  return { sql: `SELECT text, session, seq, time, who FROM lines WHERE ${where.join(' AND ')} ORDER BY ${ranked ? 'rank' : 'time DESC'} LIMIT ${limit}`, args }
+}
+
+// How many lines the same query matches in all, so a capped read can say what it left out (#1906).
+export function termCountQuery(terms, sessions, hidden) {
+  const { where, args } = termWhere(terms, sessions, hidden)
+  return { sql: `SELECT COUNT(*) AS n FROM lines WHERE ${where.join(' AND ')}`, args }
+}
+
+// The same count where no line holds every term and the read falls back to the terms a
+// line has most of: one branch per term, unioned so a line matching two counts once (#1906).
+export function anyTermCountQuery(terms, sessions, hidden) {
+  const branches = terms.map(term => termWhere([term], sessions, hidden))
+  return {
+    sql: `SELECT COUNT(*) AS n FROM (${branches.map(branch => `SELECT session, seq FROM lines WHERE ${branch.where.join(' AND ')}`).join(' UNION ')})`,
+    args: branches.flatMap(branch => branch.args),
+  }
 }
 
 export function install(rt) {
@@ -118,6 +140,8 @@ export function install(rt) {
         insert: db.prepare('INSERT INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
         before: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq < ? ORDER BY seq DESC LIMIT ?'),
         from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
+        countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
+        countVisible: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?)'),
       }
     } catch (error) {
       db.close()
@@ -202,19 +226,21 @@ export function install(rt) {
   }
 
   // Messages with all the words, best first; with none of them having all, those with
-  // the most of them. Shown oldest first.
+  // the most of them. Shown oldest first. `more` is how many hits the cap left out (#1906).
   async function searchOwnChat(botId, query, { askingId, limit = OWN_CHAT_SEARCH } = {}) {
     const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
     const { index, parts, hidden } = await indexedParts(botId, askingId)
-    if (index === null) return { lines: await scanOwnChat(botId, query, limit), every: true }
+    if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
     const sessions = parts.map(part => part.sessionId)
     const run = (wanted, max) => {
       const { sql, args } = termQuery(wanted, sessions, max, hidden)
       return index.db.prepare(sql).all(...args)
     }
+    const count = query => index.db.prepare(query.sql).get(...query.args).n
     const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
     let rows = run(terms, limit)
     let every = true
+    let total
     if (rows.length === 0 && terms.length > 1) {
       every = false
       const found = new Map()
@@ -227,11 +253,15 @@ export function install(rt) {
         }
       }
       rows = [...found.values()].sort((a, b) => (b.count - a.count) || (b.row.time - a.row.time)).slice(0, limit).map(hit => hit.row)
+      if (rows.length === limit) total = count(anyTermCountQuery(terms, sessions, hidden))
+    } else if (rows.length === limit) {
+      total = count(termCountQuery(terms, sessions, hidden))
     }
-    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every }
+    const more = total === undefined ? 0 : Math.max(0, total - rows.length)
+    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every, more }
   }
 
-  // The latest messages across all parts, oldest first.
+  // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
   async function latestOwnChat(botId, { askingId, limit = OWN_CHAT_READ } = {}) {
     const { index, parts, hidden } = await indexedParts(botId, askingId)
     if (index === null) return scanOwnChat(botId, '', limit)
@@ -241,7 +271,11 @@ export function install(rt) {
       rows.push(...index.before.all(part.sessionId, below, limit - rows.length))
       if (rows.length >= limit) break
     }
-    return rows.reverse().map(row => rowLine(parts, row))
+    const sessions = parts.map(part => part.sessionId)
+    const total = hidden === undefined
+      ? index.countAll.get(JSON.stringify(sessions)).n
+      : index.countVisible.get(JSON.stringify(sessions), hidden.session, hidden.from).n
+    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length) }
   }
 
   // The messages around an anchor, in its part.
@@ -265,15 +299,18 @@ export function install(rt) {
     const parts = rt.partsOf(botId)
     const signal = AbortSignal.timeout(HISTORY_TIMEOUT_MS)
     const lines = []
+    let total = 0
     for (const part of [...parts].reverse()) {
       for await (const line of rt.partLines(part.sessionId, signal)) {
         if (wanted !== '' && !line.text.toLowerCase().includes(wanted)) continue
+        // The rest of the log is still read, because only the count of what was left out
+        // lets a capped read say so (#1906).
+        total += 1
+        if (lines.length >= limit) continue
         lines.push(`[${parts.length > 1 ? `part ${part.number} · ` : ''}${rt.clock(line.time)}] ${excerpt(line.text, wanted)}`)
-        if (lines.length >= limit) break
       }
-      if (lines.length >= limit) break
     }
-    return lines.reverse()
+    return { lines: lines.reverse(), more: Math.max(0, total - lines.length) }
   }
 
   // The parts of a Bot's own chat, for the model: when each ran.
@@ -281,7 +318,7 @@ export function install(rt) {
 
   async function ownChatBrief(member) {
     let lines = []
-    try { lines = await latestOwnChat(member.id, { limit: OWN_CHAT_BRIEF }) } catch (error) { rt.warn('ds-bot: brief for %s failed: %s', member.name, error) }
+    try { lines = (await latestOwnChat(member.id, { limit: OWN_CHAT_BRIEF })).lines } catch (error) { rt.warn('ds-bot: brief for %s failed: %s', member.name, error) }
     return [
       'Your own chat with the user so far (latest messages, oldest first; private, so share only what the group needs):',
       lines.length > 0 ? lines.join('\n') : 'Nothing yet.',

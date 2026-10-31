@@ -26,7 +26,7 @@ const seed = (room = {}) => ({
   revision: 0,
 })
 
-async function start(t, room) {
+async function start(t, room, history = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-work-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(seed(room)))
   const ctx = fakeContext()
@@ -47,14 +47,24 @@ async function start(t, room) {
         },
       }
       const keep = (message) => { calls.push(message); held.push(message) }
-      agents.set(sessionId, { session: { id: sessionId }, calls, cancelled, inbox, followup: keep, steer: keep, cancel(reason) { cancelled.push(reason) } })
+      agents.set(sessionId, { session: { id: sessionId, seq: (history[sessionId]?.at(-1)?.seq ?? -1) + 1 }, calls, cancelled, inbox, followup: keep, steer: keep, cancel(reason) { cancelled.push(reason) } })
     }
     return agents.get(sessionId)
   }
   Object.assign(ctx, {
     llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
     workspaceRegistry: { get: () => undefined, resolveByPath: async () => undefined, create: async path => ({ id: 'w1', path }), archiveSession: async () => {} },
-    sessionController: { create: async () => ({ sessionId: 's1' }), resolveAgent: async sessionId => ({ agent: agentOf(sessionId) }), selectModel: async () => {} },
+    sessionController: {
+      create: async () => ({ sessionId: 's1' }),
+      resolveAgent: async sessionId => ({ agent: agentOf(sessionId) }),
+      selectModel: async () => {},
+      // What the durable log holds for a Session: `history` seeds it, oldest first.
+      page: async ({ address, beforeSeq, maxMessages } = {}) => {
+        const all = (history[address?.sessionId] ?? []).filter(event => beforeSeq === undefined || event.seq < beforeSeq)
+        const records = maxMessages === undefined ? all : all.slice(-maxMessages)
+        return { records: records.map(event => ({ event })), hasMore: records.length < all.length }
+      },
+    },
     sessionTitle: { rename: async () => {} },
     sessions: { flush: async () => {} },
   })
@@ -454,4 +464,40 @@ test('a kind-carrying room line stays verbatim in the store (#1251)', async (t) 
   // before this exemption (room-context.js). So the exemption itself is pinned on the gate's own decision.
   const long = { who: 'Writer', botId: 'b', kind: 'notice', text: STATUS_ESSAY }
   assert.equal(prepareRoomLine(long), long)
+})
+
+// #1906: a search shows its best 20 hits and a bare read the latest 12, and neither said
+// how much it left out, so a user asking "didn't we decide X?" could think the deciding
+// message was gone. The caps stay; the answer says what it did not show.
+const chatLine = (seq, text) => ({ type: 'user/message', seq, time: 1_000 + seq, data: { content: [{ type: 'text', text }], source: { kind: 'user' } } })
+const shownLines = out => out.split('\n').filter(line => line.startsWith('['))
+
+test('a search that hits its cap says how many hits it did not show (#1906)', async (t) => {
+  const many = { b: Array.from({ length: 25 }, (_, seq) => chatLine(seq, `message ${seq}: the merge queue slipped again`)) }
+  const host = await start(t, undefined, many)
+  const out = await host.tool('read_own_chat', { query: 'merge' }, 'b')
+  assert.equal(shownLines(out).length, 20)
+  assert.match(out, /5 more not shown/)
+
+  // Exactly at the cap, nothing was left out: no extra clause.
+  const exact = { b: Array.from({ length: 20 }, (_, seq) => chatLine(seq, `message ${seq}: the merge queue slipped again`)) }
+  const atCap = await start(t, undefined, exact)
+  const capOut = await atCap.tool('read_own_chat', { query: 'merge' }, 'b')
+  assert.equal(shownLines(capOut).length, 20)
+  assert.doesNotMatch(capOut, /more not shown/)
+})
+
+test('a bare read that hits its cap says newest 12 of 15 (#1906)', async (t) => {
+  const history = { b: Array.from({ length: 15 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
+  const host = await start(t, undefined, history)
+  const out = await host.tool('read_own_chat', {}, 'b')
+  assert.equal(shownLines(out).length, 12)
+  assert.match(out, /newest 12 of 15/)
+
+  // Exactly at the cap, the whole part was shown: no extra clause.
+  const exact = { b: Array.from({ length: 12 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
+  const atCap = await start(t, undefined, exact)
+  const capOut = await atCap.tool('read_own_chat', {}, 'b')
+  assert.equal(shownLines(capOut).length, 12)
+  assert.doesNotMatch(capOut, /newest 12 of/)
 })

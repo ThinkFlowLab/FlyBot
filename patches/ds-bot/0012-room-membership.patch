@@ -1814,6 +1814,28 @@ diff --git a/src/host/groups.js b/src/host/groups.js
    // Private context enters a group only through this tool, and the group sees each use.
    ctx.tools.register(defineTool({
      name: 'read_own_chat',
+@@ -517,13 +517,17 @@ export function install(rt) {
+         return `Part ${number} of your own chat (${rt.clock(part.startedAt)} – ${rt.clock(part.endedAt)}). The handoff note that closed it:\n${rt.noteText(part) ?? '(none: the part ended on a context overflow)'}${partsNote}`
+       }
+       if (query === '') {
+-        const lines = await rt.latestOwnChat(botId, { askingId: id })
+-        return lines.length === 0 ? `Your own chat is empty.${partsNote}` : `Your own chat (oldest first):\n${lines.join('\n')}${partsNote}`
++        const { lines, more } = await rt.latestOwnChat(botId, { askingId: id })
++        if (lines.length === 0) return `Your own chat is empty.${partsNote}`
++        const heading = more > 0 ? `Your own chat (newest ${lines.length} of ${lines.length + more}, oldest first)` : 'Your own chat (oldest first)'
++        return `${heading}:\n${lines.join('\n')}${partsNote}`
+       }
+-      const { lines, every } = await rt.searchOwnChat(botId, query, { askingId: id })
++      const { lines, every, more } = await rt.searchOwnChat(botId, query, { askingId: id })
+       if (lines.length === 0) return `Nothing in your own chat mentions "${query}".${partsNote}`
+       const heading = every ? `messages mentioning "${query}"` : `no message has all of "${query}"; messages with the most of these words`
+-      return `Your own chat, ${heading} (oldest first):\n${lines.join('\n')}${partsNote}`
++      // A capped search says how much it left out, so a message that is missing never reads as gone (#1906).
++      const leftOut = more > 0 ? `\n${more} more not shown; search with narrower words, or read around one of these anchors.` : ''
++      return `Your own chat, ${heading} (oldest first):\n${lines.join('\n')}${leftOut}${partsNote}`
+     },
+   }))
+ 
 @@ -539,7 +539,9 @@ export function install(rt) {
        const { room, error } = rt.pickRoom(args.group, self)
        if (error) return error
