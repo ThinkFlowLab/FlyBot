@@ -16,8 +16,23 @@ const timeOf = value => {
   return Number.isFinite(ms) ? ms : null
 }
 
+// One zone, one decision (#1849): `timeZone` reaches this module from a request body, and an
+// unknown name used to throw out of the whole board read — rows, queues and decisions with it.
+// It is validated here once, and an unknown name answers the named `UTC` rather than guessing:
+// callers pass the resolved value to `dayKey`, to the answer and to the cache key.
+export function resolveTimeZone(timeZone = 'UTC') {
+  const wanted = text(timeZone) || 'UTC'
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: wanted })
+    return wanted
+  } catch {
+    return 'UTC'
+  }
+}
+
 // The natural day a timestamp falls in, in the caller's time zone. `en-CA` prints ISO order, which
-// is what the comparison below needs; an unknown zone throws and the caller degrades.
+// is what the comparison below needs; an unknown zone throws here, so a caller that takes one from
+// outside (the board read) resolves it with `resolveTimeZone` first.
 export function dayKey(ms, timeZone = 'UTC') {
   if (!Number.isFinite(ms)) return ''
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -99,16 +114,19 @@ export function summarizeMetrics({ now = Date.now(), timeZone = 'UTC', source, t
   // #1848: the running rows are the board's own visible cards in every branch, so a source that is
   // missing or failed no longer empties a table that needs no token to read.
   const running = () => taskList(tasks).map(task => runningOf(task, now)).filter(row => row !== null)
-  const unavailable = (reason) => ({ ok: false, reason, timeZone, generatedAt: now, metrics: emptyMetrics(), running: running() })
+  // #1849: one zone, one decision — an unknown name is answered as the named `UTC` here, not thrown
+  // out of the whole board read.
+  const zone = resolveTimeZone(timeZone)
+  const unavailable = (reason) => ({ ok: false, reason, timeZone: zone, generatedAt: now, metrics: emptyMetrics(), running: running() })
   if (source === undefined || source === null) return unavailable('no-source')
   if (source.ok !== true) return unavailable(text(source.reason) || 'source-unavailable')
   const pullRequests = Array.isArray(source.pullRequests) ? source.pullRequests : []
   const issues = Array.isArray(source.issues) ? source.issues : []
-  const key = dayKey(now, timeZone)
-  const day = { key, timeZone }
+  const key = dayKey(now, zone)
+  const day = { key, timeZone: zone }
   return {
     ok: true,
-    timeZone,
+    timeZone: zone,
     generatedAt: now,
     metrics: {
       prsOpenedToday: countToday(pullRequests, item => item.created_at, day),
@@ -133,10 +151,13 @@ export async function readMetrics({ repo, token, fetchImpl, timeZone = 'UTC', no
   // shared entry must not answer one board with the numbers of the board that filled it.
   const liveRunning = () => taskList(tasks).map(task => runningOf(task, now)).filter(row => row !== null)
   const withLive = value => ({ ...value, metrics: { ...value.metrics, taskDoneMedianMs: median(doneTaskDurations(tasks, now)) }, running: liveRunning() })
+  // #1849: resolved once, before any early return, so the cache key, every `summarizeMetrics` call
+  // and the answer all carry the same zone.
+  const zone = resolveTimeZone(timeZone)
   const bearer = text(token)
-  if (bearer === '') return { ...summarizeMetrics({ now, timeZone, tasks, source: { ok: false, reason: 'no-credentials' } }), cache: 'miss' }
-  if (typeof fetchImpl !== 'function') return { ...summarizeMetrics({ now, timeZone, tasks, source: { ok: false, reason: 'no-fetch' } }), cache: 'miss' }
-  const key = `${repo}|${timeZone}|${Math.floor(now / ttlMs)}`
+  if (bearer === '') return { ...summarizeMetrics({ now, timeZone: zone, tasks, source: { ok: false, reason: 'no-credentials' } }), cache: 'miss' }
+  if (typeof fetchImpl !== 'function') return { ...summarizeMetrics({ now, timeZone: zone, tasks, source: { ok: false, reason: 'no-fetch' } }), cache: 'miss' }
+  const key = `${repo}|${zone}|${Math.floor(now / ttlMs)}`
   const hit = cacheStore.get(key)
   if (hit !== undefined && hit.expiresAt > now) return { ...withLive(hit.value), cache: 'hit' }
   const since = new Date(now - RECENT_MS).toISOString()
@@ -154,9 +175,9 @@ export async function readMetrics({ repo, token, fetchImpl, timeZone = 'UTC', no
     ])
     source = { ok: true, pullRequests, issues: issues.filter(item => item.pull_request === undefined) }
   } catch (error) {
-    return { ...summarizeMetrics({ now, timeZone, tasks, source: { ok: false, reason: `read-failed: ${error.message}` } }), cache: 'miss' }
+    return { ...summarizeMetrics({ now, timeZone: zone, tasks, source: { ok: false, reason: `read-failed: ${error.message}` } }), cache: 'miss' }
   }
-  const value = summarizeMetrics({ now, timeZone, source, tasks })
+  const value = summarizeMetrics({ now, timeZone: zone, source, tasks })
   // Written field by field rather than by spreading, so a caller-scoped number added later cannot
   // ride into a shared entry by accident: this list is the whole shape the cache may hold.
   const { prsOpenedToday, prsMergedToday, issuesOpenedToday, issuesClosedToday, prMergeMedianMs, issueCloseMedianMs } = value.metrics

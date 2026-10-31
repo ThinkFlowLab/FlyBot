@@ -124,3 +124,63 @@ test('the task median reads the store stamps only', () => {
   const out = summarizeMetrics({ now: NOW, timeZone: 'UTC', source: { ok: true, pullRequests: [], issues: [] }, tasks })
   assert.equal(out.metrics.taskDoneMedianMs, 2 * HOUR)
 })
+
+// #1849: a request body's `timeZone` reaches `Intl` unvalidated, so one unknown name used to throw
+// out of the whole board read instead of costing the seven numbers. The zone is resolved once, and
+// an unknown name answers the named `UTC` — on every path that answers, and in the cache key too.
+const BAD_ZONE = 'Not/AZone'
+
+test('#1849: an unknown zone answers the named UTC fallback on every path', async () => {
+  const source = { ok: true, pullRequests: [pr('2026-10-30T10:00:00Z', null)], issues: [] }
+  const direct = summarizeMetrics({ now: NOW, timeZone: BAD_ZONE, source })
+  assert.equal(direct.timeZone, 'UTC')
+  assert.equal(direct.metrics.prsOpenedToday, 1)
+  assert.equal(summarizeMetrics({ now: NOW, timeZone: BAD_ZONE }).timeZone, 'UTC')
+  assert.equal(summarizeMetrics({ now: NOW, timeZone: BAD_ZONE, source: { ok: false, reason: 'x' } }).timeZone, 'UTC')
+
+  const noCredentials = await readMetrics({ repo: 'o/r', token: '', timeZone: BAD_ZONE, now: NOW })
+  assert.equal(noCredentials.timeZone, 'UTC')
+  assert.equal(noCredentials.ok, false)
+
+  const noFetch = await readMetrics({ repo: 'o/r', token: 'tok', timeZone: BAD_ZONE, now: NOW })
+  assert.equal(noFetch.timeZone, 'UTC')
+
+  const readFailure = await readMetrics({
+    repo: 'o/r', token: 'tok', timeZone: BAD_ZONE, now: NOW,
+    fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({}) }),
+  })
+  assert.equal(readFailure.timeZone, 'UTC')
+  assert.equal(readFailure.ok, false)
+
+  // The cache key carries the resolved zone: a bad name shares the UTC entry instead of making a
+  // second one, and the hit still answers `UTC`.
+  const cacheStore = new Map()
+  const fetchImpl = async () => ({ ok: true, json: async () => [] })
+  const miss = await readMetrics({ repo: 'o/r', token: 'tok', timeZone: 'UTC', now: NOW, fetchImpl, cacheStore })
+  assert.equal(miss.cache, 'miss')
+  const hit = await readMetrics({ repo: 'o/r', token: 'tok', timeZone: BAD_ZONE, now: NOW, fetchImpl, cacheStore })
+  assert.equal(hit.cache, 'hit')
+  assert.equal(hit.timeZone, 'UTC')
+  assert.equal(cacheStore.size, 1)
+
+  const success = await readMetrics({ repo: 'o/r', token: 'tok', timeZone: BAD_ZONE, now: NOW, fetchImpl, cacheStore: new Map() })
+  assert.equal(success.timeZone, 'UTC')
+  assert.equal(success.ok, true)
+})
+
+test('#1849: a valid zone keeps the day boundary and the answer it had', () => {
+  const source = {
+    ok: true,
+    pullRequests: [pr('2026-10-30T10:00:00Z', '2026-10-30T11:00:00Z')],
+    issues: [issue('2026-10-30T09:00:00Z', null)],
+  }
+  const shanghai = summarizeMetrics({ now: NOW, timeZone: 'Asia/Shanghai', source })
+  assert.equal(shanghai.timeZone, 'Asia/Shanghai')
+  assert.equal(dayKey(NOW, 'Asia/Shanghai'), '2026-10-30')
+  assert.deepEqual(shanghai.metrics, {
+    prsOpenedToday: 1, prsMergedToday: 1, issuesOpenedToday: 1, issuesClosedToday: 0,
+    prMergeMedianMs: HOUR, issueCloseMedianMs: null, taskDoneMedianMs: null,
+  })
+  // A zone `Intl` accepts but the host would never guess stays as sent, and UTC still reads one day.
+  assert.equal(summarizeMetrics({ now: NOW, timeZone: 'UTC', source }).metrics.prsOpenedToday, 1)
+})

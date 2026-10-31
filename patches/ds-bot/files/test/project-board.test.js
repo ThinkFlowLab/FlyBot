@@ -137,6 +137,35 @@ test('the board takes its token from the host secret store and its zone from the
   }
 })
 
+// #1849: the request body's `timeZone` reaches `Intl` unvalidated, so one unknown name used to
+// throw out of the whole board read — rows, queues and decisions with it — instead of costing the
+// seven numbers. The board still returns its cards, and the metrics answer says which zone it used.
+test('#1849: an unknown zone does not take the board down with the metrics', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-board-tz-'))
+  const { rt, stop } = await start(dir)
+  const realSecret = rt.secretValue
+  const realFetch = globalThis.fetch
+  rt.secretValue = name => (name === 'GITHUB_TOKEN' ? 'tok' : undefined)
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] })
+  try {
+    const before = readFileSync(join(dir, 'state.json'))
+    const board = await rt.projectBoard('project-p1', null, { timeZone: 'Not/AZone' })
+    assert.deepEqual(board.rows.map(row => row.id), ['task-group'], 'the cards are still there')
+    assert.equal(board.counts.waiting, 0)
+    assert.equal(board.metrics.ok, true)
+    // The answer says which zone it used instead of inheriting the bad name.
+    assert.equal(board.metrics.timeZone, 'UTC')
+    // The fallback is decided in this read only: nothing about the request's zone is written back.
+    assert.deepEqual(readFileSync(join(dir, 'state.json')), before, 'the fallback is not saved to state')
+    assert.equal(before.includes('Not/AZone'), false, 'the bad name is not written to state')
+  } finally {
+    globalThis.fetch = realFetch
+    rt.secretValue = realSecret
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('an empty Project answers [] and a missing one is not an error', async () => {
   const { rt, stop } = await start()
   try {
