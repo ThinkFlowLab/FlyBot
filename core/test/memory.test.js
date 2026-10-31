@@ -534,6 +534,75 @@ async function reviewed(call) {
   throw new Error('the memory review did not finish')
 }
 
+// #1918: both local cuts of the review keep whole characters. The Bot line goes through the
+// two-argument cut at REVIEW_OTHER_LINE_MAX, the user's through the two-ended one at
+// REVIEW_USER_LINE_MAX; a boundary that lands inside a surrogate pair must step back, never
+// leave half of it in the prompt.
+test('a long Bot line cut for the review context keeps whole characters (#1918)', async (t) => {
+  const long = `${'x'.repeat(791)}😀tail`
+  const history = {
+    b2: [
+      { event: { seq: 20, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Start here.' }] } } },
+      { event: { seq: 21, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: long }] } } } },
+      { event: { seq: 22, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Now keep it.' }] } } },
+    ],
+  }
+  const replies = [JSON.stringify({ changes: [] })]
+  const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  const prompt = requests[0].messages[0].content[0].text
+  assert.equal(prompt.isWellFormed(), true)
+  assert.equal(prompt.includes('\ufffd'), false)
+  const shown = prompt.split('\n').find(one => one.startsWith('Writer: x'))
+  assert.ok(shown !== undefined, `the Bot line is in the review context:\n${prompt}`)
+  assert.ok(shown.endsWith('…(cut)'), shown.slice(-20))
+  assert.ok(shown.length <= 'Writer: '.length + 800 + ' …(cut)'.length, String(shown.length))
+})
+
+test('a long user line cut for the review keeps whole characters at both ends (#1918)', async () => {
+  const MAX = 3000
+  const render = async (text) => {
+    const history = {
+      b2: [
+        { event: { seq: 20, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Start here.' }] } } },
+        { event: { seq: 21, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } } },
+      ],
+    }
+    const replies = [JSON.stringify({ changes: [] })]
+    const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+    await call('state', {})
+    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+    await reviewed(call)
+    await stop()
+    return requests[0].messages[0].content[0].text
+  }
+  // `ends` is handed the rendered line, not the bare message: `'User: '` is six units, so the
+  // 2000-unit head budget (ceil(3000 * 2/3)) spends them first and cuts at unit 1994 of the
+  // message. The first sample puts the emoji's halves at message units 1993-1994, right on
+  // that cut, so an unfixed slice keeps the high half; the second puts them at the tail start
+  // (3008 - 1000 = 2008), where an unfixed tail begins on the low half. The whole kept line
+  // must stay on the budget within a few units either way, so a cut that throws it away fails.
+  for (const text of [`${'a'.repeat(1993)}😀${'d'.repeat(1006)}`, `${'e'.repeat(2001)}😀${'f'.repeat(999)}`]) {
+    const prompt = await render(text)
+    assert.equal(prompt.isWellFormed(), true, text.slice(0, 6))
+    assert.equal(prompt.includes('\ufffd'), false)
+    const line = prompt.split('\n').find(one => one.startsWith('User: a') || one.startsWith('User: e'))
+    assert.ok(line !== undefined, `the user line is in the review context:\n${prompt}`)
+    const marker = ' …(middle cut)… '
+    const at = line.indexOf(marker)
+    assert.ok(at > 0, line.slice(0, 40))
+    const keptHead = line.slice('User: '.length, at)
+    const keptTail = line.slice(at + marker.length)
+    assert.ok(keptHead.length + keptTail.length <= MAX, `over: ${keptHead.length} + ${keptTail.length}`)
+    assert.ok(keptHead.length + keptTail.length > MAX - 10, `short: ${keptHead.length} + ${keptTail.length}`)
+    assert.deepEqual(Buffer.from(keptHead, 'utf8'), Buffer.from(text.slice(0, keptHead.length), 'utf8'))
+    assert.deepEqual(Buffer.from(keptTail, 'utf8'), Buffer.from(text.slice(-keptTail.length), 'utf8'))
+  }
+})
+
 test('when a turn ends, the memory review keeps what the user said, through the same rules', async (t) => {
   const history = {
     b2: [

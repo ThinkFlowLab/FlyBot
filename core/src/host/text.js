@@ -56,7 +56,9 @@ export const estimateTokens = (text) => {
   for (const char of text) tokens += char.codePointAt(0) > 0x2e7f ? 1 : 0.34
   return Math.ceil(tokens)
 }
-export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, codePointEnd(text, max))}… (cut; ${rest})` : text)
+// #1918: the reason is optional — a caller with nothing to add gets "… (cut)", never
+// "… (cut; undefined)"; a caller that gives one keeps "… (cut; <reason>)" byte for byte.
+export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, codePointEnd(text, max))}… (cut${rest === undefined ? '' : `; ${rest}`})` : text)
 
 export const createClock = (timeZone) => {
   const clockFormat = new Intl.DateTimeFormat('en-CA', {

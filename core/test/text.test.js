@@ -76,6 +76,20 @@ test('clip cuts long text and says where the rest is', () => {
 })
 
 const sameBytes = (kept, prefix) => Buffer.from(kept, 'utf8').equals(Buffer.from(prefix, 'utf8'))
+// #1918: the reason is optional. A two-argument call used to print "(cut; undefined)".
+test('clip says only that it cut when it is given no reason (#1918)', () => {
+  const cut = clip('x'.repeat(900), 800)
+  assert.equal(cut.includes('undefined'), false)
+  assert.equal(cut, `${'x'.repeat(800)}… (cut)`)
+})
+
+test('clip keeps the reason it is given byte for byte (#1918)', () => {
+  assert.equal(clip('x'.repeat(900), 800, 'see part 2'), `${'x'.repeat(800)}… (cut; see part 2)`)
+  assert.equal(clip('abcdef', 3, 'see part 2'), 'abc… (cut; see part 2)')
+  assert.equal(clip('abc', 5, 'x'), 'abc')
+  assert.equal(clip('abc', 5), 'abc')
+})
+
 
 test('clip never leaves half of a surrogate pair behind', () => {
   const text = `${'a'.repeat(3999)}😀${'z'.repeat(100)}`

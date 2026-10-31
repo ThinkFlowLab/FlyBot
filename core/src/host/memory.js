@@ -28,6 +28,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { codePoints, splitRef, unquote } from './text.js'
+import { codePointStart, cut } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -1143,9 +1144,15 @@ export function install(rt) {
     }
     return cursors
   }
-  const clip = (text, max) => (text.length > max ? `${text.slice(0, max)} …(cut)` : text)
+  const clip = (text, max) => (text.length > max ? `${cut(text, max).text} …(cut)` : text)
   // A long message often ends with what the user wants of it, so both ends stay.
-  const ends = (text, max) => (text.length > max ? `${text.slice(0, Math.ceil(max * 2 / 3))} …(middle cut)… ${text.slice(-Math.floor(max / 3))}` : text)
+  const ends = (text, max) => {
+    if (text.length <= max) return text
+    const tail = text.slice(codePointStart(text, text.length - Math.floor(max / 3)))
+    // Stepping back onto a boundary can keep one more unit at the tail; the head gives it back.
+    const head = cut(text, Math.min(Math.ceil(max * 2 / 3), max - tail.length))
+    return `${head.text} …(middle cut)… ${tail}`
+  }
 
   // Lines say who spoke. The user's lines are kept longest: what they say is what
   // the review keeps; the rest is there to make it understood.
