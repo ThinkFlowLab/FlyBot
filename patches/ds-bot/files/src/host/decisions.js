@@ -10,6 +10,7 @@
 // can show it without reading the file.
 import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { looksSecret } from './memory.js'
 import { output } from './tools.js'
@@ -23,7 +24,7 @@ const KEPT = 2_000
 const MAX_BYTES = 1_000_000
 const NAME_SAFE = /^[\w-]{1,128}$/
 
-const oneLine = (text, max) => String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const oneLine = (text, max) => cut(String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim(), max).text
 
 export function install(rt) {
   if (rt.config?.decisions !== true) {

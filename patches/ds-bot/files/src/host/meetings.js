@@ -8,6 +8,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { link, mkdir, open, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
 import { workDirFor } from './project-state.js'
@@ -23,7 +24,7 @@ const NAME_MAX = 80
 const PARTICIPANTS_MAX = 32
 const OPEN_STATES = new Set(['open', 'deliberating'])
 
-const oneLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const oneLine = (value, max) => cut(String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(), max).text
 // A slug keeps letters and digits of every script, so two different Chinese questions do not both
 // fall back to `meeting` and collide on one day's file.
 const slugOf = value => oneLine(value, 80).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 80)

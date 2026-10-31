@@ -3,6 +3,7 @@
 // the app window, not here, so `read_browser` reaches it through the window: the client
 // holds a long poll open (`browser-wait`) that reports which Bots have a page open and
 // carries read requests back; the client answers with `browser-result`.
+import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
 
@@ -131,7 +132,7 @@ export function createBrowserChannel({ now = Date.now, waitMs = WAIT_MS, staleMs
   return { wait, result, read, openPages, dispose }
 }
 
-const clean = (value, max) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+const clean = (value, max) => cut(String(value ?? '').replace(/\s+/g, ' ').trim(), max).text
 
 /**
  * Where a part of the text that starts at `start` ends: at a blank line, else a line break,

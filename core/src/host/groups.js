@@ -21,7 +21,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from './tool-schema.js'
 import { ROOM_LATE_ROUNDS, SOURCE_KIND } from './constants.js'
 import { OWNER, OTHER, SCHEDULED, combine } from './turn-origin.js'
-import { escapeRegExp, textOf } from './text.js'
+import { cut, escapeRegExp, textOf } from './text.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { GROUP_REF, output } from './tools.js'
 import { failureLine } from './turns.js'
@@ -43,7 +43,7 @@ export const CLAIM_CUE_REPEAT_MS = 30 * 60 * 1000
 // that requires the line is (#1253), not because the room is assumed to speak Chinese.
 const CLAIM_CUE_REF_MAX = 60
 const CLAIM_CUE_STEP_MAX = 100
-const claimLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const claimLine = (value, max) => cut(String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(), max).text
 export function claimCueText(task) {
   const title = claimLine(task?.title, 300)
   if (title === '') return ''

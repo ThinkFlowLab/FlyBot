@@ -43,6 +43,10 @@ const isLowSurrogate = code => code >= 0xdc00 && code <= 0xdfff
 const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charCodeAt(at)) && isHighSurrogate(text.charCodeAt(at - 1)) ? at - 1 : at)
 const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
 
+// A bounded prefix that never splits a surrogate pair (#1912): every other host module cuts its own
+// archive text, and a half pair is stored as U+FFFD. `cut` says whether anything was dropped.
+export const cut = (text, max) => ({ text: text.slice(0, codePointEnd(text, max)), cut: text.length > max })
+
 // The part of a long message around the first match, so a search hit stays visible.
 export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
   if (text.length <= max) return text

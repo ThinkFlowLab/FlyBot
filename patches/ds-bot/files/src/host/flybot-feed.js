@@ -8,6 +8,7 @@
 // user pasted or a tool printed. Strings that came from outside the team (a tool name
 // from an MCP server, a remote handle, an error code) are cleaned here.
 import { SOURCE_KIND } from './constants.js'
+import { cut } from './text.js'
 import { normRemoteHandle, remoteBotTitle } from '../shared/remote-label.js'
 
 export const FEED_EVENTS = Object.freeze(['turn.start', 'turn.end', 'tool.start', 'tool.end', 'exchange.delivered', 'decision'])
@@ -22,7 +23,7 @@ const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 export const cleanLabel = (value, max = 80) => {
   let out = String(value ?? '').replace(CONTROLS, ' ')
   for (let previous; previous !== out;) { previous = out; out = out.replace(/<\s*\/?\s*untrusted-?/gi, '') }
-  return out.replace(/\s+/g, ' ').trim().slice(0, max)
+  return cut(out.replace(/\s+/g, ' ').trim(), max).text
 }
 // An error code is an enumerated value (RATE_LIMIT, AUTH): upper-case words only, so free text or a key put in the field is not kept.
 const cleanCode = code => (typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.test(code) ? code : 'UNKNOWN')

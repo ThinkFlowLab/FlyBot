@@ -84,3 +84,16 @@ test('#603: a byte cap bounds an oversized log left by an older build', async (t
   assert.equal(log.at(-1).option, 'after the byte cap')
   assert.equal(log.length, 2)
 })
+
+test('#1912: an option cut at an emoji boundary stays well formed in the log', async (t) => {
+  const { home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  // The 200-unit cut lands inside the emoji, so a code-unit slice stores half a surrogate pair.
+  const option = `${'a'.repeat(199)}😀tail`
+  await tool('record_decision', { option, choice: 'used' })
+  const text = readFileSync(join(home, 'decisions.jsonl'), 'utf8')
+  const [entry] = text.trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(entry.option.isWellFormed(), true, `the stored option must stay well formed, got: ${JSON.stringify(entry.option.slice(-4))}`)
+  assert.equal(entry.option.length <= 200, true, `the stored option must stay within 200 units, got ${entry.option.length}`)
+  assert.equal(option.startsWith(entry.option), true, 'the stored option must be a prefix of the recorded one')
+})

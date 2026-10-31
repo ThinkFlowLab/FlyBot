@@ -3,7 +3,7 @@
 // second decide is refused, with no second decision file and no second card), and an open meeting
 // keeps its recorded positions.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -84,4 +84,23 @@ test('P-209: an open meeting and a recorded position survive a restart', async (
   const read = await second.rt.meetingEndpoint('read', { meeting: id })
   assert.match(read, /\[deliberating\]/, `an open meeting must survive a restart, got: ${read.split('\n')[0]}`)
   assert.match(read, /- Chief: agree — the existing store/, `the position must survive, got: ${read}`)
+})
+
+test('#1912: a decision cut at an emoji boundary writes no replacement character into the archive', async (t) => {
+  const { dir, meeting } = await setup(t)
+  const text = await meeting({ action: 'open', question: 'Which storage shape should Stage 4 use?', participants: ['Chief', 'Dev', 'Reviewer'] })
+  const id = text.split(' ')[0]
+  await positionAll(meeting, id)
+  // The 600-unit cut lands inside the emoji, so a code-unit slice keeps half of a surrogate pair.
+  const decision = `${'a'.repeat(599)}😀tail`
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision, evidence: [{ pr: 1912 }] })
+  const [file] = readdirSync(join(dir, 'decisions')).filter(name => name.endsWith('.md'))
+  const bytes = readFileSync(join(dir, 'decisions', file))
+  const written = bytes.toString('utf8')
+  assert.equal(written.includes('\ufffd'), false, 'the archive must not hold U+FFFD')
+  assert.equal(Buffer.from(written, 'utf8').equals(bytes), true, 'the archive must round-trip through UTF-8 unchanged')
+  const lines = written.split('\n')
+  const kept = lines[lines.indexOf('## Decision') + 2]
+  assert.equal(decision.startsWith(kept), true, `the kept body must be a prefix of the decision, got: ${JSON.stringify(kept)}`)
+  assert.equal(kept.length <= 600, true, `the kept body must stay within 600 units, got ${kept.length}`)
 })

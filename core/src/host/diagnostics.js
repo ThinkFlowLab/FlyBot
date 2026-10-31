@@ -10,6 +10,7 @@ import { arch, homedir, platform, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format } from 'node:util'
+import { cut } from './text.js'
 
 export const KEEP = 200
 const LOG_MAX_BYTES = 1 << 20
@@ -47,7 +48,8 @@ export function cleanText(text, { redact = value => value, home = homedir() } = 
     const doubled = home.replace(/\\/g, '\\\\')
     if (doubled !== home) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
   }
-  return out.length > TEXT_MAX ? `${out.slice(0, TEXT_MAX)}…` : out
+  const kept = cut(out, TEXT_MAX)
+  return kept.cut ? `${kept.text}…` : out
 }
 
 const errorText = error => `${error.name && error.name !== 'Error' ? `${error.name}: ` : ''}${error.message}`

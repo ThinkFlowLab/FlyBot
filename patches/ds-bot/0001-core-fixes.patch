@@ -4467,7 +4467,14 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
 +++ b/src/host/diagnostics.js
-@@ -16,7 +16,7 @@ const LOG_MAX_BYTES = 1 << 20
+@@ -10,13 +10,14 @@ import { arch, homedir, platform, release } from 'node:os'
+ import { dirname, join } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { format } from 'node:util'
++import { cut } from './text.js'
+ 
+ export const KEEP = 200
+ const LOG_MAX_BYTES = 1 << 20
  const STACK_LINES = 8
  const TEXT_MAX = 2000
  export const REPORT_ENTRIES = 20
@@ -4476,6 +4483,16 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
  
  const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
+@@ -47,7 +47,8 @@ export function cleanText(text, { redact = value => value, home = homedir() } =
+     const doubled = home.replace(/\\/g, '\\\\')
+     if (doubled !== home) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
+   }
+-  return out.length > TEXT_MAX ? `${out.slice(0, TEXT_MAX)}…` : out
++  const kept = cut(out, TEXT_MAX)
++  return kept.cut ? `${kept.text}…` : out
+ }
+ 
+ const errorText = error => `${error.name && error.name !== 'Error' ? `${error.name}: ` : ''}${error.message}`
 @@ -66,7 +66,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
    const lines = [
      '| | |',
@@ -6275,7 +6292,7 @@ diff --git a/src/host/steward.js b/src/host/steward.js
 diff --git a/src/host/text.js b/src/host/text.js
 --- a/src/host/text.js
 +++ b/src/host/text.js
-@@ -23,11 +23,32 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
+@@ -23,11 +23,36 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
  
  export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
@@ -6298,6 +6315,10 @@ diff --git a/src/host/text.js b/src/host/text.js
 +// client side, here for the host).
 +const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charCodeAt(at)) && isHighSurrogate(text.charCodeAt(at - 1)) ? at - 1 : at)
 +const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
++
++// A bounded prefix that never splits a surrogate pair (#1912): every other host module cuts its own
++// archive text, and a half pair is stored as U+FFFD. `cut` says whether anything was dropped.
++export const cut = (text, max) => ({ text: text.slice(0, codePointEnd(text, max)), cut: text.length > max })
 +
  // The part of a long message around the first match, so a search hit stays visible.
  export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
