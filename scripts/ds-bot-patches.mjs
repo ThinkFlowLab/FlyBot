@@ -13,6 +13,29 @@
 //                                              `check` cannot answer this — a re-split series still
 //                                              reproduces core/ — and that gap landed #1883..#1889 green.
 //                                              Changes nothing on disk: generate writes to a scratch copy.
+//   node scripts/ds-bot-patches.mjs review <sha> [test-file]
+//                                              Review a tip without checking it out: download that
+//                                              commit's tarball from GitHub, commit it into a scratch
+//                                              repository so the pin check can compute a tree, and
+//                                              compare that tree with the one the API reports for the
+//                                              commit (a mismatch: the download is not that commit).
+//                                              Then run this tip's own check and canonical, and, when a
+//                                              test file is named, that file under core/ (the path the
+//                                              way core/ has it; a leading `core/` is accepted). Every
+//                                              step that fails exits non-zero and says why on stdout.
+//
+//                                              The repository is FLYBOT_REVIEW_REPO=owner/name, else
+//                                              GITHUB_REPOSITORY, else the `upstream` remote, else
+//                                              `origin`; a fork pull request's tip lives in the fork, so
+//                                              an unknown sha falls through to the next one. A public
+//                                              repository downloads without a token; DSH_SECRET_GITHUB_TOKEN
+//                                              authenticates the download when set, which is what the
+//                                              rate limit asks for. Installed dependencies
+//                                              (core/node_modules, core/dev/harness/node_modules) are
+//                                              shared into the scratch tree, so a test file runs without
+//                                              a second `npm install`; without them the test fails with
+//                                              the module it could not load, which is the reason printed.
+//                                              Needs git (to commit the tarball) and tar (to unpack it).
 //
 // The format is chosen so that two branches editing the same core file merge without conflicts in
 // the generated output (see patches/ds-bot/README.md): no `index <hash>` lines, hunk headers that
@@ -31,7 +54,7 @@
 // git keeps the git path: CI is the reference, and the test compares both appliers on every patch.
 // `generate` needs git either way, because it asks git for the diff.
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -417,6 +440,127 @@ function canonical() {
   } finally { rmSync(scratch, { recursive: true, force: true }) }
 }
 
+// `review` (see the header): its failures are a review result, not a broken checkout, so they print
+// on stdout with the rest of the report and exit non-zero instead of going to `fail`'s stderr.
+class ReviewError extends Error {}
+
+const reviewFail = message => { throw new ReviewError(message) }
+
+// The repository a sha is asked about: the explicit name first, then the remotes, since a fork pull
+// request's tip is not in the upstream and an upstream sha is not in the fork.
+function reviewRepos() {
+  const repos = []
+  const named = process.env.FLYBOT_REVIEW_REPO || process.env.GITHUB_REPOSITORY
+  if (named) repos.push(named)
+  for (const name of ['upstream', 'origin']) {
+    let url
+    try { url = execFileSync('git', ['remote', 'get-url', name], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { continue }
+    // A proxy prefix (a mirror URL) is fine: the `github.com/owner/name` tail is what the API needs.
+    const hit = /github\.com[:/]+([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(url)
+    if (hit) repos.push(`${hit[1]}/${hit[2]}`)
+  }
+  return [...new Set(repos)]
+}
+
+async function reviewResponse(url, timeout) {
+  const headers = { accept: 'application/vnd.github+json', 'user-agent': 'ds-bot-patches-review', 'x-github-api-version': '2022-11-28' }
+  if (process.env.DSH_SECRET_GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.DSH_SECRET_GITHUB_TOKEN}`
+  try {
+    return await fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(timeout) })
+  } catch (error) {
+    const why = error?.name === 'TimeoutError' ? `no answer in ${Math.round(timeout / 1000)}s` : (error?.cause?.code ?? error?.message ?? String(error))
+    reviewFail(`GET ${url} failed: ${why}`)
+  }
+}
+
+const apiMessage = async response => {
+  try { const body = await response.json(); return body?.message ? ` (${body.message})` : '' } catch { return '' }
+}
+
+// Dependencies the reviewed tip does not carry (they are ignored files, so a tarball has none): lend it
+// this checkout's, so a test file can run. Never overwrite what the tarball brought.
+function shareDependencies(coreDir) {
+  const linked = []
+  for (const rel of ['node_modules', join('dev', 'harness', 'node_modules')]) {
+    const source = join(ROOT, CORE, rel)
+    const target = join(coreDir, rel)
+    if (!existsSync(source) || existsSync(target)) continue
+    try { mkdirSync(dirname(target), { recursive: true }); symlinkSync(source, target, 'dir'); linked.push(rel) } catch { /* a failed link shows up as the module the test cannot load */ }
+  }
+  return linked
+}
+
+async function reviewWork(sha, testFile) {
+  if (!hasGit) reviewFail('review needs git: it commits the downloaded tarball to compute its tree')
+  if (!/^[0-9a-f]{7,40}$/i.test(sha ?? '')) reviewFail(`"${sha ?? ''}" is not a commit sha (7 to 40 hex characters)`)
+  const repos = reviewRepos()
+  if (!repos.length) reviewFail('no GitHub repository to ask: set FLYBOT_REVIEW_REPO=owner/name or add an `upstream` or `origin` remote')
+  let repo
+  let apiTree
+  const answers = []
+  for (const candidate of repos) {
+    const response = await reviewResponse(`https://api.github.com/repos/${candidate}/commits/${sha}`, 60_000)
+    // GitHub answers 422 "No commit found for SHA" for a sha that repository does not have, not 404.
+    if (response.status === 404 || response.status === 422) { answers.push(`${candidate}: no such commit`); continue }
+    if (!response.ok) reviewFail(`commits/${sha} on ${candidate} -> HTTP ${response.status}${await apiMessage(response)}`)
+    const body = await response.json()
+    apiTree = body?.commit?.tree?.sha
+    if (!apiTree) reviewFail(`commits/${sha} on ${candidate} carries no commit.tree.sha`)
+    repo = candidate
+    break
+  }
+  if (!repo) reviewFail(`no commit ${sha} in ${answers.join(', ')} — set FLYBOT_REVIEW_REPO=owner/name when the branch lives in another fork`)
+  const tarball = await reviewResponse(`https://api.github.com/repos/${repo}/tarball/${sha}`, 300_000)
+  if (!tarball.ok) reviewFail(`the tarball of ${sha} on ${repo} -> HTTP ${tarball.status}${await apiMessage(tarball)}`)
+  const bytes = Buffer.from(await tarball.arrayBuffer())
+  const scratch = mkdtempSync(join(tmpdir(), 'ds-bot-review-'))
+  try {
+    writeFileSync(join(scratch, 'tip.tar.gz'), bytes)
+    const tip = join(scratch, 'tip')
+    mkdirSync(tip)
+    try { execFileSync('tar', ['-xzf', join(scratch, 'tip.tar.gz'), '-C', tip, '--strip-components=1'], { stdio: ['ignore', 'pipe', 'pipe'] }) } catch (error) {
+      reviewFail(`the tarball does not extract (is tar installed?): ${String(error.stderr ?? '').trim() || error.message}`)
+    }
+    const inTip = args => execFileSync('git', args, { cwd: tip, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
+    try {
+      inTip(['init', '-q'])
+      inTip(['add', '-A'])
+      inTip(['-c', 'user.name=review', '-c', 'user.email=review@invalid', 'commit', '-q', '--no-gpg-sign', '-m', `review ${sha}`])
+    } catch (error) { reviewFail(`the extracted tree cannot be committed: ${String(error.stderr ?? '').trim() || error.message}`) }
+    const tree = inTip(['rev-parse', 'HEAD^{tree}']).trim()
+    if (tree !== apiTree) reviewFail(`the tarball of ${sha} commits as tree ${tree}, the API says ${apiTree} — the download is not that commit`)
+    console.log(`ok   ${repo}@${sha} is tree ${tree}`)
+    // The tip's own gates, not this checkout's: a reviewer wants the answer that sha's CI would give.
+    const script = join(tip, 'scripts', 'ds-bot-patches.mjs')
+    if (!existsSync(script)) reviewFail('this tip carries no scripts/ds-bot-patches.mjs')
+    for (const step of ['check', 'canonical']) {
+      try { process.stdout.write(execFileSync(process.execPath, [script, step], { cwd: tip, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })) } catch (error) {
+        reviewFail(`${step} failed on ${sha}:\n${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim() || error.message}`)
+      }
+    }
+    const rel = testFile?.replace(/^\.\//, '')
+    const underCore = rel?.startsWith(`${CORE}/`) ? rel.slice(CORE.length + 1) : rel
+    if (rel) {
+      if (!existsSync(join(tip, CORE, underCore))) reviewFail(`this tip carries no ${CORE}/${underCore}`)
+      const linked = shareDependencies(join(tip, CORE))
+      if (linked.length) console.log(`ok   lent this tip ${linked.map(f => `${CORE}/${f}`).join(' and ')} from this checkout`)
+      try {
+        process.stdout.write(execFileSync(process.execPath, ['--import', './test/harness-resolve.mjs', '--test', underCore], { cwd: join(tip, CORE), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 }))
+      } catch (error) {
+        reviewFail(`${CORE}/${underCore} failed on ${sha}:\n${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim() || error.message}`)
+      }
+    }
+    console.log(`ok   review ${repo}@${sha}${rel ? ` (${CORE}/${underCore})` : ''}`)
+  } finally { rmSync(scratch, { recursive: true, force: true }) }
+}
+
+async function review(sha, testFile) {
+  try { await reviewWork(sha, testFile) } catch (error) {
+    console.log(`review: ${error instanceof ReviewError ? error.message : (error?.message ?? String(error))}`)
+    process.exitCode = 1
+  }
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const command = process.argv[2]
   if (!existsSync(PATCHES)) fail('patches/ds-bot/ is missing')
@@ -425,5 +569,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   else if (command === 'generate') generate()
   else if (command === 'canonical') canonical()
   else if (command === 'pin') checkPin()
-  else fail('usage: node scripts/ds-bot-patches.mjs apply|check|generate|canonical|pin')
+  else if (command === 'review') review(process.argv[3], process.argv[4])
+  else fail('usage: node scripts/ds-bot-patches.mjs apply|check|generate|canonical|pin|review <sha> [test-file]')
 }

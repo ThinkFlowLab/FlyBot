@@ -52,6 +52,10 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 - `core/client.js` — built browser bundle (generated; never hand-edit).
 - `dev/bench.sh`, `dev/smoke.mjs` — test bench. The mock reads who leads a group from the system prompt (`Members: … and you (admin).`), which is where the standing section puts that line (#894). A turn's own text no longer carries it, so "admin calls everyone" in the smoke is decided from the section (#917).
 
+## Reviewing a tip without checking it out
+
+`node scripts/ds-bot-patches.mjs review <sha> [test-file]` answers a review from one command. It downloads that commit's tarball from GitHub, commits it into a scratch repository so the pin can compute a tree, and compares that tree with the API's `commit.tree.sha` — a mismatch means the download is not that commit. Then it runs that tip's own `check` and `canonical`, and, when a test file is named, that file under `core/`. A tree mismatch, a red gate or a failing test prints the reason on stdout and exits non-zero, and nothing in the checkout changes. It needs `git` and `tar`; a public repository downloads without a token, and `DSH_SECRET_GITHUB_TOKEN` authenticates the download when set. The repository is `FLYBOT_REVIEW_REPO=owner/name`, else `GITHUB_REPOSITORY`, else the `upstream` and then the `origin` remote, because a fork pull request's tip lives in the fork. This checkout's `core/node_modules` and `core/dev/harness/node_modules` are lent to the scratch tree, so a named test runs without a second `npm install`.
+
 ## Invariants
 
 1. `ds-bot/` stays pristine; CI fails if it differs from the pin.
