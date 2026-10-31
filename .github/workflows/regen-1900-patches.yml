@@ -1,0 +1,27 @@
+name: Regen 1900 patches
+on:
+  push:
+    branches: [dev/1900-dossier-off-poll]
+permissions:
+  contents: write
+jobs:
+  regen:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev/1900-dossier-off-poll
+          fetch-depth: 0
+      - name: generate
+        run: node scripts/ds-bot-patches.mjs generate
+      - name: commit the series git would write
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- patches/ds-bot; then echo "nothing to regenerate"; exit 0; fi
+          git add patches/ds-bot
+          git commit -m "Regenerate patches/ds-bot from core/ (generate, #1900)"
+          git push origin HEAD:dev/1900-dossier-off-poll
+      - name: canonical
+        run: node scripts/ds-bot-patches.mjs canonical
