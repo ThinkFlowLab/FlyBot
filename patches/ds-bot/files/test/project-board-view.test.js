@@ -390,6 +390,13 @@ test('#1900: an open board reads the dossier once, never on a tick', async () =>
   resetClock()
   win.location.hash = '#project'
   const calls = []
+  // #1913: the open's answer and the one the panel's own read returns are different texts, so the
+  // test can tell which one the panel is drawing.
+  const teamAnswers = [
+    { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: ['work'] }, skills: ['ship-it'] }] },
+    { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot, and this answer is newer.', memory: { head: 'The Chief remembers what the review pass wrote.', topics: ['work', 'review'] }, skills: ['ship-it'] }] },
+  ]
+  let teamReads = 0
   const call = async (name) => {
     calls.push(name)
     if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
@@ -399,7 +406,8 @@ test('#1900: an open board reads the dossier once, never on a tick', async () =>
     if (name === 'project-board') return { tasks: rows, done: [], waiting: [], inflight: [], blocked: [], counts: null }
     if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
     if (name === 'project-team') {
-      return { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: ['work'] }, skills: ['ship-it'] }] }
+      teamReads += 1
+      return teamAnswers[Math.min(teamReads, teamAnswers.length) - 1]
     }
     throw new Error(`unexpected endpoint ${name}`)
   }
@@ -418,10 +426,53 @@ test('#1900: an open board reads the dossier once, never on a tick', async () =>
   assert.match(drawn, /The Chief remembers the Project\./)
   assert.match(drawn, /Skills/)
   assert.match(drawn, /ship-it/)
+  // #1913: the panel opens on the answer the board already had, and one fresh `project-team` read
+  // follows it — reading the dossier is a deliberate act, so it pays for one read instead of staying
+  // as stale as the board's open.
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const refreshed = all(redraw()).map(textOf).join(' | ')
+  assert.equal(count('project-team'), 2, 'opening the panel reads the dossier once more')
+  assert.match(refreshed, /this answer is newer/, 'and the panel draws what that read returned')
+  assert.match(refreshed, /what the review pass wrote/)
+  assert.doesNotMatch(refreshed, /The Chief remembers the Project\./, 'the answer the open froze is not what the panel still shows')
   // Three ticks: the board is re-read each time, the dossier is not read again at all.
   await tick(3)
-  assert.equal(count('project-team'), 1, 'three polls later the dossier has not been read again')
+  assert.equal(count('project-team'), 2, 'three polls later the dossier has not been read again — the panel read is the answer the ticks hand back')
   assert.equal(count('project-board'), 4, 'while the board itself is re-read on every tick')
+})
+
+// #1913: a refresh that fails is not a reason to blank the panel. The rows this open already has
+// stay on screen, so a persona read that times out leaves a one-open-old dossier rather than none.
+test('#1913: a refused dossier refresh keeps the rows the panel already had', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const calls = []
+  let refuse = false
+  const call = async (name) => {
+    calls.push(name)
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') {
+      return { project: { id: 'project-1', name: 'FlyBot', chief: { botId: 'bot-chief' }, assistant: { botId: 'bot-assistant' }, roles: { maintainers: [], members: [] } }, canManage: false }
+    }
+    if (name === 'project-board') return { tasks: rows, done: [], waiting: [], inflight: [], blocked: [], counts: null }
+    if (name === 'tasks') return []
+    if (name === 'project-team') {
+      if (refuse) throw new Error('the persona read timed out')
+      return { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: [] }, skills: [] }] }
+    }
+    throw new Error(`unexpected endpoint ${name}`)
+  }
+  const count = (endpoint) => calls.filter(name => name === endpoint).length
+  const { tree, redraw } = await mount({ actions: {}, call })
+  refuse = true
+  const control = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  assert.ok(control, 'the Chief row carries its Dossier control from the open answer')
+  control.props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const drawn = all(redraw()).map(textOf).join(' | ')
+  assert.equal(count('project-team'), 2, 'opening the panel asks the dossier once more')
+  assert.match(drawn, /You are the Project Chief of FlyBot\./, 'a refused refresh keeps the answer the open had')
+  assert.match(drawn, /The Chief remembers the Project\./)
 })
 
 // #1910: a refused dossier read at open is "no answer yet", not "the team is empty". #1902 made the
@@ -434,7 +485,9 @@ test('#1910: a refused dossier read at open is asked again on the next tick, the
   resetClock()
   win.location.hash = '#project'
   const calls = []
-  let dossierReads = 0
+  // #1913: opening the panel makes its own `project-team` read, so both it and the open's time out —
+  // what this test is about is the first answer that lands, whichever read brings it.
+  let refusals = 2
   const teamAnswer = { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: ['work'] }, skills: ['ship-it'] }] }
   const call = async (name) => {
     calls.push(name)
@@ -445,8 +498,7 @@ test('#1910: a refused dossier read at open is asked again on the next tick, the
     if (name === 'project-board') return { tasks: rows, done: [], waiting: [], inflight: [], blocked: [], counts: null }
     if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
     if (name === 'project-team') {
-      dossierReads += 1
-      if (dossierReads === 1) throw new Error('the persona read timed out')
+      if (refusals > 0) { refusals -= 1; throw new Error('the persona read timed out') }
       return teamAnswer
     }
     throw new Error(`unexpected endpoint ${name}`)
@@ -459,16 +511,19 @@ test('#1910: a refused dossier read at open is asked again on the next tick, the
   assert.ok(control, 'the board still draws its team rows from the record')
   control.props.onClick()
   assert.doesNotMatch(all(redraw()).map(textOf).join(' | '), /You are the Project Chief of FlyBot\./, 'a refusal is no answer yet, so the panel does not invent a dossier')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(count('project-team'), 2, 'the panel asks once more, and that read is refused too')
+  assert.doesNotMatch(all(redraw()).map(textOf).join(' | '), /You are the Project Chief of FlyBot\./, 'a refused refresh keeps what the panel had, it does not invent a dossier')
   // The refusal is not the answer: the next poll asks again, and the row it gets fills the block.
   // Both are read before the assertion so one red run shows both numbers.
   await tick()
   const drawn = all(redraw()).map(textOf).join(' | ')
   const afterTick = { calls: count('project-team'), filled: /You are the Project Chief of FlyBot\./.test(drawn) }
-  assert.deepEqual(afterTick, { calls: 2, filled: true }, 'the next tick asks again, and the row it gets fills the dossier')
+  assert.deepEqual(afterTick, { calls: 3, filled: true }, 'the next tick asks again, and the row it gets fills the dossier')
   assert.match(drawn, /The Chief remembers the Project\./)
   // That answer is this open's answer: the poll hands it back and never reads the dossier again.
   await tick(3)
-  assert.equal(count('project-team'), 2, 'once an answer landed later polls do not read the dossier again')
+  assert.equal(count('project-team'), 3, 'once an answer landed later polls do not read the dossier again')
   assert.equal(count('project-board'), 5, 'while the board itself is re-read on every tick — the open and the four ticks')
 })
 

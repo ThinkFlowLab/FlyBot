@@ -1,7 +1,7 @@
 // The Project board view (#1710): one Project, the rows its read model already aggregated
 // (host `project-board`), grouped by where the work lives. The rows are the tasks themselves —
 // `row.id` is the underlying task id — so opening one opens that task and nothing is copied here.
-import { createElement as h, useCallback, useEffect, useState } from 'react'
+import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 import { call } from './api.js'
 import { dateLocale, hostText, t } from './i18n.js'
 import { roleText } from './role-labels.js'
@@ -932,6 +932,11 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
   const [state, setState] = useState(null)
   const [panel, setPanel] = useState(null)
   const [dossier, setDossier] = useState(null)
+  // #1913: the dossier answer the board hands back on every poll (#1900, #1910), and a generation
+  // counter an explicit Dossier open bumps so a tick already in flight cannot write the older
+  // answer back over the fresh one.
+  const team = useRef(undefined)
+  const teamGen = useRef(0)
   // The hash is the whole entry point, so it has to be read again every time it changes: an
   // entry that writes `#project=<id>` while this mounts opened nothing when the read was one-shot.
   const [hash, setHash] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash))
@@ -965,18 +970,23 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     let gone = false
     // #1864: the board, its record, its rows, the task texts and the team dossier are one read path,
     // and the dossier comes from the single `project-team` call that read makes. #1900: that call is
-    // this open's, not the poll's — `team` is handed back on every later read, so a tick re-reads
-    // only the three answers that change and the dossier is read again on the next board open.
-    // #1910: only an answer is kept. A refused read is drawn as the empty team it always was, but
-    // `team` stays undefined, so the next tick asks `project-team` again instead of serving it.
-    let team
-    const loadBoard = () => readProjectBoard(read, wanted, team)
+    // this open's, not the poll's — the answer is handed back on every later read, so a tick
+    // re-reads only the three answers that change and the dossier is read again on the next board
+    // open. #1910: only an answer is kept. A refused read is drawn as the empty team it always was,
+    // but nothing is cached, so the next tick asks `project-team` again instead of serving it.
+    // #1913: an explicit open of the Dossier panel replaces that answer with a fresh read; the
+    // generation it bumps tells a tick that was already in flight to keep the newer answer.
+    team.current = undefined
+    teamGen.current = 0
+    const loadBoard = () => readProjectBoard(read, wanted, team.current)
     const refresh = async (first) => {
+      const gen = teamGen.current
       try {
         const next = await loadBoard()
         if (!gone) {
-          if (next.teamFresh !== false) team = next.team
-          setState(next)
+          const newer = teamGen.current !== gen
+          if (next.teamFresh !== false && !newer) team.current = next.team
+          setState(newer && team.current !== undefined ? { ...next, team: team.current } : next)
         }
       } catch {
         // The first read is the page's answer, so it takes the empty state it always took. A poll
@@ -989,6 +999,26 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     const timer = setInterval(() => { if (!boardPollPaused()) void refresh(false) }, PROJECT_BOARD_POLL_MS)
     return () => { gone = true; clearInterval(timer) }
   }, [hash])
+  // #1913: reading the dossier is the one deliberate act on this board, so opening its panel pays
+  // for one `project-team` read (the host caps the answer at ~16 KB) instead of showing whatever the
+  // board opened with. The poll keeps handing back the answer this leaves, so #1900's saving stands,
+  // and a refused read draws nothing new: the rows the panel already had stay on screen.
+  const openDossier = async (value) => {
+    setDossier(value)
+    setPanel('dossier')
+    const id = state?.project?.id
+    if (typeof id !== 'string' || id === '') return
+    const gen = teamGen.current + 1
+    teamGen.current = gen
+    try {
+      const answer = await read('project-team', { id })
+      if (teamGen.current !== gen || answer === null || typeof answer !== 'object') return
+      team.current = answer
+      setState(previous => (previous === null ? previous : { ...previous, team: answer }))
+    } catch {
+      // A refresh that fails keeps the answer the open had; the next explicit open asks again.
+    }
+  }
   if (state === null) return null
   // #1750: the scrim is a sibling in front of the dialog, exactly as the Board draws it, so a click
   // beside the board dismisses it and the shell behind reads as a backdrop rather than more rows.
@@ -1020,7 +1050,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),
             // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.
-            onOpenDossier: (value) => { setDossier(value); setPanel('dossier') },
+            onOpenDossier: (value) => { void openDossier(value) },
             // #1860: a team row opens that Bot's chat. The board is a modal over the conversation,
             // so it closes first — otherwise the chat opens behind it.
             onOpenBot: (id) => { close(); actions?.openSession?.(id) },

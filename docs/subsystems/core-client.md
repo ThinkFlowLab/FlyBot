@@ -329,7 +329,12 @@ reading persona and memory files, and a refused dossier leaves the rows, the don
 on screen with an empty team block instead of the empty-Project answer. Since #1910 that block is drawn
 but not remembered: a refused read returns `teamFresh` false, the overlay keeps no answer for the poll
 to hand back, and the next tick asks `project-team` again until an answer lands — a real empty team is
-fresh and frozen like any other answer, so "no answer yet" never becomes "the team is empty". A role-pool entry draws none: since #1892 it is plain `@id`
+fresh and frozen like any other answer, so "no answer yet" never becomes "the team is empty". Since
+#1913 the panel is also the one place that refreshes it: opening the Dossier control pays for one
+`project-team` read (the host caps the answer at ~16 KB) and replaces the answer the poll hands back,
+so a memory head the review pass rewrote after the board opened is one click away. A refused refresh
+draws nothing new and leaves the rows the panel already had, and the five-second poll still never reads
+the dossier, so #1900's saving stands. A role-pool entry draws none: since #1892 it is plain `@id`
 beside its rank, because `project-team` answers rows keyed by the Project's own Bots and the old
 control asked for a row the host never sent. The entry in the owner's own Bot chat is
 `ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads

@@ -11304,6 +11304,8 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
   const [state, setState] = (0, import_react19.useState)(null);
   const [panel, setPanel] = (0, import_react19.useState)(null);
   const [dossier, setDossier] = (0, import_react19.useState)(null);
+  const team = (0, import_react19.useRef)(void 0);
+  const teamGen = (0, import_react19.useRef)(0);
   const [hash, setHash] = (0, import_react19.useState)(() => typeof window === "undefined" ? "" : window.location.hash);
   const close = (0, import_react19.useCallback)(() => {
     if (typeof window !== "undefined") window.location.hash = "";
@@ -11335,14 +11337,17 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
     }
     const wanted = hash.slice("#project".length).replace(/^=/, "");
     let gone = false;
-    let team;
-    const loadBoard = () => readProjectBoard(read, wanted, team);
+    team.current = void 0;
+    teamGen.current = 0;
+    const loadBoard = () => readProjectBoard(read, wanted, team.current);
     const refresh = async (first) => {
+      const gen = teamGen.current;
       try {
         const next = await loadBoard();
         if (!gone) {
-          if (next.teamFresh !== false) team = next.team;
-          setState(next);
+          const newer = teamGen.current !== gen;
+          if (next.teamFresh !== false && !newer) team.current = next.team;
+          setState(newer && team.current !== void 0 ? { ...next, team: team.current } : next);
         }
       } catch {
         if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
@@ -11357,6 +11362,21 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       clearInterval(timer);
     };
   }, [hash]);
+  const openDossier = async (value) => {
+    setDossier(value);
+    setPanel("dossier");
+    const id = state?.project?.id;
+    if (typeof id !== "string" || id === "") return;
+    const gen = teamGen.current + 1;
+    teamGen.current = gen;
+    try {
+      const answer = await read("project-team", { id });
+      if (teamGen.current !== gen || answer === null || typeof answer !== "object") return;
+      team.current = answer;
+      setState((previous) => previous === null ? previous : { ...previous, team: answer });
+    } catch {
+    }
+  };
   if (state === null) return null;
   return (0, import_react19.createElement)(
     "div",
@@ -11406,8 +11426,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           onMembers: () => setPanel("members"),
           // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.
           onOpenDossier: (value) => {
-            setDossier(value);
-            setPanel("dossier");
+            void openDossier(value);
           },
           // #1860: a team row opens that Bot's chat. The board is a modal over the conversation,
           // so it closes first — otherwise the chat opens behind it.
