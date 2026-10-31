@@ -134,10 +134,12 @@ test('#1700: a retired Bot is not addressable by any tool that resolves a Bot by
     add_members: await tool('update_group', { group: 'Duo', add_members: ['Writer'] }, 'm1'),
     admin: await tool('update_group', { group: 'Duo', admin: 'Writer' }, 'm1'),
   }
+  // The four tools #1844 does not touch still answer with the team list; the three write tools
+  // answer one bare sentence, identical whether the Bot is missing or belongs to another owner.
   const noSuchBot = 'No Bot named Writer. Team: Chief, Coder'
   assert.deepEqual(answered, {
     message_bot: noSuchBot,
-    stop_bot: noSuchBot,
+    stop_bot: 'No Bot named Writer.',
     update_bot: 'No Bot named Writer.',
     create_group: noSuchBot,
     add_members: noSuchBot,
@@ -172,7 +174,7 @@ test('only a Main Bot archives; a Main Bot and the caller itself are refused', a
   assert.equal(await tool('archive_bot', { bot: 'Writer' }, 'b3'), 'Only a Main Bot can archive another Bot.')
   assert.equal(saved().bots.b2.fields['flybot-tree'].retired, undefined)
   assert.equal(await tool('archive_bot', { bot: 'Chief' }, 'm1'), 'You cannot archive yourself.')
-  assert.equal(await tool('archive_bot', { bot: 'Nobody' }, 'm1'), 'No Bot named Nobody. Team: Chief, Writer, Coder')
+  assert.equal(await tool('archive_bot', { bot: 'Nobody' }, 'm1'), 'No Bot named Nobody.')
   // A Main Bot cannot be retired through this path; the role goes first (roster.setMain).
   const twoMains = JSON.parse(JSON.stringify(TEAM))
   twoMains.mainBotIds = ['m1', 'b3']
@@ -180,4 +182,45 @@ test('only a Main Bot archives; a Main Bot and the caller itself are refused', a
   t.after(second.stop)
   assert.match(await second.tool('archive_bot', { bot: 'Coder' }, 'm1'), /^Could not archive the Bot: A Main Bot cannot be archived/)
   assert.equal(second.saved().bots.b3.fields['flybot-tree'].retired, undefined)
+})
+
+// #1844: `list_bots` hides another owner's Bot and `authorize` refuses the same change, but the
+// archive tool only asked "am I a Main Bot". Two owners, one signed in, so `authzEnforced()` is
+// true and the owner rule the rest of the host keeps has to hold here too.
+test('#1844: a Main Bot cannot archive another owner\'s Bot', async (t) => {
+  const twoOwners = {
+    ...team({}),
+    version: 2,
+    members: {
+      'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
+      'owner-2': { id: 'owner-2', createdAt: 2 },
+    },
+    authSessions: { s1: { id: 's1', memberId: 'owner-1', createdAt: 1 } },
+  }
+  twoOwners.bots = {
+    ...twoOwners.bots,
+    m1: { ...bot('m1', 'Chief', 1, { treeRole: 'root' }), ownerId: 'owner-1' },
+    b2: { ...bot('b2', 'Writer', 2, { parent: 'm1' }), ownerId: 'owner-1' },
+    x1: { ...bot('x1', 'Van', 3), ownerId: 'owner-2' },
+  }
+  const { tool, saved, stop } = start(twoOwners)
+  t.after(stop)
+  // The refusal is the same sentence a name that does not exist gets: the answer may not
+  // confirm that a Bot the actor cannot see exists.
+  const withoutVan = JSON.parse(JSON.stringify(twoOwners))
+  delete withoutVan.bots.x1
+  const missing = start(withoutVan)
+  t.after(missing.stop)
+  const missingText = await missing.tool('archive_bot', { bot: 'Van' }, 'm1')
+  const foreignText = await tool('archive_bot', { bot: 'Van' }, 'm1')
+  assert.equal(missingText, 'No Bot named Van.')
+  assert.equal(foreignText, missingText)
+  assert.doesNotMatch(foreignText, /Team:/)
+  const state = saved()
+  assert.equal(state.bots.x1.hidden, undefined)
+  assert.equal(state.bots.x1.fields, undefined)
+  assert.equal(state.bots.x1.name, 'Van')
+  // The actor's own Bot is still archived by the same tool.
+  assert.match(await tool('archive_bot', { bot: 'Writer' }, 'm1'), /^Archived Writer\./)
+  assert.equal(saved().bots.b2.fields['flybot-tree'].retired, true)
 })

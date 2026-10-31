@@ -213,6 +213,18 @@ export function install(rt) {
     const bot = rt.findBot(name)
     return teamBot(bot) && !retiredBot(bot) ? bot : undefined
   }
+  // A write target must belong to the caller's own owner, or be granted to that owner (#1844).
+  // Visibility is not authorization: `inRoom` takes no part here, and `listed()` is not reused
+  // as a gate because it treats a foreign Bot in the same room as writable. With authz off (a
+  // single-owner install) this is findTeamBot, so nothing changes there.
+  const writableBot = (name, self) => {
+    const bot = findTeamBot(name)
+    if (bot === undefined || !rt.authzEnforced?.()) return bot
+    const selfOwner = rt.botOf(self)?.ownerId
+    if (selfOwner === undefined) return undefined
+    if (bot.ownerId === selfOwner) return bot
+    return rt.hasGrant?.(bot.id, selfOwner) === true ? bot : undefined
+  }
 
   ctx.tools.register(defineTool({
     name: 'message_bot',
@@ -298,8 +310,8 @@ export function install(rt) {
       await rt.load()
       const sender = callerBot(exec)
       if (sender === undefined || !rt.isMain(sender.id)) refuse('Only a Main Bot can stop other Bots.')
-      const target = findTeamBot(args.bot)
-      if (target === undefined) refuse(`No Bot named ${args.bot}. Team: ${teamNames()}`)
+      const target = writableBot(args.bot, sender.id)
+      if (target === undefined) refuse(`No Bot named ${args.bot}.`)
       if (target.id === sender.id) refuse('You cannot stop yourself.')
       const { running } = activeSessions(target.id)
       if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
@@ -369,7 +381,7 @@ export function install(rt) {
       const self = rt.selfOf(exec.agent?.id)
       const caller = rt.botOf(self)
       if (caller === undefined) return 'Only Bots on the team can use update_bot.'
-      const bot = args.bot ? findTeamBot(args.bot) : caller
+      const bot = args.bot ? writableBot(args.bot, self) : caller
       if (bot === undefined) return `No Bot named ${args.bot}.`
       if (bot.id !== caller.id && !rt.isMain(self)) return 'Only a Main Bot can change another Bot. Leave out bot to change yourself, or ask a Main Bot with message_bot.'
       try {
@@ -399,8 +411,8 @@ export function install(rt) {
       await rt.load()
       const sender = callerBot(exec)
       if (sender === undefined || !rt.isMain(sender.id)) return 'Only a Main Bot can archive another Bot.'
-      const target = findTeamBot(args.bot)
-      if (target === undefined) return `No Bot named ${args.bot}. Team: ${teamNames()}`
+      const target = writableBot(args.bot, sender.id)
+      if (target === undefined) return `No Bot named ${args.bot}.`
       if (target.id === sender.id) return 'You cannot archive yourself.'
       let freed
       try {

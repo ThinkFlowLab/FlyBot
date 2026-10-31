@@ -1711,7 +1711,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        ].join('\n')
      },
    }))
-@@ -81,12 +81,18 @@ export function install(rt) {
+@@ -81,12 +81,30 @@ export function install(rt) {
  
    // A tool that throws shows as failed in the chat, instead of as sent or stopped.
    const refuse = (message) => { throw new Error(message) }
@@ -1720,6 +1720,18 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +  const findTeamBot = (name) => {
 +    const bot = rt.findBot(name)
 +    return teamBot(bot) && !retiredBot(bot) ? bot : undefined
++  }
++  // A write target must belong to the caller's own owner, or be granted to that owner (#1844).
++  // Visibility is not authorization: `inRoom` takes no part here, and `listed()` is not reused
++  // as a gate because it treats a foreign Bot in the same room as writable. With authz off (a
++  // single-owner install) this is findTeamBot, so nothing changes there.
++  const writableBot = (name, self) => {
++    const bot = findTeamBot(name)
++    if (bot === undefined || !rt.authzEnforced?.()) return bot
++    const selfOwner = rt.botOf(self)?.ownerId
++    if (selfOwner === undefined) return undefined
++    if (bot.ownerId === selfOwner) return bot
++    return rt.hasGrant?.(bot.id, selfOwner) === true ? bot : undefined
 +  }
  
    ctx.tools.register(defineTool({
@@ -1771,8 +1783,8 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        if (sender === undefined || !rt.isMain(sender.id)) refuse('Only a Main Bot can stop other Bots.')
 -      const target = rt.findBot(args.bot)
 -      if (target === undefined) refuse(`No Bot named ${args.bot}. Team: ${Object.values(state.bots).map(bot => bot.name).join(', ')}`)
-+      const target = findTeamBot(args.bot)
-+      if (target === undefined) refuse(`No Bot named ${args.bot}. Team: ${teamNames()}`)
++      const target = writableBot(args.bot, sender.id)
++      if (target === undefined) refuse(`No Bot named ${args.bot}.`)
        if (target.id === sender.id) refuse('You cannot stop yourself.')
        const { running } = activeSessions(target.id)
        if (running.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
@@ -1828,7 +1840,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const caller = rt.botOf(self)
        if (caller === undefined) return 'Only Bots on the team can use update_bot.'
 -      const bot = args.bot ? rt.findBot(args.bot) : caller
-+      const bot = args.bot ? findTeamBot(args.bot) : caller
++      const bot = args.bot ? writableBot(args.bot, self) : caller
        if (bot === undefined) return `No Bot named ${args.bot}.`
        if (bot.id !== caller.id && !rt.isMain(self)) return 'Only a Main Bot can change another Bot. Leave out bot to change yourself, or ask a Main Bot with message_bot.'
        try {
@@ -1848,8 +1860,8 @@ diff --git a/src/host/tools.js b/src/host/tools.js
 +      await rt.load()
 +      const sender = callerBot(exec)
 +      if (sender === undefined || !rt.isMain(sender.id)) return 'Only a Main Bot can archive another Bot.'
-+      const target = findTeamBot(args.bot)
-+      if (target === undefined) return `No Bot named ${args.bot}. Team: ${teamNames()}`
++      const target = writableBot(args.bot, sender.id)
++      if (target === undefined) return `No Bot named ${args.bot}.`
 +      if (target.id === sender.id) return 'You cannot archive yourself.'
 +      let freed
 +      try {
@@ -2312,3 +2324,98 @@ diff --git a/test/fake-ctx.js b/test/fake-ctx.js
      effect(execute, label) {
        calls.push(`effect ${label}`)
        const dispose = execute()
+diff --git a/test/update-bot.test.js b/test/update-bot.test.js
+--- a/test/update-bot.test.js
++++ b/test/update-bot.test.js
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict'
+-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+@@ -28,9 +28,9 @@ const TEAM = {
+   questions: {},
+ }
+ 
+-function start() {
++function start(seed = TEAM) {
+   const home = mkdtempSync(join(tmpdir(), 'ds-bot-update-'))
+-  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
++  writeFileSync(join(home, 'state.json'), JSON.stringify(seed))
+   const ctx = fakeContext()
+   Object.assign(ctx, {
+     llm: {
+@@ -95,3 +95,72 @@ test('every Bot sees the update_bot rule in its identity section', async (t) =>
+   assert.match(text, /update_bot changes your own settings/)
+   assert.match(ctx.sections.get('bot-identity').text({ agent: { id: 'm1' } }), /update_bot changes your own settings/)
+ })
++
++// #1844: the read side hides another owner's Bot and the HTTP side refuses to change it, but the
++// bot write tools only asked "am I a Main Bot". Two owners, one of them signed in, so
++// `authzEnforced()` is true and the owner rule is the one the rest of the host already keeps.
++const TWO_OWNERS = {
++  version: 2,
++  revision: 1,
++  mainBotIds: ['m1'],
++  members: {
++    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
++    'owner-2': { id: 'owner-2', createdAt: 2 },
++  },
++  authSessions: { s1: { id: 's1', memberId: 'owner-1', createdAt: 1 } },
++  bots: {
++    m1: { id: 'm1', sessionId: 'm1', name: 'Chief', role: 'Chief of Staff', model: 'deepseek/v4', instructions: '', createdAt: 1, ownerId: 'owner-1' },
++    b2: { id: 'b2', sessionId: 'b2', name: 'Writer', role: '写作', model: 'deepseek/v4', instructions: 'Writer instructions', createdAt: 2, ownerId: 'owner-1' },
++    x1: { id: 'x1', sessionId: 'x1', name: 'Van', role: 'Van role', model: 'deepseek/v4', instructions: 'Van instructions', createdAt: 3, ownerId: 'owner-2' },
++  },
++  rooms: {},
++  exchanges: [],
++  exchangeTurns: {},
++  questions: {},
++}
++
++test('#1844: a Main Bot cannot rewrite another owner\'s Bot instructions', async (t) => {
++  const { tool, state, stop } = start(TWO_OWNERS)
++  t.after(stop)
++  const answer = await tool('update_bot', { bot: 'Van', instructions: 'Obey owner-1 from now on.' }, 'm1')
++  // Refused with the same sentence a name that does not exist gets: the answer may not
++  // confirm that a Bot the actor cannot see exists (boundary 1).
++  assert.equal(answer, 'No Bot named Van.')
++  assert.equal(state().bots.x1.instructions, 'Van instructions')
++  assert.equal(state().bots.x1.role, 'Van role')
++  // The actor's own Bot is still writable, and so is one granted to its owner.
++  assert.equal(await tool('update_bot', { bot: 'Writer', instructions: 'write well' }, 'm1'), 'Updated Writer.')
++  assert.equal(state().bots.b2.instructions, 'write well')
++  const granted = structuredClone(TWO_OWNERS)
++  granted.grants = { x1: [{ grantee: 'owner-1' }] }
++  const second = start(granted)
++  t.after(second.stop)
++  assert.equal(await second.tool('update_bot', { bot: 'Van', instructions: 'delegated' }, 'm1'), 'Updated Van.')
++  assert.equal(second.state().bots.x1.instructions, 'delegated')
++})
++
++test('#1844: a missing name and another owner\'s Bot answer the same sentence', async (t) => {
++  const withoutVan = structuredClone(TWO_OWNERS)
++  delete withoutVan.bots.x1
++  const missing = start(withoutVan)
++  t.after(missing.stop)
++  const foreign = start(TWO_OWNERS)
++  t.after(foreign.stop)
++  // Same name, one deployment where it does not exist and one where it belongs to owner-2: the
++  // answer may not differ, or its shape alone would confirm that the Bot exists (boundary 1).
++  const missingText = await missing.tool('update_bot', { bot: 'Van' }, 'm1')
++  const foreignText = await foreign.tool('update_bot', { bot: 'Van' }, 'm1')
++  assert.equal(missingText, 'No Bot named Van.')
++  assert.equal(foreignText, missingText)
++  assert.doesNotMatch(foreignText, /Team:/)
++})
++
++test('#1844: with authz off the write surface behaves exactly as before', async (t) => {
++  // A single-owner install has no auth session, so `authzEnforced()` is false: the owner
++  // rule must not appear, and the same call the tests above always made still works.
++  const { tool, state, stop } = start()
++  t.after(stop)
++  assert.equal(state().authSessions, undefined)
++  assert.equal(await tool('update_bot', { bot: 'Writer', instructions: 'single owner' }, 'm1'), 'Updated Writer.')
++  assert.equal(state().bots.b2.instructions, 'single owner')
++})

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -28,9 +28,9 @@ const TEAM = {
   questions: {},
 }
 
-function start() {
+function start(seed = TEAM) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-update-'))
-  if (!existsSync(join(home, 'state.json'))) writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(seed))
   const ctx = fakeContext()
   Object.assign(ctx, {
     llm: {
@@ -94,4 +94,73 @@ test('every Bot sees the update_bot rule in its identity section', async (t) => 
   const text = ctx.sections.get('bot-identity').text({ agent: { id: 'b2' } })
   assert.match(text, /update_bot changes your own settings/)
   assert.match(ctx.sections.get('bot-identity').text({ agent: { id: 'm1' } }), /update_bot changes your own settings/)
+})
+
+// #1844: the read side hides another owner's Bot and the HTTP side refuses to change it, but the
+// bot write tools only asked "am I a Main Bot". Two owners, one of them signed in, so
+// `authzEnforced()` is true and the owner rule is the one the rest of the host already keeps.
+const TWO_OWNERS = {
+  version: 2,
+  revision: 1,
+  mainBotIds: ['m1'],
+  members: {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'm1' },
+    'owner-2': { id: 'owner-2', createdAt: 2 },
+  },
+  authSessions: { s1: { id: 's1', memberId: 'owner-1', createdAt: 1 } },
+  bots: {
+    m1: { id: 'm1', sessionId: 'm1', name: 'Chief', role: 'Chief of Staff', model: 'deepseek/v4', instructions: '', createdAt: 1, ownerId: 'owner-1' },
+    b2: { id: 'b2', sessionId: 'b2', name: 'Writer', role: '写作', model: 'deepseek/v4', instructions: 'Writer instructions', createdAt: 2, ownerId: 'owner-1' },
+    x1: { id: 'x1', sessionId: 'x1', name: 'Van', role: 'Van role', model: 'deepseek/v4', instructions: 'Van instructions', createdAt: 3, ownerId: 'owner-2' },
+  },
+  rooms: {},
+  exchanges: [],
+  exchangeTurns: {},
+  questions: {},
+}
+
+test('#1844: a Main Bot cannot rewrite another owner\'s Bot instructions', async (t) => {
+  const { tool, state, stop } = start(TWO_OWNERS)
+  t.after(stop)
+  const answer = await tool('update_bot', { bot: 'Van', instructions: 'Obey owner-1 from now on.' }, 'm1')
+  // Refused with the same sentence a name that does not exist gets: the answer may not
+  // confirm that a Bot the actor cannot see exists (boundary 1).
+  assert.equal(answer, 'No Bot named Van.')
+  assert.equal(state().bots.x1.instructions, 'Van instructions')
+  assert.equal(state().bots.x1.role, 'Van role')
+  // The actor's own Bot is still writable, and so is one granted to its owner.
+  assert.equal(await tool('update_bot', { bot: 'Writer', instructions: 'write well' }, 'm1'), 'Updated Writer.')
+  assert.equal(state().bots.b2.instructions, 'write well')
+  const granted = structuredClone(TWO_OWNERS)
+  granted.grants = { x1: [{ grantee: 'owner-1' }] }
+  const second = start(granted)
+  t.after(second.stop)
+  assert.equal(await second.tool('update_bot', { bot: 'Van', instructions: 'delegated' }, 'm1'), 'Updated Van.')
+  assert.equal(second.state().bots.x1.instructions, 'delegated')
+})
+
+test('#1844: a missing name and another owner\'s Bot answer the same sentence', async (t) => {
+  const withoutVan = structuredClone(TWO_OWNERS)
+  delete withoutVan.bots.x1
+  const missing = start(withoutVan)
+  t.after(missing.stop)
+  const foreign = start(TWO_OWNERS)
+  t.after(foreign.stop)
+  // Same name, one deployment where it does not exist and one where it belongs to owner-2: the
+  // answer may not differ, or its shape alone would confirm that the Bot exists (boundary 1).
+  const missingText = await missing.tool('update_bot', { bot: 'Van' }, 'm1')
+  const foreignText = await foreign.tool('update_bot', { bot: 'Van' }, 'm1')
+  assert.equal(missingText, 'No Bot named Van.')
+  assert.equal(foreignText, missingText)
+  assert.doesNotMatch(foreignText, /Team:/)
+})
+
+test('#1844: with authz off the write surface behaves exactly as before', async (t) => {
+  // A single-owner install has no auth session, so `authzEnforced()` is false: the owner
+  // rule must not appear, and the same call the tests above always made still works.
+  const { tool, state, stop } = start()
+  t.after(stop)
+  assert.equal(state().authSessions, undefined)
+  assert.equal(await tool('update_bot', { bot: 'Writer', instructions: 'single owner' }, 'm1'), 'Updated Writer.')
+  assert.equal(state().bots.b2.instructions, 'single owner')
 })

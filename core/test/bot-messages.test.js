@@ -244,6 +244,36 @@ test('stop_bot cancels the running turns and tells the Bot why in a new turn', a
   assert.equal(notice.source.role, 'stopped')
 })
 
+// #1844: `list_bots` hides another owner's Bot and the HTTP side refuses the same Bot, but
+// stop_bot only asked "am I a Main Bot". Two owners, one signed in, so `authzEnforced()` is true.
+test('#1844: a Main Bot cannot stop another owner\'s running Bot', async (t) => {
+  const seed = team({ group: true })
+  seed.version = 2
+  seed.members = {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' },
+    'owner-2': { id: 'owner-2', createdAt: 2 },
+  }
+  seed.authSessions = { s1: { id: 's1', memberId: 'owner-1', createdAt: 1 } }
+  seed.bots.a.ownerId = 'owner-1'
+  seed.bots.b.ownerId = 'owner-1'
+  seed.bots.x = { id: 'x', name: 'Van', role: 'Van role', sessionId: 'x', createdAt: 3, ownerId: 'owner-2' }
+  const { agents, emit, tool, stop } = await start(seed)
+  t.after(stop)
+  emit('x', 'turn/start', { turn: 1 })
+  // The same sentence a name that does not exist gets: the answer may not confirm that a Bot
+  // the actor cannot see exists, and its running turn is not touched.
+  const withoutVan = JSON.parse(JSON.stringify(seed))
+  delete withoutVan.bots.x
+  const missing = await start(withoutVan)
+  t.after(missing.stop)
+  const missingText = await missing.tool('stop_bot', { bot: 'Van' }, 'a').then(() => 'no refusal', error => error.message)
+  const foreignText = await tool('stop_bot', { bot: 'Van' }, 'a').then(() => 'no refusal', error => error.message)
+  assert.equal(missingText, 'No Bot named Van.')
+  assert.equal(foreignText, missingText)
+  assert.doesNotMatch(foreignText, /Team:/)
+  assert.deepEqual(agents.get('x')?.calls ?? [], [], 'the foreign Bot\'s running turn is untouched')
+})
+
 test('stop_bot belongs to a Main Bot', async (t) => {
   const { tool, stop } = await start(team())
   t.after(stop)
