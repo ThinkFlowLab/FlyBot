@@ -353,7 +353,9 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   assert.match(textIn(tree), /Dev4 · stalled/, 'the board draws what the first read answered')
   const afterFirst = count.calls
   await tick()
-  assert.equal(count.calls, afterFirst + 5, 'an open board reads again on the next tick')
+  // #1900: a tick is the four reads that change — the dossier was read once above and is drawn from
+  // that answer, so it is not part of a tick's count.
+  assert.equal(count.calls, afterFirst + 4, 'an open board reads the four that change on the next tick, not the dossier')
   // A row opens its own board: the hash names the task and this board stops drawing, so a tick that
   // lands before the cleanup must not read. This segment pins the unmount, not the predicate.
   const afterTick = count.calls
@@ -363,7 +365,7 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   // Closing that board puts this one back in front: the next tick reads again.
   win.location.hash = '#project'
   await tick()
-  assert.equal(count.calls, afterTick + 5, 'closing the row’s board resumes the poll')
+  assert.equal(count.calls, afterTick + 4, 'closing the row’s board resumes the poll')
   // A hidden tab reads nothing either — this is the segment the named predicate is pinned by.
   const afterResume = count.calls
   doc.visibilityState = 'hidden'
@@ -371,7 +373,7 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   assert.equal(count.calls, afterResume, 'no read in a hidden tab')
   doc.visibilityState = 'visible'
   await tick()
-  assert.equal(count.calls, afterResume + 5, 'a visible tab reads again on the next tick')
+  assert.equal(count.calls, afterResume + 4, 'a visible tab reads again on the next tick')
   // Close the board: the timer goes with it, so a tick afterwards reads nothing at all.
   const afterVisible = count.calls
   for (const off of cleanups) off()
