@@ -522,7 +522,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      const name = patch.name === undefined ? undefined : cleanRoomName(patch.name, room.id)
      const notice = patch.notice === undefined ? undefined : cleanNotice(patch.notice)
      const moving = patch.workDir !== undefined
-@@ -340,14 +340,24 @@ export function install(rt) {
+@@ -340,19 +340,30 @@ export function install(rt) {
      const removed = room.members.filter(member => !members.includes(member))
      if (added.length > 0) changes.push(`added ${names(added)}`)
      if (removed.length > 0) changes.push(`removed ${names(removed)}`)
@@ -552,7 +552,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.mode !== undefined && patch.mode !== room.mode) {
        room.mode = patch.mode
        changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
-@@ -371,7 +371,13 @@ export function install(rt) {
+     }
+-    if (notice !== undefined && notice !== (room.notice ?? '')) {
++    const noticeChanged = notice !== undefined && notice !== (room.notice ?? '')
++    if (noticeChanged) {
+       room.notice = notice
+       changes.push(notice ? 'updated the notice' : 'cleared the notice')
+     }
+@@ -371,20 +371,33 @@ export function install(rt) {
          delete room.named
        }
      }
@@ -567,7 +574,15 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (room.name !== before) {
        changes.push(`renamed it "${room.name}"`)
        await retitleRoom(room)
-@@ -383,8 +383,11 @@ export function install(rt) {
+     }
+     await rt.save()
++    // A notice edit is a membership push like a seat change: the guests already in the room hold the old
++    // notice and nothing else tells them. The same roster snapshot carries it, only this field differs,
++    // so the envelope repeats no row. Sent after the save, like the join at creation.
++    if (noticeChanged) void rt.notifyRoomShare?.(room, { op: 'join' })
+     return { room, changes }
+   }
+ 
    async function deleteRoom(id) {
      const room = rt.roomOf(id)
      if (room === undefined) throw new Error('Unknown group chat')

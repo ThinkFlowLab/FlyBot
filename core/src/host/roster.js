@@ -435,7 +435,8 @@ export function install(rt) {
       room.mode = patch.mode
       changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
     }
-    if (notice !== undefined && notice !== (room.notice ?? '')) {
+    const noticeChanged = notice !== undefined && notice !== (room.notice ?? '')
+    if (noticeChanged) {
       room.notice = notice
       changes.push(notice ? 'updated the notice' : 'cleared the notice')
     }
@@ -466,6 +467,10 @@ export function install(rt) {
       await retitleRoom(room)
     }
     await rt.save()
+    // A notice edit is a membership push like a seat change: the guests already in the room hold the old
+    // notice and nothing else tells them. The same roster snapshot carries it, only this field differs,
+    // so the envelope repeats no row. Sent after the save, like the join at creation.
+    if (noticeChanged) void rt.notifyRoomShare?.(room, { op: 'join' })
     return { room, changes }
   }
 

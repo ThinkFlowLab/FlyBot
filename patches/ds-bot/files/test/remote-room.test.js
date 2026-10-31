@@ -21,6 +21,7 @@ import {
   viewerRole,
 } from '../src/host/room-membership.js'
 import { install as installReach, reach, ticketPeers } from '../src/host/reach.js'
+import { install as installRoster } from '../src/host/roster.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
 import { HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
@@ -725,6 +726,7 @@ const withRemote = async (rt, actorA) => {
   soloWar(rt)
   publish(rt)
   await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
   await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
 }
 
@@ -2367,6 +2369,71 @@ test('#904: a join roster lists every host Bot, and a line keeps the Bot that wr
   assert.equal(room.participants.filter(p => p.fromRoster && p.leftSeq === undefined).length, 0, 'an empty roster leaves nobody of the host\'s from the roster')
   assert.equal(room.participants.some(p => p.id === 'spec-b' && p.leftSeq === undefined), true, 'my own Bot is not controlled by the roster')
   assert.equal(room.participants.some(p => p.handle === '@chief.alice.home' && p.leftSeq === undefined), true, 'the seat that carried the join stays')
+})
+
+// The notice is a setting the host edits, and a guest already seated learns it from the share envelope
+// and nothing else: `notifyRoomShare` was called from room creation alone, so an edited or cleared notice
+// reached nobody until the next join. A notice change now rides one join — the same roster snapshot, only
+// the notice field changed — and only when the value really changed.
+test('#1939: a notice the host edits reaches the guests already seated, once, and only when it changes', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  const seated = parseRoomShare(sent.filter(msg => msg.via === 'room-share').at(-1).text)
+  assert.equal(seated.op, 'join', 'the remote seat joined through one envelope')
+  sent.length = 0
+  const shares = () => sent.filter(msg => msg.via === 'room-share')
+
+  // A patch that carries no notice, and a notice written back at the value the room already holds, push
+  // nothing: renaming the room, flipping its reply mode or handing over the admin is not a notice change.
+  await rt.updateRoom('war', { name: 'War room', mode: 'everyone', admin: 'chief-a' }, undefined, actorA)
+  assert.equal(shares().length, 0, 'a patch with no notice sends no join')
+  await rt.updateRoom('war', { notice: '' }, undefined, actorA)
+  assert.equal(shares().length, 0, 'a notice written back at its own value sends no join')
+
+  const room = rt.state.rooms.war
+  const lines = room.log.length
+  await rt.updateRoom('war', { notice: 'New' }, undefined, actorA)
+  assert.equal(shares().length, 1, 'one changed notice is one envelope')
+  const packed = parseRoomShare(shares()[0].text)
+  assert.equal(packed.op, 'join', 'the guest projects the notice from a join')
+  assert.equal(packed.notice, 'New', 'the envelope carries the new notice')
+  const { notice: carried, ...rest } = packed
+  const { notice: before, ...snapshot } = seated
+  assert.equal(typeof carried, 'string')
+  assert.deepEqual(rest, snapshot, 'the same roster snapshot: only the notice field differs, no new row')
+  assert.equal(room.log.length, lines, 'the push is the envelope, not a chat line')
+  assert.deepEqual(room.members, ['chief-a', 'chief-b'], 'no seat changed with the notice')
+
+  // The guest applies that envelope and shows the new notice.
+  const guestState = JSON.parse(JSON.stringify(TEAM))
+  guestState.rooms = {}
+  const guest = host(t, guestState)
+  await guest.rt.load()
+  const { bob } = await signAliceAndBob(guest.rt)
+  const actorB = await guest.rt.authenticate(bob.sessionToken)
+  const applied = await guest.rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: shares()[0].text, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(applied.handled, true)
+  assert.equal(applied.room.notice, 'New', 'the guest\'s copy follows the envelope')
+
+  // Clearing it is the same one envelope, with a present empty field, and the guest clears its copy.
+  await rt.updateRoom('war', { notice: '' }, undefined, actorA)
+  assert.equal(shares().length, 2, 'clearing sends one envelope, not a repeated roster')
+  assert.equal(parseRoomShare(shares()[1].text).notice, '', 'a cleared notice is still carried, as an empty field')
+  await guest.rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief',
+    text: shares()[1].text, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(applied.room.notice, '', 'the guest clears its copy too')
 })
 
 // #904: a roster is stranger-written text, so the envelope that carries one is gated: only the room's
