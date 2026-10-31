@@ -1,1 +1,0 @@
-A workflow no longer ends early because an output value merely contains `open-pr`: a declared OUTPUT now counts `open-pr` (and `tip-unchanged`) only as a whole word, so a triage brief that names `data-open-project` lets the run continue to Claim instead of finishing with every successor still queued ([#1866](https://github.com/ThinkFlowLab/FlyBot/issues/1866)).

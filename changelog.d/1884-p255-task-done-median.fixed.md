@@ -1,1 +1,0 @@
-The Project board's task-completion median now counts a card the way the task store finishes it — `status: 'accepted'`, timed from the last terminal `actors[]` entry — instead of the `completedAt` field the store never writes, so the number stops reading `—` on a real deployment ([#1884](https://github.com/ThinkFlowLab/FlyBot/issues/1884)).

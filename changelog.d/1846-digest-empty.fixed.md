@@ -1,1 +1,0 @@
-Project Assistant: the 09:00 digest now reads the Project's own board instead of an actor-less one, so a signed-in install no longer gets "no change since the previous digest" every day and the archived watermark stops hiding finished cards ([#1846](https://github.com/ThinkFlowLab/FlyBot/issues/1846)).

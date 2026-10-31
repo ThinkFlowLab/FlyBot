@@ -1,1 +1,0 @@
-A meeting can now record who a Project Chief or an owner's agent speaks for: positions carry `speaksFor`, the archived decision file names the proxy beside that position, and a `severe` decision is refused when one side rests only on a proxy whose person has neither taken a position nor been recorded silent ([#1861](https://github.com/ThinkFlowLab/FlyBot/issues/1861)).

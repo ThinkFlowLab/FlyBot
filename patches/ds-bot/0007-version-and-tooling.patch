@@ -68,14 +68,14 @@ diff --git a/package-lock.json b/package-lock.json
  {
    "name": "ds-bot",
 -  "version": "0.1.5",
-+  "version": "0.2.17",
++  "version": "0.2.18",
    "lockfileVersion": 3,
    "requires": true,
    "packages": {
      "": {
        "name": "ds-bot",
 -      "version": "0.1.5",
-+      "version": "0.2.17",
++      "version": "0.2.18",
        "license": "Apache-2.0",
 +      "dependencies": {
 +        "@larksuiteoapi/node-sdk": "1.76.0"
@@ -706,7 +706,7 @@ diff --git a/package.json b/package.json
  {
    "name": "ds-bot",
 -  "version": "0.1.5",
-+  "version": "0.2.17",
++  "version": "0.2.18",
    "description": "DS Bot: a team of long-lived Bots for DeepSeek Harness, with Main Bots, Bot-to-Bot messages and group chats",
    "keywords": [
      "dsh-plugin",

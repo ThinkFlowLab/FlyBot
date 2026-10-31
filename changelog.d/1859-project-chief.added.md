@@ -1,1 +1,0 @@
-Every Project now gets its own Chief, created with the Project: the record carries `chief: { botId, sessionId, createdAt }`, the Chief Bot carries the Project binding, and `project-delete` retires it with the Project. It speaks for that one Project only, never for the user's main Chief (#1859).
