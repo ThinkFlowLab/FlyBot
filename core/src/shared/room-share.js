@@ -81,7 +81,7 @@ function fitTransport(body) {
   if (typeof body.text === 'string') {
     while (body.text.length > 0 && wire().length > ROOM_SHARE_TEXT_MAX) {
       const extra = Math.max(1, wire().length - ROOM_SHARE_TEXT_MAX)
-      body.text = body.text.slice(0, Math.max(0, body.text.length - extra))
+      body.text = cut(body.text, Math.max(0, body.text.length - extra)).text
     }
     if (!body.text) delete body.text
   }
@@ -120,7 +120,7 @@ function rosterEntry(entry = {}) {
 // A chat line the join copies across. Text keeps its line breaks; other control characters go.
 function historyLine(entry = {}) {
   const who = clip(entry.who)
-  const text = String(entry.text ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '').trim().slice(0, HISTORY_TEXT)
+  const text = cut(String(entry.text ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '').trim(), HISTORY_TEXT).text
   if (!who || !text) return undefined
   const out = { who, text, seq: Number.isFinite(Number(entry.seq)) ? Math.max(0, Math.floor(Number(entry.seq))) : 0 }
   if (entry.authorKind === 'human' || entry.authorKind === 'bot') out.authorKind = entry.authorKind
@@ -158,7 +158,7 @@ export function encodeRoomShare(payload = {}) {
   if (payload.kind) body.kind = clip(payload.kind, 32)
   if (payload.authorKind) body.authorKind = clip(payload.authorKind, 16)
   if (payload.authorId) body.authorId = clip(payload.authorId, 120)
-  if (payload.text) body.text = String(payload.text).slice(0, 18_000)
+  if (payload.text) body.text = cut(String(payload.text), 18_000).text
   // #825: the Bots a line calls, resolved by the sending home where mentions are already resolved,
   // and how many Bot answers the discussion has already taken. A receiving home answers only its own
   // handles in `calls` and only below its room's hop cap; nothing here is read back out of the text.

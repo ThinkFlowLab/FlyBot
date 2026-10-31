@@ -37,6 +37,7 @@ import { randomBytes } from 'node:crypto'
 import { cleanPeerName, disambiguatedRemoteTitle, faceAliases, isChiefRecord, remoteBotName, remoteBotTitle, remoteCallName, sharedRoomTitle } from '../shared/remote-label.js'
 import { formatFaceRoomTitle, isAutoFaceTitle, faceRoomCreatedAt } from '../shared/face-title.js'
 import { HISTORY_MAX, HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../shared/room-share.js'
+import { cut } from '../shared/text-boundary.js'
 import { cleanFaceLead, cleanRoleLabel, faceLeadOf } from './face-lead.js'
 import { cleanName, fenceUntrusted, isFencedUntrusted, unwrapUntrusted } from './delivery.js'
 import { prepareRoomLine } from './room-context.js'
@@ -1116,7 +1117,7 @@ export function install(rt) {
       const handle = carried || claimed || own
       return {
         who: cleanName(line.who || 'member'),
-        text: seatText(line).slice(0, HISTORY_TEXT),
+        text: cut(seatText(line), HISTORY_TEXT).text,
         seq: line.seq ?? 0,
         ...(line.authorKind === 'human' || line.authorKind === 'bot' ? { authorKind: line.authorKind } : {}),
         ...(line.authorId ? { authorId: String(line.authorId).slice(0, 120) } : {}),
@@ -1180,7 +1181,7 @@ export function install(rt) {
         : String(handle || entry.authorId || who).slice(0, 120)
       append(room, rt.authoredRoomLine(room, {
         who,
-        text: String(entry.text).slice(0, HISTORY_TEXT),
+        text: cut(String(entry.text), HISTORY_TEXT).text,
         authorId,
         authorKind: human ? 'human' : 'bot',
         remote: true,

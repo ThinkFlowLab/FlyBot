@@ -22,7 +22,7 @@ import {
 } from '../src/host/room-membership.js'
 import { install as installReach, reach, ticketPeers } from '../src/host/reach.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
-import { encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
+import { HISTORY_TEXT, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
 import { ROOM_CONTEXT_BUDGET, compactStatus, fitRoomLines, prepareRoomLine } from '../src/host/room-context.js'
 import { mentionRows } from '../src/client/at-menu.js'
@@ -888,6 +888,90 @@ test('a room-share envelope clips peer names on a code point boundary (#1923)', 
     assert.ok(kept.length > max - 10, `${field} does not drop the whole field for one character: ${kept.length}`)
     assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(source, 'utf8').subarray(0, Buffer.byteLength(kept))), `${field} is a prefix of what the sender meant, byte for byte`)
   }
+})
+
+// A join copies chat lines into the envelope it sends to another owner, and its own bound is a
+// code-unit one: a line whose 2,000th unit is half of a surrogate pair reached the guest as half of
+// a character. The copied line stops before the pair instead.
+test('a join envelope copies a history line on a code point boundary', () => {
+  const text = `${'a'.repeat(1999)}\u{1F600}tail`
+  const packed = encodeRoomShare({
+    op: 'join', roomId: 'war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', seq: 3,
+    history: [{ who: 'Ann', text, seq: 1 }],
+  })
+  const parsed = parseRoomShare(packed)
+  const line = parsed.history[0]
+  assert.equal(line.text.isWellFormed(), true, `not well formed: ${JSON.stringify(line.text.slice(-2))}`)
+  assert.equal(line.text, 'a'.repeat(1999), 'the bound retracts one unit instead of splitting the pair')
+  assert.equal(line.text.includes('\uFFFD'), false, 'the copied line carries no replacement character')
+  assert.ok(line.text.length <= HISTORY_TEXT, `${line.text.length} code units, over ${HISTORY_TEXT}`)
+  assert.equal(Buffer.from(line.text, 'utf8').equals(Buffer.from(text, 'utf8').subarray(0, Buffer.byteLength(line.text))), true, 'the copied line is a UTF-8 byte prefix of what was typed')
+  // A receiving home re-sends what it read: a second pass changes nothing.
+  const again = parseRoomShare(encodeRoomShare(parsed))
+  assert.equal(again.history[0].text, 'a'.repeat(1999))
+  assert.equal(again.history[0].text.isWellFormed(), true)
+})
+
+// The host builds the history it copies, so its own 2,000-unit slice is the first place a line can
+// lose half a surrogate pair: the guest then reads U+FFFD where the host read an emoji.
+test('a join copies a long line to a guest on a code point boundary', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  const room = rt.state.rooms.war
+  rt.state.bots['chief-a'].fields = { social: { member: { handle: '@chief.a.home', home: '@alice.home', ownerName: 'Alice' } } }
+  room.participants.push({ kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 0, joinedAt: 1 })
+  room.log.push({ who: 'Alice', authorKind: 'human', text: `${'a'.repeat(1999)}\u{1F600}tail`, seq: 9 })
+  room.seq = 9
+  await rt.notifyRoomShare(room, { op: 'join', handle: '@coder.bob.home' })
+  assert.equal(sent.length > 0, true, 'the join left this home')
+  const join = parseRoomShare(sent.at(-1).text)
+  const copied = join.history.find(entry => entry.seq === 9)
+  assert.ok(copied, `the join carries the line: ${JSON.stringify(join.history?.map(entry => entry.seq))}`)
+  assert.equal(copied.text.isWellFormed(), true, `not well formed: ${JSON.stringify(copied.text.slice(-2))}`)
+  assert.equal(copied.text, 'a'.repeat(1999), 'the bound retracts one unit instead of splitting the pair')
+  assert.equal(copied.text.includes('\uFFFD'), false, 'the guest reads no replacement character')
+  assert.ok(copied.text.length <= HISTORY_TEXT, `${copied.text.length} code units, over ${HISTORY_TEXT}`)
+})
+
+// A line is also fitted to the transport's 4,000 characters after that bound, and the fitting loop
+// shrinks it by code units too: a ZWJ family emoji straddling that shrink used to leave a lone
+// surrogate in the text the guest reads.
+test('a line fitted to the transport stops on a code point boundary', () => {
+  const text = `${'a'.repeat(3821)}${'\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'.repeat(4)}`
+  const packed = encodeRoomShare({ op: 'line', roomId: 'r1', seq: 7, text })
+  assert.ok(packed.length <= 4000, `${packed.length} characters on the wire, over 4000`)
+  const parsed = parseRoomShare(packed)
+  assert.equal(parsed.text.isWellFormed(), true, `not well formed: ${JSON.stringify(parsed.text.slice(-4))}`)
+  assert.equal(parsed.text.includes('\uFFFD'), false, 'the guest reads no replacement character')
+  assert.equal(Buffer.from(parsed.text, 'utf8').equals(Buffer.from(text, 'utf8').subarray(0, Buffer.byteLength(parsed.text))), true, 'the text is a UTF-8 byte prefix of what was typed')
+})
+
+// The guest bounds the history it copies without trusting the sender's bound: an older home sends a
+// history line over 2,000 units, and the guest's own slice used to store half a surrogate pair.
+test('a guest bounds a copied history line on a code point boundary', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const long = `${'a'.repeat(1999)}\u{1F600}${'b'.repeat(400)}`
+  const join = `FLYBOT-ROOM-SHARE\n${JSON.stringify({
+    v: 1, op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 1, history: [{ who: 'Ann', text: long, seq: 7 }],
+  })}`
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  const copied = rt.roomHistory(first.room.id, actorB).find(entry => entry.who === 'Ann')
+  assert.ok(copied, `the guest copies the line: ${JSON.stringify(rt.roomHistory(first.room.id, actorB).map(entry => entry.who))}`)
+  assert.equal(copied.text.isWellFormed(), true, `not well formed: ${JSON.stringify(copied.text.slice(-2))}`)
+  assert.equal(copied.text.includes('a'.repeat(1999) + '\ud83d'), false, 'the guest bound retracts one unit instead of splitting the pair')
+  assert.equal(copied.text.includes('a'.repeat(1999)), true, 'the guest keeps the whole prefix it can')
+  assert.equal(copied.text.includes('\uFFFD'), false, 'the guest shows no replacement character')
 })
 
 test('applyInboundRoomShare projects a join with no chat line, then a leave hides it', async (t) => {
