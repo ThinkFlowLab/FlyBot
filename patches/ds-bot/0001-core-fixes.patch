@@ -6138,7 +6138,7 @@ diff --git a/src/host/steward.js b/src/host/steward.js
 diff --git a/src/host/text.js b/src/host/text.js
 --- a/src/host/text.js
 +++ b/src/host/text.js
-@@ -23,6 +23,17 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
+@@ -23,11 +23,32 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
  
  export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
@@ -6153,9 +6153,35 @@ diff --git a/src/host/text.js b/src/host/text.js
 +  return n
 +}
 +
++const isHighSurrogate = code => code >= 0xd800 && code <= 0xdbff
++const isLowSurrogate = code => code >= 0xdc00 && code <= 0xdfff
++
++// A cut moves back onto a code point boundary: half of a surrogate pair reaches a UTF-8 encoder as
++// U+FFFD, so a clipped emoji would show up as a replacement character at every exit (#1642 for the
++// client side, here for the host).
++const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charCodeAt(at)) && isHighSurrogate(text.charCodeAt(at - 1)) ? at - 1 : at)
++const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
++
  // The part of a long message around the first match, so a search hit stays visible.
  export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
    if (text.length <= max) return text
+-  const at = wanted === '' ? 0 : Math.max(0, text.toLowerCase().indexOf(wanted) - 120)
+-  return `${at > 0 ? '…' : ''}${text.slice(at, at + max)}…`
++  const found = wanted === '' ? 0 : Math.max(0, text.toLowerCase().indexOf(wanted) - 120)
++  const at = codePointStart(text, found)
++  return `${at > 0 ? '…' : ''}${text.slice(at, codePointEnd(text, at + max))}…`
+ }
+ 
+ // An upper bound: a CJK character is about one token, other text about a third.
+@@ -36,7 +36,7 @@ export const estimateTokens = (text) => {
+   for (const char of text) tokens += char.codePointAt(0) > 0x2e7f ? 1 : 0.34
+   return Math.ceil(tokens)
+ }
+-export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, max)}… (cut; ${rest})` : text)
++export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, codePointEnd(text, max))}… (cut; ${rest})` : text)
+ 
+ export const createClock = (timeZone) => {
+   const clockFormat = new Intl.DateTimeFormat('en-CA', {
 diff --git a/src/host/time-context.js b/src/host/time-context.js
 --- a/src/host/time-context.js
 +++ b/src/host/time-context.js
@@ -11619,6 +11645,48 @@ diff --git a/test/text.test.js b/test/text.test.js
  
  test('textOf joins the text blocks only', () => {
    assert.equal(textOf([{ type: 'text', text: ' a ' }, { type: 'image' }, { type: 'text', text: 'b' }, { type: 'text', text: 3 }]), 'a \nb')
+@@ -63,6 +63,41 @@ test('clip cuts long text and says where the rest is', () => {
+   assert.equal(clip('abcdef', 3, 'see part 2'), 'abc… (cut; see part 2)')
+ })
+ 
++const sameBytes = (kept, prefix) => Buffer.from(kept, 'utf8').equals(Buffer.from(prefix, 'utf8'))
++
++test('clip never leaves half of a surrogate pair behind', () => {
++  const text = `${'a'.repeat(3999)}😀${'z'.repeat(100)}`
++  const cut = clip(text, 4000, 'r')
++  assert.equal(cut.isWellFormed(), true)
++  assert.equal(cut.includes('\ufffd'), false)
++  assert.equal(Buffer.from(cut, 'utf8').toString('utf8'), cut)
++  assert.ok(cut.endsWith('… (cut; r)'), cut.slice(-20))
++  // What it keeps is the first code-point-aligned prefix that fits in 4000 UTF-16 units.
++  let prefixLength = 0
++  for (const char of text) {
++    if (prefixLength + char.length > 4000) break
++    prefixLength += char.length
++  }
++  const kept = cut.slice(0, -'… (cut; r)'.length)
++  assert.equal(kept, text.slice(0, prefixLength))
++  assert.equal(sameBytes(kept, text.slice(0, prefixLength)), true)
++})
++
++test('excerpt never starts inside a surrogate pair', () => {
++  const text = `${'x'.repeat(119)}😀${'y'.repeat(119)}needle${'z'.repeat(300)}`
++  const cut = excerpt(text, 'needle', 400)
++  assert.equal(cut.isWellFormed(), true)
++  assert.equal(cut.includes('\ufffd'), false)
++  assert.equal(Buffer.from(cut, 'utf8').toString('utf8'), cut)
++  assert.ok(cut.includes('needle'))
++  // The window starts on a code point boundary, and the text before it is whole on its own.
++  const body = cut.replace(/^…/, '').replace(/…$/, '')
++  const start = text.indexOf(body)
++  assert.ok(start > 0, String(start))
++  assert.equal(text.slice(0, start).isWellFormed(), true)
++  assert.equal(sameBytes(body, text.slice(start, start + body.length)), true)
++})
++
+ test('createClock formats month, day, and 24-hour time', () => {
+   const clock = createClock('UTC')
+   assert.equal(clock(Date.UTC(2025, 9, 8, 14, 22)), '10-08 14:22')
 diff --git a/test/tool-cells.test.js b/test/tool-cells.test.js
 --- a/test/tool-cells.test.js
 +++ b/test/tool-cells.test.js

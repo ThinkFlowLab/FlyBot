@@ -75,6 +75,41 @@ test('clip cuts long text and says where the rest is', () => {
   assert.equal(clip('abcdef', 3, 'see part 2'), 'abc… (cut; see part 2)')
 })
 
+const sameBytes = (kept, prefix) => Buffer.from(kept, 'utf8').equals(Buffer.from(prefix, 'utf8'))
+
+test('clip never leaves half of a surrogate pair behind', () => {
+  const text = `${'a'.repeat(3999)}😀${'z'.repeat(100)}`
+  const cut = clip(text, 4000, 'r')
+  assert.equal(cut.isWellFormed(), true)
+  assert.equal(cut.includes('\ufffd'), false)
+  assert.equal(Buffer.from(cut, 'utf8').toString('utf8'), cut)
+  assert.ok(cut.endsWith('… (cut; r)'), cut.slice(-20))
+  // What it keeps is the first code-point-aligned prefix that fits in 4000 UTF-16 units.
+  let prefixLength = 0
+  for (const char of text) {
+    if (prefixLength + char.length > 4000) break
+    prefixLength += char.length
+  }
+  const kept = cut.slice(0, -'… (cut; r)'.length)
+  assert.equal(kept, text.slice(0, prefixLength))
+  assert.equal(sameBytes(kept, text.slice(0, prefixLength)), true)
+})
+
+test('excerpt never starts inside a surrogate pair', () => {
+  const text = `${'x'.repeat(119)}😀${'y'.repeat(119)}needle${'z'.repeat(300)}`
+  const cut = excerpt(text, 'needle', 400)
+  assert.equal(cut.isWellFormed(), true)
+  assert.equal(cut.includes('\ufffd'), false)
+  assert.equal(Buffer.from(cut, 'utf8').toString('utf8'), cut)
+  assert.ok(cut.includes('needle'))
+  // The window starts on a code point boundary, and the text before it is whole on its own.
+  const body = cut.replace(/^…/, '').replace(/…$/, '')
+  const start = text.indexOf(body)
+  assert.ok(start > 0, String(start))
+  assert.equal(text.slice(0, start).isWellFormed(), true)
+  assert.equal(sameBytes(body, text.slice(start, start + body.length)), true)
+})
+
 test('createClock formats month, day, and 24-hour time', () => {
   const clock = createClock('UTC')
   assert.equal(clock(Date.UTC(2025, 9, 8, 14, 22)), '10-08 14:22')

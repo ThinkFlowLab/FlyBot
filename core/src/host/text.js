@@ -34,11 +34,21 @@ export const codePoints = (text) => {
   return n
 }
 
+const isHighSurrogate = code => code >= 0xd800 && code <= 0xdbff
+const isLowSurrogate = code => code >= 0xdc00 && code <= 0xdfff
+
+// A cut moves back onto a code point boundary: half of a surrogate pair reaches a UTF-8 encoder as
+// U+FFFD, so a clipped emoji would show up as a replacement character at every exit (#1642 for the
+// client side, here for the host).
+const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charCodeAt(at)) && isHighSurrogate(text.charCodeAt(at - 1)) ? at - 1 : at)
+const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
+
 // The part of a long message around the first match, so a search hit stays visible.
 export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
   if (text.length <= max) return text
-  const at = wanted === '' ? 0 : Math.max(0, text.toLowerCase().indexOf(wanted) - 120)
-  return `${at > 0 ? '…' : ''}${text.slice(at, at + max)}…`
+  const found = wanted === '' ? 0 : Math.max(0, text.toLowerCase().indexOf(wanted) - 120)
+  const at = codePointStart(text, found)
+  return `${at > 0 ? '…' : ''}${text.slice(at, codePointEnd(text, at + max))}…`
 }
 
 // An upper bound: a CJK character is about one token, other text about a third.
@@ -47,7 +57,7 @@ export const estimateTokens = (text) => {
   for (const char of text) tokens += char.codePointAt(0) > 0x2e7f ? 1 : 0.34
   return Math.ceil(tokens)
 }
-export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, max)}… (cut; ${rest})` : text)
+export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, codePointEnd(text, max))}… (cut; ${rest})` : text)
 
 export const createClock = (timeZone) => {
   const clockFormat = new Intl.DateTimeFormat('en-CA', {
