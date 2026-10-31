@@ -23,7 +23,7 @@ import {
 import { install as installReach, reach, ticketPeers } from '../src/host/reach.js'
 import { install as installRoster } from '../src/host/roster.js'
 import { friendBotOwner, friendBotTitle, remoteBotTitle, sharedRoomTitle } from '../src/shared/remote-label.js'
-import { HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
+import { HISTORY_TEXT, ROOM_SHARE_TEXT_MAX, ROSTER_MAX, encodeRoomShare, parseRoomInviteLink, parseRoomShare, roomInviteUrl } from '../src/shared/room-share.js'
 import { fenceUntrusted } from '../src/host/delivery.js'
 import { ROOM_CONTEXT_BUDGET, compactStatus, fitRoomLines, prepareRoomLine } from '../src/host/room-context.js'
 import { mentionRows } from '../src/client/at-menu.js'
@@ -2577,6 +2577,120 @@ test('#1932: a roster that had to shrink leaves the notice alone, and a cleared 
   assert.ok(back.notice.length > 0 && back.notice.length < 2000, `the long notice is cut, got ${back.notice.length}`)
   assert.equal(back.notice.isWellFormed(), true, 'the cut notice never carries half a surrogate pair')
   assert.equal(back.roster.length, 26, 'a roster that was not the cause keeps its rows')
+})
+
+// #1946 helpers: a join built from the sizes a real room reaches — 32 roster rows (ROSTER_MAX), long
+// chat lines, a present empty notice — with two one-character knobs so a group can sit at an exact
+// length with the notice withheld, which is what the roster's yield used to measure.
+const nearFullMember = (i, { handleLen = 40, nameLen = 40, ownerLen = 40 } = {}) => {
+  const pad = (base, n) => base + 'x'.repeat(Math.max(0, n - base.length))
+  const home = pad(`@owner${i}`, 20)
+  return {
+    handle: `${home}/${pad(`bot${i}`, handleLen - home.length - 1)}`,
+    home,
+    name: pad(`Bot ${i}`, nameLen),
+    ownerName: pad(`Owner ${i}`, ownerLen),
+  }
+}
+const nearFullJoin = ({ rows = ROSTER_MAX, handleLen = 40, nameLen = 40, ownerLen = 40, historyCount = 5, historyLen = 1880, roomNameLength = 21, firstNameLength = 8, notice = '' } = {}) => {
+  const pad = (base, n) => base + 'x'.repeat(Math.max(0, n - base.length))
+  const roster = Array.from({ length: rows }, (_, i) => nearFullMember(i, { handleLen, nameLen, ownerLen }))
+  roster[0].name = 'B'.repeat(firstNameLength)
+  return encodeRoomShare({
+    op: 'join',
+    roomId: '6f1c2d9a-1b2c-4d5e-8f90-1234567890ab',
+    name: 'Weekend planning room'.slice(0, roomNameLength),
+    inviterName: 'FlyBot Dev-1',
+    inviterHome: '@owner0',
+    inviterHandle: '@owner0/bot0',
+    invitedHandle: '@friend/bot7',
+    seq: 412,
+    roster,
+    notice,
+    history: Array.from({ length: historyCount }, (_, i) => ({
+      who: `Bot ${i % 4}`, text: pad(`line ${i} `, historyLen), seq: 100 + i, authorKind: 'bot',
+    })),
+  })
+}
+// #1946: the roster's yield measured the envelope with the notice taken out, so a present empty
+// notice's own key cost stayed invisible to it. A roster that stopped as soon as the notice-less
+// envelope fitted pushed the restored notice back over 4,000, and the notice branch — with nothing to
+// cut — then deleted the field. An absent notice reads on the guest as "change nothing"
+// (`room-membership.js` `noticeOf`), so the host's explicit clear never arrived. The roster now also
+// pays for carrying the notice at all — its key and an empty value, 12 units — so the notice field
+// survives the yield, and the notice's own text still pays what is left over, as #1932 fixed it.
+test('#1946: a cleared notice rides a near-full join at both ends of the band it used to be dropped', () => {
+  // A group's place in the band is the length the roster's yield measured: the same join with the
+  // notice field left out, which the roster fits to the same rows. `notice: null` encodes no notice
+  // at all, so this witness does not depend on the fix.
+  const group = (target, options, rosterRows) => {
+    assert.equal(nearFullJoin({ ...options, notice: null }).length, target, `the group measures ${target} units with the notice withheld`)
+    const shape = nearFullJoin(options)
+    assert.ok(shape.length <= ROOM_SHARE_TEXT_MAX, `the ${target} join fits the transport, got ${shape.length}`)
+    const body = JSON.parse(shape.slice(shape.indexOf('{')))
+    assert.equal(Object.prototype.hasOwnProperty.call(body, 'notice'), true, `${target}: the wire still carries the cleared notice`)
+    assert.equal(body.notice, '', `${target}: the notice is present and empty on the wire`)
+    assert.equal(parseRoomShare(shape).notice, '', `${target}: the guest reads the clear, not "change nothing"`)
+    assert.equal(body.history, undefined, `${target}: the history paid first`)
+    assert.equal(body.roster.length, rosterRows, `${target}: the roster gave ${rosterRows} rows, no more and no fewer`)
+  }
+
+  // 3,988 plus the notice field's 12 units is exactly 4,000: this end kept the notice on the base too.
+  group(3988, { roomNameLength: 9 }, 20)
+  // The band that lost it on the base: 3,989 and up, through both reachable boundaries. The roster now
+  // gives one more row — the row that makes the notice fit — instead of letting the field be deleted.
+  group(3989, { roomNameLength: 10 }, 19)
+  group(3999, { firstNameLength: 7 }, 19)
+  group(4000, {}, 19)
+
+  // The notice's own text is still not the roster's to carry: it pays what is left over and is cut,
+  // not dropped, exactly as #1932 fixed it.
+  const long = nearFullJoin({ notice: '\u{1F600}'.repeat(1000) })
+  assert.ok(long.length <= ROOM_SHARE_TEXT_MAX, `the long-notice join fits the transport, got ${long.length}`)
+  const cut = parseRoomShare(long).notice
+  assert.ok(cut.length > 0 && cut.length < 2000, `a non-empty notice is still cut, got ${cut.length}`)
+  assert.ok(long.isWellFormed() && cut.isWellFormed(), 'the cut notice never carries half a surrogate pair')
+
+  // The old rule for a non-empty notice clipped to nothing is unchanged: with no roster left to give,
+  // a notice the overflow empties is dropped rather than carried as an empty field.
+  const pad = (base, n) => base + 'x'.repeat(Math.max(0, n - base.length))
+  const crowded = encodeRoomShare({
+    op: 'join', roomId: 'war', name: 'War room', inviterName: 'Alice', inviterHome: '@alice.home',
+    inviterHandle: '@chief.alice.home', invitedHandle: '@coder01', seq: 1, notice: 'x',
+    calls: Array.from({ length: 24 }, (_, i) => pad(`@caller${i}`, 120)),
+    bots: Array.from({ length: 8 }, (_, i) => pad(`@bot${i}`, 120)),
+  })
+  assert.ok(crowded.length <= ROOM_SHARE_TEXT_MAX, `the crowded join fits the transport, got ${crowded.length}`)
+  assert.equal(parseRoomShare(crowded).notice, undefined, 'a non-empty notice clipped to nothing is still dropped')
+})
+
+// #1946: 4,001 has no shape in the grid below on the base — the roster loop stops at the first length
+// that fits, and an emptied roster leaves the envelope altogether — so this pins the rule instead of a
+// length: no join in the plan's grid (rows × handle × name × ownerName × history × first-row name)
+// loses the cleared notice, and every one fits the transport.
+test('#1946: no join in the near-full grid loses the cleared notice', () => {
+  const dropped = []
+  let widest = 0
+  let widestAt = ''
+  for (const rows of [32, 40, 64]) {
+    for (const handleLen of [40, 60, 80, 120]) {
+      for (const nameLen of [40, 60]) {
+        for (const ownerLen of [40, 60]) {
+          for (const historyCount of [0, 1, 5, 20]) {
+            for (let firstNameLength = 1; firstNameLength <= 40; firstNameLength += 1) {
+              const shape = nearFullJoin({ rows, handleLen, nameLen, ownerLen, historyCount, firstNameLength })
+              const at = `rows ${rows} handle ${handleLen} name ${nameLen} owner ${ownerLen} history ${historyCount} first ${firstNameLength}`
+              if (shape.length > widest) { widest = shape.length; widestAt = at }
+              if (!Object.prototype.hasOwnProperty.call(JSON.parse(shape.slice(shape.indexOf('{'))), 'notice')) dropped.push(at)
+              assert.ok(shape.length <= ROOM_SHARE_TEXT_MAX, `${at}: fits the transport, got ${shape.length}`)
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual(dropped, [], `${dropped.length} of the grid's joins lost the cleared notice`)
+  assert.ok(widest <= ROOM_SHARE_TEXT_MAX, `the widest join in the grid is ${widest} units (${widestAt})`)
 })
 
 // #904: the seat path attributes a line to the seat that carried it and never to the envelope's own

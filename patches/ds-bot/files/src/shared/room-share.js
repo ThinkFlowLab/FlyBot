@@ -66,13 +66,21 @@ function fitJoin(body) {
   // clearing it — is not a placeholder to delete while a row can still give.
   if (Array.isArray(body.roster) && body.roster.length > 0) {
     const keptNotice = body.notice
-    const overWithoutNotice = () => {
+    // #1946: a present notice costs 12 units on the wire even when it is empty — the key, the colon
+    // and the two quotes. Measuring with the notice taken out and then restoring it pushed the
+    // envelope back over the cap, and the notice branch below, with nothing to cut, deleted the
+    // field; an absent notice reads on the guest as "change nothing", so the host's clear never
+    // arrived. The roster now gives while the envelope overflows with the notice field in place, so
+    // the field always survives the yield. Only the field's own cost is counted: the notice's text
+    // still pays what is left over below, so #1932's cut-not-drop case is unchanged.
+    const noticeKeyCost = typeof keptNotice === 'string' ? ',"notice":""'.length : 0
+    const overWithNoticeField = () => {
       if (typeof keptNotice === 'string') delete body.notice
-      const over = wire().length > ROOM_SHARE_TEXT_MAX
+      const over = wire().length + noticeKeyCost > ROOM_SHARE_TEXT_MAX
       if (typeof keptNotice === 'string') body.notice = keptNotice
       return over
     }
-    while (body.roster.length > 0 && overWithoutNotice()) body.roster.pop()
+    while (body.roster.length > 0 && overWithNoticeField()) body.roster.pop()
     if (body.roster.length === 0) delete body.roster
   }
   // The notice pays only what is left over once the roster has given all it can, so a notice that is
