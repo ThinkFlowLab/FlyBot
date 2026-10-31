@@ -1,0 +1,1 @@
+Project board: a refused `project-team` read at open is no answer yet, not an empty team — the next five-second poll asks again, the block fills when the answer lands, and it stays frozen for the rest of the open; before this the refusal was normalised to `{ rows: [] }` and served by every later poll ([#1910](https://github.com/ThinkFlowLab/FlyBot/issues/1910)).

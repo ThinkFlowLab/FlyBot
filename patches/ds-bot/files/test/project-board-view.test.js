@@ -424,6 +424,54 @@ test('#1900: an open board reads the dossier once, never on a tick', async () =>
   assert.equal(count('project-board'), 4, 'while the board itself is re-read on every tick')
 })
 
+// #1910: a refused dossier read at open is "no answer yet", not "the team is empty". #1902 made the
+// dossier the open's one read and let that read swallow its failure into an ordinary empty team, so
+// one transient refusal became the answer every later poll handed back: the block stayed empty until
+// the board was closed and opened again, where before (#1814) the next tick healed it. The refusal
+// must leave no cached answer, so the next poll asks again; an answer that lands is this open's and
+// later polls do not read the dossier again.
+test('#1910: a refused dossier read at open is asked again on the next tick, then frozen', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const calls = []
+  let dossierReads = 0
+  const teamAnswer = { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: ['work'] }, skills: ['ship-it'] }] }
+  const call = async (name) => {
+    calls.push(name)
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') {
+      return { project: { id: 'project-1', name: 'FlyBot', chief: { botId: 'bot-chief' }, assistant: { botId: 'bot-assistant' }, roles: { maintainers: ['bot-dev'], members: [] } }, canManage: false }
+    }
+    if (name === 'project-board') return { tasks: rows, done: [], waiting: [], inflight: [], blocked: [], counts: null }
+    if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
+    if (name === 'project-team') {
+      dossierReads += 1
+      if (dossierReads === 1) throw new Error('the persona read timed out')
+      return teamAnswer
+    }
+    throw new Error(`unexpected endpoint ${name}`)
+  }
+  const count = (endpoint) => calls.filter(name => name === endpoint).length
+  const { tree, redraw } = await mount({ actions: {}, call })
+  assert.equal(count('project-team'), 1, 'the open asks the dossier once')
+  // The refusal is drawn as the empty team it was normalised to, not as a failed board.
+  const control = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  assert.ok(control, 'the board still draws its team rows from the record')
+  control.props.onClick()
+  assert.doesNotMatch(all(redraw()).map(textOf).join(' | '), /You are the Project Chief of FlyBot\./, 'a refusal is no answer yet, so the panel does not invent a dossier')
+  // The refusal is not the answer: the next poll asks again, and the row it gets fills the block.
+  // Both are read before the assertion so one red run shows both numbers.
+  await tick()
+  const drawn = all(redraw()).map(textOf).join(' | ')
+  const afterTick = { calls: count('project-team'), filled: /You are the Project Chief of FlyBot\./.test(drawn) }
+  assert.deepEqual(afterTick, { calls: 2, filled: true }, 'the next tick asks again, and the row it gets fills the dossier')
+  assert.match(drawn, /The Chief remembers the Project\./)
+  // That answer is this open's answer: the poll hands it back and never reads the dossier again.
+  await tick(3)
+  assert.equal(count('project-team'), 2, 'once an answer landed later polls do not read the dossier again')
+  assert.equal(count('project-board'), 5, 'while the board itself is re-read on every tick — the open and the four ticks')
+})
+
 test('#1814: a failing poll keeps the board the last good read drew', async () => {
   resetClock()
   win.location.hash = '#project'

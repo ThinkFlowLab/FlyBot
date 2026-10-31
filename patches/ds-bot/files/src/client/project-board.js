@@ -869,19 +869,29 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
 // answer the poll hands back — `knownTeam` is what the open read — because the host builds it by
 // reading persona and memory files, and a five-second refresh must not pay that again. A refusal
 // leaves the rest of the board standing, so a dossier problem is never the empty-Project answer.
+// #1910: a refusal is "no answer yet", not an empty team. `teamFresh` is false exactly when the
+// dossier could not be read, so the caller keeps no answer to hand back and the next tick asks again.
 export async function readProjectBoard(read, wanted, knownTeam) {
   const listing = await read('projects')
   const projects = Array.isArray(listing?.projects) ? listing.projects : []
   const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
-  if (project === undefined) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] } }
+  if (project === undefined) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] }, teamFresh: true }
   const zone = typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function'
     ? undefined
     : Intl.DateTimeFormat().resolvedOptions().timeZone
-  const [record, board, taskList, team] = await Promise.all([
+  const [record, board, taskList, dossier] = await Promise.all([
     read('project-read', { id: project.id }),
     read('project-board', { id: project.id, timeZone: zone }),
     read('tasks', {}),
-    knownTeam !== undefined ? knownTeam : read('project-team', { id: project.id }).catch(() => null),
+    // #1910: #1902 turned this failure into an ordinary empty team, which the poll then served for
+    // the rest of the open. Keep the two answers apart: a refusal is not fresh, so nothing is cached
+    // and the next tick asks again, while a real `{ rows: [] }` answer is fresh and frozen as usual.
+    knownTeam !== undefined
+      ? { answer: knownTeam, fresh: true }
+      : read('project-team', { id: project.id }).then(
+        answer => ({ answer, fresh: answer !== null && typeof answer === 'object' }),
+        () => ({ answer: null, fresh: false }),
+      ),
   ])
   const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
   // The groups are the same read as the rows, so the header cannot disagree with the cards.
@@ -894,7 +904,8 @@ export async function readProjectBoard(read, wanted, knownTeam) {
   return {
     project: withRole, assistantMine: record?.assistantMine ?? null, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true,
     tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null,
-    team: team !== null && typeof team === 'object' ? team : { rows: [] },
+    team: dossier.answer !== null && typeof dossier.answer === 'object' ? dossier.answer : { rows: [] },
+    teamFresh: dossier.fresh,
   }
 }
 
@@ -956,12 +967,17 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     // and the dossier comes from the single `project-team` call that read makes. #1900: that call is
     // this open's, not the poll's — `team` is handed back on every later read, so a tick re-reads
     // only the three answers that change and the dossier is read again on the next board open.
+    // #1910: only an answer is kept. A refused read is drawn as the empty team it always was, but
+    // `team` stays undefined, so the next tick asks `project-team` again instead of serving it.
     let team
     const loadBoard = () => readProjectBoard(read, wanted, team)
     const refresh = async (first) => {
       try {
         const next = await loadBoard()
-        if (!gone) { team = next.team; setState(next) }
+        if (!gone) {
+          if (next.teamFresh !== false) team = next.team
+          setState(next)
+        }
       } catch {
         // The first read is the page's answer, so it takes the empty state it always took. A poll
         // that fails keeps the board the last good read drew (#1814): a board that vanishes under

@@ -11264,13 +11264,19 @@ async function readProjectBoard(read, wanted, knownTeam) {
   const listing = await read("projects");
   const projects = Array.isArray(listing?.projects) ? listing.projects : [];
   const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
-  if (project === void 0) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] } };
+  if (project === void 0) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] }, teamFresh: true };
   const zone = typeof Intl === "undefined" || typeof Intl.DateTimeFormat !== "function" ? void 0 : Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const [record, board, taskList, team] = await Promise.all([
+  const [record, board, taskList, dossier] = await Promise.all([
     read("project-read", { id: project.id }),
     read("project-board", { id: project.id, timeZone: zone }),
     read("tasks", {}),
-    knownTeam !== void 0 ? knownTeam : read("project-team", { id: project.id }).catch(() => null)
+    // #1910: #1902 turned this failure into an ordinary empty team, which the poll then served for
+    // the rest of the open. Keep the two answers apart: a refusal is not fresh, so nothing is cached
+    // and the next tick asks again, while a real `{ rows: [] }` answer is fresh and frozen as usual.
+    knownTeam !== void 0 ? { answer: knownTeam, fresh: true } : read("project-team", { id: project.id }).then(
+      (answer) => ({ answer, fresh: answer !== null && typeof answer === "object" }),
+      () => ({ answer: null, fresh: false })
+    )
   ]);
   const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
   const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
@@ -11287,7 +11293,8 @@ async function readProjectBoard(read, wanted, knownTeam) {
     meetings: board?.meetings,
     queues,
     metrics: board?.metrics ?? null,
-    team: team !== null && typeof team === "object" ? team : { rows: [] }
+    team: dossier.answer !== null && typeof dossier.answer === "object" ? dossier.answer : { rows: [] },
+    teamFresh: dossier.fresh
   };
 }
 var PROJECT_BOARD_POLL_MS = 5e3;
@@ -11334,7 +11341,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       try {
         const next = await loadBoard();
         if (!gone) {
-          team = next.team;
+          if (next.teamFresh !== false) team = next.team;
           setState(next);
         }
       } catch {

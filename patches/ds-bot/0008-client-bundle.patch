@@ -9032,6 +9032,10 @@ diff --git a/client.js b/client.js
 +    const approvals = askedIn(room2, work, id, doing);
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
 +  });
++}
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
  }
 -function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
 -  if (whole && bots.length === 1) {
@@ -9057,10 +9061,6 @@ diff --git a/client.js b/client.js
 -      (0, import_react6.createElement)(BotMark, { bot, size: 16 }),
 -      bot.name
 -    ));
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
-+}
 +function splitBusy(busy) {
 +  const here = busy.filter((entry) => entry.state === "work" && entry.here);
 +  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
@@ -9859,13 +9859,13 @@ diff --git a/client.js b/client.js
 +    const questionId = card.task?.inputRequest?.id;
 +    if (text2 === "" || typeof questionId !== "string") return void 0;
 +    return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text2));
-   }
++  }
 +  if (card?.kind === "task" && card.status === "result") {
 +    if (choice === "accept") return Promise.resolve(actions.acceptTaskResult(card.task.id));
 +    const note = choice !== null && typeof choice === "object" ? String(choice.note ?? "").trim() : "";
 +    if (note === "") return void 0;
 +    return Promise.resolve(actions.sendBackTask(card.task.id, note));
-+  }
+   }
 +  if (card?.kind === "approval" && card.approval?.answerable === true) {
 +    return Promise.resolve(actions.answerApproval(card.approval.id, choice));
 +  }
@@ -12247,7 +12247,7 @@ diff --git a/client.js b/client.js
        setOpen(false);
      };
      const onKey = (event) => {
-@@ -5097,412 +5097,1334 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -5097,412 +5097,1341 @@ function UpdateButton({ useUpdate, actions }) {
        window.removeEventListener("keydown", onKey, true);
      };
    }, [open]);
@@ -13495,8 +13495,7 @@ diff --git a/client.js b/client.js
 +      { className: "bt-project-actions" },
 +      (0, import_react19.createElement)("button", { type: "button", "data-action": "project-settings", onClick: () => onSettings?.() }, t("Project settings")),
 +      (0, import_react19.createElement)("button", { type: "button", "data-action": "project-members", onClick: () => onMembers?.() }, t("Members"))
-     ),
--    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
++    ),
 +    (0, import_react19.createElement)(ProjectMetrics, { view: view.metrics }),
 +    (0, import_react19.createElement)(ProjectRunningTable, { view: view.metrics, onOpen }),
 +    (0, import_react19.createElement)(ProjectBoardRows, { view, onOpen }),
@@ -13532,14 +13531,7 @@ diff --git a/client.js b/client.js
 +    { className: "bt-project-panel", "data-panel": "project-settings" },
 +    (0, import_react19.createElement)("h3", null, t("Project settings")),
 +    (0, import_react19.createElement)(
-       "div",
--      { className: "bt-menu bt-menu-up bt-account-menu", role: "menu", "aria-label": t("Account"), style: box },
--      groups.map((group, index) => (0, import_react8.createElement)(
--        import_react8.Fragment,
--        { key: index },
--        index > 0 ? (0, import_react8.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
--        group.map(([label, Icon, run, hint]) => (0, import_react8.createElement)("button", {
--          key: label,
++      "div",
 +      { className: "bt-project-field" },
 +      (0, import_react19.createElement)("label", { htmlFor: "bt-project-member-id" }, t("Bind a member to this Project")),
 +      (0, import_react19.createElement)(
@@ -13555,9 +13547,17 @@ diff --git a/client.js b/client.js
 +        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-bind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: id }, t("Member bound.")) }, t("Bind")),
 +        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-unbind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: null }, t("Member unbound.")) }, t("Unbind"))
 +      )
-+    ),
+     ),
+-    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +    (0, import_react19.createElement)(
-+      "div",
+       "div",
+-      { className: "bt-menu bt-menu-up bt-account-menu", role: "menu", "aria-label": t("Account"), style: box },
+-      groups.map((group, index) => (0, import_react8.createElement)(
+-        import_react8.Fragment,
+-        { key: index },
+-        index > 0 ? (0, import_react8.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
+-        group.map(([label, Icon, run, hint]) => (0, import_react8.createElement)("button", {
+-          key: label,
 +      { className: "bt-project-field" },
 +      (0, import_react19.createElement)("label", null, t("Project Assistant")),
 +      (0, import_react19.createElement)(
@@ -13675,13 +13675,19 @@ diff --git a/client.js b/client.js
 +  const listing = await read("projects");
 +  const projects = Array.isArray(listing?.projects) ? listing.projects : [];
 +  const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
-+  if (project === void 0) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] } };
++  if (project === void 0) return { project: null, rows: [], done: [], canManage: false, tasks: [], team: { rows: [] }, teamFresh: true };
 +  const zone = typeof Intl === "undefined" || typeof Intl.DateTimeFormat !== "function" ? void 0 : Intl.DateTimeFormat().resolvedOptions().timeZone;
-+  const [record, board, taskList, team] = await Promise.all([
++  const [record, board, taskList, dossier] = await Promise.all([
 +    read("project-read", { id: project.id }),
 +    read("project-board", { id: project.id, timeZone: zone }),
 +    read("tasks", {}),
-+    knownTeam !== void 0 ? knownTeam : read("project-team", { id: project.id }).catch(() => null)
++    // #1910: #1902 turned this failure into an ordinary empty team, which the poll then served for
++    // the rest of the open. Keep the two answers apart: a refusal is not fresh, so nothing is cached
++    // and the next tick asks again, while a real `{ rows: [] }` answer is fresh and frozen as usual.
++    knownTeam !== void 0 ? { answer: knownTeam, fresh: true } : read("project-team", { id: project.id }).then(
++      (answer) => ({ answer, fresh: answer !== null && typeof answer === "object" }),
++      () => ({ answer: null, fresh: false })
++    )
 +  ]);
 +  const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
 +  const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
@@ -13698,7 +13704,8 @@ diff --git a/client.js b/client.js
 +    meetings: board?.meetings,
 +    queues,
 +    metrics: board?.metrics ?? null,
-+    team: team !== null && typeof team === "object" ? team : { rows: [] }
++    team: dossier.answer !== null && typeof dossier.answer === "object" ? dossier.answer : { rows: [] },
++    teamFresh: dossier.fresh
 +  };
 +}
 +var PROJECT_BOARD_POLL_MS = 5e3;
@@ -13763,7 +13770,7 @@ diff --git a/client.js b/client.js
 +      try {
 +        const next = await loadBoard();
 +        if (!gone) {
-+          team = next.team;
++          if (next.teamFresh !== false) team = next.team;
 +          setState(next);
 +        }
 +      } catch {
