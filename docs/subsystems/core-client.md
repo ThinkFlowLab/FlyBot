@@ -323,7 +323,13 @@ instructions, role and model), **Memory** (the `MEMORY.md` head and the topic na
 (the attached `skill` capability names). The panel never re-fetches per section, and a `null` row —
 the host's answer for a deleted Bot — shows *Not set* with nothing invented. `readProjectBoard`
 keeps the dossier on the same read as the rows, so the board and the panel cannot disagree, and the
-"my agent" row uses the same panel. A role-pool entry draws none: since #1892 it is plain `@id`
+"my agent" row uses the same panel. That read is taken once, when the board opens (#1900): the export
+takes the previous answer back as `cached.team` and skips the `project-team` call when it has one, so
+the five-second refresh draws the dossier the open read took instead of re-reading every persona and
+memory head on a timer — the answer only changes when someone edits one of those files, and a re-open
+reads it again. A dossier that throws is non-fatal: rows, `done`, tasks and queues still draw, `team`
+becomes `{ rows: [] }`, and the empty-project answer stays reserved for a Project that is really
+absent. A role-pool entry draws none: since #1892 it is plain `@id`
 beside its rank, because `project-team` answers rows keyed by the Project's own Bots and the old
 control asked for a row the host never sent. The entry in the owner's own Bot chat is
 `ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads
@@ -357,7 +363,8 @@ carried in and has no board of its own). A row with a board is a button: it writ
 group and clears the hash, so a reload does not reopen the same board. A row without a board (or without a
 task record) is not a button — `role` alone opens nothing. Opening the pane is four host reads, never a
 per-Bot read: `projects`, `project-read`, `project-board`, and the `tasks` list the rows are joined
-against. Since #1814 they repeat every five seconds while the pane is open, because what a card has
+against; since #1900 the fourth, `project-team`, is read once at that open and the poll below draws
+that answer instead. The other three repeat every five seconds while the pane is open, because what a card has
 waited and whether its lease is live are computed by the host at read time: a lease that expires during
 the visit turns the card `stalled` on its own instead of freezing the board. The first read failing
 answers the empty state as it did; a poll that fails keeps the board the last good read drew. Polling
