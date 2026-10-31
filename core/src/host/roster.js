@@ -262,10 +262,10 @@ export function install(rt) {
       .map(p => p.displayName || p.handle)
     return [...people, ...members.map(id => rt.botOf(id)?.name).filter(Boolean), ...remotes].join(', ')
   }
-  const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
+  const cleanNotice = text => cut(String(text ?? '').trim(), ROOM_NOTICE_MAX).text
 
   function cleanRoomName(text, selfId) {
-    const next = unquote(text).replace(/\s+/g, ' ').slice(0, ROOM_NAME_MAX)
+    const next = cut(unquote(text).replace(/\s+/g, ' '), ROOM_NAME_MAX).text
     if (next !== '' && rt.findRooms(next).some(room => room.id !== selfId)) throw new Error(`Another group chat is already called "${next}"`)
     return next
   }

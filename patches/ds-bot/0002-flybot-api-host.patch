@@ -394,11 +394,12 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (entry === undefined) throw new Error('Unknown conversation')
      if (typeof pinned === 'boolean') entry.pinned = pinned
      if (typeof hidden === 'boolean') entry.hidden = hidden
-@@ -235,7 +235,14 @@ export function install(rt) {
+@@ -235,11 +235,18 @@ export function install(rt) {
    // admin may change its own group but not delete it. Only a member can be admin.
  
    const roomBusy = id => [...rt.roomProgress.values()].some(round => round.roomId === id)
 -  const autoRoomName = members => ['You', ...members.map(id => rt.botOf(id)?.name).filter(Boolean)].join(', ')
+-  const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
 +  const autoRoomName = (members, room) => {
 +    const humans = (room?.participants ?? []).filter(p => p.kind === 'human' && p.leftSeq === undefined)
 +      .map(p => p.displayName || p.id)
@@ -407,9 +408,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      .map(p => p.displayName || p.handle)
 +    return [...people, ...members.map(id => rt.botOf(id)?.name).filter(Boolean), ...remotes].join(', ')
 +  }
-   const cleanNotice = text => String(text ?? '').trim().slice(0, ROOM_NOTICE_MAX)
++  const cleanNotice = text => cut(String(text ?? '').trim(), ROOM_NOTICE_MAX).text
  
    function cleanRoomName(text, selfId) {
+-    const next = unquote(text).replace(/\s+/g, ' ').slice(0, ROOM_NAME_MAX)
++    const next = cut(unquote(text).replace(/\s+/g, ' '), ROOM_NAME_MAX).text
+     if (next !== '' && rt.findRooms(next).some(room => room.id !== selfId)) throw new Error(`Another group chat is already called "${next}"`)
+     return next
+   }
 @@ -257,21 +257,36 @@ export function install(rt) {
    async function followMemberNames(rooms = Object.values(state.rooms)) {
      for (const room of rooms) {
