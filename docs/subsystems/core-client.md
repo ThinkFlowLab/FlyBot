@@ -374,6 +374,13 @@ along with `tasks` in the same response. A count the host answered as `null` ren
 never as `0`; a group with no items is not drawn, and a board with neither rows nor groups is still the
 empty state. Rows keep their task id, so `#task=<id>` still opens the card.
 
+The wait a card shows is one label for the whole board (#1896): `waitedLabel` reads seconds under a
+minute, minutes under an hour, hours under a day, and a span over zero never floors to `0s` — a card that
+waited 40 seconds reads `40s`, not `0m`, the way `elapsedLabel` never says `0m`. The three duration
+metrics go through that same function, so a 35-second median merge reads `35s`; a missing or negative
+span still returns nothing and an unread duration stays the dash. Tests:
+`core/test/project-board-view.test.js`.
+
 The board's three column names go through the same dictionary as the task board: `not-started`,
 `in-progress` and `done` are keys in `i18n.js`, so a zh UI reads 未开始 / 进行中 / 已完成 instead of the raw
 status.

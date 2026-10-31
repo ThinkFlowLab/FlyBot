@@ -263,6 +263,39 @@ test('#1768: the view carries the three groups and the header counts', () => {
   assert.equal(waitedLabel(5 * 60 * 1000), '5m')
 })
 
+// #1896: a span under a minute read `0m`, on the card's wait line and on all three duration metrics,
+// so a 40-second wait and a 35-second median merge both claimed "no wait". The label carries seconds
+// under a minute, the way `elapsedLabel` next door never says `0m`; zero still reads zero and an
+// unknown span still says nothing.
+test('#1896: a sub-minute wait and a sub-minute median read in seconds, never 0', () => {
+  assert.equal(waitedLabel(40 * 1000), '40s')
+  assert.equal(waitedLabel(59 * 1000 + 999), '59s')
+  assert.equal(waitedLabel(0), '0s')
+  assert.equal(waitedLabel(1), '1s', 'a span over zero never floors to 0')
+  // The units at and above a minute are unchanged.
+  assert.equal(waitedLabel(60 * 1000), '1m')
+  assert.equal(waitedLabel(3 * 3600 * 1000), '3h')
+  assert.equal(waitedLabel(50 * 24 * 3600 * 1000), '50d')
+  // Unknown stays unknown: nothing renders, rather than 0.
+  assert.equal(waitedLabel(null), null)
+  assert.equal(waitedLabel(Number.NaN), null)
+  assert.equal(waitedLabel(-1), null)
+  // The three duration metrics go through the same label, so they read seconds too.
+  const view = plain(metricsView({ ok: true, metrics: { prMergeMedianMs: 40 * 1000, issueCloseMedianMs: 59 * 1000 + 999, taskDoneMedianMs: 0 } }))
+  assert.equal(view.cards.find(card => card.key === 'prMergeMedianMs').value, '40s')
+  assert.equal(view.cards.find(card => card.key === 'issueCloseMedianMs').value, '59s')
+  assert.equal(view.cards.find(card => card.key === 'taskDoneMedianMs').value, '0s')
+  const unknown = plain(metricsView({ ok: true, metrics: { prMergeMedianMs: null, issueCloseMedianMs: -1 } }))
+  assert.equal(unknown.cards.find(card => card.key === 'prMergeMedianMs').value, METRIC_DASH)
+  assert.equal(unknown.cards.find(card => card.key === 'issueCloseMedianMs').value, METRIC_DASH)
+  // And the card's own wait line draws that same label.
+  const subMinute = { ...queues, waiting: [{ id: 'task-w3', role: 'Dev', since: 300, waitedMs: 40 * 1000 }] }
+  const nodes = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, tasks: [], queues: subMinute }))
+  const text = nodes.map(textOf).join(' | ')
+  assert.ok(text.includes('· 40s'), text)
+  assert.ok(!text.includes('0m'), text)
+})
+
 test('#1768: an unreadable count stays unknown and is never rendered as 0', () => {
   const view = plain(projectBoardView({
     project: { id: 'project-1', name: 'FlyBot' }, rows: [], tasks: [],

@@ -369,10 +369,12 @@ function ProjectDoneGroup({ view, onOpen }) {
     view.done.rows.map(row => projectRowNode(row, onOpen)))
 }
 
-// How long a card has waited, in the unit a reader wants: minutes under an hour, hours under a
-// day. A card with no `createdAt` says nothing rather than "0m".
+// How long a card has waited, in the unit a reader wants: seconds under a minute, minutes under an
+// hour, hours under a day. A card with no `createdAt` says nothing rather than "0m", and a span over
+// zero never floors to "0s" — the way `elapsedLabel` never says "0m" (#1896).
 export function waitedLabel(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null
+  if (ms < 60000) return `${ms === 0 ? 0 : Math.max(1, Math.floor(ms / 1000))}s`
   const minutes = Math.floor(ms / 60000)
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)

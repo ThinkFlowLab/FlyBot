@@ -10707,6 +10707,7 @@ function ProjectDoneGroup({ view, onOpen }) {
 }
 function waitedLabel(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null;
+  if (ms < 6e4) return `${ms === 0 ? 0 : Math.max(1, Math.floor(ms / 1e3))}s`;
   const minutes = Math.floor(ms / 6e4);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
