@@ -316,14 +316,16 @@ spawn failed — stays drawn and reads *Not set*, so this slice never waits on #
 live in `src/client/role-labels.js`, which the sidebar and this block both print. Tests:
 `core/test/project-board-panels.test.js`.
 
-The **dossier** (#1864) is the read-only half beside those rows. Each team row carries a `Dossier`
-control (`data-dossier-bot`, also for a pool member), and `ProjectDossierPanel` draws three sections
+The **dossier** (#1864) is the read-only half beside those rows. Each Bot row carries a `Dossier`
+control (`data-dossier-bot`), and `ProjectDossierPanel` draws three sections
 from the one `project-team` answer the overlay reads with the board: **Persona** (the Bot's
 instructions, role and model), **Memory** (the `MEMORY.md` head and the topic names) and **Skills**
 (the attached `skill` capability names). The panel never re-fetches per section, and a `null` row —
 the host's answer for a deleted Bot — shows *Not set* with nothing invented. `readProjectBoard`
 keeps the dossier on the same read as the rows, so the board and the panel cannot disagree, and the
-"my agent" row uses the same panel. The entry in the owner's own Bot chat is
+"my agent" row uses the same panel. A role-pool entry draws none: since #1892 it is plain `@id`
+beside its rank, because `project-team` answers rows keyed by the Project's own Bots and the old
+control asked for a row the host never sent. The entry in the owner's own Bot chat is
 `ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads
 `project-read` once for `assistant.botId` and opens that Session through `actions.openSession`; the
 assistant is not a special case of the board, and the Project page keeps its own row. Tests:

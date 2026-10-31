@@ -7527,22 +7527,11 @@ diff --git a/client.js b/client.js
 +      setBusy("");
      }
 -  });
-+  };
-+  return (0, import_react9.createElement)(
-+    "div",
-+    { className: "bt-file-chips" },
-+    files.map((file) => (0, import_react9.createElement)(
-+      "button",
-+      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
-+      `📎 ${file.name} · ${fileSize(file.size)}`
-+    )),
-+    error ? (0, import_react9.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
-+  );
- }
+-}
 -function ScopeSwitch({ value, onChange, bot }) {
 -  const options = [["all", t("All Bots")], ["bot", t("Only {name}", { name: bot.name })]];
 -  return (0, import_react5.createElement)(
-+function GroupEvent({ prefix, room: room2, name, roster, actions }) {
++  };
 +  return (0, import_react9.createElement)(
      "div",
 -    { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
@@ -7555,6 +7544,18 @@ diff --git a/client.js b/client.js
 -      className: "bt-secret-seg",
 -      onClick: () => onChange(id)
 -    }, text))
++    { className: "bt-file-chips" },
++    files.map((file) => (0, import_react9.createElement)(
++      "button",
++      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
++      `📎 ${file.name} · ${fileSize(file.size)}`
++    )),
++    error ? (0, import_react9.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
++  );
++}
++function GroupEvent({ prefix, room: room2, name, roster, actions }) {
++  return (0, import_react9.createElement)(
++    "div",
 +    { className: "bt-event" },
 +    (0, import_react9.createElement)("span", null, prefix),
 +    room2 ? (0, import_react9.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react9.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react9.createElement)("span", null, name) : null
@@ -9032,10 +9033,6 @@ diff --git a/client.js b/client.js
 +    const approvals = askedIn(room2, work, id, doing);
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
 +  });
-+}
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
  }
 -function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
 -  if (whole && bots.length === 1) {
@@ -9061,6 +9058,10 @@ diff --git a/client.js b/client.js
 -      (0, import_react6.createElement)(BotMark, { bot, size: 16 }),
 -      bot.name
 -    ));
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
++}
 +function splitBusy(busy) {
 +  const here = busy.filter((entry) => entry.state === "work" && entry.here);
 +  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
@@ -9853,7 +9854,7 @@ diff --git a/client.js b/client.js
 +    const custom = typeof reply.custom === "string" ? reply.custom.trim() : "";
 +    if (selected.length === 0 && custom === "") return void 0;
 +    return Promise.resolve(actions.answerQuestion(card.sessionId, card.question.id, { selected, custom }));
-+  }
+   }
 +  if (card?.kind === "task" && card.status === "input") {
 +    const text2 = typeof choice === "string" ? choice.trim() : "";
 +    const questionId = card.task?.inputRequest?.id;
@@ -9865,7 +9866,7 @@ diff --git a/client.js b/client.js
 +    const note = choice !== null && typeof choice === "object" ? String(choice.note ?? "").trim() : "";
 +    if (note === "") return void 0;
 +    return Promise.resolve(actions.sendBackTask(card.task.id, note));
-   }
++  }
 +  if (card?.kind === "approval" && card.approval?.answerable === true) {
 +    return Promise.resolve(actions.answerApproval(card.approval.id, choice));
 +  }
@@ -12247,7 +12248,7 @@ diff --git a/client.js b/client.js
        setOpen(false);
      };
      const onKey = (event) => {
-@@ -5097,412 +5097,1340 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -5097,412 +5097,1329 @@ function UpdateButton({ useUpdate, actions }) {
        window.removeEventListener("keydown", onKey, true);
      };
    }, [open]);
@@ -13280,18 +13281,7 @@ diff --git a/client.js b/client.js
 +var POOL_RANKS = [["owner", "owner"], ["maintainer", "maintainers"], ["member", "members"]];
 +function ProjectTeam({ project, onOpenBot, onOpenDossier }) {
 +  const view = projectTeamView(project);
-+  const poolId = (id) => (0, import_react19.createElement)("button", {
-+    key: id,
-+    type: "button",
-+    className: "bt-project-team-dossier",
-+    "data-dossier-role": "pool",
-+    "data-dossier-bot": id,
-+    "aria-label": t("Open {name}'s dossier", { name: id }),
-+    onClick: (event) => {
-+      event?.stopPropagation();
-+      onOpenDossier?.({ role: "pool", label: t("Role pool"), botId: id });
-+    }
-+  }, `@${id}`);
++  const poolId = (id) => (0, import_react19.createElement)("span", { key: id }, `@${id}`);
 +  const ranks = view.empty ? (0, import_react19.createElement)("span", { className: "bt-project-missing" }, t("No one in this pool yet.")) : (0, import_react19.createElement)(
 +    "span",
 +    { className: "bt-project-team-roles" },

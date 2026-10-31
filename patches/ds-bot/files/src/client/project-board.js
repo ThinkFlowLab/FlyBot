@@ -614,12 +614,10 @@ const POOL_RANKS = [['owner', 'owner'], ['maintainer', 'maintainers'], ['member'
 
 export function ProjectTeam({ project, onOpenBot, onOpenDossier }) {
   const view = projectTeamView(project)
-  const poolId = (id) => h('button', {
-    key: id, type: 'button', className: 'bt-project-team-dossier',
-    'data-dossier-role': 'pool', 'data-dossier-bot': id,
-    'aria-label': t('Open {name}\'s dossier', { name: id }),
-    onClick: (event) => { event?.stopPropagation(); onOpenDossier?.({ role: 'pool', label: t('Role pool'), botId: id }) },
-  }, `@${id}`)
+  // #1892: a pool entry is a rank, not a Bot this board holds a dossier answer for — `project-team`
+  // answers rows keyed by the Project's own Bots, so the old control opened a row the host never
+  // sent. The Chief and my-agent rows above keep theirs.
+  const poolId = (id) => h('span', { key: id }, `@${id}`)
   const ranks = view.empty
     ? h('span', { className: 'bt-project-missing' }, t('No one in this pool yet.'))
     : h('span', { className: 'bt-project-team-roles' },

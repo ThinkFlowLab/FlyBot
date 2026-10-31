@@ -10966,18 +10966,7 @@ var teamRow = (role, label, botId, onOpenBot, onOpenDossier) => (0, import_react
 var POOL_RANKS = [["owner", "owner"], ["maintainer", "maintainers"], ["member", "members"]];
 function ProjectTeam({ project, onOpenBot, onOpenDossier }) {
   const view = projectTeamView(project);
-  const poolId = (id) => (0, import_react19.createElement)("button", {
-    key: id,
-    type: "button",
-    className: "bt-project-team-dossier",
-    "data-dossier-role": "pool",
-    "data-dossier-bot": id,
-    "aria-label": t("Open {name}'s dossier", { name: id }),
-    onClick: (event) => {
-      event?.stopPropagation();
-      onOpenDossier?.({ role: "pool", label: t("Role pool"), botId: id });
-    }
-  }, `@${id}`);
+  const poolId = (id) => (0, import_react19.createElement)("span", { key: id }, `@${id}`);
   const ranks = view.empty ? (0, import_react19.createElement)("span", { className: "bt-project-missing" }, t("No one in this pool yet.")) : (0, import_react19.createElement)(
     "span",
     { className: "bt-project-team-roles" },

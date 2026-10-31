@@ -1,0 +1,1 @@
+Project board: a role-pool entry in the team block reads `@id` beside its rank instead of a Dossier control — `project-team` answers rows keyed by the Project's own Bots, so the old pool click opened a dossier the host never sent; the Chief and my-agent rows keep theirs ([#1892](https://github.com/ThinkFlowLab/FlyBot/issues/1892)).

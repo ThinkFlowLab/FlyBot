@@ -537,6 +537,41 @@ test('the board reads the dossier from exactly one project-team call', async () 
   assert.deepEqual(opened.map(entry => entry.botId), ['bot-chief'])
 })
 
+// #1892: the role pool is a rank list, not a Bot the board holds a dossier answer for.
+// `project-team` answers rows keyed by the Project's own Bots, so a pool click asked for a row the
+// host never sent and drew an empty panel. A pool entry now reads `@id` beside its rank; the Chief
+// and my-agent rows keep the Dossier control they have had since #1864.
+test('#1892: a role-pool entry reads @id and its rank, not a Dossier control', () => {
+  resetSlots()
+  const opened = []
+  const tree = render(ProjectBoardPane, { project: team(), rows, canManage: false, onOpenDossier: value => opened.push(value) })
+  const pool = teamRow(tree, 'pool')
+  assert.match(text(pool), /@bot-maint/, 'the pool lists the maintainer the record stores')
+  assert.match(text(pool), /@bot-member/, 'and the member')
+  assert.match(text(pool), /Owner:|Maintainer:|Member:/, 'each entry keeps its rank label')
+  assert.match(text(pool), /My role/, "and the caller's own rank line stays beside them")
+
+  const poolNodes = all(pool)
+  const dossierish = (node) => {
+    const className = String(node.props?.className ?? '').split(/\s+/)
+    return node.props?.['data-dossier-role'] !== undefined
+      || node.props?.['data-dossier-bot'] !== undefined
+      || className.includes('bt-project-team-dossier')
+      || /dossier/i.test(String(node.props?.['aria-label'] ?? ''))
+  }
+  assert.deepEqual(poolNodes.filter(dossierish).map(node => text(node)), [], 'no pool entry carries a Dossier control')
+  for (const node of poolNodes) node.props?.onClick?.()
+  assert.deepEqual(opened.filter(entry => entry.role === 'pool'), [], 'and no pool id ever asks for a dossier')
+
+  const chief = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  const agent = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-assistant')
+  assert.ok(chief, 'the Chief row keeps its dossier control')
+  assert.ok(agent, 'my agent keeps its dossier control')
+  chief.props.onClick()
+  agent.props.onClick()
+  assert.deepEqual(opened.map(entry => entry.role), ['chief', 'agent'], 'and each still asks for its own row')
+})
+
 test('the dossier panel draws Persona, Memory and Skills, and stays empty for a null row', () => {
   resetSlots()
   const drawn = text(render(ProjectDossierPanel, { row: dossier(), label: 'Project Chief' }))
