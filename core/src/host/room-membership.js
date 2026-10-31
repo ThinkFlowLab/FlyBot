@@ -2512,6 +2512,11 @@ export function install(rt) {
     let called = []
     if (data.op === 'line') {
       const who = cleanPeerName(data.who || transportName, transportName)
+      // #1943: the body is a peer's own words too. `who` is cleaned above, but `text` went to the log,
+      // the pane and the turn exactly as it arrived, so half a surrogate pair — a string JSON accepts
+      // but that is not well formed — was stored, drawn and handed to a model. One unit becomes one
+      // U+FFFD here; the line is still accepted, because a broken character must not silence a message.
+      const text = typeof data.text === 'string' ? data.text.toWellFormed() : (data.text || '')
       const hop = Number.isFinite(Number(data.hop)) ? Math.max(0, Math.floor(Number(data.hop))) : 0
       // The author claim follows the same rule (#909): a handle this room cannot trace — to the transport
       // sender, to one of its own remote seats, or to its inviter — is shown as the Bot that carried the
@@ -2519,7 +2524,7 @@ export function install(rt) {
       const author = verifiedAuthor(data, room, event)
       const posted = append(room, rt.authoredRoomLine(room, {
         who,
-        text: data.text || '',
+        text,
         authorId: author.authorId,
         authorKind: author.authorKind,
         ...(author.unverified ? { unverified: true } : {}),
@@ -2531,7 +2536,7 @@ export function install(rt) {
       const speaker = author.authorKind === 'bot' && String(author.authorId).startsWith('@') ? author.authorId : fromHandle
       await showShareLine(room, {
         who,
-        text: data.text || '',
+        text,
         remoteSeq: data.seq,
         via: `${data.roomId}:${fromHandle}`,
         senderSessionId: speaker || fromHandle,
@@ -2550,7 +2555,7 @@ export function install(rt) {
           if (room.answered.includes(key)) continue
           room.answered = [...room.answered, key].slice(-ANSWERED_KEPT)
           called.push(botId)
-          void Promise.resolve(rt.startInboundTurn({ room, botId, seq: posted.seq, hop, who, text: data.text || '' }))
+          void Promise.resolve(rt.startInboundTurn({ room, botId, seq: posted.seq, hop, who, text }))
             .catch(error => rt.warn?.('ds-bot: inbound call in %s failed: %s', room.name, error))
         }
       }
