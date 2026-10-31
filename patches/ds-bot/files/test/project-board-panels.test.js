@@ -111,9 +111,9 @@ const seed = () => ({
 })
 const project = () => seed().projects['project-1']
 
-async function startHost(t) {
+async function startHost(t, state = seed()) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-panels-'))
-  writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(state))
   const ctx = fakeContext()
   const agents = new Map()
   const agentOf = (sessionId) => {
@@ -181,6 +181,82 @@ test('the settings panel saves through project-bind and project-assistant-owner'
   byAction(tree, 'project-assistant-save').props.onClick()
   await tick()
   assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))), { endpoint: 'project-assistant-owner', payload: { id: 'project-1', settings: { off: false } } })
+})
+
+// #1845: the panel read `project.assistant.off`, a field the host never writes — the switch lives
+// per owner on `owners[<ownerId>]`. A digest the owner paused therefore showed unticked, and one
+// Save sent `off: false`, silently resuming it. The read now answers the caller's own record and a
+// Save that changes nothing leaves the schedule alone.
+const assistantSeed = () => {
+  const state = seed()
+  state.members['owner-2'] = { id: 'owner-2', createdAt: 1 }
+  Object.assign(state.projects['project-1'], {
+    ownerUserIds: ['owner-1', 'owner-2'],
+    assistant: { botId: 'a', sessionId: 's1', createdAt: 1, scheduleId: 'digest-1', owners: {} },
+  })
+  return state
+}
+const checkboxOf = (tree) => all(tree).find(node => node.props?.['data-action'] === 'assistant-off')
+
+test('the settings panel reads the caller own pause back, and a Save that changes nothing resumes no digest', async (t) => {
+  resetSlots()
+  const rt = await startHost(t, assistantSeed())
+  const calls = []
+  const watch = (runtime) => {
+    const real = runtime.scheduleEndpoint
+    runtime.scheduleEndpoint = async (endpoint, payload) => {
+      calls.push(endpoint)
+      return typeof real === 'function' ? real(endpoint, payload) : { tasks: [] }
+    }
+  }
+  watch(rt)
+  const as = (memberId) => ({ memberId })
+  const call = (runtime, endpoint, payload, actor) => runtime.projectEndpoint(endpoint, payload, actor)
+  // A mount is a fresh panel: real React starts one with no state, so the fake hook slots are
+  // emptied first (#1843). A re-render of the instance that is already open keeps them.
+  const propsFor = (assistantMine, actor, runtime) => ({ project: seed().projects['project-1'], assistantMine, call: (e, p) => call(runtime, e, p, actor), onClose() {} })
+  const mount = (assistantMine, actor, runtime = rt) => { resetSlots(); return render(ProjectSettingsPanel, propsFor(assistantMine, actor, runtime)) }
+  const redraw = (assistantMine, actor, runtime = rt) => () => render(ProjectSettingsPanel, propsFor(assistantMine, actor, runtime))
+
+  // The owner pauses their own digest through the endpoint the panel writes through.
+  const paused = await call(rt, 'project-assistant-owner', { id: 'project-1', settings: { off: true } }, as('owner-1'))
+  assert.equal(paused.off, true)
+  const scheduleCallCount = calls.length
+
+  // Opened as the owner who paused it: the box is ticked, not the default unticked box that would
+  // send `off: false` on the next Save.
+  const mine = await call(rt, 'project-read', { id: 'project-1' }, as('owner-1'))
+  assert.equal(mine.assistantMine?.off, true, 'the read answers the caller own record')
+  assert.equal(checkboxOf(mount(mine.assistantMine, as('owner-1'))).props.checked, true)
+
+  // The other owner has not paused anything: same Project, the box is unticked for them.
+  const theirs = await call(rt, 'project-read', { id: 'project-1' }, as('owner-2'))
+  assert.equal(theirs.assistantMine?.off, false, 'one owner never reads another owner switch')
+  assert.equal(checkboxOf(mount(theirs.assistantMine, as('owner-2'))).props.checked, false)
+
+  // Save without touching the row: the value stays true and nothing is resumed.
+  byAction(mount(mine.assistantMine, as('owner-1')), 'project-assistant-save').props.onClick()
+  assert.equal(await statusAfter(redraw(mine.assistantMine, as('owner-1')), 'Assistant settings saved.'), 'Assistant settings saved.')
+  assert.equal(calls.length, scheduleCallCount, 'a Save that changes nothing sends no schedule-pause/schedule-resume')
+  const kept = await call(rt, 'project-read', { id: 'project-1' }, as('owner-1'))
+  assert.equal(kept.project.assistant.owners['owner-1'].off, true, 'and it leaves the paused value paused')
+  assert.equal(kept.assistantMine.off, true)
+
+  // Ticking the box the panel drew and saving writes the value, and a fresh read returns it: an
+  // owner who never paused sees an empty box and a Save turns the digest off.
+  const fresh = await startHost(t, assistantSeed())
+  watch(fresh)
+  const unset = await call(fresh, 'project-read', { id: 'project-1' }, as('owner-1'))
+  assert.equal(unset.assistantMine?.off, false)
+  const other = mount(unset.assistantMine, as('owner-1'), fresh)
+  assert.equal(checkboxOf(other).props.checked, false)
+  checkboxOf(other).props.onChange({ target: { checked: true } })
+  byAction(redraw(unset.assistantMine, as('owner-1'), fresh)(), 'project-assistant-save').props.onClick()
+  assert.equal(await statusAfter(redraw(unset.assistantMine, as('owner-1'), fresh), 'Assistant settings saved.'), 'Assistant settings saved.')
+  const after = await call(fresh, 'project-read', { id: 'project-1' }, as('owner-1'))
+  assert.equal(after.project.assistant.owners['owner-1'].off, true, 'the ticked box is written')
+  assert.equal(after.assistantMine.off, true, 'and a fresh read returns what was written')
+  assert.ok(after.assistantMine.quiet, 'the neighbour the panel does not draw is still read back')
 })
 
 // The memory save is checked against the host, not against the payload the panel thinks it sent —

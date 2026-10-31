@@ -631,12 +631,16 @@ export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisi
 // unbind a member (`project-bind`), the assistant's per-owner controls
 // (`project-assistant-owner`) and the assistant's memory (`project-memory-write`) — and adds no
 // fourth. Fields the host has no write path for are not drawn, so every control here can save.
-export function ProjectSettingsPanel({ project, call: request, onClose, onSaved } = {}) {
+export function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
   const save = request ?? call
   const [kind, setKind] = useState('bot')
   const [memberId, setMemberId] = useState('')
   const [note, setNote] = useState('')
-  const [assistantOff, setAssistantOff] = useState(project?.assistant?.off === true)
+  // #1845: the digest opt-out is per owner, and the host keeps it on `owners[<ownerId>]`; the
+  // Project record has no such field, so reading it there showed a paused digest as unticked and
+  // the next Save turned it back on. `project-read` answers the caller's own record beside the
+  // Project; `project.assistant.off` survives only as the fallback a caller without that read had.
+  const [assistantOff, setAssistantOff] = useState(assistantMine === undefined ? project?.assistant?.off === true : assistantMine?.off === true)
   const [status, setStatus] = useState('')
   const id = text(project?.id)
   const run = async (endpoint, payload, done) => {
@@ -787,7 +791,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
       // reads, so the team block prints the rank without a second listing read.
       const base = record?.project ?? project
       const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] }
-      return { project: withRole, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
+      return { project: withRole, assistantMine: record?.assistantMine ?? null, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null }
     }
     const refresh = async (first) => {
       try {
@@ -821,7 +825,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { close(); actions?.openSettings?.('projects') } }, t('Open Projects in Settings')))
           // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
           // that hash and lands on the Bot or group the task belongs to.
-          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) })
+          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) })
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,

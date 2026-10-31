@@ -282,7 +282,10 @@ error. `canManage` comes from `project-read` and only decides whether the manage
 drawn; the refusal itself is the host's.
 
 The **Project settings** panel (#1749) saves through the three host write paths it draws — `project-bind`,
-`project-assistant-owner` and `project-memory-write` — and through no fourth. Its memory box sends one of
+`project-assistant-owner` and `project-memory-write` — and through no fourth. Its **Pause the daily digest**
+box reads the caller's own `assistantMine.off` from `project-read` (#1845), never `project.assistant.off`
+(a field the host does not write): the opt-out lives per owner, so another owner's switch is never drawn,
+and a Save that changes nothing leaves the stored value and the 09:00 task alone. Its memory box sends one of
 the two kinds the host knows: the free text is recorded as a `decision`, never as a third kind
 `project-memory-write` would refuse, so the success line (`Memory saved.`) is reachable. The status line
 quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese. Tests:

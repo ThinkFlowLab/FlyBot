@@ -581,8 +581,11 @@ A claim works the same way (#1247's compare-and-set and WIP = 1, unchanged): `tr
 `projectEndpoint` takes the authenticated actor. `project-create` stamps the caller's member id as
 `ownerUserId` (an `ownerUserId` in the body cannot mint a Project someone else manages); an install
 with no signed-in session falls back to the first member, the same rule `tasks.js` uses for
-`requesterOf`. `project-read` answers `{ project, canManage }`, where `canManage` is true only for
-the owner — or for every caller on a Project whose record names no owner. `project-bind` is refused
+`requesterOf`. `project-read` answers `{ project, canManage, assistantMine }`, where `canManage` is
+true only for the owner — or for every caller on a Project whose record names no owner — and
+`assistantMine` (`{ off, quiet }`, #1845) is the caller's own row on `project.assistant.owners`, the
+same record `project-assistant-owner` writes, so the panel can read back the digest opt-out its
+owner set; a Project record that does not exist answers without the field. `project-bind` is refused
 by the host with `bot/forbidden` unless the caller may manage the Project the binding names (or the
 one it is leaving, when unbinding); the refusal writes nothing, so hiding a button is never the
 gate. The same check covers the record itself since #1740: `project-delete`, `project-memory`,

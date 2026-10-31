@@ -20742,12 +20742,12 @@ function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, me
     (0, import_react47.createElement)(ProjectBoardRecord, { record: view.record })
   );
 }
-function ProjectSettingsPanel({ project, call: request, onClose, onSaved } = {}) {
+function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
   const save = request ?? call;
   const [kind, setKind] = (0, import_react47.useState)("bot");
   const [memberId, setMemberId] = (0, import_react47.useState)("");
   const [note, setNote] = (0, import_react47.useState)("");
-  const [assistantOff, setAssistantOff] = (0, import_react47.useState)(project?.assistant?.off === true);
+  const [assistantOff, setAssistantOff] = (0, import_react47.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
   const [status, setStatus] = (0, import_react47.useState)("");
   const id = text(project?.id);
   const run = async (endpoint, payload, done) => {
@@ -20915,7 +20915,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
       const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
       const base = record?.project ?? project;
       const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] };
-      return { project: withRole, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
+      return { project: withRole, assistantMine: record?.assistantMine ?? null, rows: board?.tasks ?? [], done: board?.done ?? [], canManage: record?.canManage === true, tasks, decisions: board?.decisions, meetings: board?.meetings, queues, metrics: board?.metrics ?? null };
     };
     const refresh = async (first) => {
       try {
@@ -20960,7 +20960,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
             close();
             actions?.openSettings?.("projects");
           } }, t("Open Projects in Settings"))
-        ) : panel === "settings" ? (0, import_react47.createElement)(ProjectSettingsPanel, { project: state.project, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react47.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react47.createElement)(ProjectBoardPane, {
+        ) : panel === "settings" ? (0, import_react47.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react47.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react47.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
           done: state.done,

@@ -351,9 +351,14 @@ export function install(rt) {
       if (text(settings.zone) === '') delete record.zone
       else record.zone = text(settings.zone)
     }
-    if (settings.off !== undefined) record.off = settings.off === true
+    const nextOff = settings.off === undefined ? wasOff : settings.off === true
+    if (settings.off !== undefined && nextOff !== wasOff) record.off = nextOff
+    // #1845: a Save that writes the value already stored is not a change. The panel sends the box
+    // it drew, so without this guard a read-back bug (or a Save on an untouched row) would call
+    // `schedule-resume` on a digest the owner paused, which is the silent rewrite itself.
+    const changed = nextOff !== wasOff
     let schedule = null
-    if (settings.off !== undefined && typeof rt.scheduleEndpoint === 'function' && typeof assistant.scheduleId === 'string') {
+    if (changed && typeof rt.scheduleEndpoint === 'function' && typeof assistant.scheduleId === 'string') {
       const allOff = ownersOf(project).every(id => assistant.owners?.[id]?.off === true)
       try {
         const view = await rt.scheduleEndpoint(allOff ? 'schedule-pause' : 'schedule-resume', { sessionId: assistant.sessionId, id: assistant.scheduleId })
@@ -362,8 +367,18 @@ export function install(rt) {
         record.scheduleError = error?.message ?? String(error)
       }
     }
-    await rt.save?.()
-    return { owner, off: record.off === true, quiet: quietOf(assistant, owner), schedule, changed: wasOff !== (record.off === true) }
+    if (changed || settings.quiet !== undefined || settings.zone !== undefined) await rt.save?.()
+    return { owner, off: record.off === true, quiet: quietOf(assistant, owner), schedule, changed }
+  }
+
+  // The caller's own controls, read from the same record `setOwner` writes (#1845): the panel used
+  // to read `project.assistant.off`, which the host never writes, so a paused digest always looked
+  // paused-off and one Save turned it back on. `project-read` carries this beside the Project.
+  const mine = (projectId, ownerId = '') => {
+    const project = activeProject(projectId)
+    const owner = text(ownerId)
+    const record = owner === '' ? null : (project?.assistant?.owners?.[owner] ?? null)
+    return { off: record?.off === true, quiet: quietOf(project?.assistant ?? null, owner) }
   }
 
   // A board row carries the card's identity and its column, not its title; the ask line needs a
@@ -505,7 +520,7 @@ export function install(rt) {
     }
   }
 
-  rt.projectAssistant = { create, reconcile, remove, read, write, identity, digest, buildDigest, setOwner, ownersOf, actionableFor, MAX_ACTIONABLE }
+  rt.projectAssistant = { create, reconcile, remove, read, write, mine, identity, digest, buildDigest, setOwner, ownersOf, actionableFor, MAX_ACTIONABLE }
 
   // The assistant's own Session calls this. The Project comes from the Session's bound Bot, never
   // from the arguments, so one Project's assistant cannot reach another Project's memory.

@@ -677,7 +677,16 @@ export function install(rt) {
       }
       case 'project-read': {
         const project = readProject(projectText(body.id, 200))
-        return { project, canManage: projectCanManage(project, actor) }
+        // #1845: the panel's own switches live per owner on the assistant record, never on the
+        // Project, so the read carries the caller's own record beside it.
+        // An absent Project has no assistant record to report, so the answer keeps the shape a
+        // missing id always had (`{ project: null, canManage: false }`).
+        if (project === null) return { project, canManage: false }
+        const actorId = projectActorId(actor)
+        const assistantMine = actorId === null
+          ? { off: false, quiet: null }
+          : (rt.projectAssistant?.mine?.(project.id, actorId) ?? { off: false, quiet: null })
+        return { project, canManage: projectCanManage(project, actor), assistantMine }
       }
       case 'project-bind': {
         const target = body.projectId === undefined || body.projectId === null
