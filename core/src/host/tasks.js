@@ -21,6 +21,7 @@ import { retiredBot } from './store.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
+import { codePoints } from './text.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
 // result-ready still waits for the requester: prune must not evict it with terminals (#111).
@@ -167,7 +168,7 @@ const readColumn = (value) => {
   return column
 }
 const selectedInput = (value, name) => {
-  if (typeof value !== 'string' || !value.trim() || value.length > 2000) throw invalid(`${name} must contain 1–2000 characters`)
+  if (typeof value !== 'string' || !value.trim() || codePoints(value) > 2000) throw invalid(`${name} must contain 1–2000 characters`)
   return value
 }
 
@@ -410,7 +411,7 @@ export function install(rt) {
   const knownRole = role => RESERVED_ROLES.has(role) || Object.values(state.bots ?? {}).some(bot => Boolean(bot?.role) && sameRole(bot.role, role))
   const boundedLine = (value, max, name) => {
     const text = String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
-    if (text.length > max) throw invalid(`${name} is at most ${max} characters`)
+    if (codePoints(text) > max) throw invalid(`${name} is at most ${max} characters`)
     return text
   }
   const readTaskClass = (value) => {

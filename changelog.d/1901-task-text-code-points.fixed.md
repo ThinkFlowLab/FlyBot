@@ -1,0 +1,1 @@
+The task board's typed question and answer (2,000) and its handoff, evidence and lease bounds (300, 200, 200) now count characters rather than UTF-16 units ([#1901](https://github.com/ThinkFlowLab/FlyBot/issues/1901)), so a 2,000-character emoji question is accepted instead of refused as 4,000.

@@ -918,3 +918,36 @@ test('sending a result back names the note in the comment, and a task without a 
   const saved = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[plainId]
   assert.equal(saved.writeBack, undefined)
 })
+
+test('a typed question and answer count characters, not UTF-16 units (#1901)', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const id = await workingInputTask(app, alice.sessionToken)
+  const emoji = '😀'.repeat(2000)
+  // 2,000 characters written in emoji is 4,000 UTF-16 units: exactly at the bound.
+  const asked = await app.call('task-wait-input', { id, question: emoji }, alice.sessionToken)
+  assert.equal(asked.ok, true, JSON.stringify(asked))
+  assert.equal(asked.value.inputRequest.question, emoji)
+  const answer = await app.call('task-answer-input', { id, questionId: asked.value.inputRequest.id, answer: emoji }, alice.sessionToken)
+  assert.equal(answer.ok, true, JSON.stringify(answer))
+  assert.equal(answer.value.inputRequest.answer, emoji)
+  // One character past the bound is refused, and the sentence still names the bound it kept.
+  const overQuestion = await app.call('task-wait-input', { id, question: '😀'.repeat(2001) }, alice.sessionToken)
+  assert.equal(overQuestion.ok, false)
+  assert.equal(overQuestion.error.code, 'bot/invalid')
+  assert.match(overQuestion.error.message, /Question must contain 1–2000 characters/)
+  // Mixed text counts what the reader sees, so a "halve the limit" fix cannot pass.
+  const mixed = '😀'.repeat(1999) + 'x'
+  const mixedAsked = await app.call('task-wait-input', { id, question: mixed }, alice.sessionToken)
+  assert.equal(mixedAsked.ok, true, JSON.stringify(mixedAsked))
+  const overAnswer = await app.call('task-answer-input', { id, questionId: mixedAsked.value.inputRequest.id, answer: '😀'.repeat(2001) }, alice.sessionToken)
+  assert.equal(overAnswer.ok, false)
+  assert.equal(overAnswer.error.code, 'bot/invalid')
+  assert.match(overAnswer.error.message, /Answer must contain 1–2000 characters/)
+  const mixedAnswer = await app.call('task-answer-input', { id, questionId: mixedAsked.value.inputRequest.id, answer: mixed }, alice.sessionToken)
+  assert.equal(mixedAnswer.ok, true, JSON.stringify(mixedAnswer))
+  const overMixed = await app.call('task-wait-input', { id, question: '😀'.repeat(2000) + 'x' }, alice.sessionToken)
+  assert.equal(overMixed.ok, false)
+  assert.match(overMixed.error.message, /Question must contain 1–2000 characters/)
+})

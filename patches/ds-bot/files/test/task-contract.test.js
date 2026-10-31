@@ -249,3 +249,40 @@ test('the Project board reads the typed fields from the same row (#1720)', async
   assert.equal(fresh.lease.holder, 'b1')
   assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'one row per task id')
 })
+
+test('the handoff, evidence and lease bounds count characters, not UTF-16 units (#1901)', async (t) => {
+  const app = await start(t)
+  const byTitle = title => Object.values(app.rt.state.tasks).find(task => task.title === title)
+  // A 300-character handoff reason written in emoji is 600 UTF-16 units: exactly at the bound.
+  const reason = '😀'.repeat(300)
+  const handoff = await app.create({ title: 'A long reason', handoff: { from: 'Lead', to: 'Dev', reason } })
+  assert.equal(app.rt.state.tasks[handoff.id].handoff.reason, reason)
+  await assert.rejects(
+    () => app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'One over', handoff: { from: 'Lead', to: 'Dev', reason: '😀'.repeat(301) } }),
+    /handoff\.reason is at most 300 characters/,
+  )
+  // Mixed text counts what the reader sees: 299 emoji + one ASCII is 300, one more is 301.
+  const mixed = '😀'.repeat(299) + 'x'
+  const mixedCard = await app.create({ title: 'A mixed reason', handoff: { from: 'Lead', to: 'Dev', reason: mixed } })
+  assert.equal(app.rt.state.tasks[mixedCard.id].handoff.reason, mixed)
+  await assert.rejects(
+    () => app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'Mixed over', handoff: { from: 'Lead', to: 'Dev', reason: '😀'.repeat(300) + 'x' } }),
+    /handoff\.reason is at most 300 characters/,
+  )
+  // evidence.check 200/201.
+  const check = '😀'.repeat(200)
+  await app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'A long check', evidence: [{ check }] })
+  assert.equal(byTitle('A long check').evidence[0].check, check)
+  await assert.rejects(
+    () => app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'Check over', evidence: [{ check: '😀'.repeat(201) }] }),
+    /evidence\.check is at most 200 characters/,
+  )
+  // lease.holder 200/201.
+  const holder = '😀'.repeat(200)
+  await app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'A long holder', lease: { holder, takenAt: 1, expiresAt: 2 } })
+  assert.equal(byTitle('A long holder').lease.holder, holder)
+  await assert.rejects(
+    () => app.rt.taskEndpoint('task-create', { botId: 'd1', title: 'Holder over', lease: { holder: '😀'.repeat(201), takenAt: 1, expiresAt: 2 } }),
+    /lease\.holder is at most 200 characters/,
+  )
+})
