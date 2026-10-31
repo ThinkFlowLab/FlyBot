@@ -178,6 +178,24 @@ test('a role returns the card to its producer as a rework card the producer can 
   assert.equal(app.rt.state.tasks[childId].claimedBy, 'd1')
 })
 
+// #P282b: the rework line carries the note at 200, and a cut inside an emoji left half a pair.
+test('the rework line keeps whole characters in the note at the 200 bound (#P282b)', async (t) => {
+  const app = await start(t)
+  const id = app.idOf(await app.track('a', { tasks: [{ title: 'Build the route', handoff: { from: 'Lead', to: 'Dev' } }] }))
+  await app.drive()
+  await app.track('d1', { claim: true, id })
+  await app.track('d1', { tasks: [{ id, handoff: { from: 'Dev', to: 'Reviewer', reason: 'diff ready' } }] })
+  await app.drive()
+  await app.track('r1', { claim: true, id })
+  await app.track('r1', { tasks: [{ id, column: 'in-progress' }] })
+  const reason = 'a'.repeat(199) + '😀tail'
+  const returned = await app.track('r1', { rework: { task: id, reason } })
+  assert.equal(returned.isWellFormed(), true, `the rework line is not well formed: ${JSON.stringify(returned.slice(-8))}`)
+  const shown = returned.split(' pool: ')[1].split('\n')[0]
+  assert.equal(shown, 'a'.repeat(199), `the rework line keeps the 200 bound: ${JSON.stringify(shown.slice(-4))}`)
+  assert.ok(Buffer.from(shown, 'utf8').equals(Buffer.from(reason, 'utf8').subarray(0, Buffer.byteLength(shown))), 'the note is a prefix of the reason, byte for byte')
+})
+
 test('a card waiting for its rework is not re-offered when its lease expires (#1804)', async (t) => {
   const app = await start(t)
   const id = app.idOf(await app.track('a', { tasks: [{ title: 'Build the route', handoff: { from: 'Lead', to: 'Dev' } }] }))

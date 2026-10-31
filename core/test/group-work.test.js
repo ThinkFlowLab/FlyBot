@@ -370,6 +370,27 @@ test('the answer given in the group reaches the asking Bot\'s waiting work and i
   assert.equal((await host.call('answer-question', { sessionId: 'r1', questionId: asked.id, answer: { selected: ['dev'] } })).error.code, 'bot/stale')
 })
 
+// #P282b: the answer echo is bounded at 300, and a cut inside an emoji left half a pair in the
+// room line every member reads.
+test('the answer echo in a group keeps whole characters at the 300 bound (#P282b)', async (t) => {
+  const host = await start(t)
+  await host.tool('message_bot', { to: 'Tester', message: '把测试跑一遍' }, 'gb')
+  host.begin('c')
+  await askBranch(host)
+  host.finish('c', 'Need to know the branch first.')
+  await settle(() => host.agentOf('gb').calls.length === 1)
+  const asked = (await host.call('state', {})).value.questions.r1
+  const custom = 'a'.repeat(299) + '😀tail'
+  assert.equal((await host.call('answer-question', { sessionId: 'r1', questionId: asked.id, answer: { selected: [], custom } })).ok, true)
+  await settle(() => host.agentOf('r1').calls.some(call => call.source?.notice === true))
+  const notice = host.agentOf('r1').calls.find(call => call.source?.notice === true)
+  const said = text(notice)
+  assert.equal(said.isWellFormed(), true, `the answer echo is not well formed: ${JSON.stringify(said.slice(-8))}`)
+  const values = said.split(' → ').at(-1)
+  assert.equal(values, 'a'.repeat(299), `the answer echo keeps the 300 bound: ${JSON.stringify(values.slice(-4))}`)
+  assert.ok(Buffer.from(values, 'utf8').equals(Buffer.from(custom, 'utf8').subarray(0, Buffer.byteLength(values))), 'the answer echo is a prefix of the answer, byte for byte')
+})
+
 test('a question in the Bot\'s own chat stays there, and a request answered to the user keeps its card there (#550)', async (t) => {
   const host = await start(t)
   host.emit('c', 'turn/start', { turn: 1 })

@@ -86,7 +86,7 @@ export function install(rt) {
     const parts = [
       `members: ${[...members, ...remotes].join(', ')}`,
       room.mode === 'admin' && room.admin ? 'plain messages go to the admin first' : 'every member replies in turn',
-      room.notice ? `notice: ${room.notice.split('\n')[0].slice(0, 100)}` : '',
+      room.notice ? `notice: ${cut(room.notice.split('\n')[0], 100).text}` : '',
       room.workDir ? `members work in ${room.workDir} here` : '',
     ].filter(Boolean)
     return `- "${room.name}" — ${parts.join('; ')}`
@@ -174,7 +174,7 @@ export function install(rt) {
       const lines = Object.values(state.bots).filter(listed).map(bot => {
         const model = bot.appliedModel ?? bot.model
         const tags = [bot.role, model ? `model ${model}` : '', heldSends[bot.id] ? `${heldSends[bot.id]} to approve` : '', !foreign(bot) && bot.workDir ? `works in ${bot.workDir}` : '', rt.isMain(bot.id) ? 'Main Bot' : '', bot.id === self ? 'you' : ''].filter(Boolean).join(', ')
-        const job = !foreign(bot) && bot.instructions ? ` — ${bot.instructions.split('\n')[0].slice(0, 120)}` : ''
+        const job = !foreign(bot) && bot.instructions ? ` — ${cut(bot.instructions.split('\n')[0], 120).text}` : ''
         return `- ${bot.name}${tags ? ` (${tags})` : ''}${job}`
       })
       if (lines.length === 0) return 'No Bots yet.'
@@ -740,7 +740,7 @@ export function install(rt) {
     await rt.save()
     const who = cleanName(actor?.displayName, 'You')
     const given = JSON.parse(reply.text).answers[0]
-    const values = [...given.selected, ...(given.custom ? [given.custom] : [])].join(', ').replace(/\s+/g, ' ').slice(0, 300)
+    const values = cut([...given.selected, ...(given.custom ? [given.custom] : [])].join(', ').replace(/\s+/g, ' '), 300).text
     void rt.postToRoom?.(room, { id: 'face-notice', name: 'Room' }, `${who} answered ${bot.name}: ${question.question} → ${values}`, { quiet: true, notice: true })
       .catch(error => rt.warn('ds-bot: the answer notice in %s was not shown: %s', room.name, error))
     return { ok: true }
@@ -1028,7 +1028,7 @@ ${task.writeBack.body}`)
         }
         if (args?.rework !== undefined) {
           const child = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })
-          return `Rework ${child.id} on ${child.reworkOf} for the ${child.handoff?.to ?? 'producer'} pool: ${String(child.note ?? '').slice(0, 200)}\nThe producer takes it from its own pool. Set that card's column to in-progress when you pick it up. Do not post a status in the group.`
+          return `Rework ${child.id} on ${child.reworkOf} for the ${child.handoff?.to ?? 'producer'} pool: ${cut(String(child.note ?? ''), 200).text}\nThe producer takes it from its own pool. Set that card's column to in-progress when you pick it up. Do not post a status in the group.`
         }
         if (args?.release !== undefined) {
           const returned = await rt.trackBotTasks(self, args ?? {}, { sessionId: exec.agent?.id, roomId })

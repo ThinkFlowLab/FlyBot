@@ -284,3 +284,20 @@ test('the own-chat ack is unchanged beside the room path (#1646)', async (t) => 
   await settleAck(host.rt, 'gb')
   assert.deepEqual(Object.keys(host.rt.busyAcksView()).sort(), ['b', 'gb'])
 })
+
+test('the prompt bounds keep whole characters at 600 and 1,500 (#P282b)', () => {
+  const sourceTask = 'w'.repeat(599) + '😀tail'
+  const sourceMessage = 'a'.repeat(1_499) + '😀tail'
+  const prompt = ackPrompt({ message: sourceMessage, tool: 'bash', working: sourceTask })
+  assert.ok(prompt.isWellFormed(), `the prompt is not well formed: ${JSON.stringify(prompt.slice(-8))}`)
+  const lines = prompt.split('\n')
+  const keptTask = lines.find(line => line.startsWith('The request being worked on: ')).slice('The request being worked on: '.length)
+  const keptMessage = lines[lines.length - 1].slice('New message: '.length)
+  assert.equal(keptTask, 'w'.repeat(599))
+  assert.equal(keptMessage, 'a'.repeat(1_499))
+  assert.ok(keptTask.length <= 600)
+  assert.ok(keptMessage.length <= 1_500)
+  const bytesOf = value => Buffer.from(value, 'utf8')
+  assert.ok(bytesOf(sourceTask).subarray(0, bytesOf(keptTask).length).equals(bytesOf(keptTask)))
+  assert.ok(bytesOf(sourceMessage).subarray(0, bytesOf(keptMessage).length).equals(bytesOf(keptMessage)))
+})

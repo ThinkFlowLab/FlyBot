@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SOURCE_KIND } from './constants.js'
 import { OWNER, OTHER, SCHEDULED } from './turn-origin.js'
+import { cut } from '../shared/text-boundary.js'
 
 // Text from outside the team, marked so the Bot treats it as data. Marker fragments are
 // removed until none is left, so a nested "</untrusted-</untrusted-message>message>"
@@ -35,7 +36,7 @@ export const unwrapUntrusted = (text) => {
 // A name from outside the team, safe on one line of trusted text: no control characters,
 // newlines, brackets or quotes, at most 60 characters.
 export const cleanName = (name, fallback = 'a remote Bot') => {
-  const text = String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60)
+  const text = cut(String(name ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim(), 60).text
   return text || fallback
 }
 export const fenceUntrusted = (name, text) => `<untrusted-message from="${cleanName(name)}">\n${stripUntrusted(text ?? '')}\n</untrusted-message>`

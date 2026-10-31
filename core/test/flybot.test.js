@@ -882,6 +882,37 @@ test('list_bots keeps whole characters in a peer display name and owner name (#1
   assert.ok(Buffer.from(keptOwner, 'utf8').equals(Buffer.from(ownerName, 'utf8').subarray(0, Buffer.byteLength(keptOwner))), 'the owner name is a prefix of what the peer published, byte for byte')
 })
 
+// #P282b: the group line's notice is bounded at 100, and a cut inside an emoji left half a pair.
+test('list_bots keeps whole characters in a group notice at the 100 bound (#P282b)', async (t) => {
+  const notice = 'a'.repeat(99) + '😀tail'
+  const { tool, stop } = await start({
+    rooms: { g: { id: 'g', name: 'Group', members: ['a'], admin: 'a', mode: 'admin', notice, createdAt: 1, createdBy: null } },
+  })
+  t.after(stop)
+  const listed = await tool('list_bots', {}, 'a')
+  assert.equal(listed.isWellFormed(), true, `the listing is not well formed: ${JSON.stringify(listed.slice(0, 80))}`)
+  const line = listed.split('\n').find(l => l.includes('notice: '))
+  assert.ok(line, `the notice is listed: ${JSON.stringify(listed)}`)
+  const kept = line.split('notice: ')[1].split('; ')[0]
+  assert.equal(kept, 'a'.repeat(99), `the notice keeps the 100 bound: ${JSON.stringify(kept.slice(-4))}`)
+  assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(notice, 'utf8').subarray(0, Buffer.byteLength(kept))), 'the notice is a prefix, byte for byte')
+})
+
+// #P282b: a Bot's job line is bounded at 120, and a cut inside an emoji left half a pair.
+test('list_bots keeps whole characters in a Bot job line at the 120 bound (#P282b)', async (t) => {
+  const { tool, stop } = await start()
+  t.after(stop)
+  const instructions = 'a'.repeat(119) + '😀tail'
+  assert.match(await tool('update_bot', { bot: 'b', instructions }, 'a'), /Updated Writer/)
+  const listed = await tool('list_bots', {}, 'a')
+  assert.equal(listed.isWellFormed(), true, `the listing is not well formed: ${JSON.stringify(listed.slice(0, 80))}`)
+  const line = listed.split('\n').find(l => l.includes(' — '))
+  assert.ok(line, `the job line is listed: ${JSON.stringify(listed)}`)
+  const kept = line.split(' — ')[1]
+  assert.equal(kept, 'a'.repeat(119), `the job line keeps the 120 bound: ${JSON.stringify(kept.slice(-4))}`)
+  assert.ok(Buffer.from(kept, 'utf8').equals(Buffer.from(instructions, 'utf8').subarray(0, Buffer.byteLength(kept))), 'the job line is a prefix, byte for byte')
+})
+
 test('cleanRemote sanitizes peer name, homeName and owner at the record boundary (#75)', async (t) => {
   const { ctx, fb, tool, received, stop, grantTo } = await start()
   t.after(stop)

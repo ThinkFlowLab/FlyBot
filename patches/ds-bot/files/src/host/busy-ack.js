@@ -14,6 +14,7 @@
 // otherwise the chat's own model is used.
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { splitRef } from './text.js'
+import { cut } from '../shared/text-boundary.js'
 
 export const COALESCE_MS = 3_000
 export const ACK_TIMEOUT_MS = 3_000
@@ -56,11 +57,11 @@ export const ACK_SYSTEM = [
 /** The user prompt for the ack call: the new message and what the turn is doing. */
 export function ackPrompt({ message, tool, working }) {
   const doing = typeof tool === 'string' && tool.trim() !== '' && tool !== 'ask_user' ? `running the tool \`${tool}\`` : 'working on the previous request'
-  const task = String(working ?? '').trim().slice(0, 600)
+  const task = cut(String(working ?? '').trim(), 600).text
   return [
     `Currently: ${doing}.`,
     ...(task === '' ? [] : [`The request being worked on: ${task}`]),
-    `New message: ${String(message ?? '').trim().slice(0, 1_500)}`,
+    `New message: ${cut(String(message ?? '').trim(), 1_500).text}`,
   ].join('\n')
 }
 

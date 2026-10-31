@@ -37,3 +37,14 @@ test('#130: previews unwrap the stored untrusted-message wrap', () => {
   assert.equal(unwrapUntrusted(fenceUntrusted('User', 'hello from the owner')), 'hello from the owner')
   assert.equal(unwrapUntrusted('plain text'), 'plain text')
 })
+
+test('a peer name at the 60 bound keeps the whole character (#P282b)', () => {
+  const source = 'a'.repeat(59) + '😀tail'
+  const name = cleanName(source)
+  assert.equal(name, 'a'.repeat(59))
+  assert.ok(name.isWellFormed(), `the name is not well formed: ${JSON.stringify(name.slice(-4))}`)
+  assert.ok(name.length <= 60)
+  const fenced = fenceUntrusted(source, 'hello')
+  assert.ok(fenced.isWellFormed(), 'the fence header is not well formed')
+  assert.ok(fenced.startsWith(`<untrusted-message from="${'a'.repeat(59)}">`))
+})
