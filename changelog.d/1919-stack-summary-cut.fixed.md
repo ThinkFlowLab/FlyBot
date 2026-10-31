@@ -1,0 +1,1 @@
+A diagnostics report's stack summary no longer shows half of an emoji ([#1919](https://github.com/ThinkFlowLab/FlyBot/issues/1919)): the `<details><summary>Stack: …` line now cuts the message on a code point boundary, so a public report shows the whole character instead of U+FFFD.

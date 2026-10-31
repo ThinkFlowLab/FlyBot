@@ -109,6 +109,24 @@ test('a browser-log line cut at its bound never splits a surrogate pair (#1916)'
   assert.ok(line.includes(`[${'y'.repeat(39)}]`), `expected the code prefix, got ${line}`)
 })
 
+// #1919: the stack summary in the report is bounded too, and its bound is a code-unit one:
+// a message cut inside an emoji shows U+FFFD in a report meant for a public issue.
+test('a stack summary cut at its bound never splits a surrogate pair (#1919)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const rt = host(home, { config: { diagnosticsFile: false } })
+  const text = `${'a'.repeat(79)}\u{1F600}tail`
+  rt.noteFailure({ source: 'host', text, stack: 'Error: x\n    at fake (/tmp/x.js:1:1)' })
+  const report = await rt.diagnostics.report({})
+  const line = report.markdown.split('\n').find(item => item.includes('<details><summary>Stack:')) ?? ''
+  assert.notEqual(line, '')
+  const shown = line.replace(/^<details><summary>Stack: /, '').replace(/<\/summary>$/, '')
+  assert.equal(shown.isWellFormed(), true, `the summary is not well formed: ${shown}`)
+  assert.equal(shown.includes('\ufffd'), false)
+  assert.ok(shown.length <= 80, `summary is ${shown.length} code units`)
+  assert.equal(Buffer.from(shown, 'utf8').equals(Buffer.from(text, 'utf8').subarray(0, Buffer.byteLength(shown))), true, 'the summary is a byte prefix of the message')
+})
+
 test('warnings send only cleaned text to the logger and stderr', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))

@@ -84,7 +84,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
   if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
   const stacks = recent.filter(entry => entry.stack).slice(-3)
-  for (const entry of stacks) out.push('', `<details><summary>Stack: ${entry.text.slice(0, 80).replace(/</g, '&lt;')}</summary>`, '', '```', entry.stack, '```', '</details>')
+  for (const entry of stacks) out.push('', `<details><summary>Stack: ${cut(entry.text, 80).text.replace(/</g, '&lt;')}</summary>`, '', '```', entry.stack, '```', '</details>')
   if (clientEntries.length > 0) {
     out.push('', `Recent browser errors (${Math.min(clientEntries.length, 10)}):`, '```', ...clientEntries.slice(-10).map(entryLine), '```')
   }
