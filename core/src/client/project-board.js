@@ -865,8 +865,11 @@ export function ProjectMembersPanel({ project, rows, onClose } = {}) {
 }
 
 // #1864: one read for the whole board, exported so a test can prove the dossier comes from a single
-// `project-team` call. `read` is the channel seam (`call` in the app).
-export async function readProjectBoard(read, wanted) {
+// `project-team` call. `read` is the channel seam (`call` in the app). #1900: the dossier is the one
+// answer the poll hands back — `knownTeam` is what the open read — because the host builds it by
+// reading persona and memory files, and a five-second refresh must not pay that again. A refusal
+// leaves the rest of the board standing, so a dossier problem is never the empty-Project answer.
+export async function readProjectBoard(read, wanted, knownTeam) {
   const listing = await read('projects')
   const projects = Array.isArray(listing?.projects) ? listing.projects : []
   const project = wanted === '' ? projects[0] : projects.find(item => item.id === wanted)
@@ -878,7 +881,7 @@ export async function readProjectBoard(read, wanted) {
     read('project-read', { id: project.id }),
     read('project-board', { id: project.id, timeZone: zone }),
     read('tasks', {}),
-    read('project-team', { id: project.id }),
+    knownTeam !== undefined ? knownTeam : read('project-team', { id: project.id }).catch(() => null),
   ])
   const tasks = Array.isArray(taskList) ? taskList : (taskList?.tasks ?? [])
   // The groups are the same read as the rows, so the header cannot disagree with the cards.
@@ -950,12 +953,15 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
     const wanted = hash.slice('#project'.length).replace(/^=/, '')
     let gone = false
     // #1864: the board, its record, its rows, the task texts and the team dossier are one read path,
-    // and the dossier comes from the single `project-team` call that read makes.
-    const loadBoard = () => readProjectBoard(read, wanted)
+    // and the dossier comes from the single `project-team` call that read makes. #1900: that call is
+    // this open's, not the poll's — `team` is handed back on every later read, so a tick re-reads
+    // only the three answers that change and the dossier is read again on the next board open.
+    let team
+    const loadBoard = () => readProjectBoard(read, wanted, team)
     const refresh = async (first) => {
       try {
         const next = await loadBoard()
-        if (!gone) setState(next)
+        if (!gone) { team = next.team; setState(next) }
       } catch {
         // The first read is the page's answer, so it takes the empty state it always took. A poll
         // that fails keeps the board the last good read drew (#1814): a board that vanishes under

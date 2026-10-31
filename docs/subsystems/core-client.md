@@ -323,7 +323,10 @@ instructions, role and model), **Memory** (the `MEMORY.md` head and the topic na
 (the attached `skill` capability names). The panel never re-fetches per section, and a `null` row —
 the host's answer for a deleted Bot — shows *Not set* with nothing invented. `readProjectBoard`
 keeps the dossier on the same read as the rows, so the board and the panel cannot disagree, and the
-"my agent" row uses the same panel. A role-pool entry draws none: since #1892 it is plain `@id`
+"my agent" row uses the same panel. Since #1900 that one answer is the open's, not the poll's: the
+five-second refresh hands it back instead of asking `project-team` again, because the host builds it by
+reading persona and memory files, and a refused dossier leaves the rows, the done group and the tasks
+on screen with an empty team block instead of the empty-Project answer. A role-pool entry draws none: since #1892 it is plain `@id`
 beside its rank, because `project-team` answers rows keyed by the Project's own Bots and the old
 control asked for a row the host never sent. The entry in the owner's own Bot chat is
 `ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads
@@ -357,10 +360,12 @@ carried in and has no board of its own). A row with a board is a button: it writ
 group and clears the hash, so a reload does not reopen the same board. A row without a board (or without a
 task record) is not a button — `role` alone opens nothing. Opening the pane is four host reads, never a
 per-Bot read: `projects`, `project-read`, `project-board`, and the `tasks` list the rows are joined
-against. Since #1814 they repeat every five seconds while the pane is open, because what a card has
+against. Since #1814 those four repeat every five seconds while the pane is open, because what a card has
 waited and whether its lease is live are computed by the host at read time: a lease that expires during
 the visit turns the card `stalled` on its own instead of freezing the board. The first read failing
-answers the empty state as it did; a poll that fails keeps the board the last good read drew. Polling
+answers the empty state as it did; a poll that fails keeps the board the last good read drew. The
+dossier is not among the four (#1900): it is read once when the pane opens and again on the next open,
+not on a tick. Polling
 pauses while a row's own board is open (the hash no longer names this Project) and while the tab is
 hidden, and a read that lands after the pane closed is dropped. Tests:
 `core/test/project-board-view.test.js`, `core/test/project-board.test.js`,

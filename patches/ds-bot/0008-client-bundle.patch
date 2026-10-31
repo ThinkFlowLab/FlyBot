@@ -7527,11 +7527,22 @@ diff --git a/client.js b/client.js
 +      setBusy("");
      }
 -  });
--}
++  };
++  return (0, import_react9.createElement)(
++    "div",
++    { className: "bt-file-chips" },
++    files.map((file) => (0, import_react9.createElement)(
++      "button",
++      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
++      `📎 ${file.name} · ${fileSize(file.size)}`
++    )),
++    error ? (0, import_react9.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
++  );
+ }
 -function ScopeSwitch({ value, onChange, bot }) {
 -  const options = [["all", t("All Bots")], ["bot", t("Only {name}", { name: bot.name })]];
 -  return (0, import_react5.createElement)(
-+  };
++function GroupEvent({ prefix, room: room2, name, roster, actions }) {
 +  return (0, import_react9.createElement)(
      "div",
 -    { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
@@ -7544,18 +7555,6 @@ diff --git a/client.js b/client.js
 -      className: "bt-secret-seg",
 -      onClick: () => onChange(id)
 -    }, text))
-+    { className: "bt-file-chips" },
-+    files.map((file) => (0, import_react9.createElement)(
-+      "button",
-+      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
-+      `📎 ${file.name} · ${fileSize(file.size)}`
-+    )),
-+    error ? (0, import_react9.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null
-+  );
-+}
-+function GroupEvent({ prefix, room: room2, name, roster, actions }) {
-+  return (0, import_react9.createElement)(
-+    "div",
 +    { className: "bt-event" },
 +    (0, import_react9.createElement)("span", null, prefix),
 +    room2 ? (0, import_react9.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react9.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react9.createElement)("span", null, name) : null
@@ -9854,13 +9853,13 @@ diff --git a/client.js b/client.js
 +    const custom = typeof reply.custom === "string" ? reply.custom.trim() : "";
 +    if (selected.length === 0 && custom === "") return void 0;
 +    return Promise.resolve(actions.answerQuestion(card.sessionId, card.question.id, { selected, custom }));
-   }
++  }
 +  if (card?.kind === "task" && card.status === "input") {
 +    const text2 = typeof choice === "string" ? choice.trim() : "";
 +    const questionId = card.task?.inputRequest?.id;
 +    if (text2 === "" || typeof questionId !== "string") return void 0;
 +    return Promise.resolve(actions.answerTaskInput(card.task.id, questionId, text2));
-+  }
+   }
 +  if (card?.kind === "task" && card.status === "result") {
 +    if (choice === "accept") return Promise.resolve(actions.acceptTaskResult(card.task.id));
 +    const note = choice !== null && typeof choice === "object" ? String(choice.note ?? "").trim() : "";
@@ -12248,7 +12247,7 @@ diff --git a/client.js b/client.js
        setOpen(false);
      };
      const onKey = (event) => {
-@@ -5097,412 +5097,1330 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -5097,412 +5097,1334 @@ function UpdateButton({ useUpdate, actions }) {
        window.removeEventListener("keydown", onKey, true);
      };
    }, [open]);
@@ -13672,7 +13671,7 @@ diff --git a/client.js b/client.js
 -    }
 -    if (id !== "" && (roster.roomsById[id] || (actions.isAgentSession?.(id) ?? roster.agentOf[id] !== void 0) || blank3 !== "1")) {
 -      lastBot.current = null;
-+async function readProjectBoard(read, wanted) {
++async function readProjectBoard(read, wanted, knownTeam) {
 +  const listing = await read("projects");
 +  const projects = Array.isArray(listing?.projects) ? listing.projects : [];
 +  const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
@@ -13682,7 +13681,7 @@ diff --git a/client.js b/client.js
 +    read("project-read", { id: project.id }),
 +    read("project-board", { id: project.id, timeZone: zone }),
 +    read("tasks", {}),
-+    read("project-team", { id: project.id })
++    knownTeam !== void 0 ? knownTeam : read("project-team", { id: project.id }).catch(() => null)
 +  ]);
 +  const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
 +  const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
@@ -13758,11 +13757,15 @@ diff --git a/client.js b/client.js
 -    wide ? (0, import_react8.createElement)("span", { className: "bt-return-name" }, t("DS Bot")) : null
 +    const wanted = hash.slice("#project".length).replace(/^=/, "");
 +    let gone = false;
-+    const loadBoard = () => readProjectBoard(read, wanted);
++    let team;
++    const loadBoard = () => readProjectBoard(read, wanted, team);
 +    const refresh = async (first) => {
 +      try {
 +        const next = await loadBoard();
-+        if (!gone) setState(next);
++        if (!gone) {
++          team = next.team;
++          setState(next);
++        }
 +      } catch {
 +        if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
 +      }

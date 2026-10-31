@@ -353,7 +353,9 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   assert.match(textIn(tree), /Dev4 · stalled/, 'the board draws what the first read answered')
   const afterFirst = count.calls
   await tick()
-  assert.equal(count.calls, afterFirst + 5, 'an open board reads again on the next tick')
+  // #1900: a tick is four calls now — the listing, the record, the board and the task texts. The
+  // fifth, the team dossier, belongs to the open and is not re-read (see the #1900 test below).
+  assert.equal(count.calls, afterFirst + 4, 'an open board reads again on the next tick, without the dossier')
   // A row opens its own board: the hash names the task and this board stops drawing, so a tick that
   // lands before the cleanup must not read. This segment pins the unmount, not the predicate.
   const afterTick = count.calls
@@ -363,7 +365,7 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   // Closing that board puts this one back in front: the next tick reads again.
   win.location.hash = '#project'
   await tick()
-  assert.equal(count.calls, afterTick + 5, 'closing the row’s board resumes the poll')
+  assert.equal(count.calls, afterTick + 4, 'closing the row’s board resumes the poll')
   // A hidden tab reads nothing either — this is the segment the named predicate is pinned by.
   const afterResume = count.calls
   doc.visibilityState = 'hidden'
@@ -371,13 +373,55 @@ test('#1814: an open board reads on every tick, stops once a row opens its own b
   assert.equal(count.calls, afterResume, 'no read in a hidden tab')
   doc.visibilityState = 'visible'
   await tick()
-  assert.equal(count.calls, afterResume + 5, 'a visible tab reads again on the next tick')
+  assert.equal(count.calls, afterResume + 4, 'a visible tab reads again on the next tick')
   // Close the board: the timer goes with it, so a tick afterwards reads nothing at all.
   const afterVisible = count.calls
   for (const off of cleanups) off()
   assert.equal(clock.timers.length, 0, 'the poll is cleared when the board closes')
   await tick(2)
   assert.equal(count.calls, afterVisible, 'nothing reads after the board closed')
+})
+
+// #1900: the dossier is `project-team`, which the host answers by reading persona and memory files
+// and resending their heads — up to ~16 KB every 5 s, an answer that only an edit changes. The poll
+// is wanted (#1814); the dossier riding on it is not. One open reads it, and every tick after that
+// reads only what the board is polling for.
+test('#1900: an open board reads the dossier once, never on a tick', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const calls = []
+  const call = async (name) => {
+    calls.push(name)
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') {
+      return { project: { id: 'project-1', name: 'FlyBot', chief: { botId: 'bot-chief' }, assistant: { botId: 'bot-assistant' }, roles: { maintainers: ['bot-dev'], members: [] } }, canManage: false }
+    }
+    if (name === 'project-board') return { tasks: rows, done: [], waiting: [], inflight: [], blocked: [], counts: null }
+    if (name === 'tasks') return [{ id: 'task-b1', title: 'Ship the poll' }]
+    if (name === 'project-team') {
+      return { rows: [{ botId: 'bot-chief', name: 'Project Chief', persona: 'You are the Project Chief of FlyBot.', memory: { head: 'The Chief remembers the Project.', topics: ['work'] }, skills: ['ship-it'] }] }
+    }
+    throw new Error(`unexpected endpoint ${name}`)
+  }
+  const count = (endpoint) => calls.filter(name => name === endpoint).length
+  const { tree, redraw } = await mount({ actions: {}, call })
+  assert.equal(count('project-team'), 1, 'opening the board reads the dossier once')
+  assert.equal(count('project-board'), 1, 'and the board once')
+  // The one answer still feeds the row and the panel the reader opens from it.
+  const control = all(tree).find(node => node.props?.['data-dossier-bot'] === 'bot-chief')
+  assert.ok(control, 'the Chief row carries its Dossier control from that answer')
+  control.props.onClick()
+  const drawn = all(redraw()).map(textOf).join(' | ')
+  assert.match(drawn, /Persona/)
+  assert.match(drawn, /You are the Project Chief of FlyBot\./)
+  assert.match(drawn, /Memory/)
+  assert.match(drawn, /The Chief remembers the Project\./)
+  assert.match(drawn, /Skills/)
+  assert.match(drawn, /ship-it/)
+  // Three ticks: the board is re-read each time, the dossier is not read again at all.
+  await tick(3)
+  assert.equal(count('project-team'), 1, 'three polls later the dossier has not been read again')
+  assert.equal(count('project-board'), 4, 'while the board itself is re-read on every tick')
 })
 
 test('#1814: a failing poll keeps the board the last good read drew', async () => {

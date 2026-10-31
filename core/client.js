@@ -11260,7 +11260,7 @@ function ProjectMembersPanel({ project, rows, onClose } = {}) {
     )
   );
 }
-async function readProjectBoard(read, wanted) {
+async function readProjectBoard(read, wanted, knownTeam) {
   const listing = await read("projects");
   const projects = Array.isArray(listing?.projects) ? listing.projects : [];
   const project = wanted === "" ? projects[0] : projects.find((item) => item.id === wanted);
@@ -11270,7 +11270,7 @@ async function readProjectBoard(read, wanted) {
     read("project-read", { id: project.id }),
     read("project-board", { id: project.id, timeZone: zone }),
     read("tasks", {}),
-    read("project-team", { id: project.id })
+    knownTeam !== void 0 ? knownTeam : read("project-team", { id: project.id }).catch(() => null)
   ]);
   const tasks = Array.isArray(taskList) ? taskList : taskList?.tasks ?? [];
   const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
@@ -11328,11 +11328,15 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
     }
     const wanted = hash.slice("#project".length).replace(/^=/, "");
     let gone = false;
-    const loadBoard = () => readProjectBoard(read, wanted);
+    let team;
+    const loadBoard = () => readProjectBoard(read, wanted, team);
     const refresh = async (first) => {
       try {
         const next = await loadBoard();
-        if (!gone) setState(next);
+        if (!gone) {
+          team = next.team;
+          setState(next);
+        }
       } catch {
         if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
       }
