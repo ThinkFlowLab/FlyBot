@@ -10464,6 +10464,10 @@ var PROJECT_BOARD_CSS = `
 .bt-project-field label{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
 .bt-project-field input,.bt-project-field select,.bt-project-field textarea{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:var(--bt-card,rgba(127,127,127,.08));color:inherit}
 .bt-project-field textarea{min-height:88px;resize:vertical}
+/* #1887: the counter under the memory box. It stays quiet until the text passes the bound, and
+   past it turns the one colour that says so; the disabled Save is the state a reader acts on. */
+.bt-project-count{font-size:11px;opacity:.6;font-variant-numeric:tabular-nums}
+.bt-project-count[data-over="true"]{opacity:1;color:#c2410c}
 .bt-project-row-actions{display:flex;gap:8px;align-items:center}
 .bt-project-members{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .bt-project-member{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08))}
@@ -10502,6 +10506,8 @@ var PROJECT_BOARD_CSS = `
 var PROJECT_SOURCES = ["bot", "group", "workflow"];
 var SOURCE_LABELS = { bot: "Bots", group: "Groups", workflow: "Workflows" };
 var text = (value) => typeof value === "string" ? value.trim() : "";
+var MEMORY_TEXT_MAX = 600;
+var memoryLength = (value) => [...text(value)].length;
 var DONE_COLUMN = "done";
 var boardOfRow = (row, task) => {
   if (task === void 0) return null;
@@ -11132,6 +11138,9 @@ function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, 
   const [kind, setKind] = (0, import_react19.useState)("bot");
   const [memberId, setMemberId] = (0, import_react19.useState)("");
   const [note, setNote] = (0, import_react19.useState)("");
+  const noteLength = memoryLength(note);
+  const noteOver = noteLength > MEMORY_TEXT_MAX;
+  const noteSaveDisabled = text(note) === "" || noteOver;
   const [assistantOff, setAssistantOff] = (0, import_react19.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
   const [status, setStatus] = (0, import_react19.useState)("");
   const id = text(project?.id);
@@ -11186,10 +11195,22 @@ function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, 
       // never as a third kind the host would refuse (#1820).
       (0, import_react19.createElement)("label", { htmlFor: "bt-project-note" }, t("Add to the assistant memory")),
       (0, import_react19.createElement)("textarea", { id: "bt-project-note", value: note, onChange: (event) => setNote(event.target.value) }),
+      (0, import_react19.createElement)("div", { className: "bt-project-count", "data-role": "project-memory-count", "data-over": noteOver ? "true" : "false" }, `${noteLength}/${MEMORY_TEXT_MAX}`),
       (0, import_react19.createElement)(
         "div",
         { className: "bt-project-row-actions" },
-        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-memory-save", onClick: () => run("project-memory-write", { id, kind: "decision", text: text(note) }, t("Memory saved.")) }, t("Save memory"))
+        (0, import_react19.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm",
+          "data-action": "project-memory-save",
+          disabled: noteSaveDisabled,
+          // A disabled button draws no click, but the guard is what a keyboard or a stale tree
+          // could still reach: neither state sends a request or writes anything.
+          onClick: () => {
+            if (noteSaveDisabled) return;
+            run("project-memory-write", { id, kind: "decision", text: text(note) }, t("Memory saved."));
+          }
+        }, t("Save memory"))
       )
     ),
     (0, import_react19.createElement)("div", { className: "bt-project-status-line", role: "status" }, status),

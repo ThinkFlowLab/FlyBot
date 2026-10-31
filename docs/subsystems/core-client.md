@@ -291,9 +291,13 @@ the two kinds the host knows: the free text is recorded as a `decision`, never a
 quotes a refusal through `hostText`, so a zh reader reads the host's own sentence in Chinese: since
 #1847 the host refuses an empty entry and one over 600 characters at that write door, and `i18n.js`
 carries both sentences — the exact key for `A Project memory entry needs text` and the number-carrying
-`[/^A Project memory entry is at most (\d+) characters$/, …]` — so a zh box that was empty or over the
-cap reads 项目记忆条目需要文字 / 项目记忆条目最多 600 个字符 instead of `Memory saved.`, with no row
-added. Tests: `core/test/project-board-panels.test.js`.
+`[/^A Project memory entry is at most (\d+) characters$/, …]` — so a zh box the host refuses reads
+项目记忆条目需要文字 / 项目记忆条目最多 600 个字符 instead of `Memory saved.`, with no row added. Since
+#1887 the box warns before that click: a counter under the field reads `N/600` in code points, the unit
+the host bounds (#1886) and not what `maxLength` would count in UTF-16 units, it turns over-limit at 601,
+and an empty or whitespace-only box disables Save — neither state calls the endpoint or writes anything,
+so the two host sentences stay for the race where the host refuses an entry the panel allowed. Tests:
+`core/test/project-board-panels.test.js`.
 
 The **Members** panel lists every owner and every member the board names, and since #1859 also the
 Project's own Chief as its own row (`data-member-role="chief"`), read from `chief` on the `project-read`

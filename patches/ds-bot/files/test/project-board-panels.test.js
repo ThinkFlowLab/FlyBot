@@ -304,6 +304,9 @@ test('a memory kind the host does not know writes nothing, and the panel quotes 
   try {
     const refused = async () => { throw Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' }) }
     const draw = () => render(ProjectSettingsPanel, { project: project(), call: refused, onClose() {} })
+    // #1887: an empty box no longer reaches the host, so the entry is one the panel allows; the
+    // refusal below is the owner gate, which is what this half of the test is about.
+    all(draw()).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value: 'ship on Friday' } })
     let tree = draw()
     byAction(tree, 'project-memory-save').props.onClick()
     assert.equal(await statusAfter(draw, '只有这个项目的主人可以修改'), '只有这个项目的主人可以修改')
@@ -345,36 +348,29 @@ test('#1847: the memory write door refuses empty and over-long text and stores 6
   assert.equal(memory.decisions[0].text, exact, 'the text is what was sent')
 })
 
-// The other half of #1847: the panel quotes the host's new refusals in Chinese, so the reader sees
-// why Save did nothing instead of a success line, and no row is added.
-test('#1847: the panel shows the Chinese refusal for an empty or over-long memory box', async (t) => {
+// The other half of #1847: the panel quotes the host's refusals in Chinese. Since #1887 the panel
+// refuses an empty or over-long box before the click, so the one refusal still reachable is the two
+// bounds disagreeing — an emoji entry the client counts as exactly 600 code points while a host
+// that still counted UTF-16 units (#1886) answers "at most 600 characters". The reader must see
+// why Save did nothing, never a success line, and no row may land.
+test('#1847: the panel shows the Chinese refusal when the host refuses the memory text', async (t) => {
+  resetSlots()
   const rt = await startHost(t)
   const call = (endpoint, payload) => rt.projectEndpoint(endpoint, payload)
   const off = installLocale(fakeLocale('zh'))
   try {
-    // The hook slots outlive a render, so the box starts where the previous test left it; empty it
-    // explicitly before pressing Save.
-    let tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    all(tree).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value: '' } })
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    byAction(tree, 'project-memory-save').props.onClick()
-    await settle()
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    let status = all(tree).find(node => node.props?.role === 'status')
-    assert.equal(text(status), '项目记忆条目需要文字')
-    assert.ok(!text(status).includes('Memory saved.'), 'a refusal is never painted as a success')
-
-    const note = all(tree).find(node => node.props?.id === 'bt-project-note')
-    note.props.onChange({ target: { value: 'x'.repeat(601) } })
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    byAction(tree, 'project-memory-save').props.onClick()
-    await settle()
-    tree = render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
-    status = all(tree).find(node => node.props?.role === 'status')
-    assert.equal(text(status), '项目记忆条目最多 600 个字符')
+    const draw = () => render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+    all(draw()).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value: '🙂'.repeat(600) } })
+    const refused = Object.assign(new Error('A Project memory entry is at most 600 characters'), { code: 'bot/invalid' })
+    const racing = () => render(ProjectSettingsPanel, { project: project(), call: async () => { throw refused }, onClose() {} })
+    assert.ok(!byAction(racing(), 'project-memory-save').props.disabled, 'the client counts the entry at the bound and lets the click through')
+    byAction(racing(), 'project-memory-save').props.onClick()
+    assert.equal(await statusAfter(racing, '项目记忆条目最多 600 个字符'), '项目记忆条目最多 600 个字符')
+    assert.ok(!drawnStatus(racing).includes('记忆已保存。'), 'a refusal is never painted as a success')
+    assert.equal(hostText('A Project memory entry needs text'), '项目记忆条目需要文字', 'the empty-text refusal is translated too, for a host that refuses it')
 
     const memory = (await call('project-memory', { id: 'project-1' })).memory
-    assert.deepEqual(memory.decisions, [], 'neither refusal adds a row')
+    assert.deepEqual(memory.decisions, [], 'the refusal adds no row')
   } finally {
     off()
   }
@@ -385,6 +381,8 @@ test("the settings panel shows the host's refusal instead of pretending the save
   const refused = Object.assign(new Error('Only the owner of this Project may change it'), { code: 'bot/forbidden' })
   const save = async () => { throw refused }
   const draw = () => render(ProjectSettingsPanel, { project: { id: 'project-1' }, call: save, onClose() {} })
+  // #1887: the box needs an entry the panel allows, or Save is disabled and no host refusal is asked.
+  all(draw()).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value: 'ship on Friday' } })
   const tree = draw()
   byAction(tree, 'project-memory-save').props.onClick()
   await waitFor(() => (/Only the owner of this Project/.test(drawnStatus(draw)) ? true : undefined))
@@ -535,4 +533,54 @@ test('the owner\'s chat entry opens the Project assistant, and only the owner\'s
   assert.equal(projectAgentFor({ projectId: 'project-1', ownerId: 'other' }, 'owner-1'), null, "another owner's Bot offers no entry")
   assert.equal(projectAgentFor({ ownerId: 'owner-1' }, 'owner-1'), null, 'a Bot outside a Project offers no entry')
   assert.equal(projectAgentFor({ projectId: 'project-1', ownerId: 'owner-1', remote: {} }, 'owner-1'), null, "a friend's Bot offers no entry")
+})
+
+// #1887: the memory box warns before the click. The field had no counter and Save stayed enabled
+// with nothing typed, so the first news of the 600 bound was the host's refusal after the click
+// (#1847 already refuses at the door — the defect is the silence before it, not a blank entry
+// landing). The counter counts code points, the unit the host bounds (#1886), so an emoji entry at
+// the bound is not refused for what `maxLength` would have counted as twice as many UTF-16 units.
+const memoryCount = (tree) => all(tree).find(node => node.props?.['data-role'] === 'project-memory-count')
+const memorySave = (tree) => byAction(tree, 'project-memory-save')
+
+test('#1887: the memory box counts code points and disables Save before the click', async (t) => {
+  resetSlots()
+  const rt = await startHost(t)
+  let calls = 0
+  const call = (endpoint, payload) => { calls += 1; return rt.projectEndpoint(endpoint, payload) }
+  const draw = () => render(ProjectSettingsPanel, { project: project(), call, onClose() {} })
+  const type = (value) => {
+    all(draw()).find(node => node.props?.id === 'bt-project-note').props.onChange({ target: { value } })
+    return draw()
+  }
+
+  // Empty: there is nothing to save, and the reader is told before pressing anything.
+  let tree = type('')
+  assert.equal(memorySave(tree).props.disabled, true, 'an empty memory box disables Save')
+  assert.equal(text(memoryCount(tree)), '0/600', 'the counter reads the empty box')
+  memorySave(tree).props.onClick()
+  await settle()
+
+  // Whitespace is not an entry either: the host refuses it as no text, so the button agrees.
+  tree = type('  \n ')
+  assert.equal(memorySave(tree).props.disabled, true, 'a whitespace-only memory box disables Save')
+
+  // One past the bound: the counter says so and Save is disabled before the click.
+  const emoji = '🙂'
+  tree = type(emoji.repeat(601))
+  assert.equal(text(memoryCount(tree)), '601/600', 'the counter counts code points, not UTF-16 units')
+  assert.equal(memoryCount(tree).props['data-over'], 'true', 'the counter is in its over-limit state')
+  assert.equal(memorySave(tree).props.disabled, true, 'an over-long entry disables Save')
+  memorySave(tree).props.onClick()
+  await settle()
+
+  // The bound itself is an entry: Save is enabled and the counter reads it whole.
+  tree = type(emoji.repeat(600))
+  assert.equal(text(memoryCount(tree)), '600/600', 'an entry at the bound reads the bound')
+  assert.equal(memoryCount(tree).props['data-over'], 'false', 'and the counter is not in its over-limit state')
+  assert.ok(!memorySave(tree).props.disabled, 'the bound itself is allowed')
+
+  assert.equal(calls, 0, 'neither a disabled nor an over-limit Save calls the endpoint')
+  const memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
+  assert.deepEqual(memory.decisions, [], 'and neither state writes anything')
 })

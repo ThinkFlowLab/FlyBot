@@ -642,7 +642,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 diff --git a/src/client/header.js b/src/client/header.js
 --- a/src/client/header.js
 +++ b/src/client/header.js
-@@ -1,11 +1,13 @@
+@@ -1,11 +1,15 @@
  import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
  import { createPortal } from 'react-dom'
 -import { currentPart, latestMemoryChange } from './text.js'
@@ -654,6 +654,8 @@ diff --git a/src/client/header.js b/src/client/header.js
 -import { clockLabel, openingTurn, unseenSince } from './cells.js'
 +import { BusyAckBubble } from './busy-ack.js'
  import { t } from './i18n.js'
++import { call } from './api.js'
++import { ProjectAgentEntry, projectAgentFor } from './project-board.js'
 +import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
  
  // -------------------------------------------------------------------------
@@ -679,8 +681,13 @@ diff --git a/src/client/header.js b/src/client/header.js
    const opening = useTurnClock((state) => {
      const first = openingTurn(state[sessionId], firstTurns, hiddenTurns)
      return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : ''
-@@ -68,41 +68,34 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+@@ -66,43 +66,42 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
+   const owner = roster.byId[sessionId]?.id ?? sessionId
+   const doing = useActivity(map => map[owner])
    const bot = roster.byId[sessionId]
++  // #1864: an owner's Bot that belongs to a Project gets the entry to that Project's assistant in
++  // its own chat header. The roster already carries the binding, so nothing else is read here.
++  const projectAgent = projectAgentFor(bot, roster.self?.memberId)
    const room = roster.roomsById[sessionId]
    const detailsOpen = useUi(state => state.details === sessionId)
 -  const name = bot?.name ?? room?.name ?? ''
@@ -727,6 +734,9 @@ diff --git a/src/client/header.js b/src/client/header.js
      h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
 -    h(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
 -    h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }))
++    projectAgent === null ? null : h(ProjectAgentEntry, {
++      projectId: projectAgent.projectId, read: call, onOpen: id => actions?.openSession?.(id),
++    }),
 +    h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
 +    h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
 +    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }))

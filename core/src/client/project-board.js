@@ -81,6 +81,10 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-field label{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
 .bt-project-field input,.bt-project-field select,.bt-project-field textarea{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--bt-line,rgba(127,127,127,.32));background:var(--bt-card,rgba(127,127,127,.08));color:inherit}
 .bt-project-field textarea{min-height:88px;resize:vertical}
+/* #1887: the counter under the memory box. It stays quiet until the text passes the bound, and
+   past it turns the one colour that says so; the disabled Save is the state a reader acts on. */
+.bt-project-count{font-size:11px;opacity:.6;font-variant-numeric:tabular-nums}
+.bt-project-count[data-over="true"]{opacity:1;color:#c2410c}
 .bt-project-row-actions{display:flex;gap:8px;align-items:center}
 .bt-project-members{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .bt-project-member{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08))}
@@ -123,6 +127,14 @@ export const PROJECT_SOURCES = ['bot', 'group', 'workflow']
 export const SOURCE_LABELS = { bot: 'Bots', group: 'Groups', workflow: 'Workflows' }
 
 const text = value => (typeof value === 'string' ? value.trim() : '')
+
+// #1887: the memory box warns about the bound before the click, the way the host bounds it. One
+// entry is at most `MAX_ENTRY` (`src/host/constants.js`, #1847) and the host counts its code points
+// (#1886), so the counter counts the same unit on the trimmed text the host would store — which is
+// also why the field carries no `maxLength`: that counts UTF-16 units and would call a 600-emoji
+// entry twice its real length.
+export const MEMORY_TEXT_MAX = 600
+const memoryLength = (value) => [...text(value)].length
 
 // #1855: the column a finished card reads. The host sends those cards apart (`done`) and the view
 // keeps them out of every group of work in flight.
@@ -753,6 +765,11 @@ export function ProjectSettingsPanel({ project, assistantMine, call: request, on
   const [kind, setKind] = useState('bot')
   const [memberId, setMemberId] = useState('')
   const [note, setNote] = useState('')
+  // #1887: an empty box has nothing to save and an over-long one can never land, so neither
+  // reaches the host — the reader sees the state before the click instead of a refusal after it.
+  const noteLength = memoryLength(note)
+  const noteOver = noteLength > MEMORY_TEXT_MAX
+  const noteSaveDisabled = text(note) === '' || noteOver
   // #1845: the digest opt-out is per owner, and the host keeps it on `owners[<ownerId>]`; the
   // Project record has no such field, so reading it there showed a paused digest as unticked and
   // the next Save turned it back on. `project-read` answers the caller's own record beside the
@@ -794,8 +811,20 @@ export function ProjectSettingsPanel({ project, assistantMine, call: request, on
       // never as a third kind the host would refuse (#1820).
       h('label', { htmlFor: 'bt-project-note' }, t('Add to the assistant memory')),
       h('textarea', { id: 'bt-project-note', value: note, onChange: event => setNote(event.target.value) }),
+      h('div', { className: 'bt-project-count', 'data-role': 'project-memory-count', 'data-over': noteOver ? 'true' : 'false' }, `${noteLength}/${MEMORY_TEXT_MAX}`),
       h('div', { className: 'bt-project-row-actions' },
-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-action': 'project-memory-save', onClick: () => run('project-memory-write', { id, kind: 'decision', text: text(note) }, t('Memory saved.')) }, t('Save memory')))),
+        h('button', {
+          type: 'button',
+          className: 'bt-soft bt-soft-sm',
+          'data-action': 'project-memory-save',
+          disabled: noteSaveDisabled,
+          // A disabled button draws no click, but the guard is what a keyboard or a stale tree
+          // could still reach: neither state sends a request or writes anything.
+          onClick: () => {
+            if (noteSaveDisabled) return
+            run('project-memory-write', { id, kind: 'decision', text: text(note) }, t('Memory saved.'))
+          },
+        }, t('Save memory')))),
     h('div', { className: 'bt-project-status-line', role: 'status' }, status),
     h('div', { className: 'bt-project-row-actions' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))

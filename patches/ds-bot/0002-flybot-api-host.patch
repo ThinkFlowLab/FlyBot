@@ -33,7 +33,7 @@ diff --git a/index.js b/index.js
  import * as chatIndex from './src/host/chat-index.js'
  import * as groups from './src/host/groups.js'
  import * as approvals from './src/host/approvals.js'
-@@ -24,11 +24,18 @@ import * as images from './src/host/images.js'
+@@ -24,11 +24,19 @@ import * as images from './src/host/images.js'
  import * as browser from './src/host/browser.js'
  import * as secrets from './src/host/secrets.js'
  import * as connectors from './src/host/connectors.js'
@@ -42,6 +42,7 @@ diff --git a/index.js b/index.js
  import * as schedules from './src/host/schedules.js'
 +import * as projectAssistant from './src/host/project-assistant.js'
 +import * as projectChief from './src/host/project-chief.js'
++import * as projectTeam from './src/host/project-team.js'
 +import * as automationDefault from './src/host/automation-default.js'
  import * as usage from './src/host/usage.js'
  import * as update from './src/host/update.js'
@@ -57,7 +58,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
++const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
  
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -896,7 +897,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,472 @@ export function install(rt) {
+@@ -161,12 +161,476 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1308,6 +1309,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        return { project: readProject(project.id), ...(result ?? {}) }
 +      }
 +      case 'project-of': return { project: projectOfMember(projectText(body.kind, 20), projectText(body.id, 200)) }
++      // The read-only team dossier (#1864): the Project's Chief, its assistant and its pool, each
++      // with persona, memory head/topics and skills. The read lives in project-team.js; a missing
++      // Bot is a `null` row there, never an error for the whole answer.
++      case 'project-team': return rt.projectTeam?.(projectText(body.id, 200)) ?? { rows: [] }
 +      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
 +      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
 +      // so the board applies the same visibility rule `tasks` does (#1723).
