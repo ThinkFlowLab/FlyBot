@@ -461,13 +461,15 @@ export function install(rt) {
     const decisions = await decisionsOf(project)
     // #1829: the seven numbers ride on the same read as the rows, so the board and its header
     // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
+    // #1848: the running table and the done-task median read `mine` — exactly the cards this
+    // reader was allowed above — never the deployment's task table.
     const metrics = await readMetrics({
       repo: text(rt.githubRepo) || 'ThinkFlowLab/FlyBot',
       token: text(rt.secretValue?.('GITHUB_TOKEN')),
       fetchImpl: globalThis.fetch,
       timeZone: text(options.timeZone) || 'UTC',
       now: typeof rt.now === 'function' ? rt.now() : Date.now(),
-      tasks,
+      tasks: mine,
     })
     return { rows: open, done, ...queues, decisions, meetings: meetingsOf(project, decisions), metrics }
   }
