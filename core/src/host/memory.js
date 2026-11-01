@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
@@ -420,6 +420,9 @@ export function install(rt) {
 
   const reviewOn = config.memoryReview !== false
   const root = join(home, 'memory')
+  const snapshotsDir = join(root, 'snapshots')
+  const summariesDir = join(root, 'summaries')
+  const archiveDir = join(root, 'archive')
   const journalPath = join(root, 'journal.jsonl')
   const dayFormat = new Intl.DateTimeFormat('en-CA', { ...(config.timeZone ? { timeZone: config.timeZone } : {}), year: 'numeric', month: '2-digit', day: '2-digit' })
   const today = () => dayFormat.format(Date.now())
@@ -441,19 +444,41 @@ export function install(rt) {
     warnedFolders.add(dir)
     rt.warn('ds-bot: memory folder is not a plain directory %s; keeping it empty', dir)
   }
+  // The one answer for "what is this folder": every segment from `memory/` down is asked on its
+  // own, because `lstat` follows a link above the last component — `memory/bots` or a
+  // `memory/snapshots` that is a link reads and writes as a real folder through it otherwise.
+  // `absent` is the state a host write may create; `other` is refused and said once.
+  const folderKind = (dir) => {
+    const parts = relative(root, dir).split(sep).filter(part => part !== '')
+    let at = root
+    let kind = dirKindSync(at)
+    for (const part of parts) {
+      if (kind !== 'real') return { kind, at }
+      at = join(at, part)
+      kind = dirKindSync(at)
+    }
+    return { kind, at }
+  }
+  // A reader takes a folder only when it is a plain directory all the way down; anything else
+  // answers what a missing folder answers, and `other` says so once per folder and process — the
+  // folder named is the one that failed, so a linked `memory/` is one warning, not one per sink.
+  const readFolder = (dir) => {
+    const { kind, at } = folderKind(dir)
+    if (kind === 'real') return true
+    warnFolder(kind, at)
+    return false
+  }
+  // The host's own bookkeeping may create a folder that is not there yet, as it always could; a
+  // link or a plain file is refused, because the write would land outside this home.
+  const writeFolder = (dir) => {
+    const { kind, at } = folderKind(dir)
+    if (kind === 'real' || kind === 'absent') return true
+    warnFolder(kind, at)
+    return false
+  }
   const scopeDir = (scope) => {
-    const base = dirKindSync(root)
-    if (base !== 'real') {
-      warnFolder(base, root)
-      return undefined
-    }
     const dir = dirOf(scope)
-    const kind = dirKindSync(dir)
-    if (kind !== 'real') {
-      warnFolder(kind, dir)
-      return undefined
-    }
-    return dir
+    return readFolder(dir) ? dir : undefined
   }
 
   const readText = (path) => {
@@ -500,6 +525,7 @@ export function install(rt) {
     await rename(temp, path)
   }
   async function journal(record) {
+    if (!writeFolder(root)) return
     await mkdir(root, { recursive: true })
     await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, 'utf8')
   }
@@ -520,6 +546,10 @@ export function install(rt) {
     if (gone) throw Object.assign(new Error('That Bot has been deleted'), { code: GONE })
     const denied = botActor === undefined ? undefined : writeDenied(scope, botActor)
     if (denied !== undefined) throw Object.assign(new Error(denied), { code: DENIED })
+    // The entry writers are in the same rule as the host's own bookkeeping: a missing folder is
+    // created, a link is refused rather than written through.
+    const dir = dirOf(scope)
+    if (!writeFolder(dir)) throw new Error(`Memory cannot change now: the memory folder is not a plain directory (${dir})`)
   }
 
   // ---------------------------------------------------------------------------
@@ -696,12 +726,13 @@ export function install(rt) {
     news.delete(botId)
     return queued(async () => {
       if (rt.readOnly() !== undefined) return
-      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
+      if (writeFolder(summariesDir)) await unlink(join(summariesDir, `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
       const dir = dirOf(ownScope(botId))
-      if (!existsSync(dir)) return
+      if (!readFolder(dir)) return
+      if (!writeFolder(archiveDir)) return
       const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-      await mkdir(join(root, 'archive'), { recursive: true })
-      await rename(dir, join(root, 'archive', name))
+      await mkdir(archiveDir, { recursive: true })
+      await rename(dir, join(archiveDir, name))
       await journal({ op: 'archive', scope: scopeKey(ownScope(botId)), actor: 'user', actorName: 'user', botName: bot?.name, to: `archive/${name}` })
     }).catch(error => rt.warn('ds-bot: memory of %s not archived: %s', bot?.name ?? botId, error))
   }
@@ -749,10 +780,12 @@ export function install(rt) {
     const kept = frozen.get(sessionId)
     if (kept !== undefined && kept.includes(rule)) return kept
     const path = snapshotPath(sessionId)
-    let text = existsSync(path) ? readText(path) : ''
+    // The snapshot is read back verbatim, so the folder holding it gets the same check: a linked
+    // `memory` or `memory/snapshots` would put outside bytes in this Session's prompt.
+    let text = readFolder(snapshotsDir) && existsSync(path) ? readText(path) : ''
     if (text === '' || !text.includes(rule)) {
       text = memorySection(bot)
-      if (rt.readOnly() === undefined) {
+      if (rt.readOnly() === undefined && writeFolder(snapshotsDir)) {
         try {
           mkdirSync(dirname(path), { recursive: true })
           writeFileSync(`${path}.tmp`, text, 'utf8')
@@ -769,6 +802,7 @@ export function install(rt) {
   function renewMemory(sessionId) {
     if (sessionId === undefined) return
     frozen.delete(sessionId)
+    if (!writeFolder(snapshotsDir)) return
     try { unlinkSync(snapshotPath(sessionId)) } catch { /* none saved */ }
   }
 
@@ -1067,6 +1101,7 @@ export function install(rt) {
   const summaryPath = botId => join(root, 'summaries', `${safeId(botId)}.json`)
   const savedSummary = (botId) => {
     if (summaries.has(botId)) return summaries.get(botId)
+    if (!readFolder(summariesDir)) return undefined
     try {
       const value = JSON.parse(readFileSync(summaryPath(botId), 'utf8'))
       if (typeof value?.hash === 'string' && typeof value.text === 'string') {
@@ -1085,7 +1120,7 @@ export function install(rt) {
       const value = { hash, text: cut(text, SUMMARY_TEXT_MAX).text, at: Date.now() }
       summaries.set(bot.id, value)
       summaryFailures.delete(bot.id)
-      if (rt.readOnly() === undefined) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
+      if (rt.readOnly() === undefined && writeFolder(summariesDir)) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
     })().catch((error) => {
       summaryFailures.set(bot.id, { hash, model, message: error?.message ?? String(error) })
       rt.warn('ds-bot: memory summary for %s failed: %s', bot.name, error)
@@ -1178,15 +1213,19 @@ export function install(rt) {
   let cursors
   const cursorsNow = () => {
     if (cursors === undefined) {
-      try {
-        const value = JSON.parse(readFileSync(cursorsPath, 'utf8'))
-        cursors = value !== null && typeof value === 'object' ? value : {}
-      } catch {
-        cursors = {}
+      cursors = {}
+      if (readFolder(root)) {
+        try {
+          const value = JSON.parse(readFileSync(cursorsPath, 'utf8'))
+          cursors = value !== null && typeof value === 'object' ? value : {}
+        } catch {
+          // none yet
+        }
       }
     }
     return cursors
   }
+  const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
   const clip = (text, max) => (text.length > max ? `${cut(text, max).text} …(cut)` : text)
   // A long message often ends with what the user wants of it, so both ends stay.
   const ends = (text, max) => {
@@ -1372,7 +1411,7 @@ export function install(rt) {
     // leaves a cursor that the next review, or another member's, goes on from.
     if (since === undefined && read.length > 0) {
       cursorsNow()[key] = read[0].seq - 1
-      await writeText(cursorsPath, JSON.stringify(cursors))
+      await saveCursors()
     }
     // Only the user's words are kept, so lines without any need no model call.
     if (read.some(line => line.who === 'user')) {
@@ -1413,7 +1452,7 @@ export function install(rt) {
     const now = cursorsNow()[key]
     if (through !== undefined && (now === undefined || through > now)) {
       cursorsNow()[key] = through
-      await writeText(cursorsPath, JSON.stringify(cursors))
+      await saveCursors()
     }
     if (again) queueReview(sessionId, room === undefined ? owner : { botId: bot.id, roomId: room.id, room })
   }

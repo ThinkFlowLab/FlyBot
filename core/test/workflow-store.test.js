@@ -3,7 +3,7 @@
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -144,7 +144,7 @@ test('the host endpoints read and write, and workflow-save is in the authz allow
 
 test('a workspace file that does not parse is skipped instead of breaking the list', () => {
   withDir((dir) => {
-    const store = createWorkflowStore({ dir, warn: () => {} })
+    const store = createWorkflowStore({ dir })
     store.customize({ from: 'blank', id: 'blank-mine', name: 'Mine' })
     writeFileSync(join(dir, 'broken.json'), '{ not json')
     const listed = store.list()
@@ -233,4 +233,133 @@ test('#2057: a linked workflow folder warns once, a missing or real one never wa
   const real = host(realRoot)
   assert.deepEqual((await real.workflowEndpoint('workflows', { op: 'list' })).own.map((entry) => entry.id), ['mine'])
   assert.deepEqual(folderWarnings(), said)
+})
+
+// The set that keeps the folder warning once per process lives in `install`, not in the store,
+// because the store is rebuilt whenever the workspace moves: a set inside it would say the same
+// thing again after a move away and back.
+test('#2068: a linked workflow folder stays one warning after the workspace moves away and back', async (t) => {
+  const warned = []
+  const a = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  const b = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => { rmSync(a, { recursive: true, force: true }); rmSync(b, { recursive: true, force: true }) })
+  const outside = elsewhere(t, {})
+  symlinkSync(outside, join(a, 'workflows'), 'dir')
+  mkdirSync(join(b, 'workflows'), { recursive: true })
+  const rt = {
+    state: { bots: {}, workspaceId: 'a' },
+    ctx: { workspaceRegistry: { get: (id) => ({ path: id === 'b' ? b : a }) } },
+    warn: (template, ...args) => warned.push(String(template).replace(/%s/g, () => String(args.shift() ?? ''))),
+  }
+  install(rt)
+  const read = async () => {
+    await rt.workflowEndpoint('workflows', { op: 'list' })
+    rt.workflowDefinitions()
+  }
+  await read()
+  rt.state.workspaceId = 'b'
+  await read()
+  rt.state.workspaceId = 'a'
+  await read()
+  const said = warned.filter((line) => line.includes('workflow folder is not a plain directory'))
+  assert.equal(said.length, 1, 'one warning per folder per process, even across a rebuilt store')
+  assert.ok(said[0].includes(join(a, 'workflows')), `the warning names the folder: ${said[0]}`)
+})
+
+// A file that does not parse is skipped on every read; the line that says so is said once per
+// file and process, from the same closure that keeps the folder warning.
+test('#2068: a workflow file that does not parse is reported once per file and process', async (t) => {
+  const warned = []
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'broken.json'), '{ not json')
+  const rt = { state: { bots: {} }, ctx: { workspaceRegistry: { get: () => ({ path: root }) } }, warn: (template, ...args) => warned.push(String(template).replace(/%s/g, () => String(args.shift() ?? ''))) }
+  install(rt)
+  const skips = () => warned.filter((line) => line.includes('does not parse as a definition'))
+  for (let round = 0; round < 3; round++) await rt.workflowEndpoint('workflows', { op: 'list' })
+  assert.equal(skips().length, 1, 'one line per file per process, not one per read')
+  writeFileSync(join(dir, 'also-broken.json'), '{ nope')
+  await rt.workflowEndpoint('workflows', { op: 'list' })
+  assert.equal(skips().length, 2, 'a second broken file earns its own line')
+})
+
+// #2068: the write side of the same rule — a missing folder is created, a link is refused.
+test('#2068: a linked workflow folder refuses a save instead of writing into it', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const outside = elsewhere(t, {})
+  const warnings = []
+  symlinkSync(outside, join(root, 'workflows'), 'dir')
+  const store = createWorkflowStore({ dir: join(root, 'workflows'), warnFolder: (dir, kind) => { if (kind === 'other') warnings.push(dir) } })
+  for (let round = 0; round < 2; round++) {
+    const saved = store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } })
+    assert.equal(saved.ok, false)
+    assert.equal(saved.code, 'workflow/not-a-folder')
+  }
+  assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
+  assert.deepEqual([...new Set(warnings)], [join(root, 'workflows')], 'the warning names the folder')
+})
+
+test('#2068: a save still creates a missing workflow folder, and lands in a real one', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const missing = join(root, 'workflows')
+  assert.equal(existsSync(missing), false)
+  assert.equal(createWorkflowStore({ dir: missing }).save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } }).ok, true)
+  assert.equal(existsSync(join(missing, 'mine.json')), true, 'the missing folder was created, as before')
+  const real = join(root, 'real')
+  mkdirSync(real, { recursive: true })
+  assert.equal(createWorkflowStore({ dir: real }).save({ definition: { ...blankWorkflow, id: 'theirs', name: 'Theirs' } }).ok, true)
+  assert.equal(existsSync(join(real, 'theirs.json')), true)
+})
+
+// The one-resolver rule, checked at the source, with a probe for every sink: a list alone would
+// still be green after a new bypass was added to it (#2068).
+const WORKFLOW_PROBES = {
+  fileFor: 'a linked workflow folder refuses a save instead of writing into it',
+  ownFiles: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
+  readOwn: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
+  projectDefault: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
+  list: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
+  save: 'a linked workflow folder refuses a save instead of writing into it',
+  setDefault: 'a linked workflow folder refuses to be the default instead of writing into it',
+}
+
+test('#2068: every path built from the workflow folder is one of the reviewed sinks', () => {
+  const source = readFileSync(new URL('../src/host/workflow-store.js', import.meta.url), 'utf8')
+  const lines = source.split('\n')
+  const ownerOf = (at) => {
+    for (let back = at; back >= 0; back--) {
+      const found = /^ {2}(?:const|let|async function|function) ([\w$]+)/.exec(lines[back])
+      if (found !== null) return found[1]
+    }
+    return '(top level)'
+  }
+  const ownersOf = (pattern) => lines.flatMap((line, at) => (pattern.test(line) ? [ownerOf(at)] : []))
+    .filter((owner, at, all) => all.indexOf(owner) === at)
+  const paths = ownersOf(/join\(dir|fileFor\(/)
+  const gates = ownersOf(/folderReal\(\)|folderWritable\(\)/)
+  assert.deepEqual(paths, ['fileFor', 'readOwn', 'projectDefault', 'list', 'save', 'setDefault'],
+    'a new path under workflows/ is a new sink: route it through folderReal/folderWritable and add it here and to WORKFLOW_PROBES')
+  assert.deepEqual(gates, ['ownFiles', 'readOwn', 'projectDefault', 'save', 'setDefault'])
+  assert.deepEqual([...new Set([...paths, ...gates])].sort(), Object.keys(WORKFLOW_PROBES).sort(),
+    'every sink needs a probe in WORKFLOW_PROBES, and every probe a sink')
+  const tests = new Set([...readFileSync(new URL('./workflow-store.test.js', import.meta.url), 'utf8').matchAll(/test\('#(?:2057|2068): ([^']+)'/g)].map((found) => found[1]))
+  for (const [sink, probe] of Object.entries(WORKFLOW_PROBES)) {
+    assert.equal(tests.has(probe), true, `the probe for ${sink} is missing: ${probe}`)
+  }
+})
+
+test('#2068: a linked workflow folder refuses to be the default instead of writing into it', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const outside = elsewhere(t, {})
+  symlinkSync(outside, join(root, 'workflows'), 'dir')
+  const store = createWorkflowStore({ dir: join(root, 'workflows') })
+  const set = store.setDefault({ id: 'blank' })
+  assert.equal(set.ok, false)
+  assert.equal(set.code, 'workflow/not-a-folder')
+  assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
 })

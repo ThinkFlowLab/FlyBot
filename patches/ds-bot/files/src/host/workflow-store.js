@@ -37,7 +37,7 @@ const summary = (definition, source) => ({
   columns: normaliseWorkflow(definition).nodes.filter((node) => node.column !== false).length,
 })
 
-export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warn = () => {}, warnFolder = () => {} } = {}) {
+export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warnFolder = () => {}, skipped = () => {} } = {}) {
   if (typeof dir !== 'string' || dir === '') throw new Error('a workflow store needs a directory')
   const fileFor = (id) => join(dir, `${id}.json`)
 
@@ -50,6 +50,15 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     if (kind !== 'real') warnFolder(dir, kind)
     return kind === 'real'
   }
+  // The write side of the same rule: a folder that is not there yet is created, as it always
+  // was, and a link or a plain file is refused instead of written through.
+  const folderWritable = () => {
+    const kind = dirKindSync(dir)
+    if (kind === 'real' || kind === 'absent') return true
+    warnFolder(dir, kind)
+    return false
+  }
+  const refuseWritable = () => ({ ok: false, code: 'workflow/not-a-folder', message: `the workflow folder ${dir} is not a plain directory, so nothing is written there`, problems: [] })
   // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
   // may be someone's hand-edit that does not parse: one broken file must not take the list down.
   const ownFiles = () => {
@@ -91,7 +100,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const own = ownFiles().flatMap((name) => {
       const definition = readOwn(name.slice(0, -'.json'.length))
       if (definition === null || definition.id === '') {
-        warn('ds-bot: workflow store: %s in %s does not parse as a definition; skipped', name, dir)
+        skipped(join(dir, name), name, dir)
         return []
       }
       return [summary(definition, 'workspace')]
@@ -147,6 +156,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const problems = validate(def)
     if (problems.length > 0) return { ok: false, code: 'workflow/invalid', message: problems[0].message, problems }
     const bytes = workflowBytes(def)
+    if (!folderWritable()) return refuseWritable()
     const previous = (() => {
       try {
         return readFileSync(fileFor(def.id), 'utf8')
@@ -173,6 +183,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   const setDefault = ({ id } = {}) => {
     const found = readDefinition(String(id ?? ''))
     if (found === null) return { ok: false, code: 'workflow/not-found', message: `there is no workflow "${id}"`, problems: [] }
+    if (!folderWritable()) return refuseWritable()
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, PROJECT_FILE), `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`)
     return { ok: true, ...list() }
@@ -225,10 +236,19 @@ export function install(rt) {
     warnedFolders.add(dir)
     rt.warn?.('ds-bot: workflow folder is not a plain directory %s; keeping it empty', dir)
   }
+  // A file that does not parse is skipped on every read, so it would repeat this line on every
+  // read too: the store is rebuilt when the workspace moves, so the set lives here, with the one
+  // above, and a file is named once per process.
+  const warnedSkips = new Set()
+  const warnSkipped = (file, name, dir) => {
+    if (warnedSkips.has(file)) return
+    warnedSkips.add(file)
+    rt.warn?.('ds-bot: workflow store: %s in %s does not parse as a definition; skipped', name, dir)
+  }
   const store = () => {
     const dir = dirFor()
     if (dir === null) return null
-    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, warn: rt.warn, warnFolder, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
+    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, warnFolder, skipped: warnSkipped, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
     return rt.workflowStore
   }
   rt.workflowEndpoint = async (endpoint, body = {}) => {
