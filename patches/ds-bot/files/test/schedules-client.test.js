@@ -481,3 +481,45 @@ test('#2030: three tasks keep the bare title and no more row; no tasks keep the 
   add.props.onClick()
   assert.deepEqual(actions.calls, [['schedules', 'b1']], 'the empty state still opens the new-task form')
 })
+
+// #2035: the shared view starts as `null` and the first read lands a frame later, so the first
+// frame of a Bot's details panel has no view at all. The summary took that for "this Bot has no
+// tasks": it drew the empty state and a button opening the *new-task form*, while the settings
+// card beside it drew nothing for the same state. A first read that fails keeps `shared` null, so
+// this was not one flickering frame.
+test('#2035: a schedules view that has not been read yet draws no empty state and opens nothing', () => {
+  const actions = opened()
+  seeded.push(null)
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.deepEqual(text(card), [], 'an unknown view draws no line, in particular not "No scheduled tasks yet"')
+  assert.equal(buttonsOf(card).length, 0, 'and no button to open the new-task form')
+  assert.deepEqual(actions.calls, [], 'nothing is opened from a view nobody read')
+})
+
+test('#2035: a read that answers zero tasks keeps the empty state and its add button', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [] })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.deepEqual(text(sectionTitle(card)[0]), ['Scheduled tasks'])
+  assert.deepEqual(text(card).filter(line => line !== 'Scheduled tasks'), ['No scheduled tasks yet. Add one'])
+  const add = buttonsOf(card)
+  assert.equal(add.length, 1)
+  assert.equal(add[0].props.className, 'bt-more')
+  add[0].props.onClick()
+  assert.deepEqual(actions.calls, [['schedules', 'b1']], 'a read zero keeps the new-task form')
+})
+
+test('#2035: five tasks keep the #2030 shape — count in the title, three rows, one more row', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: fiveTasks() })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.deepEqual(text(sectionTitle(card)[0]), ['Scheduled tasks · 5'], 'the count still comes from the read')
+  const rows = buttonsOf(card).filter(button => button.props.className === 'bt-task-line')
+  assert.equal(rows.length, 3, 'three rows')
+  const more = buttonsOf(card).filter(button => button.props.className === 'bt-more')
+  assert.equal(more.length, 1, 'one more row')
+  assert.deepEqual(text(more[0]), ['2 more not shown'])
+  rows[0].props.onClick()
+  more[0].props.onClick()
+  assert.deepEqual(actions.calls, [['schedules'], ['schedules']], 'rows and the more row open the list, never the form')
+})

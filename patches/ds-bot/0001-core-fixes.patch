@@ -2186,8 +2186,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2211,7 +2210,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2283,7 +2283,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,72 +166,191 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,196 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2389,9 +2389,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-+  ]
-+}
-+
+   ]
+ }
+ 
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
@@ -2413,7 +2413,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-   ]
++  ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -2433,8 +2433,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
- }
- 
++}
++
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -2474,7 +2474,12 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  export function ScheduleSummary({ bot, actions }) {
    const view = useSchedules(actions)
 -  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
-+  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
++  // #2035: the shared view starts null and the first read lands a frame later, so "no view yet" is
++  // not "no tasks". The settings card above draws nothing for it; this line did the opposite and
++  // offered the new-task form. `view.available === false` (Plugins off) is a different state and
++  // keeps its own line below.
++  if (view === null) return null
++  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
 +  const shown = tasks.slice(0, 3)
 +  const hidden = tasks.length - shown.length
    return h('div', null,

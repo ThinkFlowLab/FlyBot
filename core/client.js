@@ -13510,7 +13510,8 @@ function BotSchedules({ bot, roster, actions }) {
 }
 function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions);
-  const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  if (view === null) return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
   const shown = tasks.slice(0, 3);
   const hidden = tasks.length - shown.length;
   return (0, import_react25.createElement)(
