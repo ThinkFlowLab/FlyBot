@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, win32 } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { zstdCompressSync } from 'node:zlib'
 
-import { fitFixed, foldSessionEvents, scanZstdFrames, splitStep } from '../dev/turn-split.mjs'
+import { fitFixed, foldSessionEvents, scanZstdFrames, sessionIdFromPath, splitStep } from '../dev/turn-split.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SCRIPT = join(ROOT, 'core', 'dev', 'turn-split.mjs')
@@ -187,6 +187,20 @@ test('a missing session root is an error that names the path', () => {
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /no session root at/)
   assert.match(result.stderr, new RegExp(missing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
+// #1989: `compat · windows-latest` lost four cases to one cause — the Session id came from
+// `file.split('/')`. The walk builds paths with `join`, so on Windows the separator is `\`,
+// `split('/')` read one element, and every Session row carried `id: undefined`: the id column
+// died on `.padEnd`, `--room` on `.startsWith`, and the derived tables printed `undefined`.
+// The id is the directory holding the log, so read it with the path API — once under the host's
+// separator and once under a Windows-shaped one, which no Linux run would otherwise reach.
+test('#1989: a Session id is the directory name under either path separator', () => {
+  const below = ['sessions', '--workspace--', 'session-fixture', 'session.v4.jsonl.zstd']
+  const windowsFile = win32.join('D:\\a\\FlyBot\\FlyBot', ...below)
+  assert.ok(windowsFile.includes('\\'), `the fixture must be Windows-shaped: ${windowsFile}`)
+  assert.equal(sessionIdFromPath(windowsFile, win32), 'session-fixture')
+  assert.equal(sessionIdFromPath(join(...below)), 'session-fixture')
 })
 
 // The report this script backs ships a number only in a table row whose last cell names

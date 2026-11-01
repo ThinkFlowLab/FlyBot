@@ -23,7 +23,7 @@
 // `docs/reports/2026-10-26-turn-input-split.md`).
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import path, { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { zstdDecompressSync } from 'node:zlib'
 
@@ -348,6 +348,14 @@ export function readSessionFile(file) {
   return decodeSession(file).events
 }
 
+// `findSessionFiles` builds every path with `join`, so on Windows the separator is `\` and a
+// `file.split('/')` reads one element: each row then carried `id: undefined`, which crashed the
+// id column on `.padEnd`, the `--room` lookup on `.startsWith` and printed `undefined` in every
+// derived table (#1989). The id is the directory holding the log, so it comes from the path API,
+// which reads whichever separator the host joins with. `api` is a parameter so a test can read a
+// Windows-shaped path on any host.
+export const sessionIdFromPath = (file, api = path) => api.basename(api.dirname(file))
+
 export function findSessionFiles(root) {
   const files = []
   const walk = (dir, depth) => {
@@ -522,7 +530,7 @@ function main(argv) {
   if (files.length === 0) die(`no session.v4.jsonl.zstd under ${resolve(root)}`)
   const sessions = []
   for (const file of files) {
-    const id = file.split('/').at(-2)
+    const id = sessionIdFromPath(file)
     if (flags.session !== null && !id.startsWith(flags.session)) continue
     const { events, text } = decodeSession(file)
     const folded = foldSessionEvents(events)
