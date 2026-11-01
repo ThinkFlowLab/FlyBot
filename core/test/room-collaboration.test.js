@@ -19,6 +19,10 @@ const incomplete = `export function totalPaid(orders, region) {
     .reduce((total, row) => total + row.amount, 0)
 }
 `
+const broken = `export function totalPaid() {
+  return 0
+}
+`
 
 const BOT_NAMES = { chief: 'Chief', writer: 'Writer', observer: 'Observer' }
 
@@ -163,6 +167,22 @@ test('the fixture checks still pass when the working directory is reached throug
   symlinkSync(real, link)
   const worker = checkWorker({ worker: join(link, 'writer'), verifier: join(link, 'verifier') })
   assert.equal(worker.ok, true, worker.stderr)
+})
+
+test('a check reached through a symlinked working directory still fails when the code is broken', t => {
+  const home = mkdtempSync(join(tmpdir(), 'flybot-room-symlink-red-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const real = join(home, 'fixture')
+  prepareFixture(real)
+  const link = join(home, 'link')
+  symlinkSync(real, link)
+  // Break the Writer module through the link: the passing case above must not pass
+  // because the child died on permissions or skipped the check, only on a real pass.
+  writeFileSync(join(link, 'writer', 'total.mjs'), broken)
+  const worker = checkWorker({ worker: join(link, 'writer'), verifier: join(link, 'verifier') })
+  assert.equal(worker.ok, false, 'a broken check reached through the link must still fail')
+  assert.equal(worker.exitCode, 1, worker.stderr)
+  assert.match(worker.stderr, /AssertionError/)
 })
 
 test('same-room DSH fixture delegates, clarifies, edits, independently verifies and accepts', async t => {
