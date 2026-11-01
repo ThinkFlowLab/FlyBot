@@ -246,20 +246,24 @@ export function install(rt) {
 
   // The file a decided meeting archived (#1809): read from the folder the record names, and only
   // that one file — two folder-less Projects share the team folder, so a folder read whole would
-  // show each Project the other's decisions. A record written before this slice names no folder
-  // and resolves through the Project folder exactly as it did.
+  // show each Project the other's decisions. Three answers, never two: a record written before this
+  // slice names no folder (`none`) and resolves through the Project folder exactly as it did; one
+  // that named a folder but whose file this read could not take is `unreadable`, which is not that
+  // shape; one that was read carries its row. The middle case is why this is not `undefined` plus a
+  // second look at `decisionDir` in the caller.
   const archivedOf = async (meeting) => {
     const dir = text(meeting?.decisionDir)
     const path = text(meeting?.decisionFile)
+    if (dir === '') return { state: 'none' }
     // The listing accepts one shape only, and this read is part of it: a name that is not
     // `decisions/<name>.md`, or a symlink standing in for that file, is refused here too. Reading
     // it would put a file outside the folder in the rows, and the past-cut fallback reads this set.
-    if (dir === '' || !isDecisionPath(path)) return undefined
+    if (!isDecisionPath(path)) return { state: 'unreadable' }
     try {
-      return { dir, ...await describeFile(dir, path) }
+      return { state: 'read', row: { dir, ...await describeFile(dir, path) } }
     } catch {
       // Absent or unreadable is not a row: the meeting keeps its own record, with no path.
-      return undefined
+      return { state: 'unreadable' }
     }
   }
 
@@ -293,7 +297,7 @@ export function install(rt) {
       const archivedDir = text(meeting.decisionDir)
       if (archivedDir !== '' && !folders.includes(archivedDir)) folders.push(archivedDir)
       const archived = await archivedOf(meeting)
-      if (archived === undefined) {
+      if (archived.state === 'none') {
         // A record written before the archive slice names no folder: its file is one of the rows of
         // the Project's own listing, and the meeting still names the cards it decided. Kept aside
         // until that listing is deduped, so only a name this read really listed carries the cards.
@@ -303,9 +307,12 @@ export function install(rt) {
         }
         continue
       }
-      found.push(archived)
-      if (!cardsOf.has(archived.path)) {
-        cardsOf.set(archived.path, Array.isArray(meeting.taskIds) ? meeting.taskIds.map(id => text(id)).filter(id => id !== '') : [])
+      // A record that named a folder is not the shape above even when its file could not be read:
+      // that file belongs to another folder, and the same relative name here is another file.
+      if (archived.state === 'unreadable') continue
+      found.push(archived.row)
+      if (!cardsOf.has(archived.row.path)) {
+        cardsOf.set(archived.row.path, Array.isArray(meeting.taskIds) ? meeting.taskIds.map(id => text(id)).filter(id => id !== '') : [])
       }
     }
     // One row per path — the client keys a row by path, and the Project folder was read first.

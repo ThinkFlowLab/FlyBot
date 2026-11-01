@@ -1546,3 +1546,101 @@ test('#2052: two records naming one file keep the cards the first one decided', 
     rmSync(base, { recursive: true, force: true })
   }
 })
+
+// `archivedOf` answers `undefined` for two records that are not the same shape: one written before
+// the archive slice (`decisionDir === ''`), and one that named a folder whose file this read could
+// not open. The `archived === undefined` branch of `decisionsOf` is where they part: the first
+// falls through to the legacy `named` backfill, the second stops at the `continue` before it. The
+// two reads below are one fixture with that one field changed, so the difference can only come
+// from that branch.
+test('#2053: only a record that named no folder reaches the legacy card backfill', async () => {
+  const read = async (shape) => {
+    const { base, dir } = decisionFolder('ds-bot-decisions-shape-')
+    const archive = join(base, 'archive')
+    mkdirSync(join(archive, 'decisions'), { recursive: true })
+    writeFileSync(join(dir, 'decisions', '2026-11-03-shape.md'), '# the Project folder copy\n')
+    const decisionDir = shape === 'folder' ? archive : ''
+    const team = legacyFolderSeed(dir, {
+      'm-shape': legacyMeeting('shape', { decisionDir, decisionFile: 'decisions/2026-11-03-shape.md' }),
+    })
+    const { rt, callAs, stop } = await start(undefined, team)
+    try {
+      signIn(rt)
+      const board = await callAs('project-board', { id: 'project-p1' }, 'tok-3')
+      assert.equal(board.value.decisions.files.some(file => file.path === 'decisions/2026-11-03-shape.md'), true,
+        `${shape}: the Project folder lists the row`)
+      return {
+        member: (await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-03-shape.md' }, 'tok-3')).value,
+        own: (await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-03-shape.md' }, 'tok-1')).value,
+      }
+    } finally {
+      await stop()
+      rmSync(base, { recursive: true, force: true })
+    }
+  }
+  // No folder: the legacy backfill binds `task-group`, so a Project member without the card reads
+  // nothing while the card's own party reads the text.
+  const noFolder = await read('no folder')
+  assert.equal(noFolder.member.ok, false, JSON.stringify(noFolder.member))
+  assert.equal(noFolder.member.reason, "not listed: decisions/2026-11-03-shape.md is not in this board's decision list")
+  assert.equal(noFolder.own.ok, true)
+  assert.equal(noFolder.own.text, '# the Project folder copy\n')
+  // The folder's file was never opened, so nothing is bound: the row answers through the role list
+  // and the same member reads the text, exactly as a row no record mentions.
+  const folder = await read('folder')
+  assert.equal(folder.member.ok, true, JSON.stringify(folder.member))
+  assert.equal(folder.member.text, '# the Project folder copy\n',
+    'cards from a record whose own file never opened stay off this folder row')
+  // The card door opens nothing here either: no card of that record reached this row.
+  assert.equal(folder.own.ok, false, JSON.stringify(folder.own))
+  assert.equal(folder.own.reason, "not listed: decisions/2026-11-03-shape.md is not in this board's decision list")
+})
+
+// One world, two runs: the same two records and the same folder, only the insertion order of
+// `state.meetings` differs. `m-arch` named a folder that does not hold its file, so `archivedOf`
+// cannot open it; `m-no` names no folder and is the record whose file the Project folder listed.
+// Whichever of them the shared `undefined` branch lets into the backfill supplies the row's cards,
+// so an order-dependent answer here is the bug itself.
+test('#2053: the same two records answer word for word in either key order', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-order-')
+  const archive = join(base, 'archive')
+  mkdirSync(join(archive, 'decisions'), { recursive: true })
+  writeFileSync(join(dir, 'decisions', '2026-11-03-x.md'), '# the Project-folder record\n')
+  const records = {
+    'm-arch': legacyMeeting('arch', { decisionDir: archive, decisionFile: 'decisions/2026-11-03-x.md', taskIds: ['task-b1'] }),
+    'm-no': legacyMeeting('no', { decisionDir: '', decisionFile: 'decisions/2026-11-03-x.md', taskIds: ['task-group'] }),
+  }
+  const read = async (order) => {
+    const team = legacyFolderSeed(dir, Object.fromEntries(order.map(id => [id, structuredClone(records[id])])))
+    team.projects['project-p1'].roles = { maintainers: [], members: ['owner-1', 'owner-2'] }
+    team.members['owner-2'] = { id: 'owner-2', createdAt: 4, designatedChiefId: null }
+    const { rt, callAs, stop } = await start(undefined, team)
+    try {
+      signIn(rt)
+      const board = await callAs('project-board', { id: 'project-p1' }, 'tok-1')
+      assert.equal(board.value.decisions.files.some(file => file.path === 'decisions/2026-11-03-x.md'), true,
+        `${order.join(' then ')}: one row for the name`)
+      return {
+        // owner-1 holds `task-group`, the card of the folder-less record.
+        no: (await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-03-x.md' }, 'tok-1')).value,
+        // owner-2 holds `task-b1`, the card of the record whose own folder never opened that file.
+        arch: (await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-03-x.md' }, 'tok-2')).value,
+      }
+    } finally {
+      await stop()
+    }
+  }
+  const archFirst = await read(['m-arch', 'm-no'])
+  const noFirst = await read(['m-no', 'm-arch'])
+  // The folder-less record supplies the cards: its own party reads the text, in both runs.
+  assert.equal(archFirst.no.ok, true, JSON.stringify(archFirst.no))
+  assert.equal(archFirst.no.text, '# the Project-folder record\n')
+  assert.equal(noFirst.no.ok, true, JSON.stringify(noFirst.no))
+  assert.equal(noFirst.no.text, '# the Project-folder record\n')
+  // The other record's cards belong to no row here, so its party is refused in both runs — reading
+  // in either one would mean the folder it named was followed, or that it took the row's cards.
+  assert.equal(archFirst.arch.ok, false, JSON.stringify(archFirst.arch))
+  assert.equal(noFirst.arch.ok, false, JSON.stringify(noFirst.arch))
+  assert.deepEqual(noFirst, archFirst, 'the stored order of the two records changes no answer')
+  rmSync(base, { recursive: true, force: true })
+})
