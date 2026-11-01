@@ -1285,3 +1285,55 @@ test('a MEMORY.md size and its note count code points (#1895)', async (t) => {
   writeFileSync(file, withEmoji(4001 - added - 13))
   assert.match(await tool('remember', { text: 'One more' }, 'b2'), /MEMORY\.md would have 4001 of its 4000 characters/, 'one code point over is refused with the code-point count')
 })
+
+// #2001: recall stops at 30 entries. A Bot that has more matches than that was shown 30 and told
+// nothing, so entry 31 read as not existing. The cap stays 30; the reply now says what is not shown.
+// The cases are independent: one keyword hit cut, several keyword hits cut, the exact-cap silence,
+// and the semantic line.
+function memoryFile(home, entries) {
+  const dir = join(home, 'memory', 'bots', 'b2')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'MEMORY.md'), `# Memory\n\n${entries.map(entry => `- ${entry}`).join('\n')}\n\n## Index\n`)
+}
+
+test('#2001: a keyword recall that cut its list says how many matches are not shown', async (t) => {
+  const { tool, home, stop } = start()
+  t.after(() => stop())
+  memoryFile(home, Array.from({ length: 31 }, (_, at) => `Queue note number ${at + 1}`))
+  const out = await tool('recall', { query: 'queue' }, 'b2')
+  const lines = out.split('\n')
+  assert.match(lines[0], /^Entries with "queue" in your memory and the team memory:$/)
+  assert.equal(lines.at(-1), '1 more entry matches; narrow the query or read a topic', 'the one entry not shown is named')
+  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
+})
+
+test('#2001: a keyword recall that cut several matches counts them in the plural', async (t) => {
+  const { tool, home, stop } = start()
+  t.after(() => stop())
+  memoryFile(home, Array.from({ length: 33 }, (_, at) => `Queue note number ${at + 1}`))
+  const out = await tool('recall', { query: 'queue' }, 'b2')
+  const lines = out.split('\n')
+  assert.equal(lines.at(-1), '3 more entries match; narrow the query or read a topic', 'all three entries not shown are counted')
+  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
+})
+
+test('#2001: a keyword recall of exactly the cap adds no line about matches it did not cut', async (t) => {
+  const { tool, home, stop } = start()
+  t.after(() => stop())
+  memoryFile(home, Array.from({ length: 30 }, (_, at) => `Queue note number ${at + 1}`))
+  const out = await tool('recall', { query: 'queue' }, 'b2')
+  const lines = out.split('\n')
+  assert.equal(lines.length - 1, 30, 'all 30 matches are shown, with no extra line')
+  assert.doesNotMatch(out, /narrow the query or read a topic/)
+})
+
+test('#2001: a semantic recall that cut its list says more entries match the meaning', async (t) => {
+  const { tool, home, stop } = start()
+  t.after(() => stop())
+  memoryFile(home, Array.from({ length: 31 }, (_, at) => `The user prefers window seat number ${at + 1} on long flights`))
+  const out = await tool('recall', { query: 'flight seat', semantic: 'true' }, 'b2')
+  const lines = out.split('\n')
+  assert.match(lines[0], /^Entries closest in meaning to "flight seat" in your memory and the team memory:$/)
+  assert.equal(lines.at(-1), 'more entries match this meaning than are shown; narrow the query or read a topic', 'the cut is named')
+  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
+})

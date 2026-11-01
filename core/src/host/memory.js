@@ -924,11 +924,15 @@ export function install(rt) {
           ref: `${entry.text} ${entry.file.topic ?? ''}`,
           entry, tag, label, file: entry.file,
         })))
-        const hits = searchIndex(buildIndex(docs), query, { k: RECALL_MAX })
-        if (hits.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
+        // One past the cap: the hit that exists but is not shown is what the reply has to name
+        // (#2001). `searchIndex` returns the top k only, so the exact total is not available here.
+        const found = searchIndex(buildIndex(docs), query, { k: RECALL_MAX + 1 })
+        if (found.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
+        const hits = found.slice(0, RECALL_MAX)
         return [
           `Entries closest in meaning to "${query}" in ${labels}:`,
           ...hits.map(({ doc }) => `[${where(doc.tag, doc.file)}] ${formatEntry(doc.entry.text, doc.entry.meta).slice(2)}`),
+          ...(found.length > hits.length ? ['more entries match this meaning than are shown; narrow the query or read a topic'] : []),
         ].join('\n')
       }
       const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
@@ -937,12 +941,15 @@ export function install(rt) {
         return { entry, tag, count: terms.filter(term => hay.includes(term)).length }
       })).filter(hit => hit.count > 0)
       const every = scored.filter(hit => hit.count === terms.length)
-      const hits = (every.length > 0 ? every : scored.sort((a, b) => b.count - a.count)).slice(0, RECALL_MAX)
+      const matches = every.length > 0 ? every : scored.sort((a, b) => b.count - a.count)
+      const hits = matches.slice(0, RECALL_MAX)
       const labels = loaded.map(item => item.label).join(' and ')
       if (hits.length === 0) return `Nothing in ${labels} mentions "${query}". read_own_chat searches what was said.`
+      const remaining = matches.length - hits.length
       return [
         every.length > 0 ? `Entries with "${query}" in ${labels}:` : `No entry has all of "${query}"; entries with the most of these words:`,
         ...hits.map(({ entry, tag }) => `[${where(tag, entry.file)}] ${formatEntry(entry.text, entry.meta).slice(2)}`),
+        ...(remaining > 0 ? [`${remaining} more ${remaining === 1 ? 'entry matches' : 'entries match'}; narrow the query or read a topic`] : []),
       ].join('\n')
     },
   }))

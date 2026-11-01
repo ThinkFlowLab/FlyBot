@@ -4883,7 +4883,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -856,22 +856,51 @@ export function install(rt) {
+@@ -856,34 +856,70 @@ export function install(rt) {
          const topic = cleanTopic(args.topic)
          for (const { label, files } of loaded) {
            const file = files.find(item => item.topic === topic)
@@ -4927,16 +4927,36 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +          ref: `${entry.text} ${entry.file.topic ?? ''}`,
 +          entry, tag, label, file: entry.file,
 +        })))
-+        const hits = searchIndex(buildIndex(docs), query, { k: RECALL_MAX })
-+        if (hits.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
++        // One past the cap: the hit that exists but is not shown is what the reply has to name
++        // (#2001). `searchIndex` returns the top k only, so the exact total is not available here.
++        const found = searchIndex(buildIndex(docs), query, { k: RECALL_MAX + 1 })
++        if (found.length === 0) return `Nothing in ${labels} is close to "${query}". read_own_chat searches what was said.`
++        const hits = found.slice(0, RECALL_MAX)
 +        return [
 +          `Entries closest in meaning to "${query}" in ${labels}:`,
 +          ...hits.map(({ doc }) => `[${where(doc.tag, doc.file)}] ${formatEntry(doc.entry.text, doc.entry.meta).slice(2)}`),
++          ...(found.length > hits.length ? ['more entries match this meaning than are shown; narrow the query or read a topic'] : []),
 +        ].join('\n')
 +      }
        const terms = [...new Set(squash(query).split(' ').filter(Boolean))].slice(0, QUERY_TERMS_MAX)
        const scored = loaded.flatMap(({ tag, files }) => allEntries(files).map((entry) => {
          const hay = squash(`${entry.text} ${entry.file.topic ?? ''}`)
+         return { entry, tag, count: terms.filter(term => hay.includes(term)).length }
+       })).filter(hit => hit.count > 0)
+       const every = scored.filter(hit => hit.count === terms.length)
+-      const hits = (every.length > 0 ? every : scored.sort((a, b) => b.count - a.count)).slice(0, RECALL_MAX)
++      const matches = every.length > 0 ? every : scored.sort((a, b) => b.count - a.count)
++      const hits = matches.slice(0, RECALL_MAX)
+       const labels = loaded.map(item => item.label).join(' and ')
+       if (hits.length === 0) return `Nothing in ${labels} mentions "${query}". read_own_chat searches what was said.`
++      const remaining = matches.length - hits.length
+       return [
+         every.length > 0 ? `Entries with "${query}" in ${labels}:` : `No entry has all of "${query}"; entries with the most of these words:`,
+         ...hits.map(({ entry, tag }) => `[${where(tag, entry.file)}] ${formatEntry(entry.text, entry.meta).slice(2)}`),
++        ...(remaining > 0 ? [`${remaining} more ${remaining === 1 ? 'entry matches' : 'entries match'}; narrow the query or read a topic`] : []),
+       ].join('\n')
+     },
+   }))
 @@ -941,6 +941,8 @@ export function install(rt) {
    // desiredModel only falls back for models that are not served; so a failed call
    // is tried once more on the profile default.
@@ -10704,7 +10724,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,129 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,181 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -10833,6 +10853,58 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  // refusal prints that code-point number rather than twice it.
 +  writeFileSync(file, withEmoji(4001 - added - 13))
 +  assert.match(await tool('remember', { text: 'One more' }, 'b2'), /MEMORY\.md would have 4001 of its 4000 characters/, 'one code point over is refused with the code-point count')
++})
++
++// #2001: recall stops at 30 entries. A Bot that has more matches than that was shown 30 and told
++// nothing, so entry 31 read as not existing. The cap stays 30; the reply now says what is not shown.
++// The cases are independent: one keyword hit cut, several keyword hits cut, the exact-cap silence,
++// and the semantic line.
++function memoryFile(home, entries) {
++  const dir = join(home, 'memory', 'bots', 'b2')
++  mkdirSync(dir, { recursive: true })
++  writeFileSync(join(dir, 'MEMORY.md'), `# Memory\n\n${entries.map(entry => `- ${entry}`).join('\n')}\n\n## Index\n`)
++}
++
++test('#2001: a keyword recall that cut its list says how many matches are not shown', async (t) => {
++  const { tool, home, stop } = start()
++  t.after(() => stop())
++  memoryFile(home, Array.from({ length: 31 }, (_, at) => `Queue note number ${at + 1}`))
++  const out = await tool('recall', { query: 'queue' }, 'b2')
++  const lines = out.split('\n')
++  assert.match(lines[0], /^Entries with "queue" in your memory and the team memory:$/)
++  assert.equal(lines.at(-1), '1 more entry matches; narrow the query or read a topic', 'the one entry not shown is named')
++  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
++})
++
++test('#2001: a keyword recall that cut several matches counts them in the plural', async (t) => {
++  const { tool, home, stop } = start()
++  t.after(() => stop())
++  memoryFile(home, Array.from({ length: 33 }, (_, at) => `Queue note number ${at + 1}`))
++  const out = await tool('recall', { query: 'queue' }, 'b2')
++  const lines = out.split('\n')
++  assert.equal(lines.at(-1), '3 more entries match; narrow the query or read a topic', 'all three entries not shown are counted')
++  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
++})
++
++test('#2001: a keyword recall of exactly the cap adds no line about matches it did not cut', async (t) => {
++  const { tool, home, stop } = start()
++  t.after(() => stop())
++  memoryFile(home, Array.from({ length: 30 }, (_, at) => `Queue note number ${at + 1}`))
++  const out = await tool('recall', { query: 'queue' }, 'b2')
++  const lines = out.split('\n')
++  assert.equal(lines.length - 1, 30, 'all 30 matches are shown, with no extra line')
++  assert.doesNotMatch(out, /narrow the query or read a topic/)
++})
++
++test('#2001: a semantic recall that cut its list says more entries match the meaning', async (t) => {
++  const { tool, home, stop } = start()
++  t.after(() => stop())
++  memoryFile(home, Array.from({ length: 31 }, (_, at) => `The user prefers window seat number ${at + 1} on long flights`))
++  const out = await tool('recall', { query: 'flight seat', semantic: 'true' }, 'b2')
++  const lines = out.split('\n')
++  assert.match(lines[0], /^Entries closest in meaning to "flight seat" in your memory and the team memory:$/)
++  assert.equal(lines.at(-1), 'more entries match this meaning than are shown; narrow the query or read a topic', 'the cut is named')
++  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
