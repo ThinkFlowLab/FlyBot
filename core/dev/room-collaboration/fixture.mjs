@@ -54,10 +54,17 @@ export function prepareFixture(root) {
 
 function execute(directory) {
   const artifact = readFileSync(join(directory, 'total.mjs'))
-  // The permission flag must match the canonical path the loader realpaths to;
-  // a symlinked temp root (macOS /var -> /private/var) otherwise denies every read.
+  // The permission flag must cover the path handed in *and* the canonical path the
+  // ESM loader realpaths to: a symlinked temp root (macOS /var -> /private/var) or a
+  // working directory reached through a link (Windows \\?\...\link) otherwise denies every read (#314, #1988).
+  const real = realpathSync(directory)
+  // One flag per path: a single comma-joined value stays a literal path, so neither
+  // the link nor the target would match and every read would be denied.
+  const reads = real === directory
+    ? [`--allow-fs-read=${directory}`]
+    : [`--allow-fs-read=${directory}`, `--allow-fs-read=${real}`]
   const result = spawnSync(process.execPath, [
-    '--permission', `--allow-fs-read=${realpathSync(directory)}`, 'check.mjs',
+    '--permission', ...reads, 'check.mjs',
   ], { cwd: directory, env: { TZ: 'UTC' }, encoding: 'utf8', timeout: 5000, maxBuffer: 32 * 1024 })
   if (result.error) throw result.error
   return {

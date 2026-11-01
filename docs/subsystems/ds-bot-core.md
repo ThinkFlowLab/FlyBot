@@ -79,9 +79,11 @@ required clarification, background work, actual synthetic code/tests, independen
 artifact verification and simulated requester acceptance/rejection. Its reusable
 inputs/checks live in `core/dev/room-collaboration/`; the two test directories and
 Node process restrictions are not a full sandbox or a real-model trial.
-The fixture's `--permission --allow-fs-read` flag is given the canonical path (`realpathSync`) of each
-check directory: Node matches that flag literally while the ESM loader realpaths the modules it reads, so
-a symlinked temp root (macOS `/var` → `/private/var`) would otherwise deny every read (#314).
+The fixture's `--permission --allow-fs-read` flag lists each check directory **and** its canonical
+path (`realpathSync`): Node matches that flag literally while the ESM loader realpaths the modules it reads,
+so a symlinked temp root (macOS `/var` → `/private/var`) or a working directory reached through a link
+(Windows `\\?\…\link`) would otherwise deny every read (#314, #1988). The linked case keeps a companion
+test that breaks the Writer module through the link, so a green there still means the check ran.
 
 `core/dev/room-smoke.mjs` (#198) drives the same acceptance shape one tier up, on a
 real `dev/bench.sh` bench: actual DSH sessions, the scripted mock model, real shell
