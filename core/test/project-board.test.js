@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
@@ -548,7 +548,9 @@ test('#1809: a decision archived in the Session folder is listed by the board of
   try {
     const id = await decide('project-p1', 'Which folder carries the decision of a Project that names its own?')
     const meeting = rt.state.meetings[id]
-    assert.match(meeting.decisionDir ?? '', new RegExp(`^${sessionDir}$`), 'the record names the folder it archived in')
+    // Compare folders, not a pattern: a Windows path such as `C:\Users\me\U...` fed to
+    // `new RegExp` turns \U, \A, \L into escapes and stops matching its own string (#1987).
+    assert.equal(resolve(meeting.decisionDir ?? ''), resolve(sessionDir), 'the record names the folder it archived in')
     const named = meeting.decisionFile
     assert.equal(existsSync(join(sessionDir, named)), true, 'the file stays in the Session folder')
     assert.equal(existsSync(join(projectDir, 'decisions')), false, 'nothing was written into the Project folder')
