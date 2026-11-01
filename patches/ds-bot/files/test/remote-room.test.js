@@ -2567,6 +2567,25 @@ test('writing back the reply mode the room already holds says nothing', async (t
   assert.deepEqual(events, [], 'a save that writes the same mode back says nothing')
 })
 
+// #1967: the local user has no member session (nothing in this repository writes the client's
+// `flybot-member-session` key), so a save from the web UI reaches the roster with neither an actor nor a
+// Bot id. The line that says who changed what must still name the room's owner, and never read as a
+// third party doing it.
+test('a settings save with no session names the room owner, not Someone', async (t) => {
+  const { rt } = host(t, TEAM)
+  installRoster(rt)
+  await rt.load()
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+
+  await rt.updateRoom('war', { notice: 'Stand up' })
+
+  assert.equal(events.length, 1, `one save is one line: ${JSON.stringify(events)}`)
+  assert.equal(events[0].text, 'Alice updated the group notice', 'the local user is named, not someone else')
+  assert.ok(!events[0].text.includes('Someone'), 'a save by the local user never reads as a third party')
+  assert.deepEqual(events[0].extra, { quiet: true, notice: true }, 'still quiet and a notice, so no turn opens')
+})
+
 // #904: a roster is stranger-written text, so the envelope that carries one is gated: only the room's
 // own inviter, only the room this mirror is bound to, and nothing it says widens reach by itself.
 test('#904: a roster from another home or for another room changes no participant', async (t) => {

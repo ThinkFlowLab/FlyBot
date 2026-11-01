@@ -154,7 +154,7 @@ diff --git a/src/host/home-lock.js b/src/host/home-lock.js
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
-@@ -3,8 +3,10 @@
+@@ -3,8 +3,11 @@
  import { mkdir } from 'node:fs/promises'
  import { join } from 'node:path'
  import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
@@ -162,6 +162,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +import { currentColor, cut, isColor, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
 +import { cleanExternal } from './room-participant-external.js'
++import { implicitRoomOwner } from './room-membership.js'
 +import { ownEntry } from './store.js'
  
  export function install(rt) {
@@ -590,7 +591,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      }
      // Members' group conversations move on to the folder at their next turn there.
      if (moving && workDir !== room.workDir) {
-@@ -371,20 +371,53 @@ export function install(rt) {
+@@ -371,20 +371,58 @@ export function install(rt) {
          delete room.named
        }
      }
@@ -625,7 +626,12 @@ diff --git a/src/host/roster.js b/src/host/roster.js
    }
  
 +  function showSettings(room, settings, actor, actorId) {
-+    const who = actor?.displayName ?? rt.botOf(actorId)?.name ?? 'Someone'
++    // The web UI has no member session (#1967), so the local user's save arrives with neither an actor nor a
++    // Bot id: the room's implicit owner names it, the way the room line already does. Only a room with no
++    // owner at all falls back to the host's own wording for the local person; a signed-in member and a Bot
++    // acting through its tool still win, as they did.
++    const who = actor?.displayName ?? rt.botOf(actorId)?.name
++      ?? implicitRoomOwner(room, state)?.displayName ?? 'the user'
 +    const said = settings.length === 1 ? settings[0] : `${settings.slice(0, -1).join(', ')} and ${settings.at(-1)}`
 +    try {
 +      void Promise.resolve(rt.postToRoom?.(room, { id: 'face-notice', name: who }, `${who} ${said}`, { quiet: true, notice: true }))
