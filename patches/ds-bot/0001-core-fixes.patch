@@ -2057,6 +2057,19 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
+@@ -40,6 +40,12 @@ function dayAndTime(ms) {
+   const sameYear = new Date(ms).getFullYear() === new Date().getFullYear()
+   return when(ms, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+ }
++// A stored instant, or '' when it is missing or malformed: `Intl.DateTimeFormat().format(NaN)`
++// throws RangeError, which would take the whole panel down (#2024).
++function instant(value) {
++  const at = Date.parse(value)
++  return Number.isFinite(at) ? dayAndTime(at) : ''
++}
+ function weekdayNames(days) {
+   const names = days.map(day => when(Date.UTC(2024, 0, day), { weekday: 'short', timeZone: 'UTC' }))
+   return names.join(dateLocale().startsWith('zh') ? '、' : ', ')
 @@ -47,7 +47,8 @@ function weekdayNames(days) {
  function everyText(seconds) {
    if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
@@ -2067,15 +2080,32 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  }
  
  // How often a task runs, in the user's words.
-@@ -70,9 +70,22 @@ export function timingText(task) {
+@@ -55,7 +55,10 @@ export function timingText(task) {
+   const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : ''
+   switch (task.kind) {
+     case 'after':
+-    case 'at': return t('Once, {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) })
++    case 'at': {
++      const time = instant(task.scheduledAt)
++      return time === '' ? '' : t('Once, {time}', { time })
++    }
+     case 'every': return everyText(task.everySeconds)
+     case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
+     case 'weekly': {
+@@ -70,9 +70,28 @@ export function timingText(task) {
      default: return ''
    }
  }
 -const nextText = task => (task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
-+const nextText = task => (task.status === 'paused' ? t('Paused')
-+  : task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
- 
--function TaskRow({ task, actions, onView, showBot, roster }) {
++// When the task runs next, in one word where there is no next run. An unreadable instant
++// falls back to the repeat rule rather than throwing (#2024).
++const nextText = (task) => {
++  if (task.status === 'paused') return t('Paused')
++  if (task.status !== 'active') return t('Finished')
++  const at = instant(task.scheduledAt)
++  return at === '' ? timingText(task) : t('Next: {time}', { time: at })
++}
++
 +// The last run, in one line: when, and how it went (src/host/schedules.js).
 +export function lastRunText(run) {
 +  if (run === undefined || !Number.isFinite(run.at)) return ''
@@ -2087,7 +2117,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    default: return t('Last run {time}', { time })
 +  }
 +}
-+
+ 
+-function TaskRow({ task, actions, onView, showBot, roster }) {
 +function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
@@ -2232,7 +2263,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,56 +166,165 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,184 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2338,9 +2369,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-   ]
- }
- 
++  ]
++}
++
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
@@ -2362,7 +2393,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-+  ]
+   ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -2382,8 +2413,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
-+}
-+
+ }
+ 
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -2414,15 +2445,21 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +        }))
  }
  
- // The details panel's line: the Bot's next tasks, or how to add one.
-@@ -225,13 +225,15 @@ export function ScheduleSummary({ bot, actions }) {
+-// The details panel's line: the Bot's next tasks, or how to add one.
++// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
++// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
+ export function ScheduleSummary({ bot, actions }) {
+   const view = useSchedules(actions)
+-  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
++  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0
 -      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Harness settings.') : t('No scheduled tasks yet. Add one'))
 +      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
        : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
-           h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
+-          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
++          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task))))))
  }
  
  export const SCHEDULE_CSS = `

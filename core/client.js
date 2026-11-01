@@ -13047,6 +13047,10 @@ function dayAndTime(ms) {
   const sameYear = new Date(ms).getFullYear() === (/* @__PURE__ */ new Date()).getFullYear();
   return when2(ms, { ...sameYear ? {} : { year: "numeric" }, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+function instant(value) {
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? dayAndTime(at) : "";
+}
 function weekdayNames(days) {
   const names = days.map((day) => when2(Date.UTC(2024, 0, day), { weekday: "short", timeZone: "UTC" }));
   return names.join(dateLocale().startsWith("zh") ? "、" : ", ");
@@ -13061,8 +13065,10 @@ function timingText(task) {
   const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : "";
   switch (task.kind) {
     case "after":
-    case "at":
-      return t("Once, {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) });
+    case "at": {
+      const time = instant(task.scheduledAt);
+      return time === "" ? "" : t("Once, {time}", { time });
+    }
     case "every":
       return everyText(task.everySeconds);
     case "daily":
@@ -13078,7 +13084,12 @@ function timingText(task) {
       return "";
   }
 }
-var nextText = (task) => task.status === "paused" ? t("Paused") : task.status === "active" ? t("Next: {time}", { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t("Finished");
+var nextText = (task) => {
+  if (task.status === "paused") return t("Paused");
+  if (task.status !== "active") return t("Finished");
+  const at = instant(task.scheduledAt);
+  return at === "" ? timingText(task) : t("Next: {time}", { time: at });
+};
 function lastRunText(run) {
   if (run === void 0 || !Number.isFinite(run.at)) return "";
   const time = dayAndTime(run.at);
@@ -13496,7 +13507,7 @@ function BotSchedules({ bot, roster, actions }) {
 }
 function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions);
-  const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id && task.status === "active") : [];
+  const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
   return (0, import_react25.createElement)(
     "div",
     null,
@@ -13506,7 +13517,7 @@ function ScheduleSummary({ bot, actions }) {
       { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
       (0, import_react25.createElement)(ClockIcon),
       (0, import_react25.createElement)("span", { className: "bt-task-line-title" }, task.title),
-      (0, import_react25.createElement)("span", { className: "bt-task-line-when" }, timingText(task))
+      (0, import_react25.createElement)("span", { className: "bt-task-line-when" }, nextText(task))
     )))
   );
 }
@@ -19943,19 +19954,19 @@ function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatu
   const [viewport, setViewport] = (0, import_react45.useState)(() => window.innerWidth);
   const [dragging, setDragging] = (0, import_react45.useState)(false);
   const [resizing, setResizing] = (0, import_react45.useState)(false);
-  const instant = dragging || resizing;
+  const instant2 = dragging || resizing;
   const [reading, setReading] = (0, import_react45.useState)(false);
   const panelWidth = fitWidth(width ?? (view === "browser" ? DEFAULT_WIDTH : DETAILS_WIDTH), widthRange(view, viewport));
   (0, import_react45.useLayoutEffect)(() => {
     if (view === "browser" && width === null) setWidth(DEFAULT_WIDTH);
   }, [view, width]);
   (0, import_react45.useLayoutEffect)(() => {
-    chatRoom.hold(instant);
-  }, [instant]);
+    chatRoom.hold(instant2);
+  }, [instant2]);
   const [last, setLast] = (0, import_react45.useState)({ view, width: panelWidth });
   if (last.view !== view || last.width !== panelWidth) {
     setLast({ view, width: panelWidth });
-    if (last.view !== view) setSettling(last.width !== panelWidth && !instant);
+    if (last.view !== view) setSettling(last.width !== panelWidth && !instant2);
   }
   const shownView = (0, import_react45.useRef)(view);
   (0, import_react45.useLayoutEffect)(() => {
@@ -20134,7 +20145,7 @@ function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatu
       "data-leaving": leaving || void 0,
       "aria-hidden": leaving || void 0,
       "data-settling": settling || void 0,
-      "data-instant": instant || void 0,
+      "data-instant": instant2 || void 0,
       "data-dragging": dragging || void 0,
       style: { "--bt-panel-w": `${panelWidth}px` },
       onAnimationEnd: (event) => {

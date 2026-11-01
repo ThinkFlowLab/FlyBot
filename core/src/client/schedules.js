@@ -43,6 +43,12 @@ function dayAndTime(ms) {
   const sameYear = new Date(ms).getFullYear() === new Date().getFullYear()
   return when(ms, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+// A stored instant, or '' when it is missing or malformed: `Intl.DateTimeFormat().format(NaN)`
+// throws RangeError, which would take the whole panel down (#2024).
+function instant(value) {
+  const at = Date.parse(value)
+  return Number.isFinite(at) ? dayAndTime(at) : ''
+}
 function weekdayNames(days) {
   const names = days.map(day => when(Date.UTC(2024, 0, day), { weekday: 'short', timeZone: 'UTC' }))
   return names.join(dateLocale().startsWith('zh') ? '、' : ', ')
@@ -59,7 +65,10 @@ export function timingText(task) {
   const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : ''
   switch (task.kind) {
     case 'after':
-    case 'at': return t('Once, {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) })
+    case 'at': {
+      const time = instant(task.scheduledAt)
+      return time === '' ? '' : t('Once, {time}', { time })
+    }
     case 'every': return everyText(task.everySeconds)
     case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
     case 'weekly': {
@@ -74,8 +83,14 @@ export function timingText(task) {
     default: return ''
   }
 }
-const nextText = task => (task.status === 'paused' ? t('Paused')
-  : task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished'))
+// When the task runs next, in one word where there is no next run. An unreadable instant
+// falls back to the repeat rule rather than throwing (#2024).
+const nextText = (task) => {
+  if (task.status === 'paused') return t('Paused')
+  if (task.status !== 'active') return t('Finished')
+  const at = instant(task.scheduledAt)
+  return at === '' ? timingText(task) : t('Next: {time}', { time: at })
+}
 
 // The last run, in one line: when, and how it went (src/host/schedules.js).
 export function lastRunText(run) {
@@ -401,16 +416,17 @@ export function BotSchedules({ bot, roster, actions }) {
         }))
 }
 
-// The details panel's line: the Bot's next tasks, or how to add one.
+// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
+// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
 export function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions)
-  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
+  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
   return h('div', null,
     h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
     tasks.length === 0
       ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
       : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
-          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
+          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task))))))
 }
 
 export const SCHEDULE_CSS = `
