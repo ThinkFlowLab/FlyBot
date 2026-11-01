@@ -22,6 +22,7 @@ import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
 import { codePoints } from './text.js'
+import { cut } from '../shared/text-boundary.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
 // result-ready still waits for the requester: prune must not evict it with terminals (#111).
@@ -367,7 +368,7 @@ export function install(rt) {
     for (let i = from + 1; i <= goal; i++) {
       const next = WALK[i]
       transition(task, next, actor, extra)
-      if (next === 'result-ready') task.result = { kind: 'summary', summary: (task.note || 'Completed').slice(0, 2000) }
+      if (next === 'result-ready') task.result = { kind: 'summary', summary: cut(task.note || 'Completed', 2000).text }
     }
     if (target === 'accepted') {
       settleOverall(task)
@@ -1426,7 +1427,7 @@ export function install(rt) {
           ownerBotId: botId,
           // workBotId is the specialist on the exchange; assigned with #55 wiring (#111).
           title: readTitle(body.title),
-          ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: body.criteria.slice(0, 2000) } : {}),
+          ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: cut(body.criteria, 2000).text } : {}),
           origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },
           actors: [{ status: 'open', at: stamp(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
         }
@@ -1481,7 +1482,7 @@ export function install(rt) {
         // Read the evidence before the transition so a malformed write leaves the task where it is.
         const links = readLinks(body.links)
         transition(task, 'result-ready', actor)
-        task.result = { kind: 'summary', summary: String(body.summary ?? '').slice(0, 2000), ...(links.length ? { links } : {}) }
+        task.result = { kind: 'summary', summary: cut(String(body.summary ?? ''), 2000).text, ...(links.length ? { links } : {}) }
         await save()
         return view(task)
       }
