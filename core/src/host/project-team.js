@@ -14,6 +14,7 @@
 // dossier panel draws, so it carries exactly those keys and nothing that names an owner, a working
 // folder or a stored secret.
 import { rolesOf } from './project-board.js'
+import { cut } from './text.js'
 
 export const DOSSIER_LIMITS = { persona: 4000, memoryHead: 4000, topics: 64, skills: 64, rooms: 32, name: 200, role: 120, model: 200, color: 64 }
 
@@ -45,7 +46,7 @@ export function install(rt) {
   const roomsOf = (bot, project) => Object.values(rt.state?.rooms ?? {})
     .filter(room => room !== null && typeof room === 'object' && Array.isArray(room.members) && room.members.includes(bot.id))
     .filter(room => rt.projectOfMember?.('group', room.id)?.id === project.id)
-    .map(room => ({ id: text(room.id), name: text(room.name).slice(0, 200) }))
+    .map(room => ({ id: text(room.id), name: cut(text(room.name), 200).text }))
     .slice(0, DOSSIER_LIMITS.rooms)
 
   const rowOf = (botId, project) => {

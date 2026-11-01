@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { createNotifier } from './notify.js'
 import { APP_SECRET_SECRET, appCredentials, createInbound } from './feishu-inbound.js'
 import { createFeishuTransport } from './feishu-sdk.js'
+import { cut } from './text.js'
 
 export const GITHUB = 'github'
 export const GITHUB_SECRET = 'GITHUB_TOKEN'
@@ -200,7 +201,7 @@ export async function composioSearchApps(apiKey, { api = COMPOSIO_DEFAULTS.api, 
   for (const item of items) {
     const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
     if (!APP_SLUG.test(slug) || found.has(slug)) continue
-    const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 80) : slug
+    const name = typeof item.name === 'string' && item.name.trim() !== '' ? cut(item.name.trim(), 80).text : slug
     found.set(slug, { slug, name })
   }
   return [...found.values()].slice(0, MAX_FOUND)
