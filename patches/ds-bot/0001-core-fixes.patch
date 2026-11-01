@@ -1397,7 +1397,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Once, {time}': '一次，{time}',
    'Every day at {time}': '每天 {time}',
    'Every {days} at {time}': '每{days} {time}',
-@@ -784,7 +784,21 @@ const ZH = {
+@@ -784,8 +784,24 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1417,8 +1417,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Finished: '已结束',
 +  Resume: '继续',
    'in {name}': '在 {name}',
++  '1 more room': '还有 1 个房间',
++  '{count} more rooms': '还有 {count} 个房间',
    'Click again to delete': '再点一次删除',
    'Delete task': '删除任务',
+   Once: '一次',
 @@ -794,6 +794,7 @@ const ZH = {
    minutes: '分钟',
    hours: '小时',
@@ -1693,7 +1696,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  // The groups a Bot is at work in.
-@@ -44,7 +44,7 @@ export function botGroupWork(botId, work, roster) {
+@@ -44,10 +44,14 @@ export function botGroupWork(botId, work, roster) {
    return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries]) => {
      const entry = entries.find(item => item.botId === botId)
      const room = roster.roomsById[roomId]
@@ -1702,6 +1705,13 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
    })
  }
  
++// The rooms past the four rows, said in the same column: the summary line states what it cut
++// instead of the dock simply ending (#2043).
++export const moreRooms = count => (count === 1 ? t('1 more room') : t('{count} more rooms', { count }))
++
+ export function summaryText(busy) {
+   const asks = busy.filter(entry => entry.state === 'ask')
+   const workers = busy.filter(entry => entry.state === 'work')
 @@ -57,7 +57,7 @@ export function summaryText(busy) {
        : asks.length === 2 ? t('{first} and {second} are waiting for your approval', { first: names[0], second: names[1] })
          : t('{first}, {second} and {count} more are waiting for your approval', { first: names[0], second: names[1], count: asks.length - 2, total: asks.length })
@@ -1752,7 +1762,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  // Above a group's composer: who is at work here, and a line for the rest; both open the
-@@ -106,11 +106,11 @@ export function MemberDock({ sessionId, useRoster, useWork, actions }) {
+@@ -106,12 +106,17 @@ export function MemberDock({ sessionId, useRoster, useWork, actions }) {
      const { rows, rest } = splitBusy(busy)
      const open = () => actions.showDetails(sessionId)
      return h('div', { ref, className: 'bt-mw-dock-stack' },
@@ -1761,12 +1771,20 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 +      rows.map(entry => h(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
 +      rest.length > 0 ? h(SummaryLine, { busy: rest, now, onOpen: open }) : null)
    }
-   return h('div', { ref, className: 'bt-mw-dock-stack' }, groups.slice(0, ROWS_MAX).map(item => h(WorkRow, {
+-  return h('div', { ref, className: 'bt-mw-dock-stack' }, groups.slice(0, ROWS_MAX).map(item => h(WorkRow, {
 -    key: item.room.id, bot, tool: item.tool, label: t('in {name}', { name: item.room.name }), at: item.since, now, onOpen: () => actions.openSession(item.room.id),
-+    key: item.room.id, bot, tool: item.tool, step: item.step, label: t('in {name}', { name: item.room.name }), at: item.since, now, onOpen: () => actions.openSession(item.room.id),
-   })))
+-  })))
++  const rows = groups.slice(0, ROWS_MAX)
++  const more = groups.length - rows.length
++  return h('div', { ref, className: 'bt-mw-dock-stack' },
++    rows.map(item => h(WorkRow, {
++      key: item.room.id, bot, tool: item.tool, step: item.step, label: t('in {name}', { name: item.room.name }), at: item.since, now, onOpen: () => actions.openSession(item.room.id),
++    })),
++    more > 0 ? h('div', { className: 'bt-mw-row bt-mw-line bt-mw-static' },
++      h('span', { className: 'bt-mw-row-text' }, moreRooms(more))) : null)
  }
  
+ // The rows line up with the transcript's column, whose width and gutters are the shell's.
 @@ -148,6 +148,13 @@ function useNow(active) {
  
  const since = (now, at) => (typeof at === 'number' && now - at >= 60000 ? ` · ${elapsedLabel(now - at)}` : '')
@@ -1823,7 +1841,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  export function useMemberWork(room, useWork) {
-@@ -201,9 +201,11 @@ export function useMemberWork(room, useWork) {
+@@ -201,11 +201,15 @@ export function useMemberWork(room, useWork) {
    return { entries, now }
  }
  
@@ -1835,7 +1853,11 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 -.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
  .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
  .bt-mw-row:hover{background:var(--bt-hover)}
++.bt-mw-static{cursor:default;padding-inline-start:38px}
++.bt-mw-static:hover{background:none}
  .bt-mw-row>.bt-mark{flex:none}
+ .bt-mw-row-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .bt-mw-row-time{flex:none;font-size:12px;color:var(--bt-ink-3);white-space:nowrap}
 @@ -213,9 +213,7 @@ export const MEMBER_CSS = `
  .bt-mw-stop{flex:none;height:22px;padding:0 10px;border:1px solid var(--bt-line,rgba(0,0,0,.12));border-radius:11px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer}
  .bt-mw-stop:hover{background:var(--bt-hover)}
@@ -10643,7 +10665,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  })
  
  test('a Bot\'s own chat shows the groups it is at work in, unless its own chat runs', () => {
-@@ -82,3 +82,170 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
+@@ -82,3 +82,232 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
    assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
    assert.equal(dock('b', away), null)
  })
@@ -10813,6 +10835,68 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 +  const rule = sheet.match(/(?:^|\n)\.bt-mw-code\{([^}]*)\}/)?.[1] ?? ''
 +  assert.match(rule, /white-space:pre-wrap/, 'the block wraps the command it shows')
 +  assert.match(rule, /max-height:120px/, 'the block scrolls inside the height the card holds')
++})
++
++// #2043: the Bot's own chat drew four rooms and then stopped, so the fifth and later rooms
++// vanished with no count while the same dock in a group chat already drew a summary line.
++const ownTeam = count => ({
++  byId: { a: { id: 'a', name: 'Anvil' } },
++  roomsById: Object.fromEntries(Array.from({ length: count }, (_, i) => {
++    const id = `w${i + 1}`
++    return [id, { id, name: `Room ${i + 1}`, members: ['a'] }]
++  })),
++})
++const ownWork = count => ({
++  bots: {},
++  rooms: Object.fromEntries(Array.from({ length: count }, (_, i) => [`w${i + 1}`, [{ botId: 'a', since: 1, tool: 'edit' }]])),
++  approvals: [],
++})
++const ownDock = (count) => {
++  const roster = ownTeam(count)
++  const work = ownWork(count)
++  return expand(MemberDock({ sessionId: 'a', useRoster: pick => pick(roster), useWork: pick => pick(work), actions: {} }))
++}
++const moreLine = (tree) => nodes(tree, node => String(node.props.className ?? '').split(' ').includes('bt-mw-line'))
++
++test('the own-chat dock counts the rooms it drops past four instead of ending silently (#2043)', () => {
++  const five = ownDock(5)
++  assert.deepEqual(rowLabels(five), ['in Room 1 · Writing changes…', 'in Room 2 · Writing changes…', 'in Room 3 · Writing changes…', 'in Room 4 · Writing changes…'])
++  const [one] = moreLine(five)
++  assert.ok(one, 'the fifth room is counted, not dropped silently')
++  assert.notEqual(one.type, 'button', 'the line is not a button: the Bot details panel lists no rooms to open')
++  assert.equal(textOf(one), '1 more room')
++
++  const eleven = ownDock(11)
++  assert.deepEqual(rowLabels(eleven).length, 4)
++  const [seven] = moreLine(eleven)
++  assert.ok(seven)
++  assert.equal(textOf(seven), '7 more rooms')
++
++  // Four rooms fit exactly, so there is nothing to count and the dock is what it was.
++  const four = ownDock(4)
++  assert.equal(rowLabels(four).length, 4)
++  assert.equal(moreLine(four).length, 0, 'a full page with nothing behind it counts nothing')
++
++  const two = ownDock(2)
++  assert.deepEqual(rowLabels(two), ['in Room 1 · Writing changes…', 'in Room 2 · Writing changes…'])
++  assert.equal(moreLine(two).length, 0, 'the two-room own-chat case keeps its DOM')
++})
++
++test('the counted line does not look clickable, and the group line still does', () => {
++  const [line] = moreLine(ownDock(5))
++  assert.notEqual(line.type, 'button')
++  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-static\{([^}]*)\}/)?.[1] ?? ''
++  assert.match(rule, /cursor:default/, 'a line that opens nothing does not show the row pointer')
++  // The group-chat summary line keeps its button shape.
++  const work = {
++    bots: {},
++    rooms: { r1: Array.from({ length: 6 }, (_, i) => ({ botId: `m${i}`, since: 1, tool: 'edit' })) },
++    approvals: [],
++  }
++  const roster = { byId: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`m${i}`, { id: `m${i}`, name: `M${i}` }])), roomsById: { r1: { id: 'r1', name: 'Ops', members: Array.from({ length: 6 }, (_, i) => `m${i}`) } } }
++  const group = expand(MemberDock({ sessionId: 'r1', useRoster: pick => pick(roster), useWork: pick => pick(work), actions: {} }))
++  const [summary] = moreLine(group)
++  assert.equal(summary.type, 'button', 'the group summary line still opens the details panel')
 +})
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js

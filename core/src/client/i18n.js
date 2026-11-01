@@ -1267,6 +1267,8 @@ const ZH = {
   Finished: '已结束',
   Resume: '继续',
   'in {name}': '在 {name}',
+  '1 more room': '还有 1 个房间',
+  '{count} more rooms': '还有 {count} 个房间',
   'Click again to delete': '再点一次删除',
   'Delete task': '删除任务',
   Once: '一次',
