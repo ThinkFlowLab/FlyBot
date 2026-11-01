@@ -2503,6 +2503,30 @@ test('a settings patch leaves one visible line in the room, and only when a valu
   assert.equal(last().text, 'Chief A updated the group notice')
 })
 
+// #1971 follow-up: `showSettings` (`roster.js:515`) reads the signed-in member before the room's implicit
+// owner, and the settings cases above cannot see that order — there the actor and the owner are both
+// `Alice`, so either step writes the same name. A distinct signer makes the two differ: with the actor
+// moved behind `implicitRoomOwner` this save is announced as the owner's, not as the member's who made it.
+test('#1971: a settings line names the member who saved, not the room owner', async (t) => {
+  const { rt } = host(t, JSON.parse(JSON.stringify(TEAM)))
+  installRoster(rt)
+  await rt.load()
+  // Alice is the room's owner; Bob redeems a second invitation and is only a signed-in member.
+  const inviteA = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  await rt.redeemInvitation(inviteA.token, { displayName: 'Alice' })
+  const inviteB = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const bob = await rt.redeemInvitation(inviteB.token, { displayName: 'Bob' })
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+
+  await rt.updateRoom('war', { notice: 'Stand up' }, undefined, actorB)
+
+  assert.equal(events.length, 1, `one save is one line: ${JSON.stringify(events)}`)
+  assert.deepEqual(events[0].sender, { id: 'face-notice', name: 'Bob' }, 'the line is drawn by the member who saved')
+  assert.equal(events[0].text, 'Bob updated the group notice', 'the signer is named, not the room owner')
+})
+
 // #1965: an unnamed group follows its members, so a seat change moves the title without anyone asking
 // for a rename. The seat change already draws its own joined line; the room must not also say it was
 // renamed, which is what a settings save looks like.
@@ -3242,6 +3266,43 @@ test('a member rename reaches the guest already seated, once', async (t) => {
   assert.equal(sent.length, 1, 'one envelope, not one per guest record')
 })
 
+// #1971: `updateBot` follows a rename into every room whose `members` hold that Bot (`roster.js:202`), so
+// saving the name a member already holds still runs `followMemberNames`. Only `if (next === room.name)
+// continue` (`:288`) keeps that write-back quiet: without it the unchanged name is assigned and pushed as
+// one more `join`, and on the receive side a join carries a higher `seq`, which reopens a mirror the guest
+// had hidden itself (#1167, #1939). The first rename below is the contrast that keeps the second assertion
+// from being satisfied by "the join was never sent at all".
+test('#1971: a member renamed to the name it already holds sends no join', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  rt.resolveAgent = async () => ({ session: 'session' })
+  rt.chatOf = id => id
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  sent.length = 0
+  const shares = () => sent.filter(msg => msg.via === 'room-share')
+
+  // The name really moved: one join, carrying the new room name.
+  await rt.updateBot('chief-b', { name: 'Chief C' })
+  assert.equal(room.name, 'Alice, Chief A, Chief C, Coder', 'the unnamed group follows its members')
+  assert.equal(shares().length, 1, 'the rename that moved the name reaches the guest, once')
+  sent.length = 0
+
+  // The write-back: the same name saved again, so the computed name is what the room already has.
+  await rt.updateBot('chief-b', { name: 'Chief C' })
+  assert.equal(room.name, 'Alice, Chief A, Chief C, Coder', 'the computed name did not move')
+  assert.equal(shares().length, 0, 'a rename that leaves the computed name alone sends nothing')
+})
+
 // Control 1: a group with a chosen name does not follow its members, so a rename is not a change to it.
 test('a rename in a named group sends nothing', async (t) => {
   const { rt, sent } = host(t, TEAM)
@@ -3285,7 +3346,8 @@ test('a rename in a group with no remote guest sends nothing', async (t) => {
   assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'no guest to tell')
 })
 
-// Control 3: a Bot that sits in no group is renamed — every room's name is what it was, so is the wire.
+// Control 3: a Bot that sits in no group is renamed. This pins the member filter at `:202` — the rename
+// hands `followMemberNames` an empty room list — not the `:288` guard, which the #1971 case above pins.
 test('a rename that leaves the computed name alone sends nothing', async (t) => {
   const { rt, sent } = host(t, TEAM)
   installRoster(rt)
