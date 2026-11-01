@@ -3385,7 +3385,7 @@ test('a restart migrates an unnamed room title with the formula that sees the ro
 // no session machinery, so the two module-level paths are added here: a workspace registry, a Session
 // controller and a title recorder.
 function titledHost(t, saved) {
-  const { rt } = host(t, saved)
+  const { rt, sent } = host(t, saved)
   const titles = []
   const workspaces = new Map()
   let sessions = 0
@@ -3406,7 +3406,7 @@ function titledHost(t, saved) {
   })
   installRoster(rt)
   rt.resolveAgent = async id => ({ session: { id } })
-  return { rt, titles }
+  return { rt, titles, sent }
 }
 
 // The one owner of TEAM; authz is not enforced until a member session exists, so a plain actor is enough
@@ -3510,4 +3510,211 @@ test('#1995: an unnamed group without guests is renamed once per seat change', a
   assert.equal(room.name, 'Alice, Chief A, Chief B, Writer A', 'the added member is in the name')
   assert.equal(titles.length, 1, 'one seat change is one rename, not a second from the settings save')
   assert.deepEqual(titles.map(entry => entry.name), ['Alice, Chief A, Chief B, Writer A'])
+})
+
+// #2004: #1999 moved an unnamed group's name with its seats here, but the name only ever left this home
+// on an envelope addressed to the seat that changed; a guest already seated kept the copy its last
+// envelope carried. These cases read the other home's side the way `applyInboundRoomShare` does: an
+// envelope addressed to a seat replaces that seat's copy of `name`, and a `join` is what a seat counts.
+const WRITER = {
+  handle: '@writer.cy.home',
+  name: 'Writer',
+  home: '@cy.home',
+  homeName: 'Cy',
+  owner: 'Cy',
+  plugin: 'social',
+  remote: true,
+}
+
+function guestSide(sent) {
+  const copies = new Map()
+  let cursor = 0
+  return {
+    copies,
+    // The joins each seat received since the last read, and the name its copy ends on.
+    reads() {
+      const joins = new Map()
+      for (const msg of sent.slice(cursor)) {
+        const data = parseRoomShare(msg?.text)
+        if (!data || !msg.to) continue
+        if (typeof data.name === 'string') copies.set(msg.to, data.name)
+        if (data.op === 'join') joins.set(msg.to, (joins.get(msg.to) ?? 0) + 1)
+      }
+      cursor = sent.length
+      return joins
+    },
+  }
+}
+
+test('#2004: a seat change that moves the name reaches the guest already seated, once', async (t) => {
+  const { rt, titles, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER, WRITER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  let joins = guest.reads()
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the arriving guest is told the name it arrives under')
+  assert.equal(joins.get(CODER.handle), 1, 'an arriving seat is told once, not twice')
+
+  // A second guest sits: the guest already in the room has to end on the name the host holds, and one
+  // change may cost it one join — the arriving seat keeps its own targeted join and gets no second one.
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: WRITER.handle }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder, Writer')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest already seated holds the name the host moved to')
+  assert.equal(joins.get(CODER.handle), 1, 'one seat change costs a seated guest one join')
+  assert.equal(guest.copies.get(WRITER.handle), room.name, 'the arriving guest is told the name it arrives under')
+  assert.equal(joins.get(WRITER.handle), 1, 'the arriving seat is told once, not twice')
+
+  // The first guest leaves: the guest still seated has to hear whatever the name became.
+  await rt.removeRoomParticipant('war', { kind: 'bot', handle: CODER.handle }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer')
+  assert.equal(guest.copies.get(WRITER.handle), room.name, 'the guest that stayed holds the name the host holds after a leave')
+  assert.equal(joins.get(WRITER.handle), 1, 'one leave costs a seated guest one join')
+
+  // And it sits again: the guest that stayed hears the name grow, the returning seat hears it once.
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer, Coder')
+  assert.equal(guest.copies.get(WRITER.handle), room.name, 'the returning seat leaves the guest that stayed on the host name')
+  assert.equal(joins.get(WRITER.handle), 1, 'one return costs a seated guest one join')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the returning guest is told the name it arrives under')
+  assert.equal(joins.get(CODER.handle), 1, 'the returning seat is told once, not twice')
+  assert.equal(titles.length, 4, 'the Session followed each of the four seat changes, no more')
+})
+
+test('#2004: a named group sends its seated guests nothing for a seat change', async (t) => {
+  const { rt, titles, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER, WRITER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  let joins = guest.reads()
+  assert.equal(joins.get(CODER.handle), 1, 'the arriving seat gets the one join it is owed')
+  assert.equal(guest.copies.get(CODER.handle), 'War room')
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: WRITER.handle }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'War room', 'a chosen name does not follow the seats')
+  assert.equal(joins.get(CODER.handle) ?? 0, 0, 'a name that did not move is not resent to a seated guest')
+  assert.equal(joins.get(WRITER.handle), 1, 'the arriving seat is told once')
+
+  await rt.removeRoomParticipant('war', { kind: 'bot', handle: CODER.handle }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'War room')
+  assert.equal(joins.get(WRITER.handle) ?? 0, 0, 'a leave that did not move the name sends nothing either')
+  assert.equal(titles.length, 0, 'and no Session is renamed for a chosen name')
+})
+
+test('#2004: a seat that leaves by its own envelope moves the name for the guests still seated', async (t) => {
+  const { rt, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER, WRITER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: WRITER.handle }, ALICE)
+  guest.reads()
+
+  // The guest's own home says it left; this home never sends that leave itself.
+  await rt.applyInboundRoomShare({
+    text: encodeRoomShare({ op: 'leave', roomId: 'war', name: room.name, invitedHandle: CODER.handle, seq: room.seq ?? 0 }),
+    fromHandle: CODER.handle,
+    fromHome: '@bob.home',
+    localBotId: 'chief-a',
+  })
+  const joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer', 'the leave moves the name here')
+  assert.equal(rt.state.rooms.war.participants.find(p => p.handle === CODER.handle)?.leftSeq !== undefined, true, 'the seat is gone from the roster')
+  assert.equal(guest.copies.get(WRITER.handle), room.name, 'the guest still seated hears the name the host holds')
+  assert.equal(joins.get(WRITER.handle), 1, 'one leave costs a seated guest one join')
+})
+
+test('#2004: a grant revoked under a guest moves the name for the guests still seated', async (t) => {
+  const { rt, titles, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  await grantToFriend(rt, 'spec-a')
+  rt.applyParticipants(room, [
+    { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice' },
+    { kind: 'bot', id: 'chief-a', role: 'admin' },
+    { kind: 'bot', id: 'chief-b', role: 'member' },
+    { kind: 'bot', id: 'spec-a', role: 'member' },
+    { kind: 'bot', remote: true, handle: CODER.handle },
+  ], ALICE)
+  room.name = rt.autoRoomName(room.members, room)
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer A, Coder', 'the fixture starts with the guest in the name')
+  const guest = guestSide(sent)
+
+  await rt.setGrants('spec-a', [])
+  await rt.evictUnshared('spec-a')
+  const joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the eviction moves the name here')
+  assert.notEqual(room.participants.find(p => p.id === 'spec-a')?.leftSeq, undefined, 'the Bot left the room')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest still seated hears the name the host holds')
+  assert.equal(joins.get(CODER.handle), 1, 'one eviction costs a seated guest one join')
+  assert.deepEqual(titles.map(entry => entry.name), ['Alice, Chief A, Chief B, Coder'], 'and the Session follows once')
+})
+
+// #884/#1064: a link's claim seats a home's Bots in a room that already holds a guest. The seats are told
+// by their own join; the guest that was already there owes the moved name, exactly once.
+test('#2004: a claim that seats a Bot moves the name for the guest already in the room', async (t) => {
+  const { rt, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  guest.reads()
+  const ticket = 'Tkt0001AbCdEfGhIjKlMnO'
+  room.localInvites = [{ ticket, server: true, botId: 'chief-a', createdAt: Date.now(), homes: {} }]
+  rt.roomInviteServer = {
+    verify: async () => ({
+      roomId: 'war',
+      claimers: [{
+        home: '@bob.home',
+        bots: ['@chief.bob.home'],
+        members: [{ handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob' }],
+      }],
+    }),
+  }
+
+  const answered = await rt.applyInboundRoomShare({
+    text: encodeRoomShare({ op: 'ask', accept: true, ticket, roomId: 'war', bots: ['@chief.bob.home'] }),
+    fromHandle: '@chief.bob.home',
+    fromHome: '@bob.home',
+    localBotId: 'chief-a',
+  })
+  const joins = guest.reads()
+  assert.equal(answered?.accepted, true, 'the claim seats its Bot')
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder, Chief', 'the claim moves the name here')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest already in the room hears the name the host holds')
+  assert.equal(joins.get(CODER.handle), 1, 'one claim costs a seated guest one join')
+  assert.equal(guest.copies.get('@chief.bob.home'), room.name, 'the claimed seat is told the name it is seated under')
+  assert.equal(joins.get('@chief.bob.home'), 1, 'the claimed seat is told once, not twice')
 })

@@ -422,12 +422,15 @@ export function install(rt) {
   // await still saves the right one; only the Session rename is deferred, and only when the name moved.
   // A mirror of another home's room takes its name from that home's envelope and a face-to-face room has
   // its own title, so neither is recomputed here.
+  // The answer says whether the name moved. The other homes only ever heard a name on an envelope
+  // addressed to the seat that changed, so a guest already seated keeps the copy it arrived with while
+  // this home moves on: a caller that sees `true` owes those guests one broadcast (#2004).
   const settleRoomName = (room) => {
-    if (room.named || room.origin === 'inbound-share' || isFaceRoom(room)) return Promise.resolve()
+    if (room.named || room.origin === 'inbound-share' || isFaceRoom(room)) return Promise.resolve(false)
     const next = rt.autoRoomName(room.members, room)
-    if (next === room.name) return Promise.resolve()
+    if (next === room.name) return Promise.resolve(false)
     room.name = next
-    return rt.retitleRoom(room)
+    return Promise.resolve(rt.retitleRoom(room)).then(() => true)
   }
 
   const materialize = (room) => {
@@ -749,10 +752,14 @@ export function install(rt) {
         }
       }
       syncMembers(room)
-      await settleRoomName(room)
+      const moved = await settleRoomName(room)
       await rt.save()
-      if (record?.remote && record.handle) void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
-      else if (record?.kind === 'bot' && !record.remote) reshareRoster(room)
+      if (record?.remote && record.handle) {
+        void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
+        // #2004: the arrival moved the name and only the arriving seat heard it; the guests already in
+        // the room get the same name once, and the arriving seat keeps its one targeted join.
+        if (moved) reshareRoster(room, { except: record.handle })
+      } else if (record?.kind === 'bot' && !record.remote) reshareRoster(room)
       return room
     })
   }
@@ -800,7 +807,7 @@ export function install(rt) {
         rt.dropGroupSession?.(room, id)
       }
       syncMembers(room)
-      await settleRoomName(room)
+      const moved = await settleRoomName(room)
       await rt.save()
       if (me.remote && isTicketSeat(me)) {
         await settleTicket(room, me.ticket, me).catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
@@ -809,6 +816,9 @@ export function install(rt) {
       } else if (kind === 'bot' && !me.remote) {
         reshareRoster(room)
       }
+      // #2004: the leave moved the name, so the guests still in the room get the copy the host holds. The
+      // seat that left is already out of `currentParticipants`; a local Bot's leave sent its roster above.
+      if (me.remote && moved) reshareRoster(room)
       return room
     })
   }
@@ -1038,10 +1048,12 @@ export function install(rt) {
 
   // #904: a guest's copy learns this home's membership only from a fresh roster. A local add or remove
   // therefore has to send one; without this the guest list never changes and a removed Bot keeps writing.
-  function reshareRoster(room) {
+  // #2004: `except` is the seat a targeted join already reached, so a name that moved together with that
+  // seat costs it one envelope and not two.
+  function reshareRoster(room, { except } = {}) {
     if (!room || room.origin === 'inbound-share' || isFaceRoom(room)) return
     if (!(room.participants ?? []).some(p => p.remote)) return
-    void Promise.resolve(rt.notifyRoomShare?.(room, { op: 'join' }))
+    void Promise.resolve(rt.notifyRoomShare?.(room, except === undefined ? { op: 'join' } : { op: 'join', except }))
       .catch(error => rt.warn?.('ds-bot: a membership change was not shared: %s', error))
   }
 
@@ -1298,11 +1310,15 @@ export function install(rt) {
 
   // Membership notice: the add/remove click is the owner's consent, so this does not wait
   // for a chat line. Bot Social is 1:1; the envelope is the group record the other FlyBot sees.
-  rt.notifyRoomShare = async function notifyRoomShare(room, { op = 'join', handle } = {}) {
+  // #2004: `except` names the seats a targeted envelope already reached, so one seat change never costs
+  // the seat it changed two joins: its own, and the one that carries the name to the others.
+  rt.notifyRoomShare = async function notifyRoomShare(room, { op = 'join', handle, except } = {}) {
     if (!room || isFaceRoom(room) || room.origin === 'inbound-share') return []
     const wanted = handle ? String(handle) : undefined
+    const skipped = except === undefined ? undefined : new Set((Array.isArray(except) ? except : [except]).map(String))
     const remotes = (op === 'leave' ? (room.participants ?? []) : currentParticipants(room))
       .filter(p => isRemoteParticipant(p) && (!wanted || p.handle === wanted || p.id === wanted))
+      .filter(p => !skipped || !(skipped.has(String(p.handle ?? p.id)) || skipped.has(String(p.id))))
     if (remotes.length === 0) return []
     const from = shareInviter(room)
     const results = []
@@ -1787,10 +1803,13 @@ export function install(rt) {
         })
       }
       syncMembers(room)
-      await settleRoomName(room)
+      const moved = await settleRoomName(room)
       // A poll reads this again every few seconds: a claim that is already seated must not rewrite the team.
       if (fresh.length > 0 || legacy || homesBefore !== JSON.stringify(homesOf(invite))) await rt.save?.()
-      return { fresh }
+      // #2004: the seats this claim just made are told by their own join, sent by the caller; the guests
+      // that were in the room before it are the ones the moved name has to reach.
+      if (moved) reshareRoster(room, { except: seats })
+      return { fresh, moved }
     })
     if (result.refused) return { refused: result.refused, bots: result.bots }
     return { seats, fresh: result.fresh }
@@ -1989,12 +2008,15 @@ export function install(rt) {
   // and the sender must be that seat's own Bot; anything else is dropped without a trace in the room.
   async function ingestSeatShare(room, seat, data) {
     if (data.op === 'leave') {
+      let moved = false
       await withRoomLock(async () => {
         markSeatLeft(room, seat)
         syncMembers(room)
-        await settleRoomName(room)
+        moved = await settleRoomName(room)
       })
       await rt.save?.()
+      // #2004: the seat left and the name moved with it; the guests still seated hear the new one.
+      if (moved) reshareRoster(room)
       if (isTicketSeat(seat)) await settleTicket(room, seat.ticket, seat)
       return { handled: true, room, left: seat.handle }
     }
@@ -2262,6 +2284,7 @@ export function install(rt) {
       if (!Array.isArray(room.participants) || !(hasRemote(room) || isCrossOwnerRoom(room, state))) continue
       for (const me of currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote && (botId === undefined || p.id === botId))) {
         if (mayShareRoom(state, room, me.id)) continue
+        let moved = false
         await withRoomLock(async () => {
           if (me.leftSeq !== undefined) return
           const line = append(room, { kind: 'left', who: me.displayName, authorId: me.id, authorKind: 'bot', text: '' })
@@ -2270,9 +2293,11 @@ export function install(rt) {
           if (room.seen) delete room.seen[me.id]
           rt.dropGroupSession?.(room, me.id)
           syncMembers(room)
-          await settleRoomName(room)
+          moved = await settleRoomName(room)
           changed = true
         })
+        // #2004: the eviction moved this room's name; the guests still seated hear it once.
+        if (moved) reshareRoster(room)
       }
     }
     if (changed) await rt.save()
