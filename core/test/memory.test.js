@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -1390,4 +1390,67 @@ test('#2006: an ask prompt keeps whole characters at its 2,000-unit bound', asyn
   const sent = requests[0].messages[0].content[0].text
   assert.equal(sent.isWellFormed(), true, `the ask prompt keeps half an emoji: ${kept(sent)}`)
   assert.ok(sent.endsWith(`${'q'.repeat(1999)}`), 'the prompt keeps the bound and drops the emoji whole')
+})
+
+// ---------------------------------------------------------------------------
+// #2057: a linked folder is not this team's memory.
+
+const captureWarnings = (t) => {
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  return () => lines.filter(line => line.includes('memory folder is not a plain directory'))
+}
+
+test('#2057: a team memory folder that is a symlink reads nothing, and says so once', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  writeFileSync(join(outside, 'x.md'), '# x\n\n- an entry from outside the home\n')
+  mkdirSync(join(home, 'memory'), { recursive: true })
+  symlinkSync(outside, join(home, 'memory', 'team'), 'dir')
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const folderWarnings = captureWarnings(t)
+  const { section, call, stop } = start({ home })
+  t.after(() => stop())
+  // Three reads: the prompt section is what carries memory into every request.
+  for (let round = 0; round < 3; round++) {
+    const text = section('b2')
+    assert.doesNotMatch(text, /an entry from outside the home/)
+    assert.doesNotMatch(text, /\[\[x\]\]/)
+    const view = (await call('memory-view', { botId: 'b2' })).value
+    assert.deepEqual(view.entries.filter(entry => entry.scope === 'team'), [])
+    assert.equal(view.sizes.team, 0)
+  }
+  const warned = folderWarnings()
+  assert.equal(warned.length, 1, 'one warning per folder per process, not one per read')
+  assert.ok(warned[0].includes(join(home, 'memory', 'team')), `the warning names the folder: ${warned[0]}`)
+  assert.match(warned[0], /keeping it empty$/)
+})
+
+test('#2057: a memory folder that was never created reads as empty and says nothing', async (t) => {
+  const folderWarnings = captureWarnings(t)
+  const { section, call, stop, home } = start()
+  t.after(() => stop())
+  assert.equal(existsSync(join(home, 'memory')), false)
+  assert.doesNotMatch(section('b2'), /an entry from outside/)
+  const view = (await call('memory-view', { botId: 'b2' })).value
+  assert.deepEqual(view.entries, [])
+  assert.deepEqual(folderWarnings(), [])
+})
+
+test('#2057: a real team memory folder keeps listing and reading, with no warning', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  mkdirSync(join(home, 'memory', 'team'), { recursive: true })
+  writeFileSync(join(home, 'memory', 'team', 'MEMORY.md'), '# Memory\n\n- Ships on Friday [added: 2026-11-01]\n')
+  writeFileSync(join(home, 'memory', 'team', 'travel.md'), '# travel\n\n- Flies from Hangzhou\n')
+  const folderWarnings = captureWarnings(t)
+  const { section, call, stop } = start({ home })
+  t.after(() => stop())
+  const view = (await call('memory-view', { botId: 'b2' })).value
+  const text = section('b2')
+  assert.match(text, /- Ships on Friday/)
+  assert.match(text, /Topics: \[\[travel\]\]/)
+  assert.deepEqual(view.entries.filter(entry => entry.scope === 'team').map(entry => entry.text), ['Ships on Friday', 'Flies from Hangzhou'])
+  assert.deepEqual(folderWarnings(), [])
 })
