@@ -8862,7 +8862,7 @@ function useBoardTasks(actions, scope) {
   const [own, setOwn] = (0, import_react15.useState)([]);
   const [groupTasks, setGroupTasks] = (0, import_react15.useState)([]);
   const [archive, setArchive] = (0, import_react15.useState)([]);
-  const key = scope?.kind === "group" ? `group:${scope.roomId}` : "own";
+  const key = scope?.kind === "group" ? `group:${scope.roomId}` : `bot:${scope.botId ?? ""}`;
   (0, import_react15.useEffect)(() => {
     let stopped = false;
     const load = () => {

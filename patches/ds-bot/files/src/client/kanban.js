@@ -167,7 +167,9 @@ export function useBoardTasks(actions, scope) {
   const [own, setOwn] = useState([])
   const [groupTasks, setGroupTasks] = useState([])
   const [archive, setArchive] = useState([])
-  const key = scope?.kind === 'group' ? `group:${scope.roomId}` : 'own'
+  // P-360: a Bot board's archive page names that Bot, so the key has to name it too — a shared
+  // `'own'` kept the first Bot's page (and its poll) after the rail switched to another Bot.
+  const key = scope?.kind === 'group' ? `group:${scope.roomId}` : `bot:${scope.botId ?? ''}`
   useEffect(() => {
     let stopped = false
     const load = () => {
