@@ -299,7 +299,9 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
           },
         }, '×') : null,
         h('span', { className: `bt-wf-chip ${state}` }, statusLabel(state)),
-        h('span', { className: 'bt-wf-av', style: { background: COLORS[node.name] ?? '#4d6bfe' } }, (node.name ?? '?').slice(0, 1)),
+        // #2017: one code point, not one UTF-16 unit — a name that starts with an emoji
+        // would otherwise put half a surrogate pair in the circle.
+        h('span', { className: 'bt-wf-av', style: { background: COLORS[node.name] ?? '#4d6bfe' } }, Array.from(String(node.name ?? '').trim())[0] ?? '?'),
         h('span', { className: 'bt-wf-copy' },
           h('span', { className: 'bt-wf-name' }, node.name),
           h('span', { className: 'bt-wf-role' }, node.role ?? '')))

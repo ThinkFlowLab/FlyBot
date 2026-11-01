@@ -352,6 +352,36 @@ test('#1789: a node the run skipped is named Skipped, the word the Room uses', (
   }
 })
 
+// #2017: the avatar took the name's first UTF-16 unit, so a name starting with an emoji
+// showed the lone surrogate `\ud83d` in place of the emoji. One code point is what the circle
+// shows, and a node with no name still falls back to `?`.
+test('#2017: a node avatar takes the first code point, so an emoji name is whole', () => {
+  const lane = {
+    id: 'wf-rocket',
+    name: 'Rocket lane',
+    chain: '🚀 Deployer → Nameless',
+    nodes: [
+      { id: 'launch', name: '🚀 Deployer', role: '发布', x: 0, y: 0 },
+      { id: 'nameless', role: '无名', x: 0, y: 108 },
+    ],
+    edges: [{ from: 'launch', to: 'nameless' }],
+  }
+  const view = renderView({
+    phase: 'ready', pack: { ok: true, templates: [], workflows: [lane] },
+    opened: { source: 'own', id: 'wf-rocket' }, error: '', roster: { bots: [] },
+  })
+  const avatarOf = (id) => {
+    const card = all(view).find((entry) => entry.props?.['data-node'] === id)
+    const avatar = card ? all(card).find((entry) => entry.props?.className === 'bt-wf-av') : null
+    assert.ok(avatar, `the ${id} node is drawn with an avatar`)
+    return text(avatar)
+  }
+  const rocket = avatarOf('launch')
+  assert.equal(rocket, '🚀')
+  assert.equal(rocket.isWellFormed(), true, 'the avatar is not half a surrogate pair')
+  assert.equal(avatarOf('nameless'), '?')
+})
+
 test('an empty list and a failed read are settled states, not a permanent reading line', () => {
   const empty = renderView({ phase: 'empty', pack: { templates: [], workflows: [] }, error: '' })
   assert.match(text(empty), /No workflows yet/)

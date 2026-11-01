@@ -16450,7 +16450,9 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
                 }
               }, "×") : null,
               (0, import_react37.createElement)("span", { className: `bt-wf-chip ${state}` }, statusLabel2(state)),
-              (0, import_react37.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, (node.name ?? "?").slice(0, 1)),
+              // #2017: one code point, not one UTF-16 unit — a name that starts with an emoji
+              // would otherwise put half a surrogate pair in the circle.
+              (0, import_react37.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, Array.from(String(node.name ?? "").trim())[0] ?? "?"),
               (0, import_react37.createElement)(
                 "span",
                 { className: "bt-wf-copy" },
