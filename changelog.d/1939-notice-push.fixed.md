@@ -1,1 +1,0 @@
-The notice the host edits in a group's settings now reaches the friends' Bots already in the room ([#1939](https://github.com/ThinkFlowLab/FlyBot/issues/1939)): editing or clearing it pushes one room-share `join` with the same roster and only the notice changed, and a settings save that leaves the notice alone sends nothing.

@@ -1,1 +1,0 @@
-A clipped or excerpted line no longer ends on half of an emoji ([#1907](https://github.com/ThinkFlowLab/FlyBot/issues/1907)): the host cuts `read_own_chat`, checkpoint and handoff lines, the memory review input and the error sentences on a code point boundary, so what a client receives is the whole character instead of a replacement character.

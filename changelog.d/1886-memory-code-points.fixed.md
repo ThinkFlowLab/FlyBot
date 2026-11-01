@@ -1,1 +1,0 @@
-The Project memory box now counts its 600-character bound in characters rather than UTF-16 units, so a note of 600 emoji — 1,200 units — is saved instead of refused as *A Project memory entry is at most 600 characters*, and 601 characters is still refused in both writers ([#1886](https://github.com/ThinkFlowLab/FlyBot/issues/1886)).
