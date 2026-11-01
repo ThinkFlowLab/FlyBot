@@ -810,6 +810,15 @@ export function install(rt) {
     }
     // Not awaited: renaming a session must not hold up the first roster read.
     for (const room of stale) void rt.retitleRoom(room)
+    // #2010: a guest already seated arrived with the name this file had then, and the migrated one
+    // lives only here, so the boot sends the same one `join` every other rename sends (#1949). After
+    // the save above, so the envelope carries the name the file now holds; a send that fails warns and
+    // never leaves the boot without its state. A room with no remote guest, a mirror and a
+    // face-to-face room answer nothing on their own.
+    for (const room of stale) {
+      void Promise.resolve(rt.notifyRoomShare?.(room, { op: 'join' }))
+        .catch(error => warn('ds-bot: the loaded name of %s was not shared: %s', room.name, error))
+    }
   })()
 
   // The one takeover line, printed from either entry point: refresh() when a reading host

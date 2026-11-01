@@ -3380,6 +3380,112 @@ test('a restart migrates an unnamed room title with the formula that sees the ro
   await fifth.rt.load()
   assert.equal(readFileSync(fifth.rt.statePath, 'utf8'), healed, 'the healed file is left alone on the next boot')
 })
+
+// #2010: the boot migration renames an unnamed room whose stored name no longer matches the formula,
+// and the guests already seated kept the copy they arrived with — `load()` retitled the Session and
+// told nobody, so the file was the only place the new name existed and host and guest disagreed. A
+// rename is the same one `join` every other rename sends (#1949, #2004): the boot sends it after the
+// migrated state is written, and a room with nothing to tell keeps the wire silent.
+test('#2010: a boot rename reaches the guest already seated, once', async (t) => {
+  const a = host(t, TEAM)
+  const b = host(t, BOB_HOME)
+  installRoster(a.rt)
+  a.rt.resolveAgent = async id => ({ session: id })
+  a.rt.ctx.sessionTitle = { rename: async () => {} }
+  await a.rt.load()
+  await b.rt.load()
+  const invite = await a.rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await a.rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await a.rt.authenticate(alice.sessionToken)
+  a.rt.state.bots['chief-a'].fields = { social: { member: { handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  a.rt.state.bots['chief-b'].fields = { social: { member: { handle: '@helper.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  publish(a.rt, [{ handle: '@chief.bob.home', name: 'Coder', home: '@bob.home', homeName: 'Bob', owner: 'Bob', plugin: 'social', remote: true }])
+  await grantToFriend(a.rt, 'chief-a')
+  await grantToFriend(a.rt, 'chief-b')
+  const traffic = []
+  const wire = (from, to, home) => {
+    from.rt.flybotSend = async (msg) => {
+      const share = parseRoomShare(msg.text)
+      traffic.push({ op: share?.op, name: share?.name, roomId: msg.meta?.roomId })
+      if (!to) return { action: 'sent' }
+      const sender = from.rt.state.bots[msg.from]
+      const localBotId = Object.keys(to.rt.state.bots).find(id => to.rt.state.bots[id]?.fields?.social?.member?.handle === msg.to)
+      await to.rt.applyInboundRoomShare({
+        text: msg.text,
+        fromHandle: sender?.fields?.social?.member?.handle,
+        fromHome: home,
+        fromName: sender?.fields?.social?.member?.ownerName || 'Alice',
+        localBotId,
+      })
+      return { action: 'sent' }
+    }
+  }
+  wire(a, b, '@alice.home')
+  const room = a.rt.state.rooms.war
+  delete room.named
+  room.name = a.rt.autoRoomName(room.members, room)
+  await a.rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@chief.bob.home' }, actorA)
+  await settleShares()
+  const guest = () => Object.values(b.rt.state.rooms).find(copy => copy.origin === 'inbound-share')
+  assert.ok(guest(), 'the seat projected the room on the friend home')
+  const live = 'Alice, Chief A, Chief B, Coder'
+  assert.equal(guest().name, live, 'the seat join carries the wide name')
+
+  // The stored title a file keeps when the guest was not yet in the formula; the boot's own migration
+  // is what moves it back, and the guest already seated still holds the old one.
+  room.name = 'Alice, Chief A, Chief B'
+  await a.rt.save()
+  const saved = JSON.parse(readFileSync(a.rt.statePath, 'utf8'))
+  // Two controls on the same boot: an unnamed room with no remote guest moves its own title and tells
+  // nobody, and a room with a chosen name is not the formula's to move at all.
+  saved.rooms.ops = {
+    id: 'ops', name: 'Stale title nobody outside heard', members: ['chief-a', 'chief-b'], admin: 'chief-a',
+    log: [], seq: 0, seen: {},
+    participants: [
+      { kind: 'bot', id: 'chief-a', role: 'admin', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', id: 'chief-b', role: 'member', joinedSeq: 0, joinedAt: 1 },
+    ],
+  }
+  saved.rooms.library = {
+    id: 'library', name: 'The library', named: true, members: ['chief-a', 'chief-b'], admin: 'chief-a',
+    log: [], seq: 0, seen: {},
+    participants: [
+      { kind: 'bot', id: 'chief-a', role: 'admin', joinedSeq: 0, joinedAt: 1 },
+      { kind: 'bot', id: 'chief-b', role: 'member', joinedSeq: 0, joinedAt: 1 },
+    ],
+  }
+  traffic.length = 0
+
+  // A restart: the same file, read by a second host, with the guest home still where it is.
+  const second = host(t, saved)
+  installRoster(second.rt)
+  second.rt.resolveAgent = async id => ({ session: id })
+  second.rt.ctx.sessionTitle = { rename: async () => {} }
+  wire(second, b, '@alice.home')
+  await second.rt.load()
+  await settleShares()
+  assert.equal(second.rt.state.rooms.war.name, live, 'load() writes the live name')
+  assert.equal(second.rt.state.rooms.ops.name, 'You, Chief A, Chief B', 'a guestless room still follows the formula')
+  assert.equal(second.rt.state.rooms.library.name, 'The library', 'a chosen name is not recomputed')
+  const joins = () => traffic.filter(item => item.op === 'join')
+  assert.deepEqual(joins().map(item => item.roomId), ['war'], 'the boot rename is one join, and the controls stay silent')
+  assert.equal(joins()[0].name, live, 'the envelope carries the name the file now holds')
+  assert.equal(guest().name, live, 'the guest already seated holds it, with no line needed')
+
+  // The next boot finds the file already matching: the name does not move, so nothing goes out.
+  const migrated = readFileSync(second.rt.statePath, 'utf8')
+  traffic.length = 0
+  const third = host(t, migrated)
+  installRoster(third.rt)
+  third.rt.resolveAgent = async id => ({ session: id })
+  third.rt.ctx.sessionTitle = { rename: async () => {} }
+  wire(third, b, '@alice.home')
+  await third.rt.load()
+  await settleShares()
+  assert.equal(readFileSync(third.rt.statePath, 'utf8'), migrated, 'a name that already matches is not written again')
+  assert.deepEqual(traffic, [], 'and no boot rename means nothing on the wire')
+})
+
 // #1995: an unnamed group is named after its seats, so a seat that joins or leaves has to move the name
 // with it — and the group's own Session, the title the user reads in the sidebar. `host()` above carries
 // no session machinery, so the two module-level paths are added here: a workspace registry, a Session
