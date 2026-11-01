@@ -286,7 +286,13 @@ carries `total` on the decisions and `decidedTotal`/`pendingTotal` on the meetin
 `ProjectBoardRecord` draws one `bt-project-more` line reading `N more not shown` (还有 N 条未显示)
 under each capped list when that total is above the rows drawn — nothing when it is absent or equal,
 so a host that sends no total draws the section exactly as before; `data-decisions` keeps meaning
-"rows drawn" beside `data-decisions-total`.
+"rows drawn" beside `data-decisions-total`. Since #2041 a decision row is a `button` (`data-path` with
+the `data-sha256` the host computed) and activating it — by click or keyboard, no `tabIndex` needed —
+opens that one file under the row: `ProjectBoardRecord` keeps one open path, asks the host's
+`project-decision` read for that name, and draws the answer as text under a `data-open-decision` block
+(a `pre` for the body, the host's own sentence for `absent` / `too large` / `not listed`, never markup
+the answer carries). Activating the same row again closes it, another row replaces it, and closing
+reads nothing ([#2041](https://github.com/ThinkFlowLab/FlyBot/issues/2041)).
 
 The **Project settings** panel (#1749) saves through the three host write paths it draws — `project-bind`,
 `project-assistant-owner` and `project-memory-write` — and through no fourth. Its **Pause the daily digest**

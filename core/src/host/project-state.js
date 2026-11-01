@@ -101,9 +101,16 @@ export async function readProjectState(dir, file) {
     return { ok: false, reason: `not listed: ${path} is not a Project State file` }
   }
   if (!await repositoryAt(dir)) return { ok: false, reason: `not a repository: ${dir}` }
+  return readListedFile(dir, path)
+}
+
+// The bytes of one file whose name the caller already accepted as listed, bounded at `MAX_BYTES`.
+// `project_state` and the board's opened decision share this read (#2041), so the bound and the
+// symlink rule cannot drift between the two: a file that vanished since the listing, or one
+// replaced by a symlink, answers `absent` rather than the text it points at.
+export async function readListedFile(dir, path) {
   let info
   try {
-    // A symlink answers like a file that is not there — never with the text it points at.
     info = await fileAt(dir, path)
   } catch {
     return { ok: false, reason: `absent: ${path}` }

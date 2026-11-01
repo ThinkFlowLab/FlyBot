@@ -841,7 +841,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
              content: [{ type: 'text', text }],
            }, AbortSignal.timeout(30_000))
            return ok(true)
-@@ -319,32 +319,135 @@ export function install(rt) {
+@@ -319,32 +319,136 @@ export function install(rt) {
          case 'diagnostics-clear':
            await rt.diagnostics.clear()
            return ok(true)
@@ -871,6 +871,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +        case 'project-bind':
 +        case 'project-of':
 +        case 'project-board':
++        case 'project-decision':
 +        case 'project-team':
 +        case 'project-role':
 +        case 'project-delete':

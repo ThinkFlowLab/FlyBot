@@ -735,6 +735,14 @@ export function install(rt) {
       // with persona, memory head/topics and skills. The read lives in project-team.js; a missing
       // Bot is a `null` row there, never an error for the whole answer.
       case 'project-team': return rt.projectTeam?.(projectText(body.id, 200)) ?? { rows: [] }
+      // #2041: the text behind one decision row. The board's own listing is the accepted set, so a
+      // name it did not produce answers `not listed` and is never opened; the actor goes with the
+      // id, because who may read that text is decided per call (`projectDecision`).
+      case 'project-decision': {
+        const project = requireProject(projectText(body.id, 200))
+        const path = projectText(body.path, 400)
+        return await rt.projectDecision?.(project.id, path, actor) ?? { ok: false, reason: `not listed: ${path}` }
+      }
       // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
       // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
       // so the board applies the same visibility rule `tasks` does (#1723).

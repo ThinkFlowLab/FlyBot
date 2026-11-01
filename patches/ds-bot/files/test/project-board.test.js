@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { blockedOf } from '../src/host/project-board.js'
+import { MAX_BYTES } from '../src/host/project-state.js'
 import { fakeContext } from './fake-ctx.js'
 
 const seed = () => ({
@@ -1102,4 +1103,270 @@ test('#2021: the meetings read reports how many of each list it found', async ()
     assert.equal(board.meetings.pending.length, 100)
     assert.equal(board.meetings.pendingTotal, 103, 'the pending list says how many it found')
   } finally { await stop() }
+})
+
+// #2041: a decision row can be opened. The board already listed the file; opening it asks the host
+// for that one name, and the host reads only a name its own listing produced — `decisions/..`,
+// an absolute path, a name one level down and a symlink are refused before any stat.
+const folderOpenable = () => {
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-open-'))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  mkdirSync(join(dir, 'decisions', 'sub'))
+  writeFileSync(join(dir, 'decisions', '2026-10-30-adopt.md'), '# Adopt the board record\n\nThe board lists this file.\n')
+  writeFileSync(join(dir, 'decisions', '2026-10-30-big.md'), `# Big\n\n${'x'.repeat(MAX_BYTES + 1)}\n`)
+  writeFileSync(join(dir, 'decisions', 'sub', '2026-10-30-deep.md'), '# One level down\n')
+  // `decisions/../outside.md` resolves here. It is over the bound on purpose: a host that stat'd it
+  // would answer `too large`, so `not listed` is the proof the name was refused before the disk.
+  writeFileSync(join(dir, 'outside.md'), `# Outside the folder\n\n${'y'.repeat(MAX_BYTES + 1)}\n`)
+  // A legal name standing for a file outside the folder: the listing skips it, so opening answers
+  // as if the file were not there, never with the target's text.
+  symlinkSync(join(dir, 'outside.md'), join(dir, 'decisions', '2026-10-30-link.md'))
+  const absolute = join(base, 'secret.md')
+  writeFileSync(absolute, '# A file outside the Project folder\n')
+  return { base, dir, absolute }
+}
+
+const openableSeed = (dir) => {
+  const team = seed()
+  team.projects['project-p1'].workDir = dir
+  return team
+}
+
+async function startOpenable() {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const { base, dir, absolute } = folderOpenable()
+  const started = await start(home, openableSeed(dir))
+  return { ...started, home, base, dir, absolute }
+}
+
+test('#2041: a decision the board listed opens with its text', async () => {
+  const { rt, call, base, stop } = await startOpenable()
+  try {
+    // The page reads the board first; the set opening is checked against is that read's own.
+    const board = await call('project-board', { id: 'project-p1' })
+    assert.equal(board.ok, true, JSON.stringify(board))
+    assert.equal(board.value.decisions.files.some(file => file.path === 'decisions/2026-10-30-adopt.md'), true)
+    const opened = await call('project-decision', { id: 'project-p1', path: 'decisions/2026-10-30-adopt.md' })
+    assert.equal(opened.ok, true, JSON.stringify(opened))
+    assert.equal(opened.value.text, '# Adopt the board record\n\nThe board lists this file.\n')
+    assert.match(opened.value.sha256, /^[0-9a-f]{64}$/)
+    assert.equal(opened.value.path, 'decisions/2026-10-30-adopt.md')
+    // The declared read is the same answer: one rule, one place.
+    const direct = await rt.projectDecision('project-p1', 'decisions/2026-10-30-adopt.md')
+    assert.equal(direct.text, opened.value.text)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: a name the board did not list answers not listed and is never read', async () => {
+  const { rt, base, absolute, stop } = await startOpenable()
+  try {
+    await rt.projectBoard('project-p1')
+    const refused = [
+      ['decisions/../outside.md', 'a name that leaves decisions/'],
+      [absolute, 'an absolute path'],
+      ['decisions/sub/2026-10-30-deep.md', 'a name one level down'],
+      ['decisions/2026-10-30-link.md', 'a symlink with a legal name'],
+    ]
+    for (const [path, why] of refused) {
+      const answer = await rt.projectDecision('project-p1', path)
+      assert.equal(answer.ok, false, `${why} must not open`)
+      assert.match(answer.reason, /^not listed: /, `${why} answers not listed`)
+      assert.equal('text' in answer, false, `${why} carries no text`)
+    }
+    // `decisions/../outside.md` is over the bound: `too large` would prove a stat happened.
+    const escape = await rt.projectDecision('project-p1', 'decisions/../outside.md')
+    assert.equal(/too large/.test(escape.reason), false, 'the size was never measured')
+    assert.equal(existsSync(join(base, 'project', 'outside.md')), true, 'the file is there to be read')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: a listed decision over the bound answers too large and hands over no text', async () => {
+  const { rt, base, stop } = await startOpenable()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-10-30-big.md'), true, 'the row is listed')
+    const answer = await rt.projectDecision('project-p1', 'decisions/2026-10-30-big.md')
+    assert.equal(answer.ok, false)
+    assert.match(answer.reason, /^too large: /)
+    assert.match(answer.reason, new RegExp(`bound ${MAX_BYTES}`))
+    assert.equal('text' in answer, false, 'no partial text is returned')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: a decision past the 200-row cut still opens', async () => {
+  const { rt, base, stop } = await startPastCap()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-01-02-000.md'), false, 'the row is outside the cut')
+    const answer = await rt.projectDecision('project-p1', 'decisions/2026-01-02-000.md')
+    assert.equal(answer.ok, true, JSON.stringify(answer))
+    assert.equal(answer.text, '# Old decision 0\n')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: a decision deleted after the board listed it answers absent', async () => {
+  const { rt, base, dir, stop } = await startOpenable()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-10-30-adopt.md'), true)
+    rmSync(join(dir, 'decisions', '2026-10-30-adopt.md'))
+    const answer = await rt.projectDecision('project-p1', 'decisions/2026-10-30-adopt.md')
+    assert.equal(answer.ok, false)
+    assert.equal(answer.reason, 'absent: decisions/2026-10-30-adopt.md')
+    assert.equal('text' in answer, false)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: a decision a meeting archived opens from the folder the listing read it in', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-archive-'))
+  const dir = join(base, 'project')
+  const archive = join(base, 'room')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  mkdirSync(join(archive, 'decisions'), { recursive: true })
+  // The file exists only in the folder the meeting recorded, never in the Project folder.
+  writeFileSync(join(archive, 'decisions', '2026-10-29-archived.md'), '# Archived by a meeting\n')
+  const team = seed()
+  team.projects['project-p1'].workDir = dir
+  team.meetings = {
+    'meeting-archived': {
+      id: 'meeting-archived', status: 'decided', question: 'Where did this one land?', owner: 'Chief',
+      project: 'project-p1', decisionDir: archive, decisionFile: 'decisions/2026-10-29-archived.md',
+      createdAt: 1, updatedAt: 2, decidedAt: 3,
+    },
+  }
+  const { rt, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.dir, dir, 'the board still names the Project folder as its own')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-10-29-archived.md'), true, 'the archived file is a row')
+    const answer = await rt.projectDecision('project-p1', 'decisions/2026-10-29-archived.md')
+    assert.equal(answer.ok, true, JSON.stringify(answer))
+    assert.equal(answer.text, '# Archived by a meeting\n', 'read from the folder the listing read it in, not the Project folder')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+// #2041: opening a decision is behind the same door as its cards (#1723). The board already answers
+// `tasks: []` for a member who cannot see a Project's cards; the text of its decisions must not
+// answer instead. A plain record follows the Project's role list; a name a decided meeting archived
+// follows that meeting's own cards. Both refuse with the sentence a missing name answers, so the
+// refusal cannot be read as a list of what exists.
+const visibleSeed = (dir) => {
+  const team = crossSeed()
+  team.projects['project-p2'].workDir = dir
+  team.meetings = {
+    'meeting-decided': {
+      id: 'meeting-decided', status: 'decided', question: 'What shipped?', owner: 'Writer',
+      project: 'project-p2', decisionDir: dir, decisionFile: 'decisions/2026-11-01-decided.md',
+      taskIds: ['task-b1'], createdAt: 1, updatedAt: 2, decidedAt: 3,
+    },
+  }
+  return team
+}
+
+test('#2041: a decision text is answered only to a caller who can see the Project', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-visible-'))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  writeFileSync(join(dir, 'decisions', '2026-11-01-decided.md'), '# P2 decided this\n')
+  writeFileSync(join(dir, 'decisions', '2026-11-01-plain.md'), '# A plain record\n')
+  // Over the bound on purpose: a host that stat'd it would answer `too large`, so `not listed` is
+  // the proof that a caller who may not read it never reached the disk.
+  writeFileSync(join(dir, 'decisions', '2026-11-01-secret.md'), `# Secret\n\n${'s'.repeat(MAX_BYTES + 1)}\n`)
+  const { rt, callAs, stop } = await start(undefined, visibleSeed(dir))
+  try {
+    rt.authenticate = async token => (token === 'tok-1' ? { memberId: 'owner-1' } : token === 'tok-2' ? { memberId: 'owner-2' } : null)
+    rt.state.authSessions = { 's-1': { memberId: 'owner-1', tokenHash: 'a' }, 's-2': { memberId: 'owner-2', tokenHash: 'b' } }
+    // The board the two members read: owner-1 sees no card of this Project at all.
+    const theirs = await callAs('project-board', { id: 'project-p2' }, 'tok-1')
+    assert.equal(theirs.ok, true, JSON.stringify(theirs))
+    assert.deepEqual(theirs.value.tasks ?? [], [], 'owner-1 sees no card of this Project')
+    // Member B, whose Bot owns the card and the Project, opens the meeting's decision.
+    await callAs('project-board', { id: 'project-p2' }, 'tok-2')
+    const own = await callAs('project-decision', { id: 'project-p2', path: 'decisions/2026-11-01-decided.md' }, 'tok-2')
+    assert.equal(own.ok, true, JSON.stringify(own))
+    assert.equal(own.value.text, '# P2 decided this\n', 'the meeting card is visible to its owner')
+    // The plain record has no card: the Project's own role list decides, and owner-2 owns it.
+    const plain = await callAs('project-decision', { id: 'project-p2', path: 'decisions/2026-11-01-plain.md' }, 'tok-2')
+    assert.equal(plain.ok, true, JSON.stringify(plain))
+    assert.equal(plain.value.text, '# A plain record\n')
+    // Owner-1 is neither in the Project's role list nor the owner of a card: every name refuses,
+    // in the words a name the listing never had answers.
+    for (const path of ['decisions/2026-11-01-decided.md', 'decisions/2026-11-01-plain.md', 'decisions/2026-11-01-secret.md']) {
+      const answer = await callAs('project-decision', { id: 'project-p2', path }, 'tok-1')
+      assert.equal(answer.ok, true, JSON.stringify(answer))
+      assert.equal(answer.value.ok, false, `${path} must not open for a caller who sees no card`)
+      assert.equal(answer.value.reason, `not listed: ${path} is not in this board's decision list`)
+      assert.equal('text' in answer.value, false, `${path} carries no text`)
+      assert.equal('sha256' in answer.value, false, `${path} carries no hash`)
+    }
+    // The bound file is the proof: the caller who may read it is told its size, the caller who may
+    // not is never told anything the disk would have said.
+    const sized = await callAs('project-decision', { id: 'project-p2', path: 'decisions/2026-11-01-secret.md' }, 'tok-2')
+    assert.match(sized.value.reason, /^too large: /, 'a visible caller does reach the file')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2041: revoking a card closes the name a board read already cached', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-revoke-'))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  writeFileSync(join(dir, 'decisions', '2026-11-02-team.md'), '# Team decision\n')
+  const team = crossSeed()
+  team.projects['project-p1'].workDir = dir
+  team.meetings = {
+    'meeting-team': {
+      id: 'meeting-team', status: 'decided', question: 'Who ships it?', owner: 'Chief',
+      project: 'project-p1', decisionDir: dir, decisionFile: 'decisions/2026-11-02-team.md',
+      taskIds: ['task-group'], createdAt: 1, updatedAt: 2, decidedAt: 3,
+    },
+  }
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    rt.authenticate = async token => (token === 'tok-1' ? { memberId: 'owner-1' } : null)
+    rt.state.authSessions = { 's-1': { memberId: 'owner-1', tokenHash: 'a' } }
+    await callAs('project-board', { id: 'project-p1' }, 'tok-1')
+    const first = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-02-team.md' }, 'tok-1')
+    assert.equal(first.ok, true, JSON.stringify(first))
+    assert.equal(first.value.text, '# Team decision\n')
+    // The same cached read, after the card it was judged against moved to another owner and another
+    // room: the name is still in the listing, and the next open is judged again rather than served
+    // from the cache the first read left behind.
+    Object.assign(rt.state.tasks['task-group'], { ownerBotId: 'b', origin: { roomId: 'r2' } })
+    const again = await callAs('project-board', { id: 'project-p1' }, 'tok-1')
+    assert.equal(again.value.decisions.files.some(file => file.path === 'decisions/2026-11-02-team.md'), true, 'the row is still listed')
+    const revoked = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-02-team.md' }, 'tok-1')
+    assert.equal(revoked.value.ok, false, JSON.stringify(revoked))
+    assert.equal(revoked.value.reason, "not listed: decisions/2026-11-02-team.md is not in this board's decision list")
+    assert.equal('text' in revoked.value, false)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
 })

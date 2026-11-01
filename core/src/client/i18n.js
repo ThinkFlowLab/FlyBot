@@ -226,6 +226,8 @@ const ZH = {
   '{from} → {to}': '{from} → {to}',
   '+{count} more': '另有 {count} 条',
   '{count} more not shown': '还有 {count} 条未显示',
+  'Reading the decision…': '正在读取决策…',
+  'not listed': '不在列表里',
   delegated: '委托转达',
   All: '全部',
   Filter: '筛选',

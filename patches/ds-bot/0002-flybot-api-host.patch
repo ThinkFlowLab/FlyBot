@@ -1010,7 +1010,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -160,13 +160,489 @@ export function install(rt) {
+@@ -160,13 +160,497 @@ export function install(rt) {
        room.notice ??= ''
        migrated = true
      }
@@ -1441,6 +1441,14 @@ diff --git a/src/host/store.js b/src/host/store.js
 +      // with persona, memory head/topics and skills. The read lives in project-team.js; a missing
 +      // Bot is a `null` row there, never an error for the whole answer.
 +      case 'project-team': return rt.projectTeam?.(projectText(body.id, 200)) ?? { rows: [] }
++      // #2041: the text behind one decision row. The board's own listing is the accepted set, so a
++      // name it did not produce answers `not listed` and is never opened; the actor goes with the
++      // id, because who may read that text is decided per call (`projectDecision`).
++      case 'project-decision': {
++        const project = requireProject(projectText(body.id, 200))
++        const path = projectText(body.path, 400)
++        return await rt.projectDecision?.(project.id, path, actor) ?? { ok: false, reason: `not listed: ${path}` }
++      }
 +      // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
 +      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
 +      // so the board applies the same visibility rule `tasks` does (#1723).

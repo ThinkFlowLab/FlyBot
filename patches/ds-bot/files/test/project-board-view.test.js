@@ -755,3 +755,181 @@ test('#2021: no total, or one that matches, draws no line — and each meeting l
   }))
   assert.deepEqual(two.filter(node => node.props?.className === 'bt-project-more').map(textOf), ['103 more not shown', '100 more not shown'])
 })
+
+// #2041: a decision row opens. Activating it asks the host for that one name and draws the text
+// under the row; a second activation collapses it, and a refusal reads as its own sentence —
+// never as markup the answer happens to contain.
+const openableRecord = (call) => ({
+  project: { id: 'project-1', name: 'FlyBot' },
+  rows,
+  canManage: false,
+  decisions: {
+    dir: '/team/flybot',
+    files: [
+      { path: 'decisions/2026-10-30-adopt.md', name: '2026-10-30-adopt.md', date: '2026-10-30', title: 'Adopt the board record', sha256: 'a'.repeat(64), mtime: '2026-10-30T01:00:00.000Z' },
+      { path: 'decisions/2026-10-31-second.md', name: '2026-10-31-second.md', date: '2026-10-31', title: 'Keep decisions small', sha256: 'b'.repeat(64), mtime: '2026-10-31T01:00:00.000Z' },
+    ],
+    reason: '',
+  },
+  meetings: { decided: [], pending: [], reason: '' },
+  call,
+})
+
+const drawPane = () => all(render(ProjectBoardPane, openablePaneProps))
+const rowAt = (path) => drawPane().find(node => node.props?.['data-path'] === path)
+const openedAt = (path) => all(render(ProjectBoardPane, openablePaneProps)).filter(node => node.props?.['data-open-decision'] === path)
+let openablePaneProps = null
+
+test('#2041: activating a decision row asks for that row and draws its text under it', async () => {
+  slots = []
+  effects = []
+  index = 0
+  const calls = []
+  const call = async (endpoint, payload) => {
+    calls.push({ endpoint, payload })
+    return { ok: true, path: payload.path, text: '# Adopt the board record\n\nThe board lists this file.\n' }
+  }
+  openablePaneProps = openableRecord(call)
+  render(ProjectBoardPane, openablePaneProps)
+  const row = rowAt('decisions/2026-10-30-adopt.md')
+  assert.equal(row.type, 'button', 'the decision row is a button, not an inert div')
+  row.props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(plain(calls), [{ endpoint: 'project-decision', payload: { id: 'project-1', path: 'decisions/2026-10-30-adopt.md' } }])
+  assert.match(drawPane().map(textOf).join(' | '), /The board lists this file/, 'the text is drawn under the row')
+  assert.equal(openedAt('decisions/2026-10-30-adopt.md').length, 1, 'the open row is identifiable')
+})
+
+test('#2041: a second activation collapses the open decision, one row at a time', async () => {
+  slots = []
+  effects = []
+  index = 0
+  const calls = []
+  const call = async (endpoint, payload) => {
+    calls.push({ endpoint, payload })
+    return { ok: true, path: payload.path, text: `text of ${payload.path}\n` }
+  }
+  openablePaneProps = openableRecord(call)
+  render(ProjectBoardPane, openablePaneProps)
+  rowAt('decisions/2026-10-30-adopt.md').props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(openedAt('decisions/2026-10-30-adopt.md').length, 1)
+  // The other row replaces it: one row open at a time.
+  rowAt('decisions/2026-10-31-second.md').props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(openedAt('decisions/2026-10-30-adopt.md').length, 0, 'the first row closed')
+  assert.equal(openedAt('decisions/2026-10-31-second.md').length, 1, 'the second row is the open one')
+  // The same row again closes it, and closing asks the host nothing.
+  rowAt('decisions/2026-10-31-second.md').props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(openedAt('decisions/2026-10-31-second.md').length, 0, 'the second activation collapsed it')
+  assert.equal(calls.length, 2, 'collapsing read nothing')
+})
+
+test('#2041: each refused answer reads its own sentence, never the markup it carries', async () => {
+  slots = []
+  effects = []
+  index = 0
+  // The reader's three refusals, in the words the host sends them.
+  const answers = [
+    'too large: decisions/2026-10-30-adopt.md is 250000 bytes (bound 200000)',
+    "not listed: decisions/2026-10-30-adopt.md is not in this board's decision list",
+    'absent: decisions/2026-10-30-adopt.md',
+  ]
+  const call = async () => ({ ok: false, reason: answers.shift() })
+  openablePaneProps = openableRecord(call)
+  render(ProjectBoardPane, openablePaneProps)
+  const path = 'decisions/2026-10-30-adopt.md'
+  const sentences = [
+    'too large: decisions/2026-10-30-adopt.md is 250000 bytes (bound 200000)',
+    "not listed: decisions/2026-10-30-adopt.md is not in this board's decision list",
+    'absent: decisions/2026-10-30-adopt.md',
+  ]
+  for (const [index_, sentence] of sentences.entries()) {
+    rowAt(path).props.onClick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const opened = openedAt(path)
+    assert.equal(opened.length, 1, `answer ${index_ + 1} is drawn once`)
+    assert.equal(textOf(opened[0]), sentence, 'the reason is text, whole')
+    assert.equal(opened[0].props['data-refused'], 'true')
+    // The row stays a row: a refusal is an answer beside the list, not an error banner replacing it.
+    assert.equal(rowAt(path).type, 'button')
+    // Closing reads nothing, and the next activation asks again.
+    rowAt(path).props.onClick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(openedAt(path).length, 0, 'a second activation collapses the refusal')
+  }
+  assert.equal(drawPane().some(node => node.type === 'script'), false, 'nothing in an answer becomes an element')
+})
+
+// #2041: two rows, two answers, and the order they land in is not the order they were asked in.
+// The record keeps the answer only while its own row is the open one, so a late answer to a row the
+// reader already left is dropped instead of painted under the row now open.
+test('#2041: an answer that lands after another row opened is never drawn', async () => {
+  slots = []
+  effects = []
+  index = 0
+  const waiting = new Map()
+  const call = (endpoint, payload) => new Promise(resolve => waiting.set(payload.path, resolve))
+  openablePaneProps = openableRecord(call)
+  render(ProjectBoardPane, openablePaneProps)
+  const first = 'decisions/2026-10-30-adopt.md'
+  const second = 'decisions/2026-10-31-second.md'
+  rowAt(first).props.onClick()
+  rowAt(second).props.onClick()
+  // The first row's answer arrives now, after the second row became the open one.
+  waiting.get(first)({ ok: true, path: first, text: '# An answer nobody is waiting for\n' })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const nodes = all(render(ProjectBoardPane, openablePaneProps))
+  const drawn = nodes.map(textOf).join(' | ')
+  assert.equal(/An answer nobody is waiting for/.test(drawn), false, 'the late answer is not drawn')
+  const open = nodes.filter(node => node.props && node.props['data-open-decision'])
+  assert.equal(open.length, 1, 'one row is open')
+  assert.equal(open[0].props['data-open-decision'], second, 'the block belongs to the row now open')
+  assert.equal(/Reading the decision/.test(textOf(open[0])), true, 'it still waits for its own answer')
+  // The second row's own answer lands in its own block, and nothing else appears.
+  waiting.get(second)({ ok: true, path: second, text: '# The answer this row asked for\n' })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const after = all(render(ProjectBoardPane, openablePaneProps))
+  assert.equal(textOf(openedAt(second)[0]), '# The answer this row asked for\n')
+  assert.equal(/An answer nobody is waiting for/.test(after.map(textOf).join(' | ')), false)
+})
+
+// #2041: the wire from the page to the panel. `ProjectBoardOverlay` passes its own read down as
+// `call`; if that line goes, the panel's `call` is undefined and an activation returns silently —
+// nothing happens and nothing says why. So the activation is driven from the overlay, not by
+// handing the panel a fake `call` directly.
+test('#2041: the overlay hands the board its own read, so a row opens through it', async () => {
+  resetClock()
+  win.location.hash = '#project'
+  const path = 'decisions/2026-10-30-adopt.md'
+  const asked = []
+  const call = async (name, payload) => {
+    if (name === 'project-decision') asked.push({ name, payload })
+    if (name === 'projects') return { projects: [{ id: 'project-1', name: 'FlyBot' }] }
+    if (name === 'project-read') return { project: { id: 'project-1', name: 'FlyBot' }, canManage: false }
+    if (name === 'project-board') {
+      return {
+        tasks: [],
+        waiting: [], inflight: [], blocked: [], counts: { waiting: 0, inflight: 0, blocked: 0, done: 0 },
+        decisions: {
+          dir: '/team/flybot', reason: '', total: 1,
+          files: [{ path, name: '2026-10-30-adopt.md', date: '2026-10-30', title: 'Adopt the board record', sha256: 'a'.repeat(64), mtime: '2026-10-30T01:00:00.000Z' }],
+        },
+        meetings: { decided: [], pending: [], reason: '' },
+      }
+    }
+    if (name === 'tasks') return []
+    if (name === 'project-team') return { rows: [] }
+    if (name === 'project-decision') return { ok: true, path: payload.path, text: '# Opened through the overlay\n' }
+    return {}
+  }
+  const { tree, redraw } = await mount({ actions: {}, call })
+  const button = all(tree).find(node => node.type === 'button' && node.props && node.props['data-path'] === path)
+  assert.ok(button, 'the board draws the decision row')
+  assert.equal(typeof button.props.onClick, 'function', 'the row is activatable')
+  button.props.onClick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(plain(asked), [{ name: 'project-decision', payload: { id: 'project-1', path } }], 'the overlay own read carried the ask')
+  assert.match(textIn(redraw()), /Opened through the overlay/, 'the answer is drawn under the row')
+})
