@@ -1282,6 +1282,7 @@ var ZH = {
   "On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend's own Bot never gets it.": "默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。",
   "No Bots": "没有 Bot",
   "Scheduled tasks": "定时任务",
+  "Scheduled tasks · {count}": "定时任务 · {count}",
   "Every day": "每天",
   "Every {count} days": "每 {count} 天",
   "Every hour": "每小时",
@@ -13510,17 +13511,24 @@ function BotSchedules({ bot, roster, actions }) {
 function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions);
   const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  const shown = tasks.slice(0, 3);
+  const hidden = tasks.length - shown.length;
   return (0, import_react25.createElement)(
     "div",
     null,
-    (0, import_react25.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")),
-    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view?.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : (0, import_react25.createElement)("div", { className: "bt-task-list" }, tasks.slice(0, 3).map((task) => (0, import_react25.createElement)(
-      "button",
-      { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
-      (0, import_react25.createElement)(ClockIcon),
-      (0, import_react25.createElement)("span", { className: "bt-task-line-title" }, task.title),
-      (0, import_react25.createElement)("span", { className: "bt-task-line-when" }, nextText(task))
-    )))
+    (0, import_react25.createElement)("div", { className: "bt-section-title" }, hidden > 0 ? t("Scheduled tasks · {count}", { count: tasks.length }) : t("Scheduled tasks")),
+    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view?.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : (0, import_react25.createElement)(
+      "div",
+      { className: "bt-task-list" },
+      shown.map((task) => (0, import_react25.createElement)(
+        "button",
+        { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
+        (0, import_react25.createElement)(ClockIcon),
+        (0, import_react25.createElement)("span", { className: "bt-task-line-title" }, task.title),
+        (0, import_react25.createElement)("span", { className: "bt-task-line-when" }, nextText(task))
+      )),
+      hidden > 0 ? (0, import_react25.createElement)("button", { key: "more", type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules") }, t("{count} more not shown", { count: hidden })) : null
+    )
   );
 }
 var SCHEDULE_CSS = `

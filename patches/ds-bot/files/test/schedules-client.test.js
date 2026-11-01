@@ -432,3 +432,52 @@ test('#2024: a Bot with no tasks at all keeps the empty state and its add button
   button.props.onClick()
   assert.deepEqual(actions.calls, [['schedules', 'b1']], 'only the empty state opens the new-task form')
 })
+
+// #2030: the details panel drew three rows and said nothing about the rest, so five scheduled
+// tasks looked like three. The title carries the real count, and one row after the three says
+// how many are left and opens the full list — not the new-task form.
+const fiveTasks = () => [
+  ACTIVE,
+  PAUSED,
+  { ...PAUSED, id: 's3', title: 'Third' },
+  { ...PAUSED, id: 's4', title: 'Fourth' },
+  { ...PAUSED, id: 's5', title: 'Fifth' },
+]
+const sectionTitle = (tree) => all(tree).filter(node => node.props?.className === 'bt-section-title')
+
+test('#2030: five tasks draw three rows and the title says the real count', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: fiveTasks() })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  const rows = buttonsOf(card).filter(button => button.props.className === 'bt-task-line')
+  assert.equal(rows.length, 3, 'the cap still draws three rows')
+  const titles = sectionTitle(card)
+  assert.equal(titles.length, 1)
+  assert.deepEqual(text(titles[0]), ['Scheduled tasks · 5'], 'the title carries the count, not just "Scheduled tasks"')
+})
+
+test('#2030: the row after the three says how many are left and opens the list, not the new-task form', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: fiveTasks() })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  const more = buttonsOf(card).filter(button => button.props.className === 'bt-more')
+  assert.equal(more.length, 1, 'one row after the three')
+  assert.deepEqual(text(more[0]), ['2 more not shown'])
+  more[0].props.onClick()
+  assert.deepEqual(actions.calls, [['schedules']], 'the list, not the new-task form: no Bot id')
+})
+
+test('#2030: three tasks keep the bare title and no more row; no tasks keep the empty state', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: fiveTasks().slice(0, 3) })
+  const three = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.deepEqual(text(sectionTitle(three)[0]), ['Scheduled tasks'], 'no count suffix for three')
+  assert.equal(buttonsOf(three).filter(button => button.props.className === 'bt-more').length, 0, 'no more row')
+  seeded.push({ available: true, tasks: [] })
+  const none = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.deepEqual(text(none).filter(line => line !== 'Scheduled tasks'), ['No scheduled tasks yet. Add one'])
+  const add = buttonsOf(none)[0]
+  assert.equal(add.props.className, 'bt-more')
+  add.props.onClick()
+  assert.deepEqual(actions.calls, [['schedules', 'b1']], 'the empty state still opens the new-task form')
+})

@@ -1372,7 +1372,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,12 +771,21 @@ const ZH = {
+@@ -771,12 +771,22 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1385,6 +1385,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend\'s own Bot never gets it.': '默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。',
 +  'No Bots': '没有 Bot',
    'Scheduled tasks': '定时任务',
++  'Scheduled tasks · {count}': '定时任务 · {count}',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',
    'Every hour': '每小时',
@@ -2282,7 +2283,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,72 +166,184 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,191 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2467,18 +2468,27 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 -// The details panel's line: the Bot's next tasks, or how to add one.
 +// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 +// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
++// The line draws three rows, so the title carries the real count and one row after them says
++// what the cap hid; that row opens the settings list, where a bot id would open the new-task
++// form instead — the form is what the empty state's button means (#2030).
  export function ScheduleSummary({ bot, actions }) {
    const view = useSchedules(actions)
 -  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
 +  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
++  const shown = tasks.slice(0, 3)
++  const hidden = tasks.length - shown.length
    return h('div', null,
-     h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
+-    h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
++    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
      tasks.length === 0
 -      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Harness settings.') : t('No scheduled tasks yet. Add one'))
-+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
-       : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
+-      : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
 -          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
-+          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task))))))
++      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
++      : h('div', { className: 'bt-task-list' },
++          shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
++            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
++          hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
  }
  
  export const SCHEDULE_CSS = `
