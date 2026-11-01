@@ -8894,7 +8894,7 @@ function useBoardTasks(actions, scope) {
     setArchive((list) => done2 ? [task, ...without(list, task.id)] : without(list, task.id));
   };
   const done = scope?.kind === "group" ? archive : archive.filter((task) => !scope?.botId || task.ownerBotId === scope.botId);
-  return { own, tasks, archive: done, replace };
+  return { own, groupTasks, tasks, archive: done, replace };
 }
 function RailButton({ row, selected, meta, onSelect }) {
   return (0, import_react15.createElement)(
@@ -9107,7 +9107,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
   const [dragging, setDragging] = (0, import_react15.useState)(null);
   const [error, setError] = (0, import_react15.useState)("");
   const [draft, setDraft] = (0, import_react15.useState)("");
-  const { own, tasks, archive, replace } = useBoardTasks(actions, scope);
+  const { own, groupTasks, tasks, archive, replace } = useBoardTasks(actions, scope);
   const boardTasks = boardTasksFor(tasks, archive);
   const close = (0, import_react15.useCallback)(() => actions.closeBoard(), []);
   useEscape(close);
@@ -9122,7 +9122,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
   }, []);
   const archiveFull = Array.isArray(archive) && archive.length >= ARCHIVE_SHOWN;
   const counts2 = {};
-  for (const task of [...own, ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
+  for (const task of [...own, ...scope?.kind === "group" ? groupTasks : [], ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
     const id = task.ownerBotId;
     const bucket = counts2[id] ?? (counts2[id] = { done: 0, total: 0 });
     if (task.status === "cancelled" || task.status === "failed") continue;
