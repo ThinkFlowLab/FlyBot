@@ -102,7 +102,7 @@ const readProgress = (value) => {
   if (!Number.isInteger(progress) || progress < 0 || progress > 100) throw invalid('Progress must be a whole number from 0 to 100')
   return progress
 }
-const oneLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const oneLine = (value, max) => cut(String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(), max).text
 const readTitle = value => oneLine(value, 300)
 // Evidence a result carries (#401): links only, http(s), a handful, so a card can point at the diff, the
 // file or the test run without the record becoming a transcript.

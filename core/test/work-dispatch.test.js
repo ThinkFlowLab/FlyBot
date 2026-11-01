@@ -386,3 +386,12 @@ test('a dispatch whose card write fails still opens the member\'s turn (#1254)',
   run.stop.abort()
   await run.done
 })
+
+test('a dispatch title cut at the 300-unit bound keeps the pair whole', () => {
+  const prefix = '#1234 rebase '
+  const text = `@Dev1 ${prefix}${'x'.repeat(299 - prefix.length)}😀 and the rest`
+  const dispatched = workDispatch(text, { callees: [{ id: 'a' }] })
+  assert.ok(dispatched !== undefined, 'the line is a dispatch')
+  assert.equal(dispatched.title.isWellFormed(), true, `the title is not well formed: ${JSON.stringify(dispatched.title.slice(-2))}`)
+  assert.equal(dispatched.title, `${prefix}${'x'.repeat(299 - prefix.length)}`, 'the pair at the bound is dropped whole, never halved')
+})
