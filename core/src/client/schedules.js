@@ -423,7 +423,12 @@ export function BotSchedules({ bot, roster, actions }) {
 // form instead — the form is what the empty state's button means (#2030).
 export function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions)
-  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
+  // #2035: the shared view starts null and the first read lands a frame later, so "no view yet" is
+  // not "no tasks". The settings card above draws nothing for it; this line did the opposite and
+  // offered the new-task form. `view.available === false` (Plugins off) is a different state and
+  // keeps its own line below.
+  if (view === null) return null
+  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
   const shown = tasks.slice(0, 3)
   const hidden = tasks.length - shown.length
   return h('div', null,
