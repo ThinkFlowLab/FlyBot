@@ -279,7 +279,12 @@ never copies a row. The `tasks` list is the ordinary task read joined by `id` (a
 takes its `title`, falls back to `note`, and only then to `@assignee` / `—`, plus its `priority`, so three
 cards held by the same person no longer read the same. A row that carries the host's audit text (#1730) shows it inside the card detail as `bt-project-audit`, read from that same row with no second fetch; a row without it renders exactly as before. An empty Project renders the empty state, not an
 error. `canManage` comes from `project-read` and only decides whether the management affordances are
-drawn; the refusal itself is the host's.
+drawn; the refusal itself is the host's. The record section says what it hid (#2021): `projectBoardRecord`
+carries `total` on the decisions and `decidedTotal`/`pendingTotal` on the meetings, and
+`ProjectBoardRecord` draws one `bt-project-more` line reading `N more not shown` (还有 N 条未显示)
+under each capped list when that total is above the rows drawn — nothing when it is absent or equal,
+so a host that sends no total draws the section exactly as before; `data-decisions` keeps meaning
+"rows drawn" beside `data-decisions-total`.
 
 The **Project settings** panel (#1749) saves through the three host write paths it draws — `project-bind`,
 `project-assistant-owner` and `project-memory-write` — and through no fourth. Its **Pause the daily digest**

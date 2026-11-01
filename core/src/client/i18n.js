@@ -223,6 +223,7 @@ const ZH = {
   'Not sent: delivery failed': '未发出：发送失败',
   '{from} → {to}': '{from} → {to}',
   '+{count} more': '另有 {count} 条',
+  '{count} more not shown': '还有 {count} 条未显示',
   delegated: '委托转达',
   All: '全部',
   Filter: '筛选',

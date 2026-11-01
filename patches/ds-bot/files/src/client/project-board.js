@@ -214,11 +214,21 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
   const files = listOf(decisions?.files)
   const decided = Array.isArray(meetings?.decided) ? meetings.decided.map(item => meetingOf(item, 'decided')).filter(item => item !== null) : []
   const pending = Array.isArray(meetings?.pending) ? meetings.pending.map(item => meetingOf(item, item?.status ?? 'deliberating')).filter(item => item !== null) : []
+  // #2021: the host caps these lists, so it also says how many rows it found before the cut. The
+  // record carries that number beside the rows it drew; a host that sends no total answers `null`,
+  // which draws nothing, so the section then reads exactly as it did before this slice.
+  const totalOf = value => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+  const hiddenOf = (total, rows) => (total === null ? 0 : Math.max(0, total - rows))
+  const decisionsTotal = totalOf(decisions?.total)
+  const decidedTotal = totalOf(meetings?.decidedTotal)
+  const pendingTotal = totalOf(meetings?.pendingTotal)
   return {
     decisions: {
       dir,
       files,
       count: files.length,
+      total: decisionsTotal,
+      hidden: hiddenOf(decisionsTotal, files.length),
       empty: files.length === 0,
       emptyText: text(decisions?.reason) || (dir === null ? 'This Project names no working folder.' : `No decision file in ${dir}/decisions.`),
     },
@@ -226,6 +236,10 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
       decided,
       pending,
       count: decided.length + pending.length,
+      decidedTotal,
+      pendingTotal,
+      decidedHidden: hiddenOf(decidedTotal, decided.length),
+      pendingHidden: hiddenOf(pendingTotal, pending.length),
       empty: decided.length === 0 && pending.length === 0,
       emptyText: text(meetings?.reason) || 'No meeting of this Project is recorded.',
     },
@@ -548,13 +562,27 @@ function ProjectBoardRecord({ record }) {
     meeting.advance.allowed ? null : h('span', { className: 'bt-project-paused' }, meeting.advance.reason),
     proxyRow(meeting),
     h('span', { className: 'bt-project-status' }, meeting.status)))
-  return h('section', { className: 'bt-project-record', 'data-decisions': String(decisions.count), 'data-meetings': String(meetings.count) },
+  // #2021: one line under a capped list says how many rows the host left out. A host that sends no
+  // total, or one that matches the rows drawn, renders nothing at all.
+  const moreLine = (hidden, key) => (hidden > 0
+    ? h('div', { key, className: 'bt-project-more' }, t('{count} more not shown', { count: hidden }))
+    : null)
+  return h('section', {
+    className: 'bt-project-record',
+    // `data-decisions` stays "rows drawn"; the total rides beside it so the view can be asserted.
+    'data-decisions': String(decisions.count),
+    ...(decisions.total === null ? {} : { 'data-decisions-total': String(decisions.total) }),
+    'data-meetings': String(meetings.count),
+  },
     h('h4', null, t('Decisions')),
     decisions.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(decisions.emptyText)) : decisionRows,
+    moreLine(decisions.hidden, 'decisions-more'),
     h('h4', null, t('Meetings')),
     meetings.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(meetings.emptyText)) : decidedRows,
+    moreLine(meetings.decidedHidden, 'decided-more'),
     meetings.pending.length === 0 ? null : h('h5', null, t('Not decided')),
-    meetings.pending.length === 0 ? null : pendingRows)
+    meetings.pending.length === 0 ? null : pendingRows,
+    moreLine(meetings.pendingHidden, 'pending-more'))
 }
 
 // #1860: the Project team — the Project's own Chief (#1859), the assistant that speaks for the
