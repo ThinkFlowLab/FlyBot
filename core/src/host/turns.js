@@ -4,7 +4,7 @@
 // Turn tracking: which turns were triggered by another Bot, and what they said.
 import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
 import { unwrapUntrusted } from './delivery.js'
-import { textOf } from './text.js'
+import { cut, textOf } from './text.js'
 import { reminderText } from './schedules.js'
 import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
 
@@ -33,7 +33,7 @@ export function isRemoteFailureNotice(text) {
 // error row, an AUTH failure loses its message: providers may echo part of the key.
 export function turnFailure(error) {
   const code = typeof error?.code === 'string' && error.code !== '' ? error.code : 'UNKNOWN'
-  const message = code === 'AUTH' || typeof error?.message !== 'string' ? '' : error.message.trim().slice(0, 500)
+  const message = code === 'AUTH' || typeof error?.message !== 'string' ? '' : cut(error.message.trim(), 500).text
   return {
     code,
     message,
@@ -42,7 +42,7 @@ export function turnFailure(error) {
   }
 }
 
-export const failureLine = failure => `${failure.code}${failure.status ? ` ${failure.status}` : ''}${failure.message ? `: ${failure.message.slice(0, 200)}` : ''}`
+export const failureLine = failure => `${failure.code}${failure.status ? ` ${failure.status}` : ''}${failure.message ? `: ${cut(failure.message, 200).text}` : ''}`
 
 // A group's own Session never reaches a model, so the snapshot DSH prepared there
 // rides with the user's queued message to the members who answer it.
@@ -300,7 +300,9 @@ export function install(rt) {
     const value = ['command', 'cmd', 'pattern', 'query', 'url', 'file_path', 'path', 'description']
       .map(key => args?.[key]).find(item => typeof item === 'string' && item.trim() !== '')
     const line = value?.replace(/\s+/g, ' ').trim()
-    return line && line.length > 80 ? `${line.slice(0, 79)}…` : line
+    if (!line) return line
+    const bound = cut(line, 79)
+    return bound.cut ? `${bound.text}…` : line
   }
 
   // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
@@ -360,7 +362,7 @@ export function install(rt) {
     const first = keys => keys.map(key => args?.[key]).find(value => typeof value === 'string' && value.trim() !== '')
     const text = first(['description', 'justification'])
     const code = first(['command', 'cmd', 'file_path', 'path', 'url', 'query'])
-    return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
+    return { ...(text ? { text: cut(text.trim(), 300).text } : {}), ...(code ? { code: cut(code.trim(), 400).text } : {}) }
   }
 
   // The latest turns of the user's own Bots that finished or failed, for a system notification
@@ -402,7 +404,7 @@ export function install(rt) {
       ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
       at,
       ...(calls > 0 ? { calls } : {}),
-      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
+      ...(failure ? { failed: cut(failure.message || failure.code, 160).text } : {}),
       ...(rateLimited !== undefined ? { rateLimited } : {}),
       ...(silent ? { silent: true, streak } : {}),
     }], at)

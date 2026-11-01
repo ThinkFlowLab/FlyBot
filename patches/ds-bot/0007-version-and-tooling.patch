@@ -919,6 +919,36 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+@@ -155,6 +155,29 @@ test('turnFailure drops AUTH messages and keeps the facts', () => {
+   assert.equal(failureLine({ code: 'SERVER', status: 503, message: 'busy' }), 'SERVER 503: busy')
+ })
+ 
++// A bound that lands between the halves of a surrogate pair keeps the high half alone, and that lone
++// surrogate is what the record carries and every renderer draws as U+FFFD. The five bounds in
++// turns.js go through `cut()`; each has its own case, in the file that reads its value.
++test('a failure message cut at its 500-unit bound keeps the pair whole', () => {
++  const message = `${'a'.repeat(499)}😀tail`
++  const kept = turnFailure({ code: 'SERVER', message }).message
++  assert.equal(kept.isWellFormed(), true, `the message is not well formed: ${JSON.stringify(kept.slice(-4))}`)
++  // The emoji needs two units and only one is left inside the bound, so the prefix stops before it.
++  assert.equal(kept, message.slice(0, 499))
++  assert.ok(kept.length <= 500, `the 500-unit budget moved: ${kept.length}`)
++  // A pair that ends exactly on the bound stays whole.
++  const exact = `${'a'.repeat(498)}😀`
++  assert.deepEqual(turnFailure({ code: 'SERVER', message: exact }).message, exact)
++})
++
++test('a failure line cut at its 200-unit message bound keeps the pair whole', () => {
++  const line = failureLine({ code: 'SERVER', status: 503, message: `${'a'.repeat(199)}😀tail` })
++  assert.equal(line.isWellFormed(), true, `the line is not well formed: ${JSON.stringify(line.slice(-4))}`)
++  assert.equal(line, `SERVER 503: ${'a'.repeat(199)}`)
++  assert.ok(line.length <= 'SERVER 503: '.length + 200, `the 200-unit budget moved: ${line.length}`)
++  assert.equal(failureLine({ code: 'SERVER', status: 503, message: 'busy' }), 'SERVER 503: busy')
++})
++
+ function turnsHost() {
+   let listener
+   const delivered = []
 @@ -174,7 +174,6 @@ function turnsHost() {
      noteFailure: entry => noted.push(entry),
      warn() {},

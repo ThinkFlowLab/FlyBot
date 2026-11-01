@@ -132,6 +132,29 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
   assert.equal(text(post), '[Group post from Writer]\nCopied the doc to E:/docs.')
 })
 
+// Both fields of a card go through a bound of their own: 300 for the description, 400 for the
+// command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
+test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const result = await openTurn(t, host)
+  const description = `${'a'.repeat(299)}😀tail`
+  const command = `${'b'.repeat(399)}😀tail`
+  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command, description }) })
+  const outcome = host.askApproval('gb', { callId: 'k1' })
+
+  await settle(() => result() !== undefined)
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.equal(approval.detail.text.isWellFormed(), true, `the description is not well formed: ${JSON.stringify(approval.detail.text.slice(-4))}`)
+  assert.equal(approval.detail.text, description.slice(0, 299))
+  assert.equal(approval.detail.code.isWellFormed(), true, `the command is not well formed: ${JSON.stringify(approval.detail.code.slice(-4))}`)
+  assert.equal(approval.detail.code, command.slice(0, 399))
+  assert.ok(approval.detail.text.length <= 300 && approval.detail.code.length <= 400, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
+
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
+  assert.equal(await outcome, 'allowed-once')
+})
+
 test('an own chat\'s approval stays with DSH and is listed while it waits', async (t) => {
   const host = await start()
   t.after(host.stop)
@@ -445,6 +468,24 @@ test('a running Bot\'s work names its current step, in one short line, until the
   assert.equal((await bots()).b.step, undefined)
   host.emit('gb', 'turn/end', { reason: { kind: 'error', error: new Error('boom') } })
   assert.equal((await bots()).b, undefined)
+})
+
+// The step is 79 units plus an ellipsis, and the cut is decided by whether anything was dropped.
+test('a step line cut at its bound keeps the pair whole, and the ellipsis only shows when it cut', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  const bots = async () => (await host.call('state', {})).value.work.bots
+  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: `${'a'.repeat(78)}😀tail` }) })
+  const { step } = (await bots()).b
+  assert.equal(step.isWellFormed(), true, `the step is not well formed: ${JSON.stringify(step.slice(-4))}`)
+  // The emoji needs two units and only one is left inside the 79, so the prefix stops before it.
+  assert.equal(step, `${'a'.repeat(78)}…`)
+  assert.ok(step.length <= 80, `the 79 + ellipsis budget moved: ${step.length}`)
+  host.emit('gb', 'tool/result', { callId: 'k1' })
+  host.emit('gb', 'tool/call', { callId: 'k2', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
+  assert.equal((await bots()).b.step, 'npm test')
+  host.emit('gb', 'tool/result', { callId: 'k2' })
 })
 
 // #626: the shape a Bot actually hits — the owner asks for work, the turn calls `subagent`, and the
