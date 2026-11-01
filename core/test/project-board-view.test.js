@@ -701,3 +701,39 @@ test('#1855: the archive is a collapsed group on first paint and the header keep
   assert.match(text, /Done: 191/)
   assert.match(text, /Done cards/, 'the archive names what it holds')
 })
+
+// #2021: the host caps the decision and meeting lists, so the record says how many it hid instead
+// of reading as a complete list. A host that sends no total still draws exactly what it drew.
+test('#2021: a decision total above the drawn rows draws one line and rides on the section', () => {
+  const capped = { ...decisions, total: 205 }
+  const props = { project: { id: 'project-1', name: 'FlyBot' }, rows, decisions: capped, meetings, canManage: false }
+  const tree = all(ProjectBoardPane(props))
+  const more = tree.filter(node => node.props?.className === 'bt-project-more')
+  assert.equal(more.length, 1, 'one line says what the section hid')
+  assert.equal(textOf(more[0]), '203 more not shown')
+  const section = tree.filter(node => node.props?.className === 'bt-project-record')[0]
+  assert.equal(section.props['data-decisions'], '2', 'data-decisions still counts the rows drawn')
+  assert.equal(section.props['data-decisions-total'], '205')
+  assert.equal(plain(projectBoardView(props)).record.decisions.total, 205)
+})
+
+test('#2021: no total, or one that matches, draws no line — and each meeting list says its own', () => {
+  const bare = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, decisions, meetings, canManage: false }))
+  assert.equal(bare.filter(node => node.props?.className === 'bt-project-more').length, 0, 'a host without totals draws nothing new')
+  const equal = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, decisions: { ...decisions, total: 2 }, meetings, canManage: false }))
+  assert.equal(equal.filter(node => node.props?.className === 'bt-project-more').length, 0, 'a total equal to the rows hid nothing')
+  const two = all(ProjectBoardPane({
+    project: { id: 'project-1', name: 'FlyBot' },
+    rows,
+    decisions: { ...decisions, total: 2 },
+    meetings: {
+      decided: [{ id: 'meeting-d', date: '2026-10-30', question: 'Which board carries the record?', owner: 'Chief', path: '' }],
+      pending: [{ id: 'meeting-o', date: '2026-10-30', question: 'Should the board page?', status: 'deliberating' }],
+      decidedTotal: 104,
+      pendingTotal: 101,
+      reason: '',
+    },
+    canManage: false,
+  }))
+  assert.deepEqual(two.filter(node => node.props?.className === 'bt-project-more').map(textOf), ['103 more not shown', '100 more not shown'])
+})

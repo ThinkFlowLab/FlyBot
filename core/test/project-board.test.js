@@ -721,3 +721,83 @@ test('#1855: a rework, a blocked and a waiting card stay rows — only done is f
     assert.deepEqual(board.blocked.map(item => item.id), ['task-blocked'])
   } finally { await stop() }
 })
+
+// #2021: the decision list is capped, and the cut used to keep the oldest files — a Project past
+// the cap lost the decisions it had just written and nothing said the list was short. The read now
+// keeps the newest and reports how many there were, so the board can say what it hid.
+const folderWithManyDecisions = (old, fresh) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-many-'))
+  mkdirSync(join(dir, '.git'))
+  mkdirSync(join(dir, 'decisions'))
+  for (let at = 0; at < old; at += 1) {
+    writeFileSync(join(dir, 'decisions', `2026-01-02-${String(at).padStart(3, '0')}.md`), `# Old decision ${at}\n`)
+  }
+  for (let at = 0; at < fresh; at += 1) {
+    writeFileSync(join(dir, 'decisions', `2026-11-01-${String(at).padStart(3, '0')}.md`), `# Fresh decision ${at}\n`)
+  }
+  return dir
+}
+
+test('#2021: the board keeps the newest decisions and reports the total it found', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const dir = folderWithManyDecisions(200, 5)
+  const team = recordSeed()
+  team.projects['project-p1'].workDir = dir
+  const { rt, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.files.length, 200, 'the list stays at the cap')
+    const paths = board.decisions.files.map(file => file.path)
+    assert.deepEqual(paths.slice(-5), [
+      'decisions/2026-11-01-000.md',
+      'decisions/2026-11-01-001.md',
+      'decisions/2026-11-01-002.md',
+      'decisions/2026-11-01-003.md',
+      'decisions/2026-11-01-004.md',
+    ], 'every decision just written is listed')
+    assert.equal(paths[0], 'decisions/2026-01-02-005.md', 'the five oldest are the ones dropped')
+    assert.deepEqual(paths, [...paths].sort(), 'the display order stays ascending, oldest first')
+    assert.equal(board.decisions.total, 205, 'the read says how many files it found')
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#2021: under the cap the decision list is exactly what it was, plus its total', async () => {
+  const { rt, stop } = await startWithRecord()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.total, 2)
+    assert.deepEqual(board.decisions.files.map(file => file.path), ['decisions/2026-10-30-adopt.md', 'decisions/2026-10-30-second.md'])
+  } finally { await stop() }
+})
+
+// The meetings side already kept the newest; it was the silence about the total that hid a list.
+test('#2021: the meetings read reports how many of each list it found', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const team = seed()
+  team.projects['project-p1'].workDir = ''
+  team.meetings = {}
+  for (let at = 0; at < 105; at += 1) {
+    team.meetings[`decided-${at}`] = {
+      id: `decided-${at}`, status: 'decided', question: `Decided question ${at}`, owner: 'Chief',
+      project: 'project-p1', createdAt: at, updatedAt: at, decidedAt: at,
+    }
+  }
+  for (let at = 0; at < 103; at += 1) {
+    team.meetings[`open-${at}`] = {
+      id: `open-${at}`, status: 'deliberating', question: `Open question ${at}`,
+      project: 'project-p1', createdAt: 1000 + at, updatedAt: 1000 + at,
+    }
+  }
+  const { rt, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.meetings.decided.length, 100)
+    assert.equal(board.meetings.decidedTotal, 105, 'the decided list says how many it found')
+    assert.equal(board.meetings.decided[0].id, 'decided-104', 'the newest decided meeting is kept')
+    assert.equal(board.meetings.pending.length, 100)
+    assert.equal(board.meetings.pendingTotal, 103, 'the pending list says how many it found')
+  } finally { await stop() }
+})

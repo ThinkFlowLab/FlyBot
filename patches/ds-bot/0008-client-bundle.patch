@@ -151,7 +151,7 @@ diff --git a/client.js b/client.js
    Add: "添加",
    Close: "关闭",
    Copy: "复制",
-@@ -78,21 +78,72 @@ var ZH = {
+@@ -78,21 +78,73 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -206,6 +206,7 @@ diff --git a/client.js b/client.js
 +  "Not sent: delivery failed": "未发出：发送失败",
 +  "{from} → {to}": "{from} → {to}",
 +  "+{count} more": "另有 {count} 条",
++  "{count} more not shown": "还有 {count} 条未显示",
 +  delegated: "委托转达",
 +  All: "全部",
 +  Filter: "筛选",
@@ -12316,7 +12317,7 @@ diff --git a/client.js b/client.js
        setOpen(false);
      };
      const onKey = (event) => {
-@@ -5097,412 +5097,1360 @@ function UpdateButton({ useUpdate, actions }) {
+@@ -5097,412 +5097,1381 @@ function UpdateButton({ useUpdate, actions }) {
        window.removeEventListener("keydown", onKey, true);
      };
    }, [open]);
@@ -12851,11 +12852,18 @@ diff --git a/client.js b/client.js
 +  const files = listOf(decisions?.files);
 +  const decided = Array.isArray(meetings?.decided) ? meetings.decided.map((item) => meetingOf(item, "decided")).filter((item) => item !== null) : [];
 +  const pending = Array.isArray(meetings?.pending) ? meetings.pending.map((item) => meetingOf(item, item?.status ?? "deliberating")).filter((item) => item !== null) : [];
++  const totalOf = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
++  const hiddenOf = (total, rows) => total === null ? 0 : Math.max(0, total - rows);
++  const decisionsTotal = totalOf(decisions?.total);
++  const decidedTotal = totalOf(meetings?.decidedTotal);
++  const pendingTotal = totalOf(meetings?.pendingTotal);
 +  return {
 +    decisions: {
 +      dir,
 +      files,
 +      count: files.length,
++      total: decisionsTotal,
++      hidden: hiddenOf(decisionsTotal, files.length),
 +      empty: files.length === 0,
 +      emptyText: text(decisions?.reason) || (dir === null ? "This Project names no working folder." : `No decision file in ${dir}/decisions.`)
 +    },
@@ -12863,6 +12871,10 @@ diff --git a/client.js b/client.js
 +      decided,
 +      pending,
 +      count: decided.length + pending.length,
++      decidedTotal,
++      pendingTotal,
++      decidedHidden: hiddenOf(decidedTotal, decided.length),
++      pendingHidden: hiddenOf(pendingTotal, pending.length),
 +      empty: decided.length === 0 && pending.length === 0,
 +      emptyText: text(meetings?.reason) || "No meeting of this Project is recorded."
 +    }
@@ -13253,15 +13265,25 @@ diff --git a/client.js b/client.js
 +    proxyRow(meeting),
 +    (0, import_react19.createElement)("span", { className: "bt-project-status" }, meeting.status)
 +  ));
++  const moreLine = (hidden, key) => hidden > 0 ? (0, import_react19.createElement)("div", { key, className: "bt-project-more" }, t("{count} more not shown", { count: hidden })) : null;
 +  return (0, import_react19.createElement)(
 +    "section",
-+    { className: "bt-project-record", "data-decisions": String(decisions.count), "data-meetings": String(meetings.count) },
++    {
++      className: "bt-project-record",
++      // `data-decisions` stays "rows drawn"; the total rides beside it so the view can be asserted.
++      "data-decisions": String(decisions.count),
++      ...decisions.total === null ? {} : { "data-decisions-total": String(decisions.total) },
++      "data-meetings": String(meetings.count)
++    },
 +    (0, import_react19.createElement)("h4", null, t("Decisions")),
 +    decisions.empty ? (0, import_react19.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(decisions.emptyText)) : decisionRows,
++    moreLine(decisions.hidden, "decisions-more"),
 +    (0, import_react19.createElement)("h4", null, t("Meetings")),
 +    meetings.empty ? (0, import_react19.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(meetings.emptyText)) : decidedRows,
++    moreLine(meetings.decidedHidden, "decided-more"),
 +    meetings.pending.length === 0 ? null : (0, import_react19.createElement)("h5", null, t("Not decided")),
-+    meetings.pending.length === 0 ? null : pendingRows
++    meetings.pending.length === 0 ? null : pendingRows,
++    moreLine(meetings.pendingHidden, "pending-more")
 +  );
 +}
 +var botIdOf = (entry) => entry !== null && typeof entry === "object" ? text(entry.botId) : "";

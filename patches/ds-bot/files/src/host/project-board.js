@@ -261,9 +261,9 @@ export function install(rt) {
         // artifact, and a Project folder is not a repository in a default install.
         state = await listProjectState(dir, { repository: false })
       } catch (error) {
-        return { dir, files: [], reason: `unreadable: ${error?.message ?? String(error)}` }
+        return { dir, files: [], total: 0, reason: `unreadable: ${error?.message ?? String(error)}` }
       }
-      if (state.ok !== true) return { dir, files: [], reason: state.reason }
+      if (state.ok !== true) return { dir, files: [], total: 0, reason: state.reason }
       found.push(...state.files
         .filter(file => file.path.startsWith(`${DECISIONS_DIR}/`) && file.path.endsWith('.md'))
         .map(file => ({ ...file, dir })))
@@ -279,14 +279,17 @@ export function install(rt) {
     }
     // One row per path — the client keys a row by path, and the Project folder was read first.
     const seen = new Set()
-    const chosen = found
+    const deduped = found
       .filter((file) => {
         if (seen.has(file.path)) return false
         seen.add(file.path)
         return true
       })
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-      .slice(0, DECISIONS_MAX)
+    // #2021: a `decisions/YYYY-MM-DD-….md` name sorts oldest first, so the cut has to take the tail.
+    // Taking the head kept the 200 oldest files and dropped the ones just written — the wrong end of
+    // the list. The order on screen stays ascending; only which rows survive at the cap changes.
+    const chosen = deduped.slice(-DECISIONS_MAX)
     const files = []
     for (const file of chosen) {
       const name = fileName(file.path)
@@ -307,7 +310,9 @@ export function install(rt) {
         : folders.length === 1
           ? `no decision file in ${join(folders[0], DECISIONS_DIR)}`
           : 'no decision file in any folder the record names'
-    return { dir: dir === '' ? null : dir, files, reason }
+    // #2021: the count is taken after the dedup and before the cut, so a reader can tell a complete
+    // list from a truncated one instead of reading the cap as the answer.
+    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason }
   }
 
   // #1831: the card's level, who it is addressed to and whether it may advance ride on every
@@ -367,6 +372,10 @@ export function install(rt) {
     return {
       decided: decided.slice(0, MEETINGS_MAX),
       pending: pending.slice(0, MEETINGS_MAX),
+      // #2021: the meetings kept the newest already; what was missing was the same count the
+      // decisions read now carries, per list, taken before the cut.
+      decidedTotal: decided.length,
+      pendingTotal: pending.length,
       reason: mine.length === 0 ? 'no meeting of this Project is recorded' : '',
     }
   }
@@ -385,8 +394,8 @@ export function install(rt) {
       inflight: [],
       blocked: [],
       counts: { waiting: 0, inflight: 0, blocked: 0, done: 0 },
-      decisions: { dir: null, files: [], reason: 'no Project: nothing to read' },
-      meetings: { decided: [], pending: [], reason: 'no Project: nothing to read' },
+      decisions: { dir: null, files: [], total: 0, reason: 'no Project: nothing to read' },
+      meetings: { decided: [], pending: [], decidedTotal: 0, pendingTotal: 0, reason: 'no Project: nothing to read' },
       metrics: { ok: false, reason: 'no Project: nothing to read', metrics: {}, running: [] },
     }
     if (id === '') return empty
