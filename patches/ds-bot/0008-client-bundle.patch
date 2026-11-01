@@ -157,7 +157,7 @@ diff --git a/client.js b/client.js
    Content: "内容",
    "Referenced {labels}": "引用了 {labels}",
    ", ": "、",
-@@ -78,21 +78,75 @@ var ZH = {
+@@ -78,21 +78,77 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -213,6 +213,8 @@ diff --git a/client.js b/client.js
 +  "{from} → {to}": "{from} → {to}",
 +  "+{count} more": "另有 {count} 条",
 +  "{count} more not shown": "还有 {count} 条未显示",
++  "{count} newest": "最新 {count} 张",
++  "{count}+ done": "{count}+ 已完成",
 +  "Reading the decision…": "正在读取决策…",
 +  "not listed": "不在列表里",
 +  delegated: "委托转达",
@@ -5131,7 +5133,7 @@ diff --git a/client.js b/client.js
  .bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
  .bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
  .bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
-@@ -2595,2914 +2595,6754 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2595,2914 +2595,6761 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  :is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
  @media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
  `;
@@ -10224,7 +10226,7 @@ diff --git a/client.js b/client.js
 +function cardProps(task, roster, onMove, onDrag, partOf2) {
 +  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
 +}
-+function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
++function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull }) {
 +  const tree = lanes ? columnTree(tasks) : null;
 +  const linked = tree ? tree.loose.filter((task) => task.parentId || task.parentTitle) : [];
 +  const plain = tree ? tree.loose.filter((task) => !task.parentId && !task.parentTitle) : tasks;
@@ -10249,7 +10251,9 @@ diff --git a/client.js b/client.js
 +      "h3",
 +      { className: "bt-board-column-head" },
 +      (0, import_react15.createElement)("span", null, columnTitle(column)),
-+      (0, import_react15.createElement)("span", { className: "bt-board-count" }, String(tasks.length))
++      // #2045: the Done column is one archive page. `tasks.length` is what was drawn, not what the
++      // owner has, so a full page says `20 newest` instead of claiming the page is the total.
++      (0, import_react15.createElement)("span", { className: "bt-board-count" }, column === "done" && archiveFull ? t("{count} newest", { count: tasks.length }) : String(tasks.length))
 +    ),
 +    dragging ? (0, import_react15.createElement)("div", { className: "bt-board-drop" }, dropLabel(column)) : null,
 +    tasks.length === 0 && !dragging ? (0, import_react15.createElement)("p", { className: "bt-board-empty" }, t("Nothing in this column.")) : null,
@@ -10299,7 +10303,7 @@ diff --git a/client.js b/client.js
 -    });
 -  };
 -  return (0, import_react5.createElement)(
-+function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
++function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull }) {
 +  const columns = boardColumns(tasks);
 +  const lanes = scope?.kind === "group";
 +  const selectedBot = scope?.kind === "bot" ? scope.botId : "";
@@ -10318,12 +10322,14 @@ diff --git a/client.js b/client.js
 +      (0, import_react15.createElement)("h3", { className: "bt-board-rail-head" }, t("Your Bots")),
 +      rail.bots.length === 0 ? (0, import_react15.createElement)("p", { className: "bt-board-empty" }, t("No tasks yet.")) : rail.bots.map((row) => {
 +        const count = counts2?.[row.id] ?? { done: 0, total: 0 };
++        const capped = archiveFull && count.done >= ARCHIVE_SHOWN;
++        const meta = count.total === 0 ? "" : capped ? t("{count}+ done", { count: count.done }) : t("{done}/{total}", { done: count.done, total: count.total });
 +        return (0, import_react15.createElement)(RailButton, {
 +          key: row.id,
 +          row,
 +          selected: row.id === selectedBot,
 +          onSelect,
-+          meta: count.total > 0 ? t("{done}/{total}", { done: count.done, total: count.total }) : ""
++          meta
 +        });
 +      }),
 +      rail.groups.length > 0 ? (0, import_react15.createElement)("h3", { className: "bt-board-rail-head" }, t("Groups you admin")) : null,
@@ -10358,7 +10364,8 @@ diff --git a/client.js b/client.js
 +          lanes,
 +          dragging,
 +          onMove,
-+          onDrag
++          onDrag,
++          archiveFull
 +        }))
 +      )
      )
@@ -10514,8 +10521,9 @@ diff --git a/client.js b/client.js
 +    if (kind === "bot" && roster.byId?.[id]) setScope({ kind: "bot", botId: id });
 +    if (kind === "group" && roster.roomsById?.[id]) setScope({ kind: "group", roomId: id });
 +  }, []);
++  const archiveFull = Array.isArray(archive) && archive.length >= ARCHIVE_SHOWN;
 +  const counts2 = {};
-+  for (const task of [...own, ...archive]) {
++  for (const task of [...own, ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
 +    const id = task.ownerBotId;
 +    const bucket = counts2[id] ?? (counts2[id] = { done: 0, total: 0 });
 +    if (task.status === "cancelled" || task.status === "failed") continue;
@@ -10600,6 +10608,7 @@ diff --git a/client.js b/client.js
 +        dragging,
 +        error,
 +        draft,
++        archiveFull,
 +        onDraft: setDraft,
 +        onSelect: setScope,
 +        onMove: move,

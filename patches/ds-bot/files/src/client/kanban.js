@@ -278,7 +278,7 @@ function cardProps(task, roster, onMove, onDrag, partOf) {
   return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf }
 }
 
-function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag }) {
+function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull }) {
   const tree = lanes ? columnTree(tasks) : null
   const linked = tree ? tree.loose.filter(task => task.parentId || task.parentTitle) : []
   const plain = tree ? tree.loose.filter(task => !task.parentId && !task.parentTitle) : tasks
@@ -296,7 +296,9 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
   },
   h('h3', { className: 'bt-board-column-head' },
     h('span', null, columnTitle(column)),
-    h('span', { className: 'bt-board-count' }, String(tasks.length))),
+    // #2045: the Done column is one archive page. `tasks.length` is what was drawn, not what the
+    // owner has, so a full page says `20 newest` instead of claiming the page is the total.
+    h('span', { className: 'bt-board-count' }, column === 'done' && archiveFull ? t('{count} newest', { count: tasks.length }) : String(tasks.length))),
   dragging ? h('div', { className: 'bt-board-drop' }, dropLabel(column)) : null,
   tasks.length === 0 && !dragging ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.')) : null,
   tree ? tree.nests.map(nest => h('div', { key: nest.task.id, className: 'bt-board-nest' },
@@ -311,7 +313,7 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag })
     : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) })))
 }
 
-export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate }) {
+export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull }) {
   const columns = boardColumns(tasks)
   const lanes = scope?.kind === 'group'
   const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
@@ -321,9 +323,16 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
       h('h3', { className: 'bt-board-rail-head' }, t('Your Bots')),
       rail.bots.length === 0 ? h('p', { className: 'bt-board-empty' }, t('No tasks yet.')) : rail.bots.map(row => {
         const count = counts?.[row.id] ?? { done: 0, total: 0 }
+        // #2045: a Bot whose Done column is a full archive page has at least that many finished
+        // cards, and the total the rail adds up is only the page — so it says `20+ done` rather than
+        // a fraction that reads as if the page were the history.
+        const capped = archiveFull && count.done >= ARCHIVE_SHOWN
+        const meta = count.total === 0
+          ? ''
+          : capped ? t('{count}+ done', { count: count.done }) : t('{done}/{total}', { done: count.done, total: count.total })
         return h(RailButton, {
           key: row.id, row, selected: row.id === selectedBot, onSelect,
-          meta: count.total > 0 ? t('{done}/{total}', { done: count.done, total: count.total }) : '',
+          meta,
         })
       }),
       rail.groups.length > 0 ? h('h3', { className: 'bt-board-rail-head' }, t('Groups you admin')) : null,
@@ -336,7 +345,7 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
       h('div', { className: 'bt-board-columns' },
         ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
-          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag,
+          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag, archiveFull,
         })))))
 }
 
@@ -379,8 +388,14 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     if (kind === 'bot' && roster.byId?.[id]) setScope({ kind: 'bot', botId: id })
     if (kind === 'group' && roster.roomsById?.[id]) setScope({ kind: 'group', roomId: id })
   }, [])
+  // #2045: a full page is a cut — the host answers the newest `ARCHIVE_SHOWN` finished rows and no
+  // total — so this is the only signal the board has that more may exist.
+  const archiveFull = Array.isArray(archive) && archive.length >= ARCHIVE_SHOWN
   const counts = {}
-  for (const task of [...own, ...archive]) {
+  // #2045: the rail counts what the board draws, so the archive contributes at most its one page.
+  // The list can hold a row more than the page after an optimistic move, and counting that row would
+  // read as a total the board never showed.
+  for (const task of [...own, ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
     const id = task.ownerBotId
     const bucket = counts[id] ?? (counts[id] = { done: 0, total: 0 })
     if (task.status === 'cancelled' || task.status === 'failed') continue
@@ -420,7 +435,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h(BoardView, {
-        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft,
+        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, archiveFull,
         onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
       })))
 }

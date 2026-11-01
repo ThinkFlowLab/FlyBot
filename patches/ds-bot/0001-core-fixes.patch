@@ -748,7 +748,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Content: '内容',
    'Referenced {labels}': '引用了 {labels}',
    ', ': '、',
-@@ -41,22 +41,76 @@ const ZH = {
+@@ -41,22 +41,78 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -805,6 +805,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  '{from} → {to}': '{from} → {to}',
 +  '+{count} more': '另有 {count} 条',
 +  '{count} more not shown': '还有 {count} 条未显示',
++  '{count} newest': '最新 {count} 张',
++  '{count}+ done': '{count}+ 已完成',
 +  'Reading the decision…': '正在读取决策…',
 +  'not listed': '不在列表里',
 +  delegated: '委托转达',
