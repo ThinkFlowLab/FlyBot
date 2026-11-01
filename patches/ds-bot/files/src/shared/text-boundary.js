@@ -13,4 +13,10 @@ export const codePointStart = (text, at) => (at > 0 && isLowSurrogate(text.charC
 export const codePointEnd = (text, end) => (end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)) ? end - 1 : end)
 
 // A bounded prefix that never splits a surrogate pair. `cut` says whether anything was dropped.
-export const cut = (text, max) => ({ text: text.slice(0, codePointEnd(text, max)), cut: text.length > max })
+// The input is flattened first (#1963): a string that already carried an unpaired surrogate went
+// straight through, so the caller stored a value that was not well formed. U+FFFD is one UTF-16 unit
+// for the one it replaces, so a well-formed input keeps its exact prefix and its `cut` flag.
+export const cut = (text, max) => {
+  const flat = String(text).toWellFormed()
+  return { text: flat.slice(0, codePointEnd(flat, max)), cut: flat.length > max }
+}
