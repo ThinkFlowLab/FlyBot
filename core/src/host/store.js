@@ -108,7 +108,7 @@ export function install(rt) {
     try {
       await copyFile(statePath, backup, constants.COPYFILE_EXCL)
     } catch (error) {
-      if (error?.code !== 'EEXIST') return `cannot back up the version-1 state (${error?.code ?? error?.message ?? error})`
+      if (error?.code !== 'EEXIST') return `cannot back up the version-1 state to ${backup} (${error?.code ?? error?.message ?? error})`
       let kept
       try {
         kept = await readFile(backup, 'utf8')

@@ -6,7 +6,9 @@
 // - P-192: `blocked` had no way back; the meeting stayed blocked for good.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import fsp from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -67,6 +69,25 @@ async function boot() {
 const filesIn = dir => (existsSync(join(dir, 'decisions')) ? readdirSync(join(dir, 'decisions')) : [])
 const tempsIn = dir => filesIn(dir).filter(name => name.includes('.tmp-'))
 const sha256 = text => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')
+
+// #1982: the "unwritable folder" has to be one on every platform. `chmodSync(folder, 0o555)` is
+// a POSIX idea Windows ignores — the write succeeds, no EACCES is thrown, and the test fails for
+// the wrong reason. Inject the refusal at the one call the decide path makes inside the folder
+// (`claimTemp`'s `open` of its temp file in `decisions/`, meetings.js) and keep the assertions.
+function refuseWritesUnder(folder) {
+  const original = fsp.open
+  fsp.open = async (path, ...args) => {
+    if (typeof path === 'string' && path.startsWith(folder)) {
+      throw Object.assign(new Error(`EACCES: permission denied, open '${path}'`), { code: 'EACCES', path })
+    }
+    return original.call(fsp, path, ...args)
+  }
+  syncBuiltinESMExports()
+  return () => {
+    fsp.open = original
+    syncBuiltinESMExports()
+  }
+}
 
 // P-191: the file is rendered once, after the cards exist, so the ids it lists are the ids the
 // meeting keeps — and the sha it records is the sha of the bytes on disk.
@@ -279,14 +300,12 @@ test('meetings: a host without the create gate refuses the produced task instead
 test('meetings: a decide that cannot archive its file creates no card, and its retry creates none either', async (t) => {
   const { rt, dir, open, decide, closeAll, stop } = await boot()
   const folder = join(dir, 'decisions')
-  t.after(async () => {
-    chmodSync(folder, 0o755)
-    await stop()
-  })
+  t.after(stop)
   const id = await open('Which storage shape should Stage 4 use?')
   await closeAll(id)
   mkdirSync(folder)
-  chmodSync(folder, 0o555)
+  const restore = refuseWritesUnder(folder)
+  t.after(restore)
 
   for (const attempt of [1, 2]) {
     const refusal = await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] })
@@ -304,16 +323,16 @@ test('meetings: a decide that cannot archive its file creates no card, and its r
 test('meetings: a retry once the folder is writable archives the file and lists every card', async (t) => {
   const { rt, dir, open, decide, closeAll, stop } = await boot()
   const folder = join(dir, 'decisions')
-  t.after(async () => {
-    chmodSync(folder, 0o755)
-    await stop()
-  })
+  t.after(stop)
   const id = await open('Which storage shape should Stage 4 use?')
   await closeAll(id)
   mkdirSync(folder)
-  chmodSync(folder, 0o555)
-  await assert.rejects(decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] }), /EACCES: permission denied/)
-  chmodSync(folder, 0o755)
+  const restore = refuseWritesUnder(folder)
+  try {
+    await assert.rejects(decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] }), /EACCES: permission denied/)
+  } finally {
+    restore()
+  }
 
   await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }, { botId: 'r1', title: 'Review the record' }] })
   const record = rt.state.meetings[id]
@@ -347,15 +366,15 @@ test('meetings: a retry after the cards exist keeps them instead of creating ano
   // leaves a file or a temp behind.
   const folder = join(dir, 'decisions')
   mkdirSync(folder)
-  chmodSync(folder, 0o555)
-  t.after(() => { try { chmodSync(folder, 0o755) } catch { /* the tree is gone with the test */ } })
+  const restore = refuseWritesUnder(folder)
+  t.after(restore)
   for (const attempt of [1, 2]) {
     await assert.rejects(decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] }), /EACCES: permission denied/, `attempt ${attempt} still fails on the folder`)
     assert.deepEqual(Object.keys(rt.state.tasks), [card.id], `attempt ${attempt} adds no second card`)
     assert.deepEqual(filesIn(dir), [], `attempt ${attempt} archives nothing`)
     assert.deepEqual(tempsIn(dir), [], `attempt ${attempt} leaves no temp behind`)
   }
-  chmodSync(folder, 0o755)
+  restore()
 
   await decide(id, { tasks: [{ botId: 'd1', title: 'Write the record' }] })
   const record = rt.state.meetings[id]
