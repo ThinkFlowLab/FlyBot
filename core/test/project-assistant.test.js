@@ -539,6 +539,19 @@ test('#P-195: only the cards that wait on the reader reach the personal block', 
   assert.match(shared, /t-working — Worker/, 'the shared section still lists it')
 })
 
+// #2005: the personal block shortens a long card title to 77 units to keep the line readable, and
+// that bound must land on a code point. A title whose 78th UTF-16 unit is the first half of an
+// emoji used to carry that half into the digest text, which a reader then sees as a replacement
+// character.
+test('#2005: a long card title in the digest is shortened at a code point, never inside an emoji', () => {
+  const row = { id: 't-cut', source: 'bot', column: 'in-progress', assignee: 'Worker', ownerId: 'owner-1', updatedAt: 1, title: `${'a'.repeat(76)}😀${'b'.repeat(10)}`, status: 'blocked' }
+  const built = buildDigest({ project: { id: 'p', name: 'Cut' }, rows: [row], owner: 'owner-1', actionable: actionableFor([row], 'owner-1'), at: AT })
+  const personal = built.text.slice(built.text.indexOf("Needs owner-1's decision:"))
+  const line = personal.split('\n').find(entry => entry.startsWith('- t-cut'))
+  assert.equal(line.isWellFormed(), true, 'the digest line is well formed, never a lone high surrogate')
+  assert.equal(line, `- t-cut — needs your call — ${'a'.repeat(76)}… (still in-progress)`, 'the 78th unit was the first half of the pair, so the pair is dropped whole')
+})
+
 test('opting out stops generation and pauses the 09:00 task, and re-enabling restores both', async () => {
   const { rt, service, delivered, stop } = await start()
   try {

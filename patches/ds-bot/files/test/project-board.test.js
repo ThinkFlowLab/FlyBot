@@ -419,6 +419,29 @@ test('#1767: a Project without a decisions folder answers an empty list with the
   }
 })
 
+// #2005: a decision file's title is its first heading, bounded at 200 units. A heading whose 200th
+// unit is the first half of an emoji used to reach the board as an unpaired surrogate, so the
+// Decisions section carried half a character.
+test('#2005: a decision title is bounded at a code point, never inside an emoji', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-title-cut-'))
+  mkdirSync(join(dir, '.git'))
+  mkdirSync(join(dir, 'decisions'))
+  writeFileSync(join(dir, 'decisions', '2026-10-30-cut.md'), `# ${'a'.repeat(199)}😀\n`)
+  const team = recordSeed()
+  team.projects['project-p1'].workDir = dir
+  const { rt, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const [file] = board.decisions.files
+    assert.equal(file.title.isWellFormed(), true, 'the title is well formed, never a lone high surrogate')
+    assert.equal(file.title, 'a'.repeat(199), 'the 200th unit was the first half of the pair, so the pair is dropped whole')
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // #1768: the queue, the leases and the blocked cards beside the columns. The seed adds one card of
 // each shape on Project 1 and one on Project 2, so every group can be asked what it must not show.
 const queueSeed = () => {
@@ -470,6 +493,20 @@ test('#1768: a blocked card carries its own reason and another Project is in non
     const ids = [...queues.waiting, ...queues.inflight, ...queues.blocked].map(item => item.id)
     assert.ok(!ids.includes('task-far'), JSON.stringify(ids))
     assert.deepEqual([queues.counts.waiting, queues.counts.inflight, queues.counts.blocked], [2, 1, 1])
+  } finally { await stop() }
+})
+
+// #2005: every one-line the board derives (`oneLine`) is bounded at 200 UTF-16 units, so a line
+// whose 200th unit is the first half of an emoji used to reach the client as an unpaired surrogate
+// — the queue reason is the case that reads a field another home supplied.
+test('#2005: a blocked card reason is bounded at a code point, never inside an emoji', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    rt.state.tasks['task-blocked'].inputRequest.question = `${'a'.repeat(199)}😀tail`
+    const queues = await rt.projectBoardQueues('project-p1')
+    const reason = queues.blocked.find(item => item.id === 'task-blocked').reason
+    assert.equal(reason.isWellFormed(), true, 'the reason is well formed, never a lone high surrogate')
+    assert.equal(reason, 'a'.repeat(199), 'the 200th unit was the first half of the pair, so the pair is dropped whole')
   } finally { await stop() }
 })
 

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
+import { install } from '../src/host/project-team.js'
 import { fakeContext } from './fake-ctx.js'
 
 const LONG = 'x'.repeat(5000)
@@ -187,4 +188,47 @@ test('project-team cuts a room name from another home at 200 without splitting a
   assert.equal(kept, 'a'.repeat(199), 'the 200th unit was the first half of the pair, so the pair is dropped, not split')
   assert.ok(name.startsWith(kept), 'a code-point prefix of the group name')
   assert.ok(kept.length <= 200, 'the budget of 200 UTF-16 units is unchanged')
+})
+
+// #2005: `capped()` bounds the name, role, persona, model and color of a dossier row, and every
+// one of those bounds must land on a code point. A bot name whose 200th unit is the first half of
+// an emoji used to reach the panel as an unpaired surrogate.
+test('#2005: project-team caps a bot name at a code point, never inside an emoji', async (t) => {
+  const { callAs, rt, stop } = await start()
+  t.after(stop)
+  rt.state.bots['bot-chief'].name = `${'a'.repeat(199)}😀`
+  const rows = (await callAs('project-team', { id: 'project-1' })).value.rows
+  assert.equal(rows[0].name.isWellFormed(), true, 'the name is well formed, never a lone high surrogate')
+  assert.equal(rows[0].name, 'a'.repeat(199), 'the 200th unit was the first half of the pair, so the pair is dropped whole')
+})
+
+// #2005: the dossier's memory head is bounded at 4,000 units, and that bound must land on a code
+// point too; a memory file whose 4,000th unit is the first half of an emoji used to reach the
+// panel as half a character.
+test('#2005: project-team cuts the memory head at a code point, never inside an emoji', async (t) => {
+  const { callAs, home, stop } = await start()
+  t.after(stop)
+  memory(home, 'bot-chief', `${'a'.repeat(3999)}😀`)
+  const rows = (await callAs('project-team', { id: 'project-1' })).value.rows
+  assert.equal(rows[0].memory.head.isWellFormed(), true, 'the head is well formed, never a lone high surrogate')
+  assert.equal(rows[0].memory.head, 'a'.repeat(3999), 'the 4,000th unit was the first half of the pair, so the pair is dropped whole')
+})
+
+// #2005: the head is bounded twice on purpose — once where `memoryDigest` reads it, and once in the
+// dossier row itself, which is where the module promises that every string it answers is capped. The
+// second bound cannot be reached through the reader (a 4,000-unit head is already well formed), so it
+// is pinned by a direct call that hands the module a 4,001-unit head itself.
+test('#2005: project-team cuts a head handed to it directly at a code point', () => {
+  const head = `${'a'.repeat(3999)}😀`
+  const rt = {
+    state: { rooms: {} },
+    readProject: () => ({ id: 'project-1', chief: { botId: 'bot-chief' }, assistant: { botId: '' }, maintainers: [], members: [] }),
+    botOf: id => (id === 'bot-chief' ? { id, name: 'Chief', role: 'Chief', instructions: '', model: 'deepseek-chat', color: '#112233', capabilities: [], createdAt: 1 } : null),
+    memoryDigest: () => ({ head, topics: [] }),
+  }
+  install(rt)
+  const row = rt.projectTeam('project-1').rows[0]
+  assert.equal(head.length, 4001, 'the caller handed the dossier 4,001 units')
+  assert.equal(row.memory.head.isWellFormed(), true, 'the head is well formed, never a lone high surrogate')
+  assert.equal(row.memory.head, 'a'.repeat(3999), 'the pair at the bound is dropped whole instead of keeping its first half')
 })
