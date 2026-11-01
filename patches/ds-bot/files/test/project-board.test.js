@@ -420,6 +420,143 @@ test('#1767: a Project without a decisions folder answers an empty list with the
   }
 })
 
+// #2033: the Decisions row list is cut at the newest 200 files (#2021), but a decided meeting
+// still finds its own file by name. A file that fell off the oldest end of that cut is on disk and
+// was seen by this read, so its meeting must name it rather than report it gone.
+const folderPastCap = () => {
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-cap-'))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  for (let index = 0; index < 200; index += 1) {
+    writeFileSync(join(dir, 'decisions', `2026-01-02-${String(index).padStart(3, '0')}.md`), `# Old decision ${index}\n`)
+  }
+  for (let index = 0; index < 5; index += 1) {
+    writeFileSync(join(dir, 'decisions', `2026-11-01-${String(index).padStart(3, '0')}.md`), `# New decision ${index}\n`)
+  }
+  // `../outside.md` from the Project folder: present on disk, never in this read's dedupe set. A
+  // fallback that asks the filesystem instead of the read would hand its path out.
+  writeFileSync(join(base, 'outside.md'), '# Outside the folder\n')
+  return { base, dir }
+}
+
+const capSeed = (dir) => {
+  const team = seed()
+  team.projects['project-p1'].workDir = dir
+  team.meetings = {
+    'meeting-oldest': {
+      id: 'meeting-oldest', status: 'decided', question: 'The oldest decision?',
+      owner: 'Chief', project: 'project-p1', decisionFile: 'decisions/2026-01-02-000.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 6,
+    },
+    'meeting-newest': {
+      id: 'meeting-newest', status: 'decided', question: 'The newest decision?',
+      owner: 'Chief', project: 'project-p1', decisionFile: 'decisions/2026-11-01-004.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 7,
+    },
+    'meeting-absent': {
+      id: 'meeting-absent', status: 'decided', question: 'A file that never was?',
+      owner: 'Chief', project: 'project-p1', decisionFile: 'decisions/2026-12-31-missing.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 8,
+    },
+    'meeting-escape': {
+      id: 'meeting-escape', status: 'decided', question: 'A name pointing outside?',
+      owner: 'Chief', project: 'project-p1', decisionFile: '../outside.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 9,
+    },
+    // Inside the cut, so this read lists it until the file is deleted; after that the meeting must
+    // read gone again. The fallback takes names from this read, so it cannot resurrect the file.
+    'meeting-in-cap': {
+      id: 'meeting-in-cap', status: 'decided', question: 'A file inside the cut that is later deleted?',
+      owner: 'Chief', project: 'project-p1', decisionFile: 'decisions/2026-11-01-002.md',
+      createdAt: 1, updatedAt: 5, decidedAt: 10,
+    },
+  }
+  return team
+}
+
+async function startPastCap() {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const { base, dir } = folderPastCap()
+  const { rt, stop } = await start(home, capSeed(dir))
+  return { rt, home, base, dir, stop }
+}
+
+test('#2033: a decided meeting whose file fell off the 200-row cut still names it', async () => {
+  const { rt, base, stop } = await startPastCap()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.files.length, 200, 'the row list is still cut at the newest 200')
+    assert.equal(board.decisions.total, 205, 'the count still says how many files the read saw')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-01-02-000.md'), false, 'the oldest file is outside the cut, which is why the fallback is needed')
+    const oldest = board.meetings.decided.find(meeting => meeting.id === 'meeting-oldest')
+    assert.equal(oldest.path, 'decisions/2026-01-02-000.md', 'a file past the cut is named, not reported gone')
+    assert.equal('sha256' in oldest, false, 'only the cut rows carry a hash, so the fallback adds none')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2033: a decided meeting inside the cut keeps its path and hash', async () => {
+  const { rt, base, stop } = await startPastCap()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const newest = board.meetings.decided.find(meeting => meeting.id === 'meeting-newest')
+    assert.equal(newest.path, 'decisions/2026-11-01-004.md')
+    assert.match(newest.sha256, /^[0-9a-f]{64}$/)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2033: a decided meeting naming a file that is really absent still reads it gone', async () => {
+  const { rt, base, stop } = await startPastCap()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const absent = board.meetings.decided.find(meeting => meeting.id === 'meeting-absent')
+    assert.equal(absent.path, '', 'a name this read never saw is not a path')
+    assert.equal('sha256' in absent, false)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2033: a decision file deleted from inside the cut still reads gone', async () => {
+  const { rt, dir, base, stop } = await startPastCap()
+  try {
+    const before = await rt.projectBoard('project-p1')
+    const kept = before.meetings.decided.find(meeting => meeting.id === 'meeting-in-cap')
+    assert.equal(kept.path, 'decisions/2026-11-01-002.md', 'the file is inside the cut while it is there')
+    assert.match(kept.sha256, /^[0-9a-f]{64}$/)
+    rmSync(join(dir, 'decisions', '2026-11-01-002.md'))
+    const after = await rt.projectBoard('project-p1')
+    assert.equal(after.decisions.total, 204, 'the read now sees one file fewer')
+    assert.equal(after.decisions.files.some(file => file.path === 'decisions/2026-11-01-002.md'), false, 'the deleted row is off the list')
+    const gone = after.meetings.decided.find(meeting => meeting.id === 'meeting-in-cap')
+    assert.equal(gone.path, '', 'a deleted file stays gone: the fallback names only what this read saw')
+    assert.equal('sha256' in gone, false)
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2033: a decision name that points outside the folder never becomes a path', async () => {
+  const { rt, base, stop } = await startPastCap()
+  try {
+    assert.equal(existsSync(join(base, 'outside.md')), true, 'the file it points at does exist on disk')
+    const board = await rt.projectBoard('project-p1')
+    const escape = board.meetings.decided.find(meeting => meeting.id === 'meeting-escape')
+    assert.equal(escape.path, '', 'the fallback takes names from this read, never from the filesystem')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
 // #2005: a decision file's title is its first heading, bounded at 200 units. A heading whose 200th
 // unit is the first half of an emoji used to reach the board as an unpaired surrogate, so the
 // Decisions section carried half a character.

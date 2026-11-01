@@ -321,7 +321,9 @@ export function install(rt) {
           : 'no decision file in any folder the record names'
     // #2021: the count is taken after the dedup and before the cut, so a reader can tell a complete
     // list from a truncated one instead of reading the cap as the answer.
-    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason }
+    // #2033: the un-truncated dedupe of this read, paths only — the meeting lookup below has to
+    // tell "fell off the 200-row cut" from "was never here" without asking the disk again.
+    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason, known: new Set(deduped.map(file => file.path)) }
   }
 
   // #1831: the card's level, who it is addressed to and whether it may advance ride on every
@@ -354,13 +356,17 @@ export function install(rt) {
         // exactly then, and the reader can see the file the record names is gone.
         const named = text(meeting.decisionFile)
         const file = known.get(named)
+        // #2033: `files` keeps the newest 200 rows (#2021), so a name can miss there while this read
+        // still saw the file in the folder. That fallback asks this read's own dedupe set — never
+        // the filesystem — so a name like `../outside.md` cannot become a path.
+        const pastCut = file === undefined && decisions.known?.has(named) === true
         decided.push({
           id,
           date: text(meeting.decidedAt) !== '' ? new Date(meeting.decidedAt).toISOString().slice(0, 10) : '',
           question,
           owner: text(meeting.owner) || null,
           ...cardOf(meeting),
-          path: file === undefined ? '' : file.path,
+          path: file !== undefined ? file.path : pastCut ? named : '',
           ...(file === undefined ? {} : { sha256: file.sha256 }),
         })
         continue
@@ -485,6 +491,9 @@ export function install(rt) {
       ? { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } }
       : buildQueues(mine, done.length)
     const decisions = await decisionsOf(project)
+    // `known` is this read's own path set for the meeting lookup (#2033); the page renders
+    // `dir`/`files`/`total`/`reason`, so it does not travel with the board.
+    const servedDecisions = { dir: decisions.dir, files: decisions.files, total: decisions.total, reason: decisions.reason }
     // #1829: the seven numbers ride on the same read as the rows, so the board and its header
     // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
     // #1848: the running table and the done-task median read `mine` — exactly the cards this
@@ -497,7 +506,7 @@ export function install(rt) {
       now: typeof rt.now === 'function' ? rt.now() : Date.now(),
       tasks: mine,
     })
-    return { rows: open, done, ...queues, decisions, meetings: meetingsOf(project, decisions), metrics }
+    return { rows: open, done, ...queues, decisions: servedDecisions, meetings: meetingsOf(project, decisions), metrics }
   }
   const buildQueues = (mine, done) => {
     const now = typeof rt.now === 'function' ? rt.now() : Date.now()
