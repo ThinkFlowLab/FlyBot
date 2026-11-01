@@ -13508,17 +13508,14 @@ function BotSchedules({ bot, roster, actions }) {
     })
   );
 }
-function ScheduleSummary({ bot, actions }) {
-  const view = useSchedules(actions);
-  if (view === null) return null;
-  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+function SummaryLines({ tasks, actions }) {
   const shown = tasks.slice(0, 3);
   const hidden = tasks.length - shown.length;
   return (0, import_react25.createElement)(
-    "div",
+    import_react25.Fragment,
     null,
     (0, import_react25.createElement)("div", { className: "bt-section-title" }, hidden > 0 ? t("Scheduled tasks · {count}", { count: tasks.length }) : t("Scheduled tasks")),
-    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view?.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : (0, import_react25.createElement)(
+    (0, import_react25.createElement)(
       "div",
       { className: "bt-task-list" },
       shown.map((task) => (0, import_react25.createElement)(
@@ -13531,6 +13528,24 @@ function ScheduleSummary({ bot, actions }) {
       hidden > 0 ? (0, import_react25.createElement)("button", { key: "more", type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules") }, t("{count} more not shown", { count: hidden })) : null
     )
   );
+}
+function ScheduleSummary({ bot, actions }) {
+  const view = useSchedules(actions);
+  if (view === null) return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  return (0, import_react25.createElement)(
+    "div",
+    null,
+    tasks.length === 0 ? (0, import_react25.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")) : (0, import_react25.createElement)(SummaryLines, { tasks, actions }),
+    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : null
+  );
+}
+function RoomSchedules({ room: room2, actions }) {
+  const view = useSchedules(actions);
+  if (view === null || room2.origin === "face-to-face") return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id) : [];
+  if (tasks.length === 0) return null;
+  return (0, import_react25.createElement)("div", null, (0, import_react25.createElement)(SummaryLines, { tasks, actions }));
 }
 var SCHEDULE_CSS = `
 .bt-task{gap:10px}
@@ -19466,7 +19481,8 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
       { key: "usage" },
       (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Usage")),
       (0, import_react44.createElement)("div", { className: "bt-kv" }, (0, import_react44.createElement)("span", null, room2.name), (0, import_react44.createElement)("span", null, usage))
-    )
+    ),
+    (0, import_react44.createElement)(RoomSchedules, { key: "routines", room: room2, actions })
   ];
 }
 function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {

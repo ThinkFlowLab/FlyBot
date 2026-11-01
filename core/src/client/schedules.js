@@ -416,11 +416,24 @@ export function BotSchedules({ bot, roster, actions }) {
         }))
 }
 
+// The panel's rows: three of them, a title carrying the real count above three, and one row
+// saying what the cap hid (#2030). A Bot's details line and a group chat's section share it, so
+// the two surfaces cannot describe the same list differently.
+function SummaryLines({ tasks, actions }) {
+  const shown = tasks.slice(0, 3)
+  const hidden = tasks.length - shown.length
+  return h(Fragment, null,
+    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
+    h('div', { className: 'bt-task-list' },
+      shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
+        h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
+      hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
+}
+
 // The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 // tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
-// The line draws three rows, so the title carries the real count and one row after them says
-// what the cap hid; that row opens the settings list, where a bot id would open the new-task
-// form instead — the form is what the empty state's button means (#2030).
+// The rows open the settings list, where a bot id would open the new-task form instead — the
+// form is what the empty state's button means (#2030).
 export function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions)
   // #2035: the shared view starts null and the first read lands a frame later, so "no view yet" is
@@ -429,16 +442,26 @@ export function ScheduleSummary({ bot, actions }) {
   // keeps its own line below.
   if (view === null) return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
-  const shown = tasks.slice(0, 3)
-  const hidden = tasks.length - shown.length
   return h('div', null,
-    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
     tasks.length === 0
-      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
-      : h('div', { className: 'bt-task-list' },
-          shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
-            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
-          hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
+      ? h('div', { className: 'bt-section-title' }, t('Scheduled tasks'))
+      : h(SummaryLines, { tasks, actions }),
+    tasks.length === 0
+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
+      : null)
+}
+
+// A group chat's own tasks in its details panel (#2039). A task belongs to a room when it carries
+// that room's `roomId` and no `botId`; a Bot's task in the same view and another room's task are
+// both someone else's and stay out. Nothing is drawn for a room with no tasks — the rooms' page
+// keeps the only "none" sentence — and a face-to-face room has no such section. The rows open the
+// settings list with no target, because a room id here would open the new-task form (#2030).
+export function RoomSchedules({ room, actions }) {
+  const view = useSchedules(actions)
+  if (view === null || room.origin === 'face-to-face') return null
+  const tasks = view.available ? view.tasks.filter(task => task.botId === undefined && task.roomId === room.id) : []
+  if (tasks.length === 0) return null
+  return h('div', null, h(SummaryLines, { tasks, actions }))
 }
 
 export const SCHEDULE_CSS = `

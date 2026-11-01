@@ -9,7 +9,9 @@ import { build } from 'esbuild'
 // where the switch is; the Harness settings dialog has none.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SchedulesPage, BotSchedules, ScheduleSummary, CopyRow, openPlugins, formStart, timingText } from './src/client/schedules.js'",
+    // A star re-export keeps a missing name a runtime `undefined` in one test instead of a build
+    // failure that would hide which case is red (#2039).
+    contents: "export * from './src/client/schedules.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -31,7 +33,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, ScheduleSummary, CopyRow, openPlugins, formStart, timingText } = module.exports
+const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -522,4 +524,59 @@ test('#2035: five tasks keep the #2030 shape — count in the title, three rows,
   rows[0].props.onClick()
   more[0].props.onClick()
   assert.deepEqual(actions.calls, [['schedules'], ['schedules']], 'rows and the more row open the list, never the form')
+})
+
+// #2039: a scheduled task can belong to a group chat, but the room's own details panel had no
+// section for them — the only place to see them was Settings. The panel now lists the tasks the
+// room owns, in the same shape the Bot line uses. The control cases matter: a task owned by a Bot
+// and a task owned by another room sit in the same view and must not appear, so a filter written
+// as "tasks without a botId" cannot pass by drawing everything.
+const ROOM = { id: 'r1', name: 'Team room', origin: 'group', members: [] }
+const FACE_ROOM = { id: 'f1', name: 'Face room', origin: 'face-to-face', members: [] }
+const roomTasks = () => fiveTasks().map((task, index) => ({ ...task, id: `r${index}`, sessionId: 'chat-r1', botId: undefined, roomId: 'r1', title: `Room task ${index + 1}` }))
+const BOT_TASK = { ...ACTIVE, id: 'b-bot', title: 'Bot task', sessionId: 'chat-b1', botId: 'b1', roomId: 'r1' }
+const OTHER_ROOM_TASK = { ...ACTIVE, id: 'r-other', title: 'Other room task', sessionId: 'chat-r2', botId: undefined, roomId: 'r2' }
+
+test("#2039: a group chat's panel lists only the tasks that room owns", () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [...roomTasks(), BOT_TASK, OTHER_ROOM_TASK] })
+  const panel = render(RoomSchedules({ room: ROOM, actions }))
+  assert.deepEqual(text(sectionTitle(panel)[0]), ['Scheduled tasks · 5'], "the count is the room's five, not the seven the view holds")
+  const rows = buttonsOf(panel).filter(button => button.props.className === 'bt-task-line')
+  assert.equal(rows.length, 3, 'the cap still draws three rows')
+  const lines = text(panel)
+  assert.ok(!lines.includes('Bot task'), `a Bot's task must not appear in a room: ${lines.join('|')}`)
+  assert.ok(!lines.includes('Other room task'), `another room's task must not appear: ${lines.join('|')}`)
+  assert.deepEqual(text(buttonsOf(panel).filter(button => button.props.className === 'bt-more')[0]), ['2 more not shown'])
+})
+
+test("#2039: a row and the more row in a room's panel open the list with no target", () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: roomTasks() })
+  const panel = render(RoomSchedules({ room: ROOM, actions }))
+  const rows = buttonsOf(panel).filter(button => button.props.className === 'bt-task-line')
+  const more = buttonsOf(panel).filter(button => button.props.className === 'bt-more')
+  rows[0].props.onClick()
+  more[0].props.onClick()
+  assert.deepEqual(actions.calls, [['schedules'], ['schedules']], 'the list, never the new-task form: no room id and no Bot id')
+})
+
+test('#2039: a room with no tasks draws nothing at all', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [BOT_TASK, OTHER_ROOM_TASK] })
+  assert.equal(RoomSchedules({ room: ROOM, actions }), null, 'no section, no empty state, no add button')
+  assert.deepEqual(actions.calls, [])
+})
+
+test('#2039: a face-to-face room draws no schedule section', () => {
+  const actions = opened()
+  // The tasks here are the face room's own, so only the face-room rule can keep the section out.
+  seeded.push({ available: true, tasks: roomTasks().map(task => ({ ...task, roomId: 'f1', sessionId: 'chat-f1' })) })
+  assert.equal(RoomSchedules({ room: FACE_ROOM, actions }), null, 'a face room has no such section')
+})
+
+test('#2039: an unread schedules view draws no room section either', () => {
+  const actions = opened()
+  seeded.push(null)
+  assert.equal(RoomSchedules({ room: ROOM, actions }), null, 'no view yet is not "this room has no tasks"')
 })
