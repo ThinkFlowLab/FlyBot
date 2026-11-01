@@ -669,6 +669,10 @@ export function install(rt) {
         throw forbidden('Only a room admin can add participants')
       }
       const kind = draft.kind
+      // #2011: `updateRoom` sends its own join of the final name after the save, so a seat it changed must
+      // not also broadcast from here — the guests already seated would hear the same join twice. That join
+      // is not the targeted one to the arriving seat, which is still sent.
+      const broadcast = opts?.broadcast !== false
       const viaCode = opts?.viaCode === true && draft.kind === 'bot' && !isRemoteDraft(draft)
       // #923: a seat one of this room's links admitted names the pair reach.js enumerates. The link's
       // ticket, and the Bot of this home whose handle the guest knocked on, are what make that pair
@@ -758,17 +762,20 @@ export function install(rt) {
         void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
         // #2004: the arrival moved the name and only the arriving seat heard it; the guests already in
         // the room get the same name once, and the arriving seat keeps its one targeted join.
-        if (moved) reshareRoster(room, { except: record.handle })
-      } else if (record?.kind === 'bot' && !record.remote) reshareRoster(room)
+        if (moved && broadcast) reshareRoster(room, { except: record.handle })
+      } else if (record?.kind === 'bot' && !record.remote && broadcast) reshareRoster(room)
       return room
     })
   }
 
-  rt.removeRoomParticipant = function removeRoomParticipant(roomId, ref, actor) {
+  rt.removeRoomParticipant = function removeRoomParticipant(roomId, ref, actor, opts = {}) {
     return withRoomLock(async () => {
       const room = rt.roomOf(roomId)
       if (room === undefined) throw invalid('Unknown group chat')
       materialize(room)
+      // #2011: same as an add — `updateRoom` sends the final name itself, so a seat it removed does not
+      // broadcast again from here.
+      const broadcast = opts?.broadcast !== false
       const kind = ref.kind
       const id = ref.id || ref.handle
       const me = participantOf(room, kind, id)
@@ -813,12 +820,12 @@ export function install(rt) {
         await settleTicket(room, me.ticket, me).catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
       } else if (kind === 'bot' && room.origin === 'inbound-share' && room.sharedFrom?.ticket) {
         await finishTicketLeave(room).catch(error => rt.warn?.('ds-bot: leaving %s was not settled: %s', room.name, error))
-      } else if (kind === 'bot' && !me.remote) {
+      } else if (kind === 'bot' && !me.remote && broadcast) {
         reshareRoster(room)
       }
       // #2004: the leave moved the name, so the guests still in the room get the copy the host holds. The
       // seat that left is already out of `currentParticipants`; a local Bot's leave sent its roster above.
-      if (me.remote && moved) reshareRoster(room)
+      if (me.remote && moved && broadcast) reshareRoster(room)
       return room
     })
   }

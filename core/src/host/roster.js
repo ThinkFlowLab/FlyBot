@@ -477,11 +477,13 @@ export function install(rt) {
         delete room.named
       }
     }
+    // #2011: the join below carries the final name to every guest, so a seat change made here must not
+    // broadcast from the seat path as well — the guest already seated would hear the same join twice.
     if (Array.isArray(patch.addParticipants)) {
-      for (const draft of patch.addParticipants) await rt.addRoomParticipant(room.id, draft, actor)
+      for (const draft of patch.addParticipants) await rt.addRoomParticipant(room.id, draft, actor, { broadcast: false })
     }
     if (Array.isArray(patch.removeParticipants)) {
-      for (const ref of patch.removeParticipants) await rt.removeRoomParticipant(room.id, ref, actor)
+      for (const ref of patch.removeParticipants) await rt.removeRoomParticipant(room.id, ref, actor, { broadcast: false })
     }
     if (!room.named) room.name = autoRoomName(room.members, room)
     const nameChanged = room.name !== before
