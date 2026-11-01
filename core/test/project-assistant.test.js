@@ -2,12 +2,13 @@
 // Project id, a digest built only from the Project State reader and the board rows, and exactly one
 // 09:00 Asia/Shanghai task on the assistant's own Session that goes away with the Project.
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { cleanHome } from './temp-home.js'
 import { MAX_ACTIONABLE, actionableFor, buildDigest, dayIn } from '../src/host/project-assistant.js'
 
 const seed = () => ({
@@ -82,9 +83,12 @@ async function start({ github = 'Birfy', schedule = true } = {}) {
   rt.connectorsView = () => (github === null ? [] : [{ id: 'github', name: 'GitHub', state: 'ready', account: github }])
   const delivered = []
   rt.deliver = async message => { delivered.push(message) }
+  // #1983: the digest's warnings are still being appended to the diagnostics log when the test
+  // body ends; `dispose()` drains that log (and the state chain), so the home is removed once,
+  // after the writers are quiet. `cleanHome` only asserts the removal worked.
   const stop = async () => {
     await ctx.dispose()
-    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+    cleanHome(home)
   }
   return { rt, service, delivered, attachSchedule, stop }
 }

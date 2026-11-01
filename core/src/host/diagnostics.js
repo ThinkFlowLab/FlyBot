@@ -150,6 +150,19 @@ export function install(rt) {
     })
   }
 
+  // The log is written in the background, so a shutdown has to drain it: a caller that removes the
+  // home (a test's teardown, #1983) otherwise races an `appendFile` that puts `logs/` back after the
+  // removal started. `settled` waits out the last entry queued before it was called, including one
+  // queued by another cleanup; `writing` never rejects, so awaiting it is safe.
+  const settled = async () => {
+    for (;;) {
+      const tail = writing
+      await tail
+      if (tail === writing) return
+    }
+  }
+  ctx.effect(() => () => settled(), 'ds-bot: diagnostics log')
+
   // `fields`: source ('host', 'turn', 'api'), level, code, status, bot, where, sessionId, stack.
   const note = ({ level = 'error', source = 'host', text, stack, ...fields }) => {
     const entry = { time: Date.now(), level, source, text: clean(text) }

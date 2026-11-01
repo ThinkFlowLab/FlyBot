@@ -34,6 +34,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
   t.after(stop)
   assert.equal(applyResult, undefined)
   assert.deepEqual(ctx.calls, [
+    // #1983: the diagnostics log is installed first, so its cleanup is the last one `dispose()`
+    // settles — the append chain has to drain before a caller removes the home.
+    'effect ds-bot: diagnostics log',
     'effect ds-bot: state lock',
     'on llm/adapters-updated',
     'on session/event',

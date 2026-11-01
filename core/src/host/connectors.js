@@ -1040,12 +1040,16 @@ export function install(rt) {
     void scrubAddresses().catch(error => rt.warn('ds-bot: connectors: %s', reason(error))).then(() => rt.loadSecrets()).then(async () => {
       await syncAll()
     })
-    return () => {
+    // The dial's close and an MCP client's dispose are work of their own (#1983): a shutdown that
+    // drops them with `void` returns while a socket is still closing, so a caller that removes the
+    // home right after it races the teardown. `ctx.dispose()` awaits what a cleanup returns, so
+    // this one returns them.
+    return async () => {
       stopped = true
       feishuWire.off?.()
       feishuWire = { seam: undefined, off: undefined }
-      void feishuInbound.stop()
-      for (const c of connectors) void unmount(c)
+      await feishuInbound.stop()
+      await Promise.all(connectors.map(c => unmount(c)))
     }
   }, 'ds-bot: connectors')
 
