@@ -628,6 +628,24 @@ test('a run fails only when its turn errors; a turn without an answer has run, a
   assert.equal(saved(), 'stopped')
 })
 
+test('P-1993: a failed run\'s reason is cut on a code point at 200', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  const [id] = schedule.tasks.keys()
+  const message = { id: 'msg-1', content: [{ type: 'text', text: reminder(id, 'Sum up') }], source: { kind: 'schedule' } }
+  const head = `SERVER 503: ${'a'.repeat(187)}`
+  runTurn(ctx, 'm1', 1, message, { kind: 'error', error: { code: 'SERVER', status: 503, message: `${'a'.repeat(187)}😀tail` } })
+  const [[result, reason]] = await lastRuns(call)
+  assert.equal(result, 'failed')
+  assert.ok(reason.isWellFormed(), `the stored reason is well formed: ${JSON.stringify(reason)}`)
+  assert.equal(reason, head, 'the pair at the bound is dropped whole, not split')
+  // Control: a reason under the bound is stored word for word.
+  runTurn(ctx, 'm1', 2, { ...message, id: 'msg-2' }, { kind: 'error', error: { code: 'SERVER', status: 503, message: 'upstream busy' } })
+  assert.deepEqual(await lastRuns(call), [['failed', 'SERVER 503: upstream busy']])
+})
+
 test('Retry runs the same prompt once now in the Bot’s current part, and its turn is the task’s run', async (t) => {
   const schedule = scheduleService()
   const { ctx, home, call } = setup({ schedule })

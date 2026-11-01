@@ -3,6 +3,7 @@
 // the whole dsh conversation surface and none of the team tools.
 import { randomUUID } from 'node:crypto'
 import { AGENT_NAME, AGENT_SESSION_TITLE_MAX, TEAM_TOOLS } from './constants.js'
+import { cut } from './text.js'
 
 export function install(rt) {
   const { ctx, state } = rt
@@ -166,7 +167,7 @@ export function install(rt) {
     const clean = String(title ?? '').trim()
     if (clean === '') throw new Error('A session needs a title')
     const agent_ = await rt.resolveAgent(sessionId)
-    await ctx.sessionTitle.rename(agent_.session, clean.slice(0, AGENT_SESSION_TITLE_MAX))
+    await ctx.sessionTitle.rename(agent_.session, cut(clean, AGENT_SESSION_TITLE_MAX).text)
   }
 
   async function removeAgent(agentId) {

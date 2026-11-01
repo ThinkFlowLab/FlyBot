@@ -132,6 +132,24 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
   assert.equal(text(post), '[Group post from Writer]\nCopied the doc to E:/docs.')
 })
 
+test('P-1993: an approval record\'s reason is cut on a code point at 500', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const head = 'a'.repeat(499)
+  const short = host.askApproval('gb', { callId: 'k1', reason: 'copy the doc' })
+  const [control] = (await host.call('state', {})).value.work.approvals
+  assert.equal(control.reason, 'copy the doc', 'a reason under the bound is stored word for word')
+  assert.equal((await host.call('approval-answer', { id: control.id, choice: 'allow' })).ok, true)
+  assert.equal(await short, 'allowed-once')
+
+  const long = host.askApproval('gb', { callId: 'k2', reason: `${head}😀tail` })
+  const [approval] = (await host.call('state', {})).value.work.approvals
+  assert.ok(approval.reason.isWellFormed(), `the stored reason is well formed: ${JSON.stringify(approval.reason)}`)
+  assert.equal(approval.reason, head, 'the pair at the bound is dropped whole, not split')
+  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
+  assert.equal(await long, 'allowed-once')
+})
+
 // Both fields of a card go through a bound of their own: 300 for the description, 400 for the
 // command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
 test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {

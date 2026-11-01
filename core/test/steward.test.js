@@ -101,6 +101,17 @@ test('the checkpoint also reads the messages the backend keeps after it', () => 
   assert.ok(checkpointTailNote([say('user', '长'.repeat(300))]).includes(`"${'长'.repeat(80)}"`))
 })
 
+test('P-1993: the quoted first line of the kept tail is cut on a code point at 80', () => {
+  const say = (role, text) => ({ role, content: [{ type: 'text', text }] })
+  const head = 'a'.repeat(79)
+  const quoted = note => /begins "(.*)", stay right after your summary/.exec(note)[1]
+  const long = quoted(checkpointTailNote([say('user', `${head}😀tail`)]))
+  assert.ok(long.isWellFormed(), `the quoted line is well formed: ${JSON.stringify(long)}`)
+  assert.equal(long, head, 'the pair at the bound is dropped whole, not split')
+  // Control: a line under the bound is quoted word for word.
+  assert.equal(quoted(checkpointTailNote([say('user', 'Short line')])), 'Short line')
+})
+
 test('the checkpoint records unanswered requests as remaining, and does not answer them', () => {
   assert.match(CHECKPOINT_PROMPT, /every request not yet answered in your replies above/)
   assert.match(CHECKPOINT_PROMPT, /The user never sees this summary, so do not do any of the remaining work in it/)

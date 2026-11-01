@@ -1038,7 +1038,7 @@ export function install(rt) {
   // the room, posted as a relay role the room's round machinery does not answer (groups.js `opens`).
   async function mentionReceipt(sessionId, room, results, known) {
     if (room === undefined || results.length === 0) return
-    const line = value => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+    const line = value => cut(String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim(), 240).text
     const lines = results.map(({ handle, action, reason }) => {
       const name = cleanName(known.get(handle)?.name, handle)
       const why = line(reason)

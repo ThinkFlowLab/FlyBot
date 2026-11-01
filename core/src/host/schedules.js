@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 import { defineTool } from './tool-schema.js'
-import { codePoints, textOf } from './text.js'
+import { codePoints, cut, textOf } from './text.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 
@@ -279,7 +279,7 @@ export function install(rt) {
     for (const id of entry.ids) {
       const run = runs()[id]
       if (run === undefined) continue
-      noteRun(id, { ...run, result: reason !== undefined ? 'failed' : aborted ? 'stopped' : 'ran', ...(reason !== undefined ? { reason: reason.slice(0, 200) } : {}) })
+      noteRun(id, { ...run, result: reason !== undefined ? 'failed' : aborted ? 'stopped' : 'ran', ...(reason !== undefined ? { reason: cut(reason, 200).text } : {}) })
     }
   }
   // A group round whose members' turns failed: the task's run in that group failed.
