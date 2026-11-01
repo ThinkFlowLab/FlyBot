@@ -259,6 +259,8 @@ var ZH = {
   "{from} → {to}": "{from} → {to}",
   "+{count} more": "另有 {count} 条",
   "{count} more not shown": "还有 {count} 条未显示",
+  "Reading the decision…": "正在读取决策…",
+  "not listed": "不在列表里",
   delegated: "委托转达",
   All: "全部",
   Filter: "筛选",
@@ -10436,6 +10438,14 @@ var PROJECT_BOARD_CSS = `
 .bt-project-decision .bt-project-date,.bt-project-meeting .bt-project-date{font-size:11px;opacity:.6;min-width:76px;font-variant-numeric:tabular-nums}
 .bt-project-decision .bt-project-hash{margin-left:auto;font-size:11px;opacity:.55;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-decision .bt-project-title,.bt-project-meeting .bt-project-title{min-width:0}
+/* #2041: the decision row became a button, so it keeps the row's look and drops the control's. */
+button.bt-project-decision{width:100%;font:inherit;color:inherit;text-align:left;border:0;cursor:pointer}
+button.bt-project-decision:hover{background:var(--bt-card-hover,rgba(127,127,127,.16))}
+button.bt-project-decision:focus-visible{outline:2px solid var(--bt-accent,#4c8dff);outline-offset:1px}
+button.bt-project-decision[data-open="true"]{outline:1px solid var(--bt-accent,#4c8dff)}
+.bt-project-decision-wrap{margin:0}
+.bt-project-decision-text{margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font-size:12px;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-decision-refusal{opacity:.75}
 .bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
@@ -10883,14 +10893,45 @@ function ProjectQueueGroups({ view, onOpen }) {
   ));
 }
 var countText = (value) => value === null ? t("unknown") : String(value);
-function ProjectBoardRecord({ record }) {
+function ProjectBoardRecord({ record, projectId, call: call4 }) {
   const { decisions, meetings } = record;
+  const [open, setOpen] = (0, import_react19.useState)(null);
+  const toggle = (path) => {
+    if (open !== null && open.path === path) {
+      setOpen(null);
+      return;
+    }
+    if (typeof call4 !== "function") return;
+    setOpen({ path, answer: null });
+    const settle = (answer) => setOpen((current) => current !== null && current.path === path ? { path, answer } : current);
+    call4("project-decision", { id: projectId, path }).then(settle, (error) => settle({ ok: false, reason: String(error?.message ?? error) }));
+  };
+  const decisionBody = (file) => {
+    if (open === null || open.path !== file.path) return null;
+    const answer = open.answer;
+    if (answer === null) return (0, import_react19.createElement)("div", { className: "bt-project-decision-text", "data-open-decision": file.path }, t("Reading the decision…"));
+    if (answer.ok !== true) return (0, import_react19.createElement)("div", { className: "bt-project-decision-text bt-project-decision-refusal", "data-open-decision": file.path, "data-refused": "true" }, text(answer.reason) || t("not listed"));
+    return (0, import_react19.createElement)("pre", { className: "bt-project-decision-text", "data-open-decision": file.path }, typeof answer.text === "string" ? answer.text : "");
+  };
   const decisionRows = decisions.files.map((file) => (0, import_react19.createElement)(
     "div",
-    { key: file.key, className: "bt-project-decision", "data-path": file.path, "data-sha256": file.sha256 },
-    (0, import_react19.createElement)("span", { className: "bt-project-date" }, file.date),
-    (0, import_react19.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
-    (0, import_react19.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
+    { key: file.key, className: "bt-project-decision-wrap" },
+    (0, import_react19.createElement)(
+      "button",
+      {
+        type: "button",
+        className: "bt-project-decision",
+        "data-path": file.path,
+        "data-sha256": file.sha256,
+        "data-open": open !== null && open.path === file.path ? "true" : void 0,
+        "aria-expanded": open !== null && open.path === file.path ? "true" : "false",
+        onClick: () => toggle(file.path)
+      },
+      (0, import_react19.createElement)("span", { className: "bt-project-date" }, file.date),
+      (0, import_react19.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
+      (0, import_react19.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
+    ),
+    decisionBody(file)
   ));
   const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
   const proxyText = (meeting) => meeting.participants.filter((participant) => participant.speaksFor !== null).map((participant) => `${participant.name} ${t("for {user}", { user: participant.speaksFor })}`).join(", ");
@@ -11133,7 +11174,7 @@ function ProjectAgentEntry({ projectId, read, onOpen } = {}) {
     onClick: open
   }, t("My agent"));
 }
-function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier }) {
+function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier, call: call4 }) {
   const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics });
   return (0, import_react19.createElement)(
     "div",
@@ -11163,7 +11204,7 @@ function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, me
     (0, import_react19.createElement)(ProjectBoardRows, { view, onOpen }),
     (0, import_react19.createElement)(ProjectQueueGroups, { view, onOpen }),
     (0, import_react19.createElement)(ProjectDoneGroup, { view, onOpen }),
-    (0, import_react19.createElement)(ProjectBoardRecord, { record: view.record })
+    (0, import_react19.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
   );
 }
 function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
@@ -11465,6 +11506,8 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
           queues: state.queues,
           metrics: state.metrics,
           team: state.team,
+          // #2041: a decision row opens through the same channel read the page polls with.
+          call: read,
           onSettings: () => setPanel("settings"),
           onMembers: () => setPanel("members"),
           // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.

@@ -69,6 +69,9 @@ const TASK_ENDPOINTS = new Set([
   // other wiring point was present, and a signed-in host answered `bot/not-found: Unknown
   // endpoint project-board` while `project-read` and `project-of` answered ALLOW.
   'projects', 'project-create', 'project-read', 'project-bind', 'project-of', 'project-board',
+  // #2041: the text of one decision row. It reads the same Project through the same listing the
+  // board just produced, so it sits beside `project-board` rather than behind a new gate.
+  'project-decision',
   // The team dossier (#1864) is a read over the same Project and the same bindings: the owner
   // decided on 2026-10-30 that persona and memory are shared by the Project's members, so it sits
   // beside `project-read` rather than behind the owner gate.

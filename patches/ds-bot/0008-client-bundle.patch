@@ -157,7 +157,7 @@ diff --git a/client.js b/client.js
    Content: "内容",
    "Referenced {labels}": "引用了 {labels}",
    ", ": "、",
-@@ -78,21 +78,73 @@ var ZH = {
+@@ -78,21 +78,75 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -213,6 +213,8 @@ diff --git a/client.js b/client.js
 +  "{from} → {to}": "{from} → {to}",
 +  "+{count} more": "另有 {count} 条",
 +  "{count} more not shown": "还有 {count} 条未显示",
++  "Reading the decision…": "正在读取决策…",
++  "not listed": "不在列表里",
 +  delegated: "委托转达",
 +  All: "全部",
 +  Filter: "筛选",
@@ -4991,7 +4993,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
-@@ -2574,2935 +2574,6720 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2935 +2574,6761 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -11459,11 +11461,11 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
--    }
+     }
 -    if (source.kind === "schedule") {
 -      const prompts = reminderPrompts(contentText(data.content));
 -      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
-     }
+-    }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 -  }
@@ -12918,6 +12920,14 @@ diff --git a/client.js b/client.js
 +.bt-project-decision .bt-project-date,.bt-project-meeting .bt-project-date{font-size:11px;opacity:.6;min-width:76px;font-variant-numeric:tabular-nums}
 +.bt-project-decision .bt-project-hash{margin-left:auto;font-size:11px;opacity:.55;font-family:var(--bt-mono,ui-monospace,monospace)}
 +.bt-project-decision .bt-project-title,.bt-project-meeting .bt-project-title{min-width:0}
++/* #2041: the decision row became a button, so it keeps the row's look and drops the control's. */
++button.bt-project-decision{width:100%;font:inherit;color:inherit;text-align:left;border:0;cursor:pointer}
++button.bt-project-decision:hover{background:var(--bt-card-hover,rgba(127,127,127,.16))}
++button.bt-project-decision:focus-visible{outline:2px solid var(--bt-accent,#4c8dff);outline-offset:1px}
++button.bt-project-decision[data-open="true"]{outline:1px solid var(--bt-accent,#4c8dff)}
++.bt-project-decision-wrap{margin:0}
++.bt-project-decision-text{margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font-size:12px;font-family:var(--bt-mono,ui-monospace,monospace)}
++.bt-project-decision-refusal{opacity:.75}
 +.bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
 +.bt-project-missing{font-size:11px;opacity:.6}
 +.bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
@@ -13279,46 +13289,6 @@ diff --git a/client.js b/client.js
 -    return () => {
 -      window.removeEventListener("mousedown", onDown);
 -      window.removeEventListener("keydown", onKey, true);
--    };
--  }, [open]);
--  const phase = update?.phase ?? "idle";
--  const dsh = update?.dsh;
--  const dshPhase = dsh?.phase ?? "idle";
--  const dshRow = showsDshRow(dsh, update?.app);
--  if (!update?.available && !dshRow && phase === "idle" && dshPhase === "idle") return null;
--  const cloudPhase = phase === "installing" || dshPhase === "installing" ? "installing" : phase !== "idle" ? phase : dshPhase;
--  const toggle = () => {
--    const rect = button.current?.getBoundingClientRect();
--    if (rect) setBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), top: rect.bottom + 6 });
--    setOpen((value) => !value);
--  };
--  const start = () => {
--    setError("");
--    void actions.installUpdate().catch((failure) => setError(hostText(failure?.message ?? String(failure))));
--  };
--  const startDsh = () => {
--    setDshError("");
--    void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
--  };
--  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
--  const message = error || (phase === "failed" ? update.error : "");
--  const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
--  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update DS Bot {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
--  return (0, import_react8.createElement)(
--    import_react8.Fragment,
--    null,
--    (0, import_react8.createElement)("button", {
--      ref: button,
--      type: "button",
--      className: "bt-round bt-update",
--      "data-phase": cloudPhase,
--      "aria-label": label,
--      title: label,
--      "aria-haspopup": "dialog",
--      "aria-expanded": open,
--      onClick: toggle
--    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
--    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +function ProjectBoardRows({ view, onOpen }) {
 +  if (view.empty) return (0, import_react19.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
 +  return view.groups.map((group) => (0, import_react19.createElement)(
@@ -13381,7 +13351,46 @@ diff --git a/client.js b/client.js
 +      lastActivityAt: Number.isFinite(row.lastActivityAt) ? row.lastActivityAt : null,
 +      overdue: Number.isFinite(row.sinceMs) && row.sinceMs > RUNNING_OVERDUE_MS,
 +      board: boardOfRow({ source: text(row.source) }, task)
-+    };
+     };
+-  }, [open]);
+-  const phase = update?.phase ?? "idle";
+-  const dsh = update?.dsh;
+-  const dshPhase = dsh?.phase ?? "idle";
+-  const dshRow = showsDshRow(dsh, update?.app);
+-  if (!update?.available && !dshRow && phase === "idle" && dshPhase === "idle") return null;
+-  const cloudPhase = phase === "installing" || dshPhase === "installing" ? "installing" : phase !== "idle" ? phase : dshPhase;
+-  const toggle = () => {
+-    const rect = button.current?.getBoundingClientRect();
+-    if (rect) setBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), top: rect.bottom + 6 });
+-    setOpen((value) => !value);
+-  };
+-  const start = () => {
+-    setError("");
+-    void actions.installUpdate().catch((failure) => setError(hostText(failure?.message ?? String(failure))));
+-  };
+-  const startDsh = () => {
+-    setDshError("");
+-    void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
+-  };
+-  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
+-  const message = error || (phase === "failed" ? update.error : "");
+-  const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
+-  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update DS Bot {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
+-  return (0, import_react8.createElement)(
+-    import_react8.Fragment,
+-    null,
+-    (0, import_react8.createElement)("button", {
+-      ref: button,
+-      type: "button",
+-      className: "bt-round bt-update",
+-      "data-phase": cloudPhase,
+-      "aria-label": label,
+-      title: label,
+-      "aria-haspopup": "dialog",
+-      "aria-expanded": open,
+-      onClick: toggle
+-    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
+-    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +  });
 +  return {
 +    available: source?.ok === true,
@@ -13464,30 +13473,6 @@ diff --git a/client.js b/client.js
 -      setBox({ left, bottom: window.innerHeight - rect.top + 10 });
 -      setTip(true);
 -    }, 250);
--  };
--  const hide = () => {
--    clearTimeout(timer.current);
--    setTip(false);
--  };
--  return (0, import_react8.createElement)(
--    "span",
--    { className: "bt-connect-wrap" },
--    (0, import_react8.createElement)(
--      "button",
--      {
--        ref: button,
--        type: "button",
--        className: "bt-connect bt-connect-foot",
--        "aria-describedby": tip ? tipId : void 0,
--        onMouseEnter: show,
--        onMouseLeave: hide,
--        onFocus: show,
--        onBlur: hide,
--        onClick: () => actions.selectPanel("plugins")
--      },
--      (0, import_react8.createElement)(PlugIcon),
--      t("Connect plugins"),
--      (0, import_react8.createElement)("span", { className: "bt-connect-warn", "aria-hidden": true }, "!")
 +function ProjectRunningTable({ view, onOpen }) {
 +  if (view.running.length === 0) return (0, import_react19.createElement)("section", { className: "bt-project-running", "data-running": "0" }, (0, import_react19.createElement)("h4", null, t("Running tasks")), (0, import_react19.createElement)("div", { className: "bt-project-empty" }, t("Nothing is running.")));
 +  return (0, import_react19.createElement)(
@@ -13503,12 +13488,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react19.createElement)("span", null, t("Claimed for")),
 +      (0, import_react19.createElement)("span", null, t("Source")),
 +      (0, import_react19.createElement)("span", null, t("Last activity"))
-     ),
--    tip && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
--      "span",
--      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
--      t("Plugin compatibility is not fully verified.")
--    ), document.body) : null
++    ),
 +    view.running.map((row) => {
 +      const open = row.board === null ? void 0 : () => onOpen?.(row.board);
 +      return (0, import_react19.createElement)(
@@ -13530,14 +13510,8 @@ diff --git a/client.js b/client.js
 +        (0, import_react19.createElement)("span", null, row.lastActivityAt === null ? METRIC_DASH : new Date(row.lastActivityAt).toLocaleString(dateLocale()))
 +      );
 +    })
-   );
- }
--function YouAvatar() {
--  return (0, import_react8.createElement)(
--    "span",
--    { className: "bt-you-wrap" },
--    (0, import_react8.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react8.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
--    (0, import_react8.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
++  );
++}
 +function ProjectQueueGroups({ view, onOpen }) {
 +  return view.queues.map((entry) => (0, import_react19.createElement)(
 +    "section",
@@ -13571,14 +13545,76 @@ diff --git a/client.js b/client.js
 +  ));
 +}
 +var countText = (value) => value === null ? t("unknown") : String(value);
-+function ProjectBoardRecord({ record }) {
++function ProjectBoardRecord({ record, projectId, call: call4 }) {
 +  const { decisions, meetings } = record;
++  const [open, setOpen] = (0, import_react19.useState)(null);
++  const toggle = (path) => {
++    if (open !== null && open.path === path) {
++      setOpen(null);
++      return;
++    }
++    if (typeof call4 !== "function") return;
++    setOpen({ path, answer: null });
++    const settle = (answer) => setOpen((current) => current !== null && current.path === path ? { path, answer } : current);
++    call4("project-decision", { id: projectId, path }).then(settle, (error) => settle({ ok: false, reason: String(error?.message ?? error) }));
+   };
+-  const hide = () => {
+-    clearTimeout(timer.current);
+-    setTip(false);
++  const decisionBody = (file) => {
++    if (open === null || open.path !== file.path) return null;
++    const answer = open.answer;
++    if (answer === null) return (0, import_react19.createElement)("div", { className: "bt-project-decision-text", "data-open-decision": file.path }, t("Reading the decision…"));
++    if (answer.ok !== true) return (0, import_react19.createElement)("div", { className: "bt-project-decision-text bt-project-decision-refusal", "data-open-decision": file.path, "data-refused": "true" }, text(answer.reason) || t("not listed"));
++    return (0, import_react19.createElement)("pre", { className: "bt-project-decision-text", "data-open-decision": file.path }, typeof answer.text === "string" ? answer.text : "");
+   };
+-  return (0, import_react8.createElement)(
+-    "span",
+-    { className: "bt-connect-wrap" },
+-    (0, import_react8.createElement)(
 +  const decisionRows = decisions.files.map((file) => (0, import_react19.createElement)(
 +    "div",
-+    { key: file.key, className: "bt-project-decision", "data-path": file.path, "data-sha256": file.sha256 },
-+    (0, import_react19.createElement)("span", { className: "bt-project-date" }, file.date),
-+    (0, import_react19.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
-+    (0, import_react19.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
++    { key: file.key, className: "bt-project-decision-wrap" },
++    (0, import_react19.createElement)(
+       "button",
+       {
+-        ref: button,
+         type: "button",
+-        className: "bt-connect bt-connect-foot",
+-        "aria-describedby": tip ? tipId : void 0,
+-        onMouseEnter: show,
+-        onMouseLeave: hide,
+-        onFocus: show,
+-        onBlur: hide,
+-        onClick: () => actions.selectPanel("plugins")
++        className: "bt-project-decision",
++        "data-path": file.path,
++        "data-sha256": file.sha256,
++        "data-open": open !== null && open.path === file.path ? "true" : void 0,
++        "aria-expanded": open !== null && open.path === file.path ? "true" : "false",
++        onClick: () => toggle(file.path)
+       },
+-      (0, import_react8.createElement)(PlugIcon),
+-      t("Connect plugins"),
+-      (0, import_react8.createElement)("span", { className: "bt-connect-warn", "aria-hidden": true }, "!")
++      (0, import_react19.createElement)("span", { className: "bt-project-date" }, file.date),
++      (0, import_react19.createElement)("span", { className: "bt-project-title" }, file.title === "" ? file.name : file.title),
++      (0, import_react19.createElement)("span", { className: "bt-project-hash", title: file.sha256 }, file.shortHash)
+     ),
+-    tip && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
+-      "span",
+-      { role: "tooltip", id: tipId, className: "bt-connect-tip", style: box },
+-      t("Plugin compatibility is not fully verified.")
+-    ), document.body) : null
+-  );
+-}
+-function YouAvatar() {
+-  return (0, import_react8.createElement)(
+-    "span",
+-    { className: "bt-you-wrap" },
+-    (0, import_react8.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react8.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
+-    (0, import_react8.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
++    decisionBody(file)
 +  ));
 +  const recipientText = (list) => list.length === 0 ? null : list.map((name) => `@${name}`).join(", ");
 +  const proxyText = (meeting) => meeting.participants.filter((participant) => participant.speaksFor !== null).map((participant) => `${participant.name} ${t("for {user}", { user: participant.speaksFor })}`).join(", ");
@@ -13868,7 +13904,7 @@ diff --git a/client.js b/client.js
 +    onClick: open
 +  }, t("My agent"));
 +}
-+function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier }) {
++function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier, call: call4 }) {
 +  const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics });
 +  return (0, import_react19.createElement)(
 +    "div",
@@ -13898,7 +13934,7 @@ diff --git a/client.js b/client.js
 +    (0, import_react19.createElement)(ProjectBoardRows, { view, onOpen }),
 +    (0, import_react19.createElement)(ProjectQueueGroups, { view, onOpen }),
 +    (0, import_react19.createElement)(ProjectDoneGroup, { view, onOpen }),
-+    (0, import_react19.createElement)(ProjectBoardRecord, { record: view.record })
++    (0, import_react19.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
 +  );
  }
 -function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
@@ -14315,6 +14351,8 @@ diff --git a/client.js b/client.js
 +          queues: state.queues,
 +          metrics: state.metrics,
 +          team: state.team,
++          // #2041: a decision row opens through the same channel read the page polls with.
++          call: read,
 +          onSettings: () => setPanel("settings"),
 +          onMembers: () => setPanel("members"),
 +          // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.

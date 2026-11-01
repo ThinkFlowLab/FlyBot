@@ -19,7 +19,7 @@
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
-import { DECISIONS_DIR, describeFile, isDecisionPath, listProjectState } from './project-state.js'
+import { DECISIONS_DIR, describeFile, isDecisionPath, listProjectState, readListedFile } from './project-state.js'
 import { cut } from './text.js'
 import { advanceRefusal } from './meetings.js'
 import { readMetrics } from './project-metrics.js'
@@ -221,6 +221,10 @@ export function decisionCardOf(meeting) {
 }
 
 export function install(rt) {
+  // #2041: the decision names the board listed, per Project, with the folder each name was read
+  // from. A render rewrites its Project's entry; nothing else writes here, and a name outside it
+  // is refused unread.
+  const readings = new Map()
   // The folder a Project's decisions live in. A Project names one itself, and when it names none
   // the folder is the one its members work in — the same folder a meeting resolves through
   // `workDirFor` before it archives a decision, so the reader and the writer look in one place.
@@ -279,13 +283,20 @@ export function install(rt) {
         .map(file => ({ ...file, dir })))
     }
     // The other source: the folder each decided meeting of this Project recorded, one file each.
+    // #2041: a name that came from a meeting keeps that meeting's own cards, because opening the
+    // file is checked against the same rule the board paints those cards with.
+    const cardsOf = new Map()
     for (const meeting of Object.values(rt.state?.meetings ?? {})) {
       if (meeting === null || typeof meeting !== 'object' || meeting.status !== 'decided') continue
       if (!inProject(meeting, project)) continue
       const archivedDir = text(meeting.decisionDir)
       if (archivedDir !== '' && !folders.includes(archivedDir)) folders.push(archivedDir)
       const archived = await archivedOf(meeting)
-      if (archived !== undefined) found.push(archived)
+      if (archived === undefined) continue
+      found.push(archived)
+      if (!cardsOf.has(archived.path)) {
+        cardsOf.set(archived.path, Array.isArray(meeting.taskIds) ? meeting.taskIds.map(id => text(id)).filter(id => id !== '') : [])
+      }
     }
     // One row per path — the client keys a row by path, and the Project folder was read first.
     const seen = new Set()
@@ -324,7 +335,9 @@ export function install(rt) {
     // list from a truncated one instead of reading the cap as the answer.
     // #2033: the un-truncated dedupe of this read, paths only — the meeting lookup below has to
     // tell "fell off the 200-row cut" from "was never here" without asking the disk again.
-    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason, known: new Set(deduped.map(file => file.path)) }
+    // #2041: each name keeps the folder it was read from, because a decided meeting archives to a
+    // folder of its own; opening a row reads through this map and nothing else.
+    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason, known: new Map(deduped.map(file => [file.path, file.dir])), cards: cardsOf }
   }
 
   // #1831: the card's level, who it is addressed to and whether it may advance ride on every
@@ -492,6 +505,13 @@ export function install(rt) {
       ? { waiting: [], inflight: [], blocked: [], counts: { waiting: null, inflight: null, blocked: null, done: null } }
       : buildQueues(mine, done.length)
     const decisions = await decisionsOf(project)
+    // #2041: the set an opened row is checked against is this read's own listing, kept per Project
+    // because a page polls this read every few seconds. Opening a decision never lists the folder
+    // again: it reads one of these names, or answers `not listed` and touches nothing.
+    // #2041: names and folders only — never an actor's view of them. Visibility is computed per
+    // call in `projectDecision`, so one member reading the board cannot hand its own reach to the
+    // next caller, and revoking a card takes effect on the next open.
+    readings.set(id, { dirs: decisions.known, cards: decisions.cards })
     // `known` is this read's own path set for the meeting lookup (#2033); the page renders
     // `dir`/`files`/`total`/`reason`, so it does not travel with the board.
     const servedDecisions = { dir: decisions.dir, files: decisions.files, total: decisions.total, reason: decisions.reason }
@@ -540,6 +560,48 @@ export function install(rt) {
   rt.projectRoleOf = (project, memberId) => roleOf(project, memberId)
   rt.projectRoleChoices = (project, memberId) => roleChoices(project, memberId)
   rt.projectBoard = projectBoard
+  // #2041: the text behind one decision row. The accepted set is the listing this host produced for
+  // that Project — the names the 200-row cut dropped included — so a name outside it answers
+  // `not listed` without a stat, an open or a byte of content: opening a row is never a second,
+  // wider read path beside `readProjectState`. The name shape and the `lstat` read are #2038's own;
+  // this adds the membership check and nothing else.
+  // #2041: who may open a listed name. The text is behind the same door as the cards (#1723), and
+  // the two kinds of name have two doors: one a decided meeting named follows that meeting's own
+  // cards through `rt.taskVisible`, the rule the board paints them with, while a plain record has
+  // no card and follows the Project's role list (`roleOf`). Neither branch widens when it cannot
+  // judge: a missing predicate refuses rather than allows.
+  const decisionVisible = (project, actor, taskIds) => {
+    // One human on this host: the rule every task read already uses hides nothing from them.
+    if (rt.authzEnforced?.() !== true) return true
+    const role = roleOf(project, actor?.memberId)
+    if (taskIds === undefined) return role !== null
+    const cards = taskIds.map(id => rt.state?.tasks?.[id]).filter(task => task !== null && typeof task === 'object')
+    // A decided meeting that produced no card has no card to judge, so the role list decides.
+    if (cards.length === 0) return role !== null
+    const visible = typeof rt.taskVisible === 'function' ? rt.taskVisible : null
+    if (visible === null) return false
+    return cards.some(task => visible(task, actor))
+  }
+  rt.projectDecision = async (projectId, file, actor) => {
+    const name = text(file)
+    if (!isDecisionPath(name)) return { ok: false, reason: `not listed: ${name} is not a decision file` }
+    const id = text(projectId)
+    const project = rt.readProject?.(id)
+    if (project === null || project === undefined) return { ok: false, reason: `no Project: ${id}` }
+    // A name this caller may not open answers exactly what a name the listing never had answers:
+    // one sentence for both, so the refusal cannot be used as a list of what exists.
+    const listed = { ok: false, reason: `not listed: ${name} is not in this board's decision list` }
+    const entry = readings.get(id)
+    if (entry === undefined) return listed
+    // #2041: visibility is read from the caller and the state as they are now, in memory, before
+    // any `stat` or `open` — a board read never froze one member's reach into this cache.
+    if (!decisionVisible(project, actor, entry.cards.get(name))) return listed
+    const dir = entry.dirs.get(name)
+    if (dir === undefined) return listed
+    // A file that left the folder since the listing answers `absent`; one over the bound answers
+    // `too large` with the size and no text.
+    return await readListedFile(dir, name)
+  }
   // The three groups are their own read over the same pass, for a caller that wants only the queue.
   rt.projectBoardQueues = async (projectId, actor) => {
     const board = await projectBoard(projectId, actor)

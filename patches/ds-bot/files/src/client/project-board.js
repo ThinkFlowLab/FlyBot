@@ -31,6 +31,14 @@ export const PROJECT_BOARD_CSS = `
 .bt-project-decision .bt-project-date,.bt-project-meeting .bt-project-date{font-size:11px;opacity:.6;min-width:76px;font-variant-numeric:tabular-nums}
 .bt-project-decision .bt-project-hash{margin-left:auto;font-size:11px;opacity:.55;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-decision .bt-project-title,.bt-project-meeting .bt-project-title{min-width:0}
+/* #2041: the decision row became a button, so it keeps the row's look and drops the control's. */
+button.bt-project-decision{width:100%;font:inherit;color:inherit;text-align:left;border:0;cursor:pointer}
+button.bt-project-decision:hover{background:var(--bt-card-hover,rgba(127,127,127,.16))}
+button.bt-project-decision:focus-visible{outline:2px solid var(--bt-accent,#4c8dff);outline-offset:1px}
+button.bt-project-decision[data-open="true"]{outline:1px solid var(--bt-accent,#4c8dff)}
+.bt-project-decision-wrap{margin:0}
+.bt-project-decision-text{margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--bt-card,rgba(127,127,127,.08));white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font-size:12px;font-family:var(--bt-mono,ui-monospace,monospace)}
+.bt-project-decision-refusal{opacity:.75}
 .bt-project-path{font-size:11px;opacity:.6;font-family:var(--bt-mono,ui-monospace,monospace)}
 .bt-project-missing{font-size:11px;opacity:.6}
 .bt-project-status{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;margin-left:auto}
@@ -529,12 +537,44 @@ const countText = value => (value === null ? t('unknown') : String(value))
 // The record beside the cards (#1767): decisions first, then the meetings that reached one, and
 // a meeting still open or blocked listed apart — never as a decision. Every row is text the host
 // already answered; the only thing this reads again is the hash it was handed.
-function ProjectBoardRecord({ record }) {
+// #2041: a decision row opens. The row is a button, so it is reachable with a keyboard and by
+// activation; one row is open at a time, and the text under it is the host's answer to that one
+// name — the board's own listing, never a second read of the folder.
+function ProjectBoardRecord({ record, projectId, call }) {
   const { decisions, meetings } = record
-  const decisionRows = decisions.files.map(file => h('div', { key: file.key, className: 'bt-project-decision', 'data-path': file.path, 'data-sha256': file.sha256 },
+  const [open, setOpen] = useState(null)
+  const toggle = (path) => {
+    if (open !== null && open.path === path) { setOpen(null); return }
+    if (typeof call !== 'function') return
+    setOpen({ path, answer: null })
+    // An answer that lands after another row was opened must not paint this one: it is kept only
+    // while its own row is the open one.
+    const settle = (answer) => setOpen(current => (current !== null && current.path === path ? { path, answer } : current))
+    call('project-decision', { id: projectId, path }).then(settle, error => settle({ ok: false, reason: String(error?.message ?? error) }))
+  }
+  const decisionBody = (file) => {
+    if (open === null || open.path !== file.path) return null
+    const answer = open.answer
+    if (answer === null) return h('div', { className: 'bt-project-decision-text', 'data-open-decision': file.path }, t('Reading the decision…'))
+    // `absent` and `too large` read as the sentence the host sent, the same words `project_state`
+    // reports them in; the text of a decision is drawn as text, never as markup it contains.
+    if (answer.ok !== true) return h('div', { className: 'bt-project-decision-text bt-project-decision-refusal', 'data-open-decision': file.path, 'data-refused': 'true' }, text(answer.reason) || t('not listed'))
+    return h('pre', { className: 'bt-project-decision-text', 'data-open-decision': file.path }, typeof answer.text === 'string' ? answer.text : '')
+  }
+  const decisionRows = decisions.files.map(file => h('div', { key: file.key, className: 'bt-project-decision-wrap' },
+    h('button', {
+      type: 'button',
+      className: 'bt-project-decision',
+      'data-path': file.path,
+      'data-sha256': file.sha256,
+      'data-open': open !== null && open.path === file.path ? 'true' : undefined,
+      'aria-expanded': open !== null && open.path === file.path ? 'true' : 'false',
+      onClick: () => toggle(file.path),
+    },
     h('span', { className: 'bt-project-date' }, file.date),
     h('span', { className: 'bt-project-title' }, file.title === '' ? file.name : file.title),
-    h('span', { className: 'bt-project-hash', title: file.sha256 }, file.shortHash)))
+    h('span', { className: 'bt-project-hash', title: file.sha256 }, file.shortHash)),
+    decisionBody(file)))
   const recipientText = list => (list.length === 0 ? null : list.map(name => `@${name}`).join(', '))
   // A proxy line reads in the same words a task row already uses for a proxy holder.
   const proxyText = meeting => meeting.participants
@@ -763,7 +803,7 @@ export function ProjectAgentEntry({ projectId, read, onOpen } = {}) {
   }, t('My agent'))
 }
 
-export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier }) {
+export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics, onOpen, onSettings, onMembers, onOpenBot, onOpenDossier, call }) {
   const view = projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics })
   return h('div', { className: 'bt-project-board', 'data-can-manage': view.canManage ? 'true' : 'false' },
     h('h3', null, view.title),
@@ -785,7 +825,7 @@ export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisi
     h(ProjectBoardRows, { view, onOpen }),
     h(ProjectQueueGroups, { view, onOpen }),
     h(ProjectDoneGroup, { view, onOpen }),
-    h(ProjectBoardRecord, { record: view.record }))
+    h(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call }))
 }
 
 // #1749: the settings panel. It writes through the three paths the host already had — bind or
@@ -1079,6 +1119,8 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,
             decisions: state.decisions, meetings: state.meetings, queues: state.queues, metrics: state.metrics, team: state.team,
+            // #2041: a decision row opens through the same channel read the page polls with.
+            call: read,
             onSettings: () => setPanel('settings'),
             onMembers: () => setPanel('members'),
             // #1864: a team row's Dossier control opens the read-only panel, fed by the same read.
