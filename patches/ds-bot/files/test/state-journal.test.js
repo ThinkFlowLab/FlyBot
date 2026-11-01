@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -271,5 +271,75 @@ test('the dev replay script rebuilds a team to a seq, writes it 0600 and refuses
   assert.equal(bad.status, 1)
   assert.equal(bad.stdout, '')
   assert.match(bad.stderr, /refused/)
+  rmSync(home, { recursive: true, force: true })
+})
+
+// The folder above the journal is the host's own bookkeeping: a name that stands for a link
+// points the journal at a folder the team never named, and the `mkdir`/`chmod` prologue would
+// follow it. A folder that is not a real directory is therefore absent, like every other
+// journal problem: one warning, recording stops, nothing is created or changed through the link.
+test('a journal folder that is a symlink to a real folder outside the home records nothing and stays silent on disk (#2056)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  chmodSync(outside, 0o755)
+  symlinkSync(outside, join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(warnings.length, 1, 'the folder is refused once, not once per save')
+  assert.match(warnings[0], /not recording/)
+  if (posix) assert.equal(statSync(outside).mode & 0o777, 0o755, 'the folder the link points at keeps its mode')
+  assert.deepEqual(readdirSync(outside), [], 'nothing is written into the folder the link points at')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal folder that is a symlink to a missing path records nothing (#2056)', async () => {
+  const home = tempHome()
+  const missing = join(home, 'not-created')
+  symlinkSync(missing, join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /not recording/)
+  assert.equal(existsSync(missing), false, 'the missing target is not created')
+  assert.equal(existsSync(path), false)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a journal folder that is a plain file records nothing (#2056)', async () => {
+  const home = tempHome()
+  writeFileSync(join(home, 'journal'), 'not a folder\n')
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /not recording/)
+  assert.equal(existsSync(path), false)
+  assert.equal(readFileSync(join(home, 'journal'), 'utf8'), 'not a folder\n', 'the plain file is left as it was')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a real journal folder still records (#2056)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, n: 1 }))
+  await journal.record(stateText({ version: 2, n: 2 }))
+  assert.deepEqual(warnings, [])
+  const text = readFileSync(path, 'utf8')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, n: 2 }))
+  assert.equal(lstatSync(path).isSymbolicLink(), false)
+  if (posix) {
+    assert.equal(statSync(join(home, 'journal')).mode & 0o777, 0o700)
+    assert.equal(statSync(path).mode & 0o777, 0o600)
+  }
   rmSync(home, { recursive: true, force: true })
 })
