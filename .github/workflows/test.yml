@@ -31,10 +31,23 @@ jobs:
     name: ubuntu-latest · Node 24 · DSH 0.2.0-rc.2
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # `pull-requests: read` is for the gate-signature step (#2054): it reads the pull request's
+    # changed files, body and comments. The workflow-level `contents: read` alone would make that
+    # call a 403.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      # policy/gates.json (#2054): a pull request that edits an acceptance gate carries
+      # `Policy-sign: <comment id or url>` in its body, written by someone other than its author.
+      # It runs before the suite: a gate change nobody else signed is not worth 20 minutes of tests.
+      - name: Gate change signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/policy-sign.mjs
       - uses: ./.github/actions/flybot-tests
         with:
           node: '24'
