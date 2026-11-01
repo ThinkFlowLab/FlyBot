@@ -65,7 +65,12 @@ test('#1076: the refusal names both places the trailer has to appear', async () 
   assert.match(text, /Docs-not-needed:/);
 });
 
-test('the gate never runs git through a shell', async () => {
+// #1973: this case can only observe the property by running a fake `git` that has to be an executable
+// script with an interpreter line. Windows cannot launch one through CreateProcess, and a bare `git`
+// with no `.cmd`/`.exe` is not what PATH lookup finds, so the marker is never written. The case is
+// marked skipped there rather than quietly passing: the Windows behaviour is exercised by the real gate
+// in nightly.yml's `Lint` step on `windows-latest`.
+test('the gate never runs git through a shell', { skip: process.platform === 'win32' }, async () => {
   // #1954: on Windows `execSync('git rev-parse --verify origin/main^{commit}')` is handed to cmd.exe,
   // which eats `^`; rev-parse fails and the gate reports "cannot diff against origin/main" on a
   // checkout where origin/main exists. The gate must pass `^{commit}` to git as one argument, no shell
