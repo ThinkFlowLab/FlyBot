@@ -205,7 +205,7 @@ export function useBoardTasks(actions, scope) {
     setArchive(list => done ? [task, ...without(list, task.id)] : without(list, task.id))
   }
   const done = scope?.kind === 'group' ? archive : archive.filter(task => !scope?.botId || task.ownerBotId === scope.botId)
-  return { own, tasks, archive: done, replace }
+  return { own, groupTasks, tasks, archive: done, replace }
 }
 
 function RailButton({ row, selected, meta, onSelect }) {
@@ -375,7 +375,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
   const [dragging, setDragging] = useState(null)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
-  const { own, tasks, archive, replace } = useBoardTasks(actions, scope)
+  const { own, groupTasks, tasks, archive, replace } = useBoardTasks(actions, scope)
   const boardTasks = boardTasksFor(tasks, archive)
   const close = useCallback(() => actions.closeBoard(), [])
   useEscape(close)
@@ -396,8 +396,9 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
   const counts = {}
   // #2045: the rail counts what the board draws, so the archive contributes at most its one page.
   // The list can hold a row more than the page after an optimistic move, and counting that row would
-  // read as a total the board never showed.
-  for (const task of [...own, ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
+  // read as a total the board never showed. P-364: a room board's active cards live in `groupTasks`;
+  // `own` is only ever filled on a Bot board, so adding up `own` alone counted the archive page.
+  for (const task of [...own, ...(scope?.kind === 'group' ? groupTasks : []), ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
     const id = task.ownerBotId
     const bucket = counts[id] ?? (counts[id] = { done: 0, total: 0 })
     if (task.status === 'cancelled' || task.status === 'failed') continue

@@ -321,9 +321,11 @@ test('#1252: a Bot board asks the host for that Bot\'s archive, not the whole sc
 const settledTasks = (count, extra = {}) => Array.from({ length: count }, (_, index) => task(`task-done-${index}`, 'accepted', {
   title: `Finished ${index}`, progress: 100, createdAt: index, updatedAt: 100 + index, ...extra,
 }))
-const boardWith = (scope, own, archive) => {
+const boardWith = (scope, own, archive, groupActive = []) => {
   states.length = 0
-  states.push(scope, null, '', '', own, [], archive)
+  // A room board's active list lives in the second of the three board-task slots (P-364); a Bot
+  // board's lives in the first. Both are preset here rather than loaded, like the archive page.
+  states.push(scope, null, '', '', own, groupActive, archive)
   const view = expand(KanbanDialog({ roster, actions: { closeBoard: () => {}, boardClose: () => {} } }))
   const column = name => byClass(view, 'bt-board-column').find(node => node.props['data-column'] === name)
   const railMeta = id => {
@@ -389,9 +391,15 @@ test('#2045: a Bot whose share of a full group page is drawn reads as a lower bo
   assert.equal(group.railMeta('a'), '18+ done', 'eighteen of a cut page is at least eighteen, never a total')
   assert.equal(group.railMeta('s'), '2+ done', 'a smaller share of the same cut page is a lower bound too')
   // One row under the page is the whole room history, so the same rail reads its exact counts.
-  const shortRoom = boardWith({ kind: 'group', roomId: 'war' }, [], [...page('a', 1, 0), ...page('s', 2, 1)])
-  assert.equal(shortRoom.railMeta('a'), '1/1', 'a short group page is a total, not a bound')
-  assert.equal(shortRoom.railMeta('s'), '2/2', 'and every Bot on it reads the same way')
+  // P-364 rewrote this pair: the room's active cards used to fall out of the rail altogether (the
+  // `own` list is only ever filled on a Bot board), so `1/1` and `2/2` counted the archive page
+  // alone — the defect this test now pins. Two active cards are part of the same totals.
+  const shortRoom = boardWith({ kind: 'group', roomId: 'war' }, [], [...page('a', 1, 0), ...page('s', 2, 1)], [
+    task('task-open-a', 'open', { title: 'Open for a', ownerBotId: 'a' }),
+    task('task-work-s', 'working', { title: 'Work for s', ownerBotId: 's' }),
+  ])
+  assert.equal(shortRoom.railMeta('a'), '1/2', 'a short group page is a total, and the active card is in it')
+  assert.equal(shortRoom.railMeta('s'), '2/3', 'and every Bot on it reads the same way')
 })
 
 // #2045: the hedge belongs to the Bot's own drawn finished rows, not to whatever its width adds up
@@ -403,4 +411,22 @@ test('#2045: the rail hedge follows the Bot\'s drawn done rows, not its total', 
   const board = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(ARCHIVE_SHOWN))
   assert.equal(board.railMeta('s'), '20+ done', 'the Bot whose own page is full reads as a cut')
   assert.equal(board.railMeta('a'), '0/20', 'twenty active cards are not twenty finished ones')
+})
+
+// P-364: the rail counts what the board draws (#2045), but the room scope only ever fills the
+// board's active list, and the rail was adding up `own` — a list that stays empty on a room board.
+// So a room rail counted the archive page alone: a Bot with four drawn cards under one finished one
+// read `1/1`, and a Bot whose cards are all still active read nothing at all.
+test('P-364: a room board rail counts the room\'s active cards, not only its archive page', () => {
+  const room = boardWith({ kind: 'group', roomId: 'war' }, [], [task('task-done-s', 'accepted', {
+    title: 'Finished for s', ownerBotId: 's', progress: 100, createdAt: 1, updatedAt: 2,
+  })], [
+    task('task-open-s', 'open', { title: 'Open for s', ownerBotId: 's', createdAt: 3, updatedAt: 4 }),
+    task('task-working-s', 'working', { title: 'Working for s', ownerBotId: 's', createdAt: 5, updatedAt: 6 }),
+    task('task-open-s-2', 'open', { title: 'Another for s', ownerBotId: 's', createdAt: 7, updatedAt: 8 }),
+    task('task-open-a', 'open', { title: 'Open for a', ownerBotId: 'a', createdAt: 9, updatedAt: 10 }),
+  ])
+  assert.equal(byClass(room.column('in-progress'), 'bt-board-card').length, 1, 'the working card is drawn')
+  assert.equal(room.railMeta('s'), '1/4', 'four drawn cards, one of them finished: {done}/{total}, not {done}/{done}')
+  assert.equal(room.railMeta('a'), '0/1', 'a Bot with an active card and none finished is 0 of 1, not a blank rail')
 })
