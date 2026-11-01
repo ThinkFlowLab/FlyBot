@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { remoteTurn, isRemoteChat, REMOTE_PROVIDER, install, notSentLine } from '../src/host/remote-chat.js';
 import { isHomeLevelRemote, isListedRemoteChat, isShownRemoteChat } from '../src/shared/remote-label.js';
 import { feishuReply } from '../src/host/connectors.js';
+import { cut } from '../src/host/text.js';
 
 const user = (content, source, id = 'm1') => ({ role: 'user', id, content, ...(source ? { source } : {}) });
 
@@ -330,3 +331,38 @@ test('#1979: an abbreviated remote reply is well formed at 80 units', () => {
     assert.equal(line, 'Not sent: ' + kept + '. Try again.', 'the pair at the bound is dropped, not split');
     assert.ok(body.startsWith(kept), 'a code-point prefix of the reply');
 });
+
+// P-321 (#1979 follow-up): a friend's Bot name arrives from another home, and both places the chat
+// stores it bounded it with a bare `slice(0, 40)`. A name whose 40th UTF-16 unit falls inside a
+// surrogate pair came out broken: on create, roster.createBot's own bound (roster.js:65) turns the
+// lone high surrogate into U+FFFD; on refresh the lone high surrogate is stored as it is. The bound
+// is 40 code points at both sites, and the value is the same one both ways.
+test('P-321: a friend\'s Bot name from another home is cut at 40 code points on create and on refresh', async () => {
+  const state = { bots: {} }
+  let created = 0
+  const rt = {
+    state, load: async () => {}, save: async () => {}, warn() {}, ctx: {},
+    // roster.createBot's own bound (roster.js:65: `cut(String(botName ?? '').trim(), 40).text`), so the
+    // name kept here is the one the app would keep.
+    createBot: async ({ name, model, remote }) => {
+      const bot = { id: `b${++created}`, name: cut(String(name ?? '').trim(), 40).text, model, remote }
+      state.bots[bot.id] = bot
+      return bot
+    },
+  }
+  install(rt)
+  const member = { handle: '@long.name.friend.home', name: `${'a'.repeat(39)}😀tail`, home: '@friend.home', plugin: 'social' }
+  const id = await rt.remoteChats.open(member)
+  assert.equal(state.bots[id].name.isWellFormed(), true, 'the created name is well formed, never a U+FFFD for a split pair')
+  assert.equal(state.bots[id].name, 'a'.repeat(39), 'the pair at the bound is dropped, not split')
+  // Opening the same handle again with the same name refreshes the record through the other site.
+  await rt.remoteChats.open(member)
+  assert.equal(state.bots[id].name.isWellFormed(), true, 'the refreshed name is well formed, never a lone high surrogate')
+  assert.equal(state.bots[id].name, 'a'.repeat(39), 'and it is the same value the create kept')
+  // The control: a short name is stored word for word through both sites.
+  const short = { handle: '@bob.friend.home', name: 'Bob', home: '@friend.home', plugin: 'social' }
+  const sid = await rt.remoteChats.open(short)
+  assert.equal(state.bots[sid].name, 'Bob')
+  await rt.remoteChats.open(short)
+  assert.equal(state.bots[sid].name, 'Bob')
+})

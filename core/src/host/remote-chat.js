@@ -226,14 +226,14 @@ export function install(rt) {
         const lookChanged = applyPublishedLook(existing, { color, avatar, avatarUpdatedAt })
         if (JSON.stringify(next) !== JSON.stringify(existing.remote) || (name && existing.name !== name) || lookChanged) {
           existing.remote = next
-          if (name) existing.name = String(name).slice(0, 40)
+          if (name) existing.name = cut(String(name), 40).text
           await rt.save()
         }
         return existing.id
       }
       pending.set(handle, name)
       try {
-        const bot = await rt.createBot({ name: String(name || handle).slice(0, 40), model: `${REMOTE_PROVIDER}/${handle}`, remote: { handle, home, ...(homeName ? { homeName } : {}), plugin } })
+        const bot = await rt.createBot({ name: cut(String(name || handle), 40).text, model: `${REMOTE_PROVIDER}/${handle}`, remote: { handle, home, ...(homeName ? { homeName } : {}), plugin } })
         if (applyPublishedLook(bot, { color, avatar, avatarUpdatedAt })) await rt.save()
         return bot.id
       } finally { pending.delete(handle) }
