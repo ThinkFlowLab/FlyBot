@@ -207,3 +207,45 @@ test('the approval card action row wraps and stays right-aligned', () => {
   assert.match(rule, /flex-wrap:wrap/, 'the four-button row wraps rather than overflowing to the left')
   assert.match(rule, /justify-content:flex-end/, 'each wrapped line stays right-aligned')
 })
+
+// "Allow once" runs the command the card stores, so the block has to show it whole: it wraps and
+// scrolls inside a fixed height instead of one `nowrap` line the ellipsis cuts (#1992).
+test('the approval card command wraps and scrolls instead of being clipped to one line', () => {
+  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-code\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(rule, /white-space:pre-wrap/, 'a long command wraps instead of running off the card')
+  assert.match(rule, /overflow:auto/, 'what does not fit scrolls inside the block')
+  assert.match(rule, /max-height:\d+px/, 'the block keeps a height the card can hold')
+  assert.doesNotMatch(rule, /text-overflow:ellipsis/, 'the stored command is not drawn clipped')
+  assert.doesNotMatch(rule, /white-space:nowrap/, 'one nowrap line would hide the tail it approves')
+})
+
+// CSS has no `//` comment, so a line like that merges into the prelude of the next rule: the
+// selector becomes invalid and a browser drops the whole rule, which is how `.bt-mw-code` could be
+// dead while a regex over its text stayed green (#1992).
+//
+// A structural check of the sheet text, and its ceiling said plainly: this repo ships no CSS parser
+// and no jsdom in its dependencies, so the browser-level confirmation was the advisory jsdom run at
+// the fixed tip, not this test. What it does catch is the exact shape of the failure — a `//` line
+// ending up inside a rule's prelude.
+test('every rule prelude in the member sheet is a selector, so the command rule survives', () => {
+  const sheet = MEMBER_CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+  const preludes = []
+  let current = ''
+  for (const char of sheet) {
+    if (char === '{') {
+      preludes.push(current.trim())
+      current = ''
+    } else if (char === '}') {
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  for (const prelude of preludes) {
+    assert.doesNotMatch(prelude, /\/\//, `a rule prelude carries a // comment: ${prelude.slice(0, 80)}`)
+  }
+  assert.ok(preludes.includes('.bt-mw-code'), 'the command block is a rule of its own, not part of another prelude')
+  const rule = sheet.match(/(?:^|\n)\.bt-mw-code\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(rule, /white-space:pre-wrap/, 'the block wraps the command it shows')
+  assert.match(rule, /max-height:120px/, 'the block scrolls inside the height the card holds')
+})

@@ -355,14 +355,20 @@ export function install(rt) {
   }
 
   // What a running tool call is about, for an approval card: its own description and
-  // the command, path or address it acts on.
+  // the command, path or address it acts on. "Allow once" runs the command whole, so the card
+  // stores a real command line's worth of it and, when even that has to be cut, says so: the
+  // ellipsis sits inside the bound, and an uncut value carries none (#1992).
   const callDetail = (sessionId, callId) => {
     let args
     try { args = JSON.parse(live.get(sessionId)?.calls?.get(callId)?.args ?? '{}') } catch { args = {} }
     const first = keys => keys.map(key => args?.[key]).find(value => typeof value === 'string' && value.trim() !== '')
     const text = first(['description', 'justification'])
     const code = first(['command', 'cmd', 'file_path', 'path', 'url', 'query'])
-    return { ...(text ? { text: cut(text.trim(), 300).text } : {}), ...(code ? { code: cut(code.trim(), 400).text } : {}) }
+    const bound = (value, max) => {
+      const kept = cut(value, max)
+      return kept.cut ? `${cut(value, max - 1).text}…` : kept.text
+    }
+    return { ...(text ? { text: bound(text.trim(), 2000) } : {}), ...(code ? { code: bound(code.trim(), 4000) } : {}) }
   }
 
   // The latest turns of the user's own Bots that finished or failed, for a system notification

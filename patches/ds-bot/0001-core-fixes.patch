@@ -1800,8 +1800,13 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  }
  
  export function useMemberWork(room, useWork) {
-@@ -203,7 +203,6 @@ export function useMemberWork(room, useWork) {
+@@ -201,9 +201,11 @@ export function useMemberWork(room, useWork) {
+   return { entries, now }
+ }
  
++// What the owner approves is read in full: `.bt-mw-code` wraps and scrolls inside a fixed height
++// instead of one nowrap line clipped with an ellipsis (#1992). Comments stay outside the string, as
++// JavaScript: CSS has no `//`, and one there swallows the rule that follows it.
  export const MEMBER_CSS = `
  .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
 -.bt-mw-dock-stack>.bt-event.bt-mw-dock{align-self:stretch;margin:0}
@@ -1819,11 +1824,13 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
  .bt-mw-stack{display:inline-flex;align-items:center;flex:none;line-height:0}
  .bt-mw-stack>*+*{margin-left:-4px}
  .bt-mw-face{position:relative;display:inline-flex;flex:none;border-radius:50%}
-@@ -230,9 +230,9 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+@@ -229,10 +229,10 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
+ .bt-mw-tool{font-weight:600;color:var(--bt-ink)}
  .bt-mw-text{color:var(--bt-ink);overflow-wrap:anywhere}
  .bt-mw-reason{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
- .bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+-.bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 -.bt-mw-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:4px}
++.bt-mw-code{display:block;font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bt-ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto}
 +.bt-mw-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:4px}
  .bt-mw-actions>button{height:28px;padding:0 12px;font-size:12px}
  .bt-mw-actions>button:disabled{opacity:.5;cursor:default}
@@ -6704,12 +6711,26 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -235,8 +235,56 @@ export function install(rt) {
+@@ -228,15 +228,69 @@ export function install(rt) {
+   }
+ 
+   // What a running tool call is about, for an approval card: its own description and
+-  // the command, path or address it acts on.
++  // the command, path or address it acts on. "Allow once" runs the command whole, so the card
++  // stores a real command line's worth of it and, when even that has to be cut, says so: the
++  // ellipsis sits inside the bound, and an uncut value carries none (#1992).
+   const callDetail = (sessionId, callId) => {
+     let args
+     try { args = JSON.parse(live.get(sessionId)?.calls?.get(callId)?.args ?? '{}') } catch { args = {} }
      const first = keys => keys.map(key => args?.[key]).find(value => typeof value === 'string' && value.trim() !== '')
      const text = first(['description', 'justification'])
      const code = first(['command', 'cmd', 'file_path', 'path', 'url', 'query'])
 -    return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
-+    return { ...(text ? { text: cut(text.trim(), 300).text } : {}), ...(code ? { code: cut(code.trim(), 400).text } : {}) }
++    const bound = (value, max) => {
++      const kept = cut(value, max)
++      return kept.cut ? `${cut(value, max - 1).text}…` : kept.text
++    }
++    return { ...(text ? { text: bound(text.trim(), 2000) } : {}), ...(code ? { code: bound(code.trim(), 4000) } : {}) }
 +  }
 +
 +  // The latest turns of the user's own Bots that finished or failed, for a system notification
@@ -6728,7 +6749,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    const older = list.slice(0, -ENDED_KEPT)
 +      .filter(entry => entry.failed !== undefined && latest.get(placeOfEnded(entry)) === entry && now - entry.at <= FAILED_MS)
 +    return [...older.slice(-FAILED_KEPT), ...list.slice(-ENDED_KEPT)]
-+  }
+   }
 +  // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
 +  // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
 +  // same place: one blip and a provider that has been refusing for hours read differently.
@@ -6755,7 +6776,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      ...(rateLimited !== undefined ? { rateLimited } : {}),
 +      ...(silent ? { silent: true, streak } : {}),
 +    }], at)
-   }
++  }
 +  const endedView = () => ended
 +  // A scheduled run DSH could not deliver never became a turn; it joins them as a failure (#473).
 +  const noteRunFailure = (entry) => { ended = [...ended, entry].slice(-ENDED_KEPT) }
@@ -9286,7 +9307,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
-@@ -132,6 +132,47 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
+@@ -132,6 +132,84 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
    assert.equal(text(post), '[Group post from Writer]\nCopied the doc to E:/docs.')
  })
  
@@ -9308,27 +9329,64 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 +  assert.equal(await long, 'allowed-once')
 +})
 +
-+// Both fields of a card go through a bound of their own: 300 for the description, 400 for the
++// Both fields of a card go through a bound of their own: 2,000 for the description, 4,000 for the
 +// command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
 +test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {
 +  const host = await start()
 +  t.after(host.stop)
 +  const result = await openTurn(t, host)
-+  const description = `${'a'.repeat(299)}😀tail`
-+  const command = `${'b'.repeat(399)}😀tail`
++  const description = `${'a'.repeat(1_999)}😀tail`
++  const command = `${'b'.repeat(3_999)}😀tail`
 +  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command, description }) })
 +  const outcome = host.askApproval('gb', { callId: 'k1' })
 +
 +  await settle(() => result() !== undefined)
 +  const [approval] = (await host.call('state', {})).value.work.approvals
 +  assert.equal(approval.detail.text.isWellFormed(), true, `the description is not well formed: ${JSON.stringify(approval.detail.text.slice(-4))}`)
-+  assert.equal(approval.detail.text, description.slice(0, 299))
++  assert.equal(approval.detail.text, `${'a'.repeat(1_999)}…`)
 +  assert.equal(approval.detail.code.isWellFormed(), true, `the command is not well formed: ${JSON.stringify(approval.detail.code.slice(-4))}`)
-+  assert.equal(approval.detail.code, command.slice(0, 399))
-+  assert.ok(approval.detail.text.length <= 300 && approval.detail.code.length <= 400, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
++  assert.equal(approval.detail.code, `${'b'.repeat(3_999)}…`)
++  assert.ok(approval.detail.text.length <= 2_000 && approval.detail.code.length <= 4_000, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
 +
 +  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
 +  assert.equal(await outcome, 'allowed-once')
++})
++
++// "Allow once" runs the command the card stores, so the card must keep the whole command unless it
++// is genuinely past a real command line's bound — and then the stored value says it was cut (#1992).
++test('an approval card stores the command it will run whole, and marks one it had to cut', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  const result = await openTurn(t, host)
++  const tailed = `${'n'.repeat(400)} ; Remove-Item -Recurse -Force C:/data`
++  const short = 'Copy-Item a.md E:/docs'
++  const long = 'n'.repeat(4_200)
++  const description = 'd'.repeat(2_100)
++  const ask = (callId, args) => {
++    host.emit('gb', 'tool/call', { callId, name: 'pwsh', arguments: JSON.stringify(args) })
++    void host.askApproval('gb', { callId })
++  }
++  ask('k1', { command: tailed, description: 'Clear the staging folder' })
++  ask('k2', { command: short, description: 'Copy the doc' })
++  ask('k3', { command: long, description })
++
++  await settle(() => result() !== undefined)
++  const [whole, control, cut] = (await host.call('state', {})).value.work.approvals
++  // The 438-unit command the issue reproduces with: its tail is what "Allow once" runs.
++  assert.equal(whole.detail.code, tailed, 'the card stores the command it would run in full')
++  assert.ok(whole.detail.code.endsWith('; Remove-Item -Recurse -Force C:/data'))
++  assert.equal(whole.detail.code.isWellFormed(), true)
++  assert.equal(whole.detail.code.endsWith('…'), false, 'an uncut command is not marked as cut')
++  // Control: under the bound, word for word and no ellipsis.
++  assert.deepEqual(control.detail, { text: 'Copy the doc', code: short })
++  // Past the bound the stored string still says it was cut, inside the bound itself.
++  assert.equal(cut.detail.code.isWellFormed(), true)
++  assert.equal(cut.detail.code.endsWith('…'), true, `a cut command is marked: ${JSON.stringify(cut.detail.code.slice(-4))}`)
++  assert.equal(cut.detail.code.length, 4_000)
++  assert.equal(cut.detail.text.endsWith('…'), true, `a cut description is marked: ${JSON.stringify(cut.detail.text.slice(-4))}`)
++  assert.equal(cut.detail.text.length, 2_000)
++
++  for (const approval of [whole, control, cut]) assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
 +})
 +
  test('an own chat\'s approval stays with DSH and is listed while it waits', async (t) => {
@@ -10340,7 +10398,7 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
  })
  
  test('a Bot\'s own chat shows the groups it is at work in, unless its own chat runs', () => {
-@@ -82,3 +82,128 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
+@@ -82,3 +82,170 @@ test('a Bot\'s own chat shows the groups it is at work in, unless its own chat r
    assert.deepEqual(rowLabels(dock('a', { ...away, bots: { a: { since: 1 } } })), [])
    assert.equal(dock('b', away), null)
  })
@@ -10468,6 +10526,48 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 +  assert.match(rule, /display:flex/)
 +  assert.match(rule, /flex-wrap:wrap/, 'the four-button row wraps rather than overflowing to the left')
 +  assert.match(rule, /justify-content:flex-end/, 'each wrapped line stays right-aligned')
++})
++
++// "Allow once" runs the command the card stores, so the block has to show it whole: it wraps and
++// scrolls inside a fixed height instead of one `nowrap` line the ellipsis cuts (#1992).
++test('the approval card command wraps and scrolls instead of being clipped to one line', () => {
++  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-code\{([^}]*)\}/)?.[1] ?? ''
++  assert.match(rule, /white-space:pre-wrap/, 'a long command wraps instead of running off the card')
++  assert.match(rule, /overflow:auto/, 'what does not fit scrolls inside the block')
++  assert.match(rule, /max-height:\d+px/, 'the block keeps a height the card can hold')
++  assert.doesNotMatch(rule, /text-overflow:ellipsis/, 'the stored command is not drawn clipped')
++  assert.doesNotMatch(rule, /white-space:nowrap/, 'one nowrap line would hide the tail it approves')
++})
++
++// CSS has no `//` comment, so a line like that merges into the prelude of the next rule: the
++// selector becomes invalid and a browser drops the whole rule, which is how `.bt-mw-code` could be
++// dead while a regex over its text stayed green (#1992).
++//
++// A structural check of the sheet text, and its ceiling said plainly: this repo ships no CSS parser
++// and no jsdom in its dependencies, so the browser-level confirmation was the advisory jsdom run at
++// the fixed tip, not this test. What it does catch is the exact shape of the failure — a `//` line
++// ending up inside a rule's prelude.
++test('every rule prelude in the member sheet is a selector, so the command rule survives', () => {
++  const sheet = MEMBER_CSS.replace(/\/\*[\s\S]*?\*\//g, '')
++  const preludes = []
++  let current = ''
++  for (const char of sheet) {
++    if (char === '{') {
++      preludes.push(current.trim())
++      current = ''
++    } else if (char === '}') {
++      current = ''
++    } else {
++      current += char
++    }
++  }
++  for (const prelude of preludes) {
++    assert.doesNotMatch(prelude, /\/\//, `a rule prelude carries a // comment: ${prelude.slice(0, 80)}`)
++  }
++  assert.ok(preludes.includes('.bt-mw-code'), 'the command block is a rule of its own, not part of another prelude')
++  const rule = sheet.match(/(?:^|\n)\.bt-mw-code\{([^}]*)\}/)?.[1] ?? ''
++  assert.match(rule, /white-space:pre-wrap/, 'the block wraps the command it shows')
++  assert.match(rule, /max-height:120px/, 'the block scrolls inside the height the card holds')
 +})
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
