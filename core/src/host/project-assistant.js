@@ -17,7 +17,7 @@
 import { defineTool } from './tool-schema.js'
 import { MAX_ENTRY } from './constants.js'
 import { listProjectState } from './project-state.js'
-import { codePoints } from './text.js'
+import { codePoints, cut } from './text.js'
 import { output } from './tools.js'
 import { inQuietHours, clockIn, quietHoursOf, readQuietHours } from '../shared/quiet-hours.js'
 
@@ -129,7 +129,9 @@ const askOf = (row) => {
   const title = text(row.title).replace(/\s+/g, ' ')
   const where = text(row.column) === '' ? 'open' : `still ${text(row.column)}`
   if (title === '') return `${waitOf(row)} — ${where}`
-  const short = title.length > 80 ? `${title.slice(0, 77)}…` : title
+  // One line still, and the 77-unit bound lands on a code point (#2005): a cut inside a pair
+  // would send the digest half an emoji.
+  const short = title.length > 80 ? `${cut(title, 77).text}…` : title
   return `${waitOf(row)} — ${short} (${where})`
 }
 

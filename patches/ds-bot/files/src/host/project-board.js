@@ -20,6 +20,7 @@ import { open, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
 import { DECISIONS_DIR, listProjectState, sha256 } from './project-state.js'
+import { cut } from './text.js'
 import { advanceRefusal } from './meetings.js'
 import { readMetrics } from './project-metrics.js'
 
@@ -102,7 +103,9 @@ const text = value => (typeof value === 'string' ? value.trim() : '')
 // The column a finished card reads (#1855): the archive key, never a row.
 const DONE_COLUMN = 'done'
 const ONE_LINE = 200
-const oneLine = value => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, ONE_LINE) : '')
+// #2005: the bound lands on a code point. A `slice` here put the first half of an emoji into the
+// queue reason the panel draws, which reads as a replacement character.
+const oneLine = value => (typeof value === 'string' ? cut(value.replace(/\s+/g, ' ').trim(), ONE_LINE).text : '')
 const stampOf = value => (Number.isFinite(value) ? value : null)
 
 // Waiting: an open card a role may claim and no member has. `waitedMs` is measured from the card's
@@ -160,7 +163,8 @@ async function titleOf(dir, path) {
     for (const raw of buffer.subarray(0, bytesRead).toString('utf8').split(/\r?\n/)) {
       const line = raw.trim()
       if (line === '') continue
-      return line.replace(/^#+\s*/, '').slice(0, TITLE_MAX)
+      // The same code-point rule as `oneLine` (#2005): a decision heading may end in an emoji.
+      return cut(line.replace(/^#+\s*/, ''), TITLE_MAX).text
     }
     return ''
   } catch {

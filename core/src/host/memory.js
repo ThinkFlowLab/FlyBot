@@ -1498,7 +1498,9 @@ export function install(rt) {
     const head = Number.isFinite(limits.head) ? limits.head : 4000
     const topics = Number.isFinite(limits.topics) ? limits.topics : 64
     return {
-      head: readText(join(dirOf(scope), MAIN)).slice(0, head),
+      // The head is the dossier's text, so its bound lands on a code point (#2005): a `slice`
+      // here handed the panel the first half of an emoji, and no later bound can put it back.
+      head: cut(readText(join(dirOf(scope), MAIN)), head).text,
       topics: topicNames(scope).slice(0, topics),
     }
   }

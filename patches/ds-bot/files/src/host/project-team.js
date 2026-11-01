@@ -19,7 +19,9 @@ import { cut } from './text.js'
 export const DOSSIER_LIMITS = { persona: 4000, memoryHead: 4000, topics: 64, skills: 64, rooms: 32, name: 200, role: 120, model: 200, color: 64 }
 
 const text = value => (typeof value === 'string' ? value.trim() : '')
-const capped = (value, limit) => text(value).slice(0, limit)
+// #2005: every capped field lands on a code point — a `slice` bound could end on the first half
+// of an emoji, which the panel draws as a replacement character.
+const capped = (value, limit) => cut(text(value), limit).text
 
 export function install(rt) {
   // The attached names that are skills. A pack is expanded to its skill children; a capability the
@@ -64,7 +66,7 @@ export function install(rt) {
       color: capped(bot.color, DOSSIER_LIMITS.color),
       createdAt: Number.isFinite(bot.createdAt) ? bot.createdAt : null,
       memory: {
-        head: (typeof digest.head === 'string' ? digest.head : '').slice(0, DOSSIER_LIMITS.memoryHead),
+        head: cut(typeof digest.head === 'string' ? digest.head : '', DOSSIER_LIMITS.memoryHead).text,
         topics: (Array.isArray(digest.topics) ? digest.topics : []).map(name => text(name)).filter(name => name !== '').slice(0, DOSSIER_LIMITS.topics),
       },
       skills: skillNames(bot),
