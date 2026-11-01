@@ -2980,3 +2980,79 @@ test('a seat line body that arrives ill formed is made well formed where it is u
   assert.equal(shown.at(-1).text, 'hi \u{1F600} there')
   assert.equal(turns.at(-1).text, 'hi \u{1F600} there', 'a real pair is not replaced')
 })
+
+// #1949: a rename is a membership change like a notice edit. `updateRoom` pushed a join only when the
+// notice moved, so the guests already seated in the room kept the old name until the next line — a quiet
+// shared room kept it indefinitely. The join envelope already carries `name`, so a rename rides that same
+// one push; writing back the name the room already has still sends nothing (#1939).
+test('#1949: a rename reaches the guests already seated, once, and a write-back sends nothing', async (t) => {
+  const a = host(t, TEAM)
+  const b = host(t, BOB_HOME)
+  installRoster(a.rt)
+  await a.rt.load()
+  await b.rt.load()
+  const invite = await a.rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await a.rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await a.rt.authenticate(alice.sessionToken)
+  a.rt.state.bots['chief-a'].fields = { social: { member: { handle: '@chief.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  a.rt.state.bots['chief-b'].fields = { social: { member: { handle: '@helper.alice.home', home: '@alice.home', ownerName: 'Alice' } } }
+  publish(a.rt, [{ handle: '@chief.bob.home', name: 'Chief', home: '@bob.home', homeName: 'Bob', owner: 'Bob', plugin: 'social', remote: true }])
+  a.rt.roomInviteServer = { mint: async () => ({ ticket: 'Tkt0001AbCdEfGhIjKlMnO', expiresAt: null }) }
+  await a.rt.mintRoomInvite('war', actorA)
+  const traffic = []
+  const wire = (from, to, home) => {
+    from.rt.flybotSend = async (msg) => {
+      const verdict = from.rt.reach(msg)
+      traffic.push({ op: parseRoomShare(msg.text)?.op, action: verdict.action })
+      if (verdict.action !== 'allow') return { action: 'deny', reason: verdict.reason }
+      const localBotId = Object.keys(to.rt.state.bots).find(id => to.rt.state.bots[id]?.fields?.social?.member?.handle === msg.to)
+      const sender = from.rt.state.bots[msg.from]
+      await to.rt.applyInboundRoomShare({
+        text: msg.text,
+        fromHandle: sender?.fields?.social?.member?.handle,
+        fromHome: home,
+        fromName: sender?.fields?.social?.member?.ownerName || 'Alice',
+        localBotId,
+      })
+      return { action: 'sent' }
+    }
+  }
+  wire(a, b, '@alice.home')
+  wire(b, a, '@bob.home')
+  await a.rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@chief.bob.home' }, actorA)
+  await settleShares()
+  const guest = () => Object.values(b.rt.state.rooms).find(room => room.origin === 'inbound-share')
+  assert.ok(guest(), 'the seat projected the room on the friend\'s home')
+  assert.equal(guest().name, 'War room', 'the guest starts with the name the seat carried')
+  const joins = () => traffic.filter(item => item.op === 'join' && item.action === 'allow').length
+  const seats = JSON.stringify(guest().participants)
+  const logLength = guest().log.length
+
+  // The rule #1939 locked: a patch that writes back the values the room already holds pushes nothing.
+  const before = joins()
+  await a.rt.updateRoom('war', { name: 'War room', mode: 'everyone' }, undefined, actorA)
+  await settleShares()
+  assert.equal(joins(), before, 'a name written back at its own value sends no join')
+
+  // The rename itself travels now, as one join, and the seated guest holds the new name with no line.
+  await a.rt.updateRoom('war', { name: 'Renamed war' }, undefined, actorA)
+  await settleShares()
+  assert.equal(joins(), before + 1, 'one rename is one join')
+  assert.equal(guest().name, 'Renamed war', 'the guest holds the new name with no further message')
+  assert.equal(JSON.stringify(guest().participants), seats, 'the seats in that envelope are unchanged')
+  assert.equal(guest().log.length, logLength, 'the push is the envelope, not a chat line')
+
+  // A notice-only change still pushes, and a call that changes both is still exactly one push.
+  const afterNotice = joins()
+  await a.rt.updateRoom('war', { notice: 'Stand up' }, undefined, actorA)
+  await settleShares()
+  assert.equal(joins(), afterNotice + 1, 'a changed notice sends one join')
+  assert.equal(guest().notice, 'Stand up', 'the guest takes the notice from that join')
+
+  const afterBoth = joins()
+  await a.rt.updateRoom('war', { name: 'Renamed again', notice: 'Sit down' }, undefined, actorA)
+  await settleShares()
+  assert.equal(joins(), afterBoth + 1, 'a rename and a notice change in one call send one join, not two')
+  assert.equal(guest().name, 'Renamed again', 'the one envelope carries the new name')
+  assert.equal(guest().notice, 'Sit down', 'and the new notice')
+})
