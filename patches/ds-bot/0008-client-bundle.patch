@@ -18804,7 +18804,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,291 +8875,678 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,291 +8875,680 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -19301,7 +19301,9 @@ diff --git a/client.js b/client.js
 +                }
 +              }, "×") : null,
 +              (0, import_react37.createElement)("span", { className: `bt-wf-chip ${state}` }, statusLabel2(state)),
-+              (0, import_react37.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, (node.name ?? "?").slice(0, 1)),
++              // #2017: one code point, not one UTF-16 unit — a name that starts with an emoji
++              // would otherwise put half a surrogate pair in the circle.
++              (0, import_react37.createElement)("span", { className: "bt-wf-av", style: { background: COLORS[node.name] ?? "#4d6bfe" } }, Array.from(String(node.name ?? "").trim())[0] ?? "?"),
 +              (0, import_react37.createElement)(
 +                "span",
 +                { className: "bt-wf-copy" },

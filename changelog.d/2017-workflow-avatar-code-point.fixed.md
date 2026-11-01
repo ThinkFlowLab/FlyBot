@@ -1,0 +1,1 @@
+A Workflow node's avatar now shows the first character of its name ([#2017](https://github.com/ThinkFlowLab/FlyBot/issues/2017)): the circle took the name's first UTF-16 unit, so a node called `🚀 Deployer` showed half an emoji on the flowchart and in the run view. It takes the first code point instead, and a node with no name still shows `?`.
