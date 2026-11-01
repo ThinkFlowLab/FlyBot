@@ -131,12 +131,21 @@ export function inflightOf(task) {
   return { id: String(task.id), holder }
 }
 
-// Blocked: the reason is the card's own line, never a second copy.
-export function blockedOf(task) {
+// Blocked: the reason is the card's own line, never a second copy. #2029 adds the age the ask
+// already stamped (`inputRequest.requestedAt`, `tasks.js`) — a card blocked for three days and one
+// blocked for three minutes must not read alike. A card with no stamp has no age: the card's own
+// `createdAt`/`updatedAt` are not the question's clock, and an invented wait is worse than none.
+export function blockedOf(task, now) {
   if (task === null || typeof task !== 'object' || task.status !== 'blocked') return null
   const reason = oneLine(task.inputRequest?.question) || oneLine(task.queueReason) || oneLine(task.title) || ''
-  return { id: String(task.id), reason }
+  const since = stampOf(task.inputRequest?.requestedAt)
+  return { id: String(task.id), reason, since, waitedMs: since === null ? null : Math.max(0, now - since) }
 }
+
+// Oldest wait first: the card that has waited longest is the one a person wants next. Shared by the
+// Waiting and the Blocked groups so the two read in the same order; a card the host cannot date
+// sorts last rather than first.
+const oldestFirst = (a, b) => (a.since ?? Infinity) - (b.since ?? Infinity) || a.id.localeCompare(b.id)
 
 // A decision is read for its title line only: the head of the file is enough for a heading, and
 // the body stays where it is. The bound also keeps a megabyte file from being read to answer one
@@ -504,11 +513,13 @@ export function install(rt) {
         const live = lease !== null && Number.isFinite(lease.expiresAt) && lease.expiresAt > now
         inflight.push({ ...flight, lease: lease === null ? 'none' : live ? 'live' : 'expired', stalled: lease !== null && !live })
       }
-      const block = blockedOf(task)
+      const block = blockedOf(task, now)
       if (block !== null) blocked.push(block)
     }
-    // Oldest wait first: the card that has waited longest is the one a person wants next.
-    waiting.sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity) || a.id.localeCompare(b.id))
+    // Oldest wait first, in both groups: the card that has waited longest is the one a person wants
+    // next, and a blocked card that has been stuck for days belongs above one stuck for minutes.
+    waiting.sort(oldestFirst)
+    blocked.sort(oldestFirst)
     return { waiting, inflight, blocked, counts: { waiting: waiting.length, inflight: inflight.length, blocked: blocked.length, done } }
   }
   // #1828: the endpoint the host calls for a role switch. It answers the policy's own decision;

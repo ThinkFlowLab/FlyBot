@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
+import { blockedOf } from '../src/host/project-board.js'
 import { fakeContext } from './fake-ctx.js'
 
 const seed = () => ({
@@ -493,6 +494,49 @@ test('#1768: a blocked card carries its own reason and another Project is in non
     const ids = [...queues.waiting, ...queues.inflight, ...queues.blocked].map(item => item.id)
     assert.ok(!ids.includes('task-far'), JSON.stringify(ids))
     assert.deepEqual([queues.counts.waiting, queues.counts.inflight, queues.counts.blocked], [2, 1, 1])
+  } finally { await stop() }
+})
+
+// #2029: the Blocked group answered why and never how long. `inputRequest.requestedAt` is the stamp
+// the ask itself wrote (`tasks.js`), so a card's age is read from it — and from nowhere else: a
+// fallback to `createdAt` would read as a wait nobody measured.
+test('#2029: a blocked card carries the age of its own question', () => {
+  const NOW = 1_800_000_000_000
+  const since = NOW - 48 * 3600e3
+  assert.deepEqual(
+    blockedOf({ id: 't1', status: 'blocked', inputRequest: { id: 'q', question: 'why', requestedAt: since } }, NOW),
+    { id: 't1', reason: 'why', since, waitedMs: 172800000 },
+  )
+})
+
+test('#2029: a blocked card with no requestedAt has no age, invented or otherwise', async () => {
+  const { rt, stop } = await start(undefined, queueSeed())
+  try {
+    // The card's own timestamps are there and a fallback would find them; what is missing is the
+    // question's stamp, so the card says nothing about how long it has been blocked.
+    const now = Date.now()
+    rt.state.tasks['task-blocked'].createdAt = now - 48 * 3600e3
+    rt.state.tasks['task-blocked'].updatedAt = now - 48 * 3600e3
+    const queues = await rt.projectBoardQueues('project-p1')
+    const item = queues.blocked.find(entry => entry.id === 'task-blocked')
+    assert.equal(item.since, null, 'no stamp, no age')
+    assert.equal(item.waitedMs, null, 'and no invented duration')
+  } finally { await stop() }
+})
+
+test('#2029: the Blocked group lists the card stuck longest first', async () => {
+  const team = queueSeed()
+  const now = Date.now()
+  team.tasks['task-blocked'].inputRequest.requestedAt = now - 3600e3
+  team.tasks['task-blocked-old'] = { id: 'task-blocked-old', kind: 'group', status: 'blocked', waitingFor: 'input', origin: { roomId: 'r1' }, title: 'Stuck since Friday', inputRequest: { id: 'q2', question: 'Still stuck?', requestedAt: now - 48 * 3600e3 }, createdAt: 41, updatedAt: 41 }
+  team.tasks['task-blocked-unstamped'] = { id: 'task-blocked-unstamped', kind: 'group', status: 'blocked', waitingFor: 'input', origin: { roomId: 'r1' }, title: 'No stamp', inputRequest: { id: 'q3', question: 'Since when?' }, createdAt: 42, updatedAt: 42 }
+  const { rt, stop } = await start(undefined, team)
+  try {
+    const queues = await rt.projectBoardQueues('project-p1')
+    // 48 h before 1 h, and the card the host cannot date sorts last rather than first.
+    assert.deepEqual(queues.blocked.map(item => item.id), ['task-blocked-old', 'task-blocked', 'task-blocked-unstamped'])
+    assert.deepEqual(queues.blocked.map(item => item.since), [now - 48 * 3600e3, now - 3600e3, null])
+    assert.equal(queues.blocked[2].waitedMs, null)
   } finally { await stop() }
 })
 
