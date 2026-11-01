@@ -2,7 +2,7 @@
 // that same id through `run.task.id`. The aggregate reads both views as one row, never twice,
 // and writes nothing back.
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -551,6 +551,127 @@ test('#2033: a decision name that points outside the folder never becomes a path
     const board = await rt.projectBoard('project-p1')
     const escape = board.meetings.decided.find(meeting => meeting.id === 'meeting-escape')
     assert.equal(escape.path, '', 'the fallback takes names from this read, never from the filesystem')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+// A hand-edited record, or a name crafted into a decisions folder, can point `decisionFile`
+// anywhere. The board lists one shape only — a regular `decisions/<name>.md` — and that same rule
+// has to refuse every other name where the listing is produced, so neither a row nor the past-cut
+// fallback reads outside the folder. Each class below is a refusal, never a silent skip.
+const traversalFolder = () => {
+  const base = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-escape-'))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  mkdirSync(join(dir, 'decisions', 'zz'))
+  mkdirSync(join(dir, 'decisions', 'sub'))
+  writeFileSync(join(dir, 'decisions', '2026-01-02-legit.md'), '# The real decision\n')
+  writeFileSync(join(dir, 'decisions', 'sub', '2026-01-02-deep.md'), '# Left out of the listing\n')
+  writeFileSync(join(dir, 'decisions', 'handwritten-notes.md'), '# Written by hand\n')
+  writeFileSync(join(base, 'outside.md'), '# Outside the folder\n')
+  symlinkSync(join(base, 'outside.md'), join(dir, 'decisions', '2026-01-02-link.md'))
+  return { base, dir }
+}
+
+const traversalSeed = (dir, base, ids) => {
+  const team = seed()
+  team.projects['project-p1'].workDir = dir
+  const at = (id, decisionFile) => ({
+    id, status: 'decided', question: `Q ${id}`, owner: 'Chief', project: 'project-p1',
+    decisionDir: dir, decisionFile, createdAt: 1, updatedAt: 5, decidedAt: 6,
+  })
+  const all = {
+    'm-dotdot': 'decisions/zz/../../../outside.md',
+    'm-absolute-out': join(base, 'outside.md'),
+    'm-absolute-root': '/etc/passwd',
+    'm-symlink': 'decisions/2026-01-02-link.md',
+    'm-deep': 'decisions/sub/2026-01-02-deep.md',
+    'm-legit': 'decisions/2026-01-02-legit.md',
+  }
+  team.meetings = Object.fromEntries(ids.map(id => [id, at(id, all[id])]))
+  return team
+}
+
+// Each case gets only its own meetings, so a leak in one class cannot make another class red.
+async function startTraversal(ids) {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const { base, dir } = traversalFolder()
+  const { rt, stop } = await start(home, traversalSeed(dir, base, ids))
+  return { rt, base, dir, stop }
+}
+
+const decidedRow = (board, id) => board.meetings.decided.find(meeting => meeting.id === id)
+
+test('a decision name with a .. segment never becomes a row or a past-cut path', async () => {
+  const { rt, base, stop } = await startTraversal(['m-dotdot'])
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(decidedRow(board, 'm-dotdot').path, '', 'a name with a .. segment is refused, not projected')
+    assert.equal(board.decisions.files.some(file => file.path.includes('..')), false, 'no row names a .. path')
+    assert.equal(board.decisions.files.some(file => file.title === 'Outside the folder'), false, 'no row carries the outside title')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('an absolute decision name is refused, never read', async () => {
+  const { rt, base, stop } = await startTraversal(['m-absolute-out', 'm-absolute-root'])
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(decidedRow(board, 'm-absolute-out').path, '', 'an absolute path is refused')
+    assert.equal(decidedRow(board, 'm-absolute-root').path, '', 'and so is a root absolute path')
+    assert.equal('sha256' in decidedRow(board, 'm-absolute-out'), false)
+    assert.equal(board.decisions.files.some(file => file.path.startsWith('/')), false, 'no row names an absolute path')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('a symlinked decision name is refused, never followed', async () => {
+  const { rt, base, stop } = await startTraversal(['m-symlink'])
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const row = decidedRow(board, 'm-symlink')
+    assert.equal(row.path, '', 'a symlink is not a decision file this listing found')
+    assert.equal('sha256' in row, false, 'and it carries no hash of the file it points at')
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/2026-01-02-link.md'), false, 'the link is not a row')
+    assert.equal(board.decisions.files.some(file => file.title === 'Outside the folder'), false, 'and its target is never titled')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('a decision name this listing did not read never becomes a past-cut path', async () => {
+  const { rt, base, stop } = await startTraversal(['m-deep'])
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const row = decidedRow(board, 'm-deep')
+    assert.equal(row.path, '', 'the fallback names only what this read listed, so a name it never read is not a path')
+    assert.equal('sha256' in row, false)
+    assert.equal(board.decisions.files.some(file => file.path === 'decisions/sub/2026-01-02-deep.md'), false, 'the listing reads one level only')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('a regular decision name is still listed, titled and hashed', async () => {
+  const { rt, base, stop } = await startTraversal(['m-legit'])
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const file = board.decisions.files.find(row => row.path === 'decisions/2026-01-02-legit.md')
+    assert.equal(file.title, 'The real decision', 'a legal name is still listed with its own title')
+    const handwritten = board.decisions.files.find(row => row.path === 'decisions/handwritten-notes.md')
+    assert.equal(handwritten.title, 'Written by hand', 'a legal name with no date is listed too: the rule is the shape, not the date')
+    const row = decidedRow(board, 'm-legit')
+    assert.equal(row.path, 'decisions/2026-01-02-legit.md', 'and the meeting still finds it')
+    assert.match(row.sha256, /^[0-9a-f]{64}$/)
   } finally {
     await stop()
     rmSync(base, { recursive: true, force: true })

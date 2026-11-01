@@ -16,10 +16,10 @@
 // Read-only by construction: it reads `state.tasks`, `state.meetings` and the Project bindings,
 // asks each registered provider for the workflow refs of tasks that still exist, and returns the
 // sections. It writes nothing, starts nothing and is not called unless someone asks for the board.
-import { open, readFile, stat } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { columnOf } from '../shared/task-board.js'
-import { DECISIONS_DIR, listProjectState, sha256 } from './project-state.js'
+import { DECISIONS_DIR, describeFile, isDecisionPath, listProjectState } from './project-state.js'
 import { cut } from './text.js'
 import { advanceRefusal } from './meetings.js'
 import { readMetrics } from './project-metrics.js'
@@ -247,11 +247,12 @@ export function install(rt) {
   const archivedOf = async (meeting) => {
     const dir = text(meeting?.decisionDir)
     const path = text(meeting?.decisionFile)
-    if (dir === '' || !path.startsWith(`${DECISIONS_DIR}/`) || !path.endsWith('.md')) return undefined
+    // The listing accepts one shape only, and this read is part of it: a name that is not
+    // `decisions/<name>.md`, or a symlink standing in for that file, is refused here too. Reading
+    // it would put a file outside the folder in the rows, and the past-cut fallback reads this set.
+    if (dir === '' || !isDecisionPath(path)) return undefined
     try {
-      const bytes = await readFile(join(dir, path))
-      const info = await stat(join(dir, path))
-      return { dir, path, bytes: bytes.length, sha256: sha256(bytes), mtime: new Date(info.mtimeMs).toISOString() }
+      return { dir, ...await describeFile(dir, path) }
     } catch {
       // Absent or unreadable is not a row: the meeting keeps its own record, with no path.
       return undefined
@@ -274,7 +275,7 @@ export function install(rt) {
       }
       if (state.ok !== true) return { dir, files: [], total: 0, reason: state.reason }
       found.push(...state.files
-        .filter(file => file.path.startsWith(`${DECISIONS_DIR}/`) && file.path.endsWith('.md'))
+        .filter(file => isDecisionPath(file.path))
         .map(file => ({ ...file, dir })))
     }
     // The other source: the folder each decided meeting of this Project recorded, one file each.

@@ -9,7 +9,7 @@
 // file and a file too large to hand over each answer with the reason, never with an empty
 // string that would read as an empty document.
 import { createHash } from 'node:crypto'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
@@ -22,7 +22,9 @@ export const DECISIONS_DIR = 'decisions'
 // the context it was meant to save. Over the bound the answer is the size, not the text.
 export const MAX_BYTES = 200_000
 
-const isDecisionPath = path => /^decisions\/[^/]+\.md$/.test(path)
+// The one name shape a decision has: exactly one segment under `decisions/`, ending in `.md`.
+// The lister, the reader and the board all take a name only when it matches this.
+export const isDecisionPath = path => /^decisions\/[^/]+\.md$/.test(path)
 const allowed = path => PROJECT_STATE_PATHS.includes(path) || isDecisionPath(path)
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -48,9 +50,22 @@ async function decisionFiles(dir) {
     .sort()
 }
 
-async function describe(dir, path) {
+// One file sitting directly in the folder, never through a link. `readdir` already reports a
+// symlink as "not a plain file", and reading a name — here, in the reader, and on the board —
+// answers the same way: a symlink is an absent file, not its target. The `lstat` is what makes
+// that one rule hold for a name that was never listed, a name from a record, or `PROJECT.md`.
+async function fileAt(dir, path) {
+  const info = await lstat(join(dir, path))
+  if (!info.isFile()) throw new Error(`not a plain file: ${path}`)
+  return info
+}
+
+// One Project State file with its byte size, content hash and last-modified time. Exported
+// because the board reads the file a decided meeting archived, and it must refuse exactly what
+// this reader refuses — one rule, one place.
+export async function describeFile(dir, path) {
+  const info = await fileAt(dir, path)
   const bytes = await readFile(join(dir, path))
-  const info = await stat(join(dir, path))
   return { path, bytes: bytes.length, sha256: sha256(bytes), mtime: new Date(info.mtimeMs).toISOString() }
 }
 
@@ -66,12 +81,12 @@ export async function listProjectState(dir, { repository = true } = {}) {
   const found = []
   for (const path of PROJECT_STATE_PATHS) {
     try {
-      found.push(await describe(dir, path))
+      found.push(await describeFile(dir, path))
     } catch { /* an absent Project State file is simply not listed */ }
   }
   for (const path of await decisionFiles(dir)) {
     try {
-      found.push(await describe(dir, path))
+      found.push(await describeFile(dir, path))
     } catch { /* a file that vanished between readdir and read is not listed */ }
   }
   return { ok: true, dir, files: found }
@@ -88,11 +103,11 @@ export async function readProjectState(dir, file) {
   if (!await repositoryAt(dir)) return { ok: false, reason: `not a repository: ${dir}` }
   let info
   try {
-    info = await stat(join(dir, path))
+    // A symlink answers like a file that is not there — never with the text it points at.
+    info = await fileAt(dir, path)
   } catch {
     return { ok: false, reason: `absent: ${path}` }
   }
-  if (!info.isFile()) return { ok: false, reason: `absent: ${path}` }
   if (info.size > MAX_BYTES) return { ok: false, reason: `too large: ${path} is ${info.size} bytes (bound ${MAX_BYTES})` }
   const bytes = await readFile(join(dir, path))
   return { ok: true, path, bytes: bytes.length, sha256: sha256(bytes), mtime: new Date(info.mtimeMs).toISOString(), text: bytes.toString('utf8') }
