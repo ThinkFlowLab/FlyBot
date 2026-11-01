@@ -1027,3 +1027,15 @@ test('the task text bound keeps exactly what fits and a pair that ends on it', a
   assert.equal(ending, 'a'.repeat(1998) + '😀')
   assert.equal(ending.length, 2000)
 })
+
+test('a task note cut at the 300-unit bound keeps the pair whole', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const note = 'a'.repeat(299) + '😀' + 'tail'
+  const created = await app.createTask(alice.sessionToken, { note })
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const stored = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[created.value.id]
+  assert.equal(stored.note.isWellFormed(), true, `the stored note is not well formed: ${JSON.stringify(stored.note.slice(-2))}`)
+  assert.equal(stored.note, 'a'.repeat(299), 'the pair at the bound is dropped whole, never halved')
+})

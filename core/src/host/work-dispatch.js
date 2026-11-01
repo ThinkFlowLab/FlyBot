@@ -4,6 +4,7 @@
 // question, a remark, a line naming two members or an `@all` keeps the group turn it had — this
 // module only answers the shape of one line, the room decides who may dispatch.
 import { issueRefPattern, refOf } from '../shared/issue-ref.js'
+import { cut } from '../shared/text-boundary.js'
 
 export { cardNamesIssue, issueRefs, namesIssue } from '../shared/issue-ref.js'
 
@@ -13,7 +14,7 @@ const QUESTION = /[?？]/
 // "#1234 looks good to me" stays a remark. The window is characters, not words, so it covers CJK.
 const NEAR = 40
 const IMPERATIVE = /(?:\b(?:rebase|push|fix|implement|land|merge|open|close|claim|take|add|update|remove|delete|refactor|write|read|investigate|review|run|check|test|debug|split|amend|drive|finish|post|prepare|draft|design|build|move|bump|revert|rename|wire|port|handle|address|verify|reproduce|triage|document|patch|publish|release|deploy|archive|start|continue|make|set|teach|follow)\b|修复|修改|修正|实现|合并|推送|提交|更新|处理|完成|补充|去掉|删掉|删除|检查|验证|复现|整理|重构|拆分|设计|编写|写|改|修|做|跑|查|推|补|删)/i
-const oneLine = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+const oneLine = value => cut(String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(), 300).text
 
 // "@Dev1" is a call, not part of the instruction: the card says what to do, and the room already
 // knows who was named.

@@ -1,0 +1,1 @@
+The task card's title and note and a dispatched card's title and note are cut at 300 characters on a code point boundary, so a bound that lands inside an emoji or other astral character keeps whole characters instead of storing a lone surrogate the card shows as U+FFFD ([#1958](https://github.com/ThinkFlowLab/FlyBot/issues/1958)).
