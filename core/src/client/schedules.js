@@ -418,15 +418,22 @@ export function BotSchedules({ bot, roster, actions }) {
 
 // The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 // tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
+// The line draws three rows, so the title carries the real count and one row after them says
+// what the cap hid; that row opens the settings list, where a bot id would open the new-task
+// form instead — the form is what the empty state's button means (#2030).
 export function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions)
   const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id) : []
+  const shown = tasks.slice(0, 3)
+  const hidden = tasks.length - shown.length
   return h('div', null,
-    h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
+    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
     tasks.length === 0
       ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
-      : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
-          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task))))))
+      : h('div', { className: 'bt-task-list' },
+          shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
+            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
+          hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
 }
 
 export const SCHEDULE_CSS = `

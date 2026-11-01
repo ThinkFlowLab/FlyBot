@@ -1235,6 +1235,7 @@ const ZH = {
   'On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend\'s own Bot never gets it.': '默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。',
   'No Bots': '没有 Bot',
   'Scheduled tasks': '定时任务',
+  'Scheduled tasks · {count}': '定时任务 · {count}',
   'Every day': '每天',
   'Every {count} days': '每 {count} 天',
   'Every hour': '每小时',
