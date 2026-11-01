@@ -9,7 +9,7 @@ import { build } from 'esbuild'
 // where the switch is; the Harness settings dialog has none.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart, timingText } from './src/client/schedules.js'",
+    contents: "export { SchedulesPage, BotSchedules, ScheduleSummary, CopyRow, openPlugins, formStart, timingText } from './src/client/schedules.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -31,7 +31,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, CopyRow, openPlugins, formStart, timingText } = module.exports
+const { SchedulesPage, BotSchedules, ScheduleSummary, CopyRow, openPlugins, formStart, timingText } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -371,3 +371,64 @@ test('a task row offers Copy (#1287)', () => {
   assert.deepEqual(text(copy), [], 'an icon button, like Edit')
 })
 
+
+// #2024: the details panel's scheduled block and the settings page contradicted each other for
+// the same Bot. The block kept only `status === 'active'` rows, so a Bot whose tasks were all
+// paused fell into the empty branch — "No scheduled tasks yet. Add one", whose button opens the
+// new-task form — and its rows never said when the next run is.
+const opened = () => {
+  const calls = []
+  return { calls, openSettings: (...args) => calls.push(args), closeSettings() {}, selectPanel() {} }
+}
+
+test('#2024: a Bot whose tasks are all paused lists them, and the add-one empty state is gone', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [PAUSED, { ...PAUSED, id: 's3', title: 'Third' }, { ...PAUSED, id: 's4', title: 'Fourth' }] })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  const lines = text(card)
+  assert.equal(lines.filter(line => line === 'Paused').length, 3, lines.join('|'))
+  assert.ok(!lines.some(line => /No scheduled tasks yet/.test(line)), lines.join('|'))
+  const rows = buttonsOf(card).filter(button => button.props.className === 'bt-task-line')
+  assert.equal(rows.length, 3, 'three rows, not the empty state')
+  rows[0].props.onClick()
+  assert.deepEqual(actions.calls, [['schedules']], 'a row opens the settings list, not the new-task form')
+})
+
+test('#2024: each row answers when — Next: …, Paused, Finished', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [ACTIVE, PAUSED, { ...PAUSED, id: 's5', title: 'Done', status: 'finished' }] })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  const lines = text(card)
+  const when = lines.filter(line => /^Next: \S/.test(line) || line === 'Paused' || line === 'Finished')
+  assert.equal(when.length, 3, lines.join('|'))
+  assert.ok(when.some(line => /^Next: \S/.test(line)), 'the active task says when its next run is')
+  assert.ok(when.includes('Paused'), 'the paused one says so')
+  assert.ok(when.includes('Finished'), 'the finished one says so')
+  assert.ok(!lines.some(line => line.startsWith('Every day at')), 'the repeat rule alone does not answer when')
+})
+
+test('#2024: a missing or malformed scheduledAt renders without throwing', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [
+    { ...ACTIVE, id: 'd1', title: 'No instant', scheduledAt: undefined },
+    { ...ACTIVE, id: 'd2', title: 'Bad instant', scheduledAt: 'not-a-date' },
+    { ...ACTIVE, id: 'd3', title: 'Bad once', kind: 'at', scheduledAt: 'not-a-date' },
+  ] })
+  let card
+  assert.doesNotThrow(() => { card = render(ScheduleSummary({ bot: { id: 'b1' }, actions })) })
+  const rows = buttonsOf(card).filter(button => button.props.className === 'bt-task-line')
+  assert.equal(rows.length, 3, 'the rows are still drawn')
+  assert.ok(!text(card).some(line => /Invalid/.test(line)), text(card).join('|'))
+  assert.doesNotThrow(() => timingText({ kind: 'at', scheduledAt: 'not-a-date' }))
+})
+
+test('#2024: a Bot with no tasks at all keeps the empty state and its add button', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [] })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  assert.ok(text(card).includes('No scheduled tasks yet. Add one'), text(card).join('|'))
+  const button = buttonsOf(card)[0]
+  assert.equal(button.props.className, 'bt-more')
+  button.props.onClick()
+  assert.deepEqual(actions.calls, [['schedules', 'b1']], 'only the empty state opens the new-task form')
+})

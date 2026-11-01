@@ -1,0 +1,1 @@
+A Bot's Scheduled tasks block in its details panel now lists the Bot's paused and finished tasks instead of claiming the Bot has none, and each row says when it runs next — `Next: …`, `Paused` or `Finished` — rather than only the repeat rule ([#2024](https://github.com/ThinkFlowLab/FlyBot/issues/2024)).
