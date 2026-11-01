@@ -6,7 +6,7 @@
 //
 // Every line follows the model. Its declared window, less the room its reply
 // needs, is the usable context; the check line is a share of that.
-import { estimateTokens } from './text.js'
+import { cut, estimateTokens } from './text.js'
 
 // For a model that declares no window.
 export const DEFAULT_WINDOW = 500_000
@@ -145,7 +145,7 @@ export function checkpointTailNote(tail) {
   const first = tail[0]
   const text = (Array.isArray(first?.content) ? first.content : [])
     .filter(block => block?.type === 'text').map(block => block.text).join(' ').replace(/\s+/g, ' ').trim()
-  const from = text === '' ? `from your ${first?.role === 'assistant' ? 'own step' : 'latest input'}` : `from the one that begins "${text.slice(0, 80)}"`
+  const from = text === '' ? `from your ${first?.role === 'assistant' ? 'own step' : 'latest input'}` : `from the one that begins "${cut(text, 80).text}"`
   return `The last ${tail.length === 1 ? 'message' : `${tail.length} messages`} above, ${from}, stay right after your summary, word for word. Count what they give as given: summarize only what comes before them, and do not copy them.`
 }
 

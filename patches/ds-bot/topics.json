@@ -23,6 +23,7 @@
     "src/client/memory-panel.js",
     "src/client/voice.js",
     "src/host/agents.js",
+    "test/agents.test.js",
     "src/host/capabilities.js",
     "src/host/chat-index.js",
     "src/host/connectors.js",

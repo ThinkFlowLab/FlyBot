@@ -622,6 +622,36 @@ test('mentions in a group (#80, #81): the room gets a receipt — sent points to
   assert.equal((agents.get('b')?.calls ?? []).length, 0)
 })
 
+test('P-1993: a mention receipt\'s reason is cut on a code point at 240', async (t) => {
+  const { ctx, fb, stop, agents, grantTo } = await start({
+    rooms: { 'room-1': { id: 'room-1', name: 'Group', members: ['a', 'b'], admin: 'a', mode: 'admin', notice: '', createdAt: 1, createdBy: null } },
+  })
+  t.after(stop)
+  await grantTo('a', '@helper.friend.home')
+  fb.transports.add('bot-social', { send: async msg => ({ exchangeId: `r-${msg.to.handle}` }) })
+  fb.scope('social').remote.publish([{ handle: '@helper.friend.home', name: '助手', home: '@friend.home' }])
+  const head = 'a'.repeat(239)
+  fb.bot.send.use({ name: 'deny-long', handle: m => (m.target?.remote === true ? { action: 'deny', reason: /long/.test(m.text) ? `${head}😀tail` : 'no friendship' } : undefined) })
+  const receipts = () => (agents.get('room-1')?.calls ?? []).map(([, m]) => m.content.map(b => b.text).join('\n'))
+  const until = async (check) => {
+    const end = Date.now() + 2000
+    while (!check()) {
+      if (Date.now() > end) throw new Error('until: the condition did not hold within 2 s')
+      await delay(10)
+    }
+  }
+  const say = async (text, n) => {
+    ctx.emitArgs('session/event', { id: 'room-1' }, { type: 'user/message', seq: n, data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } })
+    await until(() => receipts().length >= n)
+  }
+  await say('@helper.friend.home long one', 1)
+  assert.ok(receipts()[0].isWellFormed(), `the receipt is well formed: ${JSON.stringify(receipts()[0])}`)
+  assert.equal(receipts()[0], `助手: not sent — ${head}`, 'the pair at the bound is dropped whole, not split')
+  // Control: a reason under the bound is posted word for word.
+  await say('@helper.friend.home short one', 2)
+  assert.equal(receipts()[1], '助手: not sent — no friendship')
+})
+
 test('mentions (#143): a human line to a friend Bot already in the room stays in the room; Chief is not the sender', async (t) => {
   const { ctx, fb, stop, agents } = await start({
     rooms: {

@@ -153,6 +153,20 @@ test('agent-rename retitles an owned Session and refuses others', async (t) => {
   assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: 'm1', title: 'x' })).ok, false)
 })
 
+test('P-1993: a Session title is cut on a code point at the 80-unit bound', async (t) => {
+  const { call, stop, renamed } = start(TEAM)
+  t.after(stop)
+  await call('state', {})
+  const agent = (await call('add-agent')).value
+  const head = 'a'.repeat(79)
+  assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: agent.sessions[0], title: `${head}😀tail` })).ok, true)
+  assert.ok(renamed.at(-1).title.isWellFormed(), `the title is well formed: ${JSON.stringify(renamed.at(-1).title)}`)
+  assert.equal(renamed.at(-1).title, head, 'the pair at the bound is dropped whole, not split')
+  // Control: a title under the bound is stored word for word.
+  assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: agent.sessions[0], title: '  Scratch  ' })).ok, true)
+  assert.equal(renamed.at(-1).title, 'Scratch')
+})
+
 test('remove-agent keeps the Agent with the Sessions it could not archive', async (t) => {
   const { call, stop, archived, failArchive } = start(TEAM)
   t.after(stop)

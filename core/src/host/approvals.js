@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 import { OWNER, settled } from './turn-origin.js'
+import { cut } from './text.js'
 
 const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
 const RUN_DENIED = new Set(EPHEMERAL_DENIED_TOOLS)
@@ -72,7 +73,7 @@ export function install(rt) {
       botId,
       ...(owner ? { roomId: owner.roomId } : {}),
       tool: String(request.toolName ?? ''),
-      reason: String(request.reason ?? '').slice(0, 500),
+      reason: cut(String(request.reason ?? ''), 500).text,
       detail: rt.callDetail?.(sessionId, request.callId) ?? {},
       at: Date.now(),
     }

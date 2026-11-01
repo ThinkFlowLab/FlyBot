@@ -2821,6 +2821,14 @@ diff --git a/src/client/voice.js b/src/client/voice.js
 diff --git a/src/host/agents.js b/src/host/agents.js
 --- a/src/host/agents.js
 +++ b/src/host/agents.js
+@@ -3,6 +3,7 @@
+ // the whole dsh conversation surface and none of the team tools.
+ import { randomUUID } from 'node:crypto'
+ import { AGENT_NAME, AGENT_SESSION_TITLE_MAX, TEAM_TOOLS } from './constants.js'
++import { cut } from './text.js'
+ 
+ export function install(rt) {
+   const { ctx, state } = rt
 @@ -77,6 +77,13 @@ export function install(rt) {
      const readOnly = rt.readOnly()
      if (readOnly !== undefined) throw new Error(readOnly)
@@ -2933,7 +2941,12 @@ diff --git a/src/host/agents.js b/src/host/agents.js
    }
  
    async function renameAgentSession(agentId, sessionId, title) {
-@@ -158,9 +158,9 @@ export function install(rt) {
+@@ -154,13 +154,13 @@ export function install(rt) {
+     const clean = String(title ?? '').trim()
+     if (clean === '') throw new Error('A session needs a title')
+     const agent_ = await rt.resolveAgent(sessionId)
+-    await ctx.sessionTitle.rename(agent_.session, clean.slice(0, AGENT_SESSION_TITLE_MAX))
++    await ctx.sessionTitle.rename(agent_.session, cut(clean, AGENT_SESSION_TITLE_MAX).text)
    }
  
    async function removeAgent(agentId) {
@@ -2964,12 +2977,13 @@ diff --git a/src/host/agents.js b/src/host/agents.js
 diff --git a/src/host/approvals.js b/src/host/approvals.js
 --- a/src/host/approvals.js
 +++ b/src/host/approvals.js
-@@ -3,8 +3,45 @@
+@@ -3,8 +3,46 @@
  // the group chat. A Bot's own chat keeps DSH's card; its requests are only noted, so
  // the team view can say who is waiting.
  import { randomUUID } from 'node:crypto'
 +import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 +import { OWNER, settled } from './turn-origin.js'
++import { cut } from './text.js'
  
 -const OUTCOMES = { allow: 'allowed-once', reject: 'rejected' }
 +const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
@@ -3031,6 +3045,15 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
      const id = randomUUID()
      const entry = {
        id,
+@@ -24,7 +24,7 @@ export function install(rt) {
+       botId,
+       ...(owner ? { roomId: owner.roomId } : {}),
+       tool: String(request.toolName ?? ''),
+-      reason: String(request.reason ?? '').slice(0, 500),
++      reason: cut(String(request.reason ?? ''), 500).text,
+       detail: rt.callDetail?.(sessionId, request.callId) ?? {},
+       at: Date.now(),
+     }
 @@ -47,14 +47,82 @@ export function install(rt) {
      })
    }, { prepend: true })
@@ -5640,7 +5663,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
 +import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 +import { defineTool } from './tool-schema.js'
-+import { codePoints, textOf } from './text.js'
++import { codePoints, cut, textOf } from './text.js'
 +import { output } from './tools.js'
 +import { retiredBot } from './store.js'
  
@@ -5847,7 +5870,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    for (const id of entry.ids) {
 +      const run = runs()[id]
 +      if (run === undefined) continue
-+      noteRun(id, { ...run, result: reason !== undefined ? 'failed' : aborted ? 'stopped' : 'ran', ...(reason !== undefined ? { reason: reason.slice(0, 200) } : {}) })
++      noteRun(id, { ...run, result: reason !== undefined ? 'failed' : aborted ? 'stopped' : 'ran', ...(reason !== undefined ? { reason: cut(reason, 200).text } : {}) })
 +    }
 +  }
 +  // A group round whose members' turns failed: the task's run in that group failed.
@@ -6331,7 +6354,12 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 diff --git a/src/host/steward.js b/src/host/steward.js
 --- a/src/host/steward.js
 +++ b/src/host/steward.js
-@@ -10,7 +10,9 @@ import { estimateTokens } from './text.js'
+@@ -6,11 +6,13 @@
+ //
+ // Every line follows the model. Its declared window, less the room its reply
+ // needs, is the usable context; the check line is a share of that.
+-import { estimateTokens } from './text.js'
++import { cut, estimateTokens } from './text.js'
  
  // For a model that declares no window.
  export const DEFAULT_WINDOW = 500_000
@@ -6342,6 +6370,15 @@ diff --git a/src/host/steward.js b/src/host/steward.js
  // Context sizes between requests are estimates, so the hard line stays a little
  // below what the model can actually take.
  const HARD_SHARE = 0.95
+@@ -143,7 +143,7 @@ export function checkpointTailNote(tail) {
+   const first = tail[0]
+   const text = (Array.isArray(first?.content) ? first.content : [])
+     .filter(block => block?.type === 'text').map(block => block.text).join(' ').replace(/\s+/g, ' ').trim()
+-  const from = text === '' ? `from your ${first?.role === 'assistant' ? 'own step' : 'latest input'}` : `from the one that begins "${text.slice(0, 80)}"`
++  const from = text === '' ? `from your ${first?.role === 'assistant' ? 'own step' : 'latest input'}` : `from the one that begins "${cut(text, 80).text}"`
+   return `The last ${tail.length === 1 ? 'message' : `${tail.length} messages`} above, ${from}, stay right after your summary, word for word. Count what they give as given: summarize only what comes before them, and do not copy them.`
+ }
+ 
 diff --git a/src/host/text.js b/src/host/text.js
 --- a/src/host/text.js
 +++ b/src/host/text.js
@@ -7320,6 +7357,30 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 +  }
 +  return missing
 +}
+diff --git a/test/agents.test.js b/test/agents.test.js
+--- a/test/agents.test.js
++++ b/test/agents.test.js
+@@ -153,6 +153,20 @@ test('agent-rename retitles an owned Session and refuses others', async (t) => {
+   assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: 'm1', title: 'x' })).ok, false)
+ })
+ 
++test('P-1993: a Session title is cut on a code point at the 80-unit bound', async (t) => {
++  const { call, stop, renamed } = start(TEAM)
++  t.after(stop)
++  await call('state', {})
++  const agent = (await call('add-agent')).value
++  const head = 'a'.repeat(79)
++  assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: agent.sessions[0], title: `${head}😀tail` })).ok, true)
++  assert.ok(renamed.at(-1).title.isWellFormed(), `the title is well formed: ${JSON.stringify(renamed.at(-1).title)}`)
++  assert.equal(renamed.at(-1).title, head, 'the pair at the bound is dropped whole, not split')
++  // Control: a title under the bound is stored word for word.
++  assert.equal((await call('agent-rename', { agentId: agent.id, sessionId: agent.sessions[0], title: '  Scratch  ' })).ok, true)
++  assert.equal(renamed.at(-1).title, 'Scratch')
++})
++
+ test('remove-agent keeps the Agent with the Sessions it could not archive', async (t) => {
+   const { call, stop, archived, failArchive } = start(TEAM)
+   t.after(stop)
 diff --git a/test/approval-notices.test.js b/test/approval-notices.test.js
 --- a/test/approval-notices.test.js
 +++ b/test/approval-notices.test.js
@@ -9225,10 +9286,28 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
-@@ -132,6 +132,29 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
+@@ -132,6 +132,47 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
    assert.equal(text(post), '[Group post from Writer]\nCopied the doc to E:/docs.')
  })
  
++test('P-1993: an approval record\'s reason is cut on a code point at 500', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  const head = 'a'.repeat(499)
++  const short = host.askApproval('gb', { callId: 'k1', reason: 'copy the doc' })
++  const [control] = (await host.call('state', {})).value.work.approvals
++  assert.equal(control.reason, 'copy the doc', 'a reason under the bound is stored word for word')
++  assert.equal((await host.call('approval-answer', { id: control.id, choice: 'allow' })).ok, true)
++  assert.equal(await short, 'allowed-once')
++
++  const long = host.askApproval('gb', { callId: 'k2', reason: `${head}😀tail` })
++  const [approval] = (await host.call('state', {})).value.work.approvals
++  assert.ok(approval.reason.isWellFormed(), `the stored reason is well formed: ${JSON.stringify(approval.reason)}`)
++  assert.equal(approval.reason, head, 'the pair at the bound is dropped whole, not split')
++  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
++  assert.equal(await long, 'allowed-once')
++})
++
 +// Both fields of a card go through a bound of their own: 300 for the description, 400 for the
 +// command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
 +test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {
@@ -11274,7 +11353,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,728 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,746 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -11692,6 +11771,24 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const saved = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).scheduleRuns?.[id]?.result
 +  for (let tries = 0; tries < 50 && saved() !== 'stopped'; tries++) await new Promise(resolve => setTimeout(resolve, 20))
 +  assert.equal(saved(), 'stopped')
++})
++
++test('P-1993: a failed run\'s reason is cut on a code point at 200', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await call('schedule-create', { target: 'm1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  const [id] = schedule.tasks.keys()
++  const message = { id: 'msg-1', content: [{ type: 'text', text: reminder(id, 'Sum up') }], source: { kind: 'schedule' } }
++  const head = `SERVER 503: ${'a'.repeat(187)}`
++  runTurn(ctx, 'm1', 1, message, { kind: 'error', error: { code: 'SERVER', status: 503, message: `${'a'.repeat(187)}😀tail` } })
++  const [[result, reason]] = await lastRuns(call)
++  assert.equal(result, 'failed')
++  assert.ok(reason.isWellFormed(), `the stored reason is well formed: ${JSON.stringify(reason)}`)
++  assert.equal(reason, head, 'the pair at the bound is dropped whole, not split')
++  // Control: a reason under the bound is stored word for word.
++  runTurn(ctx, 'm1', 2, { ...message, id: 'msg-2' }, { kind: 'error', error: { code: 'SERVER', status: 503, message: 'upstream busy' } })
++  assert.deepEqual(await lastRuns(call), [['failed', 'SERVER 503: upstream busy']])
 +})
 +
 +test('Retry runs the same prompt once now in the Bot’s current part, and its turn is the task’s run', async (t) => {
@@ -12161,6 +12258,24 @@ diff --git a/test/steward.test.js b/test/steward.test.js
    }
    // The check line never passes the hard line.
    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)
+@@ -101,6 +101,17 @@ test('the checkpoint also reads the messages the backend keeps after it', () =>
+   assert.ok(checkpointTailNote([say('user', '长'.repeat(300))]).includes(`"${'长'.repeat(80)}"`))
+ })
+ 
++test('P-1993: the quoted first line of the kept tail is cut on a code point at 80', () => {
++  const say = (role, text) => ({ role, content: [{ type: 'text', text }] })
++  const head = 'a'.repeat(79)
++  const quoted = note => /begins "(.*)", stay right after your summary/.exec(note)[1]
++  const long = quoted(checkpointTailNote([say('user', `${head}😀tail`)]))
++  assert.ok(long.isWellFormed(), `the quoted line is well formed: ${JSON.stringify(long)}`)
++  assert.equal(long, head, 'the pair at the bound is dropped whole, not split')
++  // Control: a line under the bound is quoted word for word.
++  assert.equal(quoted(checkpointTailNote([say('user', 'Short line')])), 'Short line')
++})
++
+ test('the checkpoint records unanswered requests as remaining, and does not answer them', () => {
+   assert.match(CHECKPOINT_PROMPT, /every request not yet answered in your replies above/)
+   assert.match(CHECKPOINT_PROMPT, /The user never sees this summary, so do not do any of the remaining work in it/)
 diff --git a/test/text.test.js b/test/text.test.js
 --- a/test/text.test.js
 +++ b/test/text.test.js
