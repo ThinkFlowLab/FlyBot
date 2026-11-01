@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -91,6 +91,32 @@ test('#1702: read one returns its bytes, bounded, and reports a missing file', a
   const listed = await tool({})
   const bigRow = listed.split('\n').find(line => line.startsWith('decisions/big.md\t'))
   assert.match(bigRow, /\t200001 bytes\t/, 'a file over the read bound still lists with its size')
+})
+
+// A symlink is a name for a file somewhere else, and this reader answers for one folder. A name
+// that stands for a link is therefore absent — the same answer as a file that is not there — and
+// never the target's text. `readdir` already leaves a link out of the listing, and the read has to
+// agree with it; a name from a record can reach the same file without ever being listed.
+test('#2037: a symlinked Project State file is not followed, it answers as absent', async (t) => {
+  const dir = projectStateFolder()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-project-state-outside-'))
+  writeFileSync(join(outside, 'secret.md'), '# Outside secret\n')
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => {
+    await stop()
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+    rmSync(outside, { recursive: true, force: true, maxRetries: 5 })
+  })
+
+  symlinkSync(join(outside, 'secret.md'), join(dir, 'decisions/0002-link.md'))
+  assert.equal(await tool({ file: 'decisions/0002-link.md' }), 'absent: decisions/0002-link.md', 'a link answers like a missing file, never with the text it points at')
+
+  rmSync(join(dir, 'PROJECT.md'))
+  symlinkSync(join(outside, 'secret.md'), join(dir, 'PROJECT.md'))
+  assert.equal(await tool({ file: 'PROJECT.md' }), 'absent: PROJECT.md', 'the same answer for a named Project State file')
+  const lines = (await tool({})).split('\n')
+  assert.equal(lines.some(line => line.startsWith('PROJECT.md\t')), false, 'a link is not listed either')
+  assert.equal(lines.some(line => line.startsWith('decisions/0002-link.md\t')), false, 'and neither is a linked decision')
 })
 
 test('#1702: a folder with no repository answers not a repository', async (t) => {
