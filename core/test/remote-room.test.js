@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -3289,4 +3289,73 @@ test('a rename that leaves the computed name alone sends nothing', async (t) => 
 
   assert.equal(room.name, 'Alice, Chief A, Chief B', 'a Bot outside the group does not rename it')
   assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'the computed name did not move')
+})
+
+// #1976: `load()` compared an unnamed group's stored name with the live formula (people and remote
+// guests from `room.participants`) and then assigned the narrow one (`['You']`, no guests). A stored
+// title the join path had not recomputed was therefore replaced by the wrong name, kept being stale on
+// every later boot, and each boot rewrote the file and the group Session title.
+test('a restart migrates an unnamed room title with the formula that sees the room (#1976)', async (t) => {
+  const first = host(t, TEAM)
+  const rt = first.rt
+  installRoster(rt)
+  rt.resolveAgent = async id => ({ session: id })
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  assert.equal(room.name, 'Alice, Chief A, Chief B')
+  // The join path keeps the title it had; out of scope here and the reason the stored name is now stale.
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  assert.equal(room.name, 'Alice, Chief A, Chief B', 'a join does not recompute the title')
+  await rt.save()
+  const saved = readFileSync(rt.statePath, 'utf8')
+
+  // A restart: the same file, read by a second host.
+  const second = host(t, saved)
+  installRoster(second.rt)
+  second.rt.resolveAgent = async id => ({ session: id })
+  const titles = []
+  second.rt.ctx.sessionTitle = { rename: async (session, name) => { titles.push(name) } }
+  await second.rt.load()
+  assert.equal(second.rt.state.rooms.war.name, 'Alice, Chief A, Chief B, Coder', 'load() writes the live name, not `You, …` with the guest gone')
+  const migrated = readFileSync(second.rt.statePath, 'utf8')
+  assert.notEqual(migrated, saved, 'the migration is written once')
+  assert.deepEqual(titles, ['Alice, Chief A, Chief B, Coder'], 'the group Session gets that same name')
+
+  // The next boot finds the file already matching, so it neither renames nor rewrites: the loop stops.
+  const third = host(t, migrated)
+  installRoster(third.rt)
+  third.rt.resolveAgent = async id => ({ session: id })
+  const again = []
+  third.rt.ctx.sessionTitle = { rename: async (session, name) => { again.push(name) } }
+  await third.rt.load()
+  assert.equal(third.rt.state.rooms.war.name, 'Alice, Chief A, Chief B, Coder', 'a name that already matches is kept')
+  assert.equal(readFileSync(third.rt.statePath, 'utf8'), migrated, 'and load() writes nothing back')
+  assert.deepEqual(again, [], 'and does not rename the group Session again')
+
+  // Control: a file carrying the old narrow string is migrated to the live name, once.
+  const narrow = JSON.parse(migrated)
+  narrow.rooms.war.name = 'You, Chief A, Chief B'
+  const fourth = host(t, narrow)
+  installRoster(fourth.rt)
+  fourth.rt.resolveAgent = async id => ({ session: id })
+  fourth.rt.ctx.sessionTitle = { rename: async () => {} }
+  await fourth.rt.load()
+  assert.equal(fourth.rt.state.rooms.war.name, 'Alice, Chief A, Chief B, Coder', 'the narrow name is replaced by the live one')
+  const healed = readFileSync(fourth.rt.statePath, 'utf8')
+  assert.notEqual(healed, migrated, 'and that replacement is written')
+
+  const fifth = host(t, healed)
+  installRoster(fifth.rt)
+  fifth.rt.resolveAgent = async id => ({ session: id })
+  fifth.rt.ctx.sessionTitle = { rename: async () => {} }
+  await fifth.rt.load()
+  assert.equal(readFileSync(fifth.rt.statePath, 'utf8'), healed, 'the healed file is left alone on the next boot')
 })

@@ -311,9 +311,18 @@ export function install(rt) {
       room.notice ??= ''
       migrated = true
     }
-    // Unnamed groups from before names followed their members may still list old names.
-    const stale = Object.values(state.rooms).filter(room => !room.named && room.name !== rt.autoRoomName(room.members, room))
-    for (const room of stale) room.name = rt.autoRoomName(room.members)
+    // Unnamed groups from before names followed their members may still list old names. The name
+    // passes `room` for both the comparison and the write: `autoRoomName` reads the people and the
+    // remote guests from `room`, so a call without it names the owner `You` and drops remote guests,
+    // and that name would never match again on the next boot (#1976).
+    const stale = []
+    for (const room of Object.values(state.rooms)) {
+      if (room.named) continue
+      const next = rt.autoRoomName(room.members, room)
+      if (room.name === next) continue
+      room.name = next
+      stale.push(room)
+    }
     // Identity schema (#47). A version-1 team had no member records — ownership was
     // implicit in the single human — so it gets one initial owner and every Bot binds
     // to it. readFileState already refused a legacy file that carries ownership fields
