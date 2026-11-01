@@ -951,3 +951,79 @@ test('a typed question and answer count characters, not UTF-16 units (#1901)', a
   assert.equal(overMixed.ok, false)
   assert.match(overMixed.error.message, /Question must contain 1–2000 characters/)
 })
+
+test('a result summary copied from a stored note is cut on a code point boundary', async (t) => {
+  const first = await start(t)
+  let app = first
+  t.after(() => app.stop())
+  const alice = await first.signIn('Alice')
+  const created = await first.createTask(alice.sessionToken)
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const id = created.value.id
+  await first.stop({ keepHome: true })
+  // A note past the 2,000-unit bound the Done move copies: the store keeps whatever a record
+  // already carries (an imported or pre-bound card), and the board move must not halve its tail.
+  const saved = JSON.parse(readFileSync(first.statePath, 'utf8'))
+  saved.tasks[id].note = 'a'.repeat(1999) + '😀'
+  writeFileSync(first.statePath, JSON.stringify(saved))
+  app = await start(t, { home: first.home })
+  const moved = await app.call('task-update', { id, column: 'done' }, alice.sessionToken)
+  assert.equal(moved.ok, true, JSON.stringify(moved))
+  assert.equal(moved.value.status, 'accepted')
+  const summary = moved.value.result.summary
+  assert.equal(summary.isWellFormed(), true, `the result summary is not well formed: ${JSON.stringify(summary.slice(-2))}`)
+  assert.equal(summary, 'a'.repeat(1999), 'the pair at the bound is dropped whole, never halved')
+})
+
+test('the criteria a task is created with is stored cut on a code point boundary', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const created = await app.createTask(alice.sessionToken, { criteria: 'a'.repeat(1999) + '😀' })
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const stored = JSON.parse(readFileSync(app.statePath, 'utf8')).tasks[created.value.id]
+  assert.equal(stored.criteria.isWellFormed(), true, `the stored criteria is not well formed: ${JSON.stringify(stored.criteria.slice(-2))}`)
+  assert.equal(stored.criteria, 'a'.repeat(1999), 'the pair at the bound is dropped whole, never halved')
+})
+
+test('a returned summary is cut on a code point boundary', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const created = await app.createTask(alice.sessionToken)
+  assert.equal(created.ok, true, JSON.stringify(created))
+  const id = created.value.id
+  for (const endpoint of ['task-accept', 'task-start']) {
+    const moved = await app.call(endpoint, { id }, alice.sessionToken)
+    assert.equal(moved.ok, true, JSON.stringify(moved))
+  }
+  const returned = await app.call('task-return', { id, summary: 'a'.repeat(1999) + '😀' }, alice.sessionToken)
+  assert.equal(returned.ok, true, JSON.stringify(returned))
+  const summary = returned.value.result.summary
+  assert.equal(summary.isWellFormed(), true, `the returned summary is not well formed: ${JSON.stringify(summary.slice(-2))}`)
+  assert.equal(summary, 'a'.repeat(1999), 'the pair at the bound is dropped whole, never halved')
+})
+
+test('the task text bound keeps exactly what fits and a pair that ends on it', async (t) => {
+  const app = await start(t)
+  t.after(() => app.stop())
+  const alice = await app.signIn('Alice')
+  const returned = async (summary) => {
+    const created = await app.createTask(alice.sessionToken)
+    assert.equal(created.ok, true, JSON.stringify(created))
+    const id = created.value.id
+    for (const endpoint of ['task-accept', 'task-start']) {
+      const moved = await app.call(endpoint, { id }, alice.sessionToken)
+      assert.equal(moved.ok, true, JSON.stringify(moved))
+    }
+    const result = await app.call('task-return', { id, summary }, alice.sessionToken)
+    assert.equal(result.ok, true, JSON.stringify(result))
+    return result.value.result.summary
+  }
+  // Plain text exactly at the bound is not trimmed by the cut.
+  assert.equal(await returned('a'.repeat(2000)), 'a'.repeat(2000))
+  // A pair that finishes exactly on the bound stays whole: 1,998 units plus one emoji are 2,000.
+  const ending = await returned('a'.repeat(1998) + '😀')
+  assert.equal(ending, 'a'.repeat(1998) + '😀')
+  assert.equal(ending.length, 2000)
+})
