@@ -566,7 +566,7 @@ export function install(rt) {
     if (actor.id === 'user') return
     const botId = scope.kind === 'team' ? actor.id : scope.botId
     if (rt.botOf(botId) === undefined) return
-    news.set(botId, { at: Date.now(), op, text: splitMeta(String(line ?? '').replace(/^- /, '')).text.slice(0, NEWS_TEXT_MAX) })
+    news.set(botId, { at: Date.now(), op, text: cut(splitMeta(String(line ?? '').replace(/^- /, '')).text, NEWS_TEXT_MAX).text })
   }
 
   function addEntry({ scope, topic, text, meta, actor, label }) {
@@ -906,7 +906,7 @@ export function install(rt) {
         ].join('\n')
       }
       const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
-      const query = String(args.query ?? '').trim().slice(0, 120)
+      const query = cut(String(args.query ?? '').trim(), 120).text
       if (query === '') {
         return loaded.map(({ tag, label, files }) => {
           const [main, ...topics] = files
@@ -1046,7 +1046,7 @@ export function install(rt) {
     const model = bot.model
     const job = (async () => {
       const text = await botShot(bot, SUMMARY_SYSTEM, summaryRequest({ name: bot.name, own: linesFor(own), team: linesFor(team), language }), { sessionId: rt.chatOf(bot.id), kind: 'memory' })
-      const value = { hash, text: text.slice(0, SUMMARY_TEXT_MAX), at: Date.now() }
+      const value = { hash, text: cut(text, SUMMARY_TEXT_MAX).text, at: Date.now() }
       summaries.set(bot.id, value)
       summaryFailures.delete(bot.id)
       if (rt.readOnly() === undefined) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
@@ -1088,7 +1088,7 @@ export function install(rt) {
   async function memoryAsk(body) {
     const bot = rt.botOf(String(body.botId ?? ''))
     if (bot === undefined) throw new Error('Unknown Bot')
-    const text = String(body.text ?? '').trim().slice(0, ASK_TEXT_MAX)
+    const text = cut(String(body.text ?? '').trim(), ASK_TEXT_MAX).text
     if (text === '') throw new Error('Type a question or a change first')
     const numbered = [
       ...allEntries(loadScope(ownScope(bot.id))).map(entry => ({ ...entry, scope: 'own' })),

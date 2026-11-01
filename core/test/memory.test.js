@@ -1337,3 +1337,57 @@ test('#2001: a semantic recall that cut its list says more entries match the mea
   assert.equal(lines.at(-1), 'more entries match this meaning than are shown; narrow the query or read a topic', 'the cut is named')
   assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
 })
+
+// #2006: four bounds in memory.js cut with `slice`, which counts UTF-16 units, so a cut
+// that lands inside a surrogate pair keeps half an emoji. Each case below fails on its own
+// when its own site is the only one still on `slice`.
+const EMOJI = '😀'
+// The index of the first lone surrogate in `text`, so a red line shows the half that was kept.
+const halfAt = (text) => {
+  for (let at = 0; at < text.length; at++) {
+    const unit = text.charCodeAt(at)
+    const low = text.charCodeAt(at + 1) >= 0xdc00 && text.charCodeAt(at + 1) <= 0xdfff
+    const high = text.charCodeAt(at - 1) >= 0xd800 && text.charCodeAt(at - 1) <= 0xdbff
+    if (unit >= 0xd800 && unit <= 0xdbff && !low) return at
+    if (unit >= 0xdc00 && unit <= 0xdfff && !high) return at
+  }
+  return -1
+}
+const kept = (text) => JSON.stringify(text.slice(Math.max(0, halfAt(text) - 8), halfAt(text) + 2))
+
+test('#2006: a news line keeps whole characters at its 160-unit bound', async (t) => {
+  const { call, tool, stop } = start()
+  t.after(() => stop())
+  await tool('remember', { text: `${'a'.repeat(159)}${EMOJI}` }, 'b2')
+  const text = (await call('state', {})).value.memoryNews.b2.text
+  assert.equal(text.isWellFormed(), true, `the news line keeps half an emoji: ${kept(text)}`)
+  assert.equal(text, 'a'.repeat(159), 'the emoji that would not fit is dropped whole')
+})
+
+test('#2006: a recall query keeps whole characters at its 120-unit bound', async (t) => {
+  const { tool, stop } = start()
+  t.after(() => stop())
+  const said = await tool('recall', { query: `${'b'.repeat(119)}${EMOJI}` }, 'b2')
+  assert.equal(said.isWellFormed(), true, `the answer carries half an emoji: ${kept(said)}`)
+  assert.match(said, new RegExp(`"${'b'.repeat(119)}"`), 'the query is echoed without the emoji that did not fit')
+})
+
+test('#2006: a saved summary keeps whole characters at its 8,000-unit bound', async (t) => {
+  const { call, tool, stop } = start({ replies: [`${'s'.repeat(7999)}${EMOJI}`] })
+  t.after(() => stop())
+  await tool('remember', { text: 'Likes tea' }, 'b2')
+  await call('memory-view', { botId: 'b2', summarize: true })
+  await summarySettled(call, 'b2')
+  const text = (await call('memory-view', { botId: 'b2' })).value.summary.text
+  assert.equal(text.isWellFormed(), true, `the summary keeps half an emoji: ${kept(text)}`)
+  assert.equal(text, 's'.repeat(7999), 'the emoji that would not fit is dropped whole')
+})
+
+test('#2006: an ask prompt keeps whole characters at its 2,000-unit bound', async (t) => {
+  const { call, requests, stop } = start({ replies: [JSON.stringify({ reply: 'Nothing to change.', changes: [] })] })
+  t.after(() => stop())
+  await call('memory-ask', { botId: 'b2', text: `${'q'.repeat(1999)}${EMOJI}` })
+  const sent = requests[0].messages[0].content[0].text
+  assert.equal(sent.isWellFormed(), true, `the ask prompt keeps half an emoji: ${kept(sent)}`)
+  assert.ok(sent.endsWith(`${'q'.repeat(1999)}`), 'the prompt keeps the bound and drops the emoji whole')
+})
