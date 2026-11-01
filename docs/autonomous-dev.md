@@ -301,7 +301,9 @@ entry — are in [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates). This s
 
 **How to merge.** A direct `gh pr merge <n> --squash` is refused with `! The merge strategy for main is set by the merge
 queue`; that is not a failure. Run `node .github/scripts/enqueue-guard.mjs --pr <n>` first — it re-reads the live head and
-exits 1 on a `hold`, on a newest conclusion that is not a PASS, and on a report marked "record only — do not merge", so a
+exits 1 on a `hold`, on a newest conclusion that is not a PASS, on a report marked "record only — do not merge", and on a
+comment written after that PASS asking not to merge this tip (#602, 2026-11-01: `hold` is human-only, so a comment is the
+only brake the author of a Bot-opened pull request has — the refusal names the comment id), so a
 PASS is never a queue permit on its own (#602); on a live, non-draft pull request of ours it also refuses a body with no
 `Owner:`/`Reviewer:` line in its first 20 lines (or a `Reviewer:` that is neither a `reviewers` login nor a `writers`
 Bot name, or a Bot name whose shared `Birfy` identity is not in `reviewers`, #947, or a `Reviewer:` naming the same Bot as

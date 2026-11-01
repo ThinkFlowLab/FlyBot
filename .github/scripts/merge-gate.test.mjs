@@ -185,7 +185,9 @@ const runGate = (fixture) => {
   })
 }
 
-const apiComment = (body, at) => ({ user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
+// The comment id is the handle a refusal names (#1112), and #602 (2026-11-01) names the stop it reads.
+let commentId = 5000
+const apiComment = (body, at, id = commentId++) => ({ id, user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
 const apiReview = (body, at) => ({ user: { login: 'reviewer-agent', type: 'User' }, body, submitted_at: at, author_association: 'MEMBER' })
 
 const firstLine = (verdict, tip = HEAD) => [
@@ -241,6 +243,28 @@ test('#637: a body that does not start with the verdict is no conclusion, so the
   assert.equal(result.ok, false)
   assert.match(result.reasons.join('; '), /no Verifier report names the tip|no Tip SHA/)
   assert.equal(result.verdict.verdict, null, 'a verdict that is not the first line is not a conclusion')
+})
+
+// #602, 2026-11-01: the hold that is a comment. The author of a pull request opened by a Bot account
+// cannot set `hold`, so "please do not merge this tip" is the only brake it has; #2067 was PASSed at
+// 17:35:30, stopped at 17:38:11 and merged at 17:39:54. The queue entry reads the same comments as the
+// guard, so the last moment before the merge refuses too.
+const stopComment = ({ id = 6561490250, login = 'hugo', type = 'User', at = '2026-11-01T17:38:11Z' } = {}) =>
+  ({ id, user: { login, type }, body: '@Birfy — **please do not merge this tip.** The change set does not cover the readers it describes.', created_at: at, author_association: 'CONTRIBUTOR' })
+
+test('#602 (2026-11-01): a comment asking not to merge refuses the queue entry, through main()', () => {
+  const result = runGate({ comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z'), stopComment()] })
+  assert.equal(result.ok, false)
+  assert.match(result.reasons.join('; '), /asks not to merge this pull request: comment 6561490250/)
+  // The author is read as the author, whatever account type their comment carries.
+  const author = runGate({ comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z'), stopComment({ id: 2, login: 'opener', type: 'Bot' })] })
+  assert.equal(author.ok, false)
+  assert.match(author.reasons.join('; '), /comment 2 by opener/)
+})
+
+test('#602 (2026-11-01): a stop older than the PASS at this tip does not refuse the entry', () => {
+  const result = runGate({ comments: [stopComment({ at: '2026-11-01T17:00:00Z' }), apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z')] })
+  assert.equal(result.ok, true, result.reasons.join('; '))
 })
 
 test('#637: hold still refuses through main()', () => {

@@ -91,7 +91,7 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   // which is not ours either. Both sides are lower-cased because the repository name in the API paths is
   // case-insensitive: `--repo thinkflowlab/flybot` used to read our own branch as a fork and print ALLOW.
   const fork = String(pull.head?.repo?.full_name ?? '').toLowerCase() !== String(repo).toLowerCase()
-  const decision = guard({ pr, head, labels, body: pull.body, files: files.map((f) => f.filename), mechanicalRelease, fork, draft: pull.draft, merged: pull.merged, result, reports, policy })
+  const decision = guard({ pr, head, labels, body: pull.body, files: files.map((f) => f.filename), mechanicalRelease, fork, draft: pull.draft, merged: pull.merged, result, reports, policy, author: pull.user?.login })
   return { decision, pull, repo, pr }
 }
 

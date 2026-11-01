@@ -125,6 +125,92 @@ function headerReasons(body, policy) {
   return reasons
 }
 
+// #602, 2026-11-01 recurrence: the hold that is a comment. `hold` is human-only (AGENTS.md → Merge gates)
+// and a pull request opened by a Bot account cannot set it, so the only brake its author has is a comment
+// asking not to merge this tip. #2067 took that brake and merged anyway — PASS at 17:35:30, "please do not
+// merge this tip" at 17:38:11, merged at 17:39:54 — because the guard read the labels, the diff and the
+// conclusions, and never the comments.
+//
+// What counts: a comment by a person (`type: "User"`) or by the pull request's own author — in #2067 the
+// author was the only one objecting, so a "only a non-author can stop" rule would have merged it too —
+// written after the conclusion this decision used. A request older than the PASS at this tip is about the
+// state that PASS has since read. With no conclusion to anchor on (a T0/T1 change) the whole list is read.
+//
+// The phrases are the ones people write, not a marker: #2067's request is a bold sentence, and its addendum
+// only says "the hold request above". Quoted text and code blocks are mentions, not requests — the first
+// PASS written for the record-only marker froze itself by explaining the marker (#687), and a comment that
+// quotes "record only — do not merge" must not do the same to a pull request.
+//
+// A stop is answered on the record. The newest comment in that window decides, so a later one that says the
+// tip may merge clears it; a corrected tip with its own PASS moves the window past the request as well.
+// Without that the rule would wedge a pull request forever on one mistaken sentence, and a T0/T1 change has
+// no PASS to move the window with.
+const STOP_REQUEST = new RegExp(
+  [
+    String.raw`\b(?:do not|don't|don’t|never)\s+(?:merge|queue|enqueue|land)\b`,
+    String.raw`\bplease do not\s+(?:merge|queue|enqueue|land|ship)\b`,
+    String.raw`\bnot ready\b`,
+    String.raw`\b(?:on hold|hold off|hold on|hold request|hold this|hold it|hold (?:the )?(?:tip|merge|pr|pull request)|please hold)\b`,
+    String.raw`(?:不要|请勿|暂不|先别|先不要|禁止|暂缓)(?:合并|入队|合入)`,
+  ].join('|'),
+  'i',
+)
+// `hold` as its own opening line — "Hold." / "Hold — the second reader is still unguarded" — is how the
+// request is usually shortened. Anywhere else the word is the label this repository already has, and
+// reading the label's name as a request would freeze every pull request that discusses one.
+const HOLD_LINE = /^[\s>*+-]*(?:hold|hold on|hold off)\b/im
+// The answer: read only after a stop in the same window, so this vocabulary cannot unblock anything alone.
+const LIFT_REQUEST = new RegExp(
+  [
+    String.raw`\b(?:merge it|merge this|you may merge|go ahead|ok(?:ay)? to merge|release the hold|lift the hold|clear the hold|no longer hold|hold (?:is )?(?:lifted|cleared)|not held)\b`,
+    String.raw`(?:可以合并|同意合并|解除|取消 hold|已解决|放行)`,
+  ].join('|'),
+  'i',
+)
+const withoutQuotes = (text) => String(text ?? '')
+  .replace(/```[\s\S]*?```/g, ' ')
+  .replace(/~~~[\s\S]*?~~~/g, ' ')
+  .replace(/`[^`\n]*`/g, ' ')
+  .replace(/"[^"\n]*"/g, ' ')
+  .replace(/“[^”\n]*”/g, ' ')
+
+// The stop request still standing, or null. `since` is the timestamp of the conclusion the decision used, in
+// ms; null reads the whole list (no anchor, or one that cannot be read — a guard that cannot find the PASS it
+// judged must not narrow what it refuses).
+export function stopRequestAt(reports, { author, since } = {}) {
+  const login = String(author ?? '').toLowerCase()
+  const after = Number.isFinite(since) ? since : null
+  const rows = (reports ?? [])
+    .map((r, i) => ({ r, i, t: Date.parse(r?.at ?? '') || 0 }))
+    .filter(({ r }) => (r?.kind ?? 'comment') === 'comment')
+    .filter(({ r }) => String(r?.type ?? '') === 'User' || (login !== '' && String(r?.login ?? '').toLowerCase() === login))
+    // A conclusion is a review, not a request: "record only — do not merge" in a PASS is the marker
+    // `recordOnlyAt` already reads, and reading it here too would make every parked PASS its own stop.
+    .filter(({ r }) => !parseReport(r?.body).verdict)
+    .filter(({ t }) => after == null || t > after)
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+  let stop = null
+  for (const { r } of rows) {
+    const text = withoutQuotes(r.body)
+    const phrase = STOP_REQUEST.exec(text)?.[0] ?? HOLD_LINE.exec(text)?.[0]
+    if (phrase) {
+      stop = { id: r.id, login: r.login, at: r.at ?? null, phrase: phrase.trim() }
+      continue
+    }
+    if (stop && LIFT_REQUEST.test(text)) stop = null
+  }
+  return stop
+}
+
+// Where the window opens: the timestamp of the conclusion this decision used (#1112 gives it an id, the
+// handle both readers already print). A conclusion the caller did not pass reads as "no anchor".
+function conclusionAt(reports, verdict) {
+  if (verdict?.id == null) return null
+  const found = (reports ?? []).find((r) => r?.id === verdict.id)
+  const t = Date.parse(found?.at ?? '')
+  return Number.isFinite(t) ? t : null
+}
+
 // The newest conclusion that names this head, if it carries the record-only marker. Only a body that
 // parses as a conclusion counts, so ordinary prose quoting the phrase is no marker; only the newest
 // one counts, so a fresh PASS at the same head supersedes an older parked report.
@@ -268,11 +354,16 @@ export function checkpointReasons(body, { pr, files } = {}) {
   return reasons
 }
 
-// The decision, without the network: `result` is merge-gate's `judge` output for this head.
-export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, draft, merged, result, reports, policy }) {
+// The decision, without the network: `result` is merge-gate's `judge` output for this head, and `author` is
+// the pull request's opener — the one commenter a stop request is read from whatever account type it carries.
+export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, draft, merged, result, reports, policy, author }) {
   const quiet = recordOnlyAt(reports, result.head ?? head)
   const reasons = [...result.reasons]
   if (quiet) reasons.push('the newest conclusion at this head says "record only — do not merge"')
+  // #602 (2026-11-01): the stop request in the comments, read after the conclusion this decision used. A
+  // merged pull request is history, not a request — this check runs again on every comment (#926, #943).
+  const stop = merged ? null : stopRequestAt(reports, { author, since: conclusionAt(reports, result.verdict) })
+  if (stop) reasons.push(`a comment asks not to merge this pull request: comment ${stop.id ?? 'without an id'} by ${stop.login} at ${stop.at ?? 'no time'} says "${stop.phrase}" — clear it on the record with a newer comment that lets this tip merge, or push a corrected tip that earns its own PASS`)
   // Two exemptions, both about what the pull request is rather than how risky it is. A mechanical release
   // PR carries neither an issue nor the label by design — it is the routine's own daily output under the
   // standing approval (AGENTS.md 6). A fork is not ours: its head cannot be pushed by us, and the owner runs
@@ -301,6 +392,9 @@ export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, 
     ok,
     reasons,
     recordOnly: Boolean(quiet),
+    // Named for the same reason the record-only marker is: a reader has to be able to go and read the text
+    // that stopped the merge, and answer it there.
+    stopRequest: stop,
     mechanicalRelease: Boolean(mechanicalRelease),
     fork: Boolean(fork),
     draft: Boolean(draft),

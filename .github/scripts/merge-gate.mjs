@@ -215,10 +215,10 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const author = pull.user?.login
   const labels = (pull.labels ?? []).map((l) => l.name)
   const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
+    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ id: c.id, kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
+      .map((v) => ({ id: v.id, kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
   ]
 
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the
@@ -251,6 +251,8 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
         result,
         reports,
         policy,
+        // #602 (2026-11-01): the author is one of the commenters a stop request is read from.
+        author,
       })
     : null
   const outcome = decision ?? result

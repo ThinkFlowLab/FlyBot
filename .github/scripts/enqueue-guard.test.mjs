@@ -60,8 +60,8 @@ const report = ({ tip = HEAD, verdict = 'PASS', extra = [], attest = null } = {}
 
 // #676: only a comment GitHub ties to this repository can be a conclusion, so the fixture carries the
 // association the API sends for the shared `Birfy` account.
-const comment = (body = report(), at = '2026-10-21T10:31:00Z') =>
-  ({ user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
+const comment = (body = report(), at = '2026-10-21T10:31:00Z', { id } = {}) =>
+  ({ ...(id == null ? {} : { id }), user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
 
 // A body written for one rule still needs a checkpoint, or every test below would fail on the rule it is
 // not about. So the fixture appends one that agrees with the body it was given: same issue, same files.
@@ -946,5 +946,71 @@ test('#1335: a withdrawal from a name that wrote no PASS here changes nothing', 
 
 test('#1335: a withdrawal naming another tip leaves this tip enqueueable', () => {
   const r = run({ comments: [comment(), correction({ tip: OLD })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+// ---- #602, 2026-11-01 recurrence: the hold nobody could label. `hold` is human-only, and the author of a
+// pull request opened by a Bot account cannot set it, so the only brake it has is a comment asking not to
+// merge this tip. On #2067 the PASS landed at 17:35:30, the author's "please do not merge this tip" at
+// 17:38:11, and the enqueue at 17:39:54 — the guard was green because nothing read the comments. These
+// cases are the refusal, the window it is read in, and the two ways it clears.
+
+// A person's comment, the shape the API returns; `id` is what the refusal names.
+const note = ({ id = 6561490250, login = 'hugo', type = 'User', body = '@Birfy — **please do not merge this tip.** Your PASS at ' + HEAD + ' is on the record and correct as to what it checked; the tip does not cover the readers it describes.', at = '2026-11-01T17:38:11Z', association = 'CONTRIBUTOR' } = {}) =>
+  ({ id, user: { login, type }, body, created_at: at, author_association: association })
+
+test('#602 (2026-11-01): a comment after the PASS asking not to merge this tip refuses, and names the comment', () => {
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z'), note()] })
+  assert.equal(r.ok, false)
+  const text = r.reasons.join('; ')
+  assert.match(text, /asks not to merge this pull request/)
+  assert.match(text, /6561490250/)
+  assert.match(text, /please do not merge/)
+  assert.match(r.message, /^do not enqueue #566: .*asks not to merge/)
+  assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`, 'the command is printed for a reader, never run')
+})
+
+test('#602 (2026-11-01): the pull request author counts even from a bot account, and a bot that is not the author does not', () => {
+  const authorStop = note({ login: 'hugo', type: 'Bot', body: 'do not merge this tip — the third reader is unguarded' })
+  assert.equal(run({ author: 'hugo', comments: [comment(report(), '2026-11-01T17:35:30Z'), authorStop] }).ok, false, 'the author is the one objecting')
+  const bot = note({ login: 'cursor[bot]', type: 'Bot', body: 'I will not merge this tip' })
+  assert.equal(run({ author: 'opener', comments: [comment(report(), '2026-11-01T17:35:30Z'), bot] }).ok, true, 'a bot account that is not the author is not a person asking')
+})
+
+test('#602 (2026-11-01): a stop written before the PASS at this tip is not this tip\'s hold', () => {
+  // The Reviewer read the tip and passed it after the request; the request is about the older state.
+  const early = note({ id: 1, body: 'this is not ready, please do not merge', at: '2026-11-01T17:00:00Z' })
+  const r = run({ comments: [early, comment(report(), '2026-11-01T17:35:30Z', { id: 6561459604 })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#602 (2026-11-01): a newer comment that lets it merge clears the stop; another comment does not', () => {
+  const held = [comment(report(), '2026-11-01T17:35:30Z'), note({ id: 2 })]
+  const stillWrong = note({ id: 3, body: 'pushed a corrected tip at 5b862c6e; the sinks are covered', at: '2026-11-01T17:40:00Z' })
+  const r = run({ comments: [...held, stillWrong] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /asks not to merge/)
+  assert.match(r.reasons.join('; '), /comment 2 by hugo/, 'the refusal names the stop that is still standing, not the later comment')
+  const cleared = note({ id: 4, body: 'Covered now — merge it.', at: '2026-11-01T18:00:00Z' })
+  assert.equal(run({ comments: [...held, cleared] }).ok, true, 'an answer on the record clears it')
+})
+
+test('#602 (2026-11-01): a stop phrase inside a fenced block or quotes is a mention, not a request', () => {
+  const fenced = note({ id: 5, body: 'The author wrote:\n\n```\nplease do not merge this tip\n```\n\nand that wording is now the rule.', at: '2026-11-01T17:40:00Z' })
+  assert.equal(run({ comments: [comment(report(), '2026-11-01T17:35:30Z'), fenced] }).ok, true)
+  const quoted = note({ id: 6, body: 'The routine says "record only — do not merge" when the owner parks one; this one is not parked.', at: '2026-11-01T17:41:00Z' })
+  assert.equal(run({ comments: [comment(report(), '2026-11-01T17:35:30Z'), quoted] }).ok, true)
+})
+
+test('#602 (2026-11-01): a T0/T1 pull request with no PASS is stopped by a comment too', () => {
+  const held = note({ id: 7, body: '**hold** — the second file is still wrong', at: '2026-11-01T17:38:11Z' })
+  const r = run({ files: [TEST_FILE], comments: [held] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /asks not to merge this pull request: comment 7 by hugo/)
+})
+
+test('#602 (2026-11-01): a comment asking not to merge refuses a merged pull request no longer', () => {
+  // This check runs on every comment; a merged pull request is history, not a request (#926, #943).
+  const r = run({ merged: true, comments: [comment(report(), '2026-11-01T17:35:30Z'), note({ id: 8 })] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
