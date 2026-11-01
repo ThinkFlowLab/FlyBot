@@ -1,1 +1,0 @@
-The task card's three 2,000-unit text bounds now cut on a code point boundary: the result summary a Done move copies from the card's note, the criteria stored at create, and the summary a return writes drop a surrogate pair whole instead of storing a lone surrogate that the card shows as U+FFFD ([#1956](https://github.com/ThinkFlowLab/FlyBot/issues/1956)).
