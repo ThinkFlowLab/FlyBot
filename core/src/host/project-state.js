@@ -10,9 +10,10 @@
 // string that would read as an empty document.
 import { createHash } from 'node:crypto'
 import { lstat, readdir, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
+import { dirKind } from './real-dir.js'
 
 // The files this reader answers for, and nothing else: a named file outside this list is
 // refused rather than read, so the tool never becomes a way to walk the working folder.
@@ -38,6 +39,10 @@ async function repositoryAt(dir) {
 }
 
 async function decisionFiles(dir) {
+  // #2055: `decisions` itself must be a real directory here. `readdir` follows a link, so a
+  // Project whose `decisions` points at another folder listed that folder's files as its own; a
+  // link, a plain file or a missing entry is "no decisions", the answer an absent folder gives.
+  if (await dirKind(join(dir, DECISIONS_DIR)) !== 'real') return []
   let entries
   try {
     entries = await readdir(join(dir, DECISIONS_DIR), { withFileTypes: true })
@@ -54,7 +59,16 @@ async function decisionFiles(dir) {
 // symlink as "not a plain file", and reading a name — here, in the reader, and on the board —
 // answers the same way: a symlink is an absent file, not its target. The `lstat` is what makes
 // that one rule hold for a name that was never listed, a name from a record, or `PROJECT.md`.
+//
+// #2055: a leaf `lstat` does not follow a link, but it does not see that the *folder* above the
+// name is one either — `decisions/secret.md` under a symlinked `decisions` stats as a plain file
+// and reads the outside text. So a decision path is read only when its folder is a real directory
+// here, the same entry `decisionFiles` checks; anything else is treated as an absent file, which
+// is what `project_state` and the board's opened row already answer for a missing one.
 async function fileAt(dir, path) {
+  if (isDecisionPath(path) && await dirKind(dirname(join(dir, path))) !== 'real') {
+    throw new Error(`not a plain file: ${path}`)
+  }
   const info = await lstat(join(dir, path))
   if (!info.isFile()) throw new Error(`not a plain file: ${path}`)
   return info

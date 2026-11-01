@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -142,4 +143,87 @@ test('#1702: calling the reader changes no prompt, section or tool registration'
   assert.deepEqual(ctx.calls, calls, 'a read registers nothing and fires no effect')
   assert.deepEqual([...ctx.sections.keys()].sort(), [...sections.keys()].sort(), 'no prompt section is added')
   assert.deepEqual([...ctx.registeredTools.keys()].sort(), tools, 'no tool is added or replaced')
+})
+
+// #2055: the `decisions` entry itself must be a real directory. `readdir` follows a link, and so
+// does the leaf `lstat` of `decisions/<name>.md`, so a Project whose `decisions` points at another
+// folder listed and read that folder's files as its own. A link — at a real folder or at a missing
+// path — and a plain file answer exactly like a folder that has no `decisions` directory: no row,
+// no hash, and `absent` for a read. The control is a real folder, which must keep working.
+function replaceDecisions(dir, target) {
+  rmSync(join(dir, 'decisions'), { recursive: true, force: true })
+  symlinkSync(target, join(dir, 'decisions'))
+}
+
+test('#2055: a decisions folder that is a symlink to a real folder outside the Project lists and opens nothing', async (t) => {
+  const dir = projectStateFolder()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-project-state-outside-'))
+  writeFileSync(join(outside, 'outside.md'), '# Outside\n')
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => {
+    await stop()
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+    rmSync(outside, { recursive: true, force: true, maxRetries: 5 })
+  })
+
+  replaceDecisions(dir, outside)
+  const listing = await tool({})
+  assert.equal(listing.split('\n').some(line => line.startsWith('decisions/')), false, 'another folder\'s files are not this Project\'s listing')
+  assert.equal(listing.includes('outside.md'), false, 'not even the name, so no title and no sha256 reach the answer')
+  assert.equal(await tool({ file: 'decisions/outside.md' }), 'absent: decisions/outside.md', 'a read answers as a folder with no decisions, never with the text it points at')
+  assert.equal(listing.includes('PROJECT.md\t'), true, 'the named Project State files are unaffected')
+})
+
+test('#2055: a decisions folder that is a symlink to a path that does not exist reads as no decisions', async (t) => {
+  const dir = projectStateFolder()
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => { await stop(); rmSync(dir, { recursive: true, force: true, maxRetries: 5 }) })
+
+  replaceDecisions(dir, join(dir, 'nowhere-decisions'))
+  const listing = await tool({})
+  assert.equal(listing.split('\n').some(line => line.startsWith('decisions/')), false, 'a dangling link lists nothing')
+  assert.equal(await tool({ file: 'decisions/0001-first.md' }), 'absent: decisions/0001-first.md', 'and a read is absent, with no error naming the target')
+})
+
+// The listing is not the only door: `project_state` with a `file` goes `readProjectState` →
+// `readListedFile` → `fileAt`, which never calls `readdir`. So the same link is asked here without
+// a listing first, and the answer is the one an absent folder gives.
+test('#2055: a decision read by name under a linked folder answers absent, with no listing first', async (t) => {
+  const dir = projectStateFolder()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-project-state-outside-read-'))
+  writeFileSync(join(outside, 'outside.md'), '# Outside\n')
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => {
+    await stop()
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
+    rmSync(outside, { recursive: true, force: true, maxRetries: 5 })
+  })
+
+  replaceDecisions(dir, outside)
+  assert.equal(await tool({ file: 'decisions/outside.md' }), 'absent: decisions/outside.md', 'the leaf lstat would see a plain file, so the folder above it decides')
+  assert.equal(await tool({ file: 'decisions/0001-first.md' }), 'absent: decisions/0001-first.md', 'a name from the old real folder is absent too, never read through the link')
+})
+
+test('#2055: a decisions folder that is a plain file, not a directory, reads as no decisions', async (t) => {
+  const dir = projectStateFolder()
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => { await stop(); rmSync(dir, { recursive: true, force: true, maxRetries: 5 }) })
+
+  rmSync(join(dir, 'decisions'), { recursive: true, force: true })
+  writeFileSync(join(dir, 'decisions'), 'not a folder\n')
+  const listing = await tool({})
+  assert.equal(listing.split('\n').some(line => line.startsWith('decisions/')), false, 'a plain file where the folder should be lists nothing')
+  assert.equal(await tool({ file: 'decisions/0001-first.md' }), 'absent: decisions/0001-first.md', 'and nothing throws')
+})
+
+test('#2055: a real decisions folder keeps listing, hashing and reading its files', async (t) => {
+  const dir = projectStateFolder()
+  const { tool, stop } = await boot({ dir })
+  t.after(async () => { await stop(); rmSync(dir, { recursive: true, force: true, maxRetries: 5 }) })
+
+  const row = (await tool({})).split('\n').find(line => line.startsWith('decisions/0001-first.md\t'))
+  assert.ok(row, 'the control still lists its decision')
+  const sha = /sha256:([0-9a-f]{64})/.exec(row)[1]
+  assert.equal(sha, createHash('sha256').update(readFileSync(join(dir, 'decisions/0001-first.md'))).digest('hex'), 'with the hash of the bytes it read')
+  assert.equal(await tool({ file: 'decisions/0001-first.md' }), '# First decision\n', 'and the read returns the file itself')
 })
