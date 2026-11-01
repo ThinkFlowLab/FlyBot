@@ -229,7 +229,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,41 +1,217 @@
+@@ -1,41 +1,229 @@
 -import { createElement as h, useRef, useState } from 'react'
 +import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
@@ -238,6 +238,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +import { SwitchRow } from './bot-settings.js'
 +import { ConnectorBots, usageText } from './connector-bots.js'
  import { t } from './i18n.js'
++import { copiedToClipboard } from '../shared/remote-label.js'
  
  const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 +const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
@@ -393,6 +394,8 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    const [busy, setBusy] = useState(false)
    const [error, setError] = useState(null)
 +  const [message, setMessage] = useState('')
++  // #2027: what the copy button last did — a new failure starts from `Copy error` again.
++  const [copyState, setCopyState] = useState('idle')
    const run = (task, after) => {
      setBusy(true)
      setError(null)
@@ -421,6 +424,8 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +    actions.connectorAppStatus(connector.id).then(value => { if (live) setStatuses(value ?? {}) }, () => { if (live) setStatuses({}) })
 +    return () => { live = false }
 +  }, [gateway, connector.state, appsKey, picking])
++  // A row that leaves the error state and fails again is a new failure, not the last copy's answer.
++  useEffect(() => { setCopyState('idle') }, [connector.state, connector.error])
 +  const search = useCallback(query => actions.connectorAppSearch(connector.id, query, connector.state === 'off' ? token : undefined), [connector.id, connector.state, token])
    const connect = () => {
 -    if (busy || token.trim() === '') return
@@ -447,6 +452,13 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +  // Choose Bots is for what gives a Bot tools or a way in. A webhook-only channel has neither, so the
 +  // switch would change nothing (acceptance 5, #1266).
 +  const perBot = !sender && (!channel || connector.mode === 'app')
++  // A failed row can carry 2,000 characters of the host's own text (#2022), so it is offered as one
++  // copy instead of a hand-selection on a phone. copiedToClipboard answers whether the text really
++  // landed, and a `false` says so on the button rather than reporting a quiet success (#1347).
++  const copyLabel = copyState === 'copied' ? t('Copied') : copyState === 'failed' ? t('Could not copy the error') : t('Copy error')
++  const copyError = () => {
++    void copiedToClipboard(connector.error ?? '').then(written => setCopyState(written ? 'copied' : 'failed'))
++  }
    const Mark = MARKS[connector.id]
    const row = useRef(null)
 -  useMorph(row, `${form}:${error !== null}:${connector.state}`)
@@ -454,10 +466,11 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +44,44 @@ function ConnectorRow({ connector, actions }) {
+@@ -44,15 +44,45 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
++        connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: copyError }, copyLabel) : null,
 +        on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
 +        on && perBot ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
          on
@@ -707,7 +720,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'New…': '新建',
    'Animation': '动画',
    'Bot animation': 'Bot 动画',
-@@ -26,6 +26,21 @@ const ZH = {
+@@ -26,10 +26,27 @@ const ZH = {
    Duplicate: '复制一份',
    Hidden: '已隐藏',
    Admin: '管理员',
@@ -729,6 +742,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Add: '添加',
    Close: '关闭',
    Copy: '复制',
+   Copied: '已复制',
++  'Copy error': '复制错误信息',
++  'Could not copy the error': '无法复制错误信息',
+   Content: '内容',
+   'Referenced {labels}': '引用了 {labels}',
+   ', ': '、',
 @@ -41,22 +41,74 @@ const ZH = {
    ' and ': '、',
    and: '和',
