@@ -249,3 +249,65 @@ test('every rule prelude in the member sheet is a selector, so the command rule 
   assert.match(rule, /white-space:pre-wrap/, 'the block wraps the command it shows')
   assert.match(rule, /max-height:120px/, 'the block scrolls inside the height the card holds')
 })
+
+// #2043: the Bot's own chat drew four rooms and then stopped, so the fifth and later rooms
+// vanished with no count while the same dock in a group chat already drew a summary line.
+const ownTeam = count => ({
+  byId: { a: { id: 'a', name: 'Anvil' } },
+  roomsById: Object.fromEntries(Array.from({ length: count }, (_, i) => {
+    const id = `w${i + 1}`
+    return [id, { id, name: `Room ${i + 1}`, members: ['a'] }]
+  })),
+})
+const ownWork = count => ({
+  bots: {},
+  rooms: Object.fromEntries(Array.from({ length: count }, (_, i) => [`w${i + 1}`, [{ botId: 'a', since: 1, tool: 'edit' }]])),
+  approvals: [],
+})
+const ownDock = (count) => {
+  const roster = ownTeam(count)
+  const work = ownWork(count)
+  return expand(MemberDock({ sessionId: 'a', useRoster: pick => pick(roster), useWork: pick => pick(work), actions: {} }))
+}
+const moreLine = (tree) => nodes(tree, node => String(node.props.className ?? '').split(' ').includes('bt-mw-line'))
+
+test('the own-chat dock counts the rooms it drops past four instead of ending silently (#2043)', () => {
+  const five = ownDock(5)
+  assert.deepEqual(rowLabels(five), ['in Room 1 · Writing changes…', 'in Room 2 · Writing changes…', 'in Room 3 · Writing changes…', 'in Room 4 · Writing changes…'])
+  const [one] = moreLine(five)
+  assert.ok(one, 'the fifth room is counted, not dropped silently')
+  assert.notEqual(one.type, 'button', 'the line is not a button: the Bot details panel lists no rooms to open')
+  assert.equal(textOf(one), '1 more room')
+
+  const eleven = ownDock(11)
+  assert.deepEqual(rowLabels(eleven).length, 4)
+  const [seven] = moreLine(eleven)
+  assert.ok(seven)
+  assert.equal(textOf(seven), '7 more rooms')
+
+  // Four rooms fit exactly, so there is nothing to count and the dock is what it was.
+  const four = ownDock(4)
+  assert.equal(rowLabels(four).length, 4)
+  assert.equal(moreLine(four).length, 0, 'a full page with nothing behind it counts nothing')
+
+  const two = ownDock(2)
+  assert.deepEqual(rowLabels(two), ['in Room 1 · Writing changes…', 'in Room 2 · Writing changes…'])
+  assert.equal(moreLine(two).length, 0, 'the two-room own-chat case keeps its DOM')
+})
+
+test('the counted line does not look clickable, and the group line still does', () => {
+  const [line] = moreLine(ownDock(5))
+  assert.notEqual(line.type, 'button')
+  const rule = MEMBER_CSS.match(/(?:^|\n)\.bt-mw-static\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(rule, /cursor:default/, 'a line that opens nothing does not show the row pointer')
+  // The group-chat summary line keeps its button shape.
+  const work = {
+    bots: {},
+    rooms: { r1: Array.from({ length: 6 }, (_, i) => ({ botId: `m${i}`, since: 1, tool: 'edit' })) },
+    approvals: [],
+  }
+  const roster = { byId: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`m${i}`, { id: `m${i}`, name: `M${i}` }])), roomsById: { r1: { id: 'r1', name: 'Ops', members: Array.from({ length: 6 }, (_, i) => `m${i}`) } } }
+  const group = expand(MemberDock({ sessionId: 'r1', useRoster: pick => pick(roster), useWork: pick => pick(work), actions: {} }))
+  const [summary] = moreLine(group)
+  assert.equal(summary.type, 'button', 'the group summary line still opens the details panel')
+})

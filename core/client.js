@@ -1314,6 +1314,8 @@ var ZH = {
   Finished: "已结束",
   Resume: "继续",
   "in {name}": "在 {name}",
+  "1 more room": "还有 1 个房间",
+  "{count} more rooms": "还有 {count} 个房间",
   "Click again to delete": "再点一次删除",
   "Delete task": "删除任务",
   Once: "一次",
@@ -7636,6 +7638,7 @@ function botGroupWork(botId, work, roster) {
     return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
   });
 }
+var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
 function summaryText(busy) {
   const asks = busy.filter((entry) => entry.state === "ask");
   const workers = busy.filter((entry) => entry.state === "work");
@@ -7695,25 +7698,36 @@ function MemberDock({ sessionId, useRoster, useWork, actions }) {
   useFlowColumn(ref, shown, sessionId);
   if (!shown) return null;
   if (room2) {
-    const { rows, rest } = splitBusy(busy);
+    const { rows: rows2, rest } = splitBusy(busy);
     const open = () => actions.showDetails(sessionId);
     return (0, import_react12.createElement)(
       "div",
       { ref, className: "bt-mw-dock-stack" },
-      rows.map((entry) => (0, import_react12.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
+      rows2.map((entry) => (0, import_react12.createElement)(WorkRow, { key: entry.id, bot: entry.bot, tool: entry.doing.tool, step: entry.doing.step, label: entry.bot.name, at: entry.doing.since, now, onOpen: open })),
       rest.length > 0 ? (0, import_react12.createElement)(SummaryLine, { busy: rest, now, onOpen: open }) : null
     );
   }
-  return (0, import_react12.createElement)("div", { ref, className: "bt-mw-dock-stack" }, groups.slice(0, ROWS_MAX).map((item) => (0, import_react12.createElement)(WorkRow, {
-    key: item.room.id,
-    bot,
-    tool: item.tool,
-    step: item.step,
-    label: t("in {name}", { name: item.room.name }),
-    at: item.since,
-    now,
-    onOpen: () => actions.openSession(item.room.id)
-  })));
+  const rows = groups.slice(0, ROWS_MAX);
+  const more = groups.length - rows.length;
+  return (0, import_react12.createElement)(
+    "div",
+    { ref, className: "bt-mw-dock-stack" },
+    rows.map((item) => (0, import_react12.createElement)(WorkRow, {
+      key: item.room.id,
+      bot,
+      tool: item.tool,
+      step: item.step,
+      label: t("in {name}", { name: item.room.name }),
+      at: item.since,
+      now,
+      onOpen: () => actions.openSession(item.room.id)
+    })),
+    more > 0 ? (0, import_react12.createElement)(
+      "div",
+      { className: "bt-mw-row bt-mw-line bt-mw-static" },
+      (0, import_react12.createElement)("span", { className: "bt-mw-row-text" }, moreRooms(more))
+    ) : null
+  );
 }
 function useFlowColumn(ref, active, key) {
   (0, import_react12.useLayoutEffect)(() => {
@@ -7808,6 +7822,8 @@ var MEMBER_CSS = `
 .bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
 .bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
 .bt-mw-row:hover{background:var(--bt-hover)}
+.bt-mw-static{cursor:default;padding-inline-start:38px}
+.bt-mw-static:hover{background:none}
 .bt-mw-row>.bt-mark{flex:none}
 .bt-mw-row-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-mw-row-time{flex:none;font-size:12px;color:var(--bt-ink-3);white-space:nowrap}
