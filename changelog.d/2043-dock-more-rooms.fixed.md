@@ -1,1 +1,0 @@
-The Bot's own-chat dock no longer drops rooms past the fourth silently: when it is at work in more than four, it draws four rows and then `1 more room` / `N more rooms` ([#2043](https://github.com/ThinkFlowLab/FlyBot/issues/2043)).

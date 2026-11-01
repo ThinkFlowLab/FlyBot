@@ -1,1 +1,0 @@
-A Bot's Scheduled tasks line in its details panel says how many tasks the Bot has and, past the three rows it draws, one **2 more not shown** row opens the full list ([#2030](https://github.com/ThinkFlowLab/FlyBot/issues/2030)).

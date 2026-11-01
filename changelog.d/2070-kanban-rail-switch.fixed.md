@@ -1,1 +1,0 @@
-The task board's Done column now follows the rail: switching from one Bot to another re-reads that Bot's archive page instead of keeping the one the board loaded for the previous Bot, which had left the newly selected Bot's Done column empty until the dialog was reopened ([#2070](https://github.com/ThinkFlowLab/FlyBot/issues/2070)).

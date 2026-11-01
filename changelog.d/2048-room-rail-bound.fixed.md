@@ -1,1 +1,0 @@
-The task board's group rail reads a Bot's own slice of the room's cut archive page as `done/total`, so a Bot with 18 of the newest 20 finished cards says `18/18` while the room holds 45. A full page is now a lower bound for every Bot on it (`18+ done`), and a page under the limit still reads its exact counts ([#2048](https://github.com/ThinkFlowLab/FlyBot/issues/2048)).

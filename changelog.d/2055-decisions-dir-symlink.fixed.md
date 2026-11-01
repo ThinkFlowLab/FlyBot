@@ -1,1 +1,0 @@
-A Project folder's `decisions/` must itself be a real directory: a link to another folder, a link to a path that does not exist and a plain file all read as no decisions at all, so `project_state`, the Project digest and the board's decision rows never list, hash or open another folder's files ([#2055](https://github.com/ThinkFlowLab/FlyBot/issues/2055)).
