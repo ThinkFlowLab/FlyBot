@@ -6424,12 +6424,13 @@ diff --git a/src/host/time-context.js b/src/host/time-context.js
 diff --git a/src/host/turns.js b/src/host/turns.js
 --- a/src/host/turns.js
 +++ b/src/host/turns.js
-@@ -3,8 +3,31 @@
+@@ -3,14 +3,37 @@
  //
  // Turn tracking: which turns were triggered by another Bot, and what they said.
  import { REFERENCE_KIND, REPLY_KIND, SOURCE_KIND } from './constants.js'
+-import { textOf } from './text.js'
 +import { unwrapUntrusted } from './delivery.js'
- import { textOf } from './text.js'
++import { cut, textOf } from './text.js'
  import { reminderText } from './schedules.js'
 +import { OTHER, combine, originOfSource, settled } from './turn-origin.js'
 +
@@ -6456,7 +6457,20 @@ diff --git a/src/host/turns.js b/src/host/turns.js
  
  // A failed turn's `LlmFailure`, kept to what can be shown and logged. Like DSH's own
  // error row, an AUTH failure loses its message: providers may echo part of the key.
-@@ -24,7 +24,7 @@ export const failureLine = failure => `${failure.code}${failure.status ? ` ${fai
+ export function turnFailure(error) {
+   const code = typeof error?.code === 'string' && error.code !== '' ? error.code : 'UNKNOWN'
+-  const message = code === 'AUTH' || typeof error?.message !== 'string' ? '' : error.message.trim().slice(0, 500)
++  const message = code === 'AUTH' || typeof error?.message !== 'string' ? '' : cut(error.message.trim(), 500).text
+   return {
+     code,
+     message,
+@@ -19,12 +19,12 @@ export function turnFailure(error) {
+   }
+ }
+ 
+-export const failureLine = failure => `${failure.code}${failure.status ? ` ${failure.status}` : ''}${failure.message ? `: ${failure.message.slice(0, 200)}` : ''}`
++export const failureLine = failure => `${failure.code}${failure.status ? ` ${failure.status}` : ''}${failure.message ? `: ${cut(failure.message, 200).text}` : ''}`
+ 
  // A group's own Session never reaches a model, so the snapshot DSH prepared there
  // rides with the user's queued message to the members who answer it.
  export function attachReference(queued, source, text) {
@@ -6597,7 +6611,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
        markExchangeTurn(sessionId, entry.turn)
      }
    }
-@@ -196,7 +196,33 @@ export function install(rt) {
+@@ -196,7 +196,35 @@ export function install(rt) {
      return merged
    }
  
@@ -6610,7 +6624,9 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    const value = ['command', 'cmd', 'pattern', 'query', 'url', 'file_path', 'path', 'description']
 +      .map(key => args?.[key]).find(item => typeof item === 'string' && item.trim() !== '')
 +    const line = value?.replace(/\s+/g, ' ').trim()
-+    return line && line.length > 80 ? `${line.slice(0, 79)}…` : line
++    if (!line) return line
++    const bound = cut(line, 79)
++    return bound.cut ? `${bound.text}…` : line
 +  }
 +
 +  // Work a group member hands a Bot with message_bot runs in a hidden turn of the Bot's own chat,
@@ -6651,10 +6667,14 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -238,6 +238,54 @@ export function install(rt) {
-     return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
-   }
- 
+@@ -235,8 +235,56 @@ export function install(rt) {
+     const first = keys => keys.map(key => args?.[key]).find(value => typeof value === 'string' && value.trim() !== '')
+     const text = first(['description', 'justification'])
+     const code = first(['command', 'cmd', 'file_path', 'path', 'url', 'query'])
+-    return { ...(text ? { text: text.trim().slice(0, 300) } : {}), ...(code ? { code: code.trim().slice(0, 400) } : {}) }
++    return { ...(text ? { text: cut(text.trim(), 300).text } : {}), ...(code ? { code: cut(code.trim(), 400).text } : {}) }
++  }
++
 +  // The latest turns of the user's own Bots that finished or failed, for a system notification
 +  // (#353) and the Agent inbox's failed turns (#471). Process-local and bounded; a window skips
 +  // the ones from before it opened. Left out: a friend's Bots, turns a friend started, turns
@@ -6694,18 +6714,17 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
 +      at,
 +      ...(calls > 0 ? { calls } : {}),
-+      ...(failure ? { failed: (failure.message || failure.code).slice(0, 160) } : {}),
++      ...(failure ? { failed: cut(failure.message || failure.code, 160).text } : {}),
 +      ...(rateLimited !== undefined ? { rateLimited } : {}),
 +      ...(silent ? { silent: true, streak } : {}),
 +    }], at)
-+  }
+   }
 +  const endedView = () => ended
 +  // A scheduled run DSH could not deliver never became a turn; it joins them as a failure (#473).
 +  const noteRunFailure = (entry) => { ended = [...ended, entry].slice(-ENDED_KEPT) }
-+
+ 
    // Where a Session speaks, for the diagnostics log.
    const placeOf = (id) => {
-     const room = rt.roomOf(rt.groupOwners.get(id)?.roomId) ?? rt.roomOf(id)
 @@ -266,6 +266,7 @@ export function install(rt) {
        case 'tool/call': {
          const name = String(event.data?.name ?? '')
@@ -9206,6 +9225,36 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
  }
  
  // Waits on real I/O (state writes) without timers, which some tests mock.
+@@ -132,6 +132,29 @@ test('a group Session\'s approval waits in the team view, frees the round, and t
+   assert.equal(text(post), '[Group post from Writer]\nCopied the doc to E:/docs.')
+ })
+ 
++// Both fields of a card go through a bound of their own: 300 for the description, 400 for the
++// command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
++test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  const result = await openTurn(t, host)
++  const description = `${'a'.repeat(299)}😀tail`
++  const command = `${'b'.repeat(399)}😀tail`
++  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command, description }) })
++  const outcome = host.askApproval('gb', { callId: 'k1' })
++
++  await settle(() => result() !== undefined)
++  const [approval] = (await host.call('state', {})).value.work.approvals
++  assert.equal(approval.detail.text.isWellFormed(), true, `the description is not well formed: ${JSON.stringify(approval.detail.text.slice(-4))}`)
++  assert.equal(approval.detail.text, description.slice(0, 299))
++  assert.equal(approval.detail.code.isWellFormed(), true, `the command is not well formed: ${JSON.stringify(approval.detail.code.slice(-4))}`)
++  assert.equal(approval.detail.code, command.slice(0, 399))
++  assert.ok(approval.detail.text.length <= 300 && approval.detail.code.length <= 400, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
++
++  assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
++  assert.equal(await outcome, 'allowed-once')
++})
++
+ test('an own chat\'s approval stays with DSH and is listed while it waits', async (t) => {
+   const host = await start()
+   t.after(host.stop)
 @@ -237,14 +237,14 @@ test('a member that fails after the round moved on shows the failure in the grou
    const [approval] = (await host.call('state', {})).value.work.approvals
    await host.call('approval-answer', { id: approval.id, choice: 'allow' })
@@ -9224,7 +9273,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    assert.deepEqual(round.failed, ['Writer'])
    assert.equal(host.agentOf('gb').calls.length, 1)
  })
-@@ -294,3 +294,186 @@ test('an approval asked inside a PTC program shows what that call does', async (
+@@ -294,3 +294,204 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })
@@ -9379,6 +9428,24 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 +  assert.equal((await bots()).b.step, undefined)
 +  host.emit('gb', 'turn/end', { reason: { kind: 'error', error: new Error('boom') } })
 +  assert.equal((await bots()).b, undefined)
++})
++
++// The step is 79 units plus an ellipsis, and the cut is decided by whether anything was dropped.
++test('a step line cut at its bound keeps the pair whole, and the ellipsis only shows when it cut', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  const bots = async () => (await host.call('state', {})).value.work.bots
++  host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command: `${'a'.repeat(78)}😀tail` }) })
++  const { step } = (await bots()).b
++  assert.equal(step.isWellFormed(), true, `the step is not well formed: ${JSON.stringify(step.slice(-4))}`)
++  // The emoji needs two units and only one is left inside the 79, so the prefix stops before it.
++  assert.equal(step, `${'a'.repeat(78)}…`)
++  assert.ok(step.length <= 80, `the 79 + ellipsis budget moved: ${step.length}`)
++  host.emit('gb', 'tool/result', { callId: 'k1' })
++  host.emit('gb', 'tool/call', { callId: 'k2', name: 'pwsh', arguments: JSON.stringify({ command: 'npm test' }) })
++  assert.equal((await bots()).b.step, 'npm test')
++  host.emit('gb', 'tool/result', { callId: 'k2' })
 +})
 +
 +// #626: the shape a Bot actually hits — the owner asks for work, the turn calls `subagent`, and the

@@ -101,6 +101,19 @@ test('#1044: a turn that wrote text then failed adds no line', async (t) => {
   assert.equal(failureLines({ ended: await host.ended() }, 'b', key => key).length, 0)
 })
 
+// The reason a failed turn leaves for the inbox is cut at 160 units: a bound inside a surrogate pair
+// leaves a lone high half, which the stored record keeps and every client draws as U+FFFD.
+test('a failed turn records its reason cut at 160 units without splitting a pair', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const message = `${'a'.repeat(159)}😀tail`
+  die(host.emit, 'b', 1, { code: 'SERVER', message })
+  const [entry] = await host.ended()
+  assert.equal(entry.failed.isWellFormed(), true, `the stored reason is not well formed: ${JSON.stringify(entry.failed.slice(-4))}`)
+  assert.equal(entry.failed, message.slice(0, 159))
+  assert.ok(entry.failed.length <= 160, `the 160-unit budget moved: ${entry.failed.length}`)
+})
+
 test('#1044: three dead turns in a row are three lines and the streak is visible', async (t) => {
   const host = await start()
   t.after(host.stop)
