@@ -1,0 +1,1 @@
+A room board opened from a Bot board now counts each active card once in its rail: the bot board's read stayed in the rail's own list after the switch, so a room that draws two cards read `1/3` instead of `1/2` ([#2069](https://github.com/ThinkFlowLab/FlyBot/issues/2069)).

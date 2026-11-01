@@ -9122,7 +9122,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
   }, []);
   const archiveFull = Array.isArray(archive) && archive.length >= ARCHIVE_SHOWN;
   const counts2 = {};
-  for (const task of [...own, ...scope?.kind === "group" ? groupTasks : [], ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
+  for (const task of [...scope?.kind === "group" ? groupTasks : own, ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
     const id = task.ownerBotId;
     const bucket = counts2[id] ?? (counts2[id] = { done: 0, total: 0 });
     if (task.status === "cancelled" || task.status === "failed") continue;
