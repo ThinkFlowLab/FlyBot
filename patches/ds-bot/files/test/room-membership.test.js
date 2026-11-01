@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -10,7 +10,7 @@ import { install as installMemberAuth } from '../src/host/member-auth.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { install as installReach } from '../src/host/reach.js'
 import { install as installRooms, currentParticipants, isCrossOwnerRoom, linesVisibleTo, roomVisibleTo } from '../src/host/room-membership.js'
-import { compactStatus } from '../src/host/room-context.js'
+import { compactStatus, fitRoomLines, prepareRoomLine } from '../src/host/room-context.js'
 // Room membership (#50): humans and Chiefs share a room with distinct authorship.
 // Team mode stays disabled — these tests cover the membership surface only.
 
@@ -486,4 +486,29 @@ test('channel: a legacy single-owner create-room still works', async (t) => {
   assert.equal(created.value.participants, undefined)
   const view = (await call('state', {}, alice.sessionToken)).value
   assert.ok(view.rooms.some(room => room.name === 'Solo'))
+})
+
+// P-305: `compactStatus` keeps the first hundred units of the flattened essay as the stub every writer of
+// `room.log` stores (#1251), and that cut was a bare `slice`. A Bot essay whose 100th unit sat inside an
+// emoji pair therefore stored a lone high surrogate, which the encoder turns into U+FFFD. The assertion is
+// on the value read back from `state.json` by a fresh runtime, not on the object the writer kept in memory.
+test('P-305: the stored status stub survives the store round trip well formed', async (t) => {
+  const { rt, statePath } = host(t, TEAM)
+  await rt.load()
+  // 99 units, then a whole emoji whose pair straddles the 100-unit stub bound, then a status essay.
+  const essay = `${'a'.repeat(99)}\u{1F600} CI on tip abcdef12 is green. tests-ok passed. ${'detail '.repeat(80)}TSAIL`
+  assert.equal(essay.isWellFormed(), true, 'the input the Bot sent is well formed')
+
+  const line = await rt.postRoomMessage('shared', { text: essay, authorId: 'chief-a', authorKind: 'bot' })
+  assert.equal(line.text, compactStatus(essay), 'the writer keeps the stub it stored')
+  await rt.save()
+
+  const reloaded = host(t, readFileSync(statePath, 'utf8'))
+  await reloaded.rt.load()
+  const stored = reloaded.rt.state.rooms.shared.log.at(-1).text
+  assert.equal(stored.isWellFormed(), true, `the reloaded stub is not well formed: ${JSON.stringify(stored)}`)
+  assert.equal(Buffer.from(stored, 'utf8').toString('utf8'), stored, 'the reloaded stub survives a UTF-8 round trip')
+  assert.match(stored, /^\[status on the board, \d+ chars\] a{99}…$/, 'the pair on the bound is dropped whole, never stored in half')
+  const turn = fitRoomLines(reloaded.rt.state.rooms.shared.log, { render: item => `${item.who}: ${item.text}`, prepare: prepareRoomLine })
+  assert.equal(turn.text.isWellFormed(), true, `the turn built from the reloaded log is not well formed: ${JSON.stringify(turn.text.slice(0, 160))}`)
 })

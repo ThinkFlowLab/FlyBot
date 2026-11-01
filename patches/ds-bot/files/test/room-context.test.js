@@ -213,3 +213,55 @@ test('presence: no members or no room renders nothing at all', () => {
   assert.equal(formatRoomPresence(presenceTasks(), { roomId: 'room', members: [], now: presenceAt }), '')
   assert.equal(formatRoomPresence(presenceTasks(), { members: presenceMembers, now: presenceAt }), '')
 })
+
+// P-305: a character bound must not land between the halves of a surrogate pair. `oneLine` ends a long
+// card, board or presence line with `flat.slice(0, max - 1) + '…'` and `fitRoomLines` clips a transcript
+// line with `text.slice(0, room - 1) + '…'`; both are bare `slice`, so a pair straddling the bound is
+// stored and sent whole-half — a lone high surrogate the encoder turns into U+FFFD.
+test('P-305: a card title cut at its bound keeps a whole emoji', () => {
+  // 78 units, then an emoji whose pair sits across the 80-unit bound.
+  const title = `${'a'.repeat(78)}\u{1F600}TAIL`
+  const board = formatRoomBoard({
+    card: { id: 'card', status: 'open', title, ownerBotId: 'dev2', origin: { roomId: 'room' }, createdAt: presenceAt, updatedAt: presenceAt },
+  }, { roomId: 'room', nameOf: () => 'Dev2', now: presenceAt })
+  assert.equal(board.isWellFormed(), true, `the board line is not well formed: ${JSON.stringify(board.slice(-60))}`)
+  const card = board.split('\n').find(item => item.startsWith('- '))
+  assert.equal(card, `- Dev2 [open] ${'a'.repeat(78)}…`, 'the pair on the bound is dropped whole, never cut in half')
+
+  // Control: a title that ends exactly on the bound keeps the whole pair …
+  const exact = formatRoomBoard({
+    card: { id: 'card', status: 'open', title: `${'b'.repeat(78)}\u{1F600}`, ownerBotId: 'dev2', origin: { roomId: 'room' } },
+  }, { roomId: 'room', nameOf: () => 'Dev2' })
+  assert.equal(exact.split('\n').find(item => item.startsWith('- ')), `- Dev2 [open] ${'b'.repeat(78)}\u{1F600}`)
+  // … and a family emoji well inside the bound is untouched.
+  const family = `Ship \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} now`
+  const kept = formatRoomBoard({
+    card: { id: 'card', status: 'open', title: family, ownerBotId: 'dev2', origin: { roomId: 'room' } },
+  }, { roomId: 'room', nameOf: () => 'Dev2' })
+  assert.match(kept, new RegExp(`- Dev2 \\[open\\] Ship \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} now$`, 'm'))
+  assert.equal(kept.isWellFormed(), true)
+})
+
+test('P-305: a clipped transcript line ends on a whole emoji', () => {
+  const budget = 1000
+  const clipped = fitRoomLines(
+    [{ seq: 1, who: 'User', text: `${'a'.repeat(budget - 2)}\u{1F600}TAIL` }],
+    { budget, render: line => line.text },
+  )
+  assert.equal(clipped.text.isWellFormed(), true, `the clipped line is not well formed: ${JSON.stringify(clipped.text.slice(-8))}`)
+  assert.equal(clipped.text, `${'a'.repeat(budget - 2)}…`, 'the pair on the clip point is dropped whole')
+
+  // Control: a line that fits with a family emoji is untouched …
+  const fits = fitRoomLines(
+    [{ seq: 1, who: 'User', text: `work \u{1F468}\u200D\u{1F469}\u200D\u{1F467}` }],
+    { budget, render: line => line.text },
+  )
+  assert.equal(fits.text, `work \u{1F468}\u200D\u{1F469}\u200D\u{1F467}`)
+  // … and a pair that ends just before the clip point survives whole.
+  const before = fitRoomLines(
+    [{ seq: 1, who: 'User', text: `${'b'.repeat(budget - 3)}\u{1F600}TAIL` }],
+    { budget, render: line => line.text },
+  )
+  assert.equal(before.text.isWellFormed(), true)
+  assert.equal(before.text, `${'b'.repeat(budget - 3)}\u{1F600}…`)
+})
