@@ -5,6 +5,7 @@
 // fill that slice. Progress for the open job is a compact board snapshot in the
 // same turn, not those essays.
 import { columnOf, compareForWork, progressOf } from '../shared/task-board.js'
+import { cut } from '../shared/text-boundary.js'
 import { fenceUntrusted } from './delivery.js'
 
 // Characters, not a tokenizer. The essays this was measured on are mostly CJK,
@@ -42,7 +43,7 @@ const oneLine = (value, max) => {
   }
   flat = flat.replace(/\s+/g, ' ').trim()
   if (flat.length <= max) return flat
-  return `${flat.slice(0, Math.max(0, max - 1))}…`
+  return `${cut(flat, Math.max(0, max - 1)).text}…`
 }
 
 export function statusShaped(text) {
@@ -92,7 +93,7 @@ export function boardCoversCue(tasks, { roomId, botId, text } = {}) {
 export function compactStatus(text) {
   const flat = oneLine(text, 100000)
   const mentions = [...new Set([...flat.matchAll(/@[^\s@,，。]{1,40}/g)].map(match => match[0]))].slice(0, 4)
-  const head = flat.slice(0, 100).trim()
+  const head = cut(flat, 100).text.trim()
   const more = flat.length > 100 ? '…' : ''
   const called = mentions.length > 0 ? ` ${mentions.join(' ')}` : ''
   return `[status on the board, ${flat.length} chars] ${head}${more}${called}`
@@ -139,7 +140,7 @@ export function fitRoomLines(lines, { budget = ROOM_CONTEXT_BUDGET, render, prep
     if (used + gap + text.length > budget) {
       const room = budget - used - gap
       if (room < 48) break
-      text = `${text.slice(0, room - 1)}…`
+      text = `${cut(text, room - 1).text}…`
       kept.push({ line, text })
       break
     }
