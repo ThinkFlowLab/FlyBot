@@ -4031,9 +4031,10 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  let addresses = []
    const reason = (error) => {
 -    const text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
+-    return rt.redactSecrets(text || 'error').slice(0, 300)
 +    let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
 +    for (const address of addresses) text = text.split(address).join('[session address]')
-     return rt.redactSecrets(text || 'error').slice(0, 300)
++    return cut(rt.redactSecrets(text || 'error'), 300).text
    }
  
 -  async function reconcile(force) {
@@ -8040,11 +8041,11 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  // A loader that hands out a fake MCP client and records each mount.
 -function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
 -  const home = teamHome()
-+function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
++function setup({ fail = false, failWith, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
    const mounts = []
    const plugin = { name: 'mcp-client', apply() {} }
    const loader = {
-@@ -50,17 +50,21 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
+@@ -50,17 +50,22 @@ function setup({ fail = false, github = { api: 'https://gh.test' } } = {}) {
      unwrapExports: exports => exports.default,
    }
    const ctx = fakeContext({ services: { loader } })
@@ -8056,6 +8057,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
      return {
 -      await: async () => { if (fail) throw new Error(`refused ${config.headers.Authorization}`) },
 +      await: async () => {
++        if (failWith !== undefined) throw new Error(failWith)
 +        if (fail === 'url') throw new Error(`cannot reach ${config.url}`)
 +        if (fail) throw new Error(`refused ${config.headers.Authorization}`)
 +      },
@@ -8130,7 +8132,45 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(github.state, 'error')
    assert.ok(!github.error.includes(token), github.error)
    assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
-@@ -142,7 +142,7 @@ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
+@@ -137,12 +137,45 @@ test('a failed MCP connection shows the error without the token, and Try again m
+   assert.equal(mounts.length, 2)
+ })
+ 
++// #2002: the MCP server's message is stored for the owner's card. A bound that lands inside a
++// surrogate pair used to keep half of it, and the card drew the replacement character.
++test('a connector error at the 300 bound keeps whole code points (#2002)', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = async () => answer(200, { login: 'octo' })
++  const thrown = `${'a'.repeat(299)}😀tail`
++  const { ctx, home } = setup({ failWith: thrown })
++  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
++  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
++  const github = result.value.find(entry => entry.id === 'github')
++  assert.equal(github.state, 'error')
++  assert.ok(github.error.isWellFormed(), `the stored error is not well formed: ${JSON.stringify(github.error.slice(-2))}`)
++  assert.ok(thrown.startsWith(github.error), 'the stored error is a prefix of what the server threw')
++  assert.ok(github.error.length <= 300, `the stored error is ${github.error.length} units, over the 300 bound`)
++  assert.equal(github.error, 'a'.repeat(299), 'the pair that would cross the bound is dropped, not halved')
++})
++
++// The control: a well-formed message under the bound is stored byte for byte, emoji included.
++test('a connector error under the bound is stored verbatim (#2002)', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = async () => answer(200, { login: 'octo' })
++  const thrown = 'the server said no 😀'
++  const { ctx, home } = setup({ failWith: thrown })
++  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
++  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
++  const github = result.value.find(entry => entry.id === 'github')
++  assert.equal(github.state, 'error')
++  assert.equal(github.error, thrown)
++  assert.ok(!github.error.includes('\\ud83d'), JSON.stringify(github.error))
++})
++
+ test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
+   const realFetch = globalThis.fetch
    t.after(() => { globalThis.fetch = realFetch })
    globalThis.fetch = async () => answer(200, { login: 'octo' })
    const { ctx, home, mounts } = setup()
