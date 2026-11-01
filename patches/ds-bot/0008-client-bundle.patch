@@ -2141,7 +2141,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,969 +1624,2049 @@ function usageOf(list, ids) {
+@@ -1624,901 +1624,1981 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -3987,60 +3987,6 @@ diff --git a/client.js b/client.js
 -.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 -.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 -.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
--@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
--.bt-mem-skel{display:flex;flex-direction:column;gap:24px}
--.bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
--.bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
--.bt-mem-skel-block .bt-mem-skel-head{width:30%;height:16px;margin-bottom:2px}
--@keyframes bt-mem-skel{from{background-position:150% 0}to{background-position:-50% 0}}
--.bt-mem-skel-label{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
--.bt-mem-empty{margin:auto;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:24px 0;animation:bt-mem-line .45s cubic-bezier(.16,1,.3,1) both}
--.bt-mem-empty-mark{width:48px;height:48px;border-radius:50%;background:var(--bt-hover);display:flex;align-items:center;justify-content:center;color:var(--bt-ink-2);margin-bottom:4px}
--.bt-mem-empty-mark svg{width:22px;height:22px}
--.bt-mem-empty-title{font-size:15px;line-height:22px;font-weight:600}
--.bt-mem-empty-text{font-size:13px;line-height:20px;color:var(--bt-ink-2)}
--.bt-mem-failed{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;background:var(--bt-hover);font-size:13px;line-height:18px;color:var(--bt-ink-2)}
--.bt-mem-failed>span{flex:1;min-width:0;overflow-wrap:anywhere}
--.bt-mem-entries{display:flex;flex-direction:column;gap:28px;animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .22s ease-out}
--.bt-mem-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
--.bt-mem-section-head h3{margin:0;font-size:15px;line-height:22px;font-weight:600}
--.bt-mem-section-head span{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
--.bt-mem-section-head .bt-mem-size{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
--.bt-mem-topic{font-size:12px;line-height:16px;color:var(--bt-ink-2);margin:14px 0 2px 4px;font-weight:500}
--.bt-mem-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
--.bt-mem-entry{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:.5px solid var(--bt-line);transition:opacity .2s ease}
--.bt-mem-entry[data-busy]{opacity:.4}
--.bt-mem-entry-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
--.bt-mem-entry-text{font-size:14px;line-height:20px;overflow-wrap:anywhere}
--.bt-mem-entry-meta{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
--.bt-mem-remove{flex:none;height:28px;min-width:28px;border-radius:999px;border:0;background:none;color:var(--bt-ink-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 6px;font:inherit;font-size:12px;opacity:0;transition:opacity .12s ease,background-color .12s ease,color .12s ease}
--.bt-mem-entry:hover .bt-mem-remove,.bt-mem-remove:focus-visible,.bt-mem-remove[data-confirm]{opacity:1}
--.bt-mem-remove:hover{background:var(--bt-hover);color:var(--bt-ink)}
--.bt-mem-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135;padding:0 10px}
--@media (hover:none){.bt-mem-remove{opacity:1}}
--.bt-mem-none{font-size:13px;line-height:18px;color:var(--bt-ink-3);padding:8px 4px}
--.bt-mem-foot{flex:none;padding:8px 20px 20px;display:flex;flex-direction:column;gap:10px}
--.bt-mem-reply{border-radius:16px;background:var(--bt-hover);padding:8px 8px 12px 16px;display:flex;flex-direction:column;gap:6px;max-height:36vh;overflow-y:auto;scrollbar-width:thin;transform-origin:50% 100%;animation:bt-pop-lift ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
--.bt-mem-reply-head{display:flex;align-items:center;gap:8px;min-height:24px}
--.bt-mem-reply-asked{flex:1;min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
--.bt-mem-reply .bt-icon-btn{width:24px;height:24px;flex:none}
--.bt-mem-reply-text{font-size:14px;line-height:21px;padding-right:8px;overflow-wrap:anywhere}
--.bt-mem-changes{list-style:none;margin:2px 0 0;padding:0 8px 0 0;display:flex;flex-direction:column;gap:4px}
--.bt-mem-changes li{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:18px;color:var(--bt-ink-2);overflow-wrap:anywhere}
--.bt-mem-changes li svg{flex:none;margin-top:1px;color:#e02135;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} .12s backwards}
--.bt-mem-changes li[data-ok] svg{color:var(--bt-green)}
--.bt-mem-ask{display:flex;align-items:center;gap:8px;height:52px;padding:0 8px 0 22px;border-radius:999px;border:.5px solid var(--bt-line-2);background:var(--bt-card);box-shadow:0 4px 16px rgba(0,0,0,.06);box-sizing:border-box;transition:border-color .15s ease,box-shadow .15s ease}
--.bt-mem-ask:focus-within{border-color:var(--bt-ink-3);box-shadow:0 4px 20px rgba(0,0,0,.1)}
--.bt-mem-input{flex:1;min-width:0;border:0;background:none;outline:none;color:var(--bt-ink);font:inherit;font-size:15px;line-height:22px;padding:0}
--.bt-mem-input::placeholder{color:var(--bt-ink-3)}
--.bt-mem-send{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:var(--bt-ink);color:var(--bt-main);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-mem-send:disabled{opacity:.22;cursor:default}
--.bt-mem-send:not(:disabled):active{scale:.92}
--.bt-mem-send>*{animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--.bt-mem-spin{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;box-sizing:border-box;animation:bt-mem-spin .7s linear infinite}
--@keyframes bt-mem-spin{to{transform:rotate(360deg)}}
--@media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
--@media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
 +// src/client/motion.js
 +var import_react4 = require("react");
 +var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -4244,20 +4190,7 @@ diff --git a/client.js b/client.js
 +  }, [value]);
 +  return [value || kept, !value && Boolean(kept)];
 +}
- 
--.bt-thumb{position:absolute;left:0;top:0;z-index:0;pointer-events:none;transition:opacity .14s ease}
--.bt-thumb[data-hidden]{opacity:0}
--[data-morph]{overflow:hidden!important}
--.bt-veil{animation:bt-veil-in .22s ease-out}
--.bt-with-icon{display:inline-flex;align-items:center;gap:4px}
--.bt-with-icon svg{width:14px;height:14px}
--.bt-tag-admin{display:inline-flex;align-items:center;gap:4px}
--.bt-create-inline{padding:18px 16px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
--.bt-create-inline .bt-create-card{max-width:none}
--.bt-panel-view>[data-move=in]{animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
--.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
--.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
--.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
++
 +// src/client/styles.js
 +var SHELL_CSS = `
 +body{--bt-ink:#141414;--bt-ink-2:rgba(20,20,20,.6);--bt-ink-3:rgba(20,20,20,.36);--bt-bubble:#eeeeee;--bt-sidebar:#f7f7f7;--bt-main:#fcfcfc;--bt-line:rgba(20,20,20,.08);--bt-line-2:rgba(20,20,20,.15);--bt-line-weak:rgba(20,20,20,.1);--bt-hover:rgba(119,119,119,.09);--bt-active:rgba(119,119,119,.17);--bt-card:#ffffff;--bt-accent:#4d6bfe;--bt-green:#00c972;--bt-star:#ff9800;--bt-user:#070707;--bt-user-ink:#fcfcfc;--bt-tag-bg:rgba(20,20,20,.06);--bt-tag-ink:rgba(20,20,20,.56)}
@@ -5055,81 +4988,34 @@ diff --git a/client.js b/client.js
 +.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 +.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 +.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
-+@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
-+.bt-mem-skel{display:flex;flex-direction:column;gap:24px}
-+.bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
-+.bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
-+.bt-mem-skel-block .bt-mem-skel-head{width:30%;height:16px;margin-bottom:2px}
-+@keyframes bt-mem-skel{from{background-position:150% 0}to{background-position:-50% 0}}
-+.bt-mem-skel-label{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
-+.bt-mem-empty{margin:auto;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:24px 0;animation:bt-mem-line .45s cubic-bezier(.16,1,.3,1) both}
-+.bt-mem-empty-mark{width:48px;height:48px;border-radius:50%;background:var(--bt-hover);display:flex;align-items:center;justify-content:center;color:var(--bt-ink-2);margin-bottom:4px}
-+.bt-mem-empty-mark svg{width:22px;height:22px}
-+.bt-mem-empty-title{font-size:15px;line-height:22px;font-weight:600}
-+.bt-mem-empty-text{font-size:13px;line-height:20px;color:var(--bt-ink-2)}
-+.bt-mem-failed{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;background:var(--bt-hover);font-size:13px;line-height:18px;color:var(--bt-ink-2)}
-+.bt-mem-failed>span{flex:1;min-width:0;overflow-wrap:anywhere}
-+.bt-mem-entries{display:flex;flex-direction:column;gap:28px;animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .22s ease-out}
-+.bt-mem-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
-+.bt-mem-section-head h3{margin:0;font-size:15px;line-height:22px;font-weight:600}
-+.bt-mem-section-head span{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
-+.bt-mem-section-head .bt-mem-size{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
-+.bt-mem-topic{font-size:12px;line-height:16px;color:var(--bt-ink-2);margin:14px 0 2px 4px;font-weight:500}
-+.bt-mem-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-+.bt-mem-entry{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:.5px solid var(--bt-line);transition:opacity .2s ease}
-+.bt-mem-entry[data-busy]{opacity:.4}
-+.bt-mem-entry-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-+.bt-mem-entry-text{font-size:14px;line-height:20px;overflow-wrap:anywhere}
-+.bt-mem-entry-meta{font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
-+.bt-mem-remove{flex:none;height:28px;min-width:28px;border-radius:999px;border:0;background:none;color:var(--bt-ink-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 6px;font:inherit;font-size:12px;opacity:0;transition:opacity .12s ease,background-color .12s ease,color .12s ease}
-+.bt-mem-entry:hover .bt-mem-remove,.bt-mem-remove:focus-visible,.bt-mem-remove[data-confirm]{opacity:1}
-+.bt-mem-remove:hover{background:var(--bt-hover);color:var(--bt-ink)}
-+.bt-mem-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135;padding:0 10px}
-+@media (hover:none){.bt-mem-remove{opacity:1}}
-+.bt-mem-none{font-size:13px;line-height:18px;color:var(--bt-ink-3);padding:8px 4px}
-+.bt-mem-foot{flex:none;padding:8px 20px 20px;display:flex;flex-direction:column;gap:10px}
-+.bt-mem-reply{border-radius:16px;background:var(--bt-hover);padding:8px 8px 12px 16px;display:flex;flex-direction:column;gap:6px;max-height:36vh;overflow-y:auto;scrollbar-width:thin;transform-origin:50% 100%;animation:bt-pop-lift ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
-+.bt-mem-reply-head{display:flex;align-items:center;gap:8px;min-height:24px}
-+.bt-mem-reply-asked{flex:1;min-width:0;font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-+.bt-mem-reply .bt-icon-btn{width:24px;height:24px;flex:none}
-+.bt-mem-reply-text{font-size:14px;line-height:21px;padding-right:8px;overflow-wrap:anywhere}
-+.bt-mem-changes{list-style:none;margin:2px 0 0;padding:0 8px 0 0;display:flex;flex-direction:column;gap:4px}
-+.bt-mem-changes li{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:18px;color:var(--bt-ink-2);overflow-wrap:anywhere}
-+.bt-mem-changes li svg{flex:none;margin-top:1px;color:#e02135;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} .12s backwards}
-+.bt-mem-changes li[data-ok] svg{color:var(--bt-green)}
-+.bt-mem-ask{display:flex;align-items:center;gap:8px;height:52px;padding:0 8px 0 22px;border-radius:999px;border:.5px solid var(--bt-line-2);background:var(--bt-card);box-shadow:0 4px 16px rgba(0,0,0,.06);box-sizing:border-box;transition:border-color .15s ease,box-shadow .15s ease}
-+.bt-mem-ask:focus-within{border-color:var(--bt-ink-3);box-shadow:0 4px 20px rgba(0,0,0,.1)}
-+.bt-mem-input{flex:1;min-width:0;border:0;background:none;outline:none;color:var(--bt-ink);font:inherit;font-size:15px;line-height:22px;padding:0}
-+.bt-mem-input::placeholder{color:var(--bt-ink-3)}
-+.bt-mem-send{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:var(--bt-ink);color:var(--bt-main);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")}}
-+.bt-mem-send:disabled{opacity:.22;cursor:default}
-+.bt-mem-send:not(:disabled):active{scale:.92}
-+.bt-mem-send>*{animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
-+.bt-mem-spin{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;box-sizing:border-box;animation:bt-mem-spin .7s linear infinite}
-+@keyframes bt-mem-spin{to{transform:rotate(360deg)}}
-+@media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
-+@media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
-+
-+.bt-thumb{position:absolute;left:0;top:0;z-index:0;pointer-events:none;transition:opacity .14s ease}
-+.bt-thumb[data-hidden]{opacity:0}
-+[data-morph]{overflow:hidden!important}
-+.bt-veil{animation:bt-veil-in .22s ease-out}
-+.bt-with-icon{display:inline-flex;align-items:center;gap:4px}
-+.bt-with-icon svg{width:14px;height:14px}
-+.bt-tag-admin{display:inline-flex;align-items:center;gap:4px}
-+.bt-create-inline{padding:18px 16px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
-+.bt-create-inline .bt-create-card{max-width:none}
-+.bt-panel-view>[data-move=in]{animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
-+.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
-+.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
-+.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
- .bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
- .bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
- .bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
-@@ -2595,2914 +2595,6692 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
- :is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
- @media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
- `;
+ @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
+ .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
+ .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
+@@ -2574,2935 +2574,6720 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+ @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
+ @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
+ 
+-.bt-thumb{position:absolute;left:0;top:0;z-index:0;pointer-events:none;transition:opacity .14s ease}
+-.bt-thumb[data-hidden]{opacity:0}
+-[data-morph]{overflow:hidden!important}
+-.bt-veil{animation:bt-veil-in .22s ease-out}
+-.bt-with-icon{display:inline-flex;align-items:center;gap:4px}
+-.bt-with-icon svg{width:14px;height:14px}
+-.bt-tag-admin{display:inline-flex;align-items:center;gap:4px}
+-.bt-create-inline{padding:18px 16px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
+-.bt-create-inline .bt-create-card{max-width:none}
+-.bt-panel-view>[data-move=in]{animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
+-.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
+-.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
+-.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
+-.bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
+-.bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
+-.bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-:is(.bt-soft,.bt-send,.bt-icon-btn,.bt-settings-close,.bt-mini,.bt-tab,.bt-nc-send,.bt-avedit-tab,.bt-shape,.bt-pick,.bt-swatch,.bt-palette-clear){transition:background-color .12s ease,color .12s ease,border-color .12s ease,opacity .12s ease,${spring(SPRING_TAP, "scale")}}
+-:is(.bt-icon-btn,.bt-settings-close,.bt-nc-send,.bt-shape,.bt-swatch,.bt-color,.bt-x,.bt-q-x,.bt-palette-clear):active:not(:disabled){scale:.9}
+-:is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
+-@media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
+-`;
 -var CONVERSATION_CSS = `
 -.bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
 -.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
@@ -5210,6 +5096,27 @@ diff --git a/client.js b/client.js
 -.bt-shimmer{animation:none;background:none;color:var(--bt-ink-2)}
 -[data-bt-enter="new"]{animation:none}
 -[data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
++.bt-thumb{position:absolute;left:0;top:0;z-index:0;pointer-events:none;transition:opacity .14s ease}
++.bt-thumb[data-hidden]{opacity:0}
++[data-morph]{overflow:hidden!important}
++.bt-veil{animation:bt-veil-in .22s ease-out}
++.bt-with-icon{display:inline-flex;align-items:center;gap:4px}
++.bt-with-icon svg{width:14px;height:14px}
++.bt-tag-admin{display:inline-flex;align-items:center;gap:4px}
++.bt-create-inline{padding:18px 16px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
++.bt-create-inline .bt-create-card{max-width:none}
++.bt-panel-view>[data-move=in]{animation:bt-page-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
++.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
++.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
++.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
++.bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
++.bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
++.bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
++:is(.bt-soft,.bt-send,.bt-icon-btn,.bt-settings-close,.bt-mini,.bt-tab,.bt-nc-send,.bt-avedit-tab,.bt-shape,.bt-pick,.bt-swatch,.bt-palette-clear){transition:background-color .12s ease,color .12s ease,border-color .12s ease,opacity .12s ease,${spring(SPRING_TAP, "scale")}}
++:is(.bt-icon-btn,.bt-settings-close,.bt-nc-send,.bt-shape,.bt-swatch,.bt-color,.bt-x,.bt-q-x,.bt-palette-clear):active:not(:disabled){scale:.9}
++:is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
++@media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
++`;
 +var CONVERSATION_CSS = `
 +.bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
 +.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;white-space:nowrap}
@@ -7147,121 +7054,7 @@ diff --git a/client.js b/client.js
 +    }),
 +    (0, import_react9.createElement)(PartLine, { time: view.startedAt })
 +  );
- }
--@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
--@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
--[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
--[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
--[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
--[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
--[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
--[data-composer-card]>[class*="_row"]{display:contents!important}
--[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
--[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
--[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
--[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
--[data-composer-placeholder]{font-size:0!important;line-height:0!important}
--[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
--/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
--[data-composer-card] button[class*="_add"]{display:none!important}
--.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-plus:active{scale:.9}
--.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
--.bt-plus[aria-expanded=true] svg{rotate:45deg}
--.bt-plus-menu{min-width:180px}
--[data-composer-card] [class*="_tools"]{gap:0!important}
--[data-composer-card] [class*="_modes"]:empty{display:none!important}
--[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
--[data-composer-card] [class*="_trailing"]{gap:8px}
--[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
--[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
--[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
--@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
--[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
--[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
--[data-composer-dock]{display:none!important}
--.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
--.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
--@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
--.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--.bt-voice:hover{opacity:.9}
--.bt-mic:active,.bt-voice:active{scale:.9}
--[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
--body[data-bt-room] .bt-voice{display:none!important}
--body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
--.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
--[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
--.bt-q{order:1}
--div:has(> nav [class*="_marks"]){display:none!important}
--/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
--   takes its surface and its text from the one --bt-user pair: a skin that repaints
--   the host's bubble surface alone would otherwise leave the text unreadable. */
--[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
--[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
--/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
--[class*="_userRow"] [class*="_actions"]{display:none!important}
--[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
--[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
--[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
--[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
--[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
--[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
--[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
--.bt-q-inline{display:flex;margin:4px 0 6px}
--[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
--[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
--.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
--.bt-q-dock{width:100%;display:flex;justify-content:center}
--.bt-q-dock .bt-q{margin:0 auto 8px}
--[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
--[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
--[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
--[class*="_toBottomSlot"]>button:active{scale:.9}
--[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
--[class*="_toBottomSlot"]>button svg{display:none}
--[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
--@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
--[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
--.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
--@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
--.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
--@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
--.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
--.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
--.bt-news-ico svg{width:16px;height:16px}
--.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
--.bt-news-x svg{width:12px;height:12px}
--.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
--@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
--.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
--.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
--.bt-open-new{display:flex;flex-direction:column}
--.bt-open-new .bt-new-sep{margin:18px 0 0}
--.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
--.bt-earlier{display:flex;flex-direction:column;gap:6px}
--.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
--.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
--.bt-urow{display:flex;justify-content:flex-end}
--.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
--.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
--.bt-ububble p{margin:0;line-height:22px}
--.bt-uimages{display:block;font-size:12px;opacity:.7}
--.bt-earlier .bt-event{margin:4px 0}
--.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
--.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
--`;
--function installStyles(text, tag) {
--  const style = document.createElement("style");
--  style.dataset.dshBot = tag;
--  style.textContent = text;
--  document.head.appendChild(style);
--  return style;
++}
 +function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
 +  const roster = useRoster((value) => value);
 +  const data = node.data;
@@ -7449,15 +7242,7 @@ diff --git a/client.js b/client.js
 +  const listed = firstTurns.split(",").map(Number);
 +  const earlier = listed.filter((entry) => entry < turn);
 +  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
- }
--var FRAGMENT_SELECTOR = /\[class\*="(_[\w-]+)"\]/g;
--var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
--function sheetClassNames(sheet) {
--  const names = [];
--  const visit = (rules) => {
--    for (const rule of rules) {
--      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
--      if (rule.cssRules) visit(rule.cssRules);
++}
 +var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
 +function movedOnSince(visit, turns, hiddenTurns) {
 +  if (typeof visit?.entered !== "number") return false;
@@ -7598,7 +7383,7 @@ diff --git a/client.js b/client.js
 +      replies = JSON.parse(contentText(content)).replies ?? [];
 +    } catch {
 +      replies = [];
-     }
++    }
 +  }
 +  if (replies.length === 0) return null;
 +  const room2 = roster.roomsById[sessionId];
@@ -7697,10 +7482,7 @@ diff --git a/client.js b/client.js
 +    seen.add(id);
 +    calls.push(call4);
 +    for (const child of call4.subCalls ?? []) visit(child);
-   };
--  try {
--    visit(sheet.cssRules);
--  } catch {
++  };
 +  visit(root);
 +  return calls;
 +}
@@ -7788,16 +7570,8 @@ diff --git a/client.js b/client.js
 +      return done && !call4.isError ? (0, import_react9.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call4.content), roster, actions, findBot }) : null;
 +    default:
 +      return null;
-   }
--  return names;
- }
--function compileFragmentSelectors(text, names) {
--  const compiled = /* @__PURE__ */ new Map();
--  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
--    if (!compiled.has(fragment)) {
--      const exact = [];
--      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
--      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
++  }
++}
 +function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
 +  const roster = useRoster((value) => value);
 +  const root = node.data.root;
@@ -7821,7 +7595,121 @@ diff --git a/client.js b/client.js
 +  const at = roster?.remoteAwaiting?.[sessionId];
 +  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
 +  return now - at < AWAIT_REPLY_MS;
-+}
+ }
+-@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+-@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+-[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+-[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+-[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+-[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
+-[data-composer-card]>[class*="_row"]{display:contents!important}
+-[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
+-[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
+-[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
+-[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
+-[data-composer-placeholder]{font-size:0!important;line-height:0!important}
+-[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
+-/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
+-[data-composer-card] button[class*="_add"]{display:none!important}
+-.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-plus:active{scale:.9}
+-.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
+-.bt-plus[aria-expanded=true] svg{rotate:45deg}
+-.bt-plus-menu{min-width:180px}
+-[data-composer-card] [class*="_tools"]{gap:0!important}
+-[data-composer-card] [class*="_modes"]:empty{display:none!important}
+-[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
+-[data-composer-card] [class*="_trailing"]{gap:8px}
+-[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
+-[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
+-[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
+-@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
+-[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
+-[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
+-[data-composer-dock]{display:none!important}
+-.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
+-.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
+-@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
+-.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-.bt-voice:hover{opacity:.9}
+-.bt-mic:active,.bt-voice:active{scale:.9}
+-[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
+-body[data-bt-room] .bt-voice{display:none!important}
+-body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+-.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
+-[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+-.bt-q{order:1}
+-div:has(> nav [class*="_marks"]){display:none!important}
+-/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
+-   takes its surface and its text from the one --bt-user pair: a skin that repaints
+-   the host's bubble surface alone would otherwise leave the text unreadable. */
+-[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
+-[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
+-/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
+-[class*="_userRow"] [class*="_actions"]{display:none!important}
+-[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
+-[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
+-[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
+-[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
+-[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
+-[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
+-[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
+-.bt-q-inline{display:flex;margin:4px 0 6px}
+-[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
+-[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
+-.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
+-.bt-q-dock{width:100%;display:flex;justify-content:center}
+-.bt-q-dock .bt-q{margin:0 auto 8px}
+-[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
+-[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
+-[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
+-[class*="_toBottomSlot"]>button:active{scale:.9}
+-[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
+-[class*="_toBottomSlot"]>button svg{display:none}
+-[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
+-@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
+-[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
+-.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
+-@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
+-.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
+-@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
+-.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
+-.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
+-.bt-news-ico svg{width:16px;height:16px}
+-.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+-.bt-news-x svg{width:12px;height:12px}
+-.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
+-@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
+-.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+-.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
+-.bt-open-new{display:flex;flex-direction:column}
+-.bt-open-new .bt-new-sep{margin:18px 0 0}
+-.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
+-.bt-earlier{display:flex;flex-direction:column;gap:6px}
+-.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
+-.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
+-.bt-urow{display:flex;justify-content:flex-end}
+-.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
+-.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
+-.bt-ububble p{margin:0;line-height:22px}
+-.bt-uimages{display:block;font-size:12px;opacity:.7}
+-.bt-earlier .bt-event{margin:4px 0}
+-.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
+-.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
+-`;
+-function installStyles(text, tag) {
+-  const style = document.createElement("style");
+-  style.dataset.dshBot = tag;
+-  style.textContent = text;
+-  document.head.appendChild(style);
+-  return style;
 +
 +// src/client/remote-approval-wait.js
 +var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
@@ -7839,7 +7727,22 @@ diff --git a/client.js b/client.js
 +  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
 +  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
 +  return root.querySelector(RUNNING_HOST);
-+}
+ }
+-var FRAGMENT_SELECTOR = /\[class\*="(_[\w-]+)"\]/g;
+-var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
+-function sheetClassNames(sheet) {
+-  const names = [];
+-  const visit = (rules) => {
+-    for (const rule of rules) {
+-      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
+-      if (rule.cssRules) visit(rule.cssRules);
+-    }
+-  };
+-  try {
+-    visit(sheet.cssRules);
+-  } catch {
+-  }
+-  return names;
 +
 +// src/client/activity-row.js
 +var import_react10 = require("react");
@@ -7851,7 +7754,14 @@ diff --git a/client.js b/client.js
 +  if (minutes < 60) return `${Math.max(1, minutes)}m`;
 +  const hours = Math.floor(minutes / 60);
 +  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
-+}
+ }
+-function compileFragmentSelectors(text, names) {
+-  const compiled = /* @__PURE__ */ new Map();
+-  return text.replace(FRAGMENT_SELECTOR, (whole, fragment) => {
+-    if (!compiled.has(fragment)) {
+-      const exact = [];
+-      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
+-      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
 +var REMOTE_GRACE_MS = 1500;
 +function useAwaitingReply(roster, sessionId) {
 +  const at = roster?.remoteAwaiting?.[sessionId];
@@ -9147,7 +9057,8 @@ diff --git a/client.js b/client.js
 +    card.activity = latestActivity(card, { roster, work, sessions });
 +    card.calls = toolCalls(card, { roster, work });
 +  }
-+  return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
++  const settled = done.sort(newest);
++  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneTotal: settled.length };
 +}
 +var needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length;
 +function startedAtOf(task) {
@@ -9295,9 +9206,7 @@ diff --git a/client.js b/client.js
        return;
      }
 -    pending.answer({ answers: next });
-+    if (custom === "") return;
-+    onAnswer(card, custom);
-   };
+-  };
 -  return (0, import_react4.createElement)(QuestionView, { key: index, question, onAnswer, onDismiss: () => pending.dismiss(), ownAnswer: true, raised: true });
 -}
 -function PendingQuestion({ sessionId, question, actions, inline }) {
@@ -9306,7 +9215,9 @@ diff --git a/client.js b/client.js
 -  const onAnswer = (answer) => {
 -    setAnswered(question.id);
 -    void actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? "" }).catch(() => setAnswered(null));
--  };
++    if (custom === "") return;
++    onAnswer(card, custom);
+   };
 -  const onDismiss = () => {
 -    setAnswered(question.id);
 -    void actions.dismissQuestion(sessionId);
@@ -9742,26 +9653,31 @@ diff --git a/client.js b/client.js
 +        "div",
 +        { className: "bt-mem-body bt-inbox-body" },
 +        (0, import_react13.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
-+        GROUPS.map((group) => (0, import_react13.createElement)(
-+          "section",
-+          { key: group.id, className: "bt-inbox-group", "aria-labelledby": `bt-inbox-${group.id}` },
-+          (0, import_react13.createElement)(
-+            "h3",
-+            { id: `bt-inbox-${group.id}`, className: "bt-inbox-head" },
-+            (0, import_react13.createElement)("span", null, t(group.title)),
-+            groups[group.id].length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-head-count" }, String(groups[group.id].length)) : null
-+          ),
-+          groups[group.id].length === 0 ? (0, import_react13.createElement)("p", { className: "bt-inbox-empty" }, t(group.empty)) : (0, import_react13.createElement)("div", { className: "bt-inbox-list" }, groups[group.id].map((card) => (0, import_react13.createElement)(InboxCard, {
-+            key: card.id,
-+            card,
-+            roster,
-+            now,
-+            busy: busy === card.id,
-+            error: errors[card.id],
-+            onAnswer: answer,
-+            onOpen: open
-+          })))
-+        ))
++        GROUPS.map((group) => {
++          const rows = groups[group.id];
++          const hidden = group.id === "done" ? Math.max(0, (model.doneTotal ?? rows.length) - rows.length) : 0;
++          return (0, import_react13.createElement)(
++            "section",
++            { key: group.id, className: "bt-inbox-group", "aria-labelledby": `bt-inbox-${group.id}` },
++            (0, import_react13.createElement)(
++              "h3",
++              { id: `bt-inbox-${group.id}`, className: "bt-inbox-head" },
++              (0, import_react13.createElement)("span", null, t(group.title)),
++              rows.length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-head-count" }, String(rows.length)) : null
++            ),
++            rows.length === 0 ? (0, import_react13.createElement)("p", { className: "bt-inbox-empty" }, t(group.empty)) : (0, import_react13.createElement)("div", { className: "bt-inbox-list" }, rows.map((card) => (0, import_react13.createElement)(InboxCard, {
++              key: card.id,
++              card,
++              roster,
++              now,
++              busy: busy === card.id,
++              error: errors[card.id],
++              onAnswer: answer,
++              onOpen: open
++            }))),
++            hidden > 0 ? (0, import_react13.createElement)("div", { key: "more", className: "bt-inbox-more" }, t("{count} more not shown", { count: hidden })) : null
++          );
++        })
 +      )
      )
    );
@@ -9793,6 +9709,7 @@ diff --git a/client.js b/client.js
 +.bt-inbox-head{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
 +.bt-inbox-head-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 +.bt-inbox-empty{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
++.bt-inbox-more{margin:0;font-size:12.5px;line-height:18px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 +.bt-inbox-list{display:flex;flex-direction:column;gap:6px}
 +.bt-inbox-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 +.bt-inbox-card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--bt-accent) 35%,transparent)}

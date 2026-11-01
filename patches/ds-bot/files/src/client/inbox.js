@@ -355,7 +355,10 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, workflows 
     card.activity = latestActivity(card, { roster, work, sessions })
     card.calls = toolCalls(card, { roster, work })
   }
-  return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) }
+  // #2042: Done is capped, and the cap used to be silent — the group counted the rows it drew,
+  // so 25 finished tasks read as 20. The sorted list keeps the count it had before the cut.
+  const settled = done.sort(newest)
+  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneTotal: settled.length }
 }
 
 // The row's badge: how many cards need me. The Done list needs no Session list for this.
@@ -648,15 +651,22 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close inbox'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h('div', { className: 'bt-mem-body bt-inbox-body' },
         h('div', { className: 'bt-inbox-feedback', role: 'status', 'aria-live': 'polite' }, feedback),
-        GROUPS.map(group => h('section', { key: group.id, className: 'bt-inbox-group', 'aria-labelledby': `bt-inbox-${group.id}` },
-          h('h3', { id: `bt-inbox-${group.id}`, className: 'bt-inbox-head' },
-            h('span', null, t(group.title)),
-            groups[group.id].length > 0 ? h('span', { className: 'bt-inbox-head-count' }, String(groups[group.id].length)) : null),
-          groups[group.id].length === 0
-            ? h('p', { className: 'bt-inbox-empty' }, t(group.empty))
-            : h('div', { className: 'bt-inbox-list' }, groups[group.id].map(card => h(InboxCard, {
-                key: card.id, card, roster, now, busy: busy === card.id, error: errors[card.id], onAnswer: answer, onOpen: open,
-              }))))))))
+        GROUPS.map(group => {
+          const rows = groups[group.id]
+          // #2042: Done draws DONE_MAX rows at most. When the model had more, one line under the
+          // rows says how many it left out, in the words the project board's capped list uses (#2021).
+          const hidden = group.id === 'done' ? Math.max(0, (model.doneTotal ?? rows.length) - rows.length) : 0
+          return h('section', { key: group.id, className: 'bt-inbox-group', 'aria-labelledby': `bt-inbox-${group.id}` },
+            h('h3', { id: `bt-inbox-${group.id}`, className: 'bt-inbox-head' },
+              h('span', null, t(group.title)),
+              rows.length > 0 ? h('span', { className: 'bt-inbox-head-count' }, String(rows.length)) : null),
+            rows.length === 0
+              ? h('p', { className: 'bt-inbox-empty' }, t(group.empty))
+              : h('div', { className: 'bt-inbox-list' }, rows.map(card => h(InboxCard, {
+                  key: card.id, card, roster, now, busy: busy === card.id, error: errors[card.id], onAnswer: answer, onOpen: open,
+                }))),
+            hidden > 0 ? h('div', { key: 'more', className: 'bt-inbox-more' }, t('{count} more not shown', { count: hidden })) : null)
+        }))))
 }
 
 export const INBOX_CSS = `
@@ -674,6 +684,7 @@ export const INBOX_CSS = `
 .bt-inbox-head{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
 .bt-inbox-head-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-empty{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+.bt-inbox-more{margin:0;font-size:12.5px;line-height:18px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-list{display:flex;flex-direction:column;gap:6px}
 .bt-inbox-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-inbox-card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--bt-accent) 35%,transparent)}
