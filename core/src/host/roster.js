@@ -408,6 +408,10 @@ export function install(rt) {
     const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
 
     const changes = []
+    // What the room itself says about this patch. A seat change already writes its own joined/left line,
+    // and a working folder is not something the others need a line about, so only the room's own settings
+    // are collected here: one patch draws at most one event.
+    const settings = []
     const names = ids => ids.map(member => rt.botOf(member)?.name).filter(Boolean).join(', ')
     const added = members.filter(member => !room.members.includes(member))
     const removed = room.members.filter(member => !members.includes(member))
@@ -424,21 +428,30 @@ export function install(rt) {
       }
       room.members = members
     }
-    if (admin !== (room.admin ?? null)) changes.push(admin ? `made ${rt.botOf(admin).name} the admin` : 'removed the admin')
+    if (admin !== (room.admin ?? null)) {
+      changes.push(admin ? `made ${rt.botOf(admin).name} the admin` : 'removed the admin')
+      // A seat change that empties the admin says "removed the admin" in `changes` alone: the room's line
+      // about it would repeat the joined/left line the seat change already writes.
+      if (patch.admin !== undefined) settings.push(admin ? `made ${rt.botOf(admin)?.name ?? 'someone'} the admin` : 'removed the admin')
+    }
     room.admin = admin
     if (taskLead !== (room.taskLead ?? null)) {
       if (taskLead) room.taskLead = taskLead
       else delete room.taskLead
-      changes.push(taskLead ? `made ${rt.botOf(taskLead).name} the task lead` : 'the admin leads the board again')
+      const lead = taskLead ? rt.botOf(taskLead).name : ''
+      changes.push(taskLead ? `made ${lead} the task lead` : 'the admin leads the board again')
+      if (patch.taskLead !== undefined) settings.push(taskLead ? `made ${lead} the task lead` : 'let the admin lead the board again')
     }
     if (patch.mode !== undefined && patch.mode !== room.mode) {
       room.mode = patch.mode
       changes.push(patch.mode === 'admin' ? 'plain messages now go to the admin first' : 'every member now replies in turn')
+      settings.push(patch.mode === 'admin' ? 'switched plain messages to the admin first' : 'switched the room to every member replying in turn')
     }
     const noticeChanged = notice !== undefined && notice !== (room.notice ?? '')
     if (noticeChanged) {
       room.notice = notice
       changes.push(notice ? 'updated the notice' : 'cleared the notice')
+      settings.push(notice ? 'updated the group notice' : 'cleared the notice')
     }
     // Members' group conversations move on to the folder at their next turn there.
     if (moving && workDir !== room.workDir) {
@@ -465,6 +478,9 @@ export function install(rt) {
     const nameChanged = room.name !== before
     if (nameChanged) {
       changes.push(`renamed it "${room.name}"`)
+      // An unnamed room's title follows its members; that move is not a rename someone asked for, so only
+      // an explicit name in the patch draws a line.
+      if (patch.name !== undefined) settings.push(`renamed the room to “${room.name}”`)
       await retitleRoom(room)
     }
     await rt.save()
@@ -473,7 +489,22 @@ export function install(rt) {
     // (#1949), so a rename is not waiting on the next line and a save that changes both sends one envelope,
     // not two. Sent after the save, like the join at creation; a save that changes neither sends nothing.
     if (nameChanged || noticeChanged) void rt.notifyRoomShare?.(room, { op: 'join' })
+    // The same settings change is a line in the room itself: the envelope above tells the guests, this
+    // tells everyone already holding the room that something moved. It is the quiet room sender, not a
+    // Bot, so it draws as an event and opens no turn.
+    if (settings.length > 0) showSettings(room, settings, actor, actorId)
     return { room, changes }
+  }
+
+  function showSettings(room, settings, actor, actorId) {
+    const who = actor?.displayName ?? rt.botOf(actorId)?.name ?? 'Someone'
+    const said = settings.length === 1 ? settings[0] : `${settings.slice(0, -1).join(', ')} and ${settings.at(-1)}`
+    try {
+      void Promise.resolve(rt.postToRoom?.(room, { id: 'face-notice', name: who }, `${who} ${said}`, { quiet: true, notice: true }))
+        .catch(error => rt.warn('ds-bot: the settings line for %s was not shown: %s', room.name, error))
+    } catch (error) {
+      rt.warn('ds-bot: the settings line for %s was not shown: %s', room.name, error)
+    }
   }
 
   async function deleteRoom(id) {
