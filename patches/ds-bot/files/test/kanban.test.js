@@ -311,3 +311,64 @@ test('#1252: a Bot board asks the host for that Bot\'s archive, not the whole sc
   const done = boardColumns(boardTasksFor([], [otherBotCard].filter(task => task.ownerBotId === 'a'))).done
   assert.equal(done.length, 1, 'the Bot\'s own finished card fills the Done column')
 })
+
+// #2045: the Done column is one archive page (`ARCHIVE_SHOWN` cards), and the page is a cut, not a
+// count. The heading prints `tasks.length`, so a Bot with 45 finished tasks reads `Done · 20`, and
+// the rail adds the page to the active list, so it reads `20/22`. Neither number is what the owner
+// has; when the page is full the board must not pretend it is the total. It may still say how much
+// it drew — `20 newest` — and that there are more where those came from — `20+ done`. A page that
+// is not full is the whole history, so those two numbers stay exactly as they are today.
+const settledTasks = (count, extra = {}) => Array.from({ length: count }, (_, index) => task(`task-done-${index}`, 'accepted', {
+  title: `Finished ${index}`, progress: 100, createdAt: index, updatedAt: 100 + index, ...extra,
+}))
+const boardWith = (scope, own, archive) => {
+  states.length = 0
+  states.push(scope, null, '', '', own, [], archive)
+  const view = expand(KanbanDialog({ roster, actions: { closeBoard: () => {}, boardClose: () => {} } }))
+  const column = name => byClass(view, 'bt-board-column').find(node => node.props['data-column'] === name)
+  const railMeta = id => {
+    const row = all(view).find(node => node.props?.['data-id'] === id)
+    const meta = byClass(row, 'bt-board-rail-meta')[0]
+    return meta ? textOf(meta) : ''
+  }
+  return { view, column, railMeta }
+}
+
+test('#2045: a full archive page says how many rows were drawn and that there are more, on a Bot board and a group board', () => {
+  const active = [
+    task('task-open-1', 'open', { title: 'Still to do', ownerBotId: 's' }),
+    task('task-work-1', 'working', { title: 'Being done', ownerBotId: 's' }),
+  ]
+  const botBoard = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(45))
+  const done = botBoard.column('done')
+  assert.equal(byClass(done, 'bt-board-card').length, ARCHIVE_SHOWN, 'the column still draws one archive page')
+  assert.equal(textOf(done).includes('20 newest'), true, 'the heading says these are the newest twenty, not the total')
+  // The other two columns are the active list, not a page, so their counts stay plain numbers.
+  assert.equal(textOf(botBoard.column('not-started')).includes('newest'), false, 'the open column keeps a plain count')
+  assert.equal(textOf(botBoard.column('in-progress')).includes('newest'), false, 'the working column keeps a plain count')
+  assert.equal(botBoard.railMeta('s'), '20+ done', 'the rail says at least twenty are done, and stops claiming a total')
+
+  // The group board reads the same archive page and must say the same thing.
+  const groupBoard = boardWith({ kind: 'group', roomId: 'war' }, [], settledTasks(45, { ownerBotId: 'a' }))
+  const groupDone = groupBoard.column('done')
+  assert.equal(byClass(groupDone, 'bt-board-card').length, ARCHIVE_SHOWN)
+  assert.equal(textOf(groupDone).includes('20 newest'), true, 'a full group page is marked the same way')
+})
+
+test('#2045: a page that is not full still reads as the whole history, unchanged', () => {
+  const active = [
+    task('task-open-1', 'open', { title: 'Still to do', ownerBotId: 's' }),
+    task('task-work-1', 'working', { title: 'Being done', ownerBotId: 's' }),
+  ]
+  const short = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(3))
+  assert.equal(byClass(short.column('done'), 'bt-board-card').length, 3)
+  assert.equal(textOf(short.column('done')).includes('newest'), false, 'three rows are three rows, with no hedge')
+  assert.equal(short.railMeta('s'), '3/5', 'the rail keeps {done}/{total} when nothing was cut')
+
+  // Exactly one page full is the boundary: the board cannot know whether a 21st card exists, so the
+  // full-page wording has to start at the page size itself, never a row later.
+  const exact = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(ARCHIVE_SHOWN))
+  assert.equal(exact.railMeta('s'), '20+ done', 'a page at the limit is treated as cut')
+  const under = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(ARCHIVE_SHOWN - 1))
+  assert.equal(under.railMeta('s'), '19/21', 'one row under the limit is the whole history')
+})
