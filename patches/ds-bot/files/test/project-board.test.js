@@ -1644,3 +1644,32 @@ test('#2053: the same two records answer word for word in either key order', asy
   assert.deepEqual(noFirst, archFirst, 'the stored order of the two records changes no answer')
   rmSync(base, { recursive: true, force: true })
 })
+
+// #2055: the board reads the decisions folder through the same listing and the same file read, so
+// a `decisions` that is a symlink is no decisions at all: no row, no hash, the empty reason the
+// board already gives a folder without one, and a decided meeting keeps its cards with no path.
+test('#2055: the board reads a linked decisions folder as no decisions', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-board-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-outside-decisions-'))
+  writeFileSync(join(outside, 'outside.md'), '# Outside\n')
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-linkdecisions-'))
+  mkdirSync(join(dir, '.git'))
+  symlinkSync(outside, join(dir, 'decisions'))
+  const team = recordSeed()
+  team.projects['project-p1'].workDir = dir
+  const { rt, call, stop } = await start(home, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    assert.equal(board.decisions.dir, dir, 'the folder the board read is still named')
+    assert.deepEqual(board.decisions.files, [], 'a linked folder contributes no row')
+    assert.match(board.decisions.reason, /no decision file in .*decisions/, 'the empty state is the one a folder without decisions gives')
+    assert.equal(JSON.stringify(board).includes('outside.md'), false, 'the outside name and hash never reach the board')
+    assert.deepEqual(board.meetings.decided.map(meeting => [meeting.id, meeting.path]), [['meeting-decided', '']], 'a decided meeting stays decided, with no path it cannot read')
+    const served = value(await call('project-board', { id: 'project-p1' }))
+    assert.deepEqual(served.decisions.files, [], 'the endpoint the page uses answers the same')
+  } finally {
+    await stop()
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
