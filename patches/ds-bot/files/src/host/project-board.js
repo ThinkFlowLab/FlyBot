@@ -286,13 +286,23 @@ export function install(rt) {
     // #2041: a name that came from a meeting keeps that meeting's own cards, because opening the
     // file is checked against the same rule the board paints those cards with.
     const cardsOf = new Map()
+    const named = new Map()
     for (const meeting of Object.values(rt.state?.meetings ?? {})) {
       if (meeting === null || typeof meeting !== 'object' || meeting.status !== 'decided') continue
       if (!inProject(meeting, project)) continue
       const archivedDir = text(meeting.decisionDir)
       if (archivedDir !== '' && !folders.includes(archivedDir)) folders.push(archivedDir)
       const archived = await archivedOf(meeting)
-      if (archived === undefined) continue
+      if (archived === undefined) {
+        // A record written before the archive slice names no folder: its file is one of the rows of
+        // the Project's own listing, and the meeting still names the cards it decided. Kept aside
+        // until that listing is deduped, so only a name this read really listed carries the cards.
+        const path = text(meeting.decisionFile)
+        if (isDecisionPath(path) && !named.has(path)) {
+          named.set(path, Array.isArray(meeting.taskIds) ? meeting.taskIds.map(id => text(id)).filter(id => id !== '') : [])
+        }
+        continue
+      }
       found.push(archived)
       if (!cardsOf.has(archived.path)) {
         cardsOf.set(archived.path, Array.isArray(meeting.taskIds) ? meeting.taskIds.map(id => text(id)).filter(id => id !== '') : [])
@@ -307,6 +317,13 @@ export function install(rt) {
         return true
       })
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    // A record that saved no folder keeps the cards it decided, on the row this read listed for it
+    // and only that row: a name the folder did not list stays a ghost and opens nothing. A record
+    // that saved a folder wins over one that saved none for the same name, and an empty list still
+    // answers through the role list in `decisionVisible`.
+    for (const [path, ids] of named) {
+      if (!cardsOf.has(path) && deduped.some(file => file.path === path)) cardsOf.set(path, ids)
+    }
     // #2021: a `decisions/YYYY-MM-DD-….md` name sorts oldest first, so the cut has to take the tail.
     // Taking the head kept the 200 oldest files and dropped the ones just written — the wrong end of
     // the list. The order on screen stays ascending; only which rows survive at the cap changes.

@@ -1370,3 +1370,179 @@ test('#2041: revoking a card closes the name a board read already cached', async
     rmSync(base, { recursive: true, force: true })
   }
 })
+
+
+// A decided meeting written before the archive slice saved no folder, so its file is a row of the
+// Project's own listing rather than one a meeting recorded. It still names the cards it decided,
+// and the name has to keep them: with no card the role list answers, and a member who sees none of
+// those cards reads the text. The two shapes must read the same, name by name.
+const decisionFolder = (prefix) => {
+  const base = mkdtempSync(join(tmpdir(), prefix))
+  const dir = join(base, 'project')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  mkdirSync(join(dir, 'decisions'))
+  return { base, dir }
+}
+
+// The owner the Project names is not a member record here, so a Bot's owner is card-affine and
+// carries no Project role: the card door and the role list cannot be mistaken for each other.
+const legacyFolderSeed = (dir, meetings) => {
+  const team = crossSeed()
+  team.projects['project-p1'].ownerUserIds = ['owner-9']
+  team.projects['project-p1'].ownerUserId = 'owner-9'
+  team.projects['project-p1'].workDir = dir
+  team.projects['project-p1'].roles = { maintainers: [], members: ['owner-3'] }
+  team.members['owner-3'] = { id: 'owner-3', createdAt: 4, designatedChiefId: null }
+  team.meetings = meetings
+  return team
+}
+
+const legacyMeeting = (id, overrides = {}) => ({
+  id, status: 'decided', question: 'What shipped?', owner: 'Chief', project: 'project-p1',
+  decisionDir: '', decisionFile: `decisions/2026-10-29-${id}.md`, taskIds: ['task-group'],
+  createdAt: 1, updatedAt: 2, decidedAt: 3, ...overrides,
+})
+
+const signIn = (rt) => {
+  const members = { 'tok-1': 'owner-1', 'tok-2': 'owner-2', 'tok-3': 'owner-3' }
+  rt.authenticate = async token => (members[token] ? { memberId: members[token] } : null)
+  rt.state.authSessions = Object.fromEntries(Object.keys(members)
+    .map((token, at) => [`s-${at + 1}`, { memberId: members[token], tokenHash: token }]))
+}
+
+const refused = (answer) => {
+  assert.equal(answer.ok, true, JSON.stringify(answer))
+  assert.equal(answer.value.ok, false, 'a caller who sees none of the cards reads no text')
+  assert.equal('text' in answer.value, false)
+}
+
+test('#2052: a record that saved no folder keeps the cards it decided, like one that saved a folder', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-record-')
+  writeFileSync(join(dir, 'decisions', '2026-10-29-nofolder.md'), '# decided with no folder\n')
+  writeFileSync(join(dir, 'decisions', '2026-10-29-folder.md'), '# decided with a folder\n')
+  const team = legacyFolderSeed(dir, {
+    'm-nofolder': legacyMeeting('nofolder'),
+    'm-folder': legacyMeeting('folder', { decisionDir: dir }),
+  })
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    signIn(rt)
+    const board = await callAs('project-board', { id: 'project-p1' }, 'tok-3')
+    assert.equal(board.ok, true, JSON.stringify(board))
+    assert.deepEqual(board.value.tasks ?? [], [], 'the member sees none of the cards this Project decides on')
+    for (const name of ['2026-10-29-nofolder.md', '2026-10-29-folder.md']) {
+      const path = `decisions/${name}`
+      assert.equal(board.value.decisions.files.some(file => file.path === path), true, `${path} is listed`)
+      const member = await callAs('project-decision', { id: 'project-p1', path }, 'tok-3')
+      refused(member)
+      assert.equal(member.value.reason, `not listed: ${path} is not in this board's decision list`)
+    }
+    // Card-affine and holding no Project role: the room's own admin reads both through the card door.
+    const noFolder = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-10-29-nofolder.md' }, 'tok-1')
+    assert.equal(noFolder.value.ok, true, JSON.stringify(noFolder))
+    assert.equal(noFolder.value.text, '# decided with no folder\n')
+    const folder = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-10-29-folder.md' }, 'tok-1')
+    assert.equal(folder.value.ok, true, JSON.stringify(folder))
+    assert.equal(folder.value.text, '# decided with a folder\n')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2052: a record that decided no card still answers through the role list', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-nocard-')
+  writeFileSync(join(dir, 'decisions', '2026-10-29-nocard.md'), '# a record with no card\n')
+  const team = legacyFolderSeed(dir, { 'm-nocard': legacyMeeting('nocard', { taskIds: [] }) })
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    signIn(rt)
+    await callAs('project-board', { id: 'project-p1' }, 'tok-3')
+    const member = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-10-29-nocard.md' }, 'tok-3')
+    assert.equal(member.value.ok, true, JSON.stringify(member))
+    assert.equal(member.value.text, '# a record with no card\n', 'a name no card binds follows the role list')
+    // The same name is still a name, not a list: a caller outside both doors reads nothing.
+    await callAs('project-board', { id: 'project-p1' }, 'tok-2')
+    const outsider = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-10-29-nocard.md' }, 'tok-2')
+    refused(outsider)
+    assert.equal(outsider.value.reason, "not listed: decisions/2026-10-29-nocard.md is not in this board's decision list")
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2052: a record naming a file the folder did not list opens nothing', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-ghost-')
+  const team = legacyFolderSeed(dir, { 'm-ghost': legacyMeeting('ghost') })
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    signIn(rt)
+    await callAs('project-board', { id: 'project-p1' }, 'tok-1')
+    for (const token of ['tok-1', 'tok-3']) {
+      const answer = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-10-29-ghost.md' }, token)
+      refused(answer)
+      assert.equal(answer.value.reason, "not listed: decisions/2026-10-29-ghost.md is not in this board's decision list",
+        'a name the listing never had stays a ghost')
+    }
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2052: a record of one Project puts no cards on another Project name', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-cross-')
+  writeFileSync(join(dir, 'decisions', '2026-11-01-shared.md'), '# read through the other Project\n')
+  const team = legacyFolderSeed(dir, { 'm-shared': legacyMeeting('shared', { decisionFile: 'decisions/2026-11-01-shared.md' }) })
+  // The second Project lists the same relative name in the same folder and has a role for owner-1.
+  team.projects['project-p2'].ownerUserId = 'owner-9'
+  team.projects['project-p2'].workDir = dir
+  team.projects['project-p2'].roles = { maintainers: [], members: ['owner-1'] }
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    signIn(rt)
+    // The first Project's record binds its own card to its own read: its member still reads nothing.
+    await callAs('project-board', { id: 'project-p1' }, 'tok-3')
+    const mine = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-01-shared.md' }, 'tok-3')
+    refused(mine)
+    // The second Project has no record for the name: its role list decides, and owner-1 reaches it.
+    await callAs('project-board', { id: 'project-p2' }, 'tok-1')
+    const theirs = await callAs('project-decision', { id: 'project-p2', path: 'decisions/2026-11-01-shared.md' }, 'tok-1')
+    assert.equal(theirs.value.ok, true, JSON.stringify(theirs))
+    assert.equal(theirs.value.text, '# read through the other Project\n', 'a record of one Project gates only its own names')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('#2052: two records naming one file keep the cards the first one decided', async () => {
+  const { base, dir } = decisionFolder('ds-bot-decisions-twice-')
+  const archive = join(base, 'archive')
+  mkdirSync(join(archive, 'decisions'), { recursive: true })
+  writeFileSync(join(archive, 'decisions', '2026-11-02-twice.md'), '# the first record decided it\n')
+  const team = legacyFolderSeed(dir, {
+    'm-first': legacyMeeting('first', { decisionDir: archive, decisionFile: 'decisions/2026-11-02-twice.md' }),
+    'm-second': legacyMeeting('second', { decisionDir: archive, decisionFile: 'decisions/2026-11-02-twice.md', taskIds: [] }),
+  })
+  const { rt, callAs, stop } = await start(undefined, team)
+  try {
+    signIn(rt)
+    for (const round of ['first read', 'second read']) {
+      const board = await callAs('project-board', { id: 'project-p1' }, 'tok-3')
+      assert.equal(board.value.decisions.files.some(file => file.path === 'decisions/2026-11-02-twice.md'), true,
+        `${round}: one row per name`)
+      const member = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-02-twice.md' }, 'tok-3')
+      refused(member)
+      assert.equal(member.value.reason, "not listed: decisions/2026-11-02-twice.md is not in this board's decision list",
+        `${round}: the first record supplies the cards`)
+    }
+    const own = await callAs('project-decision', { id: 'project-p1', path: 'decisions/2026-11-02-twice.md' }, 'tok-1')
+    assert.equal(own.value.ok, true, JSON.stringify(own))
+    assert.equal(own.value.text, '# the first record decided it\n')
+  } finally {
+    await stop()
+    rmSync(base, { recursive: true, force: true })
+  }
+})
