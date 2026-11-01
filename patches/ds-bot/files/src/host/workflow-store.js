@@ -20,6 +20,7 @@ import { copyOfPreset, isPresetId, isWorkflowId, workflowBytes, WORKFLOW_DIR } f
 import { previewNode } from '../shared/workflow-preview.js'
 import { repoDevWorkflow } from '../shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../shared/workflow-blank.js'
+import { dirKindSync } from './real-dir.js'
 
 // The shipped presets, as definitions. `PRESET_IDS` in `workflow-doc.js` names the same two; a test
 // asserts they cannot drift apart.
@@ -36,21 +37,32 @@ const summary = (definition, source) => ({
   columns: normaliseWorkflow(definition).nodes.filter((node) => node.column !== false).length,
 })
 
-// A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
-// may be someone's hand-edit that does not parse: one broken file must not take the list down.
-const ownFiles = (dir) => {
-  try {
-    return readdirSync(dir).filter((name) => name.endsWith('.json') && name !== PROJECT_FILE).sort()
-  } catch {
-    return []
-  }
-}
-
-export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warn = () => {} } = {}) {
+export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warn = () => {}, warnFolder = () => {} } = {}) {
   if (typeof dir !== 'string' || dir === '') throw new Error('a workflow store needs a directory')
   const fileFor = (id) => join(dir, `${id}.json`)
 
+  // `readdir` and `readFile` follow a directory link (#2057), so a `workflows` that is a link would
+  // list and read another folder's definitions as this workspace's own. Only a real folder is read;
+  // a missing or linked one answers what a missing folder answers today. The warning is what tells
+  // the two apart in the page, and the caller says it once per folder rather than once per read.
+  const folderReal = () => {
+    const kind = dirKindSync(dir)
+    if (kind !== 'real') warnFolder(dir, kind)
+    return kind === 'real'
+  }
+  // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
+  // may be someone's hand-edit that does not parse: one broken file must not take the list down.
+  const ownFiles = () => {
+    if (!folderReal()) return []
+    try {
+      return readdirSync(dir).filter((name) => name.endsWith('.json') && name !== PROJECT_FILE).sort()
+    } catch {
+      return []
+    }
+  }
+
   const readOwn = (id) => {
+    if (!folderReal()) return null
     try {
       return normaliseWorkflow(JSON.parse(readFileSync(fileFor(id), 'utf8')))
     } catch {
@@ -66,6 +78,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   }
 
   const projectDefault = () => {
+    if (!folderReal()) return null
     try {
       const value = JSON.parse(readFileSync(join(dir, PROJECT_FILE), 'utf8'))
       return typeof value?.default === 'string' && value.default !== '' ? value.default : null
@@ -75,7 +88,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   }
 
   const list = () => {
-    const own = ownFiles(dir).flatMap((name) => {
+    const own = ownFiles().flatMap((name) => {
       const definition = readOwn(name.slice(0, -'.json'.length))
       if (definition === null || definition.id === '') {
         warn('ds-bot: workflow store: %s in %s does not parse as a definition; skipped', name, dir)
@@ -175,7 +188,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     // The definitions in play, for the board's columns. Presets always; a workspace file is read on
     // every call so a save is visible to the next board read without a restart.
     definitions: () => {
-      const own = ownFiles(dir).map((name) => readOwn(name.slice(0, -'.json'.length))).filter((definition) => definition !== null && definition.id !== '')
+      const own = ownFiles().map((name) => readOwn(name.slice(0, -'.json'.length))).filter((definition) => definition !== null && definition.id !== '')
       return [...presets.map(normaliseWorkflow), ...own]
     },
     bytesOf: (id) => {
@@ -206,10 +219,16 @@ export function install(rt) {
       return null
     }
   }
+  const warnedFolders = new Set()
+  const warnFolder = (dir, kind) => {
+    if (kind !== 'other' || warnedFolders.has(dir)) return
+    warnedFolders.add(dir)
+    rt.warn?.('ds-bot: workflow folder is not a plain directory %s; keeping it empty', dir)
+  }
   const store = () => {
     const dir = dirFor()
     if (dir === null) return null
-    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
+    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, warn: rt.warn, warnFolder, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
     return rt.workflowStore
   }
   rt.workflowEndpoint = async (endpoint, body = {}) => {

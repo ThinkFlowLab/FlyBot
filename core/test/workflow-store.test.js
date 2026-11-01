@@ -3,7 +3,7 @@
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -150,4 +150,87 @@ test('a workspace file that does not parse is skipped instead of breaking the li
     const listed = store.list()
     assert.deepEqual(listed.own.map((entry) => entry.id), ['blank-mine'])
   })
+})
+
+// ---------------------------------------------------------------------------
+// #2057: a linked folder is not this workspace's workflows.
+
+const elsewhere = (t, files) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-outside-'))
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(root, name), text)
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  return root
+}
+
+test('#2057: a workflow folder that is a symlink lists nothing and never reads the outside file', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  const outside = elsewhere(t, { 'other.json': JSON.stringify({ ...blankWorkflow, id: 'other', name: 'Other' }) })
+  symlinkSync(outside, dir, 'dir')
+  const store = createWorkflowStore({ dir })
+  const listed = store.list()
+  assert.deepEqual(listed.own, [])
+  assert.equal(listed.default, null)
+  const opened = store.open('other')
+  assert.equal(opened.ok, false)
+  assert.equal(opened.code, 'workflow/not-found')
+  assert.equal(JSON.stringify(opened).includes('Other'), false, 'the outside definition never comes back')
+  assert.deepEqual(store.definitions().map((definition) => definition.id).sort(), PRESETS.map((preset) => preset.id).sort())
+})
+
+test('#2057: a workflow folder that is a plain file lists nothing and does not throw', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  writeFileSync(dir, 'not a folder')
+  const store = createWorkflowStore({ dir })
+  assert.deepEqual(store.list().own, [])
+  assert.deepEqual(store.definitions().map((definition) => definition.id).sort(), PRESETS.map((preset) => preset.id).sort())
+})
+
+test('#2057: a linked workflow folder warns once, a missing or real one never warns', async (t) => {
+  const warned = []
+  const host = (root) => {
+    const rt = {
+      state: { bots: {} },
+      ctx: { workspaceRegistry: { get: () => ({ path: root }) } },
+      warn: (template, ...args) => warned.push(String(template).replace(/%s/g, () => String(args.shift() ?? ''))),
+    }
+    install(rt)
+    return rt
+  }
+  const folderWarnings = () => warned.filter((line) => line.includes('workflow folder is not a plain directory'))
+
+  // A link to a folder outside the workspace: every read says "nothing", and the folder is named once.
+  const linkedRoot = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(linkedRoot, { recursive: true, force: true }))
+  const outside = elsewhere(t, { 'other.json': JSON.stringify({ ...blankWorkflow, id: 'other', name: 'Other' }) })
+  symlinkSync(outside, join(linkedRoot, 'workflows'), 'dir')
+  const linked = host(linkedRoot)
+  for (let round = 0; round < 3; round++) {
+    const listed = await linked.workflowEndpoint('workflows', { op: 'list' })
+    assert.deepEqual(listed.own, [])
+    linked.workflowDefinitions()
+  }
+  const said = folderWarnings()
+  assert.equal(said.length, 1, 'one warning per folder per process, not one per read')
+  assert.ok(said[0].includes(join(linkedRoot, 'workflows')), `the warning names the folder: ${said[0]}`)
+  assert.match(said[0], /keeping it empty$/)
+
+  // A workspace nobody has saved a workflow in: empty, silent.
+  const freshRoot = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(freshRoot, { recursive: true, force: true }))
+  const fresh = host(freshRoot)
+  assert.deepEqual((await fresh.workflowEndpoint('workflows', { op: 'list' })).own, [])
+  assert.deepEqual(folderWarnings(), said)
+
+  // A real folder: listed, silent.
+  const realRoot = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(realRoot, { recursive: true, force: true }))
+  mkdirSync(join(realRoot, 'workflows'), { recursive: true })
+  writeFileSync(join(realRoot, 'workflows', 'mine.json'), JSON.stringify({ ...blankWorkflow, id: 'mine', name: 'Mine' }))
+  const real = host(realRoot)
+  assert.deepEqual((await real.workflowEndpoint('workflows', { op: 'list' })).own.map((entry) => entry.id), ['mine'])
+  assert.deepEqual(folderWarnings(), said)
 })

@@ -32,6 +32,7 @@ import { codePointStart, cut } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
+import { dirKindSync } from './real-dir.js'
 
 // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
 // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
@@ -430,6 +431,31 @@ export function install(rt) {
   const dirOf = scope => (scope.kind === 'team' ? join(root, 'team') : join(root, 'bots', safeId(scope.botId)))
   const scopeKey = scope => (scope.kind === 'team' ? 'team' : `bot:${scope.botId}`)
 
+  // The memory folders are the home's own bookkeeping (#2057): `readdir` and `readFile` follow a
+  // directory link, so a linked folder would read another folder's files as this team's own. A
+  // reader answers exactly what it answers for a missing folder; a link is what differs, and it is
+  // said once per folder and process, because "nothing saved" and "nothing readable" look alike.
+  const warnedFolders = new Set()
+  const warnFolder = (kind, dir) => {
+    if (kind !== 'other' || warnedFolders.has(dir)) return
+    warnedFolders.add(dir)
+    rt.warn('ds-bot: memory folder is not a plain directory %s; keeping it empty', dir)
+  }
+  const scopeDir = (scope) => {
+    const base = dirKindSync(root)
+    if (base !== 'real') {
+      warnFolder(base, root)
+      return undefined
+    }
+    const dir = dirOf(scope)
+    const kind = dirKindSync(dir)
+    if (kind !== 'real') {
+      warnFolder(kind, dir)
+      return undefined
+    }
+    return dir
+  }
+
   const readText = (path) => {
     try {
       return readFileSync(path, 'utf8')
@@ -438,21 +464,31 @@ export function install(rt) {
       return ''
     }
   }
-  const topicNames = (scope) => {
+  const topicNamesIn = (dir) => {
     try {
-      return readdirSync(dirOf(scope)).filter(name => name.endsWith('.md') && name !== MAIN).map(name => name.slice(0, -3)).sort()
+      return readdirSync(dir).filter(name => name.endsWith('.md') && name !== MAIN).map(name => name.slice(0, -3)).sort()
     } catch {
       return []
     }
   }
+  const topicNames = (scope) => {
+    const dir = scopeDir(scope)
+    return dir === undefined ? [] : topicNamesIn(dir)
+  }
   // MEMORY.md first, then the topics by name.
   const loadScope = (scope) => {
     const dir = dirOf(scope)
-    return [undefined, ...topicNames(scope)].map((topic) => {
+    const open = scopeDir(scope) !== undefined
+    return [undefined, ...(open ? topicNamesIn(dir) : [])].map((topic) => {
       const file = topic === undefined ? MAIN : `${topic}.md`
-      const content = readText(join(dir, file))
+      const content = open ? readText(join(dir, file)) : ''
       return { topic, file, path: join(dir, file), content, ...parseMemory(content) }
     })
+  }
+  // One scope's MEMORY.md, empty when its folder is not read.
+  const readMainOf = (scope) => {
+    const dir = scopeDir(scope)
+    return dir === undefined ? '' : readText(join(dir, MAIN))
   }
   const limitOf = file => (file.topic === undefined ? MEMORY_LIMITS.main : MEMORY_LIMITS.topic)
   const fileName = file => (file.topic === undefined ? MAIN : `topic [[${file.topic}]]`)
@@ -683,8 +719,8 @@ export function install(rt) {
   }
   function memorySection(bot) {
     const own = ownScope(bot.id)
-    const main = parseMemory(readText(join(dirOf(own), MAIN)))
-    const team = parseMemory(readText(join(dirOf(TEAM), MAIN)))
+    const main = parseMemory(readMainOf(own))
+    const team = parseMemory(readMainOf(TEAM))
     return [
       '# Your memory',
       memoryRules(reviewOn),
@@ -1500,7 +1536,7 @@ export function install(rt) {
     return {
       // The head is the dossier's text, so its bound lands on a code point (#2005): a `slice`
       // here handed the panel the first half of an emoji, and no later bound can put it back.
-      head: cut(readText(join(dirOf(scope), MAIN)), head).text,
+      head: cut(readMainOf(scope), head).text,
       topics: topicNames(scope).slice(0, topics),
     }
   }
