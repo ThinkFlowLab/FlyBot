@@ -160,6 +160,8 @@ const ZH = {
   Close: '关闭',
   Copy: '复制',
   Copied: '已复制',
+  'Copy error': '复制错误信息',
+  'Could not copy the error': '无法复制错误信息',
   Content: '内容',
   'Referenced {labels}': '引用了 {labels}',
   ', ': '、',

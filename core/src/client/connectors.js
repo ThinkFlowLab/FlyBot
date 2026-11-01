@@ -5,6 +5,7 @@ import { ConnectorIcon } from './icons.js'
 import { SwitchRow } from './bot-settings.js'
 import { ConnectorBots, usageText } from './connector-bots.js'
 import { t } from './i18n.js'
+import { copiedToClipboard } from '../shared/remote-label.js'
 
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
@@ -157,6 +158,8 @@ function ConnectorRow({ connector, roster, actions }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [message, setMessage] = useState('')
+  // #2027: what the copy button last did — a new failure starts from `Copy error` again.
+  const [copyState, setCopyState] = useState('idle')
   const run = (task, after) => {
     setBusy(true)
     setError(null)
@@ -185,6 +188,8 @@ function ConnectorRow({ connector, roster, actions }) {
     actions.connectorAppStatus(connector.id).then(value => { if (live) setStatuses(value ?? {}) }, () => { if (live) setStatuses({}) })
     return () => { live = false }
   }, [gateway, connector.state, appsKey, picking])
+  // A row that leaves the error state and fails again is a new failure, not the last copy's answer.
+  useEffect(() => { setCopyState('idle') }, [connector.state, connector.error])
   const search = useCallback(query => actions.connectorAppSearch(connector.id, query, connector.state === 'off' ? token : undefined), [connector.id, connector.state, token])
   const connect = () => {
     if (busy) return
@@ -209,6 +214,13 @@ function ConnectorRow({ connector, roster, actions }) {
   // Choose Bots is for what gives a Bot tools or a way in. A webhook-only channel has neither, so the
   // switch would change nothing (acceptance 5, #1266).
   const perBot = !sender && (!channel || connector.mode === 'app')
+  // A failed row can carry 2,000 characters of the host's own text (#2022), so it is offered as one
+  // copy instead of a hand-selection on a phone. copiedToClipboard answers whether the text really
+  // landed, and a `false` says so on the button rather than reporting a quiet success (#1347).
+  const copyLabel = copyState === 'copied' ? t('Copied') : copyState === 'failed' ? t('Could not copy the error') : t('Copy error')
+  const copyError = () => {
+    void copiedToClipboard(connector.error ?? '').then(written => setCopyState(written ? 'copied' : 'failed'))
+  }
   const Mark = MARKS[connector.id]
   const row = useRef(null)
   useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}:${mode}`)
@@ -220,6 +232,7 @@ function ConnectorRow({ connector, roster, actions }) {
         h('span', { className: 'bt-connector-status' }, statusText(connector))),
       h('span', { className: 'bt-connector-actions' },
         connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
+        connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: copyError }, copyLabel) : null,
         on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
         on && perBot ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
         on

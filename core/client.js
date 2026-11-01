@@ -194,6 +194,8 @@ var ZH = {
   Close: "关闭",
   Copy: "复制",
   Copied: "已复制",
+  "Copy error": "复制错误信息",
+  "Could not copy the error": "无法复制错误信息",
   Content: "内容",
   "Referenced {labels}": "引用了 {labels}",
   ", ": "、",
@@ -18024,6 +18026,7 @@ function ConnectorRow({ connector, roster, actions }) {
   const [busy, setBusy] = (0, import_react39.useState)(false);
   const [error, setError] = (0, import_react39.useState)(null);
   const [message, setMessage] = (0, import_react39.useState)("");
+  const [copyState, setCopyState] = (0, import_react39.useState)("idle");
   const run = (task, after) => {
     setBusy(true);
     setError(null);
@@ -18058,6 +18061,9 @@ function ConnectorRow({ connector, roster, actions }) {
       live = false;
     };
   }, [gateway, connector.state, appsKey, picking]);
+  (0, import_react39.useEffect)(() => {
+    setCopyState("idle");
+  }, [connector.state, connector.error]);
   const search = (0, import_react39.useCallback)((query) => actions.connectorAppSearch(connector.id, query, connector.state === "off" ? token : void 0), [connector.id, connector.state, token]);
   const connect = () => {
     if (busy) return;
@@ -18091,6 +18097,10 @@ function ConnectorRow({ connector, roster, actions }) {
   const on = connector.state !== "off";
   const canPost = sender || channel && connector.mode === "webhook";
   const perBot = !sender && (!channel || connector.mode === "app");
+  const copyLabel = copyState === "copied" ? t("Copied") : copyState === "failed" ? t("Could not copy the error") : t("Copy error");
+  const copyError = () => {
+    void copiedToClipboard(connector.error ?? "").then((written) => setCopyState(written ? "copied" : "failed"));
+  };
   const Mark = MARKS[connector.id];
   const row = (0, import_react39.useRef)(null);
   useMorph(row, `${form}:${picking}:${bots}:${error !== null}:${connector.state}:${mode}`);
@@ -18111,6 +18121,7 @@ function ConnectorRow({ connector, roster, actions }) {
         "span",
         { className: "bt-connector-actions" },
         connector.state === "error" ? (0, import_react39.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t("Try again")) : null,
+        connector.state === "error" ? (0, import_react39.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: copyError }, copyLabel) : null,
         on && gateway && !picking ? (0, import_react39.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => {
           setApps(connector.apps ?? []);
           setPicking(true);
