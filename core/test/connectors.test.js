@@ -179,20 +179,42 @@ test('a failed MCP connection shows the error without the token, and Try again m
 
 // #2002: the MCP server's message is stored for the owner's card. A bound that lands inside a
 // surrogate pair used to keep half of it, and the card drew the replacement character.
-test('a connector error at the 300 bound keeps whole code points (#2002)', async (t) => {
+test('a connector error at the 2,000 bound keeps whole code points (#2002)', async (t) => {
   const realFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = realFetch })
   globalThis.fetch = async () => answer(200, { login: 'octo' })
-  const thrown = `${'a'.repeat(299)}😀tail`
+  const thrown = `${'a'.repeat(1999)}😀tail`
   const { ctx, home } = setup({ failWith: thrown })
   t.after(async () => { await ctx.dispose(); await cleanHome(home) })
   const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
   const github = result.value.find(entry => entry.id === 'github')
   assert.equal(github.state, 'error')
   assert.ok(github.error.isWellFormed(), `the stored error is not well formed: ${JSON.stringify(github.error.slice(-2))}`)
-  assert.ok(thrown.startsWith(github.error), 'the stored error is a prefix of what the server threw')
-  assert.ok(github.error.length <= 300, `the stored error is ${github.error.length} units, over the 300 bound`)
-  assert.equal(github.error, 'a'.repeat(299), 'the pair that would cross the bound is dropped, not halved')
+  assert.ok(github.error.endsWith('…'), `the stored error does not say it was cut: ${JSON.stringify(github.error.slice(-3))}`)
+  assert.ok(thrown.startsWith(github.error.slice(0, -1)), 'the text before the … is a prefix of what the server threw')
+  assert.ok(github.error.length <= 2000, `the stored error is ${github.error.length} units, over the 2,000 bound`)
+  assert.equal(github.error, `${'a'.repeat(1999)}…`, 'the pair that would cross the bound is dropped, not halved, and the cut is marked')
+})
+
+// #2016: a message that still has to be cut now says so. The `…` sits inside the 2,000 — it costs
+// one unit of the bound — so a card never shows 2,001 units, and what is kept is a whole code
+// point prefix of what the server sent.
+test('an over-bound connector error ends with … inside the 2,000 bound (#2016)', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  globalThis.fetch = async () => answer(200, { login: 'octo' })
+  const thrown = 'x'.repeat(2500)
+  const { ctx, home } = setup({ failWith: thrown })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
+  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
+  const github = result.value.find(entry => entry.id === 'github')
+  assert.equal(github.state, 'error')
+  assert.ok(github.error.endsWith('…'), `the stored error does not say it was cut: ${JSON.stringify(github.error.slice(-3))}`)
+  assert.ok(github.error.length <= 2000, `the stored error is ${github.error.length} units, over the 2,000 bound`)
+  assert.ok(github.error.isWellFormed(), 'the stored error is not well formed')
+  const kept = github.error.slice(0, -1)
+  assert.equal(kept, 'x'.repeat(1999), 'the marker costs one unit of the bound, so the kept text stops at 1,999')
+  assert.ok(thrown.startsWith(kept), 'the text before the … is a code-point prefix of what the server threw')
 })
 
 // The control: a well-formed message under the bound is stored byte for byte, emoji included.
