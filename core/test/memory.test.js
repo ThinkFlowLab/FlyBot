@@ -560,6 +560,11 @@ test('a long Bot line cut for the review context keeps whole characters (#1918)'
   assert.ok(shown !== undefined, `the Bot line is in the review context:\n${prompt}`)
   assert.ok(shown.endsWith('…(cut)'), shown.slice(-20))
   assert.ok(shown.length <= 'Writer: '.length + 800 + ' …(cut)'.length, String(shown.length))
+  // #1978: pin what survives, not only how much may survive. At 800 the cut steps back off the
+  // emoji's pair, so the whole kept line is `Writer: ` plus 791 x's; a smaller limit keeps a
+  // shorter head — the direction that drops context silently — and must go red here.
+  assert.ok(shown.startsWith(`Writer: ${'x'.repeat(791)}`), shown.slice(0, 40))
+  assert.ok(shown.replace(' …(cut)', '').length > 'Writer: '.length + 800 - 10, String(shown.length))
 })
 
 test('a long user line cut for the review keeps whole characters at both ends (#1918)', async () => {
