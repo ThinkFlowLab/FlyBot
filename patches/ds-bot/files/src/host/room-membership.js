@@ -764,6 +764,10 @@ export function install(rt) {
         // the room get the same name once, and the arriving seat keeps its one targeted join.
         if (moved && broadcast) reshareRoster(room, { except: record.handle })
       } else if (record?.kind === 'bot' && !record.remote && broadcast) reshareRoster(room)
+      // #2009: a human seat is this home's own, so it never changes the roster a guest holds — but it does
+      // change the name an unnamed group is called after, and a human seat has no envelope of its own to
+      // carry that name. Only `moved` sends, so a chosen name still sends nothing.
+      else if (record?.kind === 'human' && moved && broadcast) reshareRoster(room)
       return room
     })
   }
@@ -821,6 +825,10 @@ export function install(rt) {
       } else if (kind === 'bot' && room.origin === 'inbound-share' && room.sharedFrom?.ticket) {
         await finishTicketLeave(room).catch(error => rt.warn?.('ds-bot: leaving %s was not settled: %s', room.name, error))
       } else if (kind === 'bot' && !me.remote && broadcast) {
+        reshareRoster(room)
+      } else if (kind === 'human' && moved && broadcast) {
+        // #2009: the same as an add — a human leave moves the name of an unnamed group, and the guests
+        // still seated have no other way to hear it.
         reshareRoster(room)
       }
       // #2004: the leave moved the name, so the guests still in the room get the copy the host holds. The
