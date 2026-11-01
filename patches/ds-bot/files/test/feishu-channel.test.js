@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { RESERVED_NAMES, feishuAppSend, feishuReply } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
+import { cleanHome } from './temp-home.js'
 
 // #1266, the connector-row half: the owner's word is 「飞书是做成一个连接器，左下角点击连接应用的时候
 // 可以连接」. So the row is where Feishu is configured — one row, two modes (a custom-bot webhook, or a
@@ -31,7 +32,6 @@ const teamHome = record => {
   return home
 }
 
-const cleanHome = home => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
 const answer = (status, body) => ({ status, ok: status >= 200 && status < 300, body, json: async () => body })
 
 // A fake Feishu: tenant tokens and message sends, and every call recorded. The scripted answers are
@@ -50,8 +50,9 @@ function fakeFeishu(script = []) {
 }
 
 // The runtime a plugin sees after install, with the socket replaced by a stub: `dials` are the
-// `onEvent` handlers handed to it, exactly what a real long connection would call.
-function rig(t, { record, feishu = { api: 'https://feishu.test' } } = {}) {
+// `onEvent` handlers handed to it, exactly what a real long connection would call. `onClose` is
+// extra work the stub socket does while closing, so a test can watch a shutdown wait for it.
+function rig(t, { record, feishu = { api: 'https://feishu.test' }, onClose = async () => {} } = {}) {
   const home = teamHome(record)
   const ctx = fakeContext()
   const register = ctx.connection.fetch.register
@@ -61,8 +62,10 @@ function rig(t, { record, feishu = { api: 'https://feishu.test' } } = {}) {
   const closes = []
   rt.feishuTransport = {
     nameOf: async openId => (openId === 'ou_stranger_1' ? 'Mallory' : `Someone ${openId}`),
-    connect: async (onEvent) => { dials.push(onEvent); return { close: async () => { closes.push(1) } } },
+    connect: async (onEvent) => { dials.push(onEvent); return { close: async () => { closes.push(1); await onClose() } } },
   }
+  // #1983: `dispose()` is the one teardown, and it waits for the dial and the log before the home
+  // is removed once — no retry in `cleanHome` to cover a writer that was not awaited.
   t.after(async () => { await ctx.dispose(); cleanHome(home) })
   return { rt, ctx, home, dials, closes }
 }
@@ -168,6 +171,23 @@ test('#1266: a stranger starts no turn, appears on the row, and Allow makes the 
   assert.deepEqual(rowOf(blocked.value).allowed, [])
   assert.equal(await onEvent(event({ id: 'e3', openId: 'ou_stranger_1' })), 'refused')
   assert.equal(delivered.length, 1)
+})
+
+// #1983: the nightly teardown lost an `rmdir` to a writer that outlived `dispose()`. The socket's
+// close is one of those writers, and a shutdown that drops it with `void` returns while it is
+// still closing — the home is then removed under it. This socket takes a real tick to close, and
+// `dispose()` must not resolve before it has.
+test('#1983: a shutdown waits for the Feishu dial to close', async (t) => {
+  const feishu = fakeFeishu()
+  const realFetch = globalThis.fetch
+  globalThis.fetch = feishu.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const closed = []
+  const { ctx } = rig(t, { onClose: async () => { await new Promise(resolve => setTimeout(resolve, 50)); closed.push(1) } })
+  await call(ctx, 'connector-connect', { id: 'feishu', mode: 'app', credentials: { app_id: 'cli_app_1', app_secret: 'app-secret-value' } })
+  assert.equal(closed.length, 0, 'the stub socket is still open while the test runs')
+  await ctx.dispose()
+  assert.equal(closed.length, 1, 'dispose() waited for the socket close, so a teardown cannot race it')
 })
 
 test('#1266: Disconnect closes the socket, deletes both credentials, and no turn starts after it', async (t) => {

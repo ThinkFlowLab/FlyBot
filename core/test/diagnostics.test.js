@@ -35,15 +35,25 @@ test('cleanText hides standalone credentials it was never given', () => {
 
 function host(home, extra = {}) {
   const warnings = []
+  const disposers = []
+  // The real context's effect pair: `dispose()` settles every cleanup, including the writes
+  // some of them wait for (the store's and, since #1983, this log's).
+  const effect = (execute) => {
+    const dispose = execute()
+    if (typeof dispose === 'function') disposers.push(dispose)
+  }
   const rt = {
-    ctx: { logger: { warn: (...args) => warnings.push(args) } },
+    ctx: { logger: { warn: (...args) => warnings.push(args) }, effect },
     home,
     config: {},
     state: { bots: { a: { id: 'a', name: 'Chief', model: 'deepseek/deepseek-chat' } }, mainBotIds: ['a'], rooms: {} },
     readOnly: () => undefined,
     ...extra,
   }
+  // A test that overrides `ctx` to drop a logger keeps the effect pair the install needs.
+  rt.ctx = { effect, ...rt.ctx }
   installDiagnostics(rt)
+  rt.dispose = () => Promise.all(disposers.splice(0).map(dispose => dispose()))
   return rt
 }
 
@@ -90,6 +100,20 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
   assert.deepEqual(await again.diagnostics.entries(), [])
   assert.deepEqual(await host(home).diagnostics.entries(), [])
   quiet.mock.restore()
+})
+
+// #1983: the log is written in the background, so a shutdown that does not drain it leaves a file
+// being created after the caller has removed the home — the nightly teardown lost `rmdir` to
+// exactly that. A burst guarantees the chain is still busy when `dispose()` is called; every line
+// queued before it must be on disk when it resolves.
+test('dispose waits for the queued log appends (#1983)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const rt = host(home)
+  for (let index = 0; index < 500; index += 1) rt.warn('ds-bot: queued %d', index)
+  await rt.dispose()
+  const lines = readFileSync(join(home, 'logs', 'diagnostics.jsonl'), 'utf8').trim().split('\n')
+  assert.equal(lines.length, 500, 'every warning queued before dispose is on disk when it resolves')
 })
 
 // #1916: the browser-log lines in the report are bounded, and those bounds are code-unit ones:
