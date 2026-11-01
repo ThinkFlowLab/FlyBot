@@ -414,6 +414,22 @@ export function install(rt) {
     else if (room.admin && !room.members.includes(room.admin)) room.admin = room.members[0] ?? null
   }
 
+  // #1987: a group without a chosen name is named after its seats, so a seat that joins or leaves moves
+  // the name with it — and the group's own Session, the title the user reads, moves with the name. `room`
+  // is passed for both the comparison and the write: `autoRoomName` reads the people and the remote guests
+  // from it, so a call without one names the owner `You` and drops the guests, and that name would never
+  // match again (#1976). The name is set before the returned promise is awaited, so a path that cannot
+  // await still saves the right one; only the Session rename is deferred, and only when the name moved.
+  // A mirror of another home's room takes its name from that home's envelope and a face-to-face room has
+  // its own title, so neither is recomputed here.
+  const settleRoomName = (room) => {
+    if (room.named || room.origin === 'inbound-share' || isFaceRoom(room)) return Promise.resolve()
+    const next = rt.autoRoomName(room.members, room)
+    if (next === room.name) return Promise.resolve()
+    room.name = next
+    return rt.retitleRoom(room)
+  }
+
   const materialize = (room) => {
     if (!Array.isArray(room.participants)) room.participants = deriveParticipants(room, state)
     return room
@@ -733,6 +749,7 @@ export function install(rt) {
         }
       }
       syncMembers(room)
+      await settleRoomName(room)
       await rt.save()
       if (record?.remote && record.handle) void rt.notifyRoomShare?.(room, { op: 'join', handle: record.handle })
       else if (record?.kind === 'bot' && !record.remote) reshareRoster(room)
@@ -783,6 +800,7 @@ export function install(rt) {
         rt.dropGroupSession?.(room, id)
       }
       syncMembers(room)
+      await settleRoomName(room)
       await rt.save()
       if (me.remote && isTicketSeat(me)) {
         await settleTicket(room, me.ticket, me).catch(error => rt.warn?.('ds-bot: a seat\'s leave was not settled: %s', error))
@@ -1769,6 +1787,7 @@ export function install(rt) {
         })
       }
       syncMembers(room)
+      await settleRoomName(room)
       // A poll reads this again every few seconds: a claim that is already seated must not rewrite the team.
       if (fresh.length > 0 || legacy || homesBefore !== JSON.stringify(homesOf(invite))) await rt.save?.()
       return { fresh }
@@ -1973,6 +1992,7 @@ export function install(rt) {
       await withRoomLock(async () => {
         markSeatLeft(room, seat)
         syncMembers(room)
+        await settleRoomName(room)
       })
       await rt.save?.()
       if (isTicketSeat(seat)) await settleTicket(room, seat.ticket, seat)
@@ -2250,6 +2270,7 @@ export function install(rt) {
           if (room.seen) delete room.seen[me.id]
           rt.dropGroupSession?.(room, me.id)
           syncMembers(room)
+          await settleRoomName(room)
           changed = true
         })
       }

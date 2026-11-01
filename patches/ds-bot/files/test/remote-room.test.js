@@ -3304,9 +3304,10 @@ test('a rename that leaves the computed name alone sends nothing', async (t) => 
   await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
   sent.length = 0
 
+  const before = room.name
   await rt.updateBot('spec-a', { name: 'Writer C' })
 
-  assert.equal(room.name, 'Alice, Chief A, Chief B', 'a Bot outside the group does not rename it')
+  assert.equal(room.name, before, 'a Bot outside the group does not rename it')
   assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'the computed name did not move')
 })
 
@@ -3330,9 +3331,10 @@ test('a restart migrates an unnamed room title with the formula that sees the ro
   delete room.named
   room.name = rt.autoRoomName(room.members, room)
   assert.equal(room.name, 'Alice, Chief A, Chief B')
-  // The join path keeps the title it had; out of scope here and the reason the stored name is now stale.
   await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
-  assert.equal(room.name, 'Alice, Chief A, Chief B', 'a join does not recompute the title')
+  // #1976's subject is the boot migration, not whichever path left the stored name stale, so the stale
+  // name is written here: a file from before a join recomputed the title (#1995 does now).
+  room.name = 'Alice, Chief A, Chief B'
   await rt.save()
   const saved = readFileSync(rt.statePath, 'utf8')
 
@@ -3377,4 +3379,135 @@ test('a restart migrates an unnamed room title with the formula that sees the ro
   fifth.rt.ctx.sessionTitle = { rename: async () => {} }
   await fifth.rt.load()
   assert.equal(readFileSync(fifth.rt.statePath, 'utf8'), healed, 'the healed file is left alone on the next boot')
+})
+// #1995: an unnamed group is named after its seats, so a seat that joins or leaves has to move the name
+// with it — and the group's own Session, the title the user reads in the sidebar. `host()` above carries
+// no session machinery, so the two module-level paths are added here: a workspace registry, a Session
+// controller and a title recorder.
+function titledHost(t, saved) {
+  const { rt } = host(t, saved)
+  const titles = []
+  const workspaces = new Map()
+  let sessions = 0
+  rt.config = {}
+  Object.assign(rt.ctx, {
+    workspaceRegistry: {
+      get: id => workspaces.get(id),
+      resolveByPath: async path => [...workspaces.values()].find(workspace => workspace.path === path),
+      create: async (path) => {
+        const workspace = { id: `w${workspaces.size + 1}`, path }
+        workspaces.set(workspace.id, workspace)
+        return workspace
+      },
+      archiveSession: async () => {},
+    },
+    sessionController: { create: async () => ({ sessionId: `s${++sessions}` }) },
+    sessionTitle: { rename: async (session, name) => { titles.push({ id: session?.id, name }) } },
+  })
+  installRoster(rt)
+  rt.resolveAgent = async id => ({ session: { id } })
+  return { rt, titles }
+}
+
+// The one owner of TEAM; authz is not enforced until a member session exists, so a plain actor is enough
+// for the roster paths these cases drive.
+const ALICE = { memberId: 'owner-1', displayName: 'Alice' }
+
+test('#1995: a guest who joins an unnamed group moves the name and the Session title with it', async (t) => {
+  const { rt, titles } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  titles.length = 0
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, ALICE)
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the guest is in the name the moment the seat exists')
+  assert.deepEqual(titles.map(entry => entry.name), ['Alice, Chief A, Chief B, Coder'], 'the group Session follows, once')
+})
+
+test('#1995: a guest who leaves an unnamed group drops out of its name and title', async (t) => {
+  const { rt, titles } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  // The room as the join leaves it: the guest is seated and already in the name. The leave is what this
+  // case tests, so the invite path above is not needed to set it up.
+  rt.applyParticipants(room, [
+    { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice' },
+    { kind: 'bot', id: 'chief-a', role: 'admin' },
+    { kind: 'bot', id: 'chief-b', role: 'member' },
+    { kind: 'bot', remote: true, handle: '@coder.bob.home' },
+  ], ALICE)
+  room.name = rt.autoRoomName(room.members, room)
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the fixture starts from a name that names the guest')
+  titles.length = 0
+
+  await rt.removeRoomParticipant('war', { kind: 'bot', handle: '@coder.bob.home' }, ALICE)
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B', 'the seat is gone from the name, not only from the roster')
+  assert.deepEqual(titles.map(entry => entry.name), ['Alice, Chief A, Chief B'], 'and the group Session lets it go, once')
+})
+
+test('#1995: a group created with a guest is titled by the formula that sees the room', async (t) => {
+  const { rt, titles } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+
+  const room = await rt.createRoom({
+    members: ['chief-a', 'chief-b'],
+    participants: [
+      { kind: 'bot', id: 'chief-a', role: 'admin' },
+      { kind: 'bot', id: 'chief-b' },
+      { kind: 'bot', remote: true, handle: '@coder.bob.home' },
+    ],
+    actor: ALICE,
+  })
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the new group is named with the guest in it')
+  // The Session has to exist before the seats do, so it is opened under the narrow name and corrected
+  // once the room knows its guests; what the user is left with is the name that sees the room.
+  assert.equal(titles.filter(entry => entry.id === room.id).at(-1)?.name, 'Alice, Chief A, Chief B, Coder',
+    'the Session ends on the name that sees the guest')
+})
+
+test('#1995: a named group keeps the name its owner chose, and no title is sent for it', async (t) => {
+  const { rt, titles } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  assert.equal(room.named, true, 'the fixture room carries a chosen name')
+  titles.length = 0
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, ALICE)
+  await rt.removeRoomParticipant('war', { kind: 'bot', handle: '@coder.bob.home' }, ALICE)
+
+  assert.equal(room.name, 'War room', 'a chosen name does not follow the seats')
+  assert.deepEqual(titles, [], 'and the Session is not renamed for a seat change')
+})
+
+test('#1995: an unnamed group without guests is renamed once per seat change', async (t) => {
+  const { rt, titles } = titledHost(t, TEAM)
+  await rt.load()
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  titles.length = 0
+
+  await rt.addRoomParticipant('war', { kind: 'bot', id: 'spec-a' }, ALICE)
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer A', 'the added member is in the name')
+  assert.equal(titles.length, 1, 'one seat change is one rename, not a second from the settings save')
+  assert.deepEqual(titles.map(entry => entry.name), ['Alice, Chief A, Chief B, Writer A'])
 })
