@@ -3772,3 +3772,84 @@ test('#2004: a claim that seats a Bot moves the name for the guest already in th
   assert.equal(guest.copies.get('@chief.bob.home'), room.name, 'the claimed seat is told the name it is seated under')
   assert.equal(joins.get('@chief.bob.home'), 1, 'the claimed seat is told once, not twice')
 })
+
+// #2009: a human seat is this home's own, so it never changes the roster a guest holds — but it does
+// change the name an unnamed group is called after. That name only ever left on an envelope addressed
+// to the seat that changed, and a human seat is not addressable: the guests already seated kept the
+// copy they arrived with while the host moved on.
+function seatBob(rt) {
+  rt.state.members['owner-2'] = { id: 'owner-2', createdAt: 2, displayName: 'Bob' }
+}
+
+test('#2009: adding a human seat moves the name for the guest already in the room', async (t) => {
+  const { rt, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  seatBob(rt)
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the guest is in the name it arrived under')
+
+  await rt.addRoomParticipant('war', { kind: 'human', id: 'owner-2', displayName: 'Bob' }, ALICE)
+  const joins = guest.reads()
+  assert.equal(room.name, 'Alice, Bob, Chief A, Chief B, Coder', 'the human seat is in the name of an unnamed group')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest already seated ends on the name the host holds')
+  assert.equal(joins.get(CODER.handle), 1, 'one human seat costs a seated guest one join, not none and not two')
+})
+
+test('#2009: removing a human seat moves the name for the guest still seated', async (t) => {
+  const { rt, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  seatBob(rt)
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  await rt.addRoomParticipant('war', { kind: 'human', id: 'owner-2', displayName: 'Bob' }, ALICE)
+  guest.reads()
+  assert.equal(room.name, 'Alice, Bob, Chief A, Chief B, Coder')
+
+  await rt.removeRoomParticipant('war', { kind: 'human', id: 'owner-2' }, ALICE)
+  const joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder', 'the human seat is gone from the name too')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest still seated ends on the name the host holds after a human leave')
+  assert.equal(joins.get(CODER.handle), 1, 'one human leave costs a seated guest one join, not none and not two')
+})
+
+test('#2009: a group with a chosen name sends its seated guests nothing for a human seat', async (t) => {
+  const { rt, titles, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  seatBob(rt)
+  const room = rt.state.rooms.war
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  guest.reads()
+  titles.length = 0
+
+  await rt.addRoomParticipant('war', { kind: 'human', id: 'owner-2', displayName: 'Bob' }, ALICE)
+  let joins = guest.reads()
+  assert.equal(room.name, 'War room', 'a chosen name does not follow the seats')
+  assert.equal(joins.get(CODER.handle) ?? 0, 0, 'a human seat sends nothing when the name did not move')
+
+  await rt.removeRoomParticipant('war', { kind: 'human', id: 'owner-2' }, ALICE)
+  joins = guest.reads()
+  assert.equal(room.name, 'War room')
+  assert.equal(joins.get(CODER.handle) ?? 0, 0, 'a human leave sends nothing either')
+  assert.equal(titles.length, 0, 'and no Session is renamed for a chosen name')
+})
