@@ -1,1 +1,0 @@
-The Project board's wait label now carries seconds under a minute, so a card that waited 40 seconds reads `40s` instead of `0m`; the three duration metrics (PR merge time, issue close time, task completion) use the same label, and a span over zero never floors to `0s`. Unknown and negative spans still render nothing. ([#1896](https://github.com/ThinkFlowLab/FlyBot/issues/1896))
