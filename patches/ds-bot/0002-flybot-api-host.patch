@@ -416,7 +416,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (next !== '' && rt.findRooms(next).some(room => room.id !== selfId)) throw new Error(`Another group chat is already called "${next}"`)
      return next
    }
-@@ -257,21 +257,36 @@ export function install(rt) {
+@@ -257,21 +257,40 @@ export function install(rt) {
    async function followMemberNames(rooms = Object.values(state.rooms)) {
      for (const room of rooms) {
        if (room.named) continue
@@ -425,6 +425,10 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        if (next === room.name) continue
        room.name = next
        await retitleRoom(room)
++      // The guests already seated hold the name they were given at join, and nothing else tells them: the
++      // same one `join` as an explicit rename (#1949). The guard above is the "the name really moved"
++      // condition, so a rename that leaves the computed name alone still sends nothing.
++      void rt.notifyRoomShare?.(room, { op: 'join' })
      }
    }
  

@@ -3123,3 +3123,106 @@ test('#1949: a rename reaches the guests already seated, once, and a write-back 
   assert.equal(guest().name, 'Renamed again', 'the one envelope carries the new name')
   assert.equal(guest().notice, 'Sit down', 'and the new notice')
 })
+
+// A member's rename moves an unnamed group's title: `followMemberNames` recomputes it and retitles the
+// Session. Nothing told the guests already seated, so they kept the name they were given at join until
+// the next line or the next join envelope. A rename is a membership push exactly like the room rename
+// #1949 covers, and it rides the same single `join` — once, and only when the computed name moved.
+test('a member rename reaches the guest already seated, once', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  rt.resolveAgent = async () => ({ session: 'session' })
+  rt.chatOf = id => id
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  const shares = () => sent.filter(msg => msg.via === 'room-share')
+  assert.equal(shares().length, 1, 'the seat join itself pushed once')
+  sent.length = 0
+
+  await rt.updateBot('chief-b', { name: 'Chief C' })
+
+  assert.equal(room.name, 'Alice, Chief A, Chief C, Coder', 'the unnamed group follows its members')
+  const after = shares()
+  assert.equal(after.length, 1, 'the rename reaches the guest already seated')
+  const join = parseRoomShare(after[0].text)
+  assert.equal(join.op, 'join')
+  assert.equal(join.name, room.name, 'the envelope carries the new name')
+  assert.equal(sent.length, 1, 'one envelope, not one per guest record')
+})
+
+// Control 1: a group with a chosen name does not follow its members, so a rename is not a change to it.
+test('a rename in a named group sends nothing', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  rt.resolveAgent = async () => ({ session: 'session' })
+  rt.chatOf = id => id
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  assert.equal(room.named, true, 'the fixture group has a chosen name')
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  sent.length = 0
+
+  await rt.updateBot('chief-b', { name: 'Chief C' })
+
+  assert.equal(room.name, 'War room', 'a chosen name does not move')
+  assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'nothing to tell the guest')
+})
+
+// Control 2: the name moved, but there is nobody outside this home to tell.
+test('a rename in a group with no remote guest sends nothing', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  rt.resolveAgent = async () => ({ session: 'session' })
+  rt.chatOf = id => id
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  publish(rt)
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+
+  await rt.updateBot('chief-b', { name: 'Chief C' })
+
+  assert.equal(room.name, 'Alice, Chief A, Chief C', 'the unnamed group follows its members')
+  assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'no guest to tell')
+})
+
+// Control 3: a Bot that sits in no group is renamed — every room's name is what it was, so is the wire.
+test('a rename that leaves the computed name alone sends nothing', async (t) => {
+  const { rt, sent } = host(t, TEAM)
+  installRoster(rt)
+  rt.resolveAgent = async () => ({ session: 'session' })
+  rt.chatOf = id => id
+  rt.ctx.sessionTitle = { rename: async () => {} }
+  await rt.load()
+  const { alice } = await signAliceAndBob(rt)
+  const actorA = await rt.authenticate(alice.sessionToken)
+  publish(rt)
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: '@coder.bob.home' }, actorA)
+  sent.length = 0
+
+  await rt.updateBot('spec-a', { name: 'Writer C' })
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B', 'a Bot outside the group does not rename it')
+  assert.equal(sent.filter(msg => msg.via === 'room-share').length, 0, 'the computed name did not move')
+})
