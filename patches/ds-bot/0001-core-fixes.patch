@@ -10418,7 +10418,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.error], ['## Overview\nYou like tea.', null])
    assert.deepEqual(routes(requests).slice(2), ['deepseek/flash@2048'])
-@@ -519,12 +519,81 @@ test('a host that only reads the team shows memory but changes none of it', asyn
+@@ -519,12 +519,86 @@ test('a host that only reads the team shows memory but changes none of it', asyn
  // Until no review waits or runs.
  async function reviewed(call) {
    for (let tries = 0; tries < 200; tries += 1) {
@@ -10455,6 +10455,11 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.ok(shown !== undefined, `the Bot line is in the review context:\n${prompt}`)
 +  assert.ok(shown.endsWith('…(cut)'), shown.slice(-20))
 +  assert.ok(shown.length <= 'Writer: '.length + 800 + ' …(cut)'.length, String(shown.length))
++  // #1978: pin what survives, not only how much may survive. At 800 the cut steps back off the
++  // emoji's pair, so the whole kept line is `Writer: ` plus 791 x's; a smaller limit keeps a
++  // shorter head — the direction that drops context silently — and must go red here.
++  assert.ok(shown.startsWith(`Writer: ${'x'.repeat(791)}`), shown.slice(0, 40))
++  assert.ok(shown.replace(' …(cut)', '').length > 'Writer: '.length + 800 - 10, String(shown.length))
 +})
 +
 +test('a long user line cut for the review keeps whole characters at both ends (#1918)', async () => {
