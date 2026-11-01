@@ -3,6 +3,7 @@
 // field, it is the first Bot of the creator's home that joined. The lead writes the one plan and
 // gives out the parts; every other Bot does only its part. Pure: the room record in, text out.
 import { cleanPeerName, ownerNameOf } from '../shared/remote-label.js'
+import { cut } from './text.js'
 
 const ROLE_MAX = 80
 // Same as room-membership.js currentParticipants (kept here so the two modules do not import each other).
@@ -11,12 +12,12 @@ const handleKey = handle => String(handle ?? '').trim().replace(/^@+/, '').toLow
 
 // A role label another home set: one line of plain text, no markup or @, capped.
 export function cleanRoleLabel(value) {
-  return String(value ?? '')
+  const line = String(value ?? '')
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"`<>@]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, ROLE_MAX)
+  return cut(line, ROLE_MAX).text
 }
 
 // What the host keeps on room.face.lead: the handle every home follows, whether the creator picked

@@ -943,3 +943,17 @@ test('the Connectors page searches apps with the pasted key before connecting (n
   assert.equal(github.ok, false)
   assert.match(github.error.message, /no apps to pick/)
 })
+
+// #1979: a connector item name is text the connector side supplies, and its 80-unit bound must not
+// end on the first half of a surrogate pair: that value reaches the owner's screen as U+FFFD.
+test('a Composio app name cut at 80 does not split an emoji', async () => {
+  const key = composioKey()
+  const name = 'a'.repeat(79) + '😀' + 'tail'
+  const found = await composioSearchApps(key, { fetch: async () => answer(200, { items: [{ slug: 'gmail', name }] }) })
+  assert.equal(found.length, 1, 'the app is still listed')
+  const kept = found[0].name
+  assert.equal(kept.isWellFormed(), true, 'the kept name is well formed, never a lone high surrogate')
+  assert.equal(kept, 'a'.repeat(79), 'the 80th unit was the first half of the pair, so the pair is dropped, not split')
+  assert.ok(name.startsWith(kept), 'a code-point prefix of the name Composio supplied')
+  assert.ok(kept.length <= 80, 'the budget of 80 UTF-16 units is unchanged')
+})

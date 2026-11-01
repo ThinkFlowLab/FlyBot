@@ -173,3 +173,18 @@ test('project-team reads with the project-read class of caller, including a sign
   const unknown = await callAs('project-team', { id: 'project-none' }, 'tok-owner')
   assert.deepEqual(unknown.value.rows, [], 'an unknown Project answers no rows instead of an error')
 })
+
+// #1979: a group name is text another home supplied, and its 200-unit bound must not end on the
+// first half of a surrogate pair.
+test('project-team cuts a room name from another home at 200 without splitting an emoji', async (t) => {
+  const { callAs, rt, stop } = await start()
+  t.after(stop)
+  const name = 'a'.repeat(199) + '😀' + 'tail'
+  rt.state.rooms.r1.name = name
+  const rows = (await callAs('project-team', { id: 'project-1' })).value.rows
+  const kept = rows[0].rooms.find(room => room.id === 'r1').name
+  assert.equal(kept.isWellFormed(), true, 'the group name is well formed, never a lone high surrogate')
+  assert.equal(kept, 'a'.repeat(199), 'the 200th unit was the first half of the pair, so the pair is dropped, not split')
+  assert.ok(name.startsWith(kept), 'a code-point prefix of the group name')
+  assert.ok(kept.length <= 200, 'the budget of 200 UTF-16 units is unchanged')
+})

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { RESERVED_NAMES } from './connectors.js'
 import { ownEntry, retiredBot } from './store.js'
+import { cut } from './text.js'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -94,7 +95,7 @@ export function install(rt) {
     const item = {
       name,
       kind,
-      description: String(body.description ?? '').trim().slice(0, 2000),
+      description: cut(String(body.description ?? '').trim(), 2000).text,
       createdBy: previous?.createdBy ?? (ui ? null : botId),
       createdAt: previous?.createdAt ?? now,
       updatedAt: now,

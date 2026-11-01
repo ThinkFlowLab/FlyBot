@@ -3125,10 +3125,11 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
-@@ -1,4 +1,6 @@
+@@ -1,4 +1,7 @@
  import { createHash } from 'node:crypto'
 +import { RESERVED_NAMES } from './connectors.js'
 +import { ownEntry, retiredBot } from './store.js'
++import { cut } from './text.js'
  
  const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
  const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -3143,6 +3144,15 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
+@@ -92,7 +92,7 @@ export function install(rt) {
+     const item = {
+       name,
+       kind,
+-      description: String(body.description ?? '').trim().slice(0, 2000),
++      description: cut(String(body.description ?? '').trim(), 2000).text,
+       createdBy: previous?.createdBy ?? (ui ? null : botId),
+       createdAt: previous?.createdAt ?? now,
+       updatedAt: now,
 @@ -139,7 +139,7 @@ export function install(rt) {
      await rt.load()
      writeCheck()
@@ -3344,7 +3354,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,57 @@
+@@ -1,27 +1,58 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
@@ -3376,6 +3386,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +import { createNotifier } from './notify.js'
 +import { APP_SECRET_SECRET, appCredentials, createInbound } from './feishu-inbound.js'
 +import { createFeishuTransport } from './feishu-sdk.js'
++import { cut } from './text.js'
  
  export const GITHUB = 'github'
  export const GITHUB_SECRET = 'GITHUB_TOKEN'
@@ -3550,7 +3561,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  for (const item of items) {
 +    const slug = typeof item?.slug === 'string' ? item.slug.toLowerCase() : ''
 +    if (!APP_SLUG.test(slug) || found.has(slug)) continue
-+    const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 80) : slug
++    const name = typeof item.name === 'string' && item.name.trim() !== '' ? cut(item.name.trim(), 80).text : slug
 +    found.set(slug, { slug, name })
 +  }
 +  return [...found.values()].slice(0, MAX_FOUND)
@@ -8036,7 +8047,7 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
  })
  
  test('a GitHub address without https refuses to send the token', async (t) => {
-@@ -165,10 +165,730 @@ test('a GitHub address without https refuses to send the token', async (t) => {
+@@ -165,10 +165,744 @@ test('a GitHub address without https refuses to send the token', async (t) => {
    let asked = false
    globalThis.fetch = async () => { asked = true; return answer(200, { login: 'octo' }) }
    const { ctx, home, mounts } = setup({ github: { url: 'http://mcp.test/', api: 'https://gh.test' } })
@@ -8767,6 +8778,20 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
 +  const github = await call(ctx, 'connector-app-search', { id: 'github', query: 'x' })
 +  assert.equal(github.ok, false)
 +  assert.match(github.error.message, /no apps to pick/)
++})
++
++// #1979: a connector item name is text the connector side supplies, and its 80-unit bound must not
++// end on the first half of a surrogate pair: that value reaches the owner's screen as U+FFFD.
++test('a Composio app name cut at 80 does not split an emoji', async () => {
++  const key = composioKey()
++  const name = 'a'.repeat(79) + '😀' + 'tail'
++  const found = await composioSearchApps(key, { fetch: async () => answer(200, { items: [{ slug: 'gmail', name }] }) })
++  assert.equal(found.length, 1, 'the app is still listed')
++  const kept = found[0].name
++  assert.equal(kept.isWellFormed(), true, 'the kept name is well formed, never a lone high surrogate')
++  assert.equal(kept, 'a'.repeat(79), 'the 80th unit was the first half of the pair, so the pair is dropped, not split')
++  assert.ok(name.startsWith(kept), 'a code-point prefix of the name Composio supplied')
++  assert.ok(kept.length <= 80, 'the budget of 80 UTF-16 units is unchanged')
 +})
 diff --git a/test/follow-through.test.js b/test/follow-through.test.js
 --- a/test/follow-through.test.js

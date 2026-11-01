@@ -447,3 +447,17 @@ test('a key for all Bots reaches a shared Bot\'s capability; a key scoped to oth
   assert.equal(rt.capabilityStatusesView().worker.echo.state, 'error')
   assert.equal(rt.capabilityStatusesView().chief.echo.state, 'ready')
 })
+
+// #1979: a capability description comes from a peer server, and its 2000-unit bound must not end
+// on the first half of a surrogate pair.
+test('a capability description is cut at 2000 without splitting an emoji', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const description = 'a'.repeat(1999) + '😀' + 'tail'
+  await env.rt.capabilitySave({ name: 'echo', kind: 'skill', description, content: 'Do the work.' }, { ui: true })
+  const kept = env.rt.state.capabilities.items.echo.description
+  assert.equal(kept.isWellFormed(), true, 'the stored description is well formed, never a lone high surrogate')
+  assert.equal(kept, 'a'.repeat(1999), 'the 2000th unit was the first half of the pair, so the pair is dropped, not split')
+  assert.ok(description.startsWith(kept), 'a code-point prefix of the description the peer sent')
+  assert.ok(kept.length <= 2000, 'the budget of 2000 UTF-16 units is unchanged')
+})

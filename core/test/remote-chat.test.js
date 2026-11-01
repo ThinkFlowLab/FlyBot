@@ -304,3 +304,29 @@ test('a reply typed into a feishu chat leaves on the Feishu webhook (#1266)', as
   assert.equal(said, '', 'nothing is drawn for a send that left')
   assert.deepEqual(posts, [['https://open.feishu.cn/open-apis/bot/v2/hook/abc', 'the answer']])
 })
+
+// #1979: the remote home's own error text is cut at 157 units and ends in "…"; a cut that lands
+// between the halves of a surrogate pair hands the owner a lone high surrogate.
+test('#1979: a long remote error keeps a well-formed 157-unit tail before the ellipsis', () => {
+    const raw = 'Not sent: ' + 'a'.repeat(146) + '😀' + 'tail';
+    assert.ok(raw.length > 160, 'the long-line branch only runs past 160 units');
+    const line = notSentLine(new Error(raw));
+    assert.equal(line.isWellFormed(), true, 'the preview is well formed, never a lone high surrogate');
+    assert.ok(line.endsWith('…'), 'the long line still ends in the ellipsis');
+    const kept = line.slice(0, -1);
+    assert.equal(kept, 'Not sent: ' + 'a'.repeat(146), 'the pair at the bound is dropped, not split');
+    assert.ok(raw.startsWith(kept), 'a code-point prefix of what the remote home wrote');
+    assert.ok(kept.length <= 157, 'the budget of 157 UTF-16 units is unchanged');
+});
+
+// #1979: a remote reply is abbreviated to 80 units before the trailing-period strip, so an emoji at
+// the bound must not leave a lone high surrogate in the sentence the owner reads.
+test('#1979: an abbreviated remote reply is well formed at 80 units', () => {
+    const body = 'the remote said ' + 'a'.repeat(63) + '😀' + 'tail';
+    const kept = 'the remote said ' + 'a'.repeat(63);
+    assert.equal(kept.length, 79, 'the pair starts at unit 79, so a plain slice(0, 80) keeps half of it');
+    const line = notSentLine(new Error('Bot Social send_as_member: ' + body));
+    assert.equal(line.isWellFormed(), true, 'the sentence is well formed, never a lone high surrogate');
+    assert.equal(line, 'Not sent: ' + kept + '. Try again.', 'the pair at the bound is dropped, not split');
+    assert.ok(body.startsWith(kept), 'a code-point prefix of the reply');
+});

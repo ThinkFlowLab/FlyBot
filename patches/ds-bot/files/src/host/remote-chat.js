@@ -15,6 +15,7 @@ import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { SOURCE_KIND } from './constants.js'
 import { cleanName, fenceUntrusted } from './delivery.js'
 import { isHomeLevelRemote, normRemoteHandle } from '../shared/remote-label.js'
+import { cut } from './text.js'
 
 export const REMOTE_PROVIDER = 'flybot-remote'
 export const REMOTE_FORM = 'remote-chat'
@@ -27,7 +28,7 @@ const textOf = content => (Array.isArray(content) ? content.filter(block => bloc
 // English line with a next step; never dump `Bot Social send_as_member: …`.
 export function notSentLine(error) {
   const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
-  if (/^Not sent:/i.test(raw)) return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
+  if (/^Not sent:/i.test(raw)) return raw.length > 160 ? `${cut(raw, 157).text}…` : raw
   const body = raw.replace(/^Bot Social\s+[A-Za-z0-9_.-]+:\s*/i, '').trim()
   const blob = `${raw} ${error?.code ?? ''}`
   if (/paused|turn budget|loop detected|emergency stop/i.test(blob)) {
@@ -73,7 +74,7 @@ export function notSentLine(error) {
     return 'Not sent: Bot Social did not answer. Try again.'
   }
   // One "Try again." only: an earlier layer may already have said it (#954), and two reads as a stutter.
-  const short = (body || raw).slice(0, 80).replace(/\.$/, '').replace(/\.?\s*Try again\.?$/i, '').replace(/\.$/, '')
+  const short = cut(body || raw, 80).text.replace(/\.$/, '').replace(/\.?\s*Try again\.?$/i, '').replace(/\.$/, '')
   if (!short || /^[a-z0-9_]+$/i.test(short)) {
     return 'Not sent: the message could not leave. Try again.'
   }
