@@ -311,7 +311,9 @@ export function projectBoardView({ project, rows, done, canManage, tasks, decisi
     })
   const waiting = queueItems(queues?.waiting, item => ({ role: text(item.role) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }))
   const inflight = queueItems(queues?.inflight, item => ({ holder: text(item.holder) || null, state: item.stalled === true ? 'stalled' : 'running' }))
-  const blocked = queueItems(queues?.blocked, item => ({ reason: text(item.reason) || null }))
+  // #2029: a blocked row carries the age the host measured beside its reason, the same way the
+  // waiting row does — the view never measures it here.
+  const blocked = queueItems(queues?.blocked, item => ({ reason: text(item.reason) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }))
   const queueGroups = [
     { group: 'waiting', label: 'Waiting', items: waiting },
     { group: 'inflight', label: 'In flight', items: inflight },
@@ -503,7 +505,9 @@ function ProjectQueueGroups({ view, onOpen }) {
         ? h('span', { className: 'bt-project-wait' }, [row.role === null ? null : h('span', { key: 'role', className: 'bt-project-role' }, row.role), waitedLabel(row.waitedMs) === null ? null : ` · ${waitedLabel(row.waitedMs)}`])
         : entry.group === 'inflight'
           ? h('span', { className: 'bt-project-state' }, row.holder === null ? t(row.state) : `${row.holder} · ${t(row.state)}`)
-          : h('span', { className: 'bt-project-reason' }, row.reason)
+          // #2029: a blocked row says why and, when the host measured it, how long — `reason · 2d`.
+          // With no stamp it keeps the reason alone; an invented age would read as a wait nobody measured.
+          : h('span', { className: 'bt-project-reason' }, row.reason === null ? null : waitedLabel(row.waitedMs) === null ? row.reason : `${row.reason} · ${waitedLabel(row.waitedMs)}`)
       return h('div', {
         key: row.key,
         className: 'bt-project-row',

@@ -389,7 +389,9 @@ hidden, and a read that lands after the pane closed is dropped. Tests:
 
 The pane draws the three host groups beside the columns (#1768) — `Waiting` with the role and how long
 the card waited, `In flight` with the holder and `running`/`stalled`, `Blocked` with the card's own
-reason — and the header counts waiting / in flight / blocked / done. The groups and the counts are the
+reason and, when the host measured one, how long it has been stuck (`reason · 2d`, from the row's
+`waitedMs`; a card the host could not date keeps the reason alone) — and the header counts waiting /
+in flight / blocked / done. The groups and the counts are the
 `project-board` answer, not a second read: `waiting`, `inflight`, `blocked` and `counts` ride
 along with `tasks` in the same response. A count the host answered as `null` renders as `unknown` and
 never as `0`; a group with no items is not drawn, and a board with neither rows nor groups is still the

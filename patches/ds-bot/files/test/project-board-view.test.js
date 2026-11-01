@@ -322,6 +322,24 @@ test('#1768: the pane draws each group and a blocked card shows its reason', () 
   const ids = nodes.filter(node => node && node.props && node.props['data-task-id']).map(node => node.props['data-task-id'])
   assert.ok(ids.includes('task-w1') && ids.includes('task-b1') && ids.includes('task-g1'), JSON.stringify(ids))
 })
+
+// #2029: the blocked row said why and nothing about how long, so a card stuck three days and one
+// stuck three minutes drew the same line. The host now hands the age over as `waitedMs`; the row
+// draws it only when the host measured one, and a card with no stamp keeps the reason alone.
+test('#2029: a blocked row says how long it has been stuck, and nothing when the host has no stamp', () => {
+  const aged = { ...queues, blocked: [{ id: 'task-g1', reason: 'Which branch should this ship on?', since: 1, waitedMs: 172800000 }] }
+  const view = plain(projectBoardView({ project: { id: 'project-1', name: 'FlyBot' }, rows, tasks: [], queues: aged }))
+  assert.equal(view.queues[2].items[0].waitedMs, 172800000)
+  const nodes = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, tasks: [], queues: aged }))
+  const reason = nodes.find(node => node && node.props && node.props.className === 'bt-project-reason')
+  assert.ok(reason, 'the blocked row draws its reason line')
+  assert.ok(textOf(reason).endsWith(' · 2d'), textOf(reason))
+  // No stamp: the line is the reason alone — `0s` would claim a wait nobody measured.
+  const bare = { ...queues, blocked: [{ id: 'task-g1', reason: 'Which branch should this ship on?', since: null, waitedMs: null }] }
+  const bareNodes = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, tasks: [], queues: bare }))
+  const bareReason = bareNodes.find(node => node && node.props && node.props.className === 'bt-project-reason')
+  assert.equal(textOf(bareReason), 'Which branch should this ship on?')
+})
 // #1814: the wait a card shows and whether its lease is live are computed at read time on the host
 // (`waitedMs`, `buildQueues`), so a board that reads once freezes: a lease that expires while the
 // page is open never turns `stalled` and `3h` stays `3h`. The board polls, and the count below is

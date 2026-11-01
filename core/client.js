@@ -10654,7 +10654,7 @@ function projectBoardView({ project, rows, done, canManage, tasks, decisions, me
   });
   const waiting = queueItems(queues?.waiting, (item) => ({ role: text(item.role) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }));
   const inflight = queueItems(queues?.inflight, (item) => ({ holder: text(item.holder) || null, state: item.stalled === true ? "stalled" : "running" }));
-  const blocked = queueItems(queues?.blocked, (item) => ({ reason: text(item.reason) || null }));
+  const blocked = queueItems(queues?.blocked, (item) => ({ reason: text(item.reason) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }));
   const queueGroups = [
     { group: "waiting", label: "Waiting", items: waiting },
     { group: "inflight", label: "In flight", items: inflight },
@@ -10849,7 +10849,7 @@ function ProjectQueueGroups({ view, onOpen }) {
     (0, import_react19.createElement)("h4", null, t(entry.label)),
     entry.items.map((row) => {
       const open = row.board === null ? void 0 : () => onOpen?.(row.board);
-      const note = entry.group === "waiting" ? (0, import_react19.createElement)("span", { className: "bt-project-wait" }, [row.role === null ? null : (0, import_react19.createElement)("span", { key: "role", className: "bt-project-role" }, row.role), waitedLabel(row.waitedMs) === null ? null : ` · ${waitedLabel(row.waitedMs)}`]) : entry.group === "inflight" ? (0, import_react19.createElement)("span", { className: "bt-project-state" }, row.holder === null ? t(row.state) : `${row.holder} · ${t(row.state)}`) : (0, import_react19.createElement)("span", { className: "bt-project-reason" }, row.reason);
+      const note = entry.group === "waiting" ? (0, import_react19.createElement)("span", { className: "bt-project-wait" }, [row.role === null ? null : (0, import_react19.createElement)("span", { key: "role", className: "bt-project-role" }, row.role), waitedLabel(row.waitedMs) === null ? null : ` · ${waitedLabel(row.waitedMs)}`]) : entry.group === "inflight" ? (0, import_react19.createElement)("span", { className: "bt-project-state" }, row.holder === null ? t(row.state) : `${row.holder} · ${t(row.state)}`) : (0, import_react19.createElement)("span", { className: "bt-project-reason" }, row.reason === null ? null : waitedLabel(row.waitedMs) === null ? row.reason : `${row.reason} · ${waitedLabel(row.waitedMs)}`);
       return (0, import_react19.createElement)(
         "div",
         {
