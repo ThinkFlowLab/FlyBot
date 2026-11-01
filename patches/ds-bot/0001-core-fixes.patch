@@ -4891,9 +4891,12 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -25,9 +25,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSyn
+@@ -23,11 +23,16 @@
+ import { createHash } from 'node:crypto'
+ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
- import { dirname, join } from 'node:path'
+-import { dirname, join } from 'node:path'
++import { dirname, join, relative, sep } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 -import { defineTool } from '@deepseek-ai/dsh-tools'
 -import { splitRef, unquote } from './text.js'
@@ -4935,7 +4938,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    'Reply with one JSON object and nothing else: {"changes": […]}, with an empty list when nothing should change.',
    `At most ${REVIEW_CHANGES_MAX} changes in one answer, the most lasting first; the rest can wait for the next review.`,
    'Keep, as a new entry:',
-@@ -408,6 +408,7 @@ export function install(rt) {
+@@ -408,12 +408,16 @@ export function install(rt) {
        memoryEndpoint: async () => { throw new Error('Memory is turned off on this host') },
        memoryNews: () => ({}),
        memoryReviews: () => 0,
@@ -4943,7 +4946,16 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      })
      return
    }
-@@ -425,6 +425,31 @@ export function install(rt) {
+ 
+   const reviewOn = config.memoryReview !== false
+   const root = join(home, 'memory')
++  const snapshotsDir = join(root, 'snapshots')
++  const summariesDir = join(root, 'summaries')
++  const archiveDir = join(root, 'archive')
+   const journalPath = join(root, 'journal.jsonl')
+   const dayFormat = new Intl.DateTimeFormat('en-CA', { ...(config.timeZone ? { timeZone: config.timeZone } : {}), year: 'numeric', month: '2-digit', day: '2-digit' })
+   const today = () => dayFormat.format(Date.now())
+@@ -425,6 +425,53 @@ export function install(rt) {
    const dirOf = scope => (scope.kind === 'team' ? join(root, 'team') : join(root, 'bots', safeId(scope.botId)))
    const scopeKey = scope => (scope.kind === 'team' ? 'team' : `bot:${scope.botId}`)
  
@@ -4957,19 +4969,41 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +    warnedFolders.add(dir)
 +    rt.warn('ds-bot: memory folder is not a plain directory %s; keeping it empty', dir)
 +  }
++  // The one answer for "what is this folder": every segment from `memory/` down is asked on its
++  // own, because `lstat` follows a link above the last component — `memory/bots` or a
++  // `memory/snapshots` that is a link reads and writes as a real folder through it otherwise.
++  // `absent` is the state a host write may create; `other` is refused and said once.
++  const folderKind = (dir) => {
++    const parts = relative(root, dir).split(sep).filter(part => part !== '')
++    let at = root
++    let kind = dirKindSync(at)
++    for (const part of parts) {
++      if (kind !== 'real') return { kind, at }
++      at = join(at, part)
++      kind = dirKindSync(at)
++    }
++    return { kind, at }
++  }
++  // A reader takes a folder only when it is a plain directory all the way down; anything else
++  // answers what a missing folder answers, and `other` says so once per folder and process — the
++  // folder named is the one that failed, so a linked `memory/` is one warning, not one per sink.
++  const readFolder = (dir) => {
++    const { kind, at } = folderKind(dir)
++    if (kind === 'real') return true
++    warnFolder(kind, at)
++    return false
++  }
++  // The host's own bookkeeping may create a folder that is not there yet, as it always could; a
++  // link or a plain file is refused, because the write would land outside this home.
++  const writeFolder = (dir) => {
++    const { kind, at } = folderKind(dir)
++    if (kind === 'real' || kind === 'absent') return true
++    warnFolder(kind, at)
++    return false
++  }
 +  const scopeDir = (scope) => {
-+    const base = dirKindSync(root)
-+    if (base !== 'real') {
-+      warnFolder(base, root)
-+      return undefined
-+    }
 +    const dir = dirOf(scope)
-+    const kind = dirKindSync(dir)
-+    if (kind !== 'real') {
-+      warnFolder(kind, dir)
-+      return undefined
-+    }
-+    return dir
++    return readFolder(dir) ? dir : undefined
 +  }
 +
    const readText = (path) => {
@@ -5012,6 +5046,25 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const limitOf = file => (file.topic === undefined ? MEMORY_LIMITS.main : MEMORY_LIMITS.topic)
    const fileName = file => (file.topic === undefined ? MAIN : `topic [[${file.topic}]]`)
  
+@@ -459,6 +459,7 @@ export function install(rt) {
+     await rename(temp, path)
+   }
+   async function journal(record) {
++    if (!writeFolder(root)) return
+     await mkdir(root, { recursive: true })
+     await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, 'utf8')
+   }
+@@ -479,6 +479,10 @@ export function install(rt) {
+     if (gone) throw Object.assign(new Error('That Bot has been deleted'), { code: GONE })
+     const denied = botActor === undefined ? undefined : writeDenied(scope, botActor)
+     if (denied !== undefined) throw Object.assign(new Error(denied), { code: DENIED })
++    // The entry writers are in the same rule as the host's own bookkeeping: a missing folder is
++    // created, a link is refused rather than written through.
++    const dir = dirOf(scope)
++    if (!writeFolder(dir)) throw new Error(`Memory cannot change now: the memory folder is not a plain directory (${dir})`)
+   }
+ 
+   // ---------------------------------------------------------------------------
 @@ -486,7 +486,24 @@ export function install(rt) {
    // Main Bots and the admins of a group also write the team's; Main Bots read and
    // write every Bot's. The user may do everything from the memory panel.
@@ -5099,15 +5152,24 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      })
    }
  
-@@ -632,7 +632,7 @@ export function install(rt) {
+@@ -632,12 +632,13 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
        if (rt.readOnly() !== undefined) return
 -      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => {})
-+      await unlink(join(root, 'summaries', `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
++      if (writeFolder(summariesDir)) await unlink(join(summariesDir, `${safeId(botId)}.json`)).catch(() => { /* the summary file may not exist */ })
        const dir = dirOf(ownScope(botId))
-       if (!existsSync(dir)) return
+-      if (!existsSync(dir)) return
++      if (!readFolder(dir)) return
++      if (!writeFolder(archiveDir)) return
        const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
+-      await mkdir(join(root, 'archive'), { recursive: true })
+-      await rename(dir, join(root, 'archive', name))
++      await mkdir(archiveDir, { recursive: true })
++      await rename(dir, join(archiveDir, name))
+       await journal({ op: 'archive', scope: scopeKey(ownScope(botId)), actor: 'user', actorName: 'user', botName: bot?.name, to: `archive/${name}` })
+     }).catch(error => rt.warn('ds-bot: memory of %s not archived: %s', bot?.name ?? botId, error))
+   }
 @@ -655,8 +655,8 @@ export function install(rt) {
    }
    function memorySection(bot) {
@@ -5119,6 +5181,29 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return [
        '# Your memory',
        memoryRules(reviewOn),
+@@ -685,10 +685,12 @@ export function install(rt) {
+     const kept = frozen.get(sessionId)
+     if (kept !== undefined && kept.includes(rule)) return kept
+     const path = snapshotPath(sessionId)
+-    let text = existsSync(path) ? readText(path) : ''
++    // The snapshot is read back verbatim, so the folder holding it gets the same check: a linked
++    // `memory` or `memory/snapshots` would put outside bytes in this Session's prompt.
++    let text = readFolder(snapshotsDir) && existsSync(path) ? readText(path) : ''
+     if (text === '' || !text.includes(rule)) {
+       text = memorySection(bot)
+-      if (rt.readOnly() === undefined) {
++      if (rt.readOnly() === undefined && writeFolder(snapshotsDir)) {
+         try {
+           mkdirSync(dirname(path), { recursive: true })
+           writeFileSync(`${path}.tmp`, text, 'utf8')
+@@ -705,6 +705,7 @@ export function install(rt) {
+   function renewMemory(sessionId) {
+     if (sessionId === undefined) return
+     frozen.delete(sessionId)
++    if (!writeFolder(snapshotsDir)) return
+     try { unlinkSync(snapshotPath(sessionId)) } catch { /* none saved */ }
+   }
+ 
 @@ -837,11 +837,13 @@ export function install(rt) {
  
    ctx.tools.register(defineTool({
@@ -5218,7 +5303,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
-@@ -978,7 +978,7 @@ export function install(rt) {
+@@ -963,6 +963,7 @@ export function install(rt) {
+   const summaryPath = botId => join(root, 'summaries', `${safeId(botId)}.json`)
+   const savedSummary = (botId) => {
+     if (summaries.has(botId)) return summaries.get(botId)
++    if (!readFolder(summariesDir)) return undefined
+     try {
+       const value = JSON.parse(readFileSync(summaryPath(botId), 'utf8'))
+       if (typeof value?.hash === 'string' && typeof value.text === 'string') {
+@@ -978,10 +978,10 @@ export function install(rt) {
      const model = bot.model
      const job = (async () => {
        const text = await botShot(bot, SUMMARY_SYSTEM, summaryRequest({ name: bot.name, own: linesFor(own), team: linesFor(team), language }), { sessionId: rt.chatOf(bot.id), kind: 'memory' })
@@ -5226,7 +5319,11 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +      const value = { hash, text: cut(text, SUMMARY_TEXT_MAX).text, at: Date.now() }
        summaries.set(bot.id, value)
        summaryFailures.delete(bot.id)
-       if (rt.readOnly() === undefined) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
+-      if (rt.readOnly() === undefined) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
++      if (rt.readOnly() === undefined && writeFolder(summariesDir)) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
+     })().catch((error) => {
+       summaryFailures.set(bot.id, { hash, model, message: error?.message ?? String(error) })
+       rt.warn('ds-bot: memory summary for %s failed: %s', bot.name, error)
 @@ -1004,11 +1004,11 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
@@ -5250,11 +5347,29 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      if (text === '') throw new Error('Type a question or a change first')
      const numbered = [
        ...allEntries(loadScope(ownScope(bot.id))).map(entry => ({ ...entry, scope: 'own' })),
-@@ -1083,9 +1083,15 @@ export function install(rt) {
+@@ -1074,18 +1074,28 @@ export function install(rt) {
+   let cursors
+   const cursorsNow = () => {
+     if (cursors === undefined) {
+-      try {
+-        const value = JSON.parse(readFileSync(cursorsPath, 'utf8'))
+-        cursors = value !== null && typeof value === 'object' ? value : {}
+-      } catch {
+-        cursors = {}
++      cursors = {}
++      if (readFolder(root)) {
++        try {
++          const value = JSON.parse(readFileSync(cursorsPath, 'utf8'))
++          cursors = value !== null && typeof value === 'object' ? value : {}
++        } catch {
++          // none yet
++        }
+       }
      }
      return cursors
    }
 -  const clip = (text, max) => (text.length > max ? `${text.slice(0, max)} …(cut)` : text)
++  const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
 +  const clip = (text, max) => (text.length > max ? `${cut(text, max).text} …(cut)` : text)
    // A long message often ends with what the user wants of it, so both ends stay.
 -  const ends = (text, max) => (text.length > max ? `${text.slice(0, Math.ceil(max * 2 / 3))} …(middle cut)… ${text.slice(-Math.floor(max / 3))}` : text)
@@ -5329,6 +5444,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const live = owner.roomId === undefined ? undefined : rt.roomOf(owner.roomId)
      const kept = seen?.roomId === owner.roomId ? seen?.room : undefined
      const member = live?.members?.includes(bot.id) === true
+@@ -1248,7 +1248,7 @@ export function install(rt) {
+     // leaves a cursor that the next review, or another member's, goes on from.
+     if (since === undefined && read.length > 0) {
+       cursorsNow()[key] = read[0].seq - 1
+-      await writeText(cursorsPath, JSON.stringify(cursors))
++      await saveCursors()
+     }
+     // Only the user's words are kept, so lines without any need no model call.
+     if (read.some(line => line.who === 'user')) {
 @@ -1256,7 +1256,7 @@ export function install(rt) {
        const teamFiles = loadScope(TEAM)
        const said = read.filter(line => line.who === 'user').map(line => line.text).join('\n')
@@ -5347,6 +5471,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
+@@ -1289,7 +1289,7 @@ export function install(rt) {
+     const now = cursorsNow()[key]
+     if (through !== undefined && (now === undefined || through > now)) {
+       cursorsNow()[key] = through
+-      await writeText(cursorsPath, JSON.stringify(cursors))
++      await saveCursors()
+     }
+     if (again) queueReview(sessionId, room === undefined ? owner : { botId: bot.id, roomId: room.id, room })
+   }
 @@ -1304,7 +1304,11 @@ export function install(rt) {
        const sessionId = room.sessions?.[member]
        // A member never reviewed here is behind from the oldest line of the log.
@@ -11225,7 +11358,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,298 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,570 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -11523,6 +11656,278 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.match(text, /Topics: \[\[travel\]\]/)
 +  assert.deepEqual(view.entries.filter(entry => entry.scope === 'team').map(entry => entry.text), ['Ships on Friday', 'Flies from Hangzhou'])
 +  assert.deepEqual(folderWarnings(), [])
++})
++
++// A Bot's folder sits one level deeper than a team's: `memory/bots/<id>`. `lstat` follows a link
++// above the last component, so the middle one is the case a leaf check cannot see.
++test('#2068: a linked bots folder reads nothing for a Bot, and says so once', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(outside, 'b2'), { recursive: true })
++  writeFileSync(join(outside, 'b2', 'MEMORY.md'), '# Memory\n\n- an entry from outside the home\n')
++  writeFileSync(join(outside, 'b2', 'travel.md'), '# travel\n\n- Flies from outside\n')
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  symlinkSync(outside, join(home, 'memory', 'bots'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { section, call, stop } = start({ home })
++  t.after(() => stop())
++  for (let round = 0; round < 3; round++) {
++    const text = section('b2')
++    assert.doesNotMatch(text, /an entry from outside the home/)
++    assert.doesNotMatch(text, /\[\[travel\]\]/)
++    const view = (await call('memory-view', { botId: 'b2' })).value
++    assert.deepEqual(view.entries.filter(entry => entry.scope === 'own'), [])
++    assert.equal(view.sizes.own, 0)
++  }
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1, 'one warning per folder per process, not one per read')
++  assert.ok(warned[0].includes(join(home, 'memory', 'bots')), `the warning names the folder: ${warned[0]}`)
++})
++
++// The prompt section is frozen in `memory/snapshots/<session>.md` and read back as is, so a linked
++// `memory/` hands outside bytes to every request without ever listing a topic.
++test('#2068: a linked memory folder does not hand a snapshot to the prompt', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const first = start({ home })
++  await first.call('state', {})
++  const plain = first.section('b2')
++  await first.stop({ keep: true })
++  assert.match(plain, /The team memory is shared by every Bot/)
++  const snapshot = readFileSync(join(home, 'memory', 'snapshots', 'b2.md'), 'utf8')
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(outside, 'snapshots'), { recursive: true })
++  writeFileSync(join(outside, 'snapshots', 'b2.md'), `${snapshot}\n- an entry from outside the home\n`)
++  rmSync(join(home, 'memory'), { recursive: true, force: true })
++  symlinkSync(outside, join(home, 'memory'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const second = start({ home })
++  t.after(() => second.stop())
++  await second.call('state', {})
++  const text = second.section('b2')
++  assert.doesNotMatch(text, /an entry from outside the home/)
++  assert.match(text, /The team memory is shared by every Bot/, 'a whole section, not an empty one')
++  const view = (await second.call('memory-view', { botId: 'b2' })).value
++  assert.deepEqual(view.entries, [])
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory')), `the warning names the folder: ${warned[0]}`)
++})
++
++test('#2068: a linked summaries folder is not a saved summary', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  writeFileSync(join(outside, 'b2.json'), JSON.stringify({ hash: 'f'.repeat(64), text: 'an outside summary', at: 1 }))
++  mkdirSync(join(home, 'memory', 'team'), { recursive: true })
++  writeFileSync(join(home, 'memory', 'team', 'MEMORY.md'), '# Memory\n\n- Ships on Friday [added: 2026-11-01]\n')
++  symlinkSync(outside, join(home, 'memory', 'summaries'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { call, stop } = start({ home })
++  t.after(() => stop())
++  const view = (await call('memory-view', { botId: 'b2' })).value
++  assert.ok(view.entries.length > 0, 'the panel has entries, so a summary would be shown')
++  assert.equal(view.summary, null)
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory', 'summaries')), `the warning names the folder: ${warned[0]}`)
++})
++
++// The host keeps its own bookkeeping under `memory/` as well — the frozen snapshot, the saved
++// summary, the archive, the journal — and those writes create a missing folder, as they always
++// did. A link is refused: the file would land outside the home, which is worse than reading one.
++test('#2068: a snapshot folder that is a link gets no snapshot written through it', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  symlinkSync(outside, join(home, 'memory', 'snapshots'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { section, call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  const text = section('b2')
++  assert.match(text, /The team memory is shared by every Bot/, 'the section is built even when it cannot be frozen')
++  assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory', 'snapshots')), `the warning names the folder: ${warned[0]}`)
++})
++
++test('#2068: a linked summaries folder is not emptied by a Bot archive', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  writeFileSync(join(outside, 'b2.json'), JSON.stringify({ hash: 'f'.repeat(64), text: 'an outside summary', at: 1 }))
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  symlinkSync(outside, join(home, 'memory', 'summaries'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  await call('delete-bot', { id: 'b2' })
++  assert.equal(existsSync(join(outside, 'b2.json')), true, 'the file outside the home is still there')
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory', 'summaries')), `the warning names the folder: ${warned[0]}`)
++})
++
++test('#2068: a linked archive folder does not take a Bot memory folder', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  mkdirSync(join(home, 'memory', 'bots', 'b2'), { recursive: true })
++  writeFileSync(join(home, 'memory', 'bots', 'b2', 'MEMORY.md'), '# Memory\n\n- Ships on Friday [added: 2026-11-01]\n')
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  symlinkSync(outside, join(home, 'memory', 'archive'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  await call('delete-bot', { id: 'b2' })
++  assert.equal(existsSync(join(home, 'memory', 'bots', 'b2', 'MEMORY.md')), true, 'the Bot folder stays where it was')
++  assert.deepEqual(readdirSync(outside), [], 'nothing was moved through the link')
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory', 'archive')), `the warning names the folder: ${warned[0]}`)
++})
++
++test('#2068: a linked team folder refuses an entry write instead of writing into it', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  symlinkSync(outside, join(home, 'memory', 'team'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const folderWarnings = captureWarnings(t)
++  const { tool, call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'),
++    /^Memory cannot change now: the memory folder is not a plain directory /)
++  assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
++  const warned = folderWarnings()
++  assert.equal(warned.length, 1)
++  assert.ok(warned[0].includes(join(home, 'memory', 'team')), `the warning names the folder: ${warned[0]}`)
++})
++
++test('#2068: a linked memory root refuses an entry write and appends no journal outside', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(outside, 'bots', 'b2'), { recursive: true })
++  writeFileSync(join(outside, 'bots', 'b2', 'MEMORY.md'), '# Memory\n\n- kept\n')
++  symlinkSync(outside, join(home, 'memory'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const { tool, call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  assert.match(await tool('remember', { text: 'Ship on Friday' }, 'b2'), /^Memory cannot change now: the memory folder is not a plain directory /)
++  assert.equal(existsSync(join(outside, 'journal.jsonl')), false, 'no journal was appended through the link')
++  assert.equal(readFileSync(join(outside, 'bots', 'b2', 'MEMORY.md'), 'utf8'), '# Memory\n\n- kept\n', 'the outside file is untouched')
++})
++
++// A control beside the refusals: a missing folder is still created, as it always was.
++test('#2068: a missing memory folder is still created by a write', async (t) => {
++  const { tool, call, stop, home } = start()
++  t.after(() => stop())
++  await call('state', {})
++  assert.equal(existsSync(join(home, 'memory', 'team')), false)
++  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /^Saved to the team memory/)
++  assert.match(readFileSync(join(home, 'memory', 'team', 'MEMORY.md'), 'utf8'), /- Ship on Friday/)
++})
++
++// The rule above is one resolver, and these two cases keep it one. The first names every path
++// this module builds under `memory/`; the second ties each of those functions to a behaviour
++// probe that runs it against a linked folder — a list alone would still be green after a new
++// bypass was added to it (#2068).
++const MEMORY_PATHS = /join\((root|at|dir|dirOf)\b/
++const MEMORY_PROBES = {
++  // path builders: each is exercised through the sink its files land in
++  snapshotsDir: 'a snapshot folder that is a link gets no snapshot written through it',
++  summariesDir: 'a linked summaries folder is not emptied by a Bot archive',
++  archiveDir: 'a linked archive folder does not take a Bot memory folder',
++  journalPath: 'a linked memory root refuses an entry write and appends no journal outside',
++  dirOf: 'a linked bots folder reads nothing for a Bot, and says so once',
++  snapshotPath: 'a linked memory folder does not hand a snapshot to the prompt',
++  summaryPath: 'a linked summaries folder is not a saved summary',
++  cursorsPath: 'a linked memory root refuses an entry write and appends no journal outside',
++  // the resolver, and the readers and writers that ask it
++  folderKind: 'a linked bots folder reads nothing for a Bot, and says so once',
++  readFolder: 'a linked bots folder reads nothing for a Bot, and says so once',
++  writeFolder: 'a linked team folder refuses an entry write instead of writing into it',
++  scopeDir: 'a linked bots folder reads nothing for a Bot, and says so once',
++  loadScope: 'a linked bots folder reads nothing for a Bot, and says so once',
++  readMainOf: 'a linked bots folder reads nothing for a Bot, and says so once',
++  writable: 'a linked team folder refuses an entry write instead of writing into it',
++  addEntry: 'a linked team folder refuses an entry write instead of writing into it',
++  sectionFor: 'a snapshot folder that is a link gets no snapshot written through it',
++  renewMemory: 'a snapshot folder that is a link is not unlinked when a Bot is deleted',
++  journal: 'a linked memory root refuses an entry write and appends no journal outside',
++  savedSummary: 'a linked summaries folder is not a saved summary',
++  startSummary: 'a linked summaries folder gets no summary written through it',
++  archiveBotMemory: 'a linked archive folder does not take a Bot memory folder',
++  cursorsNow: 'a linked memory root refuses an entry write and appends no journal outside',
++  saveCursors: 'a linked memory root refuses an entry write and appends no journal outside',
++}
++
++const sourceOwners = (source) => {
++  const lines = source.split('\n')
++  const ownerOf = (at) => {
++    for (let back = at; back >= 0; back--) {
++      const found = /^ {2}(?:const|let|async function|function) ([\w$]+)/.exec(lines[back])
++      if (found !== null) return found[1]
++    }
++    return '(top level)'
++  }
++  return { lines, ownerOf, ownersOf: (pattern) => lines.flatMap((line, at) => (pattern.test(line) ? [ownerOf(at)] : [])).filter((owner, at, all) => all.indexOf(owner) === at) }
++}
++
++test('#2068: every path built from memory/ is one of the reviewed sinks', () => {
++  const { ownersOf } = sourceOwners(readFileSync(new URL('../src/host/memory.js', import.meta.url), 'utf8'))
++  assert.deepEqual(ownersOf(MEMORY_PATHS), ['snapshotsDir', 'summariesDir', 'archiveDir', 'journalPath', 'dirOf', 'folderKind', 'loadScope', 'readMainOf', 'addEntry', 'snapshotPath', 'summaryPath', 'cursorsPath'],
++    'a new path built from memory/ is a new sink: route it through folderKind/readFolder/writeFolder and add it here and to MEMORY_PROBES')
++  const missing = Object.keys(MEMORY_PROBES).filter((name) => !new RegExp(`(const|function) ${name}\\b`).test(readFileSync(new URL('../src/host/memory.js', import.meta.url), 'utf8')))
++  assert.deepEqual(missing, [], 'a probe with no sink behind it is stale')
++})
++
++test('#2068: every sink has its own probe, and every probe its own sink', () => {
++  const source = readFileSync(new URL('../src/host/memory.js', import.meta.url), 'utf8')
++  const { ownersOf } = sourceOwners(source)
++  const sinks = new Set([...ownersOf(MEMORY_PATHS), ...ownersOf(/\b(snapshotsDir|summariesDir|archiveDir|journalPath|dirOf|snapshotPath|summaryPath|cursorsPath|folderKind|readFolder|writeFolder)\b/)])
++  assert.deepEqual([...sinks].sort(), Object.keys(MEMORY_PROBES).sort(),
++    'every sink needs a probe in MEMORY_PROBES, and every probe a sink')
++  const tests = new Set([...readFileSync(new URL('./memory.test.js', import.meta.url), 'utf8').matchAll(/test\('#2068: ([^']+)'/g)].map((found) => found[1]))
++  for (const [sink, probe] of Object.entries(MEMORY_PROBES)) {
++    assert.equal(tests.has(probe), true, `the probe for ${sink} is missing: ${probe}`)
++  }
++})
++
++test('#2068: a snapshot folder that is a link is not unlinked when a Bot is deleted', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  writeFileSync(join(outside, 'b2.md'), 'a snapshot kept outside the home\n')
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  symlinkSync(outside, join(home, 'memory', 'snapshots'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const { call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  await call('delete-bot', { id: 'b2' })
++  assert.equal(existsSync(join(outside, 'b2.md')), true, 'the file outside the home was not unlinked')
++})
++
++test('#2068: a linked summaries folder gets no summary written through it', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(home, 'memory', 'team'), { recursive: true })
++  writeFileSync(join(home, 'memory', 'team', 'MEMORY.md'), '# Memory\n\n- Ships on Friday [added: 2026-11-01]\n')
++  symlinkSync(outside, join(home, 'memory', 'summaries'), 'dir')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const { call, stop } = start({ home, replies: ['## Overview\nShips on Friday.'] })
++  t.after(() => stop())
++  await call('state', {})
++  await call('memory-view', { botId: 'b2', summarize: true })
++  for (let i = 0; i < 50; i++) await settle()
++  assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
