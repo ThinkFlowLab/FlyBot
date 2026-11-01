@@ -430,3 +430,165 @@ test('P-364: a room board rail counts the room\'s active cards, not only its arc
   assert.equal(room.railMeta('s'), '1/4', 'four drawn cards, one of them finished: {done}/{total}, not {done}/{done}')
   assert.equal(room.railMeta('a'), '0/1', 'a Bot with an active card and none finished is 0 of 1, not a blank rail')
 })
+
+// P-360: the rail switch from one Bot to another. The fake React at the top of this file hands an
+// effect back to the test and never re-runs one, so a switch case written against it passes whatever
+// the hook does (#1810). This is a second, stateful context: hook slots per component, an effect
+// re-run only when its deps change, a setter that re-renders, and the board's poll on a fake clock.
+function mountBoard(actions) {
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) })
+  const runtime = { instances: new Map(), key: 'root', index: 0, dirty: false, timer: 0, timers: new Map() }
+  const instance = (key) => {
+    let found = runtime.instances.get(key)
+    if (!found) {
+      found = { slots: [], refs: [], pending: [], deps: new Map(), cleanups: new Map() }
+      runtime.instances.set(key, found)
+    }
+    return found
+  }
+  const scoped = (key, run) => {
+    const previousKey = runtime.key
+    const previousIndex = runtime.index
+    runtime.key = key
+    runtime.index = 0
+    try { return run() } finally { runtime.key = previousKey; runtime.index = previousIndex }
+  }
+  const react = {
+    createElement: h, Fragment: Symbol('fragment'),
+    useState: (initial) => {
+      const slot = instance(runtime.key)
+      const index = runtime.index++
+      if (!(index in slot.slots)) slot.slots[index] = typeof initial === 'function' ? initial() : initial
+      const set = (next) => {
+        const value = typeof next === 'function' ? next(slot.slots[index]) : next
+        if (Object.is(value, slot.slots[index])) return
+        slot.slots[index] = value
+        runtime.dirty = true
+      }
+      return [slot.slots[index], set]
+    },
+    useEffect: (run, deps) => { instance(runtime.key).pending.push({ index: runtime.index++, run, deps }) },
+    useLayoutEffect: (run, deps) => { instance(runtime.key).pending.push({ index: runtime.index++, run, deps }) },
+    useMemo: fn => fn(), useCallback: fn => fn(),
+    useRef: (current) => {
+      const slot = instance(runtime.key)
+      const index = runtime.index++
+      if (!(index in slot.refs)) slot.refs[index] = { current }
+      return slot.refs[index]
+    },
+  }
+  const commit = () => {
+    for (const slot of runtime.instances.values()) {
+      const pending = slot.pending
+      slot.pending = []
+      for (const { index, run, deps } of pending) {
+        const previous = slot.deps.get(index)
+        const changed = !deps || !previous || deps.length !== previous.length || deps.some((dep, at) => !Object.is(dep, previous[at]))
+        if (!changed) continue
+        const cleanup = slot.cleanups.get(index)
+        if (typeof cleanup === 'function') cleanup()
+        slot.cleanups.delete(index)
+        slot.deps.set(index, deps ? [...deps] : null)
+        const next = run()
+        if (typeof next === 'function') slot.cleanups.set(index, next)
+      }
+    }
+  }
+  const expandLive = (node, path = 'r') => {
+    if (node === null || node === undefined) return null
+    if (Array.isArray(node)) return node.map((child, at) => expandLive(child, `${path}.${at}`))
+    if (typeof node !== 'object') return node
+    if (typeof node.type === 'function') return scoped(path, () => expandLive(node.type({ ...node.props, children: node.children }), path))
+    return { ...node, children: (node.children ?? []).map((child, at) => expandLive(child, `${path}.${at}`)) }
+  }
+  const env = {
+    module: { exports: {} },
+    setTimeout, clearTimeout,
+    // The dialog's escape layer and its `#task=` deep link touch the page; neither is what this
+    // case reads, so they get the smallest window that lets the board mount.
+    window: { location: { hash: '' }, addEventListener() {}, removeEventListener() {} },
+    setInterval: (fn, ms) => {
+      const id = ++runtime.timer
+      runtime.timers.set(id, { every: Math.max(1, Number(ms) || 1), fn })
+      return id
+    },
+    clearInterval: (id) => runtime.timers.delete(id),
+  }
+  env.require = (name) => {
+    if (name === 'react') return react
+    if (name === 'react-dom') return { createPortal: (node) => node }
+    throw new Error(`no platform module ${name}`)
+  }
+  runInNewContext(bundle.outputFiles[0].text, env)
+  const live = env.module.exports
+  let tree = null
+  const draw = () => {
+    runtime.dirty = false
+    for (const slot of runtime.instances.values()) slot.pending = []
+    tree = expandLive(h(live.KanbanDialog, { roster, actions }))
+    commit()
+    return tree
+  }
+  const settle = async () => {
+    for (let guard = 0; guard < 50; guard += 1) {
+      await new Promise(resolve => setImmediate(resolve))
+      if (!runtime.dirty) return tree
+      draw()
+    }
+    throw new Error('the board never settled')
+  }
+  const rail = (botId) => {
+    const button = all(tree).find(node => node.type === 'button' && node.props?.['data-kind'] === 'bot' && node.props?.['data-id'] === botId)
+    assert.ok(button, `the rail names Bot ${botId}`)
+    button.props.onClick()
+  }
+  const column = (name) => byClass(tree, 'bt-board-column').find(node => node.props['data-column'] === name)
+  return { draw, settle, rail, column, get tree() { return tree } }
+}
+
+// A Bot board's Done column is that Bot's own archive page. Switching the rail therefore has to
+// send a fresh `{ botId, archive: true, limit: 20 }` read: the loaded page is scoped to the Bot it
+// was asked for, and the column filters it by the newly selected Bot, so a page kept from the
+// previous Bot is filtered down to nothing and the Done column reads empty.
+test('P-360: switching the rail re-reads the archive, and the new Bot draws its own Done page', async () => {
+  const calls = []
+  const finished = (botId, count) => Array.from({ length: count }, (_, index) => ({
+    id: `task-${botId}-done-${index}`, ownerBotId: botId, title: `${botId.toUpperCase()} finished ${index}`,
+    status: 'accepted', progress: 100, createdAt: index, updatedAt: 100 + index,
+  }))
+  const pages = { a: finished('a', ARCHIVE_SHOWN), s: finished('s', ARCHIVE_SHOWN) }
+  const actions = {
+    closeBoard: () => {},
+    boardClose: () => {},
+    tasks: (query) => {
+      calls.push({ ...query })
+      return Promise.resolve(query?.archive ? pages[query.botId] ?? [] : [])
+    },
+  }
+  const board = mountBoard(actions)
+  const archiveReads = () => calls.filter(query => query?.archive).map(query => query.botId)
+
+  board.draw()
+  await board.settle()
+  // The board opens on the first Bot of the rail (Chief `a`).
+  assert.deepEqual(archiveReads(), ['a'], 'the board opens on the first Bot and reads its archive')
+  assert.equal(byClass(board.column('done'), 'bt-board-card').length, ARCHIVE_SHOWN, 'Chief draws its own finished cards')
+  assert.match(textOf(board.column('done')), /A finished 19/)
+
+  board.rail('s')
+  await board.settle()
+  // The switch has to ask for Writer's page, not keep Chief's: the loaded rows are Chief's, and the
+  // column filters them by Writer, so a kept page is an empty column.
+  assert.deepEqual(archiveReads(), ['a', 's'], 'switching to Writer asks for Writer\'s archive page')
+  assert.deepEqual(calls.filter(query => query?.archive).at(-1), { botId: 's', archive: true, limit: ARCHIVE_SHOWN }, 'the new read names the new Bot')
+  assert.equal(byClass(board.column('done'), 'bt-board-card').length, ARCHIVE_SHOWN, 'Writer draws its own finished cards, not an empty column')
+  assert.match(textOf(board.column('done')), /S finished 19/)
+  assert.doesNotMatch(textOf(board.column('done')), /A finished/)
+
+  // And back again: every switch re-reads, not only the first one.
+  board.rail('a')
+  await board.settle()
+  assert.deepEqual(archiveReads(), ['a', 's', 'a'], 'switching back to Chief reads Chief\'s page again')
+  assert.equal(byClass(board.column('done'), 'bt-board-card').length, ARCHIVE_SHOWN, 'Chief draws its own finished cards again')
+  assert.match(textOf(board.column('done')), /A finished 19/)
+})
