@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,7 +72,7 @@ function baseRef() {
 
 function assertBaseRef(ref) {
   try {
-    execSync(`git rev-parse --verify ${ref}^{commit}`, {
+    execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
       cwd: ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -83,7 +83,7 @@ function assertBaseRef(ref) {
 }
 
 function changedFiles(ref) {
-  const out = execSync(`git diff --name-only ${ref}...HEAD`, {
+  const out = execFileSync('git', ['diff', '--name-only', `${ref}...HEAD`], {
     cwd: ROOT,
     encoding: 'utf8',
   });
@@ -91,7 +91,7 @@ function changedFiles(ref) {
 }
 
 function fileChangedIn(ref, file) {
-  const out = execSync(`git diff --name-only ${ref}...HEAD -- ${file}`, {
+  const out = execFileSync('git', ['diff', '--name-only', `${ref}...HEAD`, '--', file], {
     cwd: ROOT,
     encoding: 'utf8',
   }).trim();
@@ -100,7 +100,7 @@ function fileChangedIn(ref, file) {
 
 export function hasDocsNotNeededTrailer(ref = baseRef()) {
   assertBaseRef(ref);
-  const out = execSync(`git log ${ref}..HEAD --pretty=%B`, {
+  const out = execFileSync('git', ['log', `${ref}..HEAD`, '--pretty=%B'], {
     cwd: ROOT,
     encoding: 'utf8',
   });
