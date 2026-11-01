@@ -349,6 +349,10 @@ export function install(rt) {
         rt.applyParticipants(state.rooms[id], drafts, actor)
         if (!custom) {
           state.rooms[id].name = autoRoomName(state.rooms[id].members, state.rooms[id])
+          // #1987: the Session was opened with the narrow name — the seats were not known yet, so a group
+          // made with a guest read `You, …` and no guest. The name above is the one that sees the room, so
+          // the Session takes it; the comparison is what keeps a room without guests at one rename.
+          if (state.rooms[id].name !== title) await rt.retitleRoom(state.rooms[id])
         }
       }
       await rt.save()
