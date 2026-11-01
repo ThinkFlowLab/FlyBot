@@ -325,8 +325,10 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
         const count = counts?.[row.id] ?? { done: 0, total: 0 }
         // #2045: a Bot whose Done column is a full archive page has at least that many finished
         // cards, and the total the rail adds up is only the page — so it says `20+ done` rather than
-        // a fraction that reads as if the page were the history.
-        const capped = archiveFull && count.done >= ARCHIVE_SHOWN
+        // a fraction that reads as if the page were the history. On a group board the page is cut
+        // across the room, so a Bot's share of it is a slice of that Bot's history, not its total:
+        // any share drawn from a cut page is a lower bound.
+        const capped = archiveFull && (scope?.kind === 'group' ? count.done > 0 : count.done >= ARCHIVE_SHOWN)
         const meta = count.total === 0
           ? ''
           : capped ? t('{count}+ done', { count: count.done }) : t('{done}/{total}', { done: count.done, total: count.total })

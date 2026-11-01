@@ -9033,7 +9033,7 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
       (0, import_react15.createElement)("h3", { className: "bt-board-rail-head" }, t("Your Bots")),
       rail.bots.length === 0 ? (0, import_react15.createElement)("p", { className: "bt-board-empty" }, t("No tasks yet.")) : rail.bots.map((row) => {
         const count = counts2?.[row.id] ?? { done: 0, total: 0 };
-        const capped = archiveFull && count.done >= ARCHIVE_SHOWN;
+        const capped = archiveFull && (scope?.kind === "group" ? count.done > 0 : count.done >= ARCHIVE_SHOWN);
         const meta = count.total === 0 ? "" : capped ? t("{count}+ done", { count: count.done }) : t("{done}/{total}", { done: count.done, total: count.total });
         return (0, import_react15.createElement)(RailButton, {
           key: row.id,
