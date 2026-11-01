@@ -3590,6 +3590,60 @@ test('#2004: a seat change that moves the name reaches the guest already seated,
   assert.equal(titles.length, 4, 'the Session followed each of the four seat changes, no more')
 })
 
+// #2011: the settings page (`updateRoom`) sends one join of its own after the save, carrying the final
+// name; the seat paths it drives must not send a second one for the same change. Before this, a guest
+// already seated heard the same join twice on a settings-page add and on a settings-page remove.
+const settleEnvelopes = () => new Promise(resolve => setTimeout(resolve, 10))
+
+test('#2011: a settings-page seat change tells the guest already seated once', async (t) => {
+  const { rt, sent } = titledHost(t, TEAM)
+  await rt.load()
+  publish(rt, [CODER, WRITER])
+  await grantToFriend(rt, 'chief-a')
+  await grantToFriend(rt, 'chief-b')
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+  const guest = guestSide(sent)
+
+  await rt.addRoomParticipant('war', { kind: 'bot', remote: true, handle: CODER.handle }, ALICE)
+  guest.reads()
+
+  // A guest arrives through the settings page: the guest already seated ends on the host's name and is
+  // told once. `updateRoom` sends its own join without awaiting it, so let that envelope land first.
+  await rt.updateRoom('war', { addParticipants: [{ kind: 'bot', remote: true, handle: WRITER.handle }] }, ALICE.memberId, ALICE)
+  await settleEnvelopes()
+  let joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder, Writer')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the seated guest ends on the name the host holds')
+  assert.equal(joins.get(CODER.handle), 1, 'a settings-page add costs the seated guest one join, not two')
+  assert.ok((joins.get(WRITER.handle) ?? 0) >= 1, 'the arriving seat still hears a join of its own')
+
+  // The same guest leaves through the settings page: still one join for the guest still seated.
+  await rt.updateRoom('war', { removeParticipants: [{ kind: 'bot', handle: WRITER.handle }] }, ALICE.memberId, ALICE)
+  await settleEnvelopes()
+  joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Coder')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'the guest still seated ends on the name the host holds')
+  assert.equal(joins.get(CODER.handle), 1, 'a settings-page remove costs the seated guest one join, not two')
+
+  // A local Bot's seat added the same way follows the same rule (shared with Bob, so it may sit with his Bot).
+  await grantToFriend(rt, 'spec-a')
+  await rt.updateRoom('war', { addParticipants: [{ kind: 'bot', id: 'spec-a' }] }, ALICE.memberId, ALICE)
+  await settleEnvelopes()
+  joins = guest.reads()
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer A, Coder')
+  assert.equal(guest.copies.get(CODER.handle), room.name, 'a local seat moves the name for the seated guest too')
+  assert.equal(joins.get(CODER.handle), 1, 'a settings-page local add costs the seated guest one join, not two')
+
+  // #1949 still holds: a name asked for in the settings page is told to the guests, once.
+  await rt.updateRoom('war', { name: 'Renamed here' }, ALICE.memberId, ALICE)
+  await settleEnvelopes()
+  joins = guest.reads()
+  assert.equal(guest.copies.get(CODER.handle), 'Renamed here', 'an explicit rename still reaches the seated guest')
+  assert.equal(joins.get(CODER.handle), 1, 'and it is one join, not two')
+})
+
 test('#2004: a named group sends its seated guests nothing for a seat change', async (t) => {
   const { rt, titles, sent } = titledHost(t, TEAM)
   await rt.load()
