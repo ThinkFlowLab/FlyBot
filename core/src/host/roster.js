@@ -6,6 +6,7 @@ import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOT
 import { currentColor, cut, isColor, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
+import { implicitRoomOwner } from './room-membership.js'
 import { ownEntry } from './store.js'
 
 export function install(rt) {
@@ -501,7 +502,12 @@ export function install(rt) {
   }
 
   function showSettings(room, settings, actor, actorId) {
-    const who = actor?.displayName ?? rt.botOf(actorId)?.name ?? 'Someone'
+    // The web UI has no member session (#1967), so the local user's save arrives with neither an actor nor a
+    // Bot id: the room's implicit owner names it, the way the room line already does. Only a room with no
+    // owner at all falls back to the host's own wording for the local person; a signed-in member and a Bot
+    // acting through its tool still win, as they did.
+    const who = actor?.displayName ?? rt.botOf(actorId)?.name
+      ?? implicitRoomOwner(room, state)?.displayName ?? 'the user'
     const said = settings.length === 1 ? settings[0] : `${settings.slice(0, -1).join(', ')} and ${settings.at(-1)}`
     try {
       void Promise.resolve(rt.postToRoom?.(room, { id: 'face-notice', name: who }, `${who} ${said}`, { quiet: true, notice: true }))
