@@ -1103,7 +1103,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,99 @@ const ZH = {
+@@ -360,9 +360,101 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -1115,6 +1115,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  Inbox: '收件箱',
 +  'Inbox, {count} need you': '收件箱，{count} 项需要你',
 +  'Close inbox': '关闭收件箱',
++  'Show all': '显示全部',
++  'Show fewer': '收起',
 +  'Your Bots': '你的 Bot',
 +  'Needs you': '需要你',
 +  'In progress': '进行中',
