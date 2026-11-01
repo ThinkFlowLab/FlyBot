@@ -1104,7 +1104,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,396 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,399 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -1113,7 +1113,10 @@ diff --git a/client.js b/client.js
 +var isLowSurrogate = (code) => code >= 56320 && code <= 57343;
 +var codePointStart = (text2, at) => at > 0 && isLowSurrogate(text2.charCodeAt(at)) && isHighSurrogate(text2.charCodeAt(at - 1)) ? at - 1 : at;
 +var codePointEnd = (text2, end) => end > 0 && isHighSurrogate(text2.charCodeAt(end - 1)) && isLowSurrogate(text2.charCodeAt(end)) ? end - 1 : end;
-+var cut = (text2, max) => ({ text: text2.slice(0, codePointEnd(text2, max)), cut: text2.length > max });
++var cut = (text2, max) => {
++  const flat = String(text2).toWellFormed();
++  return { text: flat.slice(0, codePointEnd(flat, max)), cut: flat.length > max };
++};
 +
 +// src/shared/remote-label.js
 +function cleanPeerName(name, fallback = "") {
@@ -1841,7 +1844,6 @@ diff --git a/client.js b/client.js
    return spans;
  }
 -
--// src/client/text.js
 +function unmatchedMentions(text2, bots, { references = [] } = {}) {
 +  const value = String(text2 ?? "");
 +  const skip = [
@@ -1890,7 +1892,7 @@ diff --git a/client.js b/client.js
 +  return stripFence(out).replace(/\s+/g, " ").trim();
 +}
 +
-+// src/client/text.js
+ // src/client/text.js
  var MENTION_ORIGIN = "https://bots.local/";
 -function linkMentions(text, bots, selfId) {
 -  if (!text || !text.includes("@")) return text;
@@ -2131,7 +2133,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,902 +1624,1982 @@ function usageOf(list, ids) {
+@@ -1624,901 +1624,1981 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -2395,11 +2397,15 @@ diff --git a/client.js b/client.js
 -    };
 -    animation.oncancel = () => {
 -      if (!node.getAnimations().some((other) => other.id === "bt-morph" && other !== animation)) delete node.dataset.morph;
+-    };
+-  });
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
 +  return cache.has(sessionId);
-+}
+ }
+-function useLinger(value, ms) {
+-  const [kept, setKept] = (0, import_react.useState)(value);
 +function countCards(state, sessionId, callIds, delta) {
 +  const own = { ...state[sessionId] };
 +  for (const callId of callIds) {
@@ -2416,7 +2422,9 @@ diff --git a/client.js b/client.js
 +var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
 +var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
 +function useGaze(ref, enabled) {
-+  (0, import_react.useEffect)(() => {
+   (0, import_react.useEffect)(() => {
+-    if (value) {
+-      setKept(value);
 +    if (!enabled) return void 0;
 +    let frame = 0;
 +    let point = null;
@@ -2428,8 +2436,7 @@ diff --git a/client.js b/client.js
 +      const clamp = (value) => Math.max(-1, Math.min(1, value));
 +      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
 +      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
-     };
--  });
++    };
 +    const onMove = (event) => {
 +      point = { x: event.clientX, y: event.clientY };
 +      if (!frame) frame = requestAnimationFrame(place);
@@ -2447,9 +2454,7 @@ diff --git a/client.js b/client.js
 +      document.documentElement.removeEventListener("pointerleave", onLeave);
 +    };
 +  }, [enabled]);
- }
--function useLinger(value, ms) {
--  const [kept, setKept] = (0, import_react.useState)(value);
++}
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -2529,9 +2534,7 @@ diff --git a/client.js b/client.js
 +function useSettled(state) {
 +  const prev = (0, import_react.useRef)(state);
 +  const [settled, setSettled] = (0, import_react.useState)(false);
-   (0, import_react.useEffect)(() => {
--    if (value) {
--      setKept(value);
++  (0, import_react.useEffect)(() => {
 +    const was = prev.current;
 +    prev.current = state;
 +    if (state !== "idle") {
@@ -3976,7 +3979,6 @@ diff --git a/client.js b/client.js
 -.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 -.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 -.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
--@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
 +// src/client/motion.js
 +var import_react4 = require("react");
 +var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -4978,10 +4980,9 @@ diff --git a/client.js b/client.js
 +.bt-mem-summary>:nth-child(5){animation-delay:.12s}
 +.bt-mem-summary>:nth-child(6){animation-delay:.15s}
 +.bt-mem-summary>:nth-child(n+7){animation-delay:.18s}
-+@keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
+ @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
- .bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
 @@ -2574,2206 +2574,4679 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
