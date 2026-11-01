@@ -150,27 +150,64 @@ test('P-1993: an approval record\'s reason is cut on a code point at 500', async
   assert.equal(await long, 'allowed-once')
 })
 
-// Both fields of a card go through a bound of their own: 300 for the description, 400 for the
+// Both fields of a card go through a bound of their own: 2,000 for the description, 4,000 for the
 // command. A cut that splits a surrogate pair leaves a lone high half the card draws as U+FFFD.
 test('an approval card cuts its description and command at their bounds without splitting a pair', async (t) => {
   const host = await start()
   t.after(host.stop)
   const result = await openTurn(t, host)
-  const description = `${'a'.repeat(299)}😀tail`
-  const command = `${'b'.repeat(399)}😀tail`
+  const description = `${'a'.repeat(1_999)}😀tail`
+  const command = `${'b'.repeat(3_999)}😀tail`
   host.emit('gb', 'tool/call', { callId: 'k1', name: 'pwsh', arguments: JSON.stringify({ command, description }) })
   const outcome = host.askApproval('gb', { callId: 'k1' })
 
   await settle(() => result() !== undefined)
   const [approval] = (await host.call('state', {})).value.work.approvals
   assert.equal(approval.detail.text.isWellFormed(), true, `the description is not well formed: ${JSON.stringify(approval.detail.text.slice(-4))}`)
-  assert.equal(approval.detail.text, description.slice(0, 299))
+  assert.equal(approval.detail.text, `${'a'.repeat(1_999)}…`)
   assert.equal(approval.detail.code.isWellFormed(), true, `the command is not well formed: ${JSON.stringify(approval.detail.code.slice(-4))}`)
-  assert.equal(approval.detail.code, command.slice(0, 399))
-  assert.ok(approval.detail.text.length <= 300 && approval.detail.code.length <= 400, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
+  assert.equal(approval.detail.code, `${'b'.repeat(3_999)}…`)
+  assert.ok(approval.detail.text.length <= 2_000 && approval.detail.code.length <= 4_000, `a budget moved: ${approval.detail.text.length}/${approval.detail.code.length}`)
 
   assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
   assert.equal(await outcome, 'allowed-once')
+})
+
+// "Allow once" runs the command the card stores, so the card must keep the whole command unless it
+// is genuinely past a real command line's bound — and then the stored value says it was cut (#1992).
+test('an approval card stores the command it will run whole, and marks one it had to cut', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  const result = await openTurn(t, host)
+  const tailed = `${'n'.repeat(400)} ; Remove-Item -Recurse -Force C:/data`
+  const short = 'Copy-Item a.md E:/docs'
+  const long = 'n'.repeat(4_200)
+  const description = 'd'.repeat(2_100)
+  const ask = (callId, args) => {
+    host.emit('gb', 'tool/call', { callId, name: 'pwsh', arguments: JSON.stringify(args) })
+    void host.askApproval('gb', { callId })
+  }
+  ask('k1', { command: tailed, description: 'Clear the staging folder' })
+  ask('k2', { command: short, description: 'Copy the doc' })
+  ask('k3', { command: long, description })
+
+  await settle(() => result() !== undefined)
+  const [whole, control, cut] = (await host.call('state', {})).value.work.approvals
+  // The 438-unit command the issue reproduces with: its tail is what "Allow once" runs.
+  assert.equal(whole.detail.code, tailed, 'the card stores the command it would run in full')
+  assert.ok(whole.detail.code.endsWith('; Remove-Item -Recurse -Force C:/data'))
+  assert.equal(whole.detail.code.isWellFormed(), true)
+  assert.equal(whole.detail.code.endsWith('…'), false, 'an uncut command is not marked as cut')
+  // Control: under the bound, word for word and no ellipsis.
+  assert.deepEqual(control.detail, { text: 'Copy the doc', code: short })
+  // Past the bound the stored string still says it was cut, inside the bound itself.
+  assert.equal(cut.detail.code.isWellFormed(), true)
+  assert.equal(cut.detail.code.endsWith('…'), true, `a cut command is marked: ${JSON.stringify(cut.detail.code.slice(-4))}`)
+  assert.equal(cut.detail.code.length, 4_000)
+  assert.equal(cut.detail.text.endsWith('…'), true, `a cut description is marked: ${JSON.stringify(cut.detail.text.slice(-4))}`)
+  assert.equal(cut.detail.text.length, 2_000)
+
+  for (const approval of [whole, control, cut]) assert.equal((await host.call('approval-answer', { id: approval.id, choice: 'allow' })).ok, true)
 })
 
 test('an own chat\'s approval stays with DSH and is listed while it waits', async (t) => {

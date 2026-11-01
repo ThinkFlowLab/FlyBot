@@ -1,0 +1,1 @@
+An approval card now stores the command "Allow once" runs instead of clipping it at 400 units: the description and command bounds are 2,000 and 4,000, a value that still has to be cut ends with an ellipsis inside that bound, and the card wraps and scrolls a long command rather than drawing it as one clipped line ([#1992](https://github.com/ThinkFlowLab/FlyBot/issues/1992)).
