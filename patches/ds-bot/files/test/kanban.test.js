@@ -372,3 +372,35 @@ test('#2045: a page that is not full still reads as the whole history, unchanged
   const under = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(ARCHIVE_SHOWN - 1))
   assert.equal(under.railMeta('s'), '19/21', 'one row under the limit is the whole history')
 })
+
+// #2045: on a group board the archive page is cut across the whole room, so one Bot's share of it
+// is a slice of that Bot's history, not its total. A Bot with 18 of the 20 newest finished cards
+// must not read `18/18`, which claims the room has nothing older of its, and the hedge may not be
+// keyed on a Bot that happens to fill the page: any Bot whose finished rows are drawn from a cut
+// page is a lower bound.
+test('#2045: a Bot whose share of a full group page is drawn reads as a lower bound, not a total', () => {
+  const page = (owner, count, offset) => Array.from({ length: count }, (_, index) => task(`task-done-${owner}-${offset + index}`, 'accepted', {
+    title: `Finished ${offset + index}`, ownerBotId: owner, progress: 100, createdAt: offset + index, updatedAt: 100 + offset + index,
+  }))
+  const archive = [...page('a', 18, 0), ...page('s', 2, 18)]
+  const group = boardWith({ kind: 'group', roomId: 'war' }, [], archive)
+  assert.equal(byClass(group.column('done'), 'bt-board-card').length, ARCHIVE_SHOWN, 'the column still draws one page')
+  assert.equal(textOf(group.column('done')).includes('20 newest'), true, 'the heading still names the page as a cut')
+  assert.equal(group.railMeta('a'), '18+ done', 'eighteen of a cut page is at least eighteen, never a total')
+  assert.equal(group.railMeta('s'), '2+ done', 'a smaller share of the same cut page is a lower bound too')
+  // One row under the page is the whole room history, so the same rail reads its exact counts.
+  const shortRoom = boardWith({ kind: 'group', roomId: 'war' }, [], [...page('a', 1, 0), ...page('s', 2, 1)])
+  assert.equal(shortRoom.railMeta('a'), '1/1', 'a short group page is a total, not a bound')
+  assert.equal(shortRoom.railMeta('s'), '2/2', 'and every Bot on it reads the same way')
+})
+
+// #2045: the hedge belongs to the Bot's own drawn finished rows, not to whatever its width adds up
+// to. A second Bot with a page-worth of active cards and none finished is not a Bot with 20 done.
+test('#2045: the rail hedge follows the Bot\'s drawn done rows, not its total', () => {
+  const active = Array.from({ length: ARCHIVE_SHOWN }, (_, index) => task(`task-open-${index}`, 'open', {
+    title: `Open ${index}`, ownerBotId: 'a', progress: 0, createdAt: index, updatedAt: index,
+  }))
+  const board = boardWith({ kind: 'bot', botId: 's' }, active, settledTasks(ARCHIVE_SHOWN))
+  assert.equal(board.railMeta('s'), '20+ done', 'the Bot whose own page is full reads as a cut')
+  assert.equal(board.railMeta('a'), '0/20', 'twenty active cards are not twenty finished ones')
+})
