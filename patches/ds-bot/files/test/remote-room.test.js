@@ -2503,6 +2503,70 @@ test('a settings patch leaves one visible line in the room, and only when a valu
   assert.equal(last().text, 'Chief A updated the group notice')
 })
 
+// #1965: an unnamed group follows its members, so a seat change moves the title without anyone asking
+// for a rename. The seat change already draws its own joined line; the room must not also say it was
+// renamed, which is what a settings save looks like.
+test('an added member retitles an unnamed room without a settings line', async (t) => {
+  const { rt } = host(t, TEAM)
+  installRoster(rt)
+  await rt.load()
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await rt.authenticate(alice.sessionToken)
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+  const room = rt.state.rooms.war
+  delete room.named
+  room.name = rt.autoRoomName(room.members, room)
+
+  await rt.updateRoom('war', { add: ['spec-a'] }, undefined, actorA)
+
+  assert.equal(room.name, 'Alice, Chief A, Chief B, Writer A', 'the unnamed group follows its members')
+  assert.deepEqual(events, [], 'a title that follows the members is not a settings line')
+})
+
+// #1965: losing the task lead is a consequence of the seat change, not something the patch asked for.
+// The left line already says the Bot is gone, so the room says nothing else.
+test('a member leaving with the task lead clears it without a settings line', async (t) => {
+  const { rt } = host(t, TEAM)
+  installRoster(rt)
+  await rt.load()
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await rt.authenticate(alice.sessionToken)
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+  await rt.updateRoom('war', { add: ['spec-a'] }, undefined, actorA)
+  await rt.updateRoom('war', { taskLead: 'chief-b' }, undefined, actorA)
+  assert.equal(events.length, 1, 'naming the task lead is a settings line')
+  events.length = 0
+
+  await rt.updateRoom('war', { remove: ['chief-b'] }, undefined, actorA)
+
+  assert.equal(rt.state.rooms.war.taskLead, undefined, 'the lead left, so the admin plans the board again')
+  assert.deepEqual(events, [], 'the left line already says it; the cleared lead is not a second line')
+})
+
+// #1965: a save that writes back the mode the room already holds changes nothing, so it says nothing.
+test('writing back the reply mode the room already holds says nothing', async (t) => {
+  const { rt } = host(t, TEAM)
+  installRoster(rt)
+  await rt.load()
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await rt.authenticate(alice.sessionToken)
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+  await rt.updateRoom('war', { mode: 'admin' }, undefined, actorA)
+  assert.equal(events.length, 1, 'switching the mode is a settings line')
+  events.length = 0
+
+  await rt.updateRoom('war', { mode: 'admin' }, undefined, actorA)
+
+  assert.equal(rt.state.rooms.war.mode, 'admin', 'the room keeps the mode it already had')
+  assert.deepEqual(events, [], 'a save that writes the same mode back says nothing')
+})
+
 // #904: a roster is stranger-written text, so the envelope that carries one is gated: only the room's
 // own inviter, only the room this mirror is bound to, and nothing it says widens reach by itself.
 test('#904: a roster from another home or for another room changes no participant', async (t) => {
