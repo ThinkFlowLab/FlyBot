@@ -8208,7 +8208,8 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], n
     card.activity = latestActivity(card, { roster, work, sessions });
     card.calls = toolCalls(card, { roster, work });
   }
-  return { needs: needs.sort(newest), progress: progress.sort(newest), done: done.sort(newest).slice(0, DONE_MAX) };
+  const settled = done.sort(newest);
+  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneTotal: settled.length };
 }
 var needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length;
 function startedAtOf(task) {
@@ -8520,26 +8521,31 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
         "div",
         { className: "bt-mem-body bt-inbox-body" },
         (0, import_react13.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
-        GROUPS.map((group) => (0, import_react13.createElement)(
-          "section",
-          { key: group.id, className: "bt-inbox-group", "aria-labelledby": `bt-inbox-${group.id}` },
-          (0, import_react13.createElement)(
-            "h3",
-            { id: `bt-inbox-${group.id}`, className: "bt-inbox-head" },
-            (0, import_react13.createElement)("span", null, t(group.title)),
-            groups[group.id].length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-head-count" }, String(groups[group.id].length)) : null
-          ),
-          groups[group.id].length === 0 ? (0, import_react13.createElement)("p", { className: "bt-inbox-empty" }, t(group.empty)) : (0, import_react13.createElement)("div", { className: "bt-inbox-list" }, groups[group.id].map((card) => (0, import_react13.createElement)(InboxCard, {
-            key: card.id,
-            card,
-            roster,
-            now,
-            busy: busy === card.id,
-            error: errors[card.id],
-            onAnswer: answer,
-            onOpen: open
-          })))
-        ))
+        GROUPS.map((group) => {
+          const rows = groups[group.id];
+          const hidden = group.id === "done" ? Math.max(0, (model.doneTotal ?? rows.length) - rows.length) : 0;
+          return (0, import_react13.createElement)(
+            "section",
+            { key: group.id, className: "bt-inbox-group", "aria-labelledby": `bt-inbox-${group.id}` },
+            (0, import_react13.createElement)(
+              "h3",
+              { id: `bt-inbox-${group.id}`, className: "bt-inbox-head" },
+              (0, import_react13.createElement)("span", null, t(group.title)),
+              rows.length > 0 ? (0, import_react13.createElement)("span", { className: "bt-inbox-head-count" }, String(rows.length)) : null
+            ),
+            rows.length === 0 ? (0, import_react13.createElement)("p", { className: "bt-inbox-empty" }, t(group.empty)) : (0, import_react13.createElement)("div", { className: "bt-inbox-list" }, rows.map((card) => (0, import_react13.createElement)(InboxCard, {
+              key: card.id,
+              card,
+              roster,
+              now,
+              busy: busy === card.id,
+              error: errors[card.id],
+              onAnswer: answer,
+              onOpen: open
+            }))),
+            hidden > 0 ? (0, import_react13.createElement)("div", { key: "more", className: "bt-inbox-more" }, t("{count} more not shown", { count: hidden })) : null
+          );
+        })
       )
     )
   );
@@ -8559,6 +8565,7 @@ var INBOX_CSS = `
 .bt-inbox-head{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
 .bt-inbox-head-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-empty{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+.bt-inbox-more{margin:0;font-size:12.5px;line-height:18px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-list{display:flex;flex-direction:column;gap:6px}
 .bt-inbox-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-inbox-card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--bt-accent) 35%,transparent)}

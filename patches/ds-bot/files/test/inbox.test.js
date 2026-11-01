@@ -800,3 +800,87 @@ test('#1252: the Inbox asks for the settled rows, and they reach Done and Needs 
   effects.pop()()
   await new Promise(resolve => setImmediate(resolve))
 })
+
+// #2042: Done is capped at 20 rows, and before this the cap was silent — the group title
+// counted the rows drawn, never the rows the model dropped, so 25 finished tasks read as 20
+// with nothing saying so. The model now carries the total it had before the cap, and the
+// Done group adds the same "N more not shown" line the project board already uses (#2021).
+const freshTasks = (count) => {
+  const at = Date.now() - 60_000
+  return Array.from({ length: count }, (_, index) => task(`d${index + 1}`, 'accepted', {
+    createdAt: at - DAY, updatedAt: at - index * 1000,
+  }))
+}
+const emptyInbox = extra => inboxModel({ roster, work: {}, sessions: undefined, now: Date.now(), ...extra })
+const serveInboxTasks = async (rows) => {
+  const actions = { closeInbox: () => {}, tasks: () => Promise.resolve(rows) }
+  effects.length = 0
+  useTasks(actions)
+  effects.pop()()
+  await new Promise(resolve => setImmediate(resolve))
+  return actions
+}
+const drawInboxDialog = actions => InboxDialog({ roster, useWork: pick => pick({}), useSessions: pick => pick({}), actions })
+const resetInboxTasks = async () => {
+  effects.length = 0
+  useTasks({ closeInbox: () => {}, tasks: () => Promise.resolve([]) })
+  effects.pop()()
+  await new Promise(resolve => setImmediate(resolve))
+}
+
+test('#2042: the model reports the Done total from before the cap, and Needs you and In progress do not read it', () => {
+  const capped = emptyInbox({ tasks: freshTasks(25) })
+  assert.equal(capped.done.length, 20, 'the cap still draws 20 Done rows')
+  assert.equal(capped.doneTotal, 25, 'and the total is the count before the cap')
+
+  const exact = emptyInbox({ tasks: freshTasks(20) })
+  assert.equal(exact.done.length, 20)
+  assert.equal(exact.doneTotal, 20, 'twenty is exactly the cap, so nothing is hidden')
+
+  assert.equal(emptyInbox({ tasks: freshTasks(5) }).doneTotal, 5, 'a short list reports what it draws')
+  const none = emptyInbox({ tasks: [] })
+  assert.equal(none.done.length, 0)
+  assert.equal(none.doneTotal, 0, 'an empty list reports zero, not undefined')
+
+  // The other two groups never read the total: the same input classifies them as before.
+  // A quiet roster (no pending messages) keeps this control about the tasks alone.
+  const quiet = { ...roster, bots: roster.bots.map(bot => ({ ...bot, pendingCount: undefined })), rooms: [] }
+  const quietInbox = extra => inboxModel({ roster: quiet, work: {}, sessions: undefined, now: Date.now(), ...extra })
+  const failed = task('f1', 'failed', { updatedAt: Date.now() - 60_000, actors: [{ status: 'failed', why: 'the responsible Bot was deleted' }] })
+  const mixed = quietInbox({ tasks: [failed, ...freshTasks(25)] })
+  assert.deepEqual(plain(ids(mixed.needs)), ['task:f1'], 'the failed task is still the only Needs you card')
+  assert.deepEqual(plain(mixed.progress), [], 'nothing is in progress')
+  assert.equal(mixed.doneTotal, 25)
+  // The same failed task with a short Done list classifies exactly the same way.
+  const control = quietInbox({ tasks: [failed, ...freshTasks(5)] })
+  assert.deepEqual(plain(ids(control.needs)), plain(ids(mixed.needs)), 'the cap does not reach Needs you')
+  assert.deepEqual(plain(control.progress), plain(mixed.progress), 'nor In progress')
+  assert.equal(control.doneTotal, 5)
+})
+
+test('#2042: the Done group says how many rows the cap hid, and says nothing when it hid none', async () => {
+  const more = tree => byClass(tree, 'bt-inbox-more')
+  const doneRows = tree => cardsIn(tree).filter(node => node.props.card.id.startsWith('task:d'))
+  const doneSection = tree => all(tree).find(node => node.type === 'section' && node.props['aria-labelledby'] === 'bt-inbox-done')
+
+  const twentyFive = drawInboxDialog(await serveInboxTasks(freshTasks(25)))
+  assert.equal(doneRows(twentyFive).length, 20, 'twenty Done rows are drawn')
+  const lines = more(twentyFive)
+  assert.equal(lines.length, 1, 'exactly one line says how many rows the cap hid')
+  assert.equal(textOf(lines[0]), '5 more not shown')
+  assert.equal(lines[0].props.role, undefined, 'the line is not an alert')
+  // It sits inside the Done group and follows the rows, so it reads with what it counts.
+  const children = doneSection(twentyFive).children.flat(Infinity)
+  assert.ok(children.includes(lines[0]), 'the line belongs to the Done group')
+  assert.ok(children.indexOf(lines[0]) > children.findIndex(node => node?.props?.className === 'bt-inbox-list'), 'and follows the rows, not the title')
+
+  const exactly = drawInboxDialog(await serveInboxTasks(freshTasks(20)))
+  assert.equal(doneRows(exactly).length, 20)
+  assert.equal(more(exactly).length, 0, 'twenty rows hide nothing, so there is no line')
+
+  const nothing = drawInboxDialog(await serveInboxTasks([]))
+  assert.equal(more(nothing).length, 0, 'an empty Done group has no line either')
+  assert.ok(byClass(nothing, 'bt-inbox-empty').map(textOf).includes('Nothing finished in the last 7 days.'), 'the empty words are unchanged')
+
+  await resetInboxTasks()
+})
