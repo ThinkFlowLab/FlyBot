@@ -325,7 +325,11 @@ const boardWith = (scope, own, archive, groupActive = []) => {
   states.length = 0
   // A room board's active list lives in the second of the three board-task slots (P-364); a Bot
   // board's lives in the first. Both are preset here rather than loaded, like the archive page.
-  states.push(scope, null, '', '', own, groupActive, archive)
+  // #2069: a room is only ever reached from a Bot board — the dialog opens on `rail.bots[0]` — so
+  // `own` is never empty when a room is drawn; presetting it to `[]` here made the rail's double
+  // count invisible. Seed it from the Bot board's read of the same room cards.
+  const botRead = scope?.kind === 'group' ? groupActive : own
+  states.push(scope, null, '', '', botRead, groupActive, archive)
   const view = expand(KanbanDialog({ roster, actions: { closeBoard: () => {}, boardClose: () => {} } }))
   const column = name => byClass(view, 'bt-board-column').find(node => node.props['data-column'] === name)
   const railMeta = id => {
@@ -542,8 +546,20 @@ function mountBoard(actions) {
     assert.ok(button, `the rail names Bot ${botId}`)
     button.props.onClick()
   }
+  // #2069: a room board is reached by clicking a room in the same rail, so the harness drives both
+  // kinds of row, not only the Bot rows P-360 needed.
+  const room = (roomId) => {
+    const button = all(tree).find(node => node.type === 'button' && node.props?.['data-kind'] === 'group' && node.props?.['data-id'] === roomId)
+    assert.ok(button, `the rail names room ${roomId}`)
+    button.props.onClick()
+  }
+  const railMeta = (id) => {
+    const row = all(tree).find(node => node.type === 'button' && node.props?.['data-id'] === id)
+    const meta = byClass(row, 'bt-board-rail-meta')[0]
+    return meta ? textOf(meta) : ''
+  }
   const column = (name) => byClass(tree, 'bt-board-column').find(node => node.props['data-column'] === name)
-  return { draw, settle, rail, column, get tree() { return tree } }
+  return { draw, settle, rail, room, railMeta, column, get tree() { return tree } }
 }
 
 // A Bot board's Done column is that Bot's own archive page. Switching the rail therefore has to
@@ -591,4 +607,41 @@ test('P-360: switching the rail re-reads the archive, and the new Bot draws its 
   assert.deepEqual(archiveReads(), ['a', 's', 'a'], 'switching back to Chief reads Chief\'s page again')
   assert.equal(byClass(board.column('done'), 'bt-board-card').length, ARCHIVE_SHOWN, 'Chief draws its own finished cards again')
   assert.match(textOf(board.column('done')), /A finished 19/)
+})
+
+// #2069: a room board reached from a Bot board counted the room's active cards twice. The dialog
+// always opens on the first Bot of the rail, and that Bot's default read is the unfiltered active
+// list — a card in a room the Bot may act on lands in `own` as well as in the room's own read — so
+// the rail added the same card from both lists. The card the room board draws once was counted
+// twice; the room's drawn columns never showed the second copy, only the rail did.
+test('#2069: a room board reached from a Bot board counts each active card once in the rail', async () => {
+  const calls = []
+  const roomCard = { id: 'task-open-s', ownerBotId: 's', title: 'Open for s', status: 'open', progress: 0, createdAt: 3, updatedAt: 4 }
+  const finishedCard = { id: 'task-done-s', ownerBotId: 's', title: 'Finished for s', status: 'accepted', progress: 100, createdAt: 1, updatedAt: 2 }
+  const actions = {
+    closeBoard: () => {},
+    boardClose: () => {},
+    tasks: (query) => {
+      calls.push({ ...query })
+      if (query?.archive) return Promise.resolve([finishedCard])
+      if (query?.roomId) return Promise.resolve([roomCard])
+      // The host's default read carries every card the Bot may act on, room cards included.
+      return Promise.resolve([roomCard])
+    },
+  }
+  const board = mountBoard(actions)
+  board.draw()
+  await board.settle()
+  assert.deepEqual(calls[0], {}, 'the board opens on the default active read')
+  // The Bot board's read really did fill `own`: the rail already counts the room card there.
+  assert.equal(board.railMeta('s'), '0/1', 'the Bot board rail counted the room card its read returned')
+
+  board.room('war')
+  await board.settle()
+  assert.deepEqual(calls.filter(query => query?.roomId && !query.archive).at(-1), { roomId: 'war' }, 'the room board reads the room\'s active cards')
+  // The room board draws the card once, so the rail counts it once: one finished card in the archive
+  // page plus the one active card is `1/2`, not the `1/3` the doubled list produced.
+  assert.equal(byClass(board.column('not-started'), 'bt-board-card').length, 1, 'the room\'s active card is drawn once')
+  assert.equal(byClass(board.column('done'), 'bt-board-card').length, 1, 'the room\'s finished card is drawn once')
+  assert.equal(board.railMeta('s'), '1/2', 'the rail counts the drawn active card once, plus the archive page')
 })

@@ -398,9 +398,10 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
   const counts = {}
   // #2045: the rail counts what the board draws, so the archive contributes at most its one page.
   // The list can hold a row more than the page after an optimistic move, and counting that row would
-  // read as a total the board never showed. P-364: a room board's active cards live in `groupTasks`;
-  // `own` is only ever filled on a Bot board, so adding up `own` alone counted the archive page.
-  for (const task of [...own, ...(scope?.kind === 'group' ? groupTasks : []), ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
+  // read as a total the board never showed. P-364: a room board's active cards live in `groupTasks`,
+  // so a Bot board counts `own` and a room board counts that list, never both — `own` still holds the
+  // Bot board's read after the rail switches, and adding it in counted the room's cards twice (#2069).
+  for (const task of [...(scope?.kind === 'group' ? groupTasks : own), ...(archive ?? []).slice(0, ARCHIVE_SHOWN)]) {
     const id = task.ownerBotId
     const bucket = counts[id] ?? (counts[id] = { done: 0, total: 0 })
     if (task.status === 'cancelled' || task.status === 'failed') continue
