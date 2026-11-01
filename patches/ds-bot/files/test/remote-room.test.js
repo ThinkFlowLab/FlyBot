@@ -2436,6 +2436,73 @@ test('#1939: a notice the host edits reaches the guests already seated, once, an
   assert.equal(applied.room.notice, '', 'the guest clears its copy too')
 })
 
+// P-303: a settings change wrote the state and the `changes` list and left the room itself silent, so
+// nobody seated in it learned that the notice, the name, the reply mode, the admin or the task lead had
+// moved. One patch is now at most one quiet notice line — the `face-notice` sender the client already
+// draws as an event — and it opens no Bot turn. A patch that writes back the values already there says
+// nothing, and a seat change keeps its own joined/left line instead of adding a settings echo.
+test('a settings patch leaves one visible line in the room, and only when a value changed', async (t) => {
+  const { rt } = host(t, JSON.parse(JSON.stringify(TEAM)))
+  installRoster(rt)
+  await rt.load()
+  const invite = await rt.createInvitation({ createdByMemberId: 'owner-1' })
+  const alice = await rt.redeemInvitation(invite.token, { displayName: 'Alice' })
+  const actorA = await rt.authenticate(alice.sessionToken)
+  const events = []
+  rt.postToRoom = async (room, sender, text, extra) => { events.push({ room: room.id, sender, text, extra }) }
+  const count = () => events.length
+  const last = () => events.at(-1)
+
+  await rt.updateRoom('war', { name: 'Renamed war' }, undefined, actorA)
+  assert.equal(count(), 1, `one rename is one line: ${JSON.stringify(events)}`)
+  assert.deepEqual(last().sender, { id: 'face-notice', name: 'Alice' }, 'the line is the quiet room sender, not a Bot')
+  assert.equal(last().text, 'Alice renamed the room to “Renamed war”')
+  assert.deepEqual(last().extra, { quiet: true, notice: true }, 'quiet and a notice, so no Bot turn opens')
+
+  await rt.updateRoom('war', { name: 'Renamed war' }, undefined, actorA)
+  assert.equal(count(), 1, 'a name written back at its own value says nothing')
+
+  await rt.updateRoom('war', { notice: 'Stand up' }, undefined, actorA)
+  assert.equal(last().text, 'Alice updated the group notice')
+  await rt.updateRoom('war', { notice: '' }, undefined, actorA)
+  assert.equal(last().text, 'Alice cleared the notice')
+  await rt.updateRoom('war', { notice: '' }, undefined, actorA)
+  assert.equal(count(), 3, 'an empty notice written back at its own value says nothing')
+
+  await rt.updateRoom('war', { admin: 'chief-b' }, undefined, actorA)
+  assert.equal(last().text, 'Alice made Chief B the admin')
+  await rt.updateRoom('war', { admin: 'chief-b' }, undefined, actorA)
+  assert.equal(count(), 4, 'the admin set again to the same Bot says nothing')
+
+  await rt.updateRoom('war', { mode: 'admin' }, undefined, actorA)
+  assert.equal(last().text, 'Alice switched plain messages to the admin first')
+  await rt.updateRoom('war', { mode: 'everyone' }, undefined, actorA)
+  assert.equal(last().text, 'Alice switched the room to every member replying in turn')
+
+  await rt.updateRoom('war', { taskLead: 'chief-a' }, undefined, actorA)
+  assert.equal(last().text, 'Alice made Chief A the task lead')
+  await rt.updateRoom('war', { taskLead: null }, undefined, actorA)
+  assert.equal(last().text, 'Alice let the admin lead the board again')
+
+  // Two settings in one patch are still one line, both named, so a save never draws two events.
+  const before = count()
+  await rt.updateRoom('war', { name: 'Renamed again', notice: 'Sit down' }, undefined, actorA)
+  assert.equal(count(), before + 1, 'a rename and a notice change in one call are one line')
+  assert.equal(last().text, 'Alice updated the group notice and renamed the room to “Renamed again”')
+
+  // A seat change already has its joined/left line, and leaving with the admin seat empties it through the
+  // member list rather than through a settings field: neither draws a settings line.
+  const seats = count()
+  await rt.updateRoom('war', { add: ['spec-a'] }, undefined, actorA)
+  assert.equal(count(), seats, 'a seat change is not a settings line')
+  await rt.updateRoom('war', { remove: ['chief-b'] }, undefined, actorA)
+  assert.equal(count(), seats, 'a seat change that empties the admin is not a settings line either')
+
+  // The tool path passes no actor, only the Bot's own id: the line still says who did it.
+  await rt.updateRoom('war', { notice: 'From the tool' }, 'chief-a')
+  assert.equal(last().text, 'Chief A updated the group notice')
+})
+
 // #904: a roster is stranger-written text, so the envelope that carries one is gated: only the room's
 // own inviter, only the room this mirror is bound to, and nothing it says widens reach by itself.
 test('#904: a roster from another home or for another room changes no participant', async (t) => {

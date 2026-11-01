@@ -387,6 +387,10 @@ test('only the task lead assigns, the card is claimed, and the assignee is woken
   await app.rt.updateRoom('war', { taskLead: null }, 'a')
   assert.equal(app.rt.roomOf('war').taskLead, undefined)
   await app.rt.updateRoom('war', { taskLead: 's' }, 'a')
+  // The three settings patches above draw their own room lines; what this test guards is that the driver
+  // adds none of its own, so the count is taken after the setup and compared, not pinned to zero.
+  await new Promise(resolve => setImmediate(resolve))
+  const posted = app.calls('war').length
 
   const room = app.rt.roomOf('war')
   room.members = ['s', 'b']
@@ -415,7 +419,7 @@ test('only the task lead assigns, the card is claimed, and the assignee is woken
   assert.match(text, /Task board \(assign, claim, and progress live here/)
   assert.match(text, /Ship the note/)
   assert.match(text, /Bob writes/)
-  assert.equal(app.calls('war').length, 0, 'the driver does not post the cue into the room')
+  assert.equal(app.calls('war').length, posted, 'the driver does not post the cue into the room')
   assert.equal(app.calls('b').length, 1)
 
   const linked = await app.track('b', { tasks: [{ title: 'Bob extra', parent: 'Ship the note', group: 'War' }] })
@@ -426,7 +430,7 @@ test('only the task lead assigns, the card is claimed, and the assignee is woken
   app.emit('b', 'assistant/message', { message: { content: [{ type: 'text', text: 'Which file should the note use?' }] } })
   app.emit('b', 'turn/end', { reason: { kind: 'completed' } })
   await app.ctx.taskDrive.settled()
-  assert.equal(app.calls('war').length, 0, 'the own-chat reply is not posted into the group')
+  assert.equal(app.calls('war').length, posted, 'the own-chat reply is not posted into the group')
   assert.equal(app.calls('b').length, 1, 'a wake that did not move the board does not start another')
 })
 
