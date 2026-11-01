@@ -631,7 +631,7 @@ export function install(rt) {
   const reason = (error) => {
     let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
     for (const address of addresses) text = text.split(address).join('[session address]')
-    return rt.redactSecrets(text || 'error').slice(0, 300)
+    return cut(rt.redactSecrets(text || 'error'), 300).text
   }
 
   // A channel is the row's life, not a mount (#1266): webhook mode is ready once its URL is saved,

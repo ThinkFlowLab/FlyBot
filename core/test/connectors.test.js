@@ -77,7 +77,7 @@ const teamHome = () => {
 }
 
 // A loader that hands out a fake MCP client and records each mount.
-function setup({ fail = false, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
+function setup({ fail = false, failWith, github = { api: 'https://gh.test' }, composio = { api: 'https://composio.test/api/v3.1' }, home = teamHome(), warns } = {}) {
   const mounts = []
   const plugin = { name: 'mcp-client', apply() {} }
   const loader = {
@@ -92,6 +92,7 @@ function setup({ fail = false, github = { api: 'https://gh.test' }, composio = {
     mounts.push(mount)
     return {
       await: async () => {
+        if (failWith !== undefined) throw new Error(failWith)
         if (fail === 'url') throw new Error(`cannot reach ${config.url}`)
         if (fail) throw new Error(`refused ${config.headers.Authorization}`)
       },
@@ -174,6 +175,39 @@ test('a failed MCP connection shows the error without the token, and Try again m
   assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
   await call(ctx, 'connector-retry', { id: 'github' })
   assert.equal(mounts.length, 2)
+})
+
+// #2002: the MCP server's message is stored for the owner's card. A bound that lands inside a
+// surrogate pair used to keep half of it, and the card drew the replacement character.
+test('a connector error at the 300 bound keeps whole code points (#2002)', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  globalThis.fetch = async () => answer(200, { login: 'octo' })
+  const thrown = `${'a'.repeat(299)}😀tail`
+  const { ctx, home } = setup({ failWith: thrown })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
+  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
+  const github = result.value.find(entry => entry.id === 'github')
+  assert.equal(github.state, 'error')
+  assert.ok(github.error.isWellFormed(), `the stored error is not well formed: ${JSON.stringify(github.error.slice(-2))}`)
+  assert.ok(thrown.startsWith(github.error), 'the stored error is a prefix of what the server threw')
+  assert.ok(github.error.length <= 300, `the stored error is ${github.error.length} units, over the 300 bound`)
+  assert.equal(github.error, 'a'.repeat(299), 'the pair that would cross the bound is dropped, not halved')
+})
+
+// The control: a well-formed message under the bound is stored byte for byte, emoji included.
+test('a connector error under the bound is stored verbatim (#2002)', async (t) => {
+  const realFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  globalThis.fetch = async () => answer(200, { login: 'octo' })
+  const thrown = 'the server said no 😀'
+  const { ctx, home } = setup({ failWith: thrown })
+  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
+  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
+  const github = result.value.find(entry => entry.id === 'github')
+  assert.equal(github.state, 'error')
+  assert.equal(github.error, thrown)
+  assert.ok(!github.error.includes('\\ud83d'), JSON.stringify(github.error))
 })
 
 test('deleting GITHUB_TOKEN on the Secrets page unmounts GitHub', async (t) => {
