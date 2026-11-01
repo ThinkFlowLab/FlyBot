@@ -4858,6 +4858,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const allEntries = files => files.flatMap(file => file.entries.map(entry => ({ ...entry, file })))
    const actorOf = actor => ({ actor: actor.id, actorName: actor.name, ...(actor.auto ? { auto: true } : {}) })
  
+@@ -538,7 +538,7 @@ export function install(rt) {
+     if (actor.id === 'user') return
+     const botId = scope.kind === 'team' ? actor.id : scope.botId
+     if (rt.botOf(botId) === undefined) return
+-    news.set(botId, { at: Date.now(), op, text: splitMeta(String(line ?? '').replace(/^- /, '')).text.slice(0, NEWS_TEXT_MAX) })
++    news.set(botId, { at: Date.now(), op, text: cut(splitMeta(String(line ?? '').replace(/^- /, '')).text, NEWS_TEXT_MAX).text })
+   }
+ 
+   function addEntry({ scope, topic, text, meta, actor, label }) {
 @@ -568,7 +568,7 @@ export function install(rt) {
        await journal({ op: 'add', scope: scopeKey(scope), file: target.file, ...actorOf(actor), after: line })
        noteNews(scope, actor, 'add', line)
@@ -4916,7 +4925,8 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +        ].join('\n')
 +      }
        const where = (tag, file) => `${tag} · ${file.topic === undefined ? MAIN : `[[${file.topic}]]`}`
-       const query = String(args.query ?? '').trim().slice(0, 120)
+-      const query = String(args.query ?? '').trim().slice(0, 120)
++      const query = cut(String(args.query ?? '').trim(), 120).text
        if (query === '') {
          return loaded.map(({ tag, label, files }) => {
            const [main, ...topics] = files
@@ -4974,6 +4984,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const own = await modelFor(bot)
      try {
        return await oneShot(own, system, text, tag)
+@@ -978,7 +978,7 @@ export function install(rt) {
+     const model = bot.model
+     const job = (async () => {
+       const text = await botShot(bot, SUMMARY_SYSTEM, summaryRequest({ name: bot.name, own: linesFor(own), team: linesFor(team), language }), { sessionId: rt.chatOf(bot.id), kind: 'memory' })
+-      const value = { hash, text: text.slice(0, SUMMARY_TEXT_MAX), at: Date.now() }
++      const value = { hash, text: cut(text, SUMMARY_TEXT_MAX).text, at: Date.now() }
+       summaries.set(bot.id, value)
+       summaryFailures.delete(bot.id)
+       if (rt.readOnly() === undefined) await writeText(summaryPath(bot.id), JSON.stringify(value, null, 2))
 @@ -1004,11 +1004,11 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
@@ -4988,6 +5007,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        limits: MEMORY_LIMITS,
        summary: entries.length > 0 && saved !== undefined ? { text: saved.text, at: saved.at } : null,
        fresh: entries.length === 0 || saved?.hash === hash,
+@@ -1020,7 +1020,7 @@ export function install(rt) {
+   async function memoryAsk(body) {
+     const bot = rt.botOf(String(body.botId ?? ''))
+     if (bot === undefined) throw new Error('Unknown Bot')
+-    const text = String(body.text ?? '').trim().slice(0, ASK_TEXT_MAX)
++    const text = cut(String(body.text ?? '').trim(), ASK_TEXT_MAX).text
+     if (text === '') throw new Error('Type a question or a change first')
+     const numbered = [
+       ...allEntries(loadScope(ownScope(bot.id))).map(entry => ({ ...entry, scope: 'own' })),
 @@ -1083,9 +1083,15 @@ export function install(rt) {
      }
      return cursors
@@ -10866,7 +10894,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,181 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,235 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -11047,6 +11075,60 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.match(lines[0], /^Entries closest in meaning to "flight seat" in your memory and the team memory:$/)
 +  assert.equal(lines.at(-1), 'more entries match this meaning than are shown; narrow the query or read a topic', 'the cut is named')
 +  assert.equal(lines.length - 2, 30, 'the hit list itself is still 30 lines')
++})
++
++// #2006: four bounds in memory.js cut with `slice`, which counts UTF-16 units, so a cut
++// that lands inside a surrogate pair keeps half an emoji. Each case below fails on its own
++// when its own site is the only one still on `slice`.
++const EMOJI = '😀'
++// The index of the first lone surrogate in `text`, so a red line shows the half that was kept.
++const halfAt = (text) => {
++  for (let at = 0; at < text.length; at++) {
++    const unit = text.charCodeAt(at)
++    const low = text.charCodeAt(at + 1) >= 0xdc00 && text.charCodeAt(at + 1) <= 0xdfff
++    const high = text.charCodeAt(at - 1) >= 0xd800 && text.charCodeAt(at - 1) <= 0xdbff
++    if (unit >= 0xd800 && unit <= 0xdbff && !low) return at
++    if (unit >= 0xdc00 && unit <= 0xdfff && !high) return at
++  }
++  return -1
++}
++const kept = (text) => JSON.stringify(text.slice(Math.max(0, halfAt(text) - 8), halfAt(text) + 2))
++
++test('#2006: a news line keeps whole characters at its 160-unit bound', async (t) => {
++  const { call, tool, stop } = start()
++  t.after(() => stop())
++  await tool('remember', { text: `${'a'.repeat(159)}${EMOJI}` }, 'b2')
++  const text = (await call('state', {})).value.memoryNews.b2.text
++  assert.equal(text.isWellFormed(), true, `the news line keeps half an emoji: ${kept(text)}`)
++  assert.equal(text, 'a'.repeat(159), 'the emoji that would not fit is dropped whole')
++})
++
++test('#2006: a recall query keeps whole characters at its 120-unit bound', async (t) => {
++  const { tool, stop } = start()
++  t.after(() => stop())
++  const said = await tool('recall', { query: `${'b'.repeat(119)}${EMOJI}` }, 'b2')
++  assert.equal(said.isWellFormed(), true, `the answer carries half an emoji: ${kept(said)}`)
++  assert.match(said, new RegExp(`"${'b'.repeat(119)}"`), 'the query is echoed without the emoji that did not fit')
++})
++
++test('#2006: a saved summary keeps whole characters at its 8,000-unit bound', async (t) => {
++  const { call, tool, stop } = start({ replies: [`${'s'.repeat(7999)}${EMOJI}`] })
++  t.after(() => stop())
++  await tool('remember', { text: 'Likes tea' }, 'b2')
++  await call('memory-view', { botId: 'b2', summarize: true })
++  await summarySettled(call, 'b2')
++  const text = (await call('memory-view', { botId: 'b2' })).value.summary.text
++  assert.equal(text.isWellFormed(), true, `the summary keeps half an emoji: ${kept(text)}`)
++  assert.equal(text, 's'.repeat(7999), 'the emoji that would not fit is dropped whole')
++})
++
++test('#2006: an ask prompt keeps whole characters at its 2,000-unit bound', async (t) => {
++  const { call, requests, stop } = start({ replies: [JSON.stringify({ reply: 'Nothing to change.', changes: [] })] })
++  t.after(() => stop())
++  await call('memory-ask', { botId: 'b2', text: `${'q'.repeat(1999)}${EMOJI}` })
++  const sent = requests[0].messages[0].content[0].text
++  assert.equal(sent.isWellFormed(), true, `the ask prompt keeps half an emoji: ${kept(sent)}`)
++  assert.ok(sent.endsWith(`${'q'.repeat(1999)}`), 'the prompt keeps the bound and drops the emoji whole')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js
