@@ -16,6 +16,7 @@
 // not match what the earlier lines built refuses the whole journal (no partial team).
 import { chmod, lstat, mkdir, readFile, rename, unlink, writeFile, appendFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { dirKind } from './real-dir.js'
 
 export const JOURNAL_MAX_BYTES = 20 * 1024 * 1024
 export const JOURNAL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
@@ -239,8 +240,15 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
   }
 
   const open = async () => {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    await chmod(dirname(path), 0o700)
+    // The folder is this host's own bookkeeping too: a name that stands for a link would point
+    // the mkdir and chmod below, and every later write, at a folder the team never named. Only a
+    // real directory is this host's own -- a link, a plain file or a check that could not run
+    // refuses here, before anything is created, chmod-ed or written; no folder yet is still this
+    // writer's to create, as it was before (#2055's rule, #2056).
+    const folder = dirname(path)
+    if (await dirKind(folder) === 'other') throw new JournalError('the journal folder is not a plain directory')
+    await mkdir(folder, { recursive: true, mode: 0o700 })
+    await chmod(folder, 0o700)
     let info
     try {
       info = await lstat(path)
