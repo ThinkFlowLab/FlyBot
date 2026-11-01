@@ -74,7 +74,7 @@ diff --git a/src/client/composer.js b/src/client/composer.js
 diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 --- a/src/client/details-drawer.js
 +++ b/src/client/details-drawer.js
-@@ -1,12 +1,12 @@
+@@ -1,31 +1,22 @@
  import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
  import { isMainOf } from './sources.js'
 -import { HEADER, currentPart, stripHeader, usageOf } from './text.js'
@@ -90,7 +90,8 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  import { ModelMenu, modelOf } from './model-menu.js'
  import { FolderMenu } from './folder-menu.js'
  import { MemoryRow } from './memory-panel.js'
-@@ -14,18 +14,9 @@ import { ScheduleSummary } from './schedules.js'
+-import { ScheduleSummary } from './schedules.js'
++import { RoomSchedules, ScheduleSummary } from './schedules.js'
  import { Segmented, useGlide, useMorph } from './motion.js'
  import { MemberWork, useMemberWork } from './member-status.js'
  import { t } from './i18n.js'
@@ -219,7 +220,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
          const entry = entries.find(item => item.id === member.id)
          return h('div', { key: member.id, role: 'listitem' },
            h('div', { className: 'bt-member' },
-@@ -131,11 +131,11 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings })
+@@ -131,11 +131,12 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings })
                h('span', null, member.name)),
              room.admin === member.id ? h('span', { className: 'bt-chip bt-chip-admin' }, t('Admin')) : null),
            entry ? h(MemberWork, { entry, bot: member, room, roster, actions, now }) : null)
@@ -232,6 +233,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 -      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))) : null,
 +    face || !usage ? null : h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
 +      h('div', { className: 'bt-kv' }, h('span', null, room.name), h('span', null, usage))),
++    h(RoomSchedules, { key: 'routines', room, actions }),
    ]
  }
  

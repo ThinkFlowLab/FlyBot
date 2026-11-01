@@ -2125,7 +2125,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const at = instant(task.scheduledAt)
 +  return at === '' ? timingText(task) : t('Next: {time}', { time: at })
 +}
-+
+ 
+-function TaskRow({ task, actions, onView, showBot, roster }) {
 +// The last run, in one line: when, and how it went (src/host/schedules.js).
 +export function lastRunText(run) {
 +  if (run === undefined || !Number.isFinite(run.at)) return ''
@@ -2137,8 +2138,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    default: return t('Last run {time}', { time })
 +  }
 +}
- 
--function TaskRow({ task, actions, onView, showBot, roster }) {
++
 +function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
@@ -2186,7 +2186,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2210,8 +2211,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2283,7 +2283,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,72 +166,196 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,219 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2389,9 +2389,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-   ]
- }
- 
++  ]
++}
++
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
@@ -2413,7 +2413,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-+  ]
+   ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -2433,8 +2433,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
-+}
-+
+ }
+ 
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -2463,14 +2463,27 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +          onCancel: () => setEditing(null),
 +          extra: [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
 +        }))
++}
++
++// The panel's rows: three of them, a title carrying the real count above three, and one row
++// saying what the cap hid (#2030). A Bot's details line and a group chat's section share it, so
++// the two surfaces cannot describe the same list differently.
++function SummaryLines({ tasks, actions }) {
++  const shown = tasks.slice(0, 3)
++  const hidden = tasks.length - shown.length
++  return h(Fragment, null,
++    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
++    h('div', { className: 'bt-task-list' },
++      shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
++        h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
++      hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
  }
  
 -// The details panel's line: the Bot's next tasks, or how to add one.
 +// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 +// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
-+// The line draws three rows, so the title carries the real count and one row after them says
-+// what the cap hid; that row opens the settings list, where a bot id would open the new-task
-+// form instead — the form is what the empty state's button means (#2030).
++// The rows open the settings list, where a bot id would open the new-task form instead — the
++// form is what the empty state's button means (#2030).
  export function ScheduleSummary({ bot, actions }) {
    const view = useSchedules(actions)
 -  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
@@ -2480,20 +2493,30 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  // keeps its own line below.
 +  if (view === null) return null
 +  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
-+  const shown = tasks.slice(0, 3)
-+  const hidden = tasks.length - shown.length
    return h('div', null,
 -    h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
-+    h('div', { className: 'bt-section-title' }, hidden > 0 ? t('Scheduled tasks · {count}', { count: tasks.length }) : t('Scheduled tasks')),
      tasks.length === 0
 -      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Harness settings.') : t('No scheduled tasks yet. Add one'))
 -      : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
 -          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
-+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
-+      : h('div', { className: 'bt-task-list' },
-+          shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
-+            h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
-+          hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
++      ? h('div', { className: 'bt-section-title' }, t('Scheduled tasks'))
++      : h(SummaryLines, { tasks, actions }),
++    tasks.length === 0
++      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
++      : null)
++}
++
++// A group chat's own tasks in its details panel (#2039). A task belongs to a room when it carries
++// that room's `roomId` and no `botId`; a Bot's task in the same view and another room's task are
++// both someone else's and stay out. Nothing is drawn for a room with no tasks — the rooms' page
++// keeps the only "none" sentence — and a face-to-face room has no such section. The rows open the
++// settings list with no target, because a room id here would open the new-task form (#2030).
++export function RoomSchedules({ room, actions }) {
++  const view = useSchedules(actions)
++  if (view === null || room.origin === 'face-to-face') return null
++  const tasks = view.available ? view.tasks.filter(task => task.botId === undefined && task.roomId === room.id) : []
++  if (tasks.length === 0) return null
++  return h('div', null, h(SummaryLines, { tasks, actions }))
  }
  
  export const SCHEDULE_CSS = `
