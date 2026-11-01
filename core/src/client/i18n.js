@@ -702,6 +702,8 @@ const ZH = {
   Inbox: '收件箱',
   'Inbox, {count} need you': '收件箱，{count} 项需要你',
   'Close inbox': '关闭收件箱',
+  'Show all': '显示全部',
+  'Show fewer': '收起',
   'Your Bots': '你的 Bot',
   'Needs you': '需要你',
   'In progress': '进行中',

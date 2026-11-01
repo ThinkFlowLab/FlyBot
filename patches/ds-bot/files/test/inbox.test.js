@@ -17,13 +17,23 @@ const module = { exports: {} }
 // A hook's effects are collected, never run: a test that drives a load calls the one it needs.
 // Timers are stubs so a driven load does not arm a background poll.
 const effects = []
+// #2050: a hook's state lives per render pass, so a control that flips one can be tested without
+// React. A draw rewinds the cursor and a setter writes the slot the next pass reads back; the
+// `useState` calls before a component's own slots run in the same order on both passes.
+let hookState = []
+let hookCursor = 0
+const resetInboxHooks = () => { hookState = []; hookCursor = 0 }
 runInNewContext(bundle.outputFiles[0].text, {
   module, exports: module.exports, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, Date, Promise,
   require: (name) => {
     const platform = {
       react: {
         createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
-        useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
+        useState: initial => {
+          const index = hookCursor++
+          if (!(index in hookState)) hookState[index] = typeof initial === 'function' ? initial() : initial
+          return [hookState[index], value => { hookState[index] = typeof value === 'function' ? value(hookState[index]) : value }]
+        },
         useEffect: fn => { effects.push(fn) }, useLayoutEffect: () => {}, useRef: current => ({ current }), useCallback: fn => fn, useMemo: fn => fn(), Fragment: 'fragment',
       },
       'react-dom': {},
@@ -815,14 +825,21 @@ const emptyInbox = extra => inboxModel({ roster, work: {}, sessions: undefined, 
 const serveInboxTasks = async (rows) => {
   const actions = { closeInbox: () => {}, tasks: () => Promise.resolve(rows) }
   effects.length = 0
+  hookCursor = 0
   useTasks(actions)
   effects.pop()()
   await new Promise(resolve => setImmediate(resolve))
   return actions
 }
-const drawInboxDialog = actions => InboxDialog({ roster, useWork: pick => pick({}), useSessions: pick => pick({}), actions })
+// A fresh draw starts from the initial state; `keep` redraws on the state a click just wrote.
+const drawInboxDialog = (actions, { keep = false } = {}) => {
+  if (keep) hookCursor = 0
+  else resetInboxHooks()
+  return InboxDialog({ roster, useWork: pick => pick({}), useSessions: pick => pick({}), actions })
+}
 const resetInboxTasks = async () => {
   effects.length = 0
+  hookCursor = 0
   useTasks({ closeInbox: () => {}, tasks: () => Promise.resolve([]) })
   effects.pop()()
   await new Promise(resolve => setImmediate(resolve))
@@ -881,6 +898,65 @@ test('#2042: the Done group says how many rows the cap hid, and says nothing whe
   const nothing = drawInboxDialog(await serveInboxTasks([]))
   assert.equal(more(nothing).length, 0, 'an empty Done group has no line either')
   assert.ok(byClass(nothing, 'bt-inbox-empty').map(textOf).includes('Nothing finished in the last 7 days.'), 'the empty words are unchanged')
+
+  await resetInboxTasks()
+})
+
+// #2050: #2042 made the group say how many rows it hid, but the model dropped them, so the count
+// line was dead text — nothing in the product could open the rows past the cap, and 9 of 29
+// finished tasks were unreachable. The model keeps them now, and the group can draw them in place.
+test('#2050: the model keeps the finished rows past the cap, in the order the Done group draws', () => {
+  const capped = emptyInbox({ tasks: freshTasks(29) })
+  assert.equal(capped.done.length, 20, 'the cap still draws one page')
+  assert.equal(capped.doneAll.length, 29, 'and the model carries every finished row')
+  assert.equal(capped.doneTotal, 29, 'the count is unchanged')
+  assert.deepEqual(plain(ids(capped.doneAll.slice(0, 20))), plain(ids(capped.done)), 'the page is the head of that list, same order')
+  assert.deepEqual(plain(ids(capped.doneAll)), plain(freshTasks(29).map(row => `task:${row.id}`)), 'newest settled first, as the group draws them')
+
+  const short = emptyInbox({ tasks: freshTasks(5) })
+  assert.deepEqual(plain(ids(short.doneAll)), plain(ids(short.done)), 'a short list keeps exactly what it draws')
+  assert.deepEqual(plain(emptyInbox({ tasks: [] }).doneAll), [], 'an empty list keeps nothing')
+})
+
+test('#2050: the Done group opens every row it counted, and folds back to the cap', async () => {
+  const more = tree => byClass(tree, 'bt-inbox-more')
+  const control = tree => byClass(tree, 'bt-inbox-show-all')
+  const doneRows = tree => cardsIn(tree).filter(node => node.props.card.id.startsWith('task:d'))
+  const groupIds = (tree, id) => cardsIn(all(tree).find(node => node.type === 'section' && node.props['aria-labelledby'] === `bt-inbox-${id}`)).map(node => node.props.card.id)
+
+  const rows = [task('n1', 'failed', { actors: [{ status: 'failed', why: 'the responsible Bot was deleted' }] }), task('p1', 'working'), ...freshTasks(29)]
+  const actions = await serveInboxTasks(rows)
+
+  const collapsed = drawInboxDialog(actions)
+  assert.equal(doneRows(collapsed).length, 20, 'the cap still draws 20 rows')
+  assert.equal(textOf(more(collapsed)[0]), '9 more not shown', 'and still says what it hid')
+  const open = control(collapsed)
+  assert.equal(open.length, 1, 'one control offers the hidden rows')
+  assert.equal(open[0].type, 'button', 'it is a control, not dead text')
+  assert.equal(textOf(open[0]), 'Show all')
+  assert.equal(open[0].props['aria-expanded'], false, 'and reads as folded')
+
+  open[0].props.onClick()
+  const expanded = drawInboxDialog(actions, { keep: true })
+  assert.equal(doneRows(expanded).length, 29, 'every finished row is drawn in place')
+  assert.deepEqual(plain(doneRows(expanded).map(node => node.props.card.id)), plain(freshTasks(29).map(row => `task:${row.id}`)), 'the rows and their order are the ones the group already had')
+  assert.equal(more(expanded).length, 0, 'nothing is hidden, so the count line is gone')
+  assert.equal(textOf(control(expanded)[0]), 'Show fewer')
+  assert.equal(control(expanded)[0].props['aria-expanded'], true)
+  assert.deepEqual(plain(groupIds(expanded, 'needs')), plain(groupIds(collapsed, 'needs')), 'Needs you is untouched')
+  assert.deepEqual(plain(groupIds(expanded, 'progress')), plain(groupIds(collapsed, 'progress')), 'nor is In progress')
+
+  control(expanded)[0].props.onClick()
+  const folded = drawInboxDialog(actions, { keep: true })
+  assert.equal(doneRows(folded).length, 20, 'closing the toggle returns to the cap')
+  assert.equal(textOf(more(folded)[0]), '9 more not shown')
+  assert.equal(textOf(control(folded)[0]), 'Show all')
+
+  // Nothing is hidden at or under the cap, so there is no control and the group is as it was.
+  const short = drawInboxDialog(await serveInboxTasks(freshTasks(20)))
+  assert.equal(doneRows(short).length, 20)
+  assert.equal(control(short).length, 0, 'a page with nothing past it offers no control')
+  assert.equal(more(short).length, 0)
 
   await resetInboxTasks()
 })

@@ -758,6 +758,8 @@ var ZH = {
   Inbox: "收件箱",
   "Inbox, {count} need you": "收件箱，{count} 项需要你",
   "Close inbox": "关闭收件箱",
+  "Show all": "显示全部",
+  "Show fewer": "收起",
   "Your Bots": "你的 Bot",
   "Needs you": "需要你",
   "In progress": "进行中",
@@ -8229,7 +8231,7 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], n
     card.calls = toolCalls(card, { roster, work });
   }
   const settled = done.sort(newest);
-  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneTotal: settled.length };
+  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneAll: settled, doneTotal: settled.length };
 }
 var needsCount = (roster, work, tasks, now, workflows = []) => inboxModel({ roster, work, tasks, now, workflows }).needs.length;
 function startedAtOf(task) {
@@ -8498,6 +8500,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
   const [busy, setBusy] = (0, import_react13.useState)("");
   const [errors, setErrors] = (0, import_react13.useState)({});
   const [feedback, setFeedback] = (0, import_react13.useState)("");
+  const [allDone, setAllDone] = (0, import_react13.useState)(false);
   const close = (0, import_react13.useCallback)(() => actions.closeInbox(), []);
   useEscape(close);
   (0, import_react13.useEffect)(() => {
@@ -8542,7 +8545,9 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
         { className: "bt-mem-body bt-inbox-body" },
         (0, import_react13.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
         GROUPS.map((group) => {
-          const rows = groups[group.id];
+          const settled = group.id === "done" ? model.doneAll ?? groups.done : null;
+          const canOpen = group.id === "done" && settled.length > DONE_MAX;
+          const rows = canOpen && allDone ? settled : groups[group.id];
           const hidden = group.id === "done" ? Math.max(0, (model.doneTotal ?? rows.length) - rows.length) : 0;
           return (0, import_react13.createElement)(
             "section",
@@ -8563,7 +8568,14 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
               onAnswer: answer,
               onOpen: open
             }))),
-            hidden > 0 ? (0, import_react13.createElement)("div", { key: "more", className: "bt-inbox-more" }, t("{count} more not shown", { count: hidden })) : null
+            hidden > 0 ? (0, import_react13.createElement)("div", { key: "more", className: "bt-inbox-more" }, t("{count} more not shown", { count: hidden })) : null,
+            canOpen ? (0, import_react13.createElement)("button", {
+              key: "all",
+              type: "button",
+              className: "bt-inbox-show-all",
+              "aria-expanded": allDone,
+              onClick: () => setAllDone((value) => !value)
+            }, t(allDone ? "Show fewer" : "Show all")) : null
           );
         })
       )
@@ -8586,6 +8598,9 @@ var INBOX_CSS = `
 .bt-inbox-head-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-empty{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-inbox-more{margin:0;font-size:12.5px;line-height:18px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-inbox-show-all{align-self:flex-start;padding:0;border:0;background:none;font:inherit;font-size:12.5px;line-height:18px;color:var(--bt-accent);cursor:pointer}
+.bt-inbox-show-all:hover{text-decoration:underline}
+.bt-inbox-show-all:focus-visible{outline:2px solid color-mix(in srgb,var(--bt-accent) 45%,transparent);outline-offset:2px;border-radius:4px}
 .bt-inbox-list{display:flex;flex-direction:column;gap:6px}
 .bt-inbox-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-inbox-card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--bt-accent) 35%,transparent)}

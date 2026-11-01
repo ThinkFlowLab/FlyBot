@@ -357,8 +357,10 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, workflows 
   }
   // #2042: Done is capped, and the cap used to be silent — the group counted the rows it drew,
   // so 25 finished tasks read as 20. The sorted list keeps the count it had before the cut.
+  // #2050: the cap is a page, not the history — the rows past it stay in the model (`doneAll`),
+  // so the group can draw them in place instead of only saying how many it left out.
   const settled = done.sort(newest)
-  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneTotal: settled.length }
+  return { needs: needs.sort(newest), progress: progress.sort(newest), done: settled.slice(0, DONE_MAX), doneAll: settled, doneTotal: settled.length }
 }
 
 // The row's badge: how many cards need me. The Done list needs no Session list for this.
@@ -611,6 +613,8 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
   const [busy, setBusy] = useState('')
   const [errors, setErrors] = useState({})
   const [feedback, setFeedback] = useState('')
+  // #2050: Done's cap is a page of the history; this draws the rest in place, on demand.
+  const [allDone, setAllDone] = useState(false)
   const close = useCallback(() => actions.closeInbox(), [])
   useEscape(close)
   useEffect(() => {
@@ -652,7 +656,11 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
       h('div', { className: 'bt-mem-body bt-inbox-body' },
         h('div', { className: 'bt-inbox-feedback', role: 'status', 'aria-live': 'polite' }, feedback),
         GROUPS.map(group => {
-          const rows = groups[group.id]
+          // #2050: the model keeps every finished row, so the group can draw the page's remainder
+          // in place. Below the cap there is nothing to open, and it draws exactly what it did.
+          const settled = group.id === 'done' ? (model.doneAll ?? groups.done) : null
+          const canOpen = group.id === 'done' && settled.length > DONE_MAX
+          const rows = canOpen && allDone ? settled : groups[group.id]
           // #2042: Done draws DONE_MAX rows at most. When the model had more, one line under the
           // rows says how many it left out, in the words the project board's capped list uses (#2021).
           const hidden = group.id === 'done' ? Math.max(0, (model.doneTotal ?? rows.length) - rows.length) : 0
@@ -665,7 +673,11 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
               : h('div', { className: 'bt-inbox-list' }, rows.map(card => h(InboxCard, {
                   key: card.id, card, roster, now, busy: busy === card.id, error: errors[card.id], onAnswer: answer, onOpen: open,
                 }))),
-            hidden > 0 ? h('div', { key: 'more', className: 'bt-inbox-more' }, t('{count} more not shown', { count: hidden })) : null)
+            hidden > 0 ? h('div', { key: 'more', className: 'bt-inbox-more' }, t('{count} more not shown', { count: hidden })) : null,
+            canOpen ? h('button', {
+              key: 'all', type: 'button', className: 'bt-inbox-show-all', 'aria-expanded': allDone,
+              onClick: () => setAllDone(value => !value),
+            }, t(allDone ? 'Show fewer' : 'Show all')) : null)
         }))))
 }
 
@@ -685,6 +697,9 @@ export const INBOX_CSS = `
 .bt-inbox-head-count{font-weight:500;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-inbox-empty{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-inbox-more{margin:0;font-size:12.5px;line-height:18px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-inbox-show-all{align-self:flex-start;padding:0;border:0;background:none;font:inherit;font-size:12.5px;line-height:18px;color:var(--bt-accent);cursor:pointer}
+.bt-inbox-show-all:hover{text-decoration:underline}
+.bt-inbox-show-all:focus-visible{outline:2px solid color-mix(in srgb,var(--bt-accent) 45%,transparent);outline-offset:2px;border-radius:4px}
 .bt-inbox-list{display:flex;flex-direction:column;gap:6px}
 .bt-inbox-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:.5px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card,var(--bt-main))}
 .bt-inbox-card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--bt-accent) 35%,transparent)}
