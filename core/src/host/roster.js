@@ -287,6 +287,10 @@ export function install(rt) {
       if (next === room.name) continue
       room.name = next
       await retitleRoom(room)
+      // The guests already seated hold the name they were given at join, and nothing else tells them: the
+      // same one `join` as an explicit rename (#1949). The guard above is the "the name really moved"
+      // condition, so a rename that leaves the computed name alone still sends nothing.
+      void rt.notifyRoomShare?.(room, { op: 'join' })
     }
   }
 
