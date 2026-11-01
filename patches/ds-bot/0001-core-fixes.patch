@@ -3384,7 +3384,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
-@@ -1,27 +1,58 @@
+@@ -1,27 +1,61 @@
 -// Connectors: outside services every Bot can use. GitHub is the first one. Its tools come
 -// from GitHub's MCP server through DSH's own MCP client, mounted on the plugin context,
 -// so every Bot and Session gets them as mcp__github__<tool>.
@@ -3448,6 +3448,9 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 +const APP_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
 +const MAX_APPS = 40
++// What a failed mount leaves for the owner's card, as long as another server's own description
++// (#2016), and a cut one says so: the `…` costs one unit of the bound instead of making 2,001.
++const REASON_MAX = 2000
  
  // Asks GitHub who the token belongs to. Any token GitHub accepts passes.
 -export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch } = {}) {
@@ -3455,7 +3458,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,989 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,991 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
  
@@ -4034,7 +4037,9 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 -    return rt.redactSecrets(text || 'error').slice(0, 300)
 +    let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
 +    for (const address of addresses) text = text.split(address).join('[session address]')
-+    return cut(rt.redactSecrets(text || 'error'), 300).text
++    const value = rt.redactSecrets(text || 'error')
++    const kept = cut(value, REASON_MAX)
++    return kept.cut ? `${cut(value, REASON_MAX - 1).text}…` : kept.text
    }
  
 -  async function reconcile(force) {
@@ -8187,26 +8192,48 @@ diff --git a/test/connectors.test.js b/test/connectors.test.js
    assert.equal(github.state, 'error')
    assert.ok(!github.error.includes(token), github.error)
    assert.match(github.error, /\[secret:GITHUB_TOKEN\]/)
-@@ -137,12 +137,45 @@ test('a failed MCP connection shows the error without the token, and Try again m
+@@ -137,12 +137,67 @@ test('a failed MCP connection shows the error without the token, and Try again m
    assert.equal(mounts.length, 2)
  })
  
 +// #2002: the MCP server's message is stored for the owner's card. A bound that lands inside a
 +// surrogate pair used to keep half of it, and the card drew the replacement character.
-+test('a connector error at the 300 bound keeps whole code points (#2002)', async (t) => {
++test('a connector error at the 2,000 bound keeps whole code points (#2002)', async (t) => {
 +  const realFetch = globalThis.fetch
 +  t.after(() => { globalThis.fetch = realFetch })
 +  globalThis.fetch = async () => answer(200, { login: 'octo' })
-+  const thrown = `${'a'.repeat(299)}😀tail`
++  const thrown = `${'a'.repeat(1999)}😀tail`
 +  const { ctx, home } = setup({ failWith: thrown })
 +  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
 +  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
 +  const github = result.value.find(entry => entry.id === 'github')
 +  assert.equal(github.state, 'error')
 +  assert.ok(github.error.isWellFormed(), `the stored error is not well formed: ${JSON.stringify(github.error.slice(-2))}`)
-+  assert.ok(thrown.startsWith(github.error), 'the stored error is a prefix of what the server threw')
-+  assert.ok(github.error.length <= 300, `the stored error is ${github.error.length} units, over the 300 bound`)
-+  assert.equal(github.error, 'a'.repeat(299), 'the pair that would cross the bound is dropped, not halved')
++  assert.ok(github.error.endsWith('…'), `the stored error does not say it was cut: ${JSON.stringify(github.error.slice(-3))}`)
++  assert.ok(thrown.startsWith(github.error.slice(0, -1)), 'the text before the … is a prefix of what the server threw')
++  assert.ok(github.error.length <= 2000, `the stored error is ${github.error.length} units, over the 2,000 bound`)
++  assert.equal(github.error, `${'a'.repeat(1999)}…`, 'the pair that would cross the bound is dropped, not halved, and the cut is marked')
++})
++
++// #2016: a message that still has to be cut now says so. The `…` sits inside the 2,000 — it costs
++// one unit of the bound — so a card never shows 2,001 units, and what is kept is a whole code
++// point prefix of what the server sent.
++test('an over-bound connector error ends with … inside the 2,000 bound (#2016)', async (t) => {
++  const realFetch = globalThis.fetch
++  t.after(() => { globalThis.fetch = realFetch })
++  globalThis.fetch = async () => answer(200, { login: 'octo' })
++  const thrown = 'x'.repeat(2500)
++  const { ctx, home } = setup({ failWith: thrown })
++  t.after(async () => { await ctx.dispose(); await cleanHome(home) })
++  const result = await call(ctx, 'connector-connect', { id: 'github', token: fresh() })
++  const github = result.value.find(entry => entry.id === 'github')
++  assert.equal(github.state, 'error')
++  assert.ok(github.error.endsWith('…'), `the stored error does not say it was cut: ${JSON.stringify(github.error.slice(-3))}`)
++  assert.ok(github.error.length <= 2000, `the stored error is ${github.error.length} units, over the 2,000 bound`)
++  assert.ok(github.error.isWellFormed(), 'the stored error is not well formed')
++  const kept = github.error.slice(0, -1)
++  assert.equal(kept, 'x'.repeat(1999), 'the marker costs one unit of the bound, so the kept text stops at 1,999')
++  assert.ok(thrown.startsWith(kept), 'the text before the … is a code-point prefix of what the server threw')
 +})
 +
 +// The control: a well-formed message under the bound is stored byte for byte, emoji included.

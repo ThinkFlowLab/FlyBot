@@ -50,6 +50,9 @@ const INSECURE = name => `${name} addresses must start with https://`
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 const APP_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
 const MAX_APPS = 40
+// What a failed mount leaves for the owner's card, as long as another server's own description
+// (#2016), and a cut one says so: the `…` costs one unit of the bound instead of making 2,001.
+const REASON_MAX = 2000
 
 // Asks GitHub who the token belongs to. Any token GitHub accepts passes.
 export async function signIn(token, { api = GITHUB_DEFAULTS.api, fetch: request = fetch } = {}) {
@@ -631,7 +634,9 @@ export function install(rt) {
   const reason = (error) => {
     let text = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ')
     for (const address of addresses) text = text.split(address).join('[session address]')
-    return cut(rt.redactSecrets(text || 'error'), 300).text
+    const value = rt.redactSecrets(text || 'error')
+    const kept = cut(value, REASON_MAX)
+    return kept.cut ? `${cut(value, REASON_MAX - 1).text}…` : kept.text
   }
 
   // A channel is the row's life, not a mount (#1266): webhook mode is ready once its URL is saved,
