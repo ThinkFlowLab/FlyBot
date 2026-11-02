@@ -593,6 +593,9 @@ test('an earlier part keeps the request its Bot answered', async () => {
   const { items } = await rt.earlierPage('b2')
   assert.deepEqual(items.map(item => [item.kind, item.role ?? item.text]), [['event', 'request'], ['bot', 'Understood, I stopped.']])
   assert.equal(items[0].botId, 'a')
+  // P-393: the line also says where it was said, because the chat stores a reaction under it — the place
+  // in a merged row moves as older pages are prepended, while the event's own seq does not.
+  assert.deepEqual([items[1].sessionId, items[1].turn, items[1].seq], ['b1', 1, 2])
 })
 
 test('a request the model keeps turning down moves the Bot on, without its latest messages the second time; a connection failure does not', async (t) => {
