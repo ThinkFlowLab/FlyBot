@@ -1180,3 +1180,67 @@ test('#2138: a back edge that leaves a parallel layer clears the card beside it'
     assert.deepEqual(failures, [], `reviewer>coder runs through ${failures.join(', ')} (height ${height ?? 72}): ${route.d}`)
   }
 })
+// #2151: a forward-branch edge can join two cards seated on ONE row — a loop across a
+// parallel layer, or a skip across a plain row. Such a pair has no corridor between it:
+// the source's bottom sits below the target's top, so the gap clamp went to 0 and the
+// lane search was then handed an inverted interval (yA above yB). No card can overlap an
+// inverted interval, so every slot looked open and the vertical run fell back onto the
+// row's centre column — straight through a card seated there, which is drawn on top and
+// hides the stroke. Both shapes are pinned here.
+const rowRoute = (nodes, edges, from, to, heights = {}) => {
+  const boxes = wf.cardBoxes(nodes, heights)
+  const route = wf.wireRoutes(nodes, edges, heights).find((one) => one.key === `${from}>${to}`)
+  const cards = new Map([...boxes.values()].map((box) => [box.id, {
+    id: box.id,
+    left: box.cx - CARD_W / 2,
+    right: box.cx + CARD_W / 2,
+    top: box.top,
+    bottom: box.bottom,
+  }]))
+  return { route, cards, points: route ? flattenPath(route.d) : [] }
+}
+// The drawn stroke must clear every card that is not one of its two ends, and the wire
+// must still leave and land on its ports: a run hidden under a card reads as a link to
+// the neighbour, and a run that stopped short would not read as a wire at all.
+const assertWireClearsRow = (route, cards, points, from, to) => {
+  assert.ok(route, `${from}>${to} renders`)
+  const failures = crossingsOf(points, cards, from, to)
+  assert.deepEqual(failures, [], `${from}>${to} runs through ${failures.join(', ')}: ${route.d}`)
+  const first = points[0]
+  const last = points[points.length - 1]
+  assert.deepEqual([first[0], first[1]], [cards.get(from).left + CARD_W / 2, cards.get(from).bottom], `${from}>${to} leaves ${from}'s bottom port (${route.d})`)
+  assert.deepEqual([last[0], last[1]], [cards.get(to).left + CARD_W / 2, cards.get(to).top], `${from}>${to} lands on ${to}'s top port (${route.d})`)
+}
+test('#2151: a loop across one parallel layer clears the middle card', () => {
+  // The row's cards are measured one by one, so they are not the same height: a taller
+  // card beside the run must not swallow it either.
+  for (const heights of [{ b1: 72, b2: 72, b3: 72 }, { b1: 48, b2: 48, b3: 48 }, { b1: 96, b2: 72, b3: 96 }, { b1: 72, b2: 96, b3: 72 }, { b1: 96, b2: 48, b3: 72 }]) {
+    const nodes = [
+      { id: 'start', name: 'Start', x: 0, y: 0 },
+      { id: 'b1', name: 'Branch 1', x: -200, y: 108 },
+      { id: 'b2', name: 'Branch 2', x: 0, y: 108 },
+      { id: 'b3', name: 'Branch 3', x: 200, y: 108 },
+    ]
+    const edges = [
+      { from: 'start', to: 'b1' }, { from: 'start', to: 'b2' }, { from: 'start', to: 'b3' },
+      { from: 'b3', to: 'b1', loop: true },
+    ]
+    const measured = { start: 72, ...heights }
+    const { route, cards, points } = rowRoute(nodes, edges, 'b3', 'b1', measured)
+    assert.equal(route.back, false, 'a loop between two cards on one row takes the forward branch')
+    assertWireClearsRow(route, cards, points, 'b3', 'b1')
+  }
+})
+test('#2151: a skip across one row clears the middle card', () => {
+  for (const heights of [{ a: 72, b: 72, c: 72 }, { a: 48, b: 48, c: 48 }, { a: 96, b: 72, c: 96 }, { a: 72, b: 96, c: 72 }, { a: 96, b: 48, c: 72 }]) {
+    const nodes = [
+      { id: 'a', name: 'A', x: 0, y: 120 },
+      { id: 'b', name: 'B', x: 200, y: 120 },
+      { id: 'c', name: 'C', x: 400, y: 120 },
+    ]
+    const edges = [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'a', to: 'c' }]
+    const { route, cards, points } = rowRoute(nodes, edges, 'a', 'c', heights)
+    assert.equal(route.back, false, 'a skip inside one row takes the forward branch')
+    assertWireClearsRow(route, cards, points, 'a', 'c')
+  }
+})
