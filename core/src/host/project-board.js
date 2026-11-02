@@ -18,7 +18,7 @@
 // sections. It writes nothing, starts nothing and is not called unless someone asks for the board.
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
-import { columnOf } from '../shared/task-board.js'
+import { columnOf, priorityOf } from '../shared/task-board.js'
 import { DECISIONS_DIR, describeFile, isDecisionPath, listProjectState, readListedFile } from './project-state.js'
 import { cut } from './text.js'
 import { advanceRefusal } from './meetings.js'
@@ -491,9 +491,20 @@ export function install(rt) {
       mine.push(task)
       const fromRun = ref !== undefined && (runProject === null || runProject.id === id)
       const audit = typeof rt.taskAudit === 'function' ? rt.taskAudit(task.id) : ''
+      const title = text(task.title)
       rows.push({
         id: task.id,
         source,
+        // The card's own text and priority, read here so a row is enough to draw a card. A finished
+        // card is not in the open `tasks` read, and a join by id would leave the Done column with
+        // `#<id>` and no priority; a record stored before this field reads `null` / `'normal'`.
+        title: title === '' ? null : title,
+        priority: priorityOf(task),
+        // The board this row opens (#2198), so a finished card — which the open `tasks` read no
+        // longer lists — still opens from the Done column instead of drawing as a dead card. It
+        // names what `source` names: a run-carried row (`source: 'workflow'`) has no board of its
+        // own to open, which is the same `null` the client derives for it today.
+        board: source === 'workflow' || board === null ? null : { kind: board.kind, id: board.id },
         column: columnOf(task),
         assignee: task.assignee ?? null,
         // #1831: "who is doing" is the claim, not the assignee label, and "who is speaking for
