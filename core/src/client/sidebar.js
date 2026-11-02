@@ -365,6 +365,10 @@ export function TeamSidebar(props) {
     return entries.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at)
   }, [roster, updated])
   const main = roster.byId[roster.mainBotId]
+  // A host sentence of nothing but whitespace says nothing, so it draws no hint in either shape.
+  // Read the same way as the workflow page (#2176), so the two surfaces cannot disagree; the text
+  // drawn is still the host's own sentence, not a trimmed copy.
+  const readOnlySaid = typeof roster.readOnly === 'string' && roster.readOnly.trim() !== ''
   // A plugin (the tree) may give the Bots a structure: the list then is one tree under the Main Bot.
   const structure = useSidebarStructure()
   const [collapsed, setCollapsed] = useState({})
@@ -393,7 +397,8 @@ export function TeamSidebar(props) {
       : h(Fragment, null,
           h(UpdateButton, { useUpdate: props.useUpdate, actions }),
           h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
-    wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+    wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+    !wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status', title: hostText(roster.readOnly), 'aria-label': hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
     h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     h(KanbanRow, { wide, useUi, actions }),
     h(ProjectsNav, { wide }),
@@ -734,6 +739,7 @@ export const SIDEBAR_CSS = `
 .bt-rail .bt-row{position:relative}
 .bt-rail .bt-pin{position:absolute;top:3px;left:calc(50% + 12px)}
 .bt-side .bt-read-only{margin:4px 8px 6px;padding:8px 10px;border-radius:10px;background:var(--bt-hover);font-size:12px;line-height:1.45;text-align:left}
+.bt-rail .bt-read-only{width:100%;margin:4px 0 6px;padding:4px 2px;font-size:10px;line-height:1.3;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 [class*="_footArea"]:has(.bt-foot-account){display:flex!important;flex-direction:row!important;align-items:center;gap:6px}
 [class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"],[class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"]>div{display:contents!important}
 .bt-foot-account{order:-1;flex:none;display:inline-flex}
