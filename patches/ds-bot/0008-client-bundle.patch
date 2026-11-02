@@ -22338,7 +22338,7 @@ diff --git a/client.js b/client.js
    if (shown === "usage" && !usageOpened) setUsageOpened(true);
 -  const errorLine = error ? (0, import_react28.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, error) : null;
 -  return (0, import_react28.createElement)(
-+  const errorLine = error ? (0, import_react42.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, error) : null;
++  const errorLine = error ? (0, import_react42.createElement)("div", { className: "bt-error", role: "alert", style: { padding: "0 20px 8px" } }, error) : null;
 +  return (0, import_react42.createElement)(
      "div",
      { className: "bt-settings-layer", "data-leaving": leaving || void 0 },
@@ -22394,10 +22394,11 @@ diff --git a/client.js b/client.js
 +          (0, import_react42.createElement)("h2", { key: bot?.id ?? room2?.id ?? shown }, bot?.name ?? room2?.name ?? label)
          ),
 -        shown === "usage" ? null : (0, import_react28.createElement)(
++        shown === "usage" ? null : errorLine,
 +        shown === "usage" ? null : (0, import_react42.createElement)(
            "div",
            { key: pageKey, className: "bt-settings-scroll bt-settings-page", "data-move": last.current.move },
-           errorLine,
+-          errorLine,
 -          shown === "general" ? (0, import_react28.createElement)(GeneralPage, { roster, actions, run }) : null,
 -          bot ? (0, import_react28.createElement)("div", { className: "bt-settings-form" }, (0, import_react28.createElement)(BotSettingsForm, { key: bot.id, bot, roster, actions, run })) : null,
 -          shown === "bots" && !bot ? (0, import_react28.createElement)(BotsPage, { roster, actions, run }) : null,

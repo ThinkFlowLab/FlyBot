@@ -203,7 +203,10 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   // rendered state off screen (content-visibility).
   const [usageOpened, setUsageOpened] = useState(shown === 'usage')
   if (shown === 'usage' && !usageOpened) setUsageOpened(true)
-  const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null
+  // The refusal belongs to the dialog, not to the page that scrolls: after scrolling down to
+  // the control that was pressed, a line drawn at the top of the scroll box is above the
+  // viewport, and the window looks as if the click did nothing.
+  const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: '0 20px 8px' } }, error) : null
   return h('div', { className: 'bt-settings-layer', 'data-leaving': leaving || undefined },
     h('div', { className: 'bt-scrim', onMouseDown: close }),
     h('div', { className: 'bt-settings', role: 'dialog', 'aria-modal': true, 'aria-label': t('FlyBot settings'), 'data-wide': shown === 'usage' ? '' : undefined },
@@ -223,8 +226,8 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
         h('div', { className: 'bt-settings-head' },
           back ? h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': back, title: back, onClick: () => actions.openSettings(shown) }, h(ChevronLeftIcon)) : null,
           h('h2', { key: bot?.id ?? room?.id ?? shown }, bot?.name ?? room?.name ?? label)),
+        shown === 'usage' ? null : errorLine,
         shown === 'usage' ? null : h('div', { key: pageKey, className: 'bt-settings-scroll bt-settings-page', 'data-move': last.current.move },
-          errorLine,
           shown === 'general' ? h(GeneralPage, { roster, actions, run }) : null,
           bot ? h('div', { className: 'bt-settings-form' }, h(BotSettingsForm, { key: bot.id, bot, roster, actions, run })) : null,
           shown === 'bots' && !bot ? h(BotsPage, { roster, actions, run }) : null,

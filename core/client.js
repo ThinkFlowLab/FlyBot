@@ -19131,7 +19131,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
   }
   const [usageOpened, setUsageOpened] = (0, import_react42.useState)(shown === "usage");
   if (shown === "usage" && !usageOpened) setUsageOpened(true);
-  const errorLine = error ? (0, import_react42.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, error) : null;
+  const errorLine = error ? (0, import_react42.createElement)("div", { className: "bt-error", role: "alert", style: { padding: "0 20px 8px" } }, error) : null;
   return (0, import_react42.createElement)(
     "div",
     { className: "bt-settings-layer", "data-leaving": leaving || void 0 },
@@ -19172,10 +19172,10 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           back ? (0, import_react42.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": back, title: back, onClick: () => actions.openSettings(shown) }, (0, import_react42.createElement)(ChevronLeftIcon)) : null,
           (0, import_react42.createElement)("h2", { key: bot?.id ?? room2?.id ?? shown }, bot?.name ?? room2?.name ?? label)
         ),
+        shown === "usage" ? null : errorLine,
         shown === "usage" ? null : (0, import_react42.createElement)(
           "div",
           { key: pageKey, className: "bt-settings-scroll bt-settings-page", "data-move": last.current.move },
-          errorLine,
           shown === "general" ? (0, import_react42.createElement)(GeneralPage, { roster, actions, run }) : null,
           bot ? (0, import_react42.createElement)("div", { className: "bt-settings-form" }, (0, import_react42.createElement)(BotSettingsForm, { key: bot.id, bot, roster, actions, run })) : null,
           shown === "bots" && !bot ? (0, import_react42.createElement)(BotsPage, { roster, actions, run }) : null,
