@@ -44,6 +44,11 @@ export function install(rt) {
   // the chain, so a queued record cannot slip past it, and one refused file is said once rather
   // than once per decision.
   let refusedLeaf = false
+  // Housekeeping writes a temp name and renames it over the log, so that name is a write target too
+  // (#2103): a link left there would take the retained log and then become the log. One refusal is
+  // said once, the same way the leaf is.
+  let refusedTemp = false
+  let trimRefused = false
   const leafWritable = async () => {
     if (await fileKind(path) !== 'other') return true
     if (!refusedLeaf) {
@@ -57,6 +62,7 @@ export function install(rt) {
   // file so a reader never sees a half-trimmed log. The Bot side stays append-only; this is the
   // host's own housekeeping.
   async function trim() {
+    trimRefused = false
     let text
     try { text = await readFile(path, 'utf8') } catch (error) { if (error?.code === 'ENOENT') return 0; throw error }
     const lines = text.split('\n').filter(Boolean)
@@ -72,6 +78,14 @@ export function install(rt) {
     const next = kept.length > 0 ? `${kept.join('\n')}\n` : ''
     if (next !== text) {
       const tmp = `${path}.tmp`
+      if (await fileKind(tmp) === 'other') {
+        trimRefused = true
+        if (!refusedTemp) {
+          refusedTemp = true
+          rt.warn('ds-bot: the decision log was not trimmed: %s is not a plain file', tmp)
+        }
+        return kept.length
+      }
       await writeFile(tmp, next, 'utf8')
       await rename(tmp, path)
     }
@@ -85,7 +99,10 @@ export function install(rt) {
       await appendFile(path, line, 'utf8')
       linesOnDisk = linesOnDisk === null ? await countLines() : linesOnDisk + 1
       const { size } = await stat(path)
-      if (linesOnDisk > KEPT || size > MAX_BYTES) linesOnDisk = await trim()
+      if (linesOnDisk > KEPT || size > MAX_BYTES) {
+        linesOnDisk = await trim()
+        if (trimRefused) return 'untrimmed'
+      }
       return 'written'
     }).catch(error => { rt.warn('ds-bot: a decision was not written: %s', error); return 'failed' })
     return writing
@@ -145,6 +162,7 @@ export function install(rt) {
       if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file.'
       // The feed payload drops the id to a safe shape and adds the live botId (a consumer keys by it).
       rt.fireFeed?.('decision', { botId, option, choice, ...(why ? { why } : {}), time: entry.time })
+      if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${path}.tmp is not a plain file.`
       return `Recorded: ${choice} "${option}"${why ? ` — ${why}` : ''}.`
     },
   }))
