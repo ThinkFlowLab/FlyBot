@@ -1,0 +1,1 @@
+A wire that leaves a row for one below now clears the tallest card in that row instead of running through a shorter neighbour: the corridor is measured from the row's lowest measured bottom, so a 96px card beside a 48px source no longer hides the horizontal run behind its own body ([#2160](https://github.com/ThinkFlowLab/FlyBot/issues/2160)).

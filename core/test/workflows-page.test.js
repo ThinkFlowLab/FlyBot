@@ -1244,3 +1244,35 @@ test('#2151: a skip across one row clears the middle card', () => {
     assertWireClearsRow(route, cards, points, 'a', 'c')
   }
 })
+// #2151 fixed the same-row case; a forward edge that leaves its row for one below still took its
+// corridor height from the source card alone. A row's cards are measured one by one, so a card
+// beside the source can be taller: the horizontal run at `from.bottom + WIRE_GAP` then entered
+// that card's body and, drawn behind it, read as a link to the neighbour. Both shapes are pinned
+// here — one taller neighbour, and taller cards on both sides of the source.
+test('a forward edge to the next row clears a taller card beside its source (#2160)', () => {
+  for (const heights of [{ a: 48, b: 96, c: 72 }, { a: 48, b: 120, c: 72 }, { a: 72, b: 96, c: 72 }]) {
+    const nodes = [
+      { id: 'a', name: 'A', x: 0, y: 120 },
+      { id: 'b', name: 'B', x: 200, y: 120 },
+      { id: 'c', name: 'C', x: 800, y: 400 },
+    ]
+    const edges = [{ from: 'a', to: 'c' }]
+    const { route, cards, points } = rowRoute(nodes, edges, 'a', 'c', heights)
+    assert.equal(route.back, false, 'an edge to a lower row takes the forward branch')
+    assertWireClearsRow(route, cards, points, 'a', 'c')
+  }
+})
+test('a forward edge to the next row clears taller cards on both sides of its source (#2160)', () => {
+  for (const heights of [{ a: 96, b: 48, c: 96, d: 72 }, { a: 120, b: 48, c: 96, d: 72 }, { a: 96, b: 72, c: 120, d: 72 }]) {
+    const nodes = [
+      { id: 'a', name: 'A', x: 0, y: 120 },
+      { id: 'b', name: 'B', x: 200, y: 120 },
+      { id: 'c', name: 'C', x: 400, y: 120 },
+      { id: 'd', name: 'D', x: 800, y: 400 },
+    ]
+    const edges = [{ from: 'b', to: 'd' }]
+    const { route, cards, points } = rowRoute(nodes, edges, 'b', 'd', heights)
+    assert.equal(route.back, false, 'an edge to a lower row takes the forward branch')
+    assertWireClearsRow(route, cards, points, 'b', 'd')
+  }
+})

@@ -254,15 +254,18 @@ export function wireRoutes(nodes, edges, heights = {}) {
     const x2 = item.to.cx
     const y1 = item.from.bottom
     const y2 = item.to.top
+    // A row's cards are measured one by one, so the row is only as low as its tallest card.
     // #2151: two cards on one row have no corridor between them — from.bottom sits at or
     // below to.top — so a gap measured inside it is empty and both runs landed on the
     // row's own edges, under the card beside them. Sit them outside the row instead:
-    // below its lowest measured bottom and above the target's top.
+    // below its lowest measured bottom and above the target's top. The same height serves a
+    // run that leaves the row for one below: a corridor measured from the source alone runs
+    // through a taller neighbour of that row.
     const sameRow = y2 - y1 <= 0
-    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, (y2 - y1) / 2)
-    const rowBottom = sameRow
-      ? Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom))
-      : y1
+    const rowBottom = Math.max(...boxes
+      .filter((box) => Math.abs(box.top - item.from.top) <= 1.5)
+      .map((box) => box.bottom))
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, (y2 - rowBottom) / 2))
     const yA = clearOf(rowBottom + gap, 1)
     const yB = clearOf(y2 - gap, -1)
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken)
