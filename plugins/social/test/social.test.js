@@ -5392,6 +5392,25 @@ test('#90: hide-remote leaves independent rooms in parallel and does not wait fo
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
+  // Hold the leave itself: the call must return while every room leave it started is still blocked,
+  // and the seats must still be seated. A wall-clock race here measured the runner's scheduling, not
+  // the contract — on a slow machine a correct implementation lost a 60 ms race (#2102). The plugin
+  // builds its own scoped API, so the latch goes on `scope()` before it is created.
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  t.after(() => release?.())
+  let leaves = 0
+  const realScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = realScope(name)
+    const removeParticipant = scoped.rooms.removeParticipant.bind(scoped.rooms)
+    scoped.rooms.removeParticipant = async (...args) => {
+      leaves += 1
+      await held
+      return removeParticipant(...args)
+    }
+    return scoped
+  }
   const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
     client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
     home: { id: 'h1', handle: '@danyang.home' },
@@ -5418,19 +5437,6 @@ test('#90: hide-remote leaves independent rooms in parallel and does not wait fo
   })
   assert.equal(first.ok, true, first.error?.message)
   assert.equal(second.ok, true, second.error?.message)
-  // Hold the leave itself: the call must return while every room leave it started is still blocked,
-  // and the seats must still be seated. A wall-clock race here measured the runner's scheduling, not
-  // the contract — on a slow machine a correct implementation lost a 60 ms race (#2102).
-  let release
-  const held = new Promise(resolve => { release = resolve })
-  t.after(() => release?.())
-  const removeParticipant = ctx.flybot.rooms.removeParticipant.bind(ctx.flybot.rooms)
-  let leaves = 0
-  ctx.flybot.rooms.removeParticipant = async (...args) => {
-    leaves += 1
-    await held
-    return removeParticipant(...args)
-  }
   let returned = false
   const pending = call('flybot/social/hide-remote', { handle: '@coder.bob.home' })
     .then((result) => { returned = true; return result })
