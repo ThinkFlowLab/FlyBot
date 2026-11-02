@@ -12,7 +12,7 @@ Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 
 ### Backend delivery branch — 2026-11-02
 
-`delivery/development-service` packages the complete S1–S6 backend at1811e3b8f,
+`delivery/ai-centric-development-service` packages the complete S1–S6 backend at1811e3b8f,
 including verified-exit, approved integration and Chief/SDK recovery fixes. Its root
 README documents existing-service authentication, direct v1/legacy HTTP usage,
 explicit task publication/start, isolated source demo setup and evidence limits.
@@ -720,3 +720,13 @@ Delivery branch documentation now includes a source-matched API reference for al
 entrypoints, plus a workflow/private safe-watch/state guide. It distinguishes
 TaskView from stored lifecycle, actual records from fixture validation and ordinary
 questions from impactful Tasks. This does not change runtime, enable watch or add UI.
+
+
+### Publish the service snapshot in the upstream repository — 2026-11-02
+
+The owner explicitly requested pushing the delivered service to a new branch in
+ThinkFlowLab/FlyBot. `delivery/ai-centric-development-service` retains db749e4eb
+and its verified1811 production baseline; it does not merge or replace current
+upstream main3dde8e14. README checkout targets this repository/branch. This is
+a snapshot handoff, not a new main-targeting implementation PR or an upstream
+compatibility PASS. Runtime/private configuration and the frontend flow are untouched.

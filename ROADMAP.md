@@ -2,7 +2,7 @@
 
 ## Active fork roadmap — 2026-10-31
 
-Backend delivery branch `delivery/development-service` consolidates S1–S6 at1811e3b8f.
+Backend delivery branch `delivery/ai-centric-development-service` consolidates S1–S6 at1811e3b8f.
 Use the root README for login, direct API operations and isolated setup. This
 documentation handoff does not complete original frontend #41 acceptance or merge
 any staged PR; standalone process packaging/OpenAPI remain outside this branch.

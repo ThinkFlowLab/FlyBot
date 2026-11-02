@@ -7,7 +7,7 @@ owned_paths:
 
 # Automatic development application service
 
-The `delivery/development-service` branch is a consolidated source handoff from
+The `delivery/ai-centric-development-service` branch is a consolidated source handoff from
 1811e3b8f. Its [root README](../../README.md) provides the operator-facing current
 service and isolated-source quickstart, authenticated API examples and command
 index. It preserves this existing in-process facade; no HTTP contract or runtime

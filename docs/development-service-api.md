@@ -1,6 +1,6 @@
 # 自动开发服务 API 参考
 
-适用：`delivery/development-service` 分支，业务源码基线 `1811e3b8f`。
+适用：`delivery/ai-centric-development-service` 分支，业务源码基线 `1811e3b8f`。
 覆盖本版本全部 **12 个 v1 查询、21 个 v1 命令**，以及完成登录、项目选择、
 任务创建和个人代理交互所需的原生接口。不是全部 FlyBot/DSH 管理接口的目录。
 

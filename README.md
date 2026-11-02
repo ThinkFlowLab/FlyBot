@@ -1,6 +1,6 @@
 # FlyBot 自动开发后端服务
 
-这是 `zy95-12/FlyBot` 的 **`delivery/development-service` 交付分支**。
+这是 `ThinkFlowLab/FlyBot` 的 **`delivery/ai-centric-development-service` 交付分支**。
 代码基线为 `1811e3b8f71c527b87320a12575df09e0e823e8e`，已包含 S1–S6、
 已确认退出的工作区恢复、可信集成源准入及 Chief/SDK 生命周期修复；
 **直接检出本分支即可，不需要逐个合并阶段 PR**。
@@ -33,13 +33,15 @@ Chief 是常驻 Project 身份，角色执行保留人设、Skills、长期记�
 ## 1. 获取代码
 
 ```bash
-git clone --branch delivery/development-service --single-branch \
-  https://github.com/zy95-12/FlyBot.git FlyBot-service
+git clone --branch delivery/ai-centric-development-service --single-branch \
+  https://github.com/ThinkFlowLab/FlyBot.git FlyBot-service
 cd FlyBot-service
 git rev-parse HEAD
 ```
 
-私仓需先配置你自己的 GitHub 访问权限。本分支用于集成交付；创建分支不等于将阶段 PR 合入 main。
+本分支发布到主仓的新分支，来自原交付分支 `zy95-12/FlyBot@db749e4eb`。
+这是已验证代码的交付快照，尚未整合主仓最新 main 的后续变更；不能据此声称已通过主线集成测试。
+创建本分支不合并 main，不改变既有阶段 PR，也不升级正在运行的服务。
 
 ## 2. 直接使用当前机器上的服务
 
@@ -301,7 +303,8 @@ sudo journalctl -u flybot-shared-workbench.service -n 50 --no-pager
 账号服务复用不修改的 control-plane 代码，仅用于演示注册/登录；无需操作它的管理 UI。
 以下启动的是**临时账号、临时仓库和确定性模型**，不是复制现有机器的 Codex 凭据或真实前端任务。
 
-在 `FlyBot-service` 的父目录获取账号服务源码并固定版本：
+在 `FlyBot-service` 的父目录获取账号服务源码并固定版本。下面的账号服务仓库沿用原部署的fork地址；
+若其为私有，需要相应读取权限，本分支不会自动授予依赖仓库的访问权：
 
 ```bash
 git clone https://github.com/zy95-12/flybot-control-plane.git
