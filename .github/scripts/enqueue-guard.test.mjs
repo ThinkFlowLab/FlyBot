@@ -1014,3 +1014,37 @@ test('#602 (2026-11-01): a comment asking not to merge refuses a merged pull req
   const r = run({ merged: true, comments: [comment(report(), '2026-11-01T17:35:30Z'), note({ id: 8 })] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
+
+// A review body, the shape `reports` builds: the caller keeps the review's body and sends `submitted_at`
+// as `at` (`enqueue-guard.mjs:69-71`, `merge-gate.mjs:219-221`), so a request written as a review is the
+// same request in the same list.
+const reviewNote = ({ id = 6561490251, login = 'hugo', type = 'User', body = '@Birfy — **please do not merge this tip.** Your PASS at ' + HEAD + ' is on the record and correct as to what it checked; the tip does not cover the readers it describes.', at = '2026-11-01T17:38:11Z', association = 'CONTRIBUTOR', state = 'COMMENTED' } = {}) =>
+  ({ id, user: { login, type }, body, submitted_at: at, author_association: association, state })
+
+test('#602 (2026-11-01): a review asking not to merge this tip refuses too, and names the review', () => {
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [reviewNote()] })
+  assert.equal(r.ok, false, 'a request written as a review is the same request')
+  const text = r.reasons.join('; ')
+  assert.match(text, /asks not to merge this pull request/)
+  assert.match(text, /6561490251/, 'the refusal names the review it read')
+  assert.match(text, /please do not merge/)
+  assert.equal(r.command, `gh pr merge 566 --auto --squash --match-head-commit ${HEAD}`, 'the command is printed for a reader, never run')
+})
+
+test('#602 (2026-11-01): a review carrying a conclusion is a conclusion, not a stop', () => {
+  // The same sentence that stops a comment must not make a conclusion stop itself: the verdict is what
+  // `decide` reads, and `recordOnlyAt` already owns the marker a parked PASS writes.
+  const pass = reviewNote({ id: 6561490252, login: 'reviewer-agent', association: 'MEMBER', body: report({ extra: ['**please do not merge this tip.**'] }) })
+  const passing = run({ reviews: [pass] })
+  assert.equal(passing.ok, true, `a PASS review is a conclusion, not a request: ${passing.reasons.join('; ')}`)
+  const inc = reviewNote({ id: 6561490253, login: 'reviewer-agent', association: 'MEMBER', body: report({ verdict: 'INC', extra: ['**please do not merge this tip.**'] }) })
+  assert.equal(run({ reviews: [inc] }).stopRequest, null, 'an INC review is judged by decide, not read as a stop')
+})
+
+test('#602 (2026-11-01): a T0/T1 pull request with no PASS is stopped by a review too', () => {
+  const held = reviewNote({ id: 6561490254, body: '**hold** — the second file is still wrong' })
+  const r = run({ files: [TEST_FILE], reviews: [held] })
+  assert.equal(r.ok, false)
+  assert.match(r.reasons.join('; '), /asks not to merge this pull request/)
+  assert.match(r.reasons.join('; '), /6561490254/)
+})

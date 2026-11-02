@@ -131,10 +131,11 @@ function headerReasons(body, policy) {
 // merge this tip" at 17:38:11, merged at 17:39:54 — because the guard read the labels, the diff and the
 // conclusions, and never the comments.
 //
-// What counts: a comment by a person (`type: "User"`) or by the pull request's own author — in #2067 the
-// author was the only one objecting, so a "only a non-author can stop" rule would have merged it too —
-// written after the conclusion this decision used. A request older than the PASS at this tip is about the
-// state that PASS has since read. With no conclusion to anchor on (a T0/T1 change) the whole list is read.
+// What counts: a comment or a review body (#2073) by a person (`type: "User"`) or by the pull request's
+// own author, written after the conclusion this decision used — in #2067 the author was the only one
+// objecting, so a "only a non-author can stop" rule would have merged it too. A request older than the
+// PASS at this tip is about the state that PASS has since read. With no conclusion to anchor on (a T0/T1
+// change) the whole list is read.
 //
 // The phrases are the ones people write, not a marker: #2067's request is a bold sentence, and its addendum
 // only says "the hold request above". Quoted text and code blocks are mentions, not requests — the first
@@ -182,10 +183,12 @@ export function stopRequestAt(reports, { author, since } = {}) {
   const after = Number.isFinite(since) ? since : null
   const rows = (reports ?? [])
     .map((r, i) => ({ r, i, t: Date.parse(r?.at ?? '') || 0 }))
-    .filter(({ r }) => (r?.kind ?? 'comment') === 'comment')
     .filter(({ r }) => String(r?.type ?? '') === 'User' || (login !== '' && String(r?.login ?? '').toLowerCase() === login))
-    // A conclusion is a review, not a request: "record only — do not merge" in a PASS is the marker
-    // `recordOnlyAt` already reads, and reading it here too would make every parked PASS its own stop.
+    // A comment and a review body are read alike (#2073): the request a person writes is the same one
+    // whichever box it was typed in, and the callers already pass both (`enqueue-guard.mjs:69-71`,
+    // `merge-gate.mjs:219-221`). A body carrying a conclusion is the conclusion, not a request:
+    // "record only — do not merge" in a PASS is the marker `recordOnlyAt` already reads, and reading it
+    // here too would make every parked PASS its own stop.
     .filter(({ r }) => !parseReport(r?.body).verdict)
     .filter(({ t }) => after == null || t > after)
     .sort((a, b) => a.t - b.t || a.i - b.i)
