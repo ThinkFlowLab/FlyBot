@@ -16559,8 +16559,11 @@ function wireRoutes(nodes, edges, heights = {}) {
     const y2 = item.to.top;
     const sameRow = y2 - y1 <= 0;
     const rowBottom = Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom));
-    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, (y2 - rowBottom) / 2));
-    const yA = clearOf(rowBottom + gap, 1);
+    const room2 = y2 - rowBottom;
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, room2 / 2));
+    const corridor = clearOf(rowBottom + gap, 1);
+    const cap = sameRow ? Infinity : room2 === 0 ? y2 : y2 - 1;
+    const yA = sameRow ? corridor : Math.max(y1, Math.min(corridor, cap));
     const yB = clearOf(y2 - gap, -1);
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken);
     taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) });

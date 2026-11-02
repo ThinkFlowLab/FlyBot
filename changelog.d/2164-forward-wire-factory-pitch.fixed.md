@@ -1,0 +1,1 @@
+A wire that leaves a row for one below turns in the corridor under that row and never below the next row's top: at the factory 108px row pitch a card beside a 48px source can reach past that top, and the turn is then clamped a pixel above it instead of landing inside the cards below ([#2164](https://github.com/ThinkFlowLab/FlyBot/issues/2164)).
