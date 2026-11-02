@@ -421,3 +421,5 @@ bound and currently authorized. Public role facts support versioned dedupe/archi
 execution experience remains unverified and cannot overwrite human facts. Private
 notes retain history while default views remain bounded. Native Chief topic memory
 continues to use the original own-Bot store, with paged scoped adapter reads.
+
+Native resident Chief jobs now send the current protocol and scoped facts in each turn request. They keep a stable role system definition instead of relying on replacement of a cached system prompt. The full native input is budget checked and actor/delegation authority is revalidated before dispatch; the same resident Session remains in use.

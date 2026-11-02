@@ -153,3 +153,5 @@ repository files. Both workers confirmed stop and process exit before release.
 A large-output command completed with the configured CLI history cap. This proves
 SDK continuation under this controlled task, not a full Chief/pool run, an observed
 compaction event, an exact provider context-window measurement, or native restoration.
+
+Sequential native Chief jobs must receive current facts in their actual turn input, not only bot.systemPrompt metadata that an already running Session may cache. A two-job regression checks current facts, stable system definition, same Session and completed delegation cleanup. This is a deterministic adapter regression; real DSH admission coverage is tracked by dependent #2179.

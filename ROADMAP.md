@@ -447,3 +447,5 @@ SDK compaction remains runtime-managed, without claiming aggregate usage is curr
 window pressure. No new memory platform, executor or timer. Native Task-role physical
 restore2184 and normalized SQL storage2182 remain separate acceptance; real SDK
 verification must name exact runtime source hashes, not borrow deterministic tests.
+
+#2177 follow-up: validate two sequential native Chief jobs against fresh per-turn facts while retaining the same resident Session; dependent Task admission runtime acceptance remains #2179.

@@ -797,3 +797,28 @@ test('bounded source reads keep public messages/knowledge and memory revisions i
   rt.state.projectRoleMemory.foreign = { id: 'foreign', projectId: 'p2', role: 'developer', text: 'Foreign public note' }
   await assert.rejects(read({ kind: 'role-memory', id: 'foreign' }), /another Project/)
 })
+
+test('resident native Chief receives fresh job facts in each turn instead of relying on a cached system prompt', async t => {
+  const { rt } = await setup(t)
+  const { public: chief } = await get(rt, alice)
+  const sessionId = rt.state.projectAgents[chief.id].sessionId
+  const sends = [], originalDeliver = rt.deliver
+  rt.projectChiefControl.validateActor = async () => {} // This test isolates native context delivery, not Chief authorization.
+  rt.deliver = async args => { sends.push({ ...args, system: rt.botOf(chief.botId).systemPrompt }); return originalDeliver(args) }
+  for (const index of [1, 2]) {
+    let completed = false
+    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
+    const sent = sends.at(-1)
+    assert.match(sent.text, new RegExp(`FRESH_JOB_${index}`))
+    assert.match(sent.text, /Judge only this current job/)
+    assert.equal(sent.sessionId, sessionId)
+    assert.equal(sent.system.includes(`FRESH_JOB_${index}`), false, 'Task-specific facts must not become a cached system definition')
+    rt.projectAgents.onEvent({ id: sessionId }, { type: 'assistant/message', data: { turn: 1, message: { content: [{ type: 'text', text: '{}' }] } } })
+    rt.projectAgents.onEvent({ id: sessionId }, { type: 'turn/end', data: { turn: 1 } })
+    for (let pass = 0; pass < 100 && rt.projectAgents.chiefBusy('p1'); pass++) await new Promise(resolve => setTimeout(resolve, 5))
+    assert.equal(completed, true)
+    assert.equal(rt.projectAgents.chiefBusy('p1'), false)
+  }
+  assert.equal(sends.length, 2)
+  assert.equal(rt.state.projectAgents[chief.id].sessionId, sessionId)
+})

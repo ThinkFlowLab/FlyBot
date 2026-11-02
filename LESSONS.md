@@ -652,3 +652,5 @@ but arbitration continue left claim active while Task was blocked. Operator sour
 admission correctly refused. Mark only that completed Chief claim waiting-human;
 retain actual exit/lease checks and every other claim. A regression reproduces the
 old active label and verifies Task/Attempt/generation and blocked state survive.
+
+2026-11-03 Seen 1×: a resident native Session may retain its system definition after bot metadata changes. Put each current job protocol/facts in the actual turn input; keep prior context historical and preserve the Session. The explicit Task scope fence caught stale-job output during #2179 admission verification.
