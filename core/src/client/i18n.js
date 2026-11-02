@@ -826,6 +826,7 @@ const ZH = {
   '{n} line of reasoning': '{n} 行思考内容',
   '{n} lines of reasoning': '{n} 行思考内容',
   'Earlier messages': '更早的消息',
+  Connections: '连线',
   'Loading earlier messages…': '正在加载更早的消息…',
   'Couldn’t load earlier messages · Retry': '更早的消息没加载出来 · 重试',
   'Load earlier': '加载更早的消息',
