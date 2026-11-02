@@ -1,0 +1,1 @@
+A diagnostics report from a window that another dsh keeps read-only no longer says `state journal: recording`: that window never reaches the journal write, so the line now says `state journal: paused (this window is read-only)` instead, while a journal that really stopped keeps its own reason ([#2153](https://github.com/ThinkFlowLab/FlyBot/issues/2153)).

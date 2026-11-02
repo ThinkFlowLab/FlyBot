@@ -225,6 +225,7 @@ export function install(rt) {
     const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
     const groups = Object.keys(rt.state.rooms).length
     const journal = rt.journal?.status()
+    const readOnly = rt.readOnly?.()
     return {
       botVersion: ownVersion(),
       dshVersion: dshVersion(),
@@ -232,8 +233,14 @@ export function install(rt) {
       node: process.version,
       team: `${count(bots.length, 'Bot', 'Bots')}, ${rt.state.mainBotIds.length} Main, ${count(groups, 'group chat', 'group chats')}`,
       models: models.length > 0 ? models.join(', ') : undefined,
-      readOnly: rt.readOnly?.() ? 'yes, another dsh holds the team' : undefined,
-      stateJournal: journal === undefined ? undefined : journal.recording ? 'recording' : `stopped (${clean(journal.because)})`,
+      readOnly: readOnly ? 'yes, another dsh holds the team' : undefined,
+      // The writer is opened before the lock is asked for, so in a window another dsh keeps
+      // read-only `save()` returns before `journal.record()` and no line is written at all;
+      // claiming `recording` there promises a line the file will not get. A journal that
+      // genuinely stopped keeps its own reason, which is the fault a report is usually for.
+      stateJournal: journal === undefined ? undefined
+        : journal.recording ? (readOnly ? 'paused (this window is read-only)' : 'recording')
+          : `stopped (${clean(journal.because)})`,
     }
   }
 
