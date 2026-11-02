@@ -98,6 +98,11 @@ export function pullRequestNumber(argv = process.argv.slice(2), env = process.en
 
 // GitHub's own REST API, with the job's token: the workflow already has `pull-requests: read`, and
 // the runner is not assumed to carry `gh` (the shared box the Bots work on does not).
+//
+// A single-object answer (the pull request itself) is returned as it is: only a list is paged, and
+// only a list may be flattened. Flattening the object wrapped it in a one-element array, so every
+// read of `pull.body`, `pull.user` and `pull.head` came back empty and every gate change was
+// refused with "carries no `Policy-sign:` line" (#2060).
 async function api(path, token) {
   const pages = []
   for (let page = 1; ; page += 1) {
@@ -106,12 +111,13 @@ async function api(path, token) {
     })
     if (!response.ok) throw new Error(`${response.status} ${response.statusText} on ${path}`)
     const body = await response.json()
+    if (!Array.isArray(body)) return body
     pages.push(body)
-    if (!Array.isArray(body) || body.length < 100) return pages.flat()
+    if (body.length < 100) return pages.flat()
   }
 }
 
-async function readPull(repo, number, token) {
+export async function readPull(repo, number, token) {
   const pull = await api(`/repos/${repo}/pulls/${number}`, token)
   const files = (await api(`/repos/${repo}/pulls/${number}/files`, token)).map(file => file.filename)
   const comments = await api(`/repos/${repo}/issues/${number}/comments`, token)
