@@ -5392,6 +5392,25 @@ test('#90: hide-remote leaves independent rooms in parallel and does not wait fo
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
+  // Hold the leave itself: the call must return while every room leave it started is still blocked,
+  // and the seats must still be seated. A wall-clock race here measured the runner's scheduling, not
+  // the contract — on a slow machine a correct implementation lost a 60 ms race (#2102). The plugin
+  // builds its own scoped API, so the latch goes on `scope()` before it is created.
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  t.after(() => release?.())
+  let leaves = 0
+  const realScope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => {
+    const scoped = realScope(name)
+    const removeParticipant = scoped.rooms.removeParticipant.bind(scoped.rooms)
+    scoped.rooms.removeParticipant = async (...args) => {
+      leaves += 1
+      await held
+      return removeParticipant(...args)
+    }
+    return scoped
+  }
   const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
     client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
     home: { id: 'h1', handle: '@danyang.home' },
@@ -5418,17 +5437,25 @@ test('#90: hide-remote leaves independent rooms in parallel and does not wait fo
   })
   assert.equal(first.ok, true, first.error?.message)
   assert.equal(second.ok, true, second.error?.message)
-  const started = Date.now()
-  const hidden = await Promise.race([
-    call('flybot/social/hide-remote', { handle: '@coder.bob.home' }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('hide-remote waited for room leave')), 60)),
-  ])
+  let returned = false
+  const pending = call('flybot/social/hide-remote', { handle: '@coder.bob.home' })
+    .then((result) => { returned = true; return result })
+  // The latch settles the question, so this only bounds a hang: an implementation that waits for the
+  // leave would never return, and that has to fail rather than stall the run.
+  await waitUntil(() => returned, { timeout: 10000 })
+  const hidden = await pending
   assert.equal(hidden.ok, true, hidden.error?.message)
-  assert.ok(Date.now() - started < 60)
   assert.equal(hidden.value.homes[0].bots.some(b => b.handle === '@coder.bob.home'), false)
   assert.ok(hidden.value.leftRooms.some(room => room.id === first.value.id))
   assert.ok(hidden.value.leftRooms.some(room => room.id === second.value.id))
-  await waitUntil(() => ctx.flybot.rooms.list().every(room => !(room.participants ?? []).some(p => p.handle === '@coder.bob.home' && p.leftSeq === undefined)))
+  assert.equal(leaves > 0, true, 'the hide starts leaving in the background')
+  assert.equal(
+    ctx.flybot.rooms.list().every(room => !(room.participants ?? []).some(p => p.handle === '@coder.bob.home' && p.leftSeq === undefined)),
+    false,
+    'the seats are still held by the latch',
+  )
+  release()
+  await waitUntil(() => ctx.flybot.rooms.list().every(room => !(room.participants ?? []).some(p => p.handle === '@coder.bob.home' && p.leftSeq === undefined)), { timeout: 5000 })
 })
 
 test('a hidden Bot survives a failed fetch and a legacy list_friends refresh', async (t) => {
