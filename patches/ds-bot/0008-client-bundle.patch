@@ -8621,7 +8621,18 @@ diff --git a/client.js b/client.js
 -      onClick: () => onChange(id)
 -    }, text))
 -  );
--}
++function useEscape(onClose) {
++  const ref = (0, import_react11.useRef)(onClose);
++  ref.current = onClose;
++  (0, import_react11.useEffect)(() => {
++    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
++    escapeLayers.push(ref);
++    return () => {
++      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
++      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
++    };
++  }, []);
+ }
 -function SecretHead({ bot, title, detail, name, onClose }) {
 -  return (0, import_react5.createElement)(
 -    "div",
@@ -8635,17 +8646,13 @@ diff --git a/client.js b/client.js
 -    ),
 -    onClose ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react5.createElement)(CloseIcon)) : null
 -  );
-+function useEscape(onClose) {
-+  const ref = (0, import_react11.useRef)(onClose);
-+  ref.current = onClose;
-+  (0, import_react11.useEffect)(() => {
-+    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
-+    escapeLayers.push(ref);
-+    return () => {
-+      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
-+      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
-+    };
++function usePaneLeft() {
++  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
++  (0, import_react11.useLayoutEffect)(() => {
++    const column = document.querySelector('[class*="_footArea"]')?.parentElement;
++    if (column) setPaneLeft(Math.round(column.getBoundingClientRect().right));
 +  }, []);
++  return paneLeft;
  }
 -function SecretCard({ bot, request, roster, actions }) {
 -  const [value, setValue] = (0, import_react5.useState)("");
@@ -8705,33 +8712,6 @@ diff --git a/client.js b/client.js
 -      filling ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: !long || busy, onClick: save }, busy ? t("Saving…") : t("Save")) : (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: allow }, busy ? t("Allowing…") : t("Allow"))
 -    )
 -  );
-+function usePaneLeft() {
-+  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
-+  (0, import_react11.useLayoutEffect)(() => {
-+    const column = document.querySelector('[class*="_footArea"]')?.parentElement;
-+    if (column) setPaneLeft(Math.round(column.getBoundingClientRect().right));
-+  }, []);
-+  return paneLeft;
- }
--function SettledSecret({ bot, request, roster }) {
--  const canceled = request.status === "canceled";
--  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-q-head" },
--      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
--      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
--        "p",
--        { className: "bt-q-title" },
--        text,
--        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
--      )),
--      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
--    )
--  );
 +
 +// src/client/member-status.js
 +var import_react12 = require("react");
@@ -8755,11 +8735,35 @@ diff --git a/client.js b/client.js
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
 +  });
  }
--function RequestView({ bot, request, roster, actions }) {
--  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
+-function SettledSecret({ bot, request, roster }) {
+-  const canceled = request.status === "canceled";
+-  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-q-head" },
+-      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
+-      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
+-        "p",
+-        { className: "bt-q-title" },
+-        text,
+-        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
+-      )),
+-      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
+-    )
+-  );
 +function busyMembers(room2, work, roster) {
 +  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
 +  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
+ }
+-function RequestView({ bot, request, roster, actions }) {
+-  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
++function splitBusy(busy) {
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
  }
 -function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
 -  const bot = roster.byId[sessionId];
@@ -8770,10 +8774,12 @@ diff --git a/client.js b/client.js
 -    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
 -  }
 -  return null;
-+function splitBusy(busy) {
-+  const here = busy.filter((entry) => entry.state === "work" && entry.here);
-+  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
-+  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
++function botGroupWork(botId, work, roster) {
++  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
++    const entry = entries2.find((item) => item.botId === botId);
++    const room2 = roster.roomsById[roomId];
++    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
++  });
  }
 -function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
 -  const roster = useRoster((value) => value);
@@ -8785,12 +8791,15 @@ diff --git a/client.js b/client.js
 -  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
 -  if (waiting.length === 0) return null;
 -  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
-+function botGroupWork(botId, work, roster) {
-+  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
-+    const entry = entries2.find((item) => item.botId === botId);
-+    const room2 = roster.roomsById[roomId];
-+    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
-+  });
++var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
++function summaryText(busy) {
++  const asks = busy.filter((entry) => entry.state === "ask");
++  const workers = busy.filter((entry) => entry.state === "work");
++  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
++  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
++  const first = workers[0];
++  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
++  return { waiting, doing };
  }
 -function ScopeEditor({ secret, roster, onSave }) {
 -  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
@@ -8823,16 +8832,12 @@ diff --git a/client.js b/client.js
 -      { className: "bt-secret-row-actions" },
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
 -    )
--  );
-+var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
-+function summaryText(busy) {
-+  const asks = busy.filter((entry) => entry.state === "ask");
-+  const workers = busy.filter((entry) => entry.state === "work");
-+  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
-+  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
-+  const first = workers[0];
-+  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
-+  return { waiting, doing };
++function Face({ entry, size }) {
++  return (0, import_react12.createElement)(
++    "span",
++    { className: "bt-mw-face", "data-ask": entry.state === "ask" || void 0 },
++    (0, import_react12.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
+   );
  }
 -function ValueEditor({ secret, onSave }) {
 -  const [value, setValue] = (0, import_react5.useState)("");
@@ -8860,13 +8865,6 @@ diff --git a/client.js b/client.js
 -      { className: "bt-secret-inline" },
 -      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: edit, onEnter: save, label: t("New value of {name}", { name: secret.name }) })),
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
-+function Face({ entry, size }) {
-+  return (0, import_react12.createElement)(
-+    "span",
-+    { className: "bt-mw-face", "data-ask": entry.state === "ask" || void 0 },
-+    (0, import_react12.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
-+  );
-+}
 +var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
 +function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
 +  const text2 = `${label} · ${workText(tool, step)}`;
@@ -9780,15 +9778,15 @@ diff --git a/client.js b/client.js
 -    const below = rect.bottom + 220 < window.innerHeight;
 -    setPlace(kind === "react" ? { left: rect.left + rect.width / 2, top: rect.top - 6, "--bt-origin": "bottom center" } : { left: Math.min(rect.left, window.innerWidth - 208), ...below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4, "--bt-origin": "bottom left" } });
 -    setPanel(kind);
-+    if (custom === "") return;
-+    onAnswer(card, custom);
-   };
+-  };
 -  const copy2 = () => {
 -    void navigator.clipboard?.writeText(text).then(() => {
 -      setCopied(true);
 -      setTimeout(() => setCopied(false), 1e3);
 -    });
--  };
++    if (custom === "") return;
++    onAnswer(card, custom);
+   };
 -  const download2 = () => {
 -    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
 -    const link = Object.assign(document.createElement("a"), { href: url, download: `${name}-message.md` });
@@ -10574,10 +10572,6 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
--    }
--    if (source.kind === "schedule") {
--      const prompts = reminderPrompts(contentText(data.content));
--      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
 +function dropLabel(column) {
 +  if (column === "in-progress") return t("Start task");
 +  if (column === "done") return t("Complete task");
@@ -10600,6 +10594,10 @@ diff --git a/client.js b/client.js
 +      map.set(id, []);
 +      order.push(id);
      }
+-    if (source.kind === "schedule") {
+-      const prompts = reminderPrompts(contentText(data.content));
+-      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
+-    }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 +    map.get(id).push(task);
@@ -11268,20 +11266,81 @@ diff --git a/client.js b/client.js
 -  }, [done, sessionId, callId]);
 -  let replies = live.replies;
 -  if (done) {
--    try {
++  }, [onClose]);
++  const items = projectMenuItems(project);
++  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
++    "div",
++    {
++      ref,
++      className: "bt-project-menu",
++      role: "menu",
++      "aria-label": t("My role"),
++      style: { left: `${x}px`, top: `${y}px` },
++      "data-project-id": String(project?.id ?? "")
++    },
++    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
++    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
++      key: item.role,
++      type: "button",
++      role: "menuitemradio",
++      className: "bt-project-menu-item",
++      "aria-checked": item.current ? "true" : "false",
++      disabled: !item.pick,
++      onClick: () => {
++        if (item.pick) onPick(item.role);
++        else onClose();
++      }
++    }, item.label))
++  ), document.body);
++}
++function ProjectsNav({ wide = true, request, onOpen } = {}) {
++  const read = request ?? call;
++  const open = (0, import_react16.useCallback)((id) => {
++    if (onOpen) {
++      onOpen(id);
++      return;
++    }
++    if (typeof window !== "undefined") window.location.hash = projectHash(id);
++  }, [onOpen]);
++  const [expanded, setExpanded] = (0, import_react16.useState)(false);
++  const [projects, setProjects] = (0, import_react16.useState)(null);
++  const [error, setError] = (0, import_react16.useState)("");
++  const [note, setNote] = (0, import_react16.useState)("");
++  const [menu, setMenu] = (0, import_react16.useState)(null);
++  const load = (0, import_react16.useCallback)(async () => {
+     try {
 -      replies = JSON.parse(contentText(content)).replies ?? [];
 -    } catch {
 -      replies = [];
--    }
++      const listing = await read("projects");
++      const list = Array.isArray(listing?.projects) ? listing.projects : [];
++      setProjects(list);
++      setError("");
++    } catch (failure) {
++      setProjects([]);
++      setError(failure?.message ?? String(failure));
+     }
 -  }
 -  const pending = done || !live.speaking ? [] : [live.speaking];
 -  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
 -  if (replies.length === 0 && pending.length === 0) return null;
 -  const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
-+  }, [onClose]);
-+  const items = projectMenuItems(project);
-+  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
++  }, [read]);
++  (0, import_react16.useEffect)(() => {
++    if (!expanded) return;
++    void load();
++  }, [expanded, load]);
++  const toggle = () => {
++    setNote("");
++    if (!wide) {
++      void open("");
++      return;
++    }
++    setExpanded((value) => !value);
++  };
++  const listed = expanded && wide;
++  return (0, import_react16.createElement)(
      "div",
 -    { className: "bt-group-replies" },
 -    replies.map((reply, index) => {
@@ -11327,71 +11386,9 @@ diff --git a/client.js b/client.js
 -            (0, import_react6.createElement)("span", { className: "bt-event-name" }, t(reply.kind === "working" ? "{name} started on it" : "{name} paused for your approval", { name: bot.name }))
 -          )
 -        );
-+    {
-+      ref,
-+      className: "bt-project-menu",
-+      role: "menu",
-+      "aria-label": t("My role"),
-+      style: { left: `${x}px`, top: `${y}px` },
-+      "data-project-id": String(project?.id ?? "")
-+    },
-+    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
-+    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
-+      key: item.role,
-+      type: "button",
-+      role: "menuitemradio",
-+      className: "bt-project-menu-item",
-+      "aria-checked": item.current ? "true" : "false",
-+      disabled: !item.pick,
-+      onClick: () => {
-+        if (item.pick) onPick(item.role);
-+        else onClose();
-       }
+-      }
 -      if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+    }, item.label))
-+  ), document.body);
-+}
-+function ProjectsNav({ wide = true, request, onOpen } = {}) {
-+  const read = request ?? call;
-+  const open = (0, import_react16.useCallback)((id) => {
-+    if (onOpen) {
-+      onOpen(id);
-+      return;
-+    }
-+    if (typeof window !== "undefined") window.location.hash = projectHash(id);
-+  }, [onOpen]);
-+  const [expanded, setExpanded] = (0, import_react16.useState)(false);
-+  const [projects, setProjects] = (0, import_react16.useState)(null);
-+  const [error, setError] = (0, import_react16.useState)("");
-+  const [note, setNote] = (0, import_react16.useState)("");
-+  const [menu, setMenu] = (0, import_react16.useState)(null);
-+  const load = (0, import_react16.useCallback)(async () => {
-+    try {
-+      const listing = await read("projects");
-+      const list = Array.isArray(listing?.projects) ? listing.projects : [];
-+      setProjects(list);
-+      setError("");
-+    } catch (failure) {
-+      setProjects([]);
-+      setError(failure?.message ?? String(failure));
-+    }
-+  }, [read]);
-+  (0, import_react16.useEffect)(() => {
-+    if (!expanded) return;
-+    void load();
-+  }, [expanded, load]);
-+  const toggle = () => {
-+    setNote("");
-+    if (!wide) {
-+      void open("");
-+      return;
-+    }
-+    setExpanded((value) => !value);
-+  };
-+  const listed = expanded && wide;
-+  return (0, import_react16.createElement)(
-+    "div",
 +    { className: "bt-projects" },
 +    (0, import_react16.createElement)(
 +      "button",
@@ -11449,6 +11446,18 @@ diff --git a/client.js b/client.js
 -    seen.add(id);
 -    calls.push(call2);
 -    for (const child of call2.subCalls ?? []) visit(child);
+-  };
+-  visit(root);
+-  return calls;
+-}
+-function useShownCards(actions, sessionId, callIds) {
+-  const key = JSON.stringify(callIds);
+-  (0, import_react6.useLayoutEffect)(() => {
+-    const ids = JSON.parse(key);
+-    if (ids.length === 0 || !actions.noteCards) return void 0;
+-    actions.noteCards(sessionId, ids, 1);
+-    return () => actions.noteCards(sessionId, ids, -1);
+-  }, [sessionId, key]);
 +
 +// src/client/sidebar.js
 +var import_react17 = require("react");
@@ -11458,140 +11467,6 @@ diff --git a/client.js b/client.js
 +  (0, import_react17.useEffect)(() => {
 +    if (active && marked) actions.clearUnread(id);
 +  }, [active, marked]);
-+}
-+var PinMark = () => (0, import_react17.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react17.createElement)(PinMarkIcon));
-+var useApproval = (useWork, match) => useWork ? useWork((work) => (work.approvals ?? []).some(match)) : false;
-+var useGroupWork = (useWork, pick2) => useWork ? useWork((work) => pick2(work.rooms ?? {}).join(",")) : "";
-+var workKeys = (text2) => text2 === "" ? [] : text2.split(",").map((key) => {
-+  const [id, tool] = key.split("|");
-+  return { id, tool: tool || void 0 };
-+});
-+var workLine = (lead, tool, more) => (0, import_react17.createElement)(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ""}`);
-+function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useActivity, useWork, wide, marked, asRow = false }) {
-+  const id = bot.id;
-+  const part = currentPart(bot);
-+  const preview = useSessions((list) => nameMentions(previewOf(list, part, roster.exchangeTurns[part], unsentReplyTurns(bot, part), botNames(roster)), roster));
-+  const running = useSessionStatus((map) => map.get(part)?.running === true);
-+  const active = useSessionRetainInfo(part, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
-+  const unread = useSessionStatus((map) => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== void 0) || marked && !active;
-+  useMarkedUnread(id, active, marked, actions);
-+  const main = isMainOf(roster, id);
-+  const tile = roster.mainBotId === id && !asRow;
-+  const approval = useApproval(useWork, (entry) => entry.botId === id);
-+  const waiting = approval || (bot.pendingCount ?? 0) > 0;
-+  const alert = roster.questions?.[part] !== void 0 || waiting;
-+  const doing = useActivity((map) => map[id]);
-+  const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
-+  const away = !running && groups.length > 0;
-+  const state = botState(running || away, doing, alert);
-+  const shownAway = away ? awayGroups(groups, roster.roomsById) : [];
-+  const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t("a group chat"), shownAway[0].tool, shownAway.length - 1) : null;
-+  if (!isShownRemoteChat(bot) && !active && !main) return null;
-+  const onContextMenu = (event) => {
-+    event.preventDefault();
-+    actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
-   };
--  visit(root);
--  return calls;
-+  const pinned = bot.pinned === true && !tile;
-+  const remote = Boolean(bot.remote);
-+  const shown = remote ? friendBotTitle(bot) : bot.name;
-+  const secondLine = awayLine || preview || (remote ? bot.remote?.gone ? t("no longer shared") : t("Friend's Bot") : "");
-+  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
-+  if (tile && wide) {
-+    return (0, import_react17.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react17.createElement)(
-+      "button",
-+      {
-+        type: "button",
-+        className: "bt-tile",
-+        "aria-label": label,
-+        "aria-current": active ? "page" : void 0,
-+        "data-bot-id": id,
-+        title: preview || bot.name,
-+        onClick: () => actions.openSession(id),
-+        onContextMenu
-+      },
-+      (0, import_react17.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
-+      (0, import_react17.createElement)("span", { className: "bt-tile-name" }, shown),
-+      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
-+      unread && !waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
-+      bot.role ? (0, import_react17.createElement)("span", { className: "bt-chip" }, bot.role) : null
-+    ));
-+  }
-+  const unreadMark = wide && waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null;
-+  const row = (0, import_react17.createElement)(
-+    "button",
-+    {
-+      type: "button",
-+      className: "bt-row",
-+      "aria-label": label,
-+      "aria-current": active ? "page" : void 0,
-+      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
-+      "data-bot-id": id,
-+      title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
-+      onClick: () => actions.openSession(id),
-+      onContextMenu
-+    },
-+    (0, import_react17.createElement)(BotAvatar, { bot, size: 36, state, main }),
-+    pinned && !wide ? (0, import_react17.createElement)(PinMark) : null,
-+    wide ? (0, import_react17.createElement)(
-+      "span",
-+      { className: "bt-row-body" },
-+      (0, import_react17.createElement)(
-+        "span",
-+        { className: "bt-row-name" },
-+        (0, import_react17.createElement)("span", { className: "bt-row-title" }, shown),
-+        bot.remote ? (0, import_react17.createElement)(RemoteMark, { remote: bot.remote }) : null,
-+        pinned ? (0, import_react17.createElement)(PinMark) : null
-+      ),
-+      secondLine ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, secondLine) : null
-+    ) : null,
-+    unreadMark
-+  );
-+  const settingsLabel = bot.remote ? t("Bot settings") : t("Edit Bot");
-+  const settings = wide ? (0, import_react17.createElement)("button", {
-+    type: "button",
-+    className: "bt-row-settings",
-+    "aria-label": settingsLabel,
-+    title: settingsLabel,
-+    onFocus: (event) => keepSidebarStill(event.currentTarget),
-+    onClick: (event) => {
-+      event.stopPropagation();
-+      keepSidebarStill(event.currentTarget);
-+      actions.openSettings("bots", id);
-+    }
-+  }, (0, import_react17.createElement)(GearIcon)) : null;
-+  if (settings) return (0, import_react17.createElement)("div", { className: "bt-row-wrap", "data-bot-id": id }, row, settings);
-+  return row;
-+}
-+function keepSidebarStill(node) {
-+  const reset = () => {
-+    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0;
-+    const page = typeof document === "undefined" ? null : document.scrollingElement;
-+    if (page && page.scrollLeft > 0) page.scrollLeft = 0;
-+  };
-+  reset();
-+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(reset));
- }
--function useShownCards(actions, sessionId, callIds) {
--  const key = JSON.stringify(callIds);
--  (0, import_react6.useLayoutEffect)(() => {
--    const ids = JSON.parse(key);
--    if (ids.length === 0 || !actions.noteCards) return void 0;
--    actions.noteCards(sessionId, ids, 1);
--    return () => actions.noteCards(sessionId, ids, -1);
--  }, [sessionId, key]);
-+function RemoteMark({ remote }) {
-+  return (0, import_react17.createElement)(
-+    "span",
-+    { className: "bt-row-remote", title: remote.gone ? `${remote.handle} · ${t("no longer shared")}` : remote.handle, "aria-label": t("Friend's Bot") },
-+    (0, import_react17.createElement)(
-+      "svg",
-+      { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
-+      (0, import_react17.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
-+      (0, import_react17.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
-+    )
-+  );
  }
 -function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot }) {
 -  const tool = toolName(call2);
@@ -11668,13 +11543,117 @@ diff --git a/client.js b/client.js
 -      return done && !call2.isError ? (0, import_react6.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call2.content), roster, actions, findBot }) : null;
 -    default:
 -      return null;
--  }
-+function isPastFaceRoom(room2) {
-+  if (room2?.origin !== "face-to-face") return false;
-+  const status = room2.face?.status;
-+  if (status === "closed" || status === "left") return true;
-+  const expires = room2.face?.expiresAt;
-+  return status === "candidate" && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now();
++var PinMark = () => (0, import_react17.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react17.createElement)(PinMarkIcon));
++var useApproval = (useWork, match) => useWork ? useWork((work) => (work.approvals ?? []).some(match)) : false;
++var useGroupWork = (useWork, pick2) => useWork ? useWork((work) => pick2(work.rooms ?? {}).join(",")) : "";
++var workKeys = (text2) => text2 === "" ? [] : text2.split(",").map((key) => {
++  const [id, tool] = key.split("|");
++  return { id, tool: tool || void 0 };
++});
++var workLine = (lead, tool, more) => (0, import_react17.createElement)(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ""}`);
++function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useActivity, useWork, wide, marked, asRow = false }) {
++  const id = bot.id;
++  const part = currentPart(bot);
++  const preview = useSessions((list) => nameMentions(previewOf(list, part, roster.exchangeTurns[part], unsentReplyTurns(bot, part), botNames(roster)), roster));
++  const running = useSessionStatus((map) => map.get(part)?.running === true);
++  const active = useSessionRetainInfo(part, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
++  const unread = useSessionStatus((map) => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== void 0) || marked && !active;
++  useMarkedUnread(id, active, marked, actions);
++  const main = isMainOf(roster, id);
++  const tile = roster.mainBotId === id && !asRow;
++  const approval = useApproval(useWork, (entry) => entry.botId === id);
++  const waiting = approval || (bot.pendingCount ?? 0) > 0;
++  const alert = roster.questions?.[part] !== void 0 || waiting;
++  const doing = useActivity((map) => map[id]);
++  const groups = workKeys(useGroupWork(useWork, (rooms) => Object.entries(rooms).flatMap(([roomId, entries2]) => entries2.filter((entry) => entry.botId === id).map((entry) => `${roomId}|${entry.tool ?? ""}`))));
++  const away = !running && groups.length > 0;
++  const state = botState(running || away, doing, alert);
++  const shownAway = away ? awayGroups(groups, roster.roomsById) : [];
++  const awayLine = shownAway.length > 0 ? workLine(roster.roomsById[shownAway[0].id]?.name ?? t("a group chat"), shownAway[0].tool, shownAway.length - 1) : null;
++  if (!isShownRemoteChat(bot) && !active && !main) return null;
++  const onContextMenu = (event) => {
++    event.preventDefault();
++    actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
++  };
++  const pinned = bot.pinned === true && !tile;
++  const remote = Boolean(bot.remote);
++  const shown = remote ? friendBotTitle(bot) : bot.name;
++  const secondLine = awayLine || preview || (remote ? bot.remote?.gone ? t("no longer shared") : t("Friend's Bot") : "");
++  const label = [shown, main ? t("Main Bot") : "", pinned ? t("Pinned") : "", running || away ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
++  if (tile && wide) {
++    return (0, import_react17.createElement)("div", { className: "bt-tile-wrap" }, (0, import_react17.createElement)(
++      "button",
++      {
++        type: "button",
++        className: "bt-tile",
++        "aria-label": label,
++        "aria-current": active ? "page" : void 0,
++        "data-bot-id": id,
++        title: preview || bot.name,
++        onClick: () => actions.openSession(id),
++        onContextMenu
++      },
++      (0, import_react17.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
++      (0, import_react17.createElement)("span", { className: "bt-tile-name" }, shown),
++      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
++      unread && !waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
++      bot.role ? (0, import_react17.createElement)("span", { className: "bt-chip" }, bot.role) : null
++    ));
+   }
++  const unreadMark = wide && waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null;
++  const row = (0, import_react17.createElement)(
++    "button",
++    {
++      type: "button",
++      className: "bt-row",
++      "aria-label": label,
++      "aria-current": active ? "page" : void 0,
++      // An own Bot's hover text names its model (#366); a friend's Bot runs on its owner's model.
++      "data-bot-id": id,
++      title: remote ? shown : botRowTitle(shown, modelOf(bot, roster)?.name, wide),
++      onClick: () => actions.openSession(id),
++      onContextMenu
++    },
++    (0, import_react17.createElement)(BotAvatar, { bot, size: 36, state, main }),
++    pinned && !wide ? (0, import_react17.createElement)(PinMark) : null,
++    wide ? (0, import_react17.createElement)(
++      "span",
++      { className: "bt-row-body" },
++      (0, import_react17.createElement)(
++        "span",
++        { className: "bt-row-name" },
++        (0, import_react17.createElement)("span", { className: "bt-row-title" }, shown),
++        bot.remote ? (0, import_react17.createElement)(RemoteMark, { remote: bot.remote }) : null,
++        pinned ? (0, import_react17.createElement)(PinMark) : null
++      ),
++      secondLine ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, secondLine) : null
++    ) : null,
++    unreadMark
++  );
++  const settingsLabel = bot.remote ? t("Bot settings") : t("Edit Bot");
++  const settings = wide ? (0, import_react17.createElement)("button", {
++    type: "button",
++    className: "bt-row-settings",
++    "aria-label": settingsLabel,
++    title: settingsLabel,
++    onFocus: (event) => keepSidebarStill(event.currentTarget),
++    onClick: (event) => {
++      event.stopPropagation();
++      keepSidebarStill(event.currentTarget);
++      actions.openSettings("bots", id);
++    }
++  }, (0, import_react17.createElement)(GearIcon)) : null;
++  if (settings) return (0, import_react17.createElement)("div", { className: "bt-row-wrap", "data-bot-id": id }, row, settings);
++  return row;
++}
++function keepSidebarStill(node) {
++  const reset = () => {
++    for (let at = node?.parentElement; at; at = at.parentElement) if (at.scrollLeft > 0) at.scrollLeft = 0;
++    const page = typeof document === "undefined" ? null : document.scrollingElement;
++    if (page && page.scrollLeft > 0) page.scrollLeft = 0;
++  };
++  reset();
++  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(reset));
  }
 -function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
 -  const roster = useRoster((value) => value);
@@ -11691,16 +11670,15 @@ diff --git a/client.js b/client.js
 -  if (drawn.length === 0) return null;
 -  const env = { sessionId, roster, actions, useUi, useWork, findBot };
 -  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
-+function FaceMark() {
++function RemoteMark({ remote }) {
 +  return (0, import_react17.createElement)(
 +    "span",
-+    { className: "bt-row-remote bt-row-face", title: t("Face-to-face"), "aria-label": t("Face-to-face") },
++    { className: "bt-row-remote", title: remote.gone ? `${remote.handle} · ${t("no longer shared")}` : remote.handle, "aria-label": t("Friend's Bot") },
 +    (0, import_react17.createElement)(
 +      "svg",
 +      { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
-+      (0, import_react17.createElement)("circle", { cx: 9, cy: 8, r: 3 }),
-+      (0, import_react17.createElement)("circle", { cx: 16, cy: 9, r: 2.5 }),
-+      (0, import_react17.createElement)("path", { d: "M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0" })
++      (0, import_react17.createElement)("circle", { cx: 12, cy: 12, r: 9 }),
++      (0, import_react17.createElement)("path", { d: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" })
 +    )
 +  );
  }
@@ -11715,111 +11693,12 @@ diff --git a/client.js b/client.js
 -  if (minutes < 60) return `${Math.max(1, minutes)}m`;
 -  const hours = Math.floor(minutes / 60);
 -  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
-+function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
-+  const id = room2.id;
-+  const fallback = useSessions((list) => nameMentions(previewOf(list, id, [], [], botNames(roster)), roster));
-+  const preview = nameMentions(visibleText(room2.preview), roster) || fallback;
-+  const active = useSessionRetainInfo(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
-+  const unread = useSessionStatus((map) => map.get(id)?.completionUnread === true) || marked && !active;
-+  useMarkedUnread(id, active, marked, actions);
-+  const approval = useApproval(useWork, (entry) => entry.roomId === id);
-+  const question = roster.questions?.[id] !== void 0;
-+  const members = workKeys(useGroupWork(useWork, (rooms) => (rooms[id] ?? []).map((entry) => `${entry.botId}|${entry.tool ?? ""}`)));
-+  const first = roster.byId[members[0]?.id];
-+  const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null;
-+  if (room2.hidden && !active) return null;
-+  const pinned = room2.pinned === true;
-+  const title = roomTitle(room2);
-+  const from = room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : "";
-+  const hover = from && from !== title ? `${title} · ${from}` : title;
-+  const waiting = approval || (room2.pendingCount ?? 0) > 0;
-+  const alert = question || waiting;
-+  const face = room2.origin === "face-to-face";
-+  const label = [hover, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
-+  return (0, import_react17.createElement)(
-+    "button",
-+    {
-+      type: "button",
-+      className: "bt-row",
-+      "aria-label": label,
-+      "aria-current": active ? "page" : void 0,
-+      // The full title on hover. The row wraps the number-first form so the second
-+      // name is not cut to "SelfB…" (#1102, #304, #458).
-+      title: hover,
-+      "data-room-id": id,
-+      onClick: () => actions.openSession(id),
-+      onContextMenu: (event) => {
-+        event.preventDefault();
-+        actions.openMenu({ kind: "room", id, x: event.clientX, y: event.clientY });
-+      }
-+    },
-+    (0, import_react17.createElement)(RoomAvatar, { room: room2, roster, size: 36 }),
-+    pinned && !wide ? (0, import_react17.createElement)(PinMark) : null,
-+    wide ? (0, import_react17.createElement)(
-+      "span",
-+      { className: "bt-row-body" },
-+      (0, import_react17.createElement)("span", { className: "bt-row-name" }, (0, import_react17.createElement)("span", { className: face ? "bt-row-title bt-row-title-face" : "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react17.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react17.createElement)("span", { className: "bt-tag", title: from }, t("Shared")) : null, pinned ? (0, import_react17.createElement)(PinMark) : null),
-+      workingLine ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, preview) : null
-+    ) : null,
-+    wide && alert && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
-+  );
-+}
-+function AgentSessionRow({ session, agent, actions, renaming, index }) {
-+  const input = (0, import_react17.useRef)(null);
-+  (0, import_react17.useLayoutEffect)(() => {
-+    if (!renaming) return;
-+    input.current?.focus();
-+    input.current?.select();
-+  }, [renaming]);
-+  if (renaming) {
-+    const commit = (keep) => {
-+      const value = input.current?.value ?? "";
-+      if (!keep || value.trim() === "" || value.trim() === session.title) {
-+        actions.endAgentRename();
-+        return;
-+      }
-+      void (async () => {
-+        try {
-+          await actions.renameAgentSession(agent.id, session.id, value);
-+          actions.endAgentRename();
-+        } catch (error) {
-+          actions.reportError(error, "agent-rename");
-+        }
-+      })();
-+    };
-+    return (0, import_react17.createElement)(
-+      "div",
-+      { className: "bt-agent-sub-row bt-agent-edit", style: { "--i": index } },
-+      (0, import_react17.createElement)("input", {
-+        ref: input,
-+        defaultValue: session.title,
-+        "aria-label": t("Rename"),
-+        onKeyDown: (event) => {
-+          if (event.nativeEvent.isComposing) return;
-+          if (event.key === "Enter") commit(true);
-+          else if (event.key === "Escape") commit(false);
-+        },
-+        onBlur: () => commit(true)
-+      })
-+    );
-+  }
-+  return (0, import_react17.createElement)(
-+    "button",
-+    {
-+      type: "button",
-+      className: "bt-agent-sub-row",
-+      "aria-current": session.active ? "page" : void 0,
-+      style: { "--i": index },
-+      onClick: () => actions.openAgentSession(session.id),
-+      onContextMenu: (event) => {
-+        event.preventDefault();
-+        event.stopPropagation();
-+        actions.openMenu({ kind: "agent-session", id: session.id, agentId: agent.id, x: event.clientX, y: event.clientY });
-+      }
-+    },
-+    (0, import_react17.createElement)("span", { className: "bt-agent-sub-title" }, session.title),
-+    (0, import_react17.createElement)("span", { className: "bt-agent-sub-time" }, session.at > 0 ? relativeShort(session.at) : "")
-+  );
++function isPastFaceRoom(room2) {
++  if (room2?.origin !== "face-to-face") return false;
++  const status = room2.face?.status;
++  if (status === "closed" || status === "left") return true;
++  const expires = room2.face?.expiresAt;
++  return status === "candidate" && expires && Number.isFinite(Date.parse(expires)) && Date.parse(expires) <= Date.now();
  }
 -function useRunningHost(active) {
 -  const [host, setHost] = (0, import_react7.useState)(null);
@@ -11842,90 +11721,19 @@ diff --git a/client.js b/client.js
 -    return () => {
 -      cancelAnimationFrame(frame);
 -      observer.disconnect();
-+function AgentRow({ agent, actions, useSessions, useSessionStatus, useUi, wide, marked }) {
-+  const info = useSessions((list) => JSON.stringify(agent.sessions.map((id) => {
-+    const row = list.byId[id];
-+    return {
-+      id,
-+      // A blank Session's title is the workspace folder name; show the label instead.
-+      title: row?.blank === true ? "" : row?.displayTitle ?? row?.title ?? "",
-+      at: row?.updatedAt ?? 0,
-+      running: row?.running === true,
-+      active: (row?.retainedBy?.mainView ?? 0) > 0
-     };
+-    };
 -  }, [active]);
 -  return host;
-+  }).sort((a, b) => b.at - a.at)));
-+  const statusInfo = useSessionStatus((map) => JSON.stringify(agent.sessions.map((id) => ({
-+    id,
-+    running: map.get(id)?.running === true,
-+    unread: map.get(id)?.completionUnread === true
-+  }))));
-+  const statuses = Object.fromEntries(JSON.parse(statusInfo).map((entry) => [entry.id, entry]));
-+  const sessions = JSON.parse(info).map((session) => ({
-+    ...session,
-+    running: statuses[session.id]?.running ?? session.running,
-+    unread: statuses[session.id]?.unread ?? false,
-+    title: session.title === "" ? t("New session") : session.title
-+  }));
-+  const renaming = useUi((value) => value.renameAgent);
-+  const active = sessions.some((session) => session.active);
-+  const running = sessions.some((session) => session.running);
-+  const unread = sessions.some((session) => session.unread) || marked && !active;
-+  useMarkedUnread(agent.id, active, marked, actions);
-+  const preview = sessions[0]?.title ?? t("New session");
-+  const label = ["DSH Agent", running ? t("Working") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
-+  const open = active && wide;
++function FaceMark() {
 +  return (0, import_react17.createElement)(
-+    "div",
-+    { className: "bt-agent" },
++    "span",
++    { className: "bt-row-remote bt-row-face", title: t("Face-to-face"), "aria-label": t("Face-to-face") },
 +    (0, import_react17.createElement)(
-+      "button",
-+      {
-+        type: "button",
-+        className: "bt-row",
-+        "aria-label": label,
-+        "aria-current": active ? "page" : void 0,
-+        "data-agent-id": agent.id,
-+        title: wide ? void 0 : "DSH Agent",
-+        onClick: () => actions.openAgent(agent.id),
-+        onContextMenu: (event) => {
-+          event.preventDefault();
-+          actions.openMenu({ kind: "agent", id: agent.id, x: event.clientX, y: event.clientY });
-+        }
-+      },
-+      (0, import_react17.createElement)("span", { className: `bt-agent-ava${running ? " bt-run" : ""}` }, (0, import_react17.createElement)(import_dsh_client_ui_primitives2.FishLogo, { size: 22 })),
-+      wide ? (0, import_react17.createElement)(
-+        "span",
-+        { className: "bt-row-body" },
-+        (0, import_react17.createElement)("span", { className: "bt-row-name" }, "DSH Agent"),
-+        preview ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, preview) : null
-+      ) : null,
-+      wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
-+    ),
-+    (0, import_react17.createElement)(
-+      "div",
-+      { className: "bt-agent-sub", "data-open": open || void 0 },
-+      (0, import_react17.createElement)(
-+        "div",
-+        { className: "bt-agent-sub-in" },
-+        (0, import_react17.createElement)(
-+          "button",
-+          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
-+            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
-+          } },
-+          (0, import_react17.createElement)(PlusIcon),
-+          (0, import_react17.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
-+        ),
-+        sessions.map((session, index) => (0, import_react17.createElement)(AgentSessionRow, {
-+          key: session.id,
-+          session,
-+          agent,
-+          actions,
-+          index: index + 1,
-+          renaming: renaming === session.id
-+        }))
-+      )
++      "svg",
++      { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true },
++      (0, import_react17.createElement)("circle", { cx: 9, cy: 8, r: 3 }),
++      (0, import_react17.createElement)("circle", { cx: 16, cy: 9, r: 2.5 }),
++      (0, import_react17.createElement)("path", { d: "M4 18a5 5 0 0 1 10 0M14 18a4 4 0 0 1 6 0" })
 +    )
 +  );
  }
@@ -11964,23 +11772,78 @@ diff --git a/client.js b/client.js
 -        const reply = [void 0, "assistant-step", "tool-call"].includes(item.dataset.chatFlowKind);
 -        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
 -        item.addEventListener("animationend", settle);
-+var GLIDE = springEasing(1e3, 63);
-+function useListGlide(listRef, layout, key) {
-+  const tops = (0, import_react17.useRef)({ layout, map: /* @__PURE__ */ new Map() });
-+  (0, import_react17.useLayoutEffect)(() => {
-+    const list = listRef.current;
-+    if (!list) return;
-+    const next = /* @__PURE__ */ new Map();
-+    const still = reducedMotion() || tops.current.layout !== layout;
-+    for (const row of list.querySelectorAll("[data-bot-id],[data-room-id],[data-agent-id]")) {
-+      const id = row.dataset.botId ?? row.dataset.roomId ?? row.dataset.agentId;
-+      const top = row.offsetTop;
-+      next.set(id, top);
-+      const before = tops.current.map.get(id);
-+      if (!still && before !== void 0 && Math.abs(before - top) > 0.5) {
-+        row.animate([{ transform: `translateY(${before - top}px)` }, { transform: "none" }], GLIDE);
++function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
++  const id = room2.id;
++  const fallback = useSessions((list) => nameMentions(previewOf(list, id, [], [], botNames(roster)), roster));
++  const preview = nameMentions(visibleText(room2.preview), roster) || fallback;
++  const active = useSessionRetainInfo(id, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
++  const unread = useSessionStatus((map) => map.get(id)?.completionUnread === true) || marked && !active;
++  useMarkedUnread(id, active, marked, actions);
++  const approval = useApproval(useWork, (entry) => entry.roomId === id);
++  const question = roster.questions?.[id] !== void 0;
++  const members = workKeys(useGroupWork(useWork, (rooms) => (rooms[id] ?? []).map((entry) => `${entry.botId}|${entry.tool ?? ""}`)));
++  const first = roster.byId[members[0]?.id];
++  const workingLine = first ? workLine(first.name, members[0].tool, members.length - 1) : null;
++  if (room2.hidden && !active) return null;
++  const pinned = room2.pinned === true;
++  const title = roomTitle(room2);
++  const from = room2.sharedFrom ? sharedRoomTitle(room2.sharedFrom.inviterName) : "";
++  const hover = from && from !== title ? `${title} · ${from}` : title;
++  const waiting = approval || (room2.pendingCount ?? 0) > 0;
++  const alert = question || waiting;
++  const face = room2.origin === "face-to-face";
++  const label = [hover, face ? t("Face-to-face") : "", pinned ? t("Pinned") : "", members.length > 0 ? t("Working") : "", waiting ? t("Waiting for your approval") : alert ? t("Waiting for your answer") : ""].filter(Boolean).join(", ");
++  return (0, import_react17.createElement)(
++    "button",
++    {
++      type: "button",
++      className: "bt-row",
++      "aria-label": label,
++      "aria-current": active ? "page" : void 0,
++      // The full title on hover. The row wraps the number-first form so the second
++      // name is not cut to "SelfB…" (#1102, #304, #458).
++      title: hover,
++      "data-room-id": id,
++      onClick: () => actions.openSession(id),
++      onContextMenu: (event) => {
++        event.preventDefault();
++        actions.openMenu({ kind: "room", id, x: event.clientX, y: event.clientY });
        }
--    };
++    },
++    (0, import_react17.createElement)(RoomAvatar, { room: room2, roster, size: 36 }),
++    pinned && !wide ? (0, import_react17.createElement)(PinMark) : null,
++    wide ? (0, import_react17.createElement)(
++      "span",
++      { className: "bt-row-body" },
++      (0, import_react17.createElement)("span", { className: "bt-row-name" }, (0, import_react17.createElement)("span", { className: face ? "bt-row-title bt-row-title-face" : "bt-row-title" }, face ? faceRowTitle(title) : title), face ? (0, import_react17.createElement)(FaceMark) : room2.sharedFrom ? (0, import_react17.createElement)("span", { className: "bt-tag", title: from }, t("Shared")) : null, pinned ? (0, import_react17.createElement)(PinMark) : null),
++      workingLine ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, preview) : null
++    ) : null,
++    wide && alert && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
++  );
++}
++function AgentSessionRow({ session, agent, actions, renaming, index }) {
++  const input = (0, import_react17.useRef)(null);
++  (0, import_react17.useLayoutEffect)(() => {
++    if (!renaming) return;
++    input.current?.focus();
++    input.current?.select();
++  }, [renaming]);
++  if (renaming) {
++    const commit = (keep) => {
++      const value = input.current?.value ?? "";
++      if (!keep || value.trim() === "" || value.trim() === session.title) {
++        actions.endAgentRename();
++        return;
++      }
++      void (async () => {
++        try {
++          await actions.renameAgentSession(agent.id, session.id, value);
++          actions.endAgentRename();
++        } catch (error) {
++          actions.reportError(error, "agent-rename");
++        }
++      })();
+     };
 -    const observer = new MutationObserver(() => {
 -      if (!frame) frame = requestAnimationFrame(scan);
 -    });
@@ -11990,50 +11853,42 @@ diff --git a/client.js b/client.js
 -      observer.disconnect();
 -    };
 -  }, []);
-+    }
-+    tops.current = { layout, map: next };
-+  }, [layout, key]);
++    return (0, import_react17.createElement)(
++      "div",
++      { className: "bt-agent-sub-row bt-agent-edit", style: { "--i": index } },
++      (0, import_react17.createElement)("input", {
++        ref: input,
++        defaultValue: session.title,
++        "aria-label": t("Rename"),
++        onKeyDown: (event) => {
++          if (event.nativeEvent.isComposing) return;
++          if (event.key === "Enter") commit(true);
++          else if (event.key === "Escape") commit(false);
++        },
++        onBlur: () => commit(true)
++      })
++    );
++  }
++  return (0, import_react17.createElement)(
++    "button",
++    {
++      type: "button",
++      className: "bt-agent-sub-row",
++      "aria-current": session.active ? "page" : void 0,
++      style: { "--i": index },
++      onClick: () => actions.openAgentSession(session.id),
++      onContextMenu: (event) => {
++        event.preventDefault();
++        event.stopPropagation();
++        actions.openMenu({ kind: "agent-session", id: session.id, agentId: agent.id, x: event.clientX, y: event.clientY });
++      }
++    },
++    (0, import_react17.createElement)("span", { className: "bt-agent-sub-title" }, session.title),
++    (0, import_react17.createElement)("span", { className: "bt-agent-sub-time" }, session.at > 0 ? relativeShort(session.at) : "")
++  );
  }
 -function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, useSession, actions }) {
-+var NodeActions = class extends import_react17.Component {
-+  constructor(props) {
-+    super(props);
-+    this.state = { failed: false };
-+  }
-+  static getDerivedStateFromError() {
-+    return { failed: true };
-+  }
-+  componentDidCatch(error) {
-+    console.error("flybot: nodeActions failed", error);
-+  }
-+  render() {
-+    return this.state.failed ? null : (0, import_react17.createElement)(this.props.component, { bot: this.props.bot });
-+  }
-+};
-+function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) {
-+  const { bot, depth, children } = node;
-+  const closed = collapsed[bot.id] === true;
-+  return (0, import_react17.createElement)(
-+    import_react17.Fragment,
-+    null,
-+    (0, import_react17.createElement)(
-+      "div",
-+      { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
-+      children.length ? (0, import_react17.createElement)(
-+        "button",
-+        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
-+        (0, import_react17.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
-+      ) : (0, import_react17.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
-+      (0, import_react17.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
-+      typeof actions === "function" ? (0, import_react17.createElement)(NodeActions, { component: actions, bot }) : null
-+    ),
-+    closed ? null : children.map((child) => (0, import_react17.createElement)(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions }))
-+  );
-+}
-+function TeamSidebar(props) {
-+  const { wide, useRoster, useUi, useSessions, actions } = props;
-+  const listRef = (0, import_react17.useRef)(null);
-   const roster = useRoster((value) => value);
+-  const roster = useRoster((value) => value);
 -  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
 -  const liveKey = useLive((state) => JSON.stringify(state[sessionId] ?? {}));
 -  const pendingInput = useSession((snapshot) => Math.max(0, ...(snapshot?.pendingSubmissions ?? []).filter((sub) => sub.placement !== "queued").map((sub) => sub.time)));
@@ -12106,6 +11961,180 @@ diff --git a/client.js b/client.js
 -  if (!host || phase === null || !shown) return null;
 -  const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
 -  return (0, import_react_dom2.createPortal)((0, import_react7.createElement)(
++function AgentRow({ agent, actions, useSessions, useSessionStatus, useUi, wide, marked }) {
++  const info = useSessions((list) => JSON.stringify(agent.sessions.map((id) => {
++    const row = list.byId[id];
++    return {
++      id,
++      // A blank Session's title is the workspace folder name; show the label instead.
++      title: row?.blank === true ? "" : row?.displayTitle ?? row?.title ?? "",
++      at: row?.updatedAt ?? 0,
++      running: row?.running === true,
++      active: (row?.retainedBy?.mainView ?? 0) > 0
++    };
++  }).sort((a, b) => b.at - a.at)));
++  const statusInfo = useSessionStatus((map) => JSON.stringify(agent.sessions.map((id) => ({
++    id,
++    running: map.get(id)?.running === true,
++    unread: map.get(id)?.completionUnread === true
++  }))));
++  const statuses = Object.fromEntries(JSON.parse(statusInfo).map((entry) => [entry.id, entry]));
++  const sessions = JSON.parse(info).map((session) => ({
++    ...session,
++    running: statuses[session.id]?.running ?? session.running,
++    unread: statuses[session.id]?.unread ?? false,
++    title: session.title === "" ? t("New session") : session.title
++  }));
++  const renaming = useUi((value) => value.renameAgent);
++  const active = sessions.some((session) => session.active);
++  const running = sessions.some((session) => session.running);
++  const unread = sessions.some((session) => session.unread) || marked && !active;
++  useMarkedUnread(agent.id, active, marked, actions);
++  const preview = sessions[0]?.title ?? t("New session");
++  const label = ["DSH Agent", running ? t("Working") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
++  const open = active && wide;
++  return (0, import_react17.createElement)(
+     "div",
+-    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "aria-hidden": true },
+-    bot ? (0, import_react7.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react7.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
+-    (0, import_react7.createElement)(
+-      "span",
+-      { className: "bt-typing-text" },
+-      (0, import_react7.createElement)(
++    { className: "bt-agent" },
++    (0, import_react17.createElement)(
++      "button",
++      {
++        type: "button",
++        className: "bt-row",
++        "aria-label": label,
++        "aria-current": active ? "page" : void 0,
++        "data-agent-id": agent.id,
++        title: wide ? void 0 : "DSH Agent",
++        onClick: () => actions.openAgent(agent.id),
++        onContextMenu: (event) => {
++          event.preventDefault();
++          actions.openMenu({ kind: "agent", id: agent.id, x: event.clientX, y: event.clientY });
++        }
++      },
++      (0, import_react17.createElement)("span", { className: `bt-agent-ava${running ? " bt-run" : ""}` }, (0, import_react17.createElement)(import_dsh_client_ui_primitives2.FishLogo, { size: 22 })),
++      wide ? (0, import_react17.createElement)(
+         "span",
+-        { key: `${shown.key}:${shown.at}`, className: "bt-typing-label" },
+-        (0, import_react7.createElement)(Shimmer, null, `${shown.text}…`),
+-        elapsed ? (0, import_react7.createElement)("span", { className: "bt-typing-time" }, `· ${elapsed}`) : null
++        { className: "bt-row-body" },
++        (0, import_react17.createElement)("span", { className: "bt-row-name" }, "DSH Agent"),
++        preview ? (0, import_react17.createElement)("span", { className: "bt-row-preview" }, preview) : null
++      ) : null,
++      wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null
++    ),
++    (0, import_react17.createElement)(
++      "div",
++      { className: "bt-agent-sub", "data-open": open || void 0 },
++      (0, import_react17.createElement)(
++        "div",
++        { className: "bt-agent-sub-in" },
++        (0, import_react17.createElement)(
++          "button",
++          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
++            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
++          } },
++          (0, import_react17.createElement)(PlusIcon),
++          (0, import_react17.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
++        ),
++        sessions.map((session, index) => (0, import_react17.createElement)(AgentSessionRow, {
++          key: session.id,
++          session,
++          agent,
++          actions,
++          index: index + 1,
++          renaming: renaming === session.id
++        }))
+       )
+     )
+-  ), host);
+-}
+-
+-// src/client/dsh-offer.js
+-var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
+-var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
+-var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
+-function showsDshRow(dsh, app) {
+-  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
+-  if (dsh.kind === "npm") return true;
+-  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
+-}
+-
+-// src/client/sidebar.js
+-var import_react8 = require("react");
+-var import_react_dom3 = require("react-dom");
+-var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
+-function useMarkedUnread(id, active, marked, actions) {
+-  (0, import_react8.useEffect)(() => {
+-    if (active && marked) actions.clearUnread(id);
+-  }, [active, marked]);
++  );
++}
++var GLIDE = springEasing(1e3, 63);
++function useListGlide(listRef, layout, key) {
++  const tops = (0, import_react17.useRef)({ layout, map: /* @__PURE__ */ new Map() });
++  (0, import_react17.useLayoutEffect)(() => {
++    const list = listRef.current;
++    if (!list) return;
++    const next = /* @__PURE__ */ new Map();
++    const still = reducedMotion() || tops.current.layout !== layout;
++    for (const row of list.querySelectorAll("[data-bot-id],[data-room-id],[data-agent-id]")) {
++      const id = row.dataset.botId ?? row.dataset.roomId ?? row.dataset.agentId;
++      const top = row.offsetTop;
++      next.set(id, top);
++      const before = tops.current.map.get(id);
++      if (!still && before !== void 0 && Math.abs(before - top) > 0.5) {
++        row.animate([{ transform: `translateY(${before - top}px)` }, { transform: "none" }], GLIDE);
++      }
++    }
++    tops.current = { layout, map: next };
++  }, [layout, key]);
++}
++var NodeActions = class extends import_react17.Component {
++  constructor(props) {
++    super(props);
++    this.state = { failed: false };
++  }
++  static getDerivedStateFromError() {
++    return { failed: true };
++  }
++  componentDidCatch(error) {
++    console.error("flybot: nodeActions failed", error);
++  }
++  render() {
++    return this.state.failed ? null : (0, import_react17.createElement)(this.props.component, { bot: this.props.bot });
++  }
++};
++function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) {
++  const { bot, depth, children } = node;
++  const closed = collapsed[bot.id] === true;
++  return (0, import_react17.createElement)(
++    import_react17.Fragment,
++    null,
++    (0, import_react17.createElement)(
++      "div",
++      { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
++      children.length ? (0, import_react17.createElement)(
++        "button",
++        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
++        (0, import_react17.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
++      ) : (0, import_react17.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
++      (0, import_react17.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
++      typeof actions === "function" ? (0, import_react17.createElement)(NodeActions, { component: actions, bot }) : null
++    ),
++    closed ? null : children.map((child) => (0, import_react17.createElement)(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions }))
++  );
++}
++function TeamSidebar(props) {
++  const { wide, useRoster, useUi, useSessions, actions } = props;
++  const listRef = (0, import_react17.useRef)(null);
++  const roster = useRoster((value) => value);
 +  const markedUnread = useUi((value) => value.unread);
 +  props.useRegistry((value) => value);
 +  const updated = useSessions((list) => {
@@ -12143,18 +12172,7 @@ diff --git a/client.js b/client.js
 +    actions.openPalette(event.key);
 +  };
 +  return (0, import_react17.createElement)(
-     "div",
--    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "aria-hidden": true },
--    bot ? (0, import_react7.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react7.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
--    (0, import_react7.createElement)(
--      "span",
--      { className: "bt-typing-text" },
--      (0, import_react7.createElement)(
--        "span",
--        { key: `${shown.key}:${shown.at}`, className: "bt-typing-label" },
--        (0, import_react7.createElement)(Shimmer, null, `${shown.text}…`),
--        elapsed ? (0, import_react7.createElement)("span", { className: "bt-typing-time" }, `· ${elapsed}`) : null
--      )
++    "div",
 +    { className: wide ? "bt-side" : "bt-side bt-rail", onKeyDown: typeToSearch },
 +    wide ? (0, import_react17.createElement)(
 +      "div",
@@ -12179,28 +12197,7 @@ diff --git a/client.js b/client.js
 +      tree ? (0, import_react17.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react17.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : main ? (0, import_react17.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react17.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
 +      order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map((entry) => entry.kind === "bot" ? (0, import_react17.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react17.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react17.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
 +      wide ? (0, import_react17.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react17.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
-     )
--  ), host);
--}
--
--// src/client/dsh-offer.js
--var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
--var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
--var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
--function showsDshRow(dsh, app) {
--  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
--  if (dsh.kind === "npm") return true;
--  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
--}
--
--// src/client/sidebar.js
--var import_react8 = require("react");
--var import_react_dom3 = require("react-dom");
--var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
--function useMarkedUnread(id, active, marked, actions) {
--  (0, import_react8.useEffect)(() => {
--    if (active && marked) actions.clearUnread(id);
--  }, [active, marked]);
++    )
 +  );
  }
 -var PinMark = () => (0, import_react8.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react8.createElement)(PinMarkIcon));
@@ -12425,6 +12422,14 @@ diff --git a/client.js b/client.js
 +      (0, import_react17.createElement)(PlugIcon),
 +      t("Connect apps")
 +    )
++  );
++}
++function YouAvatar() {
++  return (0, import_react17.createElement)(
++    "span",
++    { className: "bt-you-wrap" },
++    (0, import_react17.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react17.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
++    (0, import_react17.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
    );
  }
 -function AgentSessionRow({ session, agent, actions, renaming, index }) {
@@ -12440,14 +12445,6 @@ diff --git a/client.js b/client.js
 -      if (!keep || value.trim() === "" || value.trim() === session.title) {
 -        actions.endAgentRename();
 -        return;
-+function YouAvatar() {
-+  return (0, import_react17.createElement)(
-+    "span",
-+    { className: "bt-you-wrap" },
-+    (0, import_react17.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react17.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
-+    (0, import_react17.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
-+  );
-+}
 +var openShellSettings = null;
 +var openShellOnboarding = null;
 +var shellShortcuts = null;
@@ -12821,6 +12818,15 @@ diff --git a/client.js b/client.js
 +      frame = 0;
 +      const node = document.querySelector(RUNNING_HOST);
 +      setHost((prev) => prev === node ? prev : node);
++    };
++    const observer = new MutationObserver(() => {
++      if (!frame) frame = requestAnimationFrame(find);
++    });
++    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
++    find();
++    return () => {
++      cancelAnimationFrame(frame);
++      observer.disconnect();
      };
 -  }).sort((a, b) => b.at - a.at)));
 -  const statusInfo = useSessionStatus((map) => JSON.stringify(agent.sessions.map((id) => ({
@@ -12844,15 +12850,6 @@ diff --git a/client.js b/client.js
 -  const label = ["DSH Agent", running ? t("Working") : "", unread ? t("Unread activity") : ""].filter(Boolean).join(", ");
 -  const open = active && wide;
 -  return (0, import_react8.createElement)(
-+    const observer = new MutationObserver(() => {
-+      if (!frame) frame = requestAnimationFrame(find);
-+    });
-+    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
-+    find();
-+    return () => {
-+      cancelAnimationFrame(frame);
-+      observer.disconnect();
-+    };
 +  }, [active]);
 +  return host;
 +}
@@ -15148,10 +15145,14 @@ diff --git a/client.js b/client.js
      },
      onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
    };
-@@ -5995,6 +5995,83 @@ function atSources({ roster, sessions, launched, iconFor }) {
-   return [bots, chats];
- }
- 
+@@ -5992,7 +5992,84 @@ function atSources({ roster, sessions, launched, iconFor }) {
+     },
+     codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
+   };
+-  return [bots, chats];
++  return [bots, chats];
++}
++
 +// src/client/face-at-filter.js
 +var REFERENCE_SOURCE = "reference";
 +var optionId = (source, index) => `dsh-slash-option-${source}-${index}`;
@@ -15227,11 +15228,9 @@ diff --git a/client.js b/client.js
 +    unsubscribe?.();
 +    style.remove();
 +  };
-+}
-+
+ }
+ 
  // src/client/speech.js
- var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
- var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
 @@ -6008,8 +6008,8 @@ async function speechCatalog(speech) {
  function waveBytes(samples, rate = 16e3) {
    const bytes = new Uint8Array(44 + samples.length * 2);
@@ -19425,7 +19424,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,291 +8875,815 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,291 +8875,835 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -19636,6 +19635,24 @@ diff --git a/client.js b/client.js
 +  const maxY = Math.max(y1, y2);
 +  return boxes.some((box) => box !== from && box !== to && maxX > leftOf(box) + 1 && minX < rightOf(box) - 1 && maxY > box.top + 1 && minY < box.bottom - 1);
 +}
++function clearRun(boxes, id, y, xa, xb, dir) {
++  const lo = Math.min(xa, xb);
++  const hi = Math.max(xa, xb);
++  let level = y;
++  for (let step = 0; step < LANE_REACH * 4; step += 1) {
++    const blocked = boxes.some((box) => box.id !== id && hi > leftOf(box) + 1 && lo < rightOf(box) - 1 && level > box.top + 1 && level < box.bottom - 1);
++    if (!blocked) return level;
++    level += dir * WIRE_LANE;
++  }
++  return level;
++}
++function rowGap(boxes, box, dir) {
++  const edge = dir < 0 ? box.top : box.bottom;
++  const others = boxes.filter((one) => one.id !== box.id && (dir < 0 ? one.bottom <= box.top + 1 : one.top >= box.bottom - 1));
++  if (!others.length) return edge + dir * WIRE_GAP;
++  const near = dir < 0 ? Math.max(...others.map((one) => one.bottom)) : Math.min(...others.map((one) => one.top));
++  return (near + edge) / 2;
++}
 +function laneFor(base, yA, yB, boxes, from, to, taken) {
 +  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < yB && yA < lane.yB) && !boxes.some((box) => box !== from && box !== to && Math.abs(x - box.cx) < CARD_HALF + WIRE_GAP && yA < box.bottom && yB > box.top);
 +  for (const step of LANE_STEPS) if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE;
@@ -19658,12 +19675,14 @@ diff --git a/client.js b/client.js
 +    const y1 = item.from.top + item.from.height / 2;
 +    const y2 = item.to.top + item.to.height / 2;
 +    const lane = rightMost + WIRE_GAP + at * WIRE_LANE;
++    const yA = clearRun(boxes, item.from.id, rowGap(boxes, item.from, -1), x1, lane, -1);
++    const yB = clearRun(boxes, item.to.id, rowGap(boxes, item.to, 1), x2, lane, 1);
 +    routes.push({
 +      key: `${item.from.id}>${item.to.id}`,
 +      back: true,
-+      d: `M ${x1} ${y1} L ${lane} ${y1} L ${lane} ${y2} L ${x2} ${y2}`
++      d: `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`
      });
-+    taken.push({ x: lane, yA: Math.min(y1, y2), yB: Math.max(y1, y2) });
++    taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) });
 +  });
 +  const centres = [];
 +  for (const item of drawn.filter((one) => one.to.top < one.from.top)) centres.push(item.from.top + item.from.height / 2, item.to.top + item.to.height / 2);
