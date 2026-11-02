@@ -130,3 +130,53 @@ test('a linked decision log is refused, not written through', async (t) => {
   assert.match(await tool('record_decision', { option: 'Write it now', choice: 'used' }), /^Recorded:/)
   assert.equal(readFileSync(leaf, 'utf8').trim().split('\n').length, 1)
 })
+
+// Housekeeping writes a temp name beside the log and renames it over the log, so the temp name is a
+// place this code writes (#2103). A link left there must be refused before the write, not taken:
+// otherwise the retained log is written through it and the log itself becomes a link.
+test('#2103: a linked temp name does not take the trim; the log stays a plain file', async (t) => {
+  const line = (n) => `${JSON.stringify({ time: 1_000 + n, bot: 'a', botName: 'Chief', option: `kept ${n}`, choice: 'used' })}\n`
+  const full = (n) => Array.from({ length: n }, (_, i) => line(i)).join('')
+
+  const { ctx, home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-tmp-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const target = join(elsewhere, 'outside.txt')
+  const before = 'PRE-EXISTING BYTES\n'
+  writeFileSync(target, before)
+  const log = join(home, 'decisions.jsonl')
+  writeFileSync(log, full(2_000))
+  symlinkSync(target, `${log}.tmp`)
+
+  const warnings = []
+  ctx.logger.warn = (...args) => warnings.push(args.join(' '))
+  const first = await tool('record_decision', { option: 'Trigger the trim', choice: 'used' })
+  const second = await tool('record_decision', { option: 'Trigger it again', choice: 'rejected' })
+
+  assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the temp link is not written through')
+  assert.equal(lstatSync(log).isSymbolicLink(), false, 'the log is still a plain file, not the link')
+  const lines = readFileSync(log, 'utf8').split('\n').filter(Boolean)
+  assert.equal(lines.length, 2_002, 'the refused trim leaves the log as it was, plus the two new lines')
+  for (const lineText of lines) assert.doesNotThrow(() => JSON.parse(lineText), 'every line stays a valid entry')
+  assert.equal(JSON.parse(lines.at(-1)).option, 'Trigger it again')
+  assert.doesNotMatch(first, /^Recorded:/, 'the answer does not claim a clean record when the trim was refused')
+  assert.doesNotMatch(second, /^Recorded:/)
+  assert.equal(warnings.length, 1, 'one warning for the temp name, not one per record')
+  assert.match(warnings[0], /decisions\.jsonl\.tmp/)
+  assert.match(warnings[0], /not a plain file/)
+
+  // The healthy path is untouched: with a normal temp name the trim still bounds the log.
+  const healthy = await boot({ decisions: true })
+  t.after(healthy.stop)
+  const plain = join(healthy.home, 'decisions.jsonl')
+  writeFileSync(plain, full(2_000))
+  const healthyWarnings = []
+  healthy.ctx.logger.warn = (...args) => healthyWarnings.push(args.join(' '))
+  assert.match(await healthy.tool('record_decision', { option: 'Trim normally', choice: 'used' }), /^Recorded:/)
+  const kept = readFileSync(plain, 'utf8').split('\n').filter(Boolean)
+  assert.equal(kept.length, 2_000, 'the trim keeps the newest KEPT lines')
+  assert.equal(JSON.parse(kept.at(-1)).option, 'Trim normally')
+  assert.equal(existsSync(`${plain}.tmp`), false, 'the healthy trim renames its temp name away')
+  assert.deepEqual(healthyWarnings, [])
+})
