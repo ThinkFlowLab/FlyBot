@@ -500,3 +500,87 @@ test('the journal says whether it is still recording, and why it stopped, path i
   rmSync(home, { recursive: true, force: true })
   rmSync(outside, { recursive: true, force: true })
 })
+
+// #2146: a rotation reads the journal before it replaces it, and that read answered no question
+// about the name until now. A journal file swapped for a link once recording had started therefore
+// had the other file's lines read as the team's history, pruned, and folded into a fresh file the
+// rename put in the link's place; the append beside it already refuses that shape (#2074/#2115).
+// A rotation asks the same question: this one name, or nothing.
+test('a rotation refuses a journal file swapped for a hard link and leaves the other name alone (#2146)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.jsonl')
+  // A legal journal, so nothing but the second name can tell it apart from this host's own file.
+  const line = lines([{ seq: 1, t: 0, op: 'base', next: { version: 2, revision: 7 }, actor: 'host' }])
+  writeFileSync(target, line)
+  if (posix) chmodSync(target, 0o644)
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  let clock = 0
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')), now: () => clock, maxAgeMs: 10 })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  clock = DAY
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.deepEqual(warnings, [])
+  rmSync(path)
+  linkSync(target, path)
+  assert.equal(lstatSync(path).nlink, 2, 'the journal name shares its file with another name now')
+  clock = 2 * DAY
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  assert.equal(readFileSync(target, 'utf8'), line, 'the file the other name holds is not read as history')
+  if (posix) assert.equal(statSync(target).mode & 0o777, 0o644, 'it keeps its mode')
+  assert.equal(warnings.length, 1, 'the second name is refused once, not once per save')
+  assert.match(warnings[0], /not a plain file/)
+  assert.equal(lstatSync(target).nlink, 2, 'the refused name is left as it was')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a rotation refuses a journal file swapped for a symlink and leaves its target alone (#2146)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.jsonl')
+  const line = lines([{ seq: 1, t: 0, op: 'base', next: { version: 2, revision: 7 }, actor: 'host' }])
+  writeFileSync(target, line)
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  let clock = 0
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')), now: () => clock, maxAgeMs: 10 })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  clock = DAY
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.deepEqual(warnings, [])
+  rmSync(path)
+  symlinkSync(target, path)
+  clock = 2 * DAY
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  assert.equal(readFileSync(target, 'utf8'), line, 'the file behind the link is not read as history')
+  assert.equal(warnings.length, 1, 'the link is refused once, not once per save')
+  assert.match(warnings[0], /not a plain file/)
+  assert.equal(lstatSync(path).isSymbolicLink(), true, 'the refused name is left as it was')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a rotation still replaces a plain journal file of this host\'s own (#2146 control)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  let clock = 0
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')), now: () => clock, maxAgeMs: 10 })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  clock = DAY
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  clock = 2 * DAY
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  assert.deepEqual(warnings, [])
+  const text = readFileSync(path, 'utf8')
+  assert.equal(parseJournal(text)[0].actor, 'retention', 'the rotation ran')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 3 }))
+  assert.equal(lstatSync(path).nlink, 1, 'the journal file carries only the name this host gave it')
+  if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
+  rmSync(home, { recursive: true, force: true })
+})
