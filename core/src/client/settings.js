@@ -21,7 +21,7 @@ import { SchedulesPage } from './schedules.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
 import { FolderMenu } from './folder-menu.js'
 import { AboutPage } from './about.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -226,6 +226,12 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
         h('div', { className: 'bt-settings-head' },
           back ? h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': back, title: back, onClick: () => actions.openSettings(shown) }, h(ChevronLeftIcon)) : null,
           h('h2', { key: bot?.id ?? room?.id ?? shown }, bot?.name ?? room?.name ?? label)),
+        // A window that holds the team read-only still opens every page here, so the header says
+        // why nothing can be changed, in the host's own sentence and above the refusal below it:
+        // the standing state first, the answer to one pressed control closest to that control.
+        typeof roster?.readOnly === 'string' && roster.readOnly.trim()
+          ? h('div', { className: 'bt-hint bt-read-only', role: 'status', style: { padding: '0 20px 8px', textAlign: 'left' } }, hostText(roster.readOnly))
+          : null,
         shown === 'usage' ? null : errorLine,
         shown === 'usage' ? null : h('div', { key: pageKey, className: 'bt-settings-scroll bt-settings-page', 'data-move': last.current.move },
           shown === 'general' ? h(GeneralPage, { roster, actions, run }) : null,
