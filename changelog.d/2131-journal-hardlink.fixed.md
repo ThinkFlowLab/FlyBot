@@ -1,0 +1,1 @@
+The state journal now refuses a `journal/state.jsonl` that is a hard link: its bytes are also a name outside this home, so the start-up read and the append both require the file to carry only this one name (`nlink === 1`). A shared inode is refused exactly like a symbolic link — one warning, nothing read, chmod-ed or appended — while a journal with one name records as before.

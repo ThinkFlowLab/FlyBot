@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -387,6 +387,74 @@ test('a journal file swapped for a link after start-up is left byte-for-byte unc
   assert.match(warnings[0], /not recording/)
   rmSync(home, { recursive: true, force: true })
   rmSync(outside, { recursive: true, force: true })
+})
+
+// A hard link is `lstat`'s idea of a plain file and not a link, so both checks let it through
+// (#2074 asked whether the name is this host's; #2115 answered it for the other name a file can
+// have): the journal took another file's bytes as the team's history, chmod-ed that file and
+// appended to it. One name is this host's, two names are not.
+test('a journal file that is a hard link is not the team’s history at start-up (#2074 shape)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.jsonl')
+  // A legal journal file: one base line, so the start-up read would take it as this team's history.
+  const line = lines([{ seq: 1, t: 0, op: 'base', next: { version: 2, revision: 7 }, actor: 'host' }])
+  writeFileSync(target, line)
+  if (posix) chmodSync(target, 0o644)
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  linkSync(target, path)
+  assert.equal(lstatSync(path).nlink, 2, 'the journal name shares its file with another name')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 8 }))
+  assert.equal(readFileSync(target, 'utf8'), line, 'the file the other name holds is not read as history or appended to')
+  if (posix) assert.equal(statSync(target).mode & 0o777, 0o644, 'it keeps its mode')
+  assert.equal(warnings.length, 1, 'the name is refused once, not once per save')
+  assert.match(warnings[0], /not recording/)
+  assert.equal(lstatSync(path).nlink, 2, 'the refused name is left as it was')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal file swapped for a hard link after start-up is not appended to (#2074 shape)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.txt')
+  writeFileSync(target, 'PRIVATE LINE\n')
+  if (posix) chmodSync(target, 0o644)
+  const folder = join(home, 'journal')
+  mkdirSync(folder)
+  const path = join(folder, 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.deepEqual(warnings, [])
+  rmSync(path)
+  linkSync(target, path)
+  assert.equal(lstatSync(path).nlink, 2, 'the journal name shares its file with another name now')
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(readFileSync(target, 'utf8'), 'PRIVATE LINE\n', 'the file the other name holds is not appended to')
+  if (posix) assert.equal(statSync(target).mode & 0o777, 0o644, 'it keeps its mode')
+  assert.equal(warnings.length, 1, 'the file that has a second name now is refused when the write runs')
+  assert.match(warnings[0], /not recording/)
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal file that is still a plain file of its own keeps recording (#2074 control)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.deepEqual(warnings, [])
+  assert.equal(lstatSync(path).nlink, 1, 'the journal file carries only the name this host gave it')
+  if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
+  assert.equal(stateText(replayTo(readFileSync(path, 'utf8'))), stateText({ version: 2, revision: 2 }))
+  rmSync(home, { recursive: true, force: true })
 })
 
 test('a journal that is still its own folder and file keeps recording (#2074 control)', async () => {
