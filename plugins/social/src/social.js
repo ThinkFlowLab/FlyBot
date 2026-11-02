@@ -4603,6 +4603,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       || Object.entries(settings.faceRooms).find(([, meta]) => meta.localRoomId === roomId)?.[0]
     if (!serverId) throw new Error('which room?')
     const seed = past || { faceRoomId: serverId, roomId, status: 'closed', members: [] }
+    // #2219: `social/face-open` is declared `{ read: true }`, so a read-only window may call it — and
+    // it kept the read half (a room the host still has, above) but made a local mirror for a past room
+    // whose mirror is gone. The write half is dropped here: the stored room comes back viewable and
+    // the room list does not grow.
+    if (flybot.readOnly?.()) {
+      return {
+        faceRoomId: serverId,
+        readOnly: true,
+        name: seed.name || faceRoomTitle({ members: seed.members }, { code: seed.joinCode }),
+        status: seed.status === 'open' ? 'closed' : (seed.status || 'closed'),
+        members: (seed.members ?? []).filter(member => member?.left !== true),
+      }
+    }
     const room = await flybot.rooms.upsertFace?.({
       roomId: serverId,
       name: seed.name || faceRoomTitle({ members: seed.members }, { code: seed.joinCode }),

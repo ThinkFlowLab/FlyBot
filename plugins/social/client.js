@@ -1977,6 +1977,7 @@ window.__ModuleLoader__.load({
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
       const [note, setNote] = useState(null)
+      const locked = readOnlyReason(roster) !== ''
       const run = async (label, fn) => {
         setBusy(label)
         setNote(null)
@@ -1999,6 +2000,12 @@ window.__ModuleLoader__.load({
         setNote(null)
         try {
           const next = await call('social/face-open', { roomId: room.roomId, faceRoomId: room.faceRoomId })
+          // #2219: a read-only host hands back the stored past view and writes no local mirror, so
+          // there is no room to open: the row stays a row and the window's own sentence says why.
+          if (next?.readOnly === true) {
+            setNote({ tone: 'info', text: readOnlyReason() || 'This window is read-only, so the room opens no chat.' })
+            return
+          }
           const id = next?.roomId || room.roomId
           if (id) actions.openSession(id)
         } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
@@ -2030,7 +2037,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'fs-name', title }, title),
           time ? h('span', { className: 'fs-face-time', 'data-flybot': 'face-time', title: time.full }, time.text) : null,
           h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(room) }, faceChipLabel(room)),
-          past
+          past || locked
             ? null
             : h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
               h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
@@ -2396,6 +2403,7 @@ window.__ModuleLoader__.load({
 
     function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
       useStyles()
+      const locked = readOnlyReason(roster)
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
       // #1607: the two lists poll on their own, so an empty `mine` is "not loaded yet" as often as it is
@@ -2518,6 +2526,14 @@ window.__ModuleLoader__.load({
             onOpen: chatId => actions?.openSession?.(chatId),
           }))
       }
+      // #2219: deciding is a write and the host refuses it in this window; the card is not offered at
+      // all, and the window's own sentence says where it can be decided.
+      if (locked) {
+        return mine.length
+          ? h('div', { 'data-flybot': 'chat-approvals' },
+            h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval-readonly', role: 'status' }, locked))
+          : null
+      }
       return h('div', { 'data-flybot': 'chat-approvals' },
         mine.length > 1 && mine.some(waiting)
           ? h('div', { className: 'fs-chat-actions' },
@@ -2536,6 +2552,11 @@ window.__ModuleLoader__.load({
       useStyles()
       const [busy, setBusy] = useState(false)
       if (!held?.id) return null
+      // #2219: the bubble card is handed no roster, so it reads the window state the sidebar saw.
+      const locked = readOnlyReason()
+      if (locked) {
+        return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'status' }, locked)
+      }
       const { from, to } = holdParties({ from: held.from, to: held.to, toName: held.toName })
       const onDecide = async (decision) => {
         setBusy(true)
@@ -2896,8 +2917,19 @@ window.__ModuleLoader__.load({
     const openFaceToFace = (mode) => facePanel.open(mode === 'start' ? 'start' : 'join')
     const openAddFriend = () => addFriendPanel.open()
 
+    // #2219: the shell names a read-only window in `roster.readOnly` and hands the roster to the slots
+    // that draw a Bot (sidebar section, session dock, room card). The card on a held reply's bubble
+    // (`flybot.approvals`) is handed no roster, so the last sentence any of those slots saw is kept here;
+    // a slot that gets a writable roster clears it again.
+    let windowReadOnly = ''
+    const readOnlyReason = (roster) => {
+      if (roster && typeof roster === 'object') windowReadOnly = typeof roster.readOnly === 'string' ? roster.readOnly.trim() : ''
+      return windowReadOnly
+    }
+
     function FriendsBots({ remoteChats, actions, roster } = {}) {
       useStyles()
+      const locked = readOnlyReason(roster) !== ''
       const [error, setError] = useState('')
       const [adding, setAdding] = useState(false)
       const [faceOpen, setFaceOpen] = useState(false)
@@ -2947,8 +2979,8 @@ window.__ModuleLoader__.load({
       }
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
-        h(AcceptNotices, { items: acceptNotices, onAsk: askShareBack, onDismiss: dismissAccept }),
-        h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest }),
+        h(AcceptNotices, { items: acceptNotices, onAsk: askShareBack, onDismiss: dismissAccept, locked }),
+        h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest, locked }),
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { actions, remoteChats, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
         faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, mode: faceMode, onClose: () => setFaceOpen(false) }) : null)
@@ -2961,13 +2993,14 @@ window.__ModuleLoader__.load({
       const bot = item?.botName || 'your Bot'
       return `${who} accepted your invite. They can message ${bot}. You cannot message them until they share a Bot with you.`
     }
-    function AcceptNotices({ items, onAsk, onDismiss } = {}) {
+    function AcceptNotices({ items, onAsk, onDismiss, locked = false } = {}) {
       if (!Array.isArray(items) || items.length === 0) return null
       return h('div', { className: 'fs-share-requests', 'data-flybot': 'accept-notices' },
         items.map((item) => h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'accept-notice' },
           h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-text' }, acceptNoticeSentence(item)),
           item.asked ? h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-asked' }, 'You asked them to share a Bot.') : null,
-          h('div', { className: 'fs-line' },
+          // #2219: asking and dismissing are writes; a read-only window still reads the notice.
+          locked ? null : h('div', { className: 'fs-line' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'accept-notice-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
             h('button', {
               type: 'button',
@@ -2981,7 +3014,7 @@ window.__ModuleLoader__.load({
     // "Share this Bot?" (#336): a friend's Bot tried to start a chat with one of my Bots that is not
     // shared with them, and Bot Social refused it. Buttons only (#349): Share opens that Bot's Sharing,
     // where the owner decides; Dismiss drops the card. Nothing is shared from here.
-    function ShareRequests({ items, actions, onDismiss } = {}) {
+    function ShareRequests({ items, actions, onDismiss, locked = false } = {}) {
       if (!Array.isArray(items) || items.length === 0) return null
       return h('div', { className: 'fs-share-requests', 'data-flybot': 'share-requests' },
         items.map((item) => {
@@ -2990,7 +3023,8 @@ window.__ModuleLoader__.load({
           return h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'share-request' },
             h('div', { className: 'fs-hint', 'data-flybot': 'share-request-text' }, `${who} tried to start a chat with ${bot}. ${bot} is not shared with them.`),
             h('div', { className: 'fs-line' },
-              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+              // #2219: dismissing is a write; opening the Sharing page is navigation and stays.
+              locked ? null : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
               h('button', {
                 type: 'button',
                 className: 'fs-btn fs-btn-sm fs-btn-primary',
@@ -3916,9 +3950,12 @@ window.__ModuleLoader__.load({
             slots().register('flybot.sidebar.section', { id: 'social', order: 100, component: FriendsBots }),
             // #1021: two rows, because joining someone else's group and starting a room are different
             // intentions. They open the same screen with the same handlers; the row says which one.
+            // #2219: every one of the three opens a panel of writes, so a read-only window is offered
+            // none of them (`visible` is the registry's own gate, read with the live roster).
             slots().register('flybot.new-chat.action', {
               id: 'social-face-join',
               order: 15,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
               label: JOIN_BY_NUMBER,
               hint: JOIN_OR_CREATE_HINT,
               icon: NearbyIcon,
@@ -3927,6 +3964,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.new-chat.action', {
               id: 'social-face-start',
               order: 16,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
               label: START_FACE_ROOM,
               hint: START_FACE_HINT,
               icon: NearbyIcon,
@@ -3935,6 +3973,7 @@ window.__ModuleLoader__.load({
             slots().register('flybot.new-chat.action', {
               id: 'social-add-friend',
               order: 17,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
               label: 'Add friend',
               hint: 'Paste an invite link or code',
               icon: AddPersonIcon,
