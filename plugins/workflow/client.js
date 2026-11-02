@@ -91,6 +91,8 @@ window.__ModuleLoader__.load({
       Save: '保存',
       'Workflow graphs': 'Workflow 图',
       'Add link': '添加连线',
+      'This pair already has a {kind} link — replace or delete it first.': '这一对已有一条{kind}连线，请先替换或删除它。',
+      '(linked)': '（已连接）',
       'From node': '起点',
       'To node': '终点',
       'Pick a node': '选择一个节点',
@@ -656,6 +658,15 @@ window.__ModuleLoader__.load({
     function withEdge(list, from, to) {
       if (list.some(edge => edge.from === from && edge.to === to)) return list
       return list.concat([{ from, to }])
+    }
+
+    // The host keys a link by its pair alone, so a second edge over the same two Bots refuses the
+    // whole save whatever its kind (#2173). The Settings form has to read the kind that is there
+    // before it submits, and name it to the user.
+    const EDGE_KIND_LABEL = { forward: 'Link', condition: 'Condition', loop: 'Loop' }
+    const blankEdgeForm = () => ({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+    function edgeKindOf(edge) {
+      return edge.loop === true ? 'loop' : edge.when ? 'condition' : 'forward'
     }
 
     // The Settings plane is zero-width, so world x sits on a ±WIRE_SPAN centre
@@ -1576,7 +1587,10 @@ window.__ModuleLoader__.load({
         })
       }
       
-      const [edgeForm, setEdgeForm] = useState({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+      const [edgeForm, setEdgeForm] = useState(blankEdgeForm)
+      // #2173: the To list says which targets the chosen From already reaches, so a repeat is
+      // visible before the form submits it.
+      const linkedTargets = new Set(edgeForm.from ? edges.filter(edge => edge.from === edgeForm.from).map(edge => edge.to) : [])
       const [toolsDraft, setToolsDraft] = useState(null)
       const toolsTimer = useRef(null)
       const toolsCommit = useRef(null)
@@ -1601,6 +1615,17 @@ window.__ModuleLoader__.load({
       
       const addEdge = () => {
         if (!edgeForm.from || !edgeForm.to) return
+        const existing = edges.find(edge => edge.from === edgeForm.from && edge.to === edgeForm.to)
+        // #2173: the drawer's withEdge rule, said out loud before the save. Repeating the pair is a
+        // no-op, because submitting it again would be the same graph the host refuses. Another
+        // kind over that pair is answered here, so the user reads that the pair is taken instead of
+        // the host's `Link A → B is listed twice` refusal, which saves nothing.
+        if (existing) {
+          const had = edgeKindOf(existing)
+          if (had === edgeForm.kind) { setEdgeForm(blankEdgeForm()); return }
+          setError(tr('This pair already has a {kind} link — replace or delete it first.', { kind: tr(EDGE_KIND_LABEL[had]) }))
+          return
+        }
         const edge = { from: edgeForm.from, to: edgeForm.to }
         if (edgeForm.kind === 'loop') {
           edge.loop = true
@@ -1610,7 +1635,7 @@ window.__ModuleLoader__.load({
           edge.when = edgeForm.until
         }
         save(nodes, edges.concat([edge]))
-        setEdgeForm({ from: '', to: '', kind: 'forward', max: 5, until: { output: '', eq: '' } })
+        setEdgeForm(blankEdgeForm())
       }
       
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
@@ -1743,7 +1768,8 @@ window.__ModuleLoader__.load({
                   'aria-label': tr('To node'),
                   value: edgeForm.to,
                   onChange: (event) => setEdgeForm({ ...edgeForm, to: event.target.value }),
-                }, h('option', { value: '' }, tr('Pick a node')), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
+                }, h('option', { value: '' }, tr('Pick a node')), nodes.map(node => h('option', { key: node.id, value: node.id },
+                  linkedTargets.has(node.id) ? `${node.name} ${tr('(linked)')}` : node.name)))),
               edgeForm.kind === 'loop' ? h('label', { className: 'wf-field' },
                 h('span', null, tr('Max iterations')),
                 h('input', {

@@ -14,6 +14,8 @@ Settings → Workflows (#1364) is this plugin's list. The page lives in the core
 
 A host call on that page that throws, rejects, or never answers ends on the page's own `.wf-err` alert instead of staying on `Reading workflows…` or looking saved: a failed read offers `Try again`, and a failed save or model change clears the `Changes are saved automatically` hint. A successful call clears the alert again.
 
+The **Add link** row applies the drawer's pair rule before it saves (#2173): a pair the graph already lists is a no-op, another kind over that same pair names the kind already there instead of submitting, and the **To** list marks the targets the chosen node already reaches. The host still refuses a duplicated pair — the form is what stops producing one.
+
 ## Owns
 
 Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, the browser chat and the flowchart canvas.
