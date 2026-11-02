@@ -2823,6 +2823,9 @@ window.__ModuleLoader__.load({
         ?? (room.presentedParticipants ?? room.participants ?? []).filter(p => p.leftSeq === undefined)
       const expiresAt = snapshot?.expiresAt || face?.expiresAt
       const mineMember = member => member.remote === false || Boolean(member.id && roster?.byId?.[member.id])
+      // #2228: a read-only window draws the same chip-only head as a past room — Leave, the Auto-send
+      // switch and the invite can only be refused by the host there.
+      const locked = readOnlyReason(roster) !== ''
       if (candidate) {
         // The open dialog already shows this waiting room: one card, not two (#306).
         if (room.id && faceDialog.roomId === room.id) return null
@@ -2844,7 +2847,7 @@ window.__ModuleLoader__.load({
                 : faceLook({ roster, member })),
             }))),
           othersIn(members, mineMember) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
-          h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
+          locked ? null : h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
             h(ConfirmLeave, {
               busy,
               size: 'fs-btn',
@@ -2874,6 +2877,11 @@ window.__ModuleLoader__.load({
       if (statusRoom.status === 'left' || statusRoom.status === 'closed') {
         // A past room is read-only: its chip only, no Auto-send and no Leave (#304).
         return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview', 'data-past': true },
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)))
+      }
+      if (locked) {
+        // The window is read-only (#2228): the same chip-only head as a past room.
+        return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview', 'data-readonly': true },
           h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)))
       }
       // Leave shares the status line, a row away from the Auto-send toggle, so a tap meant for one
