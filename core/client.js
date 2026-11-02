@@ -16851,7 +16851,7 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
     )
   );
 }
-function Row2({ item, source, onOpen, onRename, onDelete }) {
+function Row2({ item, source, onOpen, onRename, onDelete, editable = true }) {
   return (0, import_react37.createElement)(
     "button",
     {
@@ -16867,7 +16867,7 @@ function Row2({ item, source, onOpen, onRename, onDelete }) {
       (0, import_react37.createElement)("span", null, item.name),
       (0, import_react37.createElement)("span", { className: "bt-set-hint" }, item.preview || chainOf(item) || item.description || "")
     ),
-    source === "own" ? (0, import_react37.createElement)(
+    source === "own" && editable ? (0, import_react37.createElement)(
       "span",
       { className: "bt-set-actions" },
       (0, import_react37.createElement)("button", {
@@ -16903,7 +16903,9 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
   const templates = pack?.templates ?? [];
   const templateIds = new Set(templates.map((item) => item.id));
   const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id));
-  const showUse = opened?.source === "factory" || opened?.fromFactory !== void 0;
+  const readOnly = typeof roster?.readOnly === "string" ? roster.readOnly.trim() : "";
+  const locked = readOnly !== "";
+  const showUse = !locked && (opened?.source === "factory" || opened?.fromFactory !== void 0);
   return (0, import_react37.createElement)(
     "div",
     { className: "bt-wf-page" },
@@ -16942,7 +16944,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         (0, import_react37.createElement)(
           "div",
           { className: "bt-set-card" },
-          yours.length === 0 ? (0, import_react37.createElement)("div", { className: "bt-set-row" }, (0, import_react37.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react37.createElement)(Row2, { key: item.id, item, source: "own", onOpen: () => onOpen?.(item, "own"), onRename, onDelete }))
+          yours.length === 0 ? (0, import_react37.createElement)("div", { className: "bt-set-row" }, (0, import_react37.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react37.createElement)(Row2, { key: item.id, item, source: "own", editable: !locked, onOpen: () => onOpen?.(item, "own"), onRename, onDelete }))
         )
       )
     ) : null,
@@ -16954,7 +16956,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         { className: "bt-wf-actions" },
         (0, import_react37.createElement)("button", { type: "button", onClick: () => onBack?.() }, t("Back")),
         showUse ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onUse?.(opened.source === "factory" ? opened.id : opened.fromFactory) }, t("Use this")) : null,
-        opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
+        locked ? (0, import_react37.createElement)("span", { className: "bt-wf-status", role: "status" }, hostText(readOnly)) : opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
       ),
       (0, import_react37.createElement)("h3", { className: "bt-wf-title" }, graph.name),
       graph.description ? (0, import_react37.createElement)("p", { className: "bt-wf-hint" }, graph.description) : null,
@@ -16964,7 +16966,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         onCommit,
         width: canvasWidth,
         cardHeights,
-        editing: opened?.source === "own" && editing === true
+        editing: opened?.source === "own" && editing === true && !locked
       })
     ) : null
   );
@@ -17016,6 +17018,7 @@ function DeleteModal({ workflow, onClose, onConfirm }) {
   );
 }
 function WorkflowsPage({ call: call4, roster }) {
+  const readOnly = typeof roster?.readOnly === "string" && roster.readOnly.trim() ? roster.readOnly : "";
   const [phase, setPhase] = (0, import_react37.useState)("loading");
   const [pack, setPack] = (0, import_react37.useState)(null);
   const [error, setError] = (0, import_react37.useState)("");
@@ -17084,7 +17087,7 @@ function WorkflowsPage({ call: call4, roster }) {
       setError("");
       if (made) {
         setOpened({ source: "own", id: made.id });
-        setEditing(true);
+        setEditing(!readOnly);
       }
     }).catch((failure) => {
       setError(workflowCallError(failure, t("Could not copy this workflow")));
@@ -17130,6 +17133,7 @@ function WorkflowsPage({ call: call4, roster }) {
   };
   const commit = (graph) => {
     if (!opened || opened.source !== "own") return;
+    if (readOnly) return;
     Promise.resolve(invoke("workflow/graph", { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges })).then((value) => {
       const settled = settleWorkflowRead(value);
       if (settled.phase === "error") {

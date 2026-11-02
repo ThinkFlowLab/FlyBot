@@ -1381,3 +1381,90 @@ test('a forward edge into the next row turns above the tallest CJK named card (#
   const below = points.filter((point) => point[1] > cards.get('d').top)
   assert.deepEqual(below, [], `a>d never draws into the next row (${route.d})`)
 })
+
+// #2176: a window that holds the team read-only still offered Edit on Settings → Workflows.
+// The host's own sentence already arrives on the page as `roster.readOnly`; it must replace the
+// control rather than show up after the fact, because `workflow/graph` is not in the channel's
+// READS list (`core/src/host/channel.js:227`), so the host only refuses once the user has built
+// the layout — and then the state is discarded with one technical line.
+const READ_ONLY = 'another dsh holds the team, so this window is read-only'
+
+test('#2176: a read-only window renders the host sentence instead of Edit and offers no rename or delete', () => {
+  const view = renderView({ phase: 'ready', pack, opened: { source: 'own', id: 'wf-mine' }, error: '', roster: { bots: [], readOnly: READ_ONLY } })
+  const editingControl = all(view).filter((entry) => entry.type === 'button' && (text(entry) === 'Edit' || text(entry) === 'Finish editing'))
+  assert.deepEqual(editingControl.map(text), [], 'a read-only window offers no editing control')
+  const sentence = all(view).find((entry) => entry.props?.className === 'bt-wf-status' && text(entry) === READ_ONLY)
+  assert.ok(sentence, 'the host sentence is rendered on the page')
+  assert.equal(text(sentence), READ_ONLY, 'the page repeats the host wording, it does not invent one')
+  assert.equal(all(view).some((entry) => entry.props?.['data-port']), false, 'no port handles to drag')
+  // The read side is untouched: the graph, its cards and the run chips still render.
+  assert.ok(all(view).some((entry) => entry.props?.['data-node'] === 'coder'), 'the opened graph still renders')
+
+  // Rename and Delete live on the list rows, so they are checked on the list the page shows
+  // before a graph is opened — that is where the user would reach them.
+  const list = renderView({ phase: 'ready', pack, opened: null, error: '', roster: { bots: [], readOnly: READ_ONLY } })
+  assert.equal(all(list).some((entry) => entry.type === 'button' && (entry.props?.['aria-label'] === 'Rename' || entry.props?.['aria-label'] === 'Delete')), false,
+    'rename and delete are not offered in a read-only window')
+  assert.ok(all(list).some((entry) => entry.props?.['data-workflow'] === 'wf-mine'), 'the list still renders')
+})
+
+test('#2176: a read-only window never asks the host to save a graph the user drags', async () => {
+  const calls = []
+  const page = mountPage({ call: async (method) => { calls.push(method); return pack }, roster: { bots: [], readOnly: READ_ONLY } })
+  await page.settle()
+  await openWorkflow(page, 'wf-mine')
+  // A user who is offered an editing control takes it; read-only must not offer one. On a page
+  // that does, this drives the very flow that ends in the host's refusal.
+  const edit = all(page.tree).find((entry) => entry.type === 'button' && (text(entry) === 'Edit' || text(entry) === 'Finish editing'))
+  if (edit) {
+    edit.props.onClick({ stopPropagation() {}, preventDefault() {}, target: {} })
+    await page.settle()
+  }
+  const card = all(page.tree).find((entry) => entry.props?.['data-node'] === 'coder')
+  assert.ok(card, 'the card the user would drag is on the canvas')
+  card.props.onPointerDown({ clientX: 10, clientY: 20, target: { dataset: {} } })
+  const canvas = all(page.tree).find((entry) => entry.props?.className === 'bt-wf-canvas')
+  canvas.props.onPointerUp({ clientX: 30, clientY: 50, target: { dataset: {} } })
+  await page.settle()
+  assert.deepEqual(calls.filter((method) => method === 'workflow/graph'), [], 'a read-only window never writes the graph')
+  assert.ok(calls.includes('workflow/state'), 'the page still reads')
+})
+
+test('#2176: a window that is not read-only keeps Edit, rename and delete', () => {
+  const view = renderView({ phase: 'ready', pack, opened: { source: 'own', id: 'wf-mine' }, error: '', roster: { bots: [] } })
+  assert.equal(all(view).some((entry) => entry.type === 'button' && text(entry) === 'Edit'), true, 'a normal window still offers Edit')
+  assert.equal(all(view).some((entry) => text(entry) === READ_ONLY), false, 'no read-only sentence in a normal window')
+  const list = renderView({ phase: 'ready', pack, opened: null, error: '', roster: { bots: [] } })
+  assert.equal(all(list).some((entry) => entry.type === 'button' && entry.props?.['aria-label'] === 'Rename'), true, 'rename is still offered')
+  assert.equal(all(list).some((entry) => entry.type === 'button' && entry.props?.['aria-label'] === 'Delete'), true, 'delete is still offered')
+})
+
+// #2176: `Use this` writes `workflow/create`, and the channel's READS list does not hold that
+// method either (`core/src/host/channel.js:227`), so a read-only window that keeps the button
+// offers the user a copy the host refuses. The button goes away with Edit; the read side stays.
+test('#2176: a read-only window offers no Use this on a preset and never creates a copy', async () => {
+  const calls = []
+  const page = mountPage({ call: async (method) => { calls.push(method); return pack }, roster: { bots: [], readOnly: READ_ONLY } })
+  await page.settle()
+  await openWorkflow(page, 'delivery')
+  assert.equal(all(page.tree).some((entry) => entry.type === 'button' && text(entry) === 'Use this'), false,
+    'a read-only window offers no Use this')
+  assert.deepEqual(calls.filter((method) => method === 'workflow/create'), [], 'a read-only window never asks the host to copy a preset')
+  assert.ok(calls.includes('workflow/state'), 'the page still reads')
+  assert.ok(all(page.tree).some((entry) => entry.props?.['data-node'] === 'coder'), 'the opened graph still renders')
+})
+
+test('#2176: a window that is not read-only keeps Use this and copies the preset once', async () => {
+  const calls = []
+  const copied = { ...pack, workflows: [...pack.workflows, { ...factory, id: 'delivery-copy', name: 'Copy of delivery' }] }
+  const page = mountPage({
+    call: async (method) => { calls.push(method); return method === 'workflow/create' ? copied : pack },
+    roster: { bots: [] },
+  })
+  await page.settle()
+  await openWorkflow(page, 'delivery')
+  assert.equal(all(page.tree).some((entry) => entry.type === 'button' && text(entry) === 'Use this'), true, 'a normal window still offers Use this')
+  await page.click((entry) => text(entry) === 'Use this')
+  assert.deepEqual(calls.filter((method) => method === 'workflow/create'), ['workflow/create'], 'a normal window copies the preset once')
+  assert.match(text(page.tree), /Copy of delivery/, 'the copy opens')
+})

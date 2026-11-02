@@ -3,7 +3,7 @@
 // sidebar run uses. A read always settles: a host that never answers becomes
 // an error, an empty store says so, and the file path is not the page.
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 
 export const READ_MS = 8000
 
@@ -532,7 +532,7 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
       })))))
 }
 
-function Row({ item, source, onOpen, onRename, onDelete }) {
+function Row({ item, source, onOpen, onRename, onDelete, editable = true }) {
   return h('button', {
     type: 'button', className: 'bt-set-row', 'data-workflow': item.id, 'data-source': source,
     onClick: () => onOpen?.(item),
@@ -540,7 +540,7 @@ function Row({ item, source, onOpen, onRename, onDelete }) {
   h('span', { className: 'bt-set-copy' },
     h('span', null, item.name),
     h('span', { className: 'bt-set-hint' }, item.preview || chainOf(item) || item.description || '')),
-  source === 'own' ? h('span', { className: 'bt-set-actions' },
+  source === 'own' && editable ? h('span', { className: 'bt-set-actions' },
     h('button', {
       type: 'button', className: 'bt-set-action', 'aria-label': t('Rename'), title: t('Rename'),
       onClick: (event) => { event.stopPropagation(); onRename?.(item) },
@@ -562,7 +562,14 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
   const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id))
-  const showUse = opened?.source === 'factory' || opened?.fromFactory !== undefined
+  // #2176: a window that holds the team read-only carries the host's own sentence. The page
+  // shows that sentence where Edit was and never opens the editor, so `workflow/graph` is not
+  // offered in the first place instead of being refused after the layout was built. `Use this`
+  // writes `workflow/create`, which the channel's READS list does not hold either, so a
+  // read-only window does not offer that one either.
+  const readOnly = typeof roster?.readOnly === 'string' ? roster.readOnly.trim() : ''
+  const locked = readOnly !== ''
+  const showUse = !locked && (opened?.source === 'factory' || opened?.fromFactory !== undefined)
   return h('div', { className: 'bt-wf-page' },
     h('p', { className: 'bt-wf-hint' }, t('A workflow is a group of your Bots. Drag the flowchart to change who hands work to whom.')),
     error ? h('div', { className: 'bt-error', role: 'alert' }, alertCopy(error),
@@ -587,19 +594,21 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
         h('div', { className: 'bt-set-card' },
           yours.length === 0
             ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No workflows of your own yet.')))
-            : yours.map((item) => h(Row, { key: item.id, item, source: 'own', onOpen: () => onOpen?.(item, 'own'), onRename, onDelete }))))) : null,
+            : yours.map((item) => h(Row, { key: item.id, item, source: 'own', editable: !locked, onOpen: () => onOpen?.(item, 'own'), onRename, onDelete }))))) : null,
     graph ? h('div', { className: 'bt-wf-editor' },
       h('div', { className: 'bt-wf-actions' },
         h('button', { type: 'button', onClick: () => onBack?.() }, t('Back')),
         showUse ? h('button', { type: 'button', onClick: () => onUse?.(opened.source === 'factory' ? opened.id : opened.fromFactory) }, t('Use this')) : null,
-        opened?.source === 'own' ? h('button', { type: 'button', onClick: () => onEditing?.(!editing) }, editing ? t('Finish editing') : t('Edit')) : null),
+        locked
+          ? h('span', { className: 'bt-wf-status', role: 'status' }, hostText(readOnly))
+          : opened?.source === 'own' ? h('button', { type: 'button', onClick: () => onEditing?.(!editing) }, editing ? t('Finish editing') : t('Edit')) : null),
       h('h3', { className: 'bt-wf-title' }, graph.name),
       graph.description ? h('p', { className: 'bt-wf-hint' }, graph.description) : null,
       (graph.nodes ?? []).length === 0
         ? h('p', { className: 'bt-wf-status' }, t('This workflow has no flowchart yet.'))
         : h(GraphCanvas, {
           graph, roster, onCommit, width: canvasWidth, cardHeights,
-          editing: opened?.source === 'own' && editing === true,
+          editing: opened?.source === 'own' && editing === true && !locked,
         })) : null)
 }
 
@@ -627,6 +636,7 @@ function DeleteModal({ workflow, onClose, onConfirm }) {
 }
 
 export function WorkflowsPage({ call, roster }) {
+  const readOnly = typeof roster?.readOnly === 'string' && roster.readOnly.trim() ? roster.readOnly : ''
   const [phase, setPhase] = useState('loading')
   const [pack, setPack] = useState(null)
   const [error, setError] = useState('')
@@ -691,7 +701,7 @@ export function WorkflowsPage({ call, roster }) {
         setPack(settled.pack)
         setPhase(settled.phase)
         setError('')
-        if (made) { setOpened({ source: 'own', id: made.id }); setEditing(true) }
+        if (made) { setOpened({ source: 'own', id: made.id }); setEditing(!readOnly) }
       })
       .catch((failure) => { setError(workflowCallError(failure, t('Could not copy this workflow'))) })
   }
@@ -734,6 +744,9 @@ export function WorkflowsPage({ call, roster }) {
 
   const commit = (graph) => {
     if (!opened || opened.source !== 'own') return
+    // #2176: the channel refuses `workflow/graph` for a read-only window; the page does not
+    // build the request at all.
+    if (readOnly) return
     Promise.resolve(invoke('workflow/graph', { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges }))
       .then((value) => {
         const settled = settleWorkflowRead(value)
