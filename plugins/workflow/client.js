@@ -1381,7 +1381,7 @@ window.__ModuleLoader__.load({
       }))
     }
 
-    function RenameModal({ workflow, onClose, onConfirm }) {
+    function RenameModal({ workflow, onClose, onConfirm, error }) {
       const [name, setName] = useState(workflow?.name ?? '')
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Rename workflow') },
@@ -1390,20 +1390,22 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×'))),
           h('div', { className: 'wf-modal-body' },
             h('label', { className: 'wf-field' }, tr('Name'),
-              h('input', { value: name, onChange: (event) => setName(event.target.value) }))),
+              h('input', { value: name, onChange: (event) => setName(event.target.value) })),
+            error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', onClick: () => onConfirm?.(name) }, tr('Rename')))))
     }
 
-    function DeleteModal({ workflow, onClose, onConfirm }) {
+    function DeleteModal({ workflow, onClose, onConfirm, error }) {
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Delete workflow') },
           h('div', { className: 'wf-modal-header' },
             h('h3', null, tr('Delete workflow'),
               h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onClose }, '×'))),
           h('div', { className: 'wf-modal-body' },
-            h('p', { className: 'wf-hint' }, tr('Are you sure you want to delete "{name}"? This cannot be undone.', { name: workflow?.name ?? '' }))),
+            h('p', { className: 'wf-hint' }, tr('Are you sure you want to delete "{name}"? This cannot be undone.', { name: workflow?.name ?? '' })),
+            error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
@@ -1472,7 +1474,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-dark', disabled: !canAssign, onClick: () => { if (canAssign) onConfirm({ taskId, target }) } }, tr('Assign')))))
     }
 
-    function CreateModal({ roster, templates, onClose, onCreate, onTemplate }) {
+    function CreateModal({ roster, templates, onClose, onCreate, onTemplate, error }) {
       const locals = (roster?.bots ?? []).filter(bot => bot && bot.remote !== true)
       const [name, setName] = useState('')
       const [steps, setSteps] = useState([])
@@ -1511,6 +1513,7 @@ window.__ModuleLoader__.load({
                   h('input', { type: 'checkbox', checked: parallel, onChange: (event) => setParallel(event.target.checked) }),
                   tr('Parallel')),
                 h('button', { type: 'button', className: 'wf-btn', onClick: add }, tr('Add a Bot')))),
+            error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
             h('ol', { className: 'wf-plan' }, steps.map((layer, index) => h('li', { key: index }, layer.map(node => node.name).join(' ‖ '))))),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
@@ -2166,7 +2169,7 @@ window.__ModuleLoader__.load({
       return h('div', { 'data-flybot': 'workflow' },
         h('div', { className: 'wf-sec' },
           h('span', null, tr('Workflows')),
-          h('button', { type: 'button', className: 'wf-new', onClick: () => setCreating(true) }, tr('New'))),
+          h('button', { type: 'button', className: 'wf-new', onClick: () => { setError(''); setCreating(true) } }, tr('New'))),
         workflows.length > 0 ? h('label', { className: 'wf-filter' },
           h('span', null, tr('Filter by Project')),
           h('select', {
@@ -2254,7 +2257,7 @@ window.__ModuleLoader__.load({
           onClose: () => setAssignOpen(false), onConfirm: confirmAssign, onRetry: loadTasks,
         })) : null,
         creating ? portal(h(CreateModal, {
-          roster, templates: pack?.templates, onClose: () => setCreating(false), onCreate: create,
+          roster, templates: pack?.templates, error, onClose: () => setCreating(false), onCreate: create,
           onTemplate: (template) => {
             void call('workflow/create', { template }).then(value => {
               if (value?.ok === false) { setError(value.error ?? ''); return }
@@ -2276,15 +2279,15 @@ window.__ModuleLoader__.load({
           onPointerDown: (event) => event.stopPropagation(),
           onClick: (event) => event.stopPropagation(),
         },
-          h('button', { type: 'button', onClick: () => { setRenaming(rowMenu.workflow); setRowMenu(null) } }, tr('Rename')),
-          h('button', { type: 'button', className: 'wf-danger-text', onClick: () => { setDeleting(rowMenu.workflow); setRowMenu(null) } }, tr('Delete')))) : null,
+          h('button', { type: 'button', onClick: () => { setError(''); setRenaming(rowMenu.workflow); setRowMenu(null) } }, tr('Rename')),
+          h('button', { type: 'button', className: 'wf-danger-text', onClick: () => { setError(''); setDeleting(rowMenu.workflow); setRowMenu(null) } }, tr('Delete')))) : null,
         renaming ? portal(h(RenameModal, {
-          workflow: renaming,
+          workflow: renaming, error,
           onClose: () => setRenaming(null),
           onConfirm: (name) => { void confirmRename(renaming.id, name) },
         })) : null,
         deleting ? portal(h(DeleteModal, {
-          workflow: deleting,
+          workflow: deleting, error,
           onClose: () => setDeleting(null),
           onConfirm: () => { void confirmDelete(deleting.id) },
         })) : null)
