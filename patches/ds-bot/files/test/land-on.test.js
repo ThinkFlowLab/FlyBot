@@ -73,3 +73,18 @@ test('a navigation with no user activation behind it is noted, with where it wen
     clearClientErrors()
   }
 })
+
+// #1306: the landing runs from a 400 ms timer with no click behind it, and the shell throws
+// synchronously on an id its session list does not know (`sessions.retain: unknown session`) —
+// the two uncaught errors in the report. When the caller passes the list, a destination that
+// list does not know is never returned: a fresh part the list has not caught up with falls back
+// to the chat it replaced, and with nothing known there is no destination at all.
+test('#1306: a destination the session list does not know is never handed to the shell', () => {
+  const pending = { byId: {}, phase: 'pending' }
+  assert.equal(landingPart(roster, null, 'chief', { sessions: pending }), undefined, 'a session list that has not loaded: no destination')
+  assert.equal(landingPart(roster, last, 'chief', { stay: true, sessions: pending }), undefined, 'the held chat is not in the list either')
+  const fresh = { ...friend, sessionId: 'friend-2' }
+  const gone = { byId: { 'chief-2': { id: 'chief-2' } } }
+  assert.equal(landingPart({ byId: { friend: fresh, chief } }, last, 'chief', { stay: true, sessions: gone }), 'chief-2', 'a fresh part the list has not caught up with, the chat it replaced gone: the Main Bot')
+  assert.equal(landingPart({ byId: { friend: fresh, chief } }, last, 'chief', { stay: true, sessions }), 'friend-1', 'the fresh part is unknown, the chat it replaced is known: stay on that chat')
+})

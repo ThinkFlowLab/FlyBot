@@ -2509,12 +2509,16 @@ var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team se
 var currentPart = (bot) => bot.sessionId ?? bot.id;
 function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
   const bot = last ? roster.byId[last.botId] : void 0;
-  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
-  if (bot && stay) return last.sessionId;
   const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
-  if (held) return last.sessionId;
   const main = roster.byId[mainId];
-  return main ? currentPart(main) : mainId;
+  const destinations = [
+    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : void 0,
+    bot && stay ? last.sessionId : void 0,
+    held ? last.sessionId : void 0,
+    main ? currentPart(main) : mainId
+  ].filter((id) => id !== void 0);
+  if (sessions === void 0) return destinations[0];
+  return destinations.find((id) => sessions.byId?.[id] !== void 0);
 }
 function reminderPrompts(text2) {
   const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
@@ -22427,8 +22431,9 @@ function apply(ctx) {
     landOn: async (id, last, { stay = false, view = "" } = {}) => {
       if (last) await pull().catch(() => {
       });
-      setPlain(false);
       const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() });
+      if (target === void 0) return noteNavigation("refused", id, last?.sessionId);
+      setPlain(false);
       noteNavigation("landOn", target, last?.sessionId);
       expected = target;
       ctx.uiWorkspace.openSession(target);

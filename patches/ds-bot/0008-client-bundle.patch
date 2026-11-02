@@ -1964,7 +1964,7 @@ diff --git a/client.js b/client.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
  }
-@@ -1483,9 +1483,18 @@ function relativeShort(ms) {
+@@ -1483,9 +1483,22 @@ function relativeShort(ms) {
  var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
  var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
  var currentPart = (bot) => bot.sessionId ?? bot.id;
@@ -1973,12 +1973,16 @@ diff --git a/client.js b/client.js
 -  const batch = /^reminders_json: (.*)$/m.exec(text);
 +function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
 +  const bot = last ? roster.byId[last.botId] : void 0;
-+  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
-+  if (bot && stay) return last.sessionId;
 +  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
-+  if (held) return last.sessionId;
 +  const main = roster.byId[mainId];
-+  return main ? currentPart(main) : mainId;
++  const destinations = [
++    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : void 0,
++    bot && stay ? last.sessionId : void 0,
++    held ? last.sessionId : void 0,
++    main ? currentPart(main) : mainId
++  ].filter((id) => id !== void 0);
++  if (sessions === void 0) return destinations[0];
++  return destinations.find((id) => sessions.byId?.[id] !== void 0);
 +}
 +function reminderPrompts(text2) {
 +  const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
@@ -24834,7 +24838,7 @@ diff --git a/client.js b/client.js
        if (isAgentSessionId(id)) return actions.openAgentSession(id);
        ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
        setPlain(false);
-@@ -13653,12 +13653,12 @@ function apply(ctx) {
+@@ -13653,12 +13653,13 @@ function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -24843,9 +24847,10 @@ diff --git a/client.js b/client.js
        if (last) await pull().catch(() => {
        });
 -      const bot = last ? roster.getSnapshot().byId[last.botId] : void 0;
++      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() });
++      if (target === void 0) return noteNavigation("refused", id, last?.sessionId);
        setPlain(false);
 -      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id);
-+      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() });
 +      noteNavigation("landOn", target, last?.sessionId);
        expected = target;
        ctx.uiWorkspace.openSession(target);

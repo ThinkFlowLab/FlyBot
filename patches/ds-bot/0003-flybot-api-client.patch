@@ -1646,7 +1646,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,11 +409,11 @@ export function apply(ctx) {
+@@ -409,11 +409,14 @@ export function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1655,9 +1655,12 @@ diff --git a/src/client/index.js b/src/client/index.js
 -      const bot = last ? roster.getSnapshot().byId[last.botId] : undefined
 +    landOn: async (id, last, { stay = false, view = '' } = {}) => {
 +      if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
++      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() })
++      // #1306: no destination the session list knows. The shell would throw, and this call comes from
++      // a 400 ms timer with no click behind it; leaving the view where it is keeps the page quiet.
++      if (target === undefined) return noteNavigation('refused', id, last?.sessionId)
        setPlain(false)
 -      const target = bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : partFor(id)
-+      const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() })
 +      noteNavigation('landOn', target, last?.sessionId)
        expected = target
        ctx.uiWorkspace.openSession(target)
