@@ -1260,3 +1260,22 @@ test('Project dispatch uses its own Chief without a legacy main and never borrow
     assert.equal(sent.length, 1, 'a missing Project Chief must not fall back to an unrelated private main')
   } finally { await started.service.dispose() }
 })
+
+test('native Task dispatch retains structured handoff/inbox data and checks its exact message before sending', async () => {
+  let lifecycle
+  const sent = [], checked = []
+  const fb = { bot: { list: () => roster, create: async () => 'native-worker', remove: async () => true, send: async body => { sent.push(body); return { ok: true } } },
+    projects: { execution: { connectPools(value) { lifecycle = value; return () => {} }, checkInput: async body => { checked.push(body); return { checked: true } } } },
+    readOnly: () => false, api: { handle() { return () => {} } }, tools: { register() { return () => {} } }, warn() {} }
+  const plugin = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  try {
+    await lifecycle.dispatch({ botId: 'native-worker', taskId: 't', brief: 'Continue the same task', inputs: { handoff: { id: 'return-receipt', reason: 'Fix the boundary' }, taskInbox: { batchId: 'batch', inputs: [{ id: 'input-one' }] } }, outputs: [{ name: 'handoff' }] })
+    assert.match(sent[0].text, /"id":"return-receipt"/)
+    assert.match(sent[0].text, /"batchId":"batch"/)
+    assert.match(sent[0].text, /"id":"input-one"/)
+    assert.equal(checked[0].text, sent[0].text)
+    fb.projects.execution.checkInput = async () => { throw new Error('Context budget exceeded') }
+    await assert.rejects(lifecycle.dispatch({ botId: 'native-worker', taskId: 't', brief: 'Too much input' }), /budget/)
+    assert.equal(sent.length, 1)
+  } finally { await plugin.dispose() }
+})

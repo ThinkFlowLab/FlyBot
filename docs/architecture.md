@@ -170,3 +170,6 @@ integration inputs. Current manager authority, released execution proof, exact
 workspace/generation snapshot and Effect-backed admission fence which parents the
 host may retain. Sealing preserves the resolved staged tree and trusted ancestry;
 it does not grant SDK shared-ref access, replace a PR or substitute for verification.
+
+
+The [shared context contract](subsystems/project-context.md) separates fixed role rules, retrieved memory, working summaries and original sources, with configured model/Harness envelopes and original native/SDK lifecycle management.

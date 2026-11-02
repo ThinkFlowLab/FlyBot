@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { captureProcessScope, priorScopeExited } from './project-process-proof.js'
 import { fileDigest } from './project-resource-workspaces.js'
 import { ownEntry, setEntry } from './store.js'
+import { stageRoleSummary } from './project-context-memory.js'
 const template = JSON.parse(readFileSync(new URL('./project-chief-schedule.json', import.meta.url), 'utf8'))
 const refuse = message => Object.assign(new Error(message), { code: 'bot/chief' })
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -161,6 +162,16 @@ export function createProjectChiefControl(rt) {
     }
     rt.projectInputs?.commitChief(actor, { afterDecision: true })
     rt.projectInputs?.finishChiefHandoff(task.id, saved.handoff?.id, audit.id)
+    try {
+      const summary = stageRoleSummary(rt.state, { task, role: 'chief', receiptId: audit.id,
+        claim: { id: audit.id, projectId: task.projectId, taskId: task.id, attemptId: task.deliveryAttemptId ?? saved.attemptId, generation: task.collaboration?.generation ?? 0, decision: { action: decision.action, intentHash: audit.snapshotSha256 } },
+        summary: { completed: `Chief ${decision.action}: ${reason}`, next: task.collaboration?.status === 'closed' ? 'Task closed by Chief after the existing evidence/authority gates' : task.chiefQuestion ? 'Await the addressed personal agent or current user; Chief retains arbitration' : `Follow the current ${task.collaboration?.status ?? task.status} state and original decision` } })
+      audit.workSummaryRef = { id: summary.row.id, revision: summary.row.revision, sha256: summary.row.sha256 }
+    } catch (error) {
+      // Summary failure is visible and retains its last valid version; it must
+      // not erase an already applied decision or manufacture a new Session.
+      audit.contextIssue = { code: error.code ?? 'bot/context-resume', reason: error.message, retainedPrevious: true }
+    }
     audit.status = 'applied'; audit.finishedAt = Date.now(); await rt.save()
     return audit
     } finally { rt.projectInputs?.releaseChief(actor) }

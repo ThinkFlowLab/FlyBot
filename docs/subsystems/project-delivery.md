@@ -472,3 +472,10 @@ they still enforce current execution permission/resource availability. Preparati
 failure clears an unused definition pin only if no Session/worker exists. Workspace
 drafts, original prepared contexts and Attempt evidence remain untouched. SDK resume
 and unknown-exit recovery follow [the Harness contract](project-harness.md).
+
+
+#2177 builds role context with the actual resource/model budget, mandatory Project
+and current Task constraints, the role's own working summary, and bounded relevant
+memory. Fixed persona/skills remain pinned; summary/memory data cannot alter rights.
+Task-role summary references and input-usage metadata survive returns. Native and
+SDK input preflights fail before inference if required input cannot fit.

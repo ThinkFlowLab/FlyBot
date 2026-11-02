@@ -8,6 +8,7 @@ import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
 import { fileDigest } from './project-resource-workspaces.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
 import { ownEntry, setEntry } from './store.js'
+import { checkContextPrompt, resolveContextBudget } from './project-context-budget.js'
 import { taskSession, backendBindingKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/harness' })
 const sha = text => createHash('sha256').update(text).digest('hex')
@@ -20,6 +21,7 @@ export function harnessCapabilities(harness) {
   return { version: 'project-harness-capabilities/v1', harness, sdkVersion: VERSIONS[harness] ?? null,
     taskRoleResume: harness !== 'flybot', input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
     cancellation: harness === 'flybot' ? 'native-bot-stop' : 'abort-and-worker-stop',
+    toolOutputBudget: harness === 'codex' ? 'configured-cli-history-limit' : harness === 'flybot' ? 'scoped-context-tools' : 'sdk-runtime-managed',
     exitConfirmation: harness === 'flybot' ? 'native-bot-removal' : 'stop-ack-and-process-exit', crossHarnessResume: false }
 }
 
@@ -88,6 +90,7 @@ export function createProjectHarness(rt) {
     const identity = { harness: session.execution.harness, resourceId: session.resourceLease.resourceId, principalId: selected.principalId, cwd: workspace.path, model: session.execution.model ?? selected.selected.model, profile: selected.selected }
     const bindingKey = chief?.bindingKey ?? backendBindingKey({ ...identity, definition: definitionKey })
     const previous = logical ? resumableBinding(rt.state, logical, bindingKey, { legacyKey: backendBindingKey({ ...identity, definition: sha(spec.prompt ?? '') }), definitionKey }) : null
+    const contextBudget = await resolveContextBudget(rt, { execution: session.execution }, { projectId: session.projectId, resourceId: session.resourceLease.resourceId, model: identity.model })
     const id = `sdk-worker-${randomUUID()}`
     // Verification may write fixtures, but never the sealed review checkout.
     const scratchDirectory = chief ? null : join(selected.resource.root, `.flybot-scratch-${id}`)
@@ -118,7 +121,7 @@ export function createProjectHarness(rt) {
     }
     row.eventLog = join(directory, `${evidenceName}-sdk.jsonl`)
     const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath], cwd: workspace.path })
-    const control = { process, chief, resumeSessionId: chief?.resumeSessionId ?? previous?.sessionId, continuedPolicyHash: previous?.policySha256, archivePath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
+    const control = { process, chief, contextBudget, resumeSessionId: chief?.resumeSessionId ?? previous?.sessionId, continuedPolicyHash: previous?.policySha256, archivePath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
     active.set(id, control)
     let readyResolve, readyReject
     control.handshake = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject })
@@ -283,6 +286,35 @@ export function createProjectHarness(rt) {
     control.idleInputWake = operation
     try { return await operation } finally { if (control.idleInputWake === operation) delete control.idleInputWake }
   }
+  async function checkNativeInput({ botId, taskId, text }) {
+    const bot = rt.botOf?.(botId), attempt = ownEntry(rt.state.projectAttempts ?? {}, bot?.attemptId)
+    if (!attempt) return null // Ordinary legacy Workflow carriers keep their original seam.
+    const session = Object.values(attempt.roleSessions ?? {}).find(row => row.botId === botId)
+    if (attempt.taskId !== taskId || !session || session.projectId !== attempt.projectId || session.taskId !== taskId) throw refuse('Native input Session scope changed')
+    if (!session.context?.budget) return null // Pre-migration snapshots have no declared budget.
+    const task = ownEntry(rt.state.tasks, taskId), claim = task?.collaboration?.claim
+    if (!task || task.projectId !== attempt.projectId) throw refuse('Native Task scope changed')
+    const current = () => rt.botOf(botId) === bot && attempt.status === 'running' && attempt.roleSessions[session.role] === session && session.status === 'bound' &&
+      (!session.poolClaimId || task.collaboration.claim === claim && claim?.id === session.poolClaimId && claim.botId === botId && claim.status === 'active' && claim.generation === session.generation && task.collaboration.generation === claim.generation)
+    if (!current()) throw refuse('Native input was superseded')
+    const actor = { memberId: task.collaboration?.initiatedBy ?? task.requesterId ?? rt.readProject(attempt.projectId).ownerUserId }
+    await rt.projectDelegations?.background(actor.memberId, task.collaboration?.sourceSessionId)
+    rt.requireProjectAccess(actor, attempt.projectId, 'task-write', task)
+    rt.projects.requireActive(attempt.projectId)
+    if (!current()) throw refuse('Native input was superseded during authority validation')
+    if (session.resourceLease) rt.projectResources.requireBinding(attempt.projectId, session.resourceLease)
+    const usage = checkContextPrompt(`${bot.systemPrompt ?? bot.instructions ?? ''}\n\n${text}`, session.context.budget)
+    session.inputUsage = usage; session.inputValidatedAt = Date.now()
+    const before = rt.savesQueued?.(), saved = rt.save(), queued = rt.savesQueued?.()
+    await saved
+    if (typeof before === 'number' && queued <= before) throw refuse('Native input did not commit a state snapshot')
+    const lease = session.resourceLease && ownEntry(rt.state.projectResourceLeases ?? {}, session.resourceLease.id)
+    if (!current() || session.resourceLease && (lease?.generation !== session.resourceLease.generation || lease.status === 'released')) throw refuse('Native input was superseded before delivery')
+    rt.requireProjectAccess(actor, attempt.projectId, 'task-write', task)
+    rt.projects.requireActive(attempt.projectId)
+    if (session.resourceLease) rt.projectResources.requireBinding(attempt.projectId, session.resourceLease)
+    return { checked: true, usage }
+  }
   async function dispatch(step) {
     const row = ownEntry(workers(), step.botId), control = active.get(step.botId)
     if (!row) return null
@@ -294,6 +326,7 @@ export function createProjectHarness(rt) {
     const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
     const workspace = rt.state.projectAttempts?.[row.attemptId]?.workspaces?.[row.role]
     const writableRoots = row.role === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
+    row.inputUsage = checkContextPrompt(prompt, control.contextBudget)
     row.status = 'running'; row.executionStartedAt = Date.now()
     try {
       const before = rt.savesQueued?.()
@@ -309,7 +342,7 @@ export function createProjectHarness(rt) {
       throw error
     }
     control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
-      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || row.role !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1 }, prompt }) + '\n')
+      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || row.role !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1, toolOutputTokens: control.contextBudget.limits.toolOutputTokens }, prompt }) + '\n')
     if (control.inputBatch?.inputs.length && control.session.poolClaimId) {
       const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim
       if (claim?.id === control.session.poolClaimId) await rt.projectInputs?.transport(task.id, claim, control.inputBatch.batchId, { kind: 'adapter-written', sha256: sha(JSON.stringify(control.inputBatch)) })
@@ -395,7 +428,7 @@ export function createProjectHarness(rt) {
     }
     delete row.pending; row.status = 'running'; await rt.save(); return { sent: true }
   }
-  return { profile, spawn, dispatch, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
+  return { profile, spawn, dispatch, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
     capabilities: harnessCapabilities, owns: id => Boolean(ownEntry(workers(), id)), hasController: id => active.has(id) && !active.get(id).closed, versions: VERSIONS }
 }
 export function install(rt) { rt.projectHarness = createProjectHarness(rt) }

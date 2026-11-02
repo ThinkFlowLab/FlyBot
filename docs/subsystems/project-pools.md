@@ -155,3 +155,11 @@ exits; selecting another resource cannot bypass them. Chief may still observe an
 arbitrate a blocked Task. Unknown occupancy remains visible and pending; a timeout
 is not release evidence. Native exit/restoration and transaction-wide recovery still
 follow the execution/storage acceptance work, not fabricated from these view states.
+
+
+#2177 commits the source role's bounded working-summary reference with its handoff.
+Failed uncommitted offers preserve the previous valid summary. Optional bounded
+experience notes remain inference/unresolved/conflict and cannot overwrite human
+facts; bad optional notes record memoryIssue rather than cancelling valid work.
+Trusted role.memory.record uses the active claim and original Effects durability;
+it neither transfers initiative nor creates a Task. See [context](project-context.md).

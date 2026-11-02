@@ -155,3 +155,10 @@ existing Effects service with the decision; native watch authority is revalidate
 execution. Safe suggestions require explicit user publication, while watch answers
 use ordinary Task input admission. Chief retains Task initiative and decides whether
 the answer resolves the block. See [consultation protocol](project-agents.md).
+
+
+#2177 snapshots meaningful Chief decisions into separate scoped working topics on
+the existing persistent public carrier. Summaries retain original Task constraints,
+uncertainty and source evidence; later turns retrieve a bounded relevant subset.
+A summary failure records contextIssue and preserves the previous summary without
+erasing a decision already applied through the original gates. No new timer is added.

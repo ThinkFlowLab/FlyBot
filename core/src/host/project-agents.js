@@ -5,8 +5,10 @@ import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
 import { textOf } from './text.js'
 import { resolveAgentSkills } from './project-agent-skills.js'
-import { roleContext, readContextArchive, contextHash, KNOWLEDGE_CHECKPOINT_VERSION } from './project-role-context.js'
+import { buildProjectContext, contextHash, KNOWLEDGE_CHECKPOINT_VERSION } from './project-role-context.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
+import { exchangeProjectContext, readProjectAgentContext } from './project-agent-context.js'
+import { stagePublicRoleMemory, roleMemoryView } from './project-context-memory.js'
 import { createProjectConsultations } from './project-consultations.js'
 import { createProjectRooms } from './project-rooms.js'
 import { deliveryGraph } from './project-delivery-template.js'
@@ -45,33 +47,20 @@ export function createProjectAgents(rt) {
     const chief = ownEntry(agents(), `public-${projectId}`)
     return chief && rt.memoryDigest ? rt.memoryDigest(chief.botId) : { head: '', topics: [] }
   }
-  async function contextExchange(agentId, delegationId, { contextRequests = [], memoryUpdates = [], memoryRequests = [] }, snapshot) {
-    const agent = ownEntry(agents(), agentId)
-    if (!agent || agent.id !== `public-${agent.projectId}` || agent.visibility !== 'public' || !isDelegationActive(agentId, delegationId)) throw refuse('Chief context delegation is unavailable')
-    const authority = await authorize(rt.botOf(agent.botId))
-    if (authority.delegation.readOnly && memoryUpdates.length) throw refuse('Read-only conversations cannot publish memory')
-    if (snapshot?.archive?.projectId !== agent.projectId || snapshot.archive.role !== 'chief') throw refuse('Context belongs to another Project or role')
-    if (![contextRequests, memoryUpdates, memoryRequests].every(rows => Array.isArray(rows) && rows.length <= 4)) throw refuse('Chief context operations exceed their budget')
-    const reads = contextRequests.length ? readContextArchive(snapshot, contextRequests) : []
-    const memories = memoryRequests.map(request => {
-      if (!rt.botMemoryRecall) throw refuse('Bot memory is unavailable')
-      return rt.botMemoryRecall(agent.botId, { topic: request.topic, query: request.query })
-    })
-    const writes = []
-    for (const request of memoryUpdates) {
-      if (!rt.botMemoryRemember) throw refuse('Bot memory is unavailable')
-      const result = await rt.botMemoryRemember(agent.botId, { text: request.text, topic: request.topic, replace: request.replace }, { reference: `Project ${agent.projectId}; Chief request ${agent.lastRequest.id}` })
-      writes.push({ changed: result.changed, message: result.message })
-    }
-    return { reads, memories, writes }
+  async function contextExchange(agentId, delegationId, requests, snapshot) {
+    return exchangeProjectContext(rt, agentId, delegationId, requests, snapshot, { authorize, isDelegationActive })
   }
   function memoryFor(projectId, role, refs = []) {
-    return refs.map(id => {
+    const explicit = refs.map(id => {
       const row = ownEntry(roleMemory(), id)
       if (!row || row.projectId !== projectId || row.role !== role) throw refuse('Role memory reference belongs to another scope or is missing')
+      if (row.kind === 'work-summary') throw refuse('Task summaries cannot replace long-term role memory')
       const { versions: _versions, ...current } = row
       return structuredClone(current)
     })
+    const learned = Object.values(roleMemory()).filter(row => row.projectId === projectId && row.role === role && row.kind === 'learned-experience' && row.status !== 'archived' && !refs.includes(row.id))
+      .map(({ versions: _history, ...row }) => structuredClone(row))
+    return [...explicit, ...learned]
   }
   const delegations = new Map()
   const rooms = createProjectRooms(rt, { send: (body, actor) => serial(() => send(body, actor)), stop: stopAgent })
@@ -174,15 +163,7 @@ export function createProjectAgents(rt) {
     return record
   }
   async function context(bot, body = {}) {
-    const { agent, actor, delegation } = await authorize(bot)
-    if (body.contextRequests || body.memoryRequests || body.memoryUpdates) return contextExchange(agent.id, delegation.id, body, agent.lastRequest.context)
-    const detail = await rt.projectEndpoint('project-detail', { id: agent.projectId }, actor)
-    return { permissionMode: delegation.readOnly ? 'conversation' : actor.watchGrantId ? 'watch' : 'safe', project: detail.project, tasks: detail.tasks, runs: detail.runs,
-      knowledge: (ownEntry(state.projectKnowledge ?? {}, agent.projectId) ?? []).slice(-10), contextSources: agent.lastRequest?.context?.sources ?? null, retrieval: 'Use contextRequests on this tool for the complete immutable current snapshot; omitted records remain retained.',
-      publicMessages: (agent.roomId ? rooms.requireRoom(agent.projectId, agent.roomId, actor).messages : ownEntry(transcripts(), `public-${agent.projectId}`) ?? []).slice(-10).map(row => ({ ...row, text: row.text.slice(0, 2000) })),
-      ...(agent.visibility === 'public' && !agent.roomId ? { chiefMemory: chiefMemory(agent.projectId) } : {}),
-      ...(agent.visibility === 'private' ? { privateMemory: (ownEntry(privateNotes(), agent.id) ?? []).slice(-20), privateConversation: logOf(agent.id).slice(-10).map(row => ({ ...row, text: row.text.slice(0, 2000) })) } : {}),
-      identity: { visibility: agent.visibility, projectId: agent.projectId, memberId: actor.memberId } }
+    return readProjectAgentContext(rt, bot, body, { authorize, contextExchange, privateNotes, logOf, rooms, chiefMemory })
   }
   async function writeMemory(agent, actor, text) {
     if (agent.visibility !== 'private' || agent.memberId !== actor.memberId) throw refuse('Private memory is not yours')
@@ -192,7 +173,7 @@ export function createProjectAgents(rt) {
     if (!note) throw refuse('A private note needs text')
     const row = { id: randomUUID(), text: note, at: Date.now(), memberId: actor.memberId }
     const rows = ownEntry(privateNotes(), agent.id) ?? []
-    setEntry(privateNotes(), agent.id, [...rows, row].slice(-100))
+    setEntry(privateNotes(), agent.id, [...rows, row])
     await rt.save()
     return { saved: true, id: row.id }
   }
@@ -260,7 +241,7 @@ export function createProjectAgents(rt) {
       const detail = await rt.projectEndpoint('project-detail', { id: agent.projectId }, actor)
       const projectFacts = { tasks: detail.tasks.slice(-20).map(({ id, title, status, criteria }) => ({ id, title, status, criteria: clean(criteria, 1000) })),
         runs: detail.runs.slice(-10).map(({ id, taskId, status }) => ({ id, taskId, status })), publicMessages: logOf(agent.id).slice(-8).map(row => ({ kind: row.kind, text: row.text.slice(0, 1500) })) }
-      const snapshot = roleContext({ retrieval: true, projectId: agent.projectId, role, revision: definitionSet(agent.projectId).revision, projectFacts: { ...projectFacts, chiefMemory: role === 'chief' && !room ? chiefMemory(agent.projectId) : undefined },
+      const snapshot = await buildProjectContext(rt, { retrieval: true, projectId: agent.projectId, role, revision: definitionSet(agent.projectId).revision, projectFacts: { ...projectFacts, chiefMemory: role === 'chief' && !room ? chiefMemory(agent.projectId) : undefined },
         definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, memory: memoryFor(agent.projectId, role, definition.memoryRefs),
         knowledge: ownEntry(state.projectKnowledge ?? {}, agent.projectId) ?? [], repository: await rt.projectDelivery?.repositoryContext(agent.projectId) ?? [] })
       agent.nextContext = snapshot
@@ -300,7 +281,7 @@ export function createProjectAgents(rt) {
     const set = definitionSet(projectId), definition = structuredClone(set.roles.find(row => row.role === 'chief'))
     const project = rt.readProject(projectId)
     const policy = rt.config.projectRepositories?.[project.repository] ? await rt.projectDelivery.repositoryRolePolicy(projectId, undefined, 'chief') : null
-    const snapshot = roleContext({ retrieval: true, projectId, role: 'chief', revision: set.revision, definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, policy, memory: memoryFor(projectId, 'chief', definition.memoryRefs), knowledge: ownEntry(state.projectKnowledge ?? {}, projectId) ?? [], projectFacts: { ...projectFacts, chiefMemory: chiefMemory(projectId) }, repository: [] })
+    const snapshot = await buildProjectContext(rt, { retrieval: true, projectId, role: 'chief', revision: set.revision, definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, policy, memory: memoryFor(projectId, 'chief', definition.memoryRefs), knowledge: ownEntry(state.projectKnowledge ?? {}, projectId) ?? [], projectFacts: { ...projectFacts, chiefMemory: chiefMemory(projectId) }, repository: [] })
     const carrierBefore = rt.botOf(agent.botId), priorPrompt = { instructions: carrierBefore.instructions, systemPrompt: carrierBefore.systemPrompt }
     const fullPrompt = prompt + (policy ? '\n\n' + policy.text : '')
     const delegation = { id: randomUUID(), exchangeId: randomUUID(), actor: { ...actor }, definitionRevision: set.revision, started: false, revoked: false, chiefJob: { runId, prompt: fullPrompt }, onChiefResult: onResult }
@@ -350,7 +331,7 @@ export function createProjectAgents(rt) {
     if (prior) { if (prior.text !== text) throw refuse('Conversation requestId was reused with different text'); return { handoff: structuredClone(prior), consultation: consultations.view(parent, prior), already: true } }
     const definitions = definitionSet(parent.projectId), definition = structuredClone(definitions.roles.find(row => row.role === 'chief'))
     const detail = await rt.projectEndpoint('project-detail', { id: parent.projectId }, actor)
-    const snapshot = roleContext({ retrieval: true, projectId: parent.projectId, role: 'chief', revision: definitions.revision, definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, memory: memoryFor(parent.projectId, 'chief', definition.memoryRefs), knowledge: ownEntry(state.projectKnowledge ?? {}, parent.projectId) ?? [], projectFacts: { chiefMemory: chiefMemory(parent.projectId), tasks: detail.tasks.slice(-20).map(({ id, title, status, criteria }) => ({ id, title, status, criteria: clean(criteria, 1000) })), runs: detail.runs.slice(-10).map(({ id, taskId, status }) => ({ id, taskId, status })) }, repository: await rt.projectDelivery.repositoryContext(parent.projectId) })
+    const snapshot = await buildProjectContext(rt, { retrieval: true, projectId: parent.projectId, role: 'chief', revision: definitions.revision, definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, memory: memoryFor(parent.projectId, 'chief', definition.memoryRefs), knowledge: ownEntry(state.projectKnowledge ?? {}, parent.projectId) ?? [], projectFacts: { chiefMemory: chiefMemory(parent.projectId), tasks: detail.tasks.slice(-20).map(({ id, title, status, criteria }) => ({ id, title, status, criteria: clean(criteria, 1000) })), runs: detail.runs.slice(-10).map(({ id, taskId, status }) => ({ id, taskId, status })) }, repository: await rt.projectDelivery.repositoryContext(parent.projectId) })
     const id = `chief-conversation-${randomUUID()}`
     const instructions = 'You are the Project Chief answering an ordinary question through a private conversation handoff. Answer or ask for clarification; do not create/propose/run Tasks, publish decisions, merge, release or change code. This temporary Session receives only this explicit question and shared Project facts; it must not read other private history. Use project_agent_github for actual repository facts. Return the answer to the requesting conversation.\n\n' + snapshot.text
     const bot = await rt.createBot({ name: `Chief question ${id.slice(-12)}`, role: 'Project Chief conversation', instructions, systemPrompt: instructions, hidden: true, ownerId: actor.memberId, ...(definition.model ? { model: definition.model } : {}) })
@@ -481,17 +462,10 @@ export function createProjectAgents(rt) {
     if (endpoint === 'project-role-memory-write') {
       rt.requireProjectAccess(actor, projectId, 'configure')
       if (!ROLES.includes(body.role)) throw refuse('Unknown public agent role')
-      const text = clean(body.text, 4000)
-      const reference = clean(body.source?.reference, 300)
-      if (!text || !reference || body.source?.kind !== 'human') throw refuse('Role memory needs explicit human publication and source')
-      const previous = body.memoryId ? ownEntry(roleMemory(), body.memoryId) : null
-      if (body.memoryId && (!previous || previous.projectId !== projectId || previous.role !== body.role)) throw refuse('Role memory belongs to another scope')
-      const row = { id: previous?.id ?? `role-memory-${randomUUID()}`, projectId, role: body.role, text, revision: (previous?.revision ?? 0) + 1,
-        source: { kind: 'human', reference, memberId: actor.memberId }, at: Date.now(),
-        versions: previous ? [...(previous.versions ?? []), { revision: previous.revision, text: previous.text, source: previous.source, at: previous.at }] : [] }
-      setEntry(roleMemory(), row.id, row)
-      await rt.save()
-      return { memory: structuredClone(row) }
+      if (rt.readOnly?.() !== undefined) throw refuse('Role memory is read-only')
+      const result = stagePublicRoleMemory(state, { projectId, body, actor, idFactory: () => `role-memory-${randomUUID()}` })
+      if (result.changed) await rt.save()
+      return { memory: roleMemoryView(result.row, { versions: true, offset: Math.max(0, (result.row.versions?.length ?? 0) - 20) }), already: !result.changed }
     }
     if (endpoint === 'project-knowledge-write') {
       rt.requireProjectAccess(actor, projectId, 'create')
@@ -520,15 +494,29 @@ export function createProjectAgents(rt) {
       const agent = await serial(() => ensure(projectId, actor, body.visibility === 'public' ? 'public' : 'private'))
       return { agent: structuredClone(agent), live: liveFor(agent), messages: structuredClone(logOf(agent.id)), busy: delegations.has(agent.id) || Boolean(rt.activityView?.()[agent.botId]) }
     }
+    if (body.roleMemoryId !== undefined) {
+      const row = ownEntry(roleMemory(), body.roleMemoryId)
+      if (!row || row.projectId !== projectId) throw refuse('Role memory belongs to another scope')
+      return { memory: roleMemoryView(row, { versions: true, offset: body.versionOffset ?? 0, limit: body.versionLimit ?? 20 }) }
+    }
+    const roleRows = Object.values(roleMemory()).filter(row => row.projectId === projectId)
+    const roleLimit = body.roleMemoryLimit ?? 50, roleOffset = body.roleMemoryOffset ?? Math.max(0, roleRows.length - roleLimit)
+    const privateLimit = body.privateMemoryLimit ?? 100
+    if (![roleLimit, privateLimit].every(value => Number.isSafeInteger(value) && value >= 1 && value <= 100) || !Number.isSafeInteger(roleOffset) || roleOffset < 0) throw refuse('Invalid memory page')
     const publicAgent = await serial(() => ensure(projectId, actor, 'public'))
     if (body.view === 'summary') return { projectId: project.id, public: { id: publicAgent.id, botId: publicAgent.botId, visibility: 'public' } }
     const mine = await serial(() => ensure(projectId, actor))
+    const notes = ownEntry(privateNotes(), mine.id) ?? []
+    const privateOffset = body.privateMemoryOffset ?? Math.max(0, notes.length - privateLimit)
+    if (!Number.isSafeInteger(privateOffset) || privateOffset < 0) throw refuse('Invalid private memory page')
     return { projectId: project.id, delegation: rt.projectDelegations?.view(mine.id) ?? { mode: 'safe', grant: null }, definitions: structuredClone(definitionSet(projectId)),
       public: { id: publicAgent.id, botId: publicAgent.botId, visibility: 'public' }, mine: structuredClone(mine),
-      privateMemory: structuredClone(ownEntry(privateNotes(), mine.id) ?? []),
+      privateMemory: structuredClone(notes.slice(privateOffset, privateOffset + privateLimit)),
+      privateMemoryHistory: { total: notes.length, retained: true, offset: privateOffset, nextOffset: privateOffset + privateLimit < notes.length ? privateOffset + privateLimit : null },
       proposals: Object.values(proposals()).filter(row => row.projectId === projectId && row.memberId === actor.memberId).map(row => structuredClone(row)),
       chiefMemory: body.memoryTopic !== undefined && rt.botMemoryRecall ? rt.botMemoryRecall(publicAgent.botId, { topic: body.memoryTopic }) : chiefMemory(projectId),
-      roleMemory: Object.values(roleMemory()).filter(row => row.projectId === projectId).map(row => structuredClone(row)),
+      roleMemory: roleRows.slice(roleOffset, roleOffset + roleLimit).map(row => roleMemoryView(row)),
+      roleMemoryHistory: { total: roleRows.length, retained: true, offset: roleOffset, nextOffset: roleOffset + roleLimit < roleRows.length ? roleOffset + roleLimit : null },
       knowledge: structuredClone(ownEntry(state.projectKnowledge ?? {}, projectId) ?? []) }
   }
   async function action(bot, body) {
@@ -744,7 +732,7 @@ export function install(rt) {
   })
 
   const methods = [
-    ['project_agent_context', { contextRequests: { type: 'array', items: { type: 'object', additionalProperties: true } }, memoryRequests: { type: 'array', items: { type: 'object', additionalProperties: true } }, memoryUpdates: { type: 'array', items: { type: 'object', additionalProperties: true } } }, 'Read scoped facts or retrieve exact context sources. Public Chief may read its own memory topics and remember short durable facts; never other Bots or team memory.', async (args, bot) => rt.projectAgents.context(bot, args)],
+    ['project_agent_context', { sourceRequest: { type: 'object', additionalProperties: true }, contextRequests: { type: 'array', items: { type: 'object', additionalProperties: true } }, memoryRequests: { type: 'array', items: { type: 'object', additionalProperties: true } }, memoryUpdates: { type: 'array', items: { type: 'object', additionalProperties: true } } }, 'Read scoped facts or retrieve exact context sources. Public Chief may read its own memory topics and remember short durable facts; never other Bots or team memory.', async (args, bot) => rt.projectAgents.context(bot, args)],
     ['project_agent_memory', { text: { type: 'string', required: true } }, 'Save a private user/project note; never publish it.', async (args, bot) => rt.projectAgents.memory(bot, args.text)],
     ['project_agent_task', { title: { type: 'string', required: true }, criteria: { type: 'string' }, note: { type: 'string' }, projectTaskKind: { type: 'string', description: 'code, decision or release; ordinary questions are conversation handoffs' } }, 'Propose a Task privately, or create from the current public request.', async (args, bot) => rt.projectAgents.task(bot, args)],
     ['project_agent_suggest_closure', { reason: { type: 'string', required: true } }, 'Recommend Project closure without creating a Task or granting closure rights. The Owner must personally double-confirm.', async (args, bot) => rt.projectAgents.suggestClosure(bot, args)],

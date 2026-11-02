@@ -252,3 +252,12 @@ This stage has subprocess/SDK-adapter regression coverage, not a new real-model 
 Native Task-role continuation, unified public receipts/events (#2185), transactionally
 committed Effects (#2182), parent resumption (#2179), and final real-task validation
 remain explicit acceptance work. No second executor or scheduler is introduced.
+
+
+#2177 resolves the actual selected resource/profile's context budget before dispatch,
+checks full SDK input before its durable-start barrier, and records inputUsage.
+Native Workflow checks its exact input text through optional execution.checkInput
+before send, with current claim/role/lease/authority and post-save fences. Codex's
+tool history limit is configured separately from SDK compaction; Claude generic
+output control remains runtime-managed. These limits do not claim precise current
+SDK-window occupancy from aggregate usage. See [context contract](project-context.md).

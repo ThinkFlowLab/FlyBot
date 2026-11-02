@@ -134,3 +134,10 @@ This prevents generated context from introducing trailing-whitespace findings.
 Patch normalization emits empty context lines without trailing spaces. Its parser
 accepts Git's suppress-blank-empty form and distinguishes an empty final context
 line from the patch terminator by the hunk's remaining line counts.
+
+
+Project own-memory adapters accept bounded offset/limit pages while retaining their
+original own-Bot scope; model-supplied team/Bot names cannot retarget memory. The
+Workflow type adds optional exact native-input preflight; source patches remain
+generated from core. See [Project context](project-context.md) for source/cursor,
+role-memory and model/Harness budgeting semantics.

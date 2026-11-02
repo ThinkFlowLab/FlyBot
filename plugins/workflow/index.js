@@ -91,12 +91,15 @@ export function apply(ctx, config = {}) {
       if (!from || typeof fb.bot.send !== 'function') return { ok: false, code: 'no-sender' }
       const lines = [`Task ${step.taskId}: ${step.brief}`]
       for (const [name, value] of Object.entries(step.inputs ?? {})) {
-        if (value) lines.push(`Input ${name}: ${value}`)
+        if (value !== undefined && value !== null) lines.push(`Input ${name}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
       }
       const outputs = (step.outputs ?? []).map(port => port.name).filter(Boolean)
       if (outputs.length > 0) lines.push(`When you finish, add one line per output: OUTPUT <name>: <value> (${outputs.join(', ')}).`)
       lines.push('Reply with the result of this step.')
-      return fb.bot.send({ from, to: step.botId, text: lines.join('\n'), role: 'request' })
+      const text = lines.join('\n')
+      const checked = await fb.projects?.execution?.checkInput?.({ botId: step.botId, taskId: step.taskId, text })
+      if (checked?.ok === false) return checked
+      return fb.bot.send({ from, to: step.botId, text, role: 'request' })
     },
   } : {}
   // A host that does not hand board writes over cannot start a run from a card (#1462).

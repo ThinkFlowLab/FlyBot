@@ -710,3 +710,70 @@ test('a busy native watch defers its committed notification without exhausting r
   assert.equal(effect.failures, 0)
   assert.equal(effect.waitingFor, 'agent')
 })
+
+test('role memory updates deduplicate facts, preserve uncertainty/history and archive without losing source records', async t => {
+  const { rt } = await setup(t)
+  const base = { projectId: 'p1', role: 'developer', factKey: 'build/runtime', text: 'Use the checked Node runtime', classification: 'fact', source: { kind: 'human', reference: 'Approved runtime decision' } }
+  const first = await rt.projectEndpoint('project-role-memory-write', base, alice)
+  const same = await rt.projectEndpoint('project-role-memory-write', base, alice)
+  assert.equal(same.memory.id, first.memory.id)
+  assert.equal(same.memory.revision, 1)
+  const revised = await rt.projectEndpoint('project-role-memory-write', { ...base, text: 'Runtime choice needs a new check', classification: 'unresolved', expectedRevision: 1 }, alice)
+  assert.equal(revised.memory.id, first.memory.id)
+  assert.equal(revised.memory.revision, 2)
+  assert.equal(revised.memory.versions[0].classification, 'fact')
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, expectedRevision: 1 }, alice), /revision/)
+  const archived = await rt.projectEndpoint('project-role-memory-write', { ...base, memoryId: first.memory.id, text: revised.memory.text, classification: 'unresolved', status: 'archived', expectedRevision: 2 }, alice)
+  assert.equal(archived.memory.status, 'archived')
+  assert.equal(archived.memory.versions.length, 2)
+  assert.equal(archived.memory.source.reference, base.source.reference)
+  await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'chief', memoryRefs: [] }, alice)
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, classification: 'permission' }, alice), /classification/)
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, projectId: 'p2', memoryId: first.memory.id }, alice), /scope/)
+})
+
+test('private memory retention is separate from its bounded default view', async t => {
+  const { rt } = await setup(t)
+  for (let index = 0; index < 105; index++) await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: `Private record ${index}` }, alice)
+  const agent = (await get(rt, alice)).mine
+  assert.equal(rt.state.projectAgentMemory[agent.id].length, 105)
+  assert.equal(rt.state.projectAgentMemory[agent.id][0].text, 'Private record 0')
+  const view = await get(rt, alice)
+  assert.equal(view.privateMemory.length, 100)
+  assert.equal(view.privateMemoryHistory.total, 105)
+  assert.equal(JSON.stringify(await get(rt, bob)).includes('Private record 0'), false)
+})
+
+test('context tools keep large histories bounded and read exact private sources only within their own participation', async t => {
+  const { rt } = await setup(t)
+  const mine = (await get(rt, alice)).mine
+  await message(rt, alice)
+  rt.config.projectContext = { defaults: { readChars: 2200 } }
+  for (let index = 0; index < 80; index++) rt.state.tasks[`context-task-${index}`] = { id: `context-task-${index}`, projectId: 'p1', title: index === 79 ? 'Focused active repair' : 'Historical repair', criteria: 'Retain every original requirement. '.repeat(100), status: 'open', requesterId: alice.memberId, ownerBotId: mine.botId }
+  for (let index = 0; index < 30; index++) await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: `Scoped private experience ${index} `.repeat(40) }, alice)
+  const result = await rt.projectAgents.context(rt.botOf(mine.botId))
+  assert.ok(JSON.stringify(result).length <= 2200)
+  assert.ok(result.retrieval.omitted.tasks > 0)
+  const index = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task-index', query: 'Focused' } })
+  assert.ok(index.contextPage.text.includes('context-task-79'))
+  let offset = 0, sha256, raw = '', pages = 0
+  for (;;) {
+    const source = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task', id: 'context-task-79', offset, ...(sha256 ? { sha256 } : {}) } })
+    assert.ok(JSON.stringify(source).length <= 2200)
+    raw += source.contextPage.text; sha256 = source.contextPage.sha256; pages++
+    if (source.contextPage.nextOffset === null) break
+    assert.ok(source.contextPage.nextOffset > offset)
+    assert.ok(pages < 30)
+    offset = source.contextPage.nextOffset
+  }
+  assert.equal(JSON.parse(raw).criteria, rt.state.tasks['context-task-79'].criteria)
+  const peer = (await get(rt, bob)).mine
+  await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: 'Peer private content' }, bob)
+  const peerNote = rt.state.projectAgentMemory[peer.id][0]
+  await assert.rejects(rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'private-memory', id: peerNote.id } }), /unavailable/)
+  const note = rt.state.projectAgentMemory[mine.id][0]
+  const owned = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'private-memory', id: note.id } })
+  assert.ok(owned.contextPage.text.includes('Scoped private experience 0'))
+  rt.state.tasks.foreign = { id: 'foreign', projectId: 'p2', title: 'Other project source' }
+  await assert.rejects(rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task', id: 'foreign' } }), /another Project/)
+})
