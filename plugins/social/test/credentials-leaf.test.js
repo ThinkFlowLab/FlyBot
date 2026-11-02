@@ -87,8 +87,12 @@ test('a missing credentials file is created, mode 600, and a plain one is rewrit
   if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600, 'the rewrite keeps mode 600')
 })
 
+// The home is named with `Me` on purpose: it is a value from the file (`displayName`), and the name
+// `mkdtemp` hands out is random, so a line-wide scan for it fails whenever the path happens to carry
+// it — the flake this case pins down.
 test('the refusal names the path once, and never the values it would have written', (t) => {
-  const home = homeOf(t)
+  const home = mkdtempSync(join(tmpdir(), 'flybot-social-leaf-Me'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
   const outside = outsideFile(home)
   const path = join(home, 'flybot-social.json')
   symlinkSync(outside, path)
@@ -98,7 +102,7 @@ test('the refusal names the path once, and never the values it would have writte
   assert.equal(said.length, 1, 'one line per path, however often the write is tried')
   assert.ok(said[0].includes(path), 'the line names the path a reader has to look at')
   assert.ok(!said[0].includes('connector-SECRET'), 'the line carries no token, not even a fragment')
-  assert.ok(!said[0].includes('owner-1') && !said[0].includes('Me'), 'and no other value from the file')
+  assert.equal(said[0], `flybot-social: ${path} is not a plain file, so nothing was written there`, 'the line is the path and the reason, and no other value from the file')
 })
 
 test('startSocial refuses loudly when the credentials path is a link, and the token already there still reads back', async (t) => {
