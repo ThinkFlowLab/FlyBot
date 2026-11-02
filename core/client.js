@@ -10622,6 +10622,11 @@ var MEMORY_TEXT_MAX = 600;
 var memoryLength = (value) => [...text(value)].length;
 var DONE_COLUMN = "done";
 var boardOfRow = (row, task) => {
+  const stated = row?.board;
+  if (stated !== null && typeof stated === "object") {
+    const id = text(stated.id);
+    if (id !== "" && (stated.kind === "group" || stated.kind === "bot")) return { kind: stated.kind, id };
+  }
   if (task === void 0) return null;
   if (row.source === "group") {
     const id = text(task.origin?.roomId);
@@ -10728,8 +10733,8 @@ function projectBoardView({ project, rows, done, canManage, tasks, decisions, me
       assignee: text(row.assignee) || null,
       runId: text(row.runId) || null,
       nodeId: text(row.nodeId) || null,
-      title: text(task?.title) || text(task?.note) || null,
-      priority: text(task?.priority) || null,
+      title: text(row.title) || text(task?.title) || text(task?.note) || null,
+      priority: text(row.priority) || text(task?.priority) || null,
       audit: text(row.audit) || null,
       // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
       // a card carrying neither renders exactly as before.

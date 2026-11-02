@@ -148,10 +148,18 @@ const memoryLength = (value) => [...text(value)].length
 // keeps them out of every group of work in flight.
 const DONE_COLUMN = 'done'
 
-// The board a row opens, read from the host's own `source` rather than re-deciding membership:
-// a group row names its room, a bot row its owner, and a workflow row is one the run carried in,
-// so it has no board of its own to open.
+// The board a row opens. The host row names it (#2198), which is the only way a finished card can
+// open at all: the `tasks` read keeps open cards, so a Done row has no record to derive it from.
+// A row from a host that predates the field still derives it the old way — a group row names its
+// room, a bot row its owner, and a workflow row is one the run carried in, so it has no board of
+// its own to open. The kind is checked against the two boards a card can live on, because the
+// value becomes a `#task=<kind>:<id>` hash and an unknown kind would land nowhere.
 const boardOfRow = (row, task) => {
+  const stated = row?.board
+  if (stated !== null && typeof stated === 'object') {
+    const id = text(stated.id)
+    if (id !== '' && (stated.kind === 'group' || stated.kind === 'bot')) return { kind: stated.kind, id }
+  }
   if (task === undefined) return null
   if (row.source === 'group') {
     const id = text(task.origin?.roomId)
@@ -256,8 +264,10 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
 
 // Pure: no fetch, no React, no store. `rows` is the host's read model, `canManage` comes from
 // `project-read` and only decides what the caller may *ask* for — the host refuses regardless.
-// `tasks` is the one task read joined by id: the row carries an id and who holds it, not its text.
-// `decisions` and `meetings` are the host's read of the Project's record (#1767), passed through.
+// `tasks` is the one task read joined by id, and it is a fallback only: the row carries the card's
+// own title, priority and board, which is all a finished card has (the `tasks` read keeps open
+// cards, so a Done card has no record there to join). `decisions` and `meetings` are the host's read
+// of the Project's record (#1767), passed through.
 // `queues` is the other half of that same read (#1768): the waiting, in-flight and blocked cards
 // and their counts, as the host answered them.
 export function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
@@ -288,8 +298,8 @@ export function projectBoardView({ project, rows, done, canManage, tasks, decisi
       assignee: text(row.assignee) || null,
       runId: text(row.runId) || null,
       nodeId: text(row.nodeId) || null,
-      title: text(task?.title) || text(task?.note) || null,
-      priority: text(task?.priority) || null,
+      title: text(row.title) || text(task?.title) || text(task?.note) || null,
+      priority: text(row.priority) || text(task?.priority) || null,
       audit: text(row.audit) || null,
       // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
       // a card carrying neither renders exactly as before.

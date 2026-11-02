@@ -117,6 +117,33 @@ test('the board groups rows by their source and keeps each task id', () => {
   assert.deepEqual(view.done.rows.map(row => row.id), ['task-g1'], 'the finished row is the archive')
 })
 
+// P-167: the `tasks` read keeps open cards only, so a finished card has no record there to join.
+// The row carries the card's own text and priority, and the Done column draws that — never `#<id>`.
+test('#P-167: a finished card keeps its title and priority with no task record to join', () => {
+  const done = { id: 'task-done', source: 'bot', column: 'done', assignee: null, updatedAt: 7, title: 'Ship the release', priority: 'high' }
+  const view = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [], done: [done], tasks: [] }))
+  assert.equal(view.done.rows[0].title, 'Ship the release')
+  assert.equal(view.done.rows[0].priority, 'high')
+  const drawn = all(ProjectBoardPane({ project: { id: 'p', name: 'FlyBot' }, rows: [], done: [done], tasks: [] }))
+  const title = drawn.find(node => node.props?.className === 'bt-project-title')
+  assert.equal(textOf(title), 'Ship the release')
+})
+
+// #2198: a finished card is not only text — it is a card, so it opens the board it lives on. With
+// no `tasks` record to join, the board has to come from the row; without it the card drew as a
+// dead row with no click at all.
+test('#2198: a finished card opens the board its row names, with no task record to join', () => {
+  const done = { id: 'task-done', source: 'group', column: 'done', assignee: null, updatedAt: 7, title: 'Ship the release', priority: 'high', board: { kind: 'group', id: 'r1' } }
+  const view = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [], done: [done], tasks: [] }))
+  assert.deepEqual(view.done.rows[0].board, { kind: 'group', id: 'r1' })
+  const opened = []
+  const drawn = all(ProjectBoardPane({ project: { id: 'p', name: 'FlyBot' }, rows: [], done: [done], tasks: [], onOpen: board => opened.push(board) }))
+  const card = drawn.find(node => node.props?.className === 'bt-project-row')
+  assert.equal(card.props.role, 'button', 'the finished card is offered as a control')
+  card.props.onClick()
+  assert.deepEqual(plain(opened), [{ kind: 'group', id: 'r1' }])
+})
+
 test('a workflow row carries its run and node; other rows carry none', () => {
   const view = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows, canManage: false }))
   const [botRow] = view.groups[0].rows

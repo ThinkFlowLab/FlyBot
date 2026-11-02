@@ -5022,7 +5022,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
-@@ -2574,2935 +2574,6823 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2935 +2574,6828 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -10580,10 +10580,6 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
--    }
--    if (source.kind === "schedule") {
--      const prompts = reminderPrompts(contentText(data.content));
--      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
 +function dropLabel(column) {
 +  if (column === "in-progress") return t("Start task");
 +  if (column === "done") return t("Complete task");
@@ -10606,6 +10602,10 @@ diff --git a/client.js b/client.js
 +      map.set(id, []);
 +      order.push(id);
      }
+-    if (source.kind === "schedule") {
+-      const prompts = reminderPrompts(contentText(data.content));
+-      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
+-    }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 +    map.get(id).push(task);
@@ -11274,20 +11274,81 @@ diff --git a/client.js b/client.js
 -  }, [done, sessionId, callId]);
 -  let replies = live.replies;
 -  if (done) {
--    try {
++  }, [onClose]);
++  const items = projectMenuItems(project);
++  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
++    "div",
++    {
++      ref,
++      className: "bt-project-menu",
++      role: "menu",
++      "aria-label": t("My role"),
++      style: { left: `${x}px`, top: `${y}px` },
++      "data-project-id": String(project?.id ?? "")
++    },
++    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
++    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
++      key: item.role,
++      type: "button",
++      role: "menuitemradio",
++      className: "bt-project-menu-item",
++      "aria-checked": item.current ? "true" : "false",
++      disabled: !item.pick,
++      onClick: () => {
++        if (item.pick) onPick(item.role);
++        else onClose();
++      }
++    }, item.label))
++  ), document.body);
++}
++function ProjectsNav({ wide = true, request, onOpen } = {}) {
++  const read = request ?? call;
++  const open = (0, import_react16.useCallback)((id) => {
++    if (onOpen) {
++      onOpen(id);
++      return;
++    }
++    if (typeof window !== "undefined") window.location.hash = projectHash(id);
++  }, [onOpen]);
++  const [expanded, setExpanded] = (0, import_react16.useState)(false);
++  const [projects, setProjects] = (0, import_react16.useState)(null);
++  const [error, setError] = (0, import_react16.useState)("");
++  const [note, setNote] = (0, import_react16.useState)("");
++  const [menu, setMenu] = (0, import_react16.useState)(null);
++  const load = (0, import_react16.useCallback)(async () => {
+     try {
 -      replies = JSON.parse(contentText(content)).replies ?? [];
 -    } catch {
 -      replies = [];
--    }
++      const listing = await read("projects");
++      const list = Array.isArray(listing?.projects) ? listing.projects : [];
++      setProjects(list);
++      setError("");
++    } catch (failure) {
++      setProjects([]);
++      setError(failure?.message ?? String(failure));
+     }
 -  }
 -  const pending = done || !live.speaking ? [] : [live.speaking];
 -  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
 -  if (replies.length === 0 && pending.length === 0) return null;
 -  const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
-+  }, [onClose]);
-+  const items = projectMenuItems(project);
-+  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
++  }, [read]);
++  (0, import_react16.useEffect)(() => {
++    if (!expanded) return;
++    void load();
++  }, [expanded, load]);
++  const toggle = () => {
++    setNote("");
++    if (!wide) {
++      void open("");
++      return;
++    }
++    setExpanded((value) => !value);
++  };
++  const listed = expanded && wide;
++  return (0, import_react16.createElement)(
      "div",
 -    { className: "bt-group-replies" },
 -    replies.map((reply, index) => {
@@ -11333,71 +11394,9 @@ diff --git a/client.js b/client.js
 -            (0, import_react6.createElement)("span", { className: "bt-event-name" }, t(reply.kind === "working" ? "{name} started on it" : "{name} paused for your approval", { name: bot.name }))
 -          )
 -        );
-+    {
-+      ref,
-+      className: "bt-project-menu",
-+      role: "menu",
-+      "aria-label": t("My role"),
-+      style: { left: `${x}px`, top: `${y}px` },
-+      "data-project-id": String(project?.id ?? "")
-+    },
-+    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
-+    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
-+      key: item.role,
-+      type: "button",
-+      role: "menuitemradio",
-+      className: "bt-project-menu-item",
-+      "aria-checked": item.current ? "true" : "false",
-+      disabled: !item.pick,
-+      onClick: () => {
-+        if (item.pick) onPick(item.role);
-+        else onClose();
-       }
+-      }
 -      if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
-+    }, item.label))
-+  ), document.body);
-+}
-+function ProjectsNav({ wide = true, request, onOpen } = {}) {
-+  const read = request ?? call;
-+  const open = (0, import_react16.useCallback)((id) => {
-+    if (onOpen) {
-+      onOpen(id);
-+      return;
-+    }
-+    if (typeof window !== "undefined") window.location.hash = projectHash(id);
-+  }, [onOpen]);
-+  const [expanded, setExpanded] = (0, import_react16.useState)(false);
-+  const [projects, setProjects] = (0, import_react16.useState)(null);
-+  const [error, setError] = (0, import_react16.useState)("");
-+  const [note, setNote] = (0, import_react16.useState)("");
-+  const [menu, setMenu] = (0, import_react16.useState)(null);
-+  const load = (0, import_react16.useCallback)(async () => {
-+    try {
-+      const listing = await read("projects");
-+      const list = Array.isArray(listing?.projects) ? listing.projects : [];
-+      setProjects(list);
-+      setError("");
-+    } catch (failure) {
-+      setProjects([]);
-+      setError(failure?.message ?? String(failure));
-+    }
-+  }, [read]);
-+  (0, import_react16.useEffect)(() => {
-+    if (!expanded) return;
-+    void load();
-+  }, [expanded, load]);
-+  const toggle = () => {
-+    setNote("");
-+    if (!wide) {
-+      void open("");
-+      return;
-+    }
-+    setExpanded((value) => !value);
-+  };
-+  const listed = expanded && wide;
-+  return (0, import_react16.createElement)(
-+    "div",
 +    { className: "bt-projects" },
 +    (0, import_react16.createElement)(
 +      "button",
@@ -13116,6 +13115,11 @@ diff --git a/client.js b/client.js
 +var memoryLength = (value) => [...text(value)].length;
 +var DONE_COLUMN = "done";
 +var boardOfRow = (row, task) => {
++  const stated = row?.board;
++  if (stated !== null && typeof stated === "object") {
++    const id = text(stated.id);
++    if (id !== "" && (stated.kind === "group" || stated.kind === "bot")) return { kind: stated.kind, id };
++  }
 +  if (task === void 0) return null;
 +  if (row.source === "group") {
 +    const id = text(task.origin?.roomId);
@@ -13234,8 +13238,8 @@ diff --git a/client.js b/client.js
 +      assignee: text(row.assignee) || null,
 +      runId: text(row.runId) || null,
 +      nodeId: text(row.nodeId) || null,
-+      title: text(task?.title) || text(task?.note) || null,
-+      priority: text(task?.priority) || null,
++      title: text(row.title) || text(task?.title) || text(task?.note) || null,
++      priority: text(row.priority) || text(task?.priority) || null,
 +      audit: text(row.audit) || null,
 +      // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
 +      // a card carrying neither renders exactly as before.
