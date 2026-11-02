@@ -16993,7 +16993,7 @@ diff --git a/client.js b/client.js
        key: item.name,
        label: item.name,
        hint: attached.has(item.name) ? statusText(statuses[item.name]) : void 0,
-@@ -7372,9 +7372,63 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
+@@ -7372,9 +7372,68 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
    );
  }
  
@@ -17044,11 +17044,16 @@ diff --git a/client.js b/client.js
 +}
 +
 +// src/client/memory-empty.js
++var blockedPaths = (view) => [...new Set((view?.blocked ?? []).map((item) => typeof item?.path === "string" ? item.path : "").filter((path) => path !== ""))];
++var blockedSentence = (paths) => t("The memory folder {path} is not a plain directory, so it cannot be read.", { path: paths.join(", ") });
 +function memoryEmptyNotice(view) {
 +  if ((view?.entries?.length ?? 0) > 0) return null;
-+  const paths = [...new Set((view?.blocked ?? []).map((item) => typeof item?.path === "string" ? item.path : "").filter((path) => path !== ""))];
++  return memoryBlockedNotice(view);
++}
++function memoryBlockedNotice(view) {
++  const paths = blockedPaths(view);
 +  if (paths.length === 0) return null;
-+  return t("The memory folder {path} is not a plain directory, so it cannot be read.", { path: paths.join(", ") });
++  return blockedSentence(paths);
 +}
 +
  // src/client/memory-panel.js
@@ -17099,7 +17104,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -7428,45 +7428,47 @@ function ago(at, now) {
+@@ -7428,45 +7428,50 @@ function ago(at, now) {
    return format.format(-Math.round(hours / 24), "day");
  }
  function Skeleton({ label }) {
@@ -17152,10 +17157,13 @@ diff --git a/client.js b/client.js
 -  if (!view.summary) return (0, import_react17.createElement)(import_react17.Fragment, null, failed, failed ? null : (0, import_react17.createElement)(Skeleton, { label: t("Writing the summary…") }));
 -  return (0, import_react17.createElement)(
 -    import_react17.Fragment,
-+  if (!view.summary) return (0, import_react28.createElement)(import_react28.Fragment, null, failed, failed ? null : (0, import_react28.createElement)(Skeleton, { label: t("Writing the summary…") }));
++  const refused = memoryBlockedNotice(view);
++  const blocked = refused === null ? null : (0, import_react28.createElement)("div", { className: "bt-mem-empty-text", role: "status" }, refused);
++  if (!view.summary) return (0, import_react28.createElement)(import_react28.Fragment, null, blocked, failed, failed ? null : (0, import_react28.createElement)(Skeleton, { label: t("Writing the summary…") }));
 +  return (0, import_react28.createElement)(
 +    import_react28.Fragment,
      null,
++    blocked,
      failed,
 -    (0, import_react17.createElement)(
 +    (0, import_react28.createElement)(
@@ -17201,7 +17209,7 @@ diff --git a/client.js b/client.js
        type: "button",
        className: "bt-mem-remove",
        "data-confirm": confirming || void 0,
-@@ -7512,7 +7512,7 @@ function EntryRow({ entry, remove }) {
+@@ -7512,91 +7512,93 @@ function EntryRow({ entry, remove }) {
        "aria-label": confirming ? t("Click again to remove") : t("Remove from memory"),
        title: confirming ? void 0 : t("Remove from memory"),
        onClick: click
@@ -17210,7 +17218,9 @@ diff --git a/client.js b/client.js
    );
  }
  function Entries({ bot, view, remove }) {
-@@ -7521,82 +7521,82 @@ function Entries({ bot, view, remove }) {
+   const groups = groupEntries(view.entries);
++  const refused = memoryBlockedNotice(view);
+   const sections = [
      { scope: "own", title: t("{name}'s memory", { name: bot.name }), size: view.sizes.own },
      { scope: "team", title: t("Team memory"), hint: t("Every Bot reads it"), size: view.sizes.team }
    ];
@@ -17219,6 +17229,7 @@ diff --git a/client.js b/client.js
      "div",
      { className: "bt-mem-entries" },
 -    sections.map((section) => (0, import_react17.createElement)(
++    refused === null ? null : (0, import_react28.createElement)("div", { className: "bt-mem-empty-text", role: "status" }, refused),
 +    sections.map((section) => (0, import_react28.createElement)(
        "section",
        { key: section.scope, className: "bt-mem-section" },

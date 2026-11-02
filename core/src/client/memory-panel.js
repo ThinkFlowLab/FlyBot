@@ -5,7 +5,7 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState 
 import { useEscape } from './overlay-hooks.js'
 import { ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DotsIcon, MemoryIcon, TrashIcon } from './icons.js'
 import { dateLocale, hostText, t } from './i18n.js'
-import { memoryEmptyNotice } from './memory-empty.js'
+import { memoryBlockedNotice, memoryEmptyNotice } from './memory-empty.js'
 import { summaryBlocks } from './text.js'
 import { useLinger } from './motion.js'
 
@@ -79,8 +79,10 @@ function Summary({ bot, view, regenerate }) {
         h('span', null, view.summary ? t('The summary is out of date: {reason}', { reason: hostText(view.error) }) : t('The summary could not be written: {reason}', { reason: hostText(view.error) })),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: regenerate }, t('Try again')))
     : null
-  if (!view.summary) return h(Fragment, null, failed, failed ? null : h(Skeleton, { label: t('Writing the summary…') }))
-  return h(Fragment, null, failed,
+  const refused = memoryBlockedNotice(view)
+  const blocked = refused === null ? null : h('div', { className: 'bt-mem-empty-text', role: 'status' }, refused)
+  if (!view.summary) return h(Fragment, null, blocked, failed, failed ? null : h(Skeleton, { label: t('Writing the summary…') }))
+  return h(Fragment, null, blocked, failed,
     h('div', { key: view.summary.at, className: 'bt-mem-summary', 'data-stale': !view.fresh || undefined },
       summaryBlocks(view.summary.text).map((block, index) => (block.kind === 'h'
         ? h('h3', { key: index }, block.text)
@@ -122,11 +124,13 @@ function EntryRow({ entry, remove }) {
 
 function Entries({ bot, view, remove }) {
   const groups = groupEntries(view.entries)
+  const refused = memoryBlockedNotice(view)
   const sections = [
     { scope: 'own', title: t("{name}'s memory", { name: bot.name }), size: view.sizes.own },
     { scope: 'team', title: t('Team memory'), hint: t('Every Bot reads it'), size: view.sizes.team },
   ]
   return h('div', { className: 'bt-mem-entries' },
+    refused === null ? null : h('div', { className: 'bt-mem-empty-text', role: 'status' }, refused),
     sections.map(section => h('section', { key: section.scope, className: 'bt-mem-section' },
       h('div', { className: 'bt-mem-section-head' },
         h('h3', null, section.title),
