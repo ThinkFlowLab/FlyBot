@@ -19175,6 +19175,10 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           back ? (0, import_react42.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": back, title: back, onClick: () => actions.openSettings(shown) }, (0, import_react42.createElement)(ChevronLeftIcon)) : null,
           (0, import_react42.createElement)("h2", { key: bot?.id ?? room2?.id ?? shown }, bot?.name ?? room2?.name ?? label)
         ),
+        // A window that holds the team read-only still opens every page here, so the header says
+        // why nothing can be changed, in the host's own sentence and above the refusal below it:
+        // the standing state first, the answer to one pressed control closest to that control.
+        typeof roster?.readOnly === "string" && roster.readOnly.trim() ? (0, import_react42.createElement)("div", { className: "bt-hint bt-read-only", role: "status", style: { padding: "0 20px 8px", textAlign: "left" } }, hostText(roster.readOnly)) : null,
         shown === "usage" ? null : errorLine,
         shown === "usage" ? null : (0, import_react42.createElement)(
           "div",
