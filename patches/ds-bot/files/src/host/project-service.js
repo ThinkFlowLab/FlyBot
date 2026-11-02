@@ -276,6 +276,8 @@ export function install(rt) {
     return project.roles
   }
   const projectEndpoint = async (endpoint, body = {}, actor = null) => {
+    const agentAccess = await rt.personalAgentAuth?.endpoint(endpoint, body, actor)
+    if (agentAccess !== undefined) return agentAccess
     const personal = await rt.personalAgents.endpoint(endpoint, body, actor)
     if (personal !== undefined) return personal
     const lifecycle = await rt.projectLifecycle.endpoint(endpoint, body, actor)

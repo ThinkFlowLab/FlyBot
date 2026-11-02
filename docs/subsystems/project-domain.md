@@ -173,3 +173,7 @@ and dynamic execution compatibility remain tracked with role/execution convergen
 ## Independent personal-agent integration
 
 Load migration also relates legacy private Project agents to independent user identities and participation scopes; it preserves Task/Run and private carrier history. Personal-agent native endpoints enter through the same authenticated service before Project-scoped routing.
+
+## Scoped connection integration
+
+Authenticated internal/external personal agents can suggest closure as their current member without gaining Owner confirmation rights. Suggestions record the stable personalAgentId; safe native private agents use a scoped suggestion tool. This addresses the proxy-suggestion integration from #2171; role proposal/approval remains pending.

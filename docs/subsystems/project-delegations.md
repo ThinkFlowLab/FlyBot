@@ -79,3 +79,7 @@ participations. Grant validation rechecks active participation; leave/retire rev
 only matching carrier grants after persistence and uses existing stop handling.
 Default-agent selection does not transfer a grant to a different carrier. Private
 histories remain readable to their owner without reactivating execution authority.
+
+## Scoped connection integration
+
+personal-agent-delegation-set reuses mode() with an explicitly owned participation, rather than changing the default to borrow another carrier grant. Grant validation checks actor/carrier binding when supplied. Agent/delegated identities cannot change their own mode. Connection logout and mandate withdrawal remain distinct.

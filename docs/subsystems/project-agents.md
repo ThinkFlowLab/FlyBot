@@ -363,3 +363,7 @@ completion from the actual bound callback. Native-only execution retains its eve
 ## Independent personal-agent integration
 
 Independent personal identities (#2170) now own per-Project participations/carriers. Legacy IDs and private memory/transcripts remain in place; privateIdentity resolves the selected participation. Native tools validate active participation before and after async authorization. See [personal agents](personal-agents.md).
+
+## Scoped connection integration
+
+Private-agent persona v5 describes an independent identity/isolated participation and adds project_agent_suggest_closure. Safe private agents can recommend closure without a Task; host-derived participation is required, and Owner confirmation stays personal. Approved external private proposals retain persisted origin/approval provenance.

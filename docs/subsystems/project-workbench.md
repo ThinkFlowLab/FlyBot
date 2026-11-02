@@ -462,3 +462,7 @@ Project convergence #2171 admits the six repository/closure endpoints through th
 ## Independent personal-agent integration
 
 The restricted gateway admits independent personal-agent registration/read/participation/history/lifecycle operations; each handler enforces current user ownership and scoped Project authority. No UI or control-plane change is made.
+
+## Scoped connection integration
+
+The restricted gateway exposes scoped personal-agent credential/delegation/proposal endpoints over the existing HTTP transport. Credential provisioning remains human-only; external requests cannot fall through to generic host or private-agent APIs.

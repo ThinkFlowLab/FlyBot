@@ -61,3 +61,7 @@ carriers and broader migration remains #2186; runtime lifecycle remains #2184.
 Tests distinguish local contract/HTTP and migration validation from actual model
 and external-provider acceptance. The README/API publication stays deferred to
 #2189 after final backend interfaces stabilize.
+
+## Scoped connection integration
+
+Connection authentication now uses [scoped credentials](personal-agent-auth.md) and the existing participation watch grants. External descriptors still do not establish provider-login verification; controlled HTTP clients validate the FlyBot-side protocol only.
