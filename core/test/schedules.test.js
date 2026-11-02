@@ -1014,3 +1014,58 @@ test('a task name counts code points against its 120-character bound (#1895)', a
   assert.equal(refused.ok, false)
   assert.match(refused.error.message, /Keep the name under 120 characters/)
 })
+
+// #2112: the list answers only the caller's rows, so a member can be handed an empty list whose
+// real meaning is "another member scheduled something". `someHidden` is that difference, and it
+// is set only where a known row was actually dropped — never for a host with nothing to hide.
+test('#2112: a narrowed list says another owner has rows; an owner who can read them is not told so', async (t) => {
+  const { ctx, home, rt, callAs, schedule } = signedIn(t, TWO_OWNERS)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
+  const made = await callAs('schedule-create', { target: 'a1', title: 'Mine', prompt: 'My own words', when: DAILY }, 'tok-a')
+  assert.equal(made.ok, true, JSON.stringify(made))
+
+  const mine = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
+  assert.deepEqual(mine.tasks.map(task => task.title), ['Mine'])
+  assert.equal(mine.someHidden, undefined, 'nothing was dropped for the owner who can read the row')
+
+  const theirs = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
+  assert.deepEqual(theirs.tasks, [], 'the other owner reads none of it')
+  assert.equal(theirs.someHidden, true, 'an empty list still says the row exists and is hidden')
+
+  const hostWide = await rt.scheduleEndpoint('schedules', {}, undefined)
+  assert.deepEqual(hostWide.tasks, [])
+  assert.equal(hostWide.someHidden, true, 'a call with no actor was narrowed too, and says so')
+  assert.equal(schedule.tasks.size, 1, 'the read wrote nothing')
+})
+
+test('#2112: a paused row of another owner is hidden too, and counted as hidden', async (t) => {
+  const { ctx, home, rt, callAs, schedule } = signedIn(t, TWO_OWNERS)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  const made = await callAs('schedule-create', { target: 'a1', title: 'Paused one', prompt: 'Go', when: DAILY }, 'tok-a')
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [id] = [...schedule.tasks.keys()]
+  const paused = await callAs('schedule-pause', { sessionId: 'a1', id }, 'tok-a')
+  assert.equal(paused.ok, true, JSON.stringify(paused))
+
+  const mine = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
+  assert.deepEqual(mine.tasks.map(task => [task.title, task.status]), [['Paused one', 'paused']])
+  assert.equal(mine.someHidden, undefined, 'the paused row is visible to its owner')
+  const theirs = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
+  assert.deepEqual(theirs.tasks, [])
+  assert.equal(theirs.someHidden, true, 'the paused row is hidden from the other owner, and counted')
+})
+
+test('#2112: with nobody signed in nothing is narrowed, so no hidden flag is set', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, rt, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  assert.equal(rt.authzEnforced(), false, 'a one-person install has no member session')
+  const made = await call('schedule-create', { target: 'w1', title: 'Standup', prompt: 'Sum up', when: DAILY })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const listed = await rt.scheduleEndpoint('schedules', {}, null)
+  assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
+  assert.equal(listed.someHidden, undefined, 'the whole host is readable, so nothing is hidden')
+})

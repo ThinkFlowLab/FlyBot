@@ -1445,7 +1445,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Morning briefing': '早间简报',
    'What to do': '要做什么',
    'Sum up what changed since yesterday and what needs me today.': '总结一下昨天以来的变化，以及今天需要我处理的事。',
-@@ -806,9 +806,20 @@ const ZH = {
+@@ -806,11 +806,24 @@ const ZH = {
    Unit: '单位',
    'Create task': '创建任务',
    'Turn on Automation tasks in DSH': '在 DSH 里打开「自动化任务」',
@@ -1467,7 +1467,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.': '「每 N 分钟」和 cron 任务仍可能在安静时段内运行：下一次运行时间是 DSH 算的。这里如实说明，不假装已经静音。',
    'No scheduled tasks yet.': '还没有定时任务。',
    'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
++  'No scheduled tasks you can see. Another member\'s tasks stay hidden.': '没有你能看到的定时任务，另一位成员的任务是隐藏的。',
++  'No scheduled tasks you can see. Add one': '没有你能看到的定时任务，去添加',
    'Automation tasks are off in DSH': 'DSH 的「自动化任务」没有打开',
+   'No such Bot': '没有这个 Bot',
+   'No such Bot or group chat': '没有这个 Bot 或群聊',
 @@ -819,10 +819,19 @@ const ZH = {
    'Pick a date and time': '选一个日期和时间',
    'Pick a time in the future': '选一个将来的时间',
@@ -2409,7 +2413,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,72 +166,228 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,232 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2512,7 +2516,10 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 -      : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => setAdding(true) }, h(PlusIcon), t('New task'))),
 +      : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),
      byChat.length === 0 && !adding
-       ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No scheduled tasks yet.'))))
+-      ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No scheduled tasks yet.'))))
++      // #2112: the list is narrowed to the caller's rows, so an empty page can mean "another
++      // member scheduled something". `someHidden` is the host saying it dropped such a row.
++      ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, view.someHidden ? t('No scheduled tasks you can see. Another member\'s tasks stay hidden.') : t('No scheduled tasks yet.'))))
        : byChat.map(([id, avatar, name, tasks]) => h('section', { key: id, className: 'bt-set-section' },
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
@@ -2637,7 +2644,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +      ? h('div', { className: 'bt-section-title' }, t('Scheduled tasks'))
 +      : h(SummaryLines, { tasks, actions }),
 +    tasks.length === 0
-+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
++      // #2112: with the list narrowed to the caller's rows, "none of this Bot's tasks" and "none
++      // this caller may see" are different answers; the view's `someHidden` says which one it is.
++      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : view.someHidden ? t('No scheduled tasks you can see. Add one') : t('No scheduled tasks yet. Add one'))
 +      : null)
 +}
 +
@@ -6423,7 +6432,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
    }
    if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
    else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
-@@ -89,63 +89,559 @@ export function install(rt) {
+@@ -89,63 +89,565 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -6460,10 +6469,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  // The Session a Bot's or group chat's new task goes to: the Bot's current part.
 +  const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
 +  const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
- 
--  async function schedulesView() {
--    if (service === null) return { available: false, tasks: [] }
--    const tasks = []
++
 +  // Team quiet hours (#1166): a window the user set, checked when a task is created or
 +  // edited. It never mutes anything — a task that already fires inside the window keeps
 +  // firing, because DSH has no hook before a delivery (docs/subsystems/core-host.md).
@@ -6548,11 +6554,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  async function checkMissed(now = Date.now()) {
 +    if (service === null) return
 +    const seen = new Set()
-     for (const entry of await service.catalog()) {
++    for (const entry of await service.catalog()) {
 +      if (entry.status !== 'active' || !(Date.parse(entry.scheduledAt) <= now) || entry.lastDelivery?.scheduledAt === entry.scheduledAt) continue
-       const owner = ownerOf(entry.sessionId)
-       if (!known(owner)) continue
--      tasks.push({ ...entry, ...owner })
++      const owner = ownerOf(entry.sessionId)
++      if (!known(owner)) continue
 +      seen.add(entry.id)
 +      const first = due.get(entry.id)
 +      if (first?.scheduledAt !== entry.scheduledAt) { due.set(entry.id, { scheduledAt: entry.scheduledAt, since: now }); continue }
@@ -6653,7 +6658,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    }
 +    throw invalid('The task could not be copied. Try again')
 +  }
-+
+ 
+-  async function schedulesView() {
+-    if (service === null) return { available: false, tasks: [] }
 +  // `actor` narrows the rows to that caller's own; the page asks every 30 seconds with the
 +  // member's session, so the answer is the list a member may read, not the host's catalog. A row
 +  // is read exactly as a task's source is read (`sourceOf`): unenforced, the whole host answers as
@@ -6663,23 +6670,30 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    if (service === null) return { available: false, tasks: [], quietHours }
 +    // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
 +    await checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error))
-+    const tasks = []
-+    for (const entry of await service.catalog()) {
-+      const owner = ownerOf(entry.sessionId)
-+      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
+     const tasks = []
++    // #2112: a short list and an empty host are not the same answer. A known row dropped because
++    // the caller does not own it sets `someHidden`, so the page can say rows exist that it may not
++    // read; a row with no known owner is unusable to everybody and hides nothing.
++    let someHidden = false
+     for (const entry of await service.catalog()) {
+       const owner = ownerOf(entry.sessionId)
+       if (!known(owner)) continue
+-      tasks.push({ ...entry, ...owner })
++      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
 +      const lastRun = lastRunOf(entry)
 +      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
 +    }
 +    for (const entry of Object.values(paused())) {
 +      const owner = ownerOf(entry.sessionId)
-+      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
++      if (!known(owner)) continue
++      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
 +    }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
-+    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
++    return { available: true, tasks, quietHours, ...(someHidden ? { someHidden: true } : {}), ...(unchecked ? { quietUnchecked: true } : {}) }
 +  }
 +
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
@@ -12970,7 +12984,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,805 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,860 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -13775,6 +13789,61 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const refused = await call('schedule-create', { target: 'm1', title: over, prompt: 'Go', when: { kind: 'every', minutes: 5 } })
 +  assert.equal(refused.ok, false)
 +  assert.match(refused.error.message, /Keep the name under 120 characters/)
++})
++
++// #2112: the list answers only the caller's rows, so a member can be handed an empty list whose
++// real meaning is "another member scheduled something". `someHidden` is that difference, and it
++// is set only where a known row was actually dropped — never for a host with nothing to hide.
++test('#2112: a narrowed list says another owner has rows; an owner who can read them is not told so', async (t) => {
++  const { ctx, home, rt, callAs, schedule } = signedIn(t, TWO_OWNERS)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await signedInNow(rt, callAs)
++  assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
++  const made = await callAs('schedule-create', { target: 'a1', title: 'Mine', prompt: 'My own words', when: DAILY }, 'tok-a')
++  assert.equal(made.ok, true, JSON.stringify(made))
++
++  const mine = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
++  assert.deepEqual(mine.tasks.map(task => task.title), ['Mine'])
++  assert.equal(mine.someHidden, undefined, 'nothing was dropped for the owner who can read the row')
++
++  const theirs = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
++  assert.deepEqual(theirs.tasks, [], 'the other owner reads none of it')
++  assert.equal(theirs.someHidden, true, 'an empty list still says the row exists and is hidden')
++
++  const hostWide = await rt.scheduleEndpoint('schedules', {}, undefined)
++  assert.deepEqual(hostWide.tasks, [])
++  assert.equal(hostWide.someHidden, true, 'a call with no actor was narrowed too, and says so')
++  assert.equal(schedule.tasks.size, 1, 'the read wrote nothing')
++})
++
++test('#2112: a paused row of another owner is hidden too, and counted as hidden', async (t) => {
++  const { ctx, home, rt, callAs, schedule } = signedIn(t, TWO_OWNERS)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await signedInNow(rt, callAs)
++  const made = await callAs('schedule-create', { target: 'a1', title: 'Paused one', prompt: 'Go', when: DAILY }, 'tok-a')
++  assert.equal(made.ok, true, JSON.stringify(made))
++  const [id] = [...schedule.tasks.keys()]
++  const paused = await callAs('schedule-pause', { sessionId: 'a1', id }, 'tok-a')
++  assert.equal(paused.ok, true, JSON.stringify(paused))
++
++  const mine = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
++  assert.deepEqual(mine.tasks.map(task => [task.title, task.status]), [['Paused one', 'paused']])
++  assert.equal(mine.someHidden, undefined, 'the paused row is visible to its owner')
++  const theirs = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
++  assert.deepEqual(theirs.tasks, [])
++  assert.equal(theirs.someHidden, true, 'the paused row is hidden from the other owner, and counted')
++})
++
++test('#2112: with nobody signed in nothing is narrowed, so no hidden flag is set', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, rt, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  assert.equal(rt.authzEnforced(), false, 'a one-person install has no member session')
++  const made = await call('schedule-create', { target: 'w1', title: 'Standup', prompt: 'Sum up', when: DAILY })
++  assert.equal(made.ok, true, JSON.stringify(made))
++  const listed = await rt.scheduleEndpoint('schedules', {}, null)
++  assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
++  assert.equal(listed.someHidden, undefined, 'the whole host is readable, so nothing is hidden')
 +})
 diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 --- a/test/session-identity.test.js
