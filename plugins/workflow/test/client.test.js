@@ -3152,3 +3152,106 @@ test('#2163: a wire to a Bot that is not connected yet still adds the edge', asy
   assert.ok(pairs(saved.body.edges).includes('writer>deployer'), 'the new pair is saved')
   assert.equal(alertsOf(view).length, 0, 'the save is not refused')
 })
+
+// #2173: Settings → Add link submits a pair the graph already has, and the host refuses the whole
+// save, so every other edit in that submission is lost and the page shows only "listed twice".
+// The drawer already avoids this (withEdge); the form has to decide before it saves, and the To
+// list has to say which targets are taken. The host's normalizeGraph keeps failing closed.
+function settingsLinksHost(graph, calls, { refuseDuplicates = true } = {}) {
+  return async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph] }
+    if (name === 'workflow/graph') {
+      if (refuseDuplicates) {
+        const seen = new Set()
+        for (const edge of body.edges) {
+          const key = `${edge.from}>${edge.to}`
+          if (seen.has(key)) return { ok: false, error: `Link ${edge.from} → ${edge.to} is listed twice` }
+          seen.add(key)
+        }
+      }
+      return { ok: true, workflows: [{ ...graph, nodes: body.nodes, edges: body.edges }] }
+    }
+    return { ok: true, workflows: [graph] }
+  }
+}
+
+async function openAddLinkForm(graph, calls) {
+  const settings = mount(client.WorkflowSettings, { call: settingsLinksHost(graph, calls), roster: { bots: [] } })
+  await settle()
+  button(settings.tree, 'Edit').props.onClick()
+  await settle()
+  const pick = (label) => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
+  const choose = async (label, value) => {
+    pick(label).props.onChange({ target: { value } })
+    await settle()
+  }
+  return {
+    settings,
+    choose,
+    graphCalls: () => calls.filter(item => item.name === 'workflow/graph'),
+  }
+}
+
+test('#2173: adding a link the graph already has is a no-op, not a refused duplicate save', async () => {
+  await withUnhandled(async (unhandled) => {
+    const calls = []
+    const { settings, choose, graphCalls } = await openAddLinkForm(delivery(), calls)
+    await choose('From node', 'coder')
+    await choose('To node', 'reviewer')
+    button(settings.tree, 'Add link').props.onClick()
+    await settle()
+    assert.equal(graphCalls().length, 0, 'the pair the graph already has is not submitted again')
+    assert.deepEqual(alertsOf(settings), [], 'nothing is refused, because nothing was submitted')
+    const from = findAll(settings.tree, node => node.props?.['aria-label'] === 'From node')[0]
+    const to = findAll(settings.tree, node => node.props?.['aria-label'] === 'To node')[0]
+    assert.equal(from.props.value, '', 'the form clears as it does today')
+    assert.equal(to.props.value, '')
+    assert.deepEqual(unhandled, [])
+    settings.unmount()
+  })
+})
+
+test('#2173: a linked pair given another kind names the link already there instead of submitting', async () => {
+  const calls = []
+  const { settings, choose, graphCalls } = await openAddLinkForm(delivery(), calls)
+  await choose('Kind', 'condition')
+  await choose('From node', 'coder')
+  await choose('To node', 'reviewer')
+  await choose('when', 'verdict')
+  button(settings.tree, 'Add link').props.onClick()
+  await settle()
+  assert.equal(graphCalls().length, 0, 'the conflicting pair is not submitted blind')
+  const [alert] = alertsOf(settings)
+  assert.ok(alert, 'the user is told why nothing happened')
+  assert.match(alert, /Link/, 'the banner names the kind that is already there')
+  assert.match(alert, /replace|delete/i, 'and says what to do about it')
+  assert.equal(/listed twice/.test(alert), false, "the host's technical refusal is not what the user reads")
+  settings.unmount()
+})
+
+test('#2173: the To list marks a target the From node already reaches', async () => {
+  const calls = []
+  const { settings, choose } = await openAddLinkForm(delivery(), calls)
+  await choose('From node', 'coder')
+  const options = findAll(settings.tree, node => node.type === 'option').map(textOf)
+  assert.ok(options.includes('Reviewer (linked)'), 'a target coder already reaches is marked')
+  assert.ok(options.includes('Tester (linked)'), 'so is the other one')
+  assert.ok(options.includes('Deployer'), 'a target coder does not reach stays plain')
+  settings.unmount()
+})
+
+test('#2173: a pair the graph does not have still saves and shows', async () => {
+  const calls = []
+  const { settings, choose, graphCalls } = await openAddLinkForm(delivery(), calls)
+  await choose('From node', 'writer')
+  await choose('To node', 'deployer')
+  button(settings.tree, 'Add link').props.onClick()
+  await settle()
+  const saved = graphCalls().at(-1)
+  assert.ok(saved, 'the new pair is submitted')
+  const keys = saved.body.edges.map(edge => `${edge.from}>${edge.to}`)
+  assert.equal(keys.filter(key => key === 'writer>deployer').length, 1, 'exactly one edge')
+  assert.deepEqual(alertsOf(settings), [], 'and nothing is refused')
+  settings.unmount()
+})
