@@ -650,6 +650,14 @@ window.__ModuleLoader__.load({
       return (nested ?? direct)?.dataset?.node || ''
     }
 
+    // The host refuses a graph that lists one pair twice, and that refusal saves nothing, so a
+    // gesture that repeats a pair it already sees would turn the whole edit into an error the
+    // picture never shows. Adding an edge the graph already has is therefore a no-op here.
+    function withEdge(list, from, to) {
+      if (list.some(edge => edge.from === from && edge.to === to)) return list
+      return list.concat([{ from, to }])
+    }
+
     // The Settings plane is zero-width, so world x sits on a ±WIRE_SPAN centre
     // line; the fitted drawer plane starts at 0, so it passes span 0 (#1513).
     function wirePath(from, to, span = WIRE_SPAN) {
@@ -1149,10 +1157,10 @@ window.__ModuleLoader__.load({
           if (plane.wrapped) setPlaneHint(tr('Layout lives in Settings'))
           else commit(nodes.map(node => node.id === gesture.id ? { ...node, ...ghost[gesture.id] } : node), edges)
         } else if (gesture.kind === 'wire' && hit && hit !== gesture.from) {
-          commit(workflow.nodes, edges.concat([{ from: gesture.from, to: hit }]))
+          commit(workflow.nodes, withEdge(edges, gesture.from, hit))
         } else if (gesture.kind === 'reconnect') {
           const rest = edges.filter(edge => !(edge.from === gesture.from && edge.to === gesture.to))
-          if (hit && hit !== gesture.from) commit(workflow.nodes, rest.concat([{ from: gesture.from, to: hit }]))
+          if (hit && hit !== gesture.from) commit(workflow.nodes, withEdge(rest, gesture.from, hit))
           else if (!hit) commit(workflow.nodes, rest)
         } else if (gesture.kind === 'add' && event.target?.dataset?.plane) {
           const bot = gesture.bot
@@ -1809,7 +1817,7 @@ window.__ModuleLoader__.load({
         if (!gesture) return
         const hit = hitNode(event)
         if (gesture.kind === 'wire' && hit && hit !== gesture.from) {
-          commit(nodes, edges.concat([{ from: gesture.from, to: hit }]))
+          commit(nodes, withEdge(edges, gesture.from, hit))
         }
         setGesture(null)
       }

@@ -3073,3 +3073,82 @@ test('#2155: a click on the read-only flowchart still commits nothing', async ()
   assert.equal(calls.filter(name => name === 'workflow/graph').length, 0, 'a click on the read-only plane committed a graph')
   view.unmount()
 })
+
+// The host refuses a graph that lists one pair twice (`Link A → B is listed twice`) and saves
+// nothing, so a drawer gesture that repeats a pair turns the whole edit into a red error the
+// picture never shows: the plane is drawn from `workflow.edges`, which the refused save never
+// changed. These three drive the drawer against that same refusal.
+function duplicateGraphHost(graph, calls) {
+  const pairs = list => list.map(edge => `${edge.from}>${edge.to}`)
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    if (name === 'workflow/graph') {
+      const seen = new Set()
+      for (const edge of body.edges) {
+        const key = `${edge.from}>${edge.to}`
+        if (seen.has(key)) return { ok: false, error: `Link ${edge.from} → ${edge.to} is listed twice` }
+        seen.add(key)
+      }
+      return { ok: true, workflows: [{ ...graph, nodes: body.nodes, edges: body.edges }] }
+    }
+    return { ok: true, workflows: [graph] }
+  }
+  return { call, pairs }
+}
+
+async function openDrawerEditor(graph, calls) {
+  const view = mount(client.Section, { roster: { bots: [] }, call: duplicateGraphHost(graph, calls).call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
+  button(view.tree, 'Edit').props.onClick()
+  const canvas = () => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-canvas'))[0]
+  return { view, canvas }
+}
+
+test('#2163: a wire to a Bot the same card already reaches saves one edge, not a refused duplicate', async () => {
+  const calls = []
+  const graph = delivery()
+  graph.edges = [...graph.edges, { from: 'writer', to: 'tester' }]
+  const { pairs } = duplicateGraphHost(graph, calls)
+  const { view, canvas } = await openDrawerEditor(graph, calls)
+  const port = findAll(view.tree, node => node.props?.['data-port'] === 'out' && node.props['aria-label'] === 'Writer')[0]
+  port.props.onPointerDown({ preventDefault() {}, stopPropagation() {}, target: { dataset: { port: 'out' } } })
+  canvas().props.onPointerUp({ target: { dataset: { node: 'tester' }, closest() { return null } } })
+  await settle()
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.equal(pairs(saved.body.edges).filter(key => key === 'writer>tester').length, 1, 'the pair is listed once')
+  assert.equal(alertsOf(view).length, 0, 'the save is not refused')
+})
+
+test('#2163: reconnecting an edge onto a pair that already exists keeps one edge and drops the dragged one', async () => {
+  const calls = []
+  const graph = delivery()
+  const { pairs } = duplicateGraphHost(graph, calls)
+  const { view, canvas } = await openDrawerEditor(graph, calls)
+  const end = findAll(view.tree, node => node.props?.['data-port'] === 'end'
+    && node.props['data-src'] === 'coder' && node.props['data-dst'] === 'reviewer')[0]
+  end.props.onPointerDown({ preventDefault() {}, stopPropagation() {} })
+  canvas().props.onPointerUp({ target: { dataset: { node: 'tester' }, closest() { return null } } })
+  await settle()
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  const keys = pairs(saved.body.edges)
+  assert.equal(keys.filter(key => key === 'coder>tester').length, 1, 'the dropped pair is listed once')
+  assert.equal(keys.includes('coder>reviewer'), false, 'the dragged edge left its old target')
+  assert.equal(alertsOf(view).length, 0, 'the save is not refused')
+})
+
+test('#2163: a wire to a Bot that is not connected yet still adds the edge', async () => {
+  const calls = []
+  const graph = delivery()
+  const { pairs } = duplicateGraphHost(graph, calls)
+  const { view, canvas } = await openDrawerEditor(graph, calls)
+  const port = findAll(view.tree, node => node.props?.['data-port'] === 'out' && node.props['aria-label'] === 'Writer')[0]
+  port.props.onPointerDown({ preventDefault() {}, stopPropagation() {}, target: { dataset: { port: 'out' } } })
+  canvas().props.onPointerUp({ target: { dataset: { node: 'deployer' }, closest() { return null } } })
+  await settle()
+  const saved = calls.filter(item => item.name === 'workflow/graph').at(-1)
+  assert.ok(pairs(saved.body.edges).includes('writer>deployer'), 'the new pair is saved')
+  assert.equal(alertsOf(view).length, 0, 'the save is not refused')
+})
