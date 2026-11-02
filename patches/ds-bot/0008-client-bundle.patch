@@ -5144,7 +5144,7 @@ diff --git a/client.js b/client.js
  .bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
  .bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
  .bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
-@@ -2595,2914 +2595,6783 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2595,2914 +2595,6789 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  :is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
  @media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
  `;
@@ -6613,13 +6613,15 @@ diff --git a/client.js b/client.js
 +    actions.openSession(target);
 +  };
 +  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
++  const shown = (texts2 ?? []).filter((text2) => String(text2 ?? "").trim() !== "");
++  if (shown.length === 0) return null;
 +  return (0, import_react9.createElement)(
 +    "div",
 +    { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
-+    texts2.map((text2, index) => {
++    shown.map((text2, index) => {
 +      const key = msgKey ? `${msgKey}:${index}` : void 0;
 +      const picked = key ? reactions?.[index] ?? [] : [];
-+      const last = index === texts2.length - 1;
++      const last = index === shown.length - 1;
 +      const live = streaming && last;
 +      return (0, import_react9.createElement)(
 +        "div",
@@ -6845,6 +6847,7 @@ diff --git a/client.js b/client.js
 +  );
 +}
 +function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
++  if (!(texts2 ?? []).some((text2) => String(text2 ?? "").trim() !== "")) return null;
 +  const lead = (0, import_react9.createElement)("span", { className: "bt-lead", title: name }, (0, import_react9.createElement)(PersonMark, { name }));
 +  return (0, import_react9.createElement)(
 +    "div",
@@ -6905,6 +6908,7 @@ diff --git a/client.js b/client.js
 +  return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
 +}
 +function GroupMessage({ bot, text: text2, room: room2, roster, actions, msgKey, useUi, seq }) {
++  if (String(text2 ?? "").trim() === "") return null;
 +  const held = heldLineState(room2, { seq, botId: bot.id, text: text2 });
 +  if (held === "rejected") {
 +    return (0, import_react9.createElement)(
@@ -6970,6 +6974,8 @@ diff --git a/client.js b/client.js
 +  const face = room2?.origin === "face-to-face";
 +  const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
 +  const files = Array.isArray(source.attachments) ? source.attachments : [];
++  const words = stripTrace(text2);
++  if (String(words ?? "").trim() === "" && files.length === 0) return null;
 +  const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
 +  if (person) {
 +    return (0, import_react9.createElement)(
@@ -6982,7 +6988,7 @@ diff --git a/client.js b/client.js
 +        person,
 +        carrier ? (0, import_react9.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
 +      ),
-+      (0, import_react9.createElement)(Bubbles, { texts: [stripTrace(text2)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react9.createElement)("span", { className: "bt-lead", title: person }, (0, import_react9.createElement)(PersonMark, { name: person })) }),
++      String(words ?? "").trim() === "" ? null : (0, import_react9.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react9.createElement)("span", { className: "bt-lead", title: person }, (0, import_react9.createElement)(PersonMark, { name: person })) }),
 +      files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +    );
 +  }
@@ -6998,7 +7004,7 @@ diff --git a/client.js b/client.js
 +      name,
 +      (0, import_react9.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react9.createElement)(GlobeMark), handle)
 +    ),
-+    (0, import_react9.createElement)(Bubbles, { texts: [stripTrace(text2)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
++    String(words ?? "").trim() === "" ? null : (0, import_react9.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
 +    files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
 +  );
 +}
@@ -7165,121 +7171,7 @@ diff --git a/client.js b/client.js
 +    }),
 +    (0, import_react9.createElement)(PartLine, { time: view.startedAt })
 +  );
- }
--@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
--@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
--[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
--[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
--[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
--[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
--[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
--[data-composer-card]>[class*="_row"]{display:contents!important}
--[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
--[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
--[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
--[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
--[data-composer-placeholder]{font-size:0!important;line-height:0!important}
--[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
--/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
--[data-composer-card] button[class*="_add"]{display:none!important}
--.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-plus:active{scale:.9}
--.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
--.bt-plus[aria-expanded=true] svg{rotate:45deg}
--.bt-plus-menu{min-width:180px}
--[data-composer-card] [class*="_tools"]{gap:0!important}
--[data-composer-card] [class*="_modes"]:empty{display:none!important}
--[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
--[data-composer-card] [class*="_trailing"]{gap:8px}
--[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
--[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
--[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
--@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
--[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
--[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
--[data-composer-dock]{display:none!important}
--.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
--.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
--@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
--.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--.bt-voice:hover{opacity:.9}
--.bt-mic:active,.bt-voice:active{scale:.9}
--[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
--body[data-bt-room] .bt-voice{display:none!important}
--body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
--.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
--[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
--.bt-q{order:1}
--div:has(> nav [class*="_marks"]){display:none!important}
--/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
--   takes its surface and its text from the one --bt-user pair: a skin that repaints
--   the host's bubble surface alone would otherwise leave the text unreadable. */
--[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
--[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
--/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
--[class*="_userRow"] [class*="_actions"]{display:none!important}
--[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
--[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
--[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
--[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
--[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
--[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
--[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
--.bt-q-inline{display:flex;margin:4px 0 6px}
--[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
--[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
--.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
--.bt-q-dock{width:100%;display:flex;justify-content:center}
--.bt-q-dock .bt-q{margin:0 auto 8px}
--[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
--[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
--[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
--[class*="_toBottomSlot"]>button:active{scale:.9}
--[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
--[class*="_toBottomSlot"]>button svg{display:none}
--[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
--@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
--[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
--.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
--@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
--.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
--@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
--.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
--.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
--.bt-news-ico svg{width:16px;height:16px}
--.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
--.bt-news-x svg{width:12px;height:12px}
--.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
--@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
--.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
--.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
--.bt-open-new{display:flex;flex-direction:column}
--.bt-open-new .bt-new-sep{margin:18px 0 0}
--.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
--.bt-earlier{display:flex;flex-direction:column;gap:6px}
--.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
--.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
--.bt-urow{display:flex;justify-content:flex-end}
--.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
--.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
--.bt-ububble p{margin:0;line-height:22px}
--.bt-uimages{display:block;font-size:12px;opacity:.7}
--.bt-earlier .bt-event{margin:4px 0}
--.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
--.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
--`;
--function installStyles(text, tag) {
--  const style = document.createElement("style");
--  style.dataset.dshBot = tag;
--  style.textContent = text;
--  document.head.appendChild(style);
--  return style;
++}
 +function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
 +  const roster = useRoster((value) => value);
 +  const data = node.data;
@@ -7467,15 +7359,7 @@ diff --git a/client.js b/client.js
 +  const listed = firstTurns.split(",").map(Number);
 +  const earlier = listed.filter((entry) => entry < turn);
 +  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
- }
--var FRAGMENT_SELECTOR = /\[class\*="(_[\w-]+)"\]/g;
--var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
--function sheetClassNames(sheet) {
--  const names = [];
--  const visit = (rules) => {
--    for (const rule of rules) {
--      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
--      if (rule.cssRules) visit(rule.cssRules);
++}
 +var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
 +function movedOnSince(visit, turns, hiddenTurns) {
 +  if (typeof visit?.entered !== "number") return false;
@@ -7585,7 +7469,121 @@ diff --git a/client.js b/client.js
 +    actions.noteLive(sessionId, id, JSON.parse(key));
 +    return () => actions.noteLive(sessionId, id, null);
 +  }, [sessionId, id, key]);
-+}
+ }
+-@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+-@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+-[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+-[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+-[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+-[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
+-[data-composer-card]>[class*="_row"]{display:contents!important}
+-[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
+-[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
+-[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
+-[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
+-[data-composer-placeholder]{font-size:0!important;line-height:0!important}
+-[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
+-/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
+-[data-composer-card] button[class*="_add"]{display:none!important}
+-.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-plus:active{scale:.9}
+-.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
+-.bt-plus[aria-expanded=true] svg{rotate:45deg}
+-.bt-plus-menu{min-width:180px}
+-[data-composer-card] [class*="_tools"]{gap:0!important}
+-[data-composer-card] [class*="_modes"]:empty{display:none!important}
+-[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
+-[data-composer-card] [class*="_trailing"]{gap:8px}
+-[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
+-[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
+-[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
+-@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
+-[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
+-[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
+-[data-composer-dock]{display:none!important}
+-.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
+-.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
+-@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
+-.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-.bt-voice:hover{opacity:.9}
+-.bt-mic:active,.bt-voice:active{scale:.9}
+-[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
+-body[data-bt-room] .bt-voice{display:none!important}
+-body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+-.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
+-[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+-.bt-q{order:1}
+-div:has(> nav [class*="_marks"]){display:none!important}
+-/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
+-   takes its surface and its text from the one --bt-user pair: a skin that repaints
+-   the host's bubble surface alone would otherwise leave the text unreadable. */
+-[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
+-[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
+-/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
+-[class*="_userRow"] [class*="_actions"]{display:none!important}
+-[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
+-[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
+-[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
+-[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
+-[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
+-[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
+-[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
+-.bt-q-inline{display:flex;margin:4px 0 6px}
+-[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
+-[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
+-.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
+-.bt-q-dock{width:100%;display:flex;justify-content:center}
+-.bt-q-dock .bt-q{margin:0 auto 8px}
+-[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
+-[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
+-[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
+-[class*="_toBottomSlot"]>button:active{scale:.9}
+-[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
+-[class*="_toBottomSlot"]>button svg{display:none}
+-[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
+-@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
+-[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
+-.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
+-@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
+-.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
+-@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
+-.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
+-.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
+-.bt-news-ico svg{width:16px;height:16px}
+-.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+-.bt-news-x svg{width:12px;height:12px}
+-.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
+-@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
+-.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+-.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
+-.bt-open-new{display:flex;flex-direction:column}
+-.bt-open-new .bt-new-sep{margin:18px 0 0}
+-.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
+-.bt-earlier{display:flex;flex-direction:column;gap:6px}
+-.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
+-.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
+-.bt-urow{display:flex;justify-content:flex-end}
+-.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
+-.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
+-.bt-ububble p{margin:0;line-height:22px}
+-.bt-uimages{display:block;font-size:12px;opacity:.7}
+-.bt-earlier .bt-event{margin:4px 0}
+-.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
+-.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
+-`;
+-function installStyles(text, tag) {
+-  const style = document.createElement("style");
+-  style.dataset.dshBot = tag;
+-  style.textContent = text;
+-  document.head.appendChild(style);
+-  return style;
 +function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
 +  const [live, setLive] = (0, import_react9.useState)({ replies: [] });
 +  (0, import_react9.useEffect)(() => {
@@ -7616,7 +7614,7 @@ diff --git a/client.js b/client.js
 +      replies = JSON.parse(contentText(content)).replies ?? [];
 +    } catch {
 +      replies = [];
-     }
++    }
 +  }
 +  if (replies.length === 0) return null;
 +  const room2 = roster.roomsById[sessionId];
@@ -7703,7 +7701,15 @@ diff --git a/client.js b/client.js
 +      return (0, import_react9.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
 +    })
 +  );
-+}
+ }
+-var FRAGMENT_SELECTOR = /\[class\*="(_[\w-]+)"\]/g;
+-var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
+-function sheetClassNames(sheet) {
+-  const names = [];
+-  const visit = (rules) => {
+-    for (const rule of rules) {
+-      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
+-      if (rule.cssRules) visit(rule.cssRules);
 +var DRAWN = /* @__PURE__ */ new Set(["message_bot", "stop_bot", "create_bot", "update_bot", "group_relay", "create_group", "update_group", "delete_group", "post_to_group", "ask_user", "request_secret", "ask_user_question", "read_group_chat", "remember", "forget"]);
 +var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
 +function callTree(root) {
@@ -7715,10 +7721,7 @@ diff --git a/client.js b/client.js
 +    seen.add(id);
 +    calls.push(call4);
 +    for (const child of call4.subCalls ?? []) visit(child);
-   };
--  try {
--    visit(sheet.cssRules);
--  } catch {
++  };
 +  visit(root);
 +  return calls;
 +}
@@ -7795,7 +7798,11 @@ diff --git a/client.js b/client.js
 +      const question = argValue("questions")?.[0];
 +      if (!answer) return null;
 +      return (0, import_react9.createElement)("div", { className: "bt-q-inline" }, (0, import_react9.createElement)(SettledQuestion, { question, answer }));
-+    }
+     }
+-  };
+-  try {
+-    visit(sheet.cssRules);
+-  } catch {
 +    case "read_group_chat": {
 +      if (!done) return null;
 +      const room2 = roster.rooms.find((entry) => entry.name === arg("group"));
@@ -7816,6 +7823,9 @@ diff --git a/client.js b/client.js
 -      const exact = [];
 -      for (const name of names) if (name.includes(fragment)) exact.push(`.${name}`);
 -      compiled.set(fragment, exact.length ? `:is(${exact.join(",")})` : whole);
+-    }
+-    return compiled.get(fragment);
+-  });
 +function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
 +  const roster = useRoster((value) => value);
 +  const root = node.data.root;
@@ -7831,7 +7841,42 @@ diff --git a/client.js b/client.js
 +  if (drawn.length === 0) return null;
 +  const env = { sessionId, roster, actions, useUi, findBot };
 +  return (0, import_react9.createElement)(import_react9.Fragment, null, drawn.map((call4, index) => (0, import_react9.createElement)(import_react9.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
-+}
+ }
+-function installCompiledStyles(text, tag) {
+-  const style = installStyles("", tag);
+-  const cache = /* @__PURE__ */ new WeakMap();
+-  const render = () => {
+-    const names = /* @__PURE__ */ new Set();
+-    for (const sheet of document.styleSheets) {
+-      if (sheet.ownerNode?.dataset?.dshBot) continue;
+-      let list = cache.get(sheet);
+-      if (!list) {
+-        list = sheetClassNames(sheet);
+-        cache.set(sheet, list);
+-      }
+-      for (const name of list) names.add(name);
+-    }
+-    const next = compileFragmentSelectors(text, names);
+-    if (style.textContent !== next) style.textContent = next;
+-  };
+-  render();
+-  let timer;
+-  const schedule = () => {
+-    clearTimeout(timer);
+-    timer = setTimeout(render, 120);
+-  };
+-  const onLoad = (event) => {
+-    if (event.target instanceof HTMLLinkElement) schedule();
+-  };
+-  const observer = new MutationObserver(schedule);
+-  observer.observe(document.head, { childList: true });
+-  document.addEventListener("load", onLoad, true);
+-  return () => {
+-    observer.disconnect();
+-    document.removeEventListener("load", onLoad, true);
+-    clearTimeout(timer);
+-    style.remove();
+-  };
 +
 +// src/client/awaiting.js
 +var AWAIT_REPLY_MS = 10 * 60 * 1e3;
@@ -7839,8 +7884,16 @@ diff --git a/client.js b/client.js
 +  const at = roster?.remoteAwaiting?.[sessionId];
 +  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
 +  return now - at < AWAIT_REPLY_MS;
-+}
-+
+ }
+ 
+-// src/client/mark.js
+-var import_react2 = require("react");
+-var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
+-var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
+-var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
+-function useGaze(ref, enabled) {
+-  (0, import_react2.useEffect)(() => {
+-    if (!enabled) return void 0;
 +// src/client/remote-approval-wait.js
 +var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
 +function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
@@ -7907,19 +7960,28 @@ diff --git a/client.js b/client.js
 +      sendTurn.current = -1;
 +      setReplied(false);
 +      return void 0;
-     }
--    return compiled.get(fragment);
--  });
++    }
 +    if (wasSending.current) {
 +      wasSending.current = false;
 +      sendTurn.current = lastTurnOnScreen();
 +    }
 +    if (sendTurn.current < 0) return void 0;
-+    let frame = 0;
+     let frame = 0;
+-    let point = null;
+-    const place = () => {
 +    const check = () => {
-+      frame = 0;
+       frame = 0;
+-      const node = ref.current;
+-      if (!node || !point) return;
+-      const box = node.getBoundingClientRect();
+-      const clamp = (value) => Math.max(-1, Math.min(1, value));
+-      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
+-      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
 +      if (lastTurnOnScreen("assistant-step") > sendTurn.current) setReplied(true);
-+    };
+     };
+-    const onMove = (event) => {
+-      point = { x: event.clientX, y: event.clientY };
+-      if (!frame) frame = requestAnimationFrame(place);
 +    const observer = new MutationObserver(() => {
 +      if (!frame) frame = requestAnimationFrame(check);
 +    });
@@ -7928,78 +7990,90 @@ diff --git a/client.js b/client.js
 +    return () => {
 +      cancelAnimationFrame(frame);
 +      observer.disconnect();
-+    };
+     };
+-    const onLeave = () => {
+-      point = null;
+-      ref.current?.style.setProperty("--bt-gx", "0");
+-      ref.current?.style.setProperty("--bt-gy", "0");
 +  }, [remote, sending]);
 +  return replied;
- }
--function installCompiledStyles(text, tag) {
--  const style = installStyles("", tag);
--  const cache = /* @__PURE__ */ new WeakMap();
--  const render = () => {
--    const names = /* @__PURE__ */ new Set();
--    for (const sheet of document.styleSheets) {
--      if (sheet.ownerNode?.dataset?.dshBot) continue;
--      let list = cache.get(sheet);
--      if (!list) {
--        list = sheetClassNames(sheet);
--        cache.set(sheet, list);
--      }
--      for (const name of list) names.add(name);
++}
 +function useRunningHost(active, where = RUNNING_HOST) {
 +  const [host, setHost] = (0, import_react10.useState)(null);
 +  (0, import_react10.useEffect)(() => {
 +    if (!active) {
 +      setHost(null);
 +      return void 0;
-     }
--    const next = compileFragmentSelectors(text, names);
--    if (style.textContent !== next) style.textContent = next;
--  };
--  render();
--  let timer;
--  const schedule = () => {
--    clearTimeout(timer);
--    timer = setTimeout(render, 120);
--  };
--  const onLoad = (event) => {
--    if (event.target instanceof HTMLLinkElement) schedule();
--  };
--  const observer = new MutationObserver(schedule);
--  observer.observe(document.head, { childList: true });
--  document.addEventListener("load", onLoad, true);
--  return () => {
--    observer.disconnect();
--    document.removeEventListener("load", onLoad, true);
--    clearTimeout(timer);
--    style.remove();
--  };
++    }
 +    let frame = 0;
 +    const find = () => {
 +      frame = 0;
 +      const node = findHost(where);
 +      setHost((prev) => prev === node ? prev : node);
-+    };
+     };
+-    window.addEventListener("pointermove", onMove, { passive: true });
+-    document.documentElement.addEventListener("pointerleave", onLeave);
 +    const observer = new MutationObserver(() => {
 +      if (!frame) frame = requestAnimationFrame(find);
 +    });
 +    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
 +    find();
-+    return () => {
-+      cancelAnimationFrame(frame);
+     return () => {
+       cancelAnimationFrame(frame);
+-      window.removeEventListener("pointermove", onMove);
+-      document.documentElement.removeEventListener("pointerleave", onLeave);
 +      observer.disconnect();
-+    };
+     };
+-  }, [enabled]);
+-}
+-var FIDGETS = ["hop", "sway", "stretch", "look"];
+-function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
+-  const look = given ?? lookOf(bot);
+-  const ref = (0, import_react2.useRef)(null);
+-  const maskId = (0, import_react2.useRef)("");
+-  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
+-  const [poked, setPoked] = (0, import_react2.useState)(false);
+-  useGaze(ref, gaze);
+-  const common = {
+-    ref,
+-    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
+-    "data-shape": look.image ? "image" : shapeId(look.shape),
+-    "data-state": STATES.includes(state) ? state : "idle",
+-    "data-live": live ? "" : void 0,
+-    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
+-    "data-gaze": gaze ? "" : void 0,
+-    "data-poke": pokeable ? "" : void 0,
+-    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
+-    role: label ? "img" : void 0,
+-    "aria-label": label,
+-    "aria-hidden": label ? void 0 : true,
+-    onClick: pokeable ? () => setPoked(true) : void 0,
+-    onAnimationEnd: poked ? (event) => {
+-      if (/^bt-poke/.test(event.animationName)) setPoked(false);
+-    } : void 0
+-  };
+-  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
+-  const box = shapeOf(look.shape).size;
+-  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
+-}
+-function StarIcon({ size = 8 }) {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+-  );
+-}
+-function AdminStar() {
+-  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
 +  }, [active, where]);
 +  return host;
  }
--
--// src/client/mark.js
--var import_react2 = require("react");
--var STATES = ["idle", "thinking", "searching", "working", "sending", "orbit", "alert", "done"];
--var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
--var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
--function useGaze(ref, enabled) {
--  (0, import_react2.useEffect)(() => {
--    if (!enabled) return void 0;
+-function MainStar() {
+-  return (0, import_react2.createElement)(
+-    "svg",
+-    { viewBox: "0 0 20 20", "aria-hidden": true },
+-    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
+-  );
 +function useRowEntrances(replacing) {
 +  const check = (0, import_react10.useRef)(replacing);
 +  check.current = replacing;
@@ -8007,22 +8081,14 @@ diff --git a/client.js b/client.js
 +    const seen = /* @__PURE__ */ new WeakSet();
 +    const started = Date.now();
 +    let column = null;
-     let frame = 0;
--    let point = null;
--    const place = () => {
++    let frame = 0;
 +    const settle = (event) => {
 +      if (event.target !== event.currentTarget || !/^bt-row/.test(event.animationName)) return;
 +      delete event.currentTarget.dataset.btEnter;
 +      event.currentTarget.removeEventListener("animationend", settle);
 +    };
 +    const scan = () => {
-       frame = 0;
--      const node = ref.current;
--      if (!node || !point) return;
--      const box = node.getBoundingClientRect();
--      const clamp = (value) => Math.max(-1, Math.min(1, value));
--      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
--      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
++      frame = 0;
 +      const next = document.querySelector("[data-chat-flow]");
 +      if (next !== column) {
 +        observer.disconnect();
@@ -8044,10 +8110,7 @@ diff --git a/client.js b/client.js
 +        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
 +        item.addEventListener("animationend", settle);
 +      }
-     };
--    const onMove = (event) => {
--      point = { x: event.clientX, y: event.clientY };
--      if (!frame) frame = requestAnimationFrame(place);
++    };
 +    const observer = new MutationObserver(() => {
 +      if (!frame) frame = requestAnimationFrame(scan);
 +    });
@@ -8055,13 +8118,17 @@ diff --git a/client.js b/client.js
 +    return () => {
 +      cancelAnimationFrame(frame);
 +      observer.disconnect();
-     };
--    const onLeave = () => {
--      point = null;
--      ref.current?.style.setProperty("--bt-gx", "0");
--      ref.current?.style.setProperty("--bt-gy", "0");
++    };
 +  }, []);
-+}
+ }
+-function useSettled(state) {
+-  const prev = (0, import_react2.useRef)(state);
+-  const [settled, setSettled] = (0, import_react2.useState)(false);
+-  (0, import_react2.useEffect)(() => {
+-    const was = prev.current;
+-    prev.current = state;
+-    if (state !== "idle") {
+-      setSettled(false);
 +function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, useSession, actions }) {
 +  const roster = useRoster((value) => value);
 +  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
@@ -8112,8 +8179,11 @@ diff --git a/client.js b/client.js
 +  (0, import_react10.useEffect)(() => {
 +    if (visible) {
 +      setPhase("in");
-+      return void 0;
-+    }
+       return void 0;
+     }
+-    if (was === "idle" || was === "alert") return void 0;
+-    setSettled(true);
+-    const timer = setTimeout(() => setSettled(false), 1800);
 +    let timer;
 +    const leave = () => {
 +      setPhase((current) => current === "in" ? "out" : current);
@@ -8121,12 +8191,12 @@ diff --git a/client.js b/client.js
 +        shift.current = document.querySelector("[data-conversation-scroll]")?.scrollTop ?? null;
 +        setPhase((current) => current === "out" ? null : current);
 +      }, 140);
-     };
--    window.addEventListener("pointermove", onMove, { passive: true });
--    document.documentElement.addEventListener("pointerleave", onLeave);
++    };
 +    if (steady) timer = setTimeout(leave, REMOTE_GRACE_MS);
 +    else leave();
-+    return () => clearTimeout(timer);
+     return () => clearTimeout(timer);
+-  }, [state]);
+-  return settled;
 +  }, [visible]);
 +  (0, import_react10.useLayoutEffect)(() => {
 +    if (phase !== null) return;
@@ -8173,7 +8243,20 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  ), host);
-+}
+ }
+-function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
+-  const settled = useSettled(state);
+-  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
+-  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
+-  return (0, import_react2.createElement)(
+-    "span",
+-    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
+-    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
+-    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
+-    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
+-    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
+-    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
+-  );
 +
 +// src/client/dsh-offer.js
 +var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
@@ -8183,7 +8266,17 @@ diff --git a/client.js b/client.js
 +  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
 +  if (dsh.kind === "npm") return true;
 +  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
-+}
+ }
+-function clusterSeats(count, frame) {
+-  if (count === 1) return [[0, 0, frame]];
+-  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
+-  if (count === 3) {
+-    const size = frame * 5 / 9;
+-    const rest = frame - size;
+-    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
+-  }
+-  const half = frame / 2;
+-  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
 +
 +// src/client/overlay-hooks.js
 +var import_react11 = require("react");
@@ -8197,51 +8290,42 @@ diff --git a/client.js b/client.js
 +  (0, import_react11.useEffect)(() => {
 +    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
 +    escapeLayers.push(ref);
-     return () => {
--      cancelAnimationFrame(frame);
--      window.removeEventListener("pointermove", onMove);
--      document.documentElement.removeEventListener("pointerleave", onLeave);
++    return () => {
 +      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
 +      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
-     };
--  }, [enabled]);
--}
--var FIDGETS = ["hop", "sway", "stretch", "look"];
--function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
--  const look = given ?? lookOf(bot);
--  const ref = (0, import_react2.useRef)(null);
--  const maskId = (0, import_react2.useRef)("");
--  if (maskId.current === "") maskId.current = `bt-mark-${nextMarkSerial()}`;
--  const [poked, setPoked] = (0, import_react2.useState)(false);
--  useGaze(ref, gaze);
--  const common = {
--    ref,
--    className: poked ? "bt-mark bt-mark-poke" : "bt-mark",
--    "data-shape": look.image ? "image" : shapeId(look.shape),
--    "data-state": STATES.includes(state) ? state : "idle",
--    "data-live": live ? "" : void 0,
--    "data-fidget": live ? FIDGETS[fnv1a(`${bot?.id ?? ""}:fidget`) % FIDGETS.length] : void 0,
--    "data-gaze": gaze ? "" : void 0,
--    "data-poke": pokeable ? "" : void 0,
--    style: { width: size, height: size, ...live ? { "--bt-delay": `${-(fnv1a(String(bot?.id ?? "")) % 5e3) / 1e3}s`, "--bt-fidget-delay": `${-(fnv1a(`${bot?.id ?? ""}:when`) % 9e3) / 1e3}s` } : {} },
--    role: label ? "img" : void 0,
--    "aria-label": label,
--    "aria-hidden": label ? void 0 : true,
--    onClick: pokeable ? () => setPoked(true) : void 0,
--    onAnimationEnd: poked ? (event) => {
--      if (/^bt-poke/.test(event.animationName)) setPoked(false);
--    } : void 0
--  };
--  if (look.image) return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("img", { className: "bt-mark-img", src: look.image, alt: "", draggable: false }));
--  const box = shapeOf(look.shape).size;
--  return (0, import_react2.createElement)("span", common, (0, import_react2.createElement)("svg", { viewBox: `0 0 ${box} ${box}`, dangerouslySetInnerHTML: { __html: characterMarkup(look.shape, look.color).replaceAll(MASK_ID, maskId.current) } }));
++    };
 +  }, []);
  }
--function StarIcon({ size = 8 }) {
+-function RoomAvatar({ room: room2, roster, size = 36 }) {
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const people = members.length === 1 ? [members[0], null] : members;
+-  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
+-  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
+-  if (size <= 20 && people.length > 1) {
+-    return (0, import_react2.createElement)(
+-      "span",
+-      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
+-      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
+-      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
+-    );
+-  }
+-  const seats = clusterSeats(Math.min(people.length, 4), size);
+-  const overflow = people.length > 4 ? people.length - 3 : 0;
+-  const gap = size / 14;
+-  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
 -  return (0, import_react2.createElement)(
--    "svg",
--    { width: size, height: size, viewBox: "0 0 10 10", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M5 .6l1.3 2.8 3 .3-2.3 2 .7 3L5 7.2 2.3 8.7l.7-3L.7 3.7l3-.3z", fill: "#fff" })
+-    "span",
+-    { className: "bt-cluster", style: { width: size, height: size } },
+-    seats.map(([x, y, s], index) => {
+-      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
+-      const style = { left: x, top: y, width: s, height: s };
+-      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
+-      if (overflow > 0 && index === 3) {
+-        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
+-      }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
+-    })
 -  );
 +function usePaneLeft() {
 +  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
@@ -8251,9 +8335,11 @@ diff --git a/client.js b/client.js
 +  }, []);
 +  return paneLeft;
  }
--function AdminStar() {
--  return (0, import_react2.createElement)("span", { className: "bt-admin-star", role: "img", "aria-label": t("Admin") }, (0, import_react2.createElement)(StarIcon, { size: 7 }));
-+
+ 
+-// src/client/icons.js
+-var import_react3 = require("react");
+-function PlusIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
 +// src/client/member-status.js
 +var import_react12 = require("react");
 +var NO_WORK = { bots: {}, rooms: {}, approvals: [] };
@@ -8276,50 +8362,27 @@ diff --git a/client.js b/client.js
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
 +  });
  }
--function MainStar() {
--  return (0, import_react2.createElement)(
--    "svg",
--    { viewBox: "0 0 20 20", "aria-hidden": true },
--    (0, import_react2.createElement)("path", { d: "M10 2.4l2.29 5.04 5.51.63-4.09 3.74 1.11 5.42L10 14.5l-4.82 2.73 1.11-5.42L2.2 8.07l5.51-.63z" })
--  );
+-function SearchIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react3.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
 +function busyMembers(room2, work, roster) {
 +  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
 +  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
  }
--function useSettled(state) {
--  const prev = (0, import_react2.useRef)(state);
--  const [settled, setSettled] = (0, import_react2.useState)(false);
--  (0, import_react2.useEffect)(() => {
--    const was = prev.current;
--    prev.current = state;
--    if (state !== "idle") {
--      setSettled(false);
--      return void 0;
--    }
--    if (was === "idle" || was === "alert") return void 0;
--    setSettled(true);
--    const timer = setTimeout(() => setSettled(false), 1800);
--    return () => clearTimeout(timer);
--  }, [state]);
--  return settled;
+-function PeopleIcon() {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
+-    (0, import_react3.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
+-    (0, import_react3.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
+-  );
 +function splitBusy(busy) {
 +  const here = busy.filter((entry) => entry.state === "work" && entry.here);
 +  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
 +  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
  }
--function BotAvatar({ bot, size, state = "idle", main, admin, badge = true, live = true, gaze = false, pokeable = false }) {
--  const settled = useSettled(state);
--  if (bot === void 0) return (0, import_react2.createElement)(BotMark, { size });
--  const badgeKind = !badge ? null : state === "alert" ? "alert" : state !== "idle" ? "working" : admin ? "admin" : main ? "main" : null;
--  return (0, import_react2.createElement)(
--    "span",
--    { className: "bt-mark", style: { width: size, height: size, "--bt-size": `${size}px` } },
--    (0, import_react2.createElement)(BotMark, { bot, size, state: settled ? "done" : state, live, gaze, pokeable }),
--    badgeKind === "working" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-working", "aria-label": t("Working"), role: "img" }) : null,
--    badgeKind === "alert" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-alert", "aria-label": t("Waiting for your answer"), role: "img" }, "?") : null,
--    badgeKind === "admin" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-admin", "aria-label": t("Admin"), role: "img" }, (0, import_react2.createElement)(StarIcon)) : null,
--    badgeKind === "main" ? (0, import_react2.createElement)("span", { className: "bt-badge bt-badge-main", "aria-label": t("Main Bot"), role: "img" }, (0, import_react2.createElement)(MainStar)) : null
--  );
+-function ArrowUpIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 16V4M5 9l5-5 5 5", stroke: "currentColor", strokeWidth: 1.8, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }));
 +function botGroupWork(botId, work, roster) {
 +  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
 +    const entry = entries2.find((item) => item.botId === botId);
@@ -8327,16 +8390,13 @@ diff --git a/client.js b/client.js
 +    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
 +  });
  }
--function clusterSeats(count, frame) {
--  if (count === 1) return [[0, 0, frame]];
--  if (count === 2) return [[0, 0, frame * 2 / 3], [frame / 3, frame / 3, frame * 2 / 3]];
--  if (count === 3) {
--    const size = frame * 5 / 9;
--    const rest = frame - size;
--    return [[rest / 2, 0, size], [0, rest, size], [rest, rest, size]];
--  }
--  const half = frame / 2;
--  return [[0, 0, half], [half, 0, half], [0, half, half], [half, half, half]];
+-function MicIcon({ size = 16 }) {
+-  return (0, import_react3.createElement)(
+-    "svg",
+-    { width: size, height: size, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("rect", { x: 7, y: 2.5, width: 6, height: 10, rx: 3, fill: "currentColor", stroke: "none" }),
+-    (0, import_react3.createElement)("path", { d: "M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" })
+-  );
 +var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
 +function summaryText(busy) {
 +  const asks = busy.filter((entry) => entry.state === "ask");
@@ -8347,69 +8407,23 @@ diff --git a/client.js b/client.js
 +  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
 +  return { waiting, doing };
  }
--function RoomAvatar({ room: room2, roster, size = 36 }) {
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const people = members.length === 1 ? [members[0], null] : members;
--  const seat = (bot, seatSize, key) => bot ? (0, import_react2.createElement)(BotMark, { key, bot, size: seatSize }) : (0, import_react2.createElement)("span", { key, className: "bt-cluster-you", style: { width: seatSize * 0.92, height: seatSize * 0.92, margin: seatSize * 0.04 } });
--  if (people.length === 0) return (0, import_react2.createElement)(BotMark, { size });
--  if (size <= 20 && people.length > 1) {
--    return (0, import_react2.createElement)(
--      "span",
--      { className: "bt-stack", style: { "--bt-stack-size": `${size}px` } },
--      people.slice(0, 3).map((bot, index) => seat(bot, size, bot?.id ?? `you-${index}`)),
--      people.length > 3 ? (0, import_react2.createElement)("span", { className: "bt-stack-more" }, `+${people.length - 3}`) : null
--    );
--  }
--  const seats = clusterSeats(Math.min(people.length, 4), size);
--  const overflow = people.length > 4 ? people.length - 3 : 0;
--  const gap = size / 14;
--  const rings = seats.map(([x, y, s]) => ({ cx: x + s / 2, cy: y + s / 2, r: s * 0.48 + gap }));
--  return (0, import_react2.createElement)(
-+function Face({ entry, size }) {
-+  return (0, import_react12.createElement)(
-     "span",
--    { className: "bt-cluster", style: { width: size, height: size } },
--    seats.map(([x, y, s], index) => {
--      const holes2 = rings.slice(index + 1).filter((ring) => Math.hypot(ring.cx - x - s / 2, ring.cy - y - s / 2) < ring.r + s * 0.46).map((ring) => `radial-gradient(circle at ${ring.cx - x}px ${ring.cy - y}px,transparent ${ring.r}px,#000 ${ring.r + 0.5}px)`);
--      const style = { left: x, top: y, width: s, height: s };
--      if (holes2.length > 0) Object.assign(style, { WebkitMaskImage: holes2.join(","), maskImage: holes2.join(","), WebkitMaskComposite: "source-in", maskComposite: "intersect" });
--      if (overflow > 0 && index === 3) {
--        return (0, import_react2.createElement)("span", { key: "more", className: "bt-cluster-more", style: { ...style, width: s * 0.92, height: s * 0.92, margin: s * 0.04, fontSize: Math.max(8, Math.round(s * 0.36)) } }, `+${overflow}`);
--      }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
--    })
--  );
--}
--
--// src/client/icons.js
--var import_react3 = require("react");
--function PlusIcon() {
--  return (0, import_react3.createElement)("svg", { width: 18, height: 18, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 3.5v13M3.5 10h13", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
--}
--function SearchIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("circle", { cx: 8.5, cy: 8.5, r: 5.5, stroke: "currentColor", strokeWidth: 1.6, fill: "none" }), (0, import_react3.createElement)("path", { d: "M13 13l4 4", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
--}
--function PeopleIcon() {
+-function WaveIcon({ size = 16 }) {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("circle", { cx: 7.5, cy: 7, r: 3 }),
--    (0, import_react3.createElement)("path", { d: "M2 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" }),
--    (0, import_react3.createElement)("path", { d: "M13 4.3a3 3 0 0 1 0 5.4M15 12.4c1.6.6 2.6 2 3 4.1" })
+-    { width: size, height: size, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
+-    [[3, 7.5, 5], [6.5, 4.5, 11], [10, 2.5, 15], [13.5, 5.5, 9], [17, 8, 4]].map(([x, y, height]) => (0, import_react3.createElement)("rect", { key: x, x: x - 1, y, width: 2, height, rx: 1 }))
++function Face({ entry, size }) {
++  return (0, import_react12.createElement)(
++    "span",
 +    { className: "bt-mw-face", "data-ask": entry.state === "ask" || void 0 },
 +    (0, import_react12.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
    );
  }
--function ArrowUpIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M10 16V4M5 9l5-5 5 5", stroke: "currentColor", strokeWidth: 1.8, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }));
--}
--function MicIcon({ size = 16 }) {
+-function ShareIcon() {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: size, height: size, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("rect", { x: 7, y: 2.5, width: 6, height: 10, rx: 3, fill: "currentColor", stroke: "none" }),
--    (0, import_react3.createElement)("path", { d: "M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" })
+-    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("path", { d: "M10 12.5V3M6.5 6.5L10 3l3.5 3.5M4 11v4.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V11" })
 +var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
 +function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
 +  const text2 = `${label} · ${workText(tool, step)}`;
@@ -8422,11 +8436,16 @@ diff --git a/client.js b/client.js
 +    elapsed ? (0, import_react12.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
  }
--function WaveIcon({ size = 16 }) {
+-function CloseIcon() {
+-  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M5 5l10 10M15 5L5 15", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
+-}
+-var ChevronLeftIcon = () => (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M12.5 4.5L7 10l5.5 5.5" }));
+-var ChevronRightIcon = () => (0, import_react3.createElement)("svg", { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M7.5 4.5L13 10l-5.5 5.5" }));
+-var lineIcon = (paths) => function LineIcon() {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: size, height: size, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
--    [[3, 7.5, 5], [6.5, 4.5, 11], [10, 2.5, 15], [13.5, 5.5, 9], [17, 8, 4]].map(([x, y, height]) => (0, import_react3.createElement)("rect", { key: x, x: x - 1, y, width: 2, height, rx: 1 }))
+-    { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    paths.map((d, index) => (0, import_react3.createElement)("path", { key: index, d }))
 +function SummaryLine({ busy, now, onOpen }) {
 +  const { waiting, doing } = summaryText(busy);
 +  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
@@ -8443,12 +8462,15 @@ diff --git a/client.js b/client.js
 +    ),
 +    elapsed ? (0, import_react12.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
- }
--function ShareIcon() {
+-};
+-var CLOUD = "M6.5 15.25H5.75a3.25 3.25 0 0 1-.55-6.45 4.75 4.75 0 0 1 9.2-1.1 3.75 3.75 0 0 1 .1 7.55H13.5";
+-function CloudDownloadIcon({ done = false }) {
 -  return (0, import_react3.createElement)(
 -    "svg",
--    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("path", { d: "M10 12.5V3M6.5 6.5L10 3l3.5 3.5M4 11v4.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V11" })
+-    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-    (0, import_react3.createElement)("path", { d: CLOUD }),
+-    done ? (0, import_react3.createElement)("path", { d: "M7.75 13.25l1.75 1.75 3-3.25" }) : (0, import_react3.createElement)("g", { className: "bt-cloud-arrow" }, (0, import_react3.createElement)("path", { d: "M10 9.75v7" }), (0, import_react3.createElement)("path", { d: "M7.75 14.5L10 16.75l2.25-2.25" }))
++}
 +function MemberDock({ sessionId, useRoster, useWork, actions }) {
 +  const roster = useRoster((value) => value);
 +  const work = useWork((value) => value);
@@ -8494,51 +8516,6 @@ diff --git a/client.js b/client.js
 +    ) : null
    );
  }
--function CloseIcon() {
--  return (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M5 5l10 10M15 5L5 15", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }));
-+function useFlowColumn(ref, active, key) {
-+  (0, import_react12.useLayoutEffect)(() => {
-+    const node = ref.current;
-+    const flow = document.querySelector("[data-chat-flow]");
-+    if (!active || !node || !flow) return void 0;
-+    const place = () => {
-+      node.style.marginInlineStart = "0px";
-+      const column = flow.getBoundingClientRect();
-+      node.style.marginInlineStart = `${Math.round(column.left - node.getBoundingClientRect().left)}px`;
-+      node.style.width = `${Math.round(column.width)}px`;
-+    };
-+    place();
-+    const observer = new ResizeObserver(place);
-+    for (const target of [flow, flow.parentElement, node.parentElement]) if (target) observer.observe(target);
-+    return () => observer.disconnect();
-+  }, [active, key]);
- }
--var ChevronLeftIcon = () => (0, import_react3.createElement)("svg", { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M12.5 4.5L7 10l5.5 5.5" }));
--var ChevronRightIcon = () => (0, import_react3.createElement)("svg", { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react3.createElement)("path", { d: "M7.5 4.5L13 10l-5.5 5.5" }));
--var lineIcon = (paths) => function LineIcon() {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    paths.map((d, index) => (0, import_react3.createElement)("path", { key: index, d }))
--  );
--};
--var CLOUD = "M6.5 15.25H5.75a3.25 3.25 0 0 1-.55-6.45 4.75 4.75 0 0 1 9.2-1.1 3.75 3.75 0 0 1 .1 7.55H13.5";
--function CloudDownloadIcon({ done = false }) {
--  return (0, import_react3.createElement)(
--    "svg",
--    { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--    (0, import_react3.createElement)("path", { d: CLOUD }),
--    done ? (0, import_react3.createElement)("path", { d: "M7.75 13.25l1.75 1.75 3-3.25" }) : (0, import_react3.createElement)("g", { className: "bt-cloud-arrow" }, (0, import_react3.createElement)("path", { d: "M10 9.75v7" }), (0, import_react3.createElement)("path", { d: "M7.75 14.5L10 16.75l2.25-2.25" }))
--  );
-+function useNow(active) {
-+  const [now, setNow] = (0, import_react12.useState)(Date.now);
-+  (0, import_react12.useEffect)(() => {
-+    if (!active) return void 0;
-+    const timer = setInterval(() => setNow(Date.now()), 3e4);
-+    return () => clearInterval(timer);
-+  }, [active]);
-+  return now;
- }
 -var SmileIcon = lineIcon(["M10 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13z", "M7.3 11.6a3.4 3.4 0 0 0 5.4 0", "M7.75 8.25h.01M12.25 8.25h.01"]);
 -var ReplyIcon = lineIcon(["M8 5L4 9l4 4", "M4 9h7.5a4.5 4.5 0 0 1 4.5 4.5V15"]);
 -var DotsIcon = lineIcon(["M5 10h.01M10 10h.01M15 10h.01"]);
@@ -8563,6 +8540,32 @@ diff --git a/client.js b/client.js
 -      { transform: "rotate(45 10 10)" },
 -      (0, import_react3.createElement)("path", { d: "M8 2.5h4a.9.9 0 0 1 0 1.8h-.4v4.1c0 1.4 1.1 2.6 2.6 3.1l.7.3v1.5H5.1v-1.5l.7-.3c1.5-.5 2.6-1.7 2.6-3.1V4.3H8a.9.9 0 0 1 0-1.8z" }),
 -      (0, import_react3.createElement)("path", { d: "M9.35 13.3h1.3v3.6L10 18l-.65-1.1z" })
++function useFlowColumn(ref, active, key) {
++  (0, import_react12.useLayoutEffect)(() => {
++    const node = ref.current;
++    const flow = document.querySelector("[data-chat-flow]");
++    if (!active || !node || !flow) return void 0;
++    const place = () => {
++      node.style.marginInlineStart = "0px";
++      const column = flow.getBoundingClientRect();
++      node.style.marginInlineStart = `${Math.round(column.left - node.getBoundingClientRect().left)}px`;
++      node.style.width = `${Math.round(column.width)}px`;
++    };
++    place();
++    const observer = new ResizeObserver(place);
++    for (const target of [flow, flow.parentElement, node.parentElement]) if (target) observer.observe(target);
++    return () => observer.disconnect();
++  }, [active, key]);
++}
++function useNow(active) {
++  const [now, setNow] = (0, import_react12.useState)(Date.now);
++  (0, import_react12.useEffect)(() => {
++    if (!active) return void 0;
++    const timer = setInterval(() => setNow(Date.now()), 3e4);
++    return () => clearInterval(timer);
++  }, [active]);
++  return now;
++}
 +var since = (now, at) => typeof at === "number" && now - at >= 6e4 ? ` · ${elapsedLabel(now - at)}` : "";
 +var alwaysChoices = (approval, bot) => bot?.remote ? [] : [
 +  ["always-bot", "Always allow for this Bot"],
@@ -9626,26 +9629,6 @@ diff --git a/client.js b/client.js
 -      request.kind === "allow" && !replacing ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: () => setReplacing(true) }, t("Replace value")) : null,
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: cancel }, t("Cancel")),
 -      filling ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: !long || busy, onClick: save }, busy ? t("Saving…") : t("Save")) : (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: allow }, busy ? t("Allowing…") : t("Allow"))
--    )
--  );
--}
--function SettledSecret({ bot, request, roster }) {
--  const canceled = request.status === "canceled";
--  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-q-head" },
--      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
--      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
--        "p",
--        { className: "bt-q-title" },
--        text,
--        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
--      )),
--      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
 +    (0, import_react13.createElement)(
 +      "span",
 +      { className: "bt-inbox-actions" },
@@ -9656,8 +9639,10 @@ diff --git a/client.js b/client.js
      )
    );
  }
--function RequestView({ bot, request, roster, actions }) {
--  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
+-function SettledSecret({ bot, request, roster }) {
+-  const canceled = request.status === "canceled";
+-  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
+-  return (0, import_react5.createElement)(
 +function useNow2(ms) {
 +  const [now, setNow] = (0, import_react13.useState)(Date.now);
 +  (0, import_react13.useEffect)(() => {
@@ -9665,40 +9650,15 @@ diff --git a/client.js b/client.js
 +    return () => clearInterval(timer);
 +  }, [ms]);
 +  return now;
- }
--function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
--  const bot = roster.byId[sessionId];
--  if (!bot) return null;
--  const request = (roster.secretRequests?.[bot.id] ?? []).find((entry) => entry.callId === callId && (entry.sessionId ?? sessionId) === sessionId);
--  if (request) return (0, import_react5.createElement)("div", { className: "bt-q-inline" }, (0, import_react5.createElement)(RequestView, { bot, request, roster, actions }));
--  if (done && /already saved/.test(contentText(content))) {
--    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
++}
 +function openCard(actions, card) {
 +  actions.closeInbox();
 +  if (card?.kind === "workflow") {
 +    actions.openSettings("workflow");
 +    return;
-   }
--  return null;
--}
--function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
--  const roster = useRoster((value) => value);
--  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
--  const loading = useSession?.(historyLoading) === true;
--  const bot = roster.byId[sessionId];
--  if (!bot || currentPart(bot) !== sessionId) return null;
--  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
--  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
--  if (waiting.length === 0) return null;
--  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
++  }
 +  actions.openSession(card.chat);
- }
--function ScopeEditor({ secret, roster, onSave }) {
--  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
--  const [picked, setPicked] = (0, import_react5.useState)(secret.scope === "all" ? [] : secret.scope);
--  const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
--  const same = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
--  return (0, import_react5.createElement)(
++}
 +function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {
 +  const work = useWork((value) => value);
 +  const sessions = useSessions((value) => value);
@@ -9736,32 +9696,21 @@ diff --git a/client.js b/client.js
 +  const open = (card) => openCard(actions, card);
 +  return (0, import_react13.createElement)(
      "div",
--    { className: "bt-secret-edit-block" },
--    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Who may use it")),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
--      [["all", t("All Bots")], ["some", t("Chosen Bots")]].map(([id, text]) => (0, import_react5.createElement)(
--        "label",
--        { key: id, className: "bt-secret-radio" },
--        (0, import_react5.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
--        text
--      ))
--    ),
--    mode === "some" ? (0, import_react5.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react5.createElement)("button", {
--      key: bot.id,
--      type: "button",
--      className: "bt-secret-bot",
--      "aria-pressed": picked.includes(bot.id),
--      onClick: () => toggle(bot.id)
--    }, (0, import_react5.createElement)(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? (0, import_react5.createElement)(CheckIcon) : null))) : null,
+-    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
 -    (0, import_react5.createElement)(
 +    { className: "bt-mem-layer bt-inbox-layer", "data-leaving": leaving || void 0 },
 +    (0, import_react13.createElement)("div", { className: "bt-scrim bt-mem-scrim", onMouseDown: close }),
 +    (0, import_react13.createElement)(
        "div",
--      { className: "bt-secret-row-actions" },
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
+-      { className: "bt-q-head" },
+-      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
+-      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
+-        "p",
+-        { className: "bt-q-title" },
+-        text,
+-        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
+-      )),
+-      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
 +      { className: "bt-mem bt-inbox", role: "dialog", "aria-modal": true, "aria-labelledby": "bt-inbox-heading" },
 +      (0, import_react13.createElement)(
 +        "div",
@@ -9813,18 +9762,29 @@ diff --git a/client.js b/client.js
      )
    );
  }
--function ValueEditor({ secret, onSave }) {
--  const [value, setValue] = (0, import_react5.useState)("");
--  const [replaced, setReplaced] = (0, import_react5.useState)(false);
--  const long = value.trim().length >= MIN_VALUE;
--  const save = () => {
--    if (!long) return;
--    void Promise.resolve(onSave(value)).then((ok) => {
--      if (ok) {
--        setValue("");
--        setReplaced(true);
--      }
--    });
+-function RequestView({ bot, request, roster, actions }) {
+-  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
+-}
+-function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
+-  const bot = roster.byId[sessionId];
+-  if (!bot) return null;
+-  const request = (roster.secretRequests?.[bot.id] ?? []).find((entry) => entry.callId === callId && (entry.sessionId ?? sessionId) === sessionId);
+-  if (request) return (0, import_react5.createElement)("div", { className: "bt-q-inline" }, (0, import_react5.createElement)(RequestView, { bot, request, roster, actions }));
+-  if (done && /already saved/.test(contentText(content))) {
+-    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
+-  }
+-  return null;
+-}
+-function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
+-  const roster = useRoster((value) => value);
+-  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
+-  const loading = useSession?.(historyLoading) === true;
+-  const bot = roster.byId[sessionId];
+-  if (!bot || currentPart(bot) !== sessionId) return null;
+-  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
+-  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
+-  if (waiting.length === 0) return null;
+-  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
 +var INBOX_CSS = `
 +.bt-inbox-row{min-height:40px;padding:6px 8px;gap:10px}
 +.bt-inbox-mark{flex:none;width:36px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
@@ -9893,7 +9853,25 @@ diff --git a/client.js b/client.js
 +    id: String(task.id),
 +    title: String(task.title ?? "")
 +  };
-+}
+ }
+-function ScopeEditor({ secret, roster, onSave }) {
+-  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
+-  const [picked, setPicked] = (0, import_react5.useState)(secret.scope === "all" ? [] : secret.scope);
+-  const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+-  const same = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-secret-edit-block" },
+-    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Who may use it")),
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
+-      [["all", t("All Bots")], ["some", t("Chosen Bots")]].map(([id, text]) => (0, import_react5.createElement)(
+-        "label",
+-        { key: id, className: "bt-secret-radio" },
+-        (0, import_react5.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
+-        text
+-      ))
 +
 +// src/client/board-card.js
 +var import_react14 = require("react");
@@ -9947,7 +9925,19 @@ diff --git a/client.js b/client.js
 +      (0, import_react14.createElement)("span", { className: skin.id }, idText),
 +      topExtra,
 +      badge ? (0, import_react14.createElement)("span", { className: skin.badge, "data-badge": card?.badge ?? void 0 }, badge) : null
-+    ),
+     ),
+-    mode === "some" ? (0, import_react5.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react5.createElement)("button", {
+-      key: bot.id,
+-      type: "button",
+-      className: "bt-secret-bot",
+-      "aria-pressed": picked.includes(bot.id),
+-      onClick: () => toggle(bot.id)
+-    }, (0, import_react5.createElement)(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? (0, import_react5.createElement)(CheckIcon) : null))) : null,
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-row-actions" },
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
+-    )
 +    (0, import_react14.createElement)("span", { className: skin.title }, card?.title || emptyTitle),
 +    labels.length ? (0, import_react14.createElement)("span", { className: skin.labels }, labels.map((name) => (0, import_react14.createElement)("span", { key: name, className: skin.label, "data-label": name }, name))) : null,
 +    card?.owner ? (0, import_react14.createElement)("span", { className: skin.owner, "data-kind": card.ownerKind ?? "human" }, card.owner) : null,
@@ -9955,8 +9945,20 @@ diff --git a/client.js b/client.js
 +    meta,
 +    footer,
 +    actions
-+  );
-+}
+   );
+ }
+-function ValueEditor({ secret, onSave }) {
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const [replaced, setReplaced] = (0, import_react5.useState)(false);
+-  const long = value.trim().length >= MIN_VALUE;
+-  const save = () => {
+-    if (!long) return;
+-    void Promise.resolve(onSave(value)).then((ok) => {
+-      if (ok) {
+-        setValue("");
+-        setReplaced(true);
+-      }
+-    });
 +
 +// src/client/kanban.js
 +var import_react15 = require("react");
@@ -19236,7 +19238,7 @@ diff --git a/client.js b/client.js
          )
        )
      )
-@@ -8577,18 +8577,41 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
+@@ -8577,18 +8577,43 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
  }
  
  // src/client/exchange.js
@@ -19259,11 +19261,13 @@ diff --git a/client.js b/client.js
 +}
 +function ExchangeLine({ entry, roster, actions }) {
 +  const bot = roster.byId[entry.from] ?? { id: entry.from, name: t("You"), color: "gray" };
++  const body = exchangeText(entry.text);
++  if (body === "") return null;
 +  return (0, import_react35.createElement)(
 +    "div",
 +    { className: "bt-group-msg" },
 +    (0, import_react35.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } }, bot.name),
-+    (0, import_react35.createElement)(Bubbles, { texts: [exchangeText(entry.text)], roster, selfId: bot.id, actions, lead: (0, import_react35.createElement)("span", { className: "bt-lead" }, (0, import_react35.createElement)(BotMark, { bot, size: 22 })) })
++    (0, import_react35.createElement)(Bubbles, { texts: [body], roster, selfId: bot.id, actions, lead: (0, import_react35.createElement)("span", { className: "bt-lead" }, (0, import_react35.createElement)(BotMark, { bot, size: 22 })) })
 +  );
 +}
  function ExchangeDialog({ pair, roster, actions }) {

@@ -6202,13 +6202,15 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
     actions.openSession(target);
   };
   const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
+  const shown = (texts2 ?? []).filter((text2) => String(text2 ?? "").trim() !== "");
+  if (shown.length === 0) return null;
   return (0, import_react9.createElement)(
     "div",
     { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
-    texts2.map((text2, index) => {
+    shown.map((text2, index) => {
       const key = msgKey ? `${msgKey}:${index}` : void 0;
       const picked = key ? reactions?.[index] ?? [] : [];
-      const last = index === texts2.length - 1;
+      const last = index === shown.length - 1;
       const live = streaming && last;
       return (0, import_react9.createElement)(
         "div",
@@ -6434,6 +6436,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   );
 }
 function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
+  if (!(texts2 ?? []).some((text2) => String(text2 ?? "").trim() !== "")) return null;
   const lead = (0, import_react9.createElement)("span", { className: "bt-lead", title: name }, (0, import_react9.createElement)(PersonMark, { name }));
   return (0, import_react9.createElement)(
     "div",
@@ -6494,6 +6497,7 @@ function heldLineState(room2, { seq, botId, text: text2 } = {}, now = Date.now()
   return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
 }
 function GroupMessage({ bot, text: text2, room: room2, roster, actions, msgKey, useUi, seq }) {
+  if (String(text2 ?? "").trim() === "") return null;
   const held = heldLineState(room2, { seq, botId: bot.id, text: text2 });
   if (held === "rejected") {
     return (0, import_react9.createElement)(
@@ -6559,6 +6563,8 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
   const face = room2?.origin === "face-to-face";
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
   const files = Array.isArray(source.attachments) ? source.attachments : [];
+  const words = stripTrace(text2);
+  if (String(words ?? "").trim() === "" && files.length === 0) return null;
   const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
   if (person) {
     return (0, import_react9.createElement)(
@@ -6571,7 +6577,7 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
         person,
         carrier ? (0, import_react9.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
       ),
-      (0, import_react9.createElement)(Bubbles, { texts: [stripTrace(text2)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react9.createElement)("span", { className: "bt-lead", title: person }, (0, import_react9.createElement)(PersonMark, { name: person })) }),
+      String(words ?? "").trim() === "" ? null : (0, import_react9.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react9.createElement)("span", { className: "bt-lead", title: person }, (0, import_react9.createElement)(PersonMark, { name: person })) }),
       files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
     );
   }
@@ -6587,7 +6593,7 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
       name,
       (0, import_react9.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react9.createElement)(GlobeMark), handle)
     ),
-    (0, import_react9.createElement)(Bubbles, { texts: [stripTrace(text2)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
+    String(words ?? "").trim() === "" ? null : (0, import_react9.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
     files.length ? (0, import_react9.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
   );
 }
@@ -16021,11 +16027,13 @@ function exchangeText(text2) {
 }
 function ExchangeLine({ entry, roster, actions }) {
   const bot = roster.byId[entry.from] ?? { id: entry.from, name: t("You"), color: "gray" };
+  const body = exchangeText(entry.text);
+  if (body === "") return null;
   return (0, import_react35.createElement)(
     "div",
     { className: "bt-group-msg" },
     (0, import_react35.createElement)("span", { className: "bt-group-name", style: { color: inkText(colorOf(bot)) } }, bot.name),
-    (0, import_react35.createElement)(Bubbles, { texts: [exchangeText(entry.text)], roster, selfId: bot.id, actions, lead: (0, import_react35.createElement)("span", { className: "bt-lead" }, (0, import_react35.createElement)(BotMark, { bot, size: 22 })) })
+    (0, import_react35.createElement)(Bubbles, { texts: [body], roster, selfId: bot.id, actions, lead: (0, import_react35.createElement)("span", { className: "bt-lead" }, (0, import_react35.createElement)(BotMark, { bot, size: 22 })) })
   );
 }
 function ExchangeDialog({ pair, roster, actions }) {

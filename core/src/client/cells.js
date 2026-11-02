@@ -35,11 +35,16 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
     actions.openSession(target)
   }
   const reactions = useUi ? useUi(state => (msgKey ? state.reactions?.[msgKey] ?? null : null)) : null
+  // #2123: a message with no text is no message — a turn that ended in tool calls only, or whose reply
+  // a card elsewhere carries, leaves nothing to draw. The empty and whitespace-only shapes are one: the
+  // row (bubble and its avatar) is drawn only for a text a person can read.
+  const shown = (texts ?? []).filter(text => String(text ?? '').trim() !== '')
+  if (shown.length === 0) return null
   return h('div', { className: 'bt-astack', 'data-lead': lead ? '' : undefined, onClickCapture: onClick },
-    texts.map((text, index) => {
+    shown.map((text, index) => {
       const key = msgKey ? `${msgKey}:${index}` : undefined
       const picked = key ? reactions?.[index] ?? [] : []
-      const last = index === texts.length - 1
+      const last = index === shown.length - 1
       const live = streaming && last
       return h('div', { key: index, className: 'bt-msg' },
         h('div', { className: 'bt-msg-line' },
@@ -258,6 +263,8 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
 // line in a face-to-face room: the person's name and a person mark, not the Bot's (the host marks
 // the turn, remote-chat.js / turns.js, or posts it as a person line, hooks.js postHuman).
 function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
+  // #2123: the same rule as a Bot's line — text a person can read or no row (the name and mark go too).
+  if (!(texts ?? []).some(text => String(text ?? '').trim() !== '')) return null
   const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark, { name }))
   return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
     h('span', { className: 'bt-group-name' }, name),
@@ -321,6 +328,9 @@ export function heldLineState(room, { seq, botId, text } = {}, now = Date.now())
 
 // One Bot message inside a group chat: avatar, name (with its group role), bubble.
 function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) {
+  // #2123: the Bot posted no words (a turn that only called tools, a reply carried by a card): there is
+  // no line to draw, and drawing one leaves the avatar and an empty bubble under the trace row.
+  if (String(text ?? '').trim() === '') return null
   const held = heldLineState(room, { seq, botId: bot.id, text })
   // Rejected: one grey line where the bubble would have been, never the words (#456).
   if (held === 'rejected') {
@@ -390,6 +400,10 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
   const face = room?.origin === 'face-to-face'
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
   const files = Array.isArray(source.attachments) ? source.attachments : []
+  // #2123: a route with no words of its own is no line, unless it carries files a person can open. The
+  // empty bubble is dropped on its own too, so an attachment-only line keeps its header and files.
+  const words = stripTrace(text)
+  if (String(words ?? '').trim() === '' && files.length === 0) return null
   // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
   // person's, with their name and a person mark, and the Bot that carried it only named as the route.
   const person = typeof source.remote.typedBy === 'string' ? source.remote.typedBy : ''
@@ -398,7 +412,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       // One short header: the person, and the Bot that carried the line only when it is known (#275).
       h('span', { className: 'bt-group-name', title: handle }, person,
         carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
-      h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
+      String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
       files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
   }
   const mark = h(BotMark, { bot, size: 22 })
@@ -411,7 +425,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       ? h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) }, title: handle }, name)
       : h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
         h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
-    h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
+    String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
     files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
 

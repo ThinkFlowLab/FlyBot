@@ -35,9 +35,12 @@ export function exchangeText(text) {
 // One stored exchange turn: the same cleaned text reaches the bubble and the message tools' copy.
 export function ExchangeLine({ entry, roster, actions }) {
   const bot = roster.byId[entry.from] ?? { id: entry.from, name: t('You'), color: 'gray' }
+  // #2123: a stored line that is only routing (a delegation trace, a fence) has no words for a person.
+  const body = exchangeText(entry.text)
+  if (body === '') return null
   return h('div', { className: 'bt-group-msg' },
     h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name),
-    h(Bubbles, { texts: [exchangeText(entry.text)], roster, selfId: bot.id, actions, lead: h('span', { className: 'bt-lead' }, h(BotMark, { bot: bot, size: 22 })) }))
+    h(Bubbles, { texts: [body], roster, selfId: bot.id, actions, lead: h('span', { className: 'bt-lead' }, h(BotMark, { bot: bot, size: 22 })) }))
 }
 export function ExchangeDialog({ pair, roster, actions }) {
   const [entries, setEntries] = useState(null)
