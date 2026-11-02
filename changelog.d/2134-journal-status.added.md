@@ -1,0 +1,1 @@
+With `stateJournal` on, the diagnostics report now says whether the state journal is recording or why it stopped, and `journal.status()` answers the same question to a host ([#2134](https://github.com/ThinkFlowLab/FlyBot/issues/2134)).

@@ -795,7 +795,7 @@ diff --git a/scripts/lint.mjs b/scripts/lint.mjs
 diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 --- a/test/diagnostics.test.js
 +++ b/test/diagnostics.test.js
-@@ -1,11 +1,11 @@
+@@ -1,11 +1,12 @@
  import assert from 'node:assert/strict'
 -import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 +import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -806,6 +806,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  import { test } from 'node:test'
 -import { cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
 +import { ISSUES_URL, cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
++import { openJournal, stateText } from '../src/host/journal.js'
  import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
  import { errorCode } from '../src/host/channel.js'
  import { SOURCE_KIND } from '../src/host/constants.js'
@@ -1002,6 +1003,39 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+@@ -133,6 +133,32 @@ test('diagnostics append fallback redacts an error message', async (t) => {
+   assert.match(stderr.join('\n'), /api_key=\[hidden\]/)
+ })
+ 
++// #2134: the report is where a user looks after a bug the journal was turned on for, so it says
++// whether the journal is still recording or why it stopped, and says nothing while it is off.
++test('the diagnostics report says whether the state journal is recording or why it stopped (#2134)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const off = await host(home, { config: { diagnosticsFile: false } }).diagnostics.report({})
++  assert.equal(off.facts.stateJournal, undefined, 'a host without the journal says nothing about it')
++  assert.doesNotMatch(off.markdown, /state journal:/)
++
++  const target = join(home, 'someone-else.txt')
++  writeFileSync(target, 'PRIVATE LINE\n')
++  mkdirSync(join(home, 'journal'), { recursive: true })
++  const path = join(home, 'journal', 'state.jsonl')
++  symlinkSync(target, path)
++  const journal = openJournal({ path, warn: () => {} })
++  await journal.record(stateText({ version: 2, revision: 1 }))
++  const stopped = await host(home, { journal, config: { diagnosticsFile: false } }).diagnostics.report({})
++  assert.match(stopped.markdown, /^state journal: stopped \(.*not a plain file.*\)$/m)
++  assert.equal(stopped.facts.stateJournal.startsWith('stopped ('), true)
++
++  const recording = openJournal({ path: join(home, 'live', 'state.jsonl'), warn: () => {} })
++  const live = await host(home, { journal: recording, config: { diagnosticsFile: false } }).diagnostics.report({})
++  assert.match(live.markdown, /^state journal: recording$/m)
++  assert.equal(live.facts.stateJournal, 'recording')
++})
++
+ test('reportMarkdown says when nothing went wrong', () => {
+   const text = reportMarkdown({ facts: { botVersion: '0.1.0', os: 'linux' } })
+   assert.match(text, /No host errors recorded\./)
 @@ -155,6 +155,29 @@ test('turnFailure drops AUTH messages and keeps the facts', () => {
    assert.equal(failureLine({ code: 'SERVER', status: 503, message: 'busy' }), 'SERVER 503: busy')
  })

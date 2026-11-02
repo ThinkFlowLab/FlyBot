@@ -472,3 +472,31 @@ test('a journal that is still its own folder and file keeps recording (#2074 con
   if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
   rmSync(home, { recursive: true, force: true })
 })
+
+// #2134: the journal can stop for good — a link where its file belongs, a folder the host does not
+// own, a write that failed — and until now only a stderr warning said so. `status()` answers the
+// question a host can ask, with the reason `stop()` already received and the journal path in it.
+test('the journal says whether it is still recording, and why it stopped, path included (#2134)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.txt')
+  writeFileSync(target, 'PRIVATE LINE\n')
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  symlinkSync(target, path)
+  const stopped = openJournal({ path, warn: () => {} })
+  await stopped.record(stateText({ version: 2, revision: 1 }))
+  const answer = stopped.status()
+  assert.equal(answer.recording, false)
+  assert.ok(answer.because.includes(path), `the reason names the journal: ${answer.because}`)
+  assert.match(answer.because, /not a plain file/)
+  assert.equal(readFileSync(target, 'utf8'), 'PRIVATE LINE\n', 'nothing is written through the link')
+
+  // The control: a journal that is still its own file answers recording, before and after a write.
+  const own = openJournal({ path: join(home, 'own', 'state.jsonl'), warn: () => {} })
+  assert.deepEqual(own.status(), { recording: true })
+  await own.record(stateText({ version: 2, revision: 1 }))
+  assert.deepEqual(own.status(), { recording: true })
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})

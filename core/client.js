@@ -6197,7 +6197,7 @@ var import_react9 = require("react");
 var import_react_dom = require("react-dom");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
-function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
+function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
   const onClick = (event) => {
     const target = mentionTarget(event);
     if (target === null) return;
@@ -6205,15 +6205,17 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
     event.stopPropagation();
     actions.openSession(target);
   };
-  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
+  const reactions = useUi ? useUi((state) => msgKey || msgKeys ? msgKeys ? state.reactions ?? null : state.reactions?.[msgKey] ?? null : null) : null;
+  const reactKey = (index) => msgKeys ? msgKeys[index] : msgKey;
+  const reactIndex = (index) => msgKeys ? 0 : index;
   const shown = (texts2 ?? []).filter((text2) => String(text2 ?? "").trim() !== "");
   if (shown.length === 0) return null;
   return (0, import_react9.createElement)(
     "div",
     { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
     shown.map((text2, index) => {
-      const key = msgKey ? `${msgKey}:${index}` : void 0;
-      const picked = key ? reactions?.[index] ?? [] : [];
+      const key = reactKey(index);
+      const picked = key ? (msgKeys ? reactions?.[key] : reactions)?.[reactIndex(index)] ?? [] : [];
       const last = index === shown.length - 1;
       const live = streaming && last;
       return (0, import_react9.createElement)(
@@ -6228,14 +6230,14 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
             { className: "bt-bubble" },
             (0, import_react9.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(text2, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
           ),
-          live ? null : (0, import_react9.createElement)(MessageTools, { text: text2, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(msgKey, index, emoji) : void 0, actions })
+          live ? null : (0, import_react9.createElement)(MessageTools, { text: text2, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(key, reactIndex(index), emoji) : void 0, actions })
         ),
         picked.length ? (0, import_react9.createElement)("div", { className: "bt-reacts" }, picked.map((emoji) => (0, import_react9.createElement)("button", {
           key: emoji,
           type: "button",
           className: "bt-react",
           "aria-label": t("Remove reaction {emoji}", { emoji }),
-          onClick: () => actions.toggleReaction(msgKey, index, emoji)
+          onClick: () => actions.toggleReaction(key, reactIndex(index), emoji)
         }, emoji))) : null
       );
     })
@@ -6677,7 +6679,7 @@ var scrollParent = (node) => {
   }
   return null;
 };
-function EarlierParts({ sessionId, roster, actions }) {
+function EarlierParts({ sessionId, roster, actions, useUi }) {
   const [view, setView] = (0, import_react9.useState)({ items: [], cursor: void 0, loading: true, failed: false, startedAt: null });
   const top = (0, import_react9.useRef)(null);
   const busy = (0, import_react9.useRef)(false);
@@ -6720,11 +6722,19 @@ function EarlierParts({ sessionId, roster, actions }) {
     return () => observer.disconnect();
   }, [view.cursor, view.loading, view.failed]);
   const selfId = roster.byId[sessionId]?.id;
+  const keyOf = (item) => `${item.sessionId ?? sessionId}:${item.turn ?? ""}:${item.seq ?? item.time ?? ""}`;
   const rows = [];
   for (const item of view.items) {
-    const last = rows.at(-1);
-    if (item.kind === "bot" && last?.kind === "bot") last.texts.push(item.text);
-    else rows.push(item.kind === "bot" ? { kind: "bot", texts: [item.text] } : item);
+    if (item.kind === "bot") {
+      if (String(item.text ?? "").trim() === "") continue;
+      const last = rows.at(-1);
+      if (last?.kind === "bot") {
+        last.texts.push(item.text);
+        last.msgKeys.push(keyOf(item));
+      } else rows.push({ kind: "bot", texts: [item.text], msgKeys: [keyOf(item)] });
+      continue;
+    }
+    rows.push(item);
   }
   return (0, import_react9.createElement)(
     "div",
@@ -6749,7 +6759,7 @@ function EarlierParts({ sessionId, roster, actions }) {
         case "answer":
           return (0, import_react9.createElement)(AnsweredCell, { key, node: { data: row } });
         case "bot":
-          return (0, import_react9.createElement)(Bubbles, { key, texts: row.texts, roster, selfId, actions });
+          return (0, import_react9.createElement)(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi });
         case "event": {
           if (row.role === "report") return (0, import_react9.createElement)(GroupEvent, { key, prefix: t("Replies from"), room: roster.roomsById[row.roomId], name: t("a group chat"), roster, actions });
           const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t("a Bot"), color: "gray" };
@@ -6801,7 +6811,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
       return source.remote.firstContact === true ? (0, import_react9.createElement)(import_react9.Fragment, null, (0, import_react9.createElement)(FirstContact, { source, roster, sessionId }), message) : message;
     }
     if (source.kind === "bot") {
-      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react9.createElement)(EarlierParts, { sessionId, roster, actions });
+      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react9.createElement)(EarlierParts, { sessionId, roster, actions, useUi });
       if (source.role === "room" || source.role === "kickoff") return null;
       if (source.role === "mention") return (0, import_react9.createElement)("div", { className: "bt-event" }, (0, import_react9.createElement)("span", null, contentText(data.content)));
       if (source.role === "secret" || deferred) return null;

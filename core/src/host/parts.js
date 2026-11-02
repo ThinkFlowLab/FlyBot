@@ -1307,7 +1307,9 @@ export function install(rt) {
     for (const event of events) {
       if (event.type === 'assistant/message') {
         const text = textOf(event.data?.message?.content)
-        if (text !== '' && !hidden.has(event.data?.turn)) items.push({ kind: 'bot', text, time: event.time })
+        // The part and the line's place in it are what the chat stores a reaction under: a page can be
+        // loaded twice, and a place in the merged row above it moves as older pages arrive (#P393).
+        if (text !== '' && !hidden.has(event.data?.turn)) items.push({ kind: 'bot', text, time: event.time, turn: event.data?.turn, seq: event.seq, sessionId: partId })
         continue
       }
       if (event.type !== 'user/message') continue

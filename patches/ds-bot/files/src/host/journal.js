@@ -228,6 +228,8 @@ export function pruneEntries(entries, { now, maxBytes = JOURNAL_MAX_BYTES, maxAg
 // and leaves the file as it is; it never stops the team from saving.
 export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX_BYTES, maxAgeMs = JOURNAL_MAX_AGE_MS }) {
   let stopped = false
+  // Why recording stopped, in the words `stop()` already had; `status()` hands it on.
+  let because
   let lastText
   let seq = 0
   let bytes = 0
@@ -235,8 +237,10 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
   let queue = Promise.resolve()
 
   const stop = (error) => {
+    if (stopped) return
     stopped = true
-    warn('ds-bot: state journal %s is not recording: %s', path, error)
+    because = `${path} is not recording: ${error}`
+    warn('ds-bot: state journal %s', because)
   }
 
   const open = async () => {
@@ -322,5 +326,7 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
     queue = queue.then(() => write(snapshot, actor)).catch(stop)
     return queue
   }
-  return { record, path }
+  // Whether this writer still records, and why not — the host can ask instead of reading stderr.
+  const status = () => (stopped ? { recording: false, because } : { recording: true })
+  return { record, path, status }
 }

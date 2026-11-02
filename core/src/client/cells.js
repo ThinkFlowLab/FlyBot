@@ -26,7 +26,7 @@ const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied')
 
 // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
 // row, so it lines up with the bubble whether or not reactions hang below it.
-export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
+export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
   const onClick = (event) => {
     const target = mentionTarget(event)
     if (target === null) return
@@ -34,7 +34,14 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
     event.stopPropagation()
     actions.openSession(target)
   }
-  const reactions = useUi ? useUi(state => (msgKey ? state.reactions?.[msgKey] ?? null : null)) : null
+  // One reaction key per row in the live chat, and one per text in a page of an earlier part, where every
+  // line is its own message. The subscription stays one hook either way, so a row that grows a text does
+  // not change the hook order.
+  const reactions = useUi
+    ? useUi(state => (msgKey || msgKeys ? (msgKeys ? state.reactions ?? null : state.reactions?.[msgKey] ?? null) : null))
+    : null
+  const reactKey = (index) => (msgKeys ? msgKeys[index] : msgKey)
+  const reactIndex = (index) => (msgKeys ? 0 : index)
   // #2123: a message with no text is no message — a turn that ended in tool calls only, or whose reply
   // a card elsewhere carries, leaves nothing to draw. The empty and whitespace-only shapes are one: the
   // row (bubble and its avatar) is drawn only for a text a person can read.
@@ -42,8 +49,8 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
   if (shown.length === 0) return null
   return h('div', { className: 'bt-astack', 'data-lead': lead ? '' : undefined, onClickCapture: onClick },
     shown.map((text, index) => {
-      const key = msgKey ? `${msgKey}:${index}` : undefined
-      const picked = key ? reactions?.[index] ?? [] : []
+      const key = reactKey(index)
+      const picked = key ? (msgKeys ? reactions?.[key] : reactions)?.[reactIndex(index)] ?? [] : []
       const last = index === shown.length - 1
       const live = streaming && last
       return h('div', { key: index, className: 'bt-msg' },
@@ -51,9 +58,9 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
           lead && last ? lead : null,
           h('div', { className: 'bt-bubble' },
             h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
-          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(msgKey, index, emoji) : undefined, actions })),
+          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
-          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(msgKey, index, emoji),
+          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
         }, emoji))) : null)
     }))
 }
@@ -507,7 +514,7 @@ const scrollParent = (node) => {
 // The earlier parts of a Bot's own chat, above its current part as one conversation.
 // Pages load from the host as the user scrolls up; a thin line marks where each
 // part begins, the last one where the current part begins.
-function EarlierParts({ sessionId, roster, actions }) {
+function EarlierParts({ sessionId, roster, actions, useUi }) {
   const [view, setView] = useState({ items: [], cursor: undefined, loading: true, failed: false, startedAt: null })
   const top = useRef(null)
   const busy = useRef(false)
@@ -550,11 +557,23 @@ function EarlierParts({ sessionId, roster, actions }) {
     return () => observer.disconnect()
   }, [view.cursor, view.loading, view.failed])
   const selfId = roster.byId[sessionId]?.id
+  // A line of an earlier part is a message like any other: the part it was said in, the turn, and its
+  // place in the part are what a reaction is stored under, so the bubble can be acted on at all. The
+  // page's owner falls back to the chat when a host hands over only words (#P393).
+  const keyOf = (item) => `${item.sessionId ?? sessionId}:${item.turn ?? ''}:${item.seq ?? item.time ?? ''}`
   const rows = []
   for (const item of view.items) {
-    const last = rows.at(-1)
-    if (item.kind === 'bot' && last?.kind === 'bot') last.texts.push(item.text)
-    else rows.push(item.kind === 'bot' ? { kind: 'bot', texts: [item.text] } : item)
+    if (item.kind === 'bot') {
+      // #2123: nothing readable is no line, and it would also take the next line's key.
+      if (String(item.text ?? '').trim() === '') continue
+      const last = rows.at(-1)
+      if (last?.kind === 'bot') {
+        last.texts.push(item.text)
+        last.msgKeys.push(keyOf(item))
+      } else rows.push({ kind: 'bot', texts: [item.text], msgKeys: [keyOf(item)] })
+      continue
+    }
+    rows.push(item)
   }
   return h('div', { className: 'bt-earlier', role: 'feed', 'aria-label': t('Earlier messages'), 'aria-busy': view.loading },
     h('div', { ref: top, className: 'bt-earlier-top' },
@@ -570,7 +589,7 @@ function EarlierParts({ sessionId, roster, actions }) {
           row.text ? h(MarkdownText, { text: row.text, labels: mdLabels(), variant: 'compact' }) : null,
           row.images ? h('span', { className: 'bt-uimages' }, row.images === 1 ? t('1 image') : t('{count} images', { count: row.images })) : null))
         case 'answer': return h(AnsweredCell, { key, node: { data: row } })
-        case 'bot': return h(Bubbles, { key, texts: row.texts, roster, selfId, actions })
+        case 'bot': return h(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi })
         case 'event': {
           if (row.role === 'report') return h(GroupEvent, { key, prefix: t('Replies from'), room: roster.roomsById[row.roomId], name: t('a group chat'), roster, actions })
           const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t('a Bot'), color: 'gray' }
@@ -632,7 +651,7 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     }
     if (source.kind === 'bot') {
       // A part opens with its handoff package, so the earlier parts go right above it.
-      if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions })
+      if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions, useUi })
       // Group turns belong to the group chat; the member's own chat stays one-to-one. A
       // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
       if (source.role === 'room' || source.role === 'kickoff') return null

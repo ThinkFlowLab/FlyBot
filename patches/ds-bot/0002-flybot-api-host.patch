@@ -1695,7 +1695,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    Object.assign(rt, {
 -    state, load, save, refresh, readOnly,
-+    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
++    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, journal,
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
