@@ -1,0 +1,1 @@
+The host's read-only sentence now stays visible when the sidebar is collapsed to the rail, clipped to one line with the full sentence on hover and in its accessible name, instead of disappearing until the window is wide again; a host that sent an empty or whitespace-only sentence draws no hint in either shape ([#2188](https://github.com/ThinkFlowLab/FlyBot/issues/2188)).

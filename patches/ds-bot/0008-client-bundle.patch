@@ -5018,7 +5018,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-mem-line{from{opacity:0;transform:translateY(4px)}}
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
-@@ -2574,2935 +2574,6820 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2935 +2574,6823 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -12161,6 +12161,7 @@ diff --git a/client.js b/client.js
 +    return entries2.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at);
 +  }, [roster, updated]);
 +  const main = roster.byId[roster.mainBotId];
++  const readOnlySaid = typeof roster.readOnly === "string" && roster.readOnly.trim() !== "";
 +  const structure = useSidebarStructure();
 +  const [collapsed, setCollapsed] = (0, import_react17.useState)({});
 +  const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
@@ -12192,7 +12193,8 @@ diff --git a/client.js b/client.js
 +      (0, import_react17.createElement)(UpdateButton, { useUpdate: props.useUpdate, actions }),
 +      (0, import_react17.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react17.createElement)(PlusIcon))
 +    ),
-+    wide && roster.readOnly ? (0, import_react17.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
++    wide && readOnlySaid ? (0, import_react17.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
++    !wide && readOnlySaid ? (0, import_react17.createElement)("div", { className: "bt-hint bt-read-only", role: "status", title: hostText(roster.readOnly), "aria-label": hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
 +    (0, import_react17.createElement)(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
 +    (0, import_react17.createElement)(KanbanRow, { wide, useUi, actions }),
 +    (0, import_react17.createElement)(ProjectsNav, { wide }),
@@ -12719,6 +12721,7 @@ diff --git a/client.js b/client.js
 +.bt-rail .bt-row{position:relative}
 +.bt-rail .bt-pin{position:absolute;top:3px;left:calc(50% + 12px)}
 +.bt-side .bt-read-only{margin:4px 8px 6px;padding:8px 10px;border-radius:10px;background:var(--bt-hover);font-size:12px;line-height:1.45;text-align:left}
++.bt-rail .bt-read-only{width:100%;margin:4px 0 6px;padding:4px 2px;font-size:10px;line-height:1.3;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +[class*="_footArea"]:has(.bt-foot-account){display:flex!important;flex-direction:row!important;align-items:center;gap:6px}
 +[class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"],[class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"]>div{display:contents!important}
 +.bt-foot-account{order:-1;flex:none;display:inline-flex}
