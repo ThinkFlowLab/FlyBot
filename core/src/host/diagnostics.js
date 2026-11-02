@@ -147,7 +147,7 @@ export function install(rt) {
   const refuseLeaf = () => {
     if (refusedLeaf) return
     refusedLeaf = true
-    console.error('[ds-bot] diagnostics log is not a plain file; nothing was written there')
+    console.error('[ds-bot] diagnostics log is not a plain file of its own; nothing was written there')
   }
 
   const append = (entry) => {

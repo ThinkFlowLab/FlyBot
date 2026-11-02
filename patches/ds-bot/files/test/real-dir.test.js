@@ -96,3 +96,23 @@ test('#P-hardlink: a temp name is writable only when it is absent or a plain fil
     assert.equal(tempWritable(join(dir, 'folder.json.123.tmp')), false, 'a folder where a file belongs is refused too')
   } finally { done() }
 })
+
+// #2159: the leaf a write appends to and the temp name it lands through are asked by one predicate,
+// so a hard link is `other` here too: `appendFile` and `truncate` write the shared inode, not a
+// copy. Readers never call this function (they ask `dirKind`), so no `cp -al` snapshot turns a file
+// unreadable by this rule; the knife cuts writers only.
+test('#2159: a hard-linked leaf is other, and a file of one name beside it stays real', async () => {
+  const { dir, outside, done } = bench()
+  try {
+    const shared = join(outside, 'shared.jsonl')
+    writeFileSync(shared, 'OUTSIDE\n')
+    linkSync(shared, join(dir, 'shared.jsonl'))
+    assert.equal(await fileKind(join(dir, 'shared.jsonl')), 'other', 'a hard link shares its bytes with a name outside this home')
+    assert.equal(fileKindSync(join(dir, 'shared.jsonl')), 'other', 'and the sync form answers the same')
+    assert.equal(await fileKind(shared), 'other', 'the other name is the same inode, both report nlink 2')
+    assert.equal(fileKindSync(shared), 'other')
+    writeFileSync(join(dir, 'plain.jsonl'), 'x\n')
+    assert.equal(await fileKind(join(dir, 'plain.jsonl')), 'real', 'the control: a file carrying one name is still written')
+    assert.equal(fileKindSync(join(dir, 'plain.jsonl')), 'real')
+  } finally { done() }
+})

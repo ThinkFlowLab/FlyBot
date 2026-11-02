@@ -31,13 +31,19 @@ export function dirKindSync(path) {
   }
 }
 
+// `lstat` reports a hard link as a plain file while its bytes are also a name outside this home: an
+// append or a truncate lands in the shared inode, not in a copy. One predicate answers "may a leaf
+// be written through", so the temp name a write lands through (#2114) and the file it becomes
+// cannot answer differently for the same file (#2159).
+const plainLeaf = info => info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+
 // The leaf of a path is asked the same way (#2079): `lstat` does not follow the last component, so
 // a link there reports `isSymbolicLink()`, never a file. The three states keep their meanings: a
-// missing file is a writer's to create, a plain non-link file is written, and a link, a directory
-// or a check that could not run is refused rather than written through.
+// missing file is a writer's to create, a plain file of its own is written, and a link, a hard
+// link, a directory or a check that could not run is refused rather than written through.
 const fileKindOf = info => info === undefined
   ? 'absent'
-  : info.isFile() && !info.isSymbolicLink() ? 'real' : 'other'
+  : plainLeaf(info) ? 'real' : 'other'
 
 export async function fileKind(path) {
   try {
@@ -51,15 +57,12 @@ export async function fileKind(path) {
 // `writeFile` follows a link at the last component, so a link left at `<file>.<pid>.tmp` would take
 // the bytes outside the home and the `rename` after them would put the link where the file belongs.
 // `absent` is a writer's to create and a plain leftover under this host's own pid is replaceable;
-// anything else refuses the write before the first byte. A hard link is a plain file to `lstat`
-// while its bytes are also a name outside this home (a write lands in the shared inode, not in a
-// link), so a name with another name (`nlink > 1`) is refused the same way; a crashed host's own
-// leftover is one name and stays replaceable. The destination itself needs no such check: `rename`
-// replaces the name, link included, instead of writing through it.
+// anything else refuses the write before the first byte. A crashed host's own leftover is one name
+// and stays replaceable. The destination itself needs no such check: `rename` replaces the name,
+// link included, instead of writing through it.
 export const tempWritable = (path) => {
   try {
-    const info = lstatSync(path)
-    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+    return plainLeaf(lstatSync(path))
   } catch (error) {
     return error?.code === 'ENOENT'
   }

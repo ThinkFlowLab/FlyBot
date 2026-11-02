@@ -3,7 +3,7 @@
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -411,4 +411,53 @@ test('#2079: a linked project file refuses to become the default', (t) => {
   assert.equal(readFileSync(join(outside, 'project.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the file the link names is byte-identical')
   assert.equal(lstatSync(link).isSymbolicLink(), true, 'the link is still a link')
   assert.deepEqual([...new Set(warnings)], [link], 'the warning names the file, once')
+})
+
+// #2159: a hard link at a definition file is a plain file to `lstat` while its bytes are also a name
+// outside the workspace, so the save would land in the shared inode. The leaf is asked with the same
+// predicate as the temp name (#2114): the file is refused as `workflow/not-a-file`, once, and the
+// other name keeps its bytes.
+test('#2159: a hard-linked workflow file refuses a save instead of writing through it', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const outside = elsewhere(t, { 'mine.json': 'OUTSIDE BYTES\n' })
+  const leaf = join(dir, 'mine.json')
+  linkSync(join(outside, 'mine.json'), leaf)
+  const warnings = []
+  const store = createWorkflowStore({ dir, warnFile: (file) => warnings.push(file) })
+  for (let round = 0; round < 2; round++) {
+    const saved = store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } })
+    assert.equal(saved.ok, false)
+    assert.equal(saved.code, 'workflow/not-a-file')
+    assert.match(saved.message, /not a plain file of its own/)
+  }
+  assert.equal(readFileSync(join(outside, 'mine.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(leaf).nlink, 2, 'the file is still another name of the same inode')
+  assert.deepEqual([...new Set(warnings)], [leaf], 'the warning names the file, once')
+  // The control: the same file carrying one name is written.
+  unlinkSync(leaf)
+  assert.equal(store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } }).ok, true)
+  assert.equal(existsSync(leaf), true)
+})
+
+test('#2159: a hard-linked project file refuses to become the default', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const outside = elsewhere(t, { 'project.json': 'OUTSIDE BYTES\n' })
+  const leaf = join(dir, 'project.json')
+  linkSync(join(outside, 'project.json'), leaf)
+  const warnings = []
+  const store = createWorkflowStore({ dir, warnFile: (file) => warnings.push(file) })
+  for (let round = 0; round < 2; round++) {
+    const set = store.setDefault({ id: 'blank' })
+    assert.equal(set.ok, false)
+    assert.equal(set.code, 'workflow/not-a-file')
+  }
+  assert.equal(readFileSync(join(outside, 'project.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(leaf).nlink, 2, 'the file is still another name of the same inode')
+  assert.deepEqual([...new Set(warnings)], [leaf], 'the warning names the file, once')
 })
