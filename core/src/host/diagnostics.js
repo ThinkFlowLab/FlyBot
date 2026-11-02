@@ -10,6 +10,7 @@ import { arch, homedir, platform, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format } from 'node:util'
+import { fileKind } from './real-dir.js'
 import { cut } from './text.js'
 
 export const KEEP = 200
@@ -136,9 +137,20 @@ export function install(rt) {
     : Promise.resolve([])
   let cleared = 0
 
+  // The log is one leaf file under the home, so a link there is not a place to write (#2089). The
+  // check sits inside the chain, before the append and before the size rename, so a linked leaf is
+  // left alone entirely; one line on stderr per host says so, without the home folder in it.
+  let refusedLeaf = false
+  const refuseLeaf = () => {
+    if (refusedLeaf) return
+    refusedLeaf = true
+    console.error('[ds-bot] diagnostics log is not a plain file; nothing was written there')
+  }
+
   const append = (entry) => {
     if (!toFile) return
     writing = writing.then(async () => {
+      if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
       await mkdir(dirname(logPath), { recursive: true })
       const size = await stat(logPath).then(info => info.size, () => 0)
       if (size > LOG_MAX_BYTES) await rename(logPath, `${logPath}.1`)
@@ -258,7 +270,12 @@ export function install(rt) {
     cleared = Date.now()
     fresh = []
     if (!toFile) return
-    writing = writing.then(() => writeFile(logPath, '', 'utf8')).catch(() => {})
+    // Clearing truncates the leaf, so it is the same question as the append: a link is not ours to
+    // truncate, and the old file behind it stays exactly as it was.
+    writing = writing.then(async () => {
+      if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
+      await writeFile(logPath, '', 'utf8')
+    }).catch(() => {})
     await writing
   }
 

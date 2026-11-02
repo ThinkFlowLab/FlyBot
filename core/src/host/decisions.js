@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { looksSecret } from './memory.js'
+import { fileKind } from './real-dir.js'
 import { output } from './tools.js'
 
 const OPTION_MAX = 200
@@ -39,6 +40,18 @@ export function install(rt) {
   // Lines on disk after the last append/trim, so a record does not re-read the file every time
   // (null until the first record counts once).
   let linesOnDisk = null
+  // The log is one leaf file, and a link there is not a place to write (#2089). The check is inside
+  // the chain, so a queued record cannot slip past it, and one refused file is said once rather
+  // than once per decision.
+  let refusedLeaf = false
+  const leafWritable = async () => {
+    if (await fileKind(path) !== 'other') return true
+    if (!refusedLeaf) {
+      refusedLeaf = true
+      rt.warn('ds-bot: the decision log is not a plain file, so a decision was not written to it')
+    }
+    return false
+  }
   const countLines = async () => (await readFile(path, 'utf8')).split('\n').filter(Boolean).length
   // Keep the file bounded in place: the newest entries under both caps, written through a temp
   // file so a reader never sees a half-trimmed log. The Bot side stays append-only; this is the
@@ -67,12 +80,14 @@ export function install(rt) {
   function record(entry) {
     const line = `${JSON.stringify(entry)}\n`
     writing = writing.then(async () => {
+      if (!await leafWritable()) return 'refused'
       await mkdir(dirname(path), { recursive: true })
       await appendFile(path, line, 'utf8')
       linesOnDisk = linesOnDisk === null ? await countLines() : linesOnDisk + 1
       const { size } = await stat(path)
       if (linesOnDisk > KEPT || size > MAX_BYTES) linesOnDisk = await trim()
-    }).catch(error => rt.warn('ds-bot: a decision was not written: %s', error))
+      return 'written'
+    }).catch(error => { rt.warn('ds-bot: a decision was not written: %s', error); return 'failed' })
     return writing
   }
   // The entries, oldest first, capped to the newest `KEPT` lines and `MAX_BYTES`. A read takes at
@@ -124,7 +139,10 @@ export function install(rt) {
       if (looksSecret(option) || looksSecret(why)) return 'A decision never holds a key, token or password; record the choice without it.'
       const safeName = NAME_SAFE.test(botId) ? botId : 'bot'
       const entry = { time: Date.now(), bot: safeName, botName: oneLine(bot.name, 40), option, choice, ...(why ? { why } : {}) }
-      await record(entry)
+      const wrote = await record(entry)
+      // A refused leaf drops the line, so the answer and the feed say the same thing: nothing was
+      // recorded. A write that failed for another reason keeps its old shape (a warning, an answer).
+      if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file.'
       // The feed payload drops the id to a safe shape and adds the live botId (a consumer keys by it).
       rt.fireFeed?.('decision', { botId, option, choice, ...(why ? { why } : {}), time: entry.time })
       return `Recorded: ${choice} "${option}"${why ? ` — ${why}` : ''}.`

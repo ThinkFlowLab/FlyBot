@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -96,4 +96,37 @@ test('#1912: an option cut at an emoji boundary stays well formed in the log', a
   assert.equal(entry.option.isWellFormed(), true, `the stored option must stay well formed, got: ${JSON.stringify(entry.option.slice(-4))}`)
   assert.equal(entry.option.length <= 200, true, `the stored option must stay within 200 units, got ${entry.option.length}`)
   assert.equal(option.startsWith(entry.option), true, 'the stored option must be a prefix of the recorded one')
+})
+
+// The log is one leaf file beside the home, so a link there is not a place to write: the rule the
+// journal keeps (#2074) and the memory side record keeps (#2079). A refusal drops the line, warns
+// once, and tells the Bot it was not recorded rather than claiming a line that is not on disk.
+test('a linked decision log is refused, not written through', async (t) => {
+  const { ctx, home, tool, events, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const target = join(elsewhere, 'decisions.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const leaf = join(home, 'decisions.jsonl')
+  symlinkSync(target, leaf)
+
+  const warnings = []
+  ctx.logger.warn = (...args) => warnings.push(args.join(' '))
+  const first = await tool('record_decision', { option: 'Keep the link', choice: 'rejected' })
+  const second = await tool('record_decision', { option: 'Keep it again', choice: 'used' })
+  assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link is not written through')
+  assert.equal(lstatSync(leaf).isSymbolicLink(), true, 'the link is still the leaf')
+  assert.equal(readlinkSync(leaf), target)
+  assert.match(first, /Not recorded/, 'the Bot is told the decision is not on disk')
+  assert.match(second, /Not recorded/)
+  assert.equal(warnings.length, 1, 'one warning, not one for every refused record')
+  assert.match(warnings[0], /not a plain file/)
+  assert.deepEqual(events, [], 'a decision that is not on disk is not announced on the feed')
+
+  // A real leaf afterwards: the refusal is about this file, not a latch that stops the log.
+  rmSync(leaf)
+  assert.match(await tool('record_decision', { option: 'Write it now', choice: 'used' }), /^Recorded:/)
+  assert.equal(readFileSync(leaf, 'utf8').trim().split('\n').length, 1)
 })
