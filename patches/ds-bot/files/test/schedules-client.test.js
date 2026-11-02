@@ -614,3 +614,32 @@ test('the failure sentence is null while there is nothing to say', () => {
   assert.equal(schedulesReadFailure(''), null)
   assert.equal(schedulesReadFailure('HTTP 500'), 'The scheduled tasks could not be read: HTTP 500')
 })
+
+// #2112 narrowed the list to the caller's own rows, but a page that had another member's tasks
+// still said "No scheduled tasks yet." — an empty answer nobody could tell apart from a host
+// where nobody scheduled anything. The view carries `someHidden` when rows were dropped for the
+// caller, and both empty surfaces say the list is narrowed instead of pretending it is empty.
+test('#2112: a narrowed list says rows are hidden, not "No scheduled tasks yet."', () => {
+  seeded.push({ available: true, tasks: [], someHidden: true })
+  const page = render(SchedulesPage({ roster: OTHERS, actions: spy(), start: null }))
+  const lines = text(page)
+  assert.ok(!lines.includes('No scheduled tasks yet.'), lines.join('|'))
+  assert.ok(lines.some(line => /hidden/.test(line) && /member/.test(line)), lines.join('|'))
+})
+
+test('#2112: with nothing dropped the page keeps "No scheduled tasks yet."', () => {
+  seeded.push({ available: true, tasks: [] })
+  const page = render(SchedulesPage({ roster: OTHERS, actions: spy(), start: null }))
+  const lines = text(page)
+  assert.ok(lines.includes('No scheduled tasks yet.'), lines.join('|'))
+  assert.ok(!lines.some(line => /hidden/.test(line)), lines.join('|'))
+})
+
+test('#2112: the Bot details line says the list is narrowed, not that none exist', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [], someHidden: true })
+  const card = render(ScheduleSummary({ bot: { id: 'b1' }, actions }))
+  const lines = text(card)
+  assert.ok(!lines.includes('No scheduled tasks yet. Add one'), lines.join('|'))
+  assert.ok(lines.some(line => /you can see/.test(line) && /Add one/.test(line)), lines.join('|'))
+})

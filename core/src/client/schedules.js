@@ -360,7 +360,9 @@ export function SchedulesPage({ roster, actions, start }) {
       ? h(TaskForm, { key: 'form', roster, actions, start, onDone: shown, onCancel: () => setAdding(false) })
       : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),
     byChat.length === 0 && !adding
-      ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No scheduled tasks yet.'))))
+      // #2112: the list is narrowed to the caller's rows, so an empty page can mean "another
+      // member scheduled something". `someHidden` is the host saying it dropped such a row.
+      ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, view.someHidden ? t('No scheduled tasks you can see. Another member\'s tasks stay hidden.') : t('No scheduled tasks yet.'))))
       : byChat.map(([id, avatar, name, tasks]) => h('section', { key: id, className: 'bt-set-section' },
           h('h3', { className: 'bt-task-head' }, avatar, name),
           h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
@@ -469,7 +471,9 @@ export function ScheduleSummary({ bot, actions }) {
       ? h('div', { className: 'bt-section-title' }, t('Scheduled tasks'))
       : h(SummaryLines, { tasks, actions }),
     tasks.length === 0
-      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : t('No scheduled tasks yet. Add one'))
+      // #2112: with the list narrowed to the caller's rows, "none of this Bot's tasks" and "none
+      // this caller may see" are different answers; the view's `someHidden` says which one it is.
+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view.available === false ? t('Switch on Automation tasks on the Plugins page.') : view.someHidden ? t('No scheduled tasks you can see. Add one') : t('No scheduled tasks yet. Add one'))
       : null)
 }
 

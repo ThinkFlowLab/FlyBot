@@ -1359,6 +1359,8 @@ var ZH = {
   "A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.": "「每 N 分钟」和 cron 任务仍可能在安静时段内运行：下一次运行时间是 DSH 算的。这里如实说明，不假装已经静音。",
   "No scheduled tasks yet.": "还没有定时任务。",
   "No scheduled tasks yet. Add one": "还没有定时任务，去添加",
+  "No scheduled tasks you can see. Another member's tasks stay hidden.": "没有你能看到的定时任务，另一位成员的任务是隐藏的。",
+  "No scheduled tasks you can see. Add one": "没有你能看到的定时任务，去添加",
   "Automation tasks are off in DSH": "DSH 的「自动化任务」没有打开",
   "No such Bot": "没有这个 Bot",
   "No such Bot or group chat": "没有这个 Bot 或群聊",
@@ -13542,7 +13544,7 @@ function SchedulesPage({ roster, actions, start }) {
       setEditing(null);
       setAdding(true);
     } }, (0, import_react25.createElement)(PlusIcon), t("New task"))),
-    byChat.length === 0 && !adding ? (0, import_react25.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react25.createElement)(
+    byChat.length === 0 && !adding ? (0, import_react25.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, view.someHidden ? t("No scheduled tasks you can see. Another member's tasks stay hidden.") : t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react25.createElement)(
       "section",
       { key: id, className: "bt-set-section" },
       (0, import_react25.createElement)("h3", { className: "bt-task-head" }, avatar, name),
@@ -13674,7 +13676,7 @@ function ScheduleSummary({ bot, actions }) {
     "div",
     null,
     tasks.length === 0 ? (0, import_react25.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")) : (0, import_react25.createElement)(SummaryLines, { tasks, actions }),
-    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view.available === false ? t("Switch on Automation tasks on the Plugins page.") : t("No scheduled tasks yet. Add one")) : null
+    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view.available === false ? t("Switch on Automation tasks on the Plugins page.") : view.someHidden ? t("No scheduled tasks you can see. Add one") : t("No scheduled tasks yet. Add one")) : null
   );
 }
 function RoomSchedules({ room: room2, actions }) {

@@ -1312,6 +1312,8 @@ const ZH = {
   'A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.': '「每 N 分钟」和 cron 任务仍可能在安静时段内运行：下一次运行时间是 DSH 算的。这里如实说明，不假装已经静音。',
   'No scheduled tasks yet.': '还没有定时任务。',
   'No scheduled tasks yet. Add one': '还没有定时任务，去添加',
+  'No scheduled tasks you can see. Another member\'s tasks stay hidden.': '没有你能看到的定时任务，另一位成员的任务是隐藏的。',
+  'No scheduled tasks you can see. Add one': '没有你能看到的定时任务，去添加',
   'Automation tasks are off in DSH': 'DSH 的「自动化任务」没有打开',
   'No such Bot': '没有这个 Bot',
   'No such Bot or group chat': '没有这个 Bot 或群聊',

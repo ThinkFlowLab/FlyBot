@@ -410,22 +410,28 @@ export function install(rt) {
     // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
     await checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error))
     const tasks = []
+    // #2112: a short list and an empty host are not the same answer. A known row dropped because
+    // the caller does not own it sets `someHidden`, so the page can say rows exist that it may not
+    // read; a row with no known owner is unusable to everybody and hides nothing.
+    let someHidden = false
     for (const entry of await service.catalog()) {
       const owner = ownerOf(entry.sessionId)
-      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
+      if (!known(owner)) continue
+      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
       const lastRun = lastRunOf(entry)
       tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
     for (const entry of Object.values(paused())) {
       const owner = ownerOf(entry.sessionId)
-      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
+      if (!known(owner)) continue
+      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
       const lastRun = lastRunOf({ id: entry.id })
       tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
     // #1166: a repeat rule can still fire inside the window — the page says so instead of
     // claiming a silence FlyBot cannot keep.
     const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
-    return { available: true, tasks, quietHours, ...(unchecked ? { quietUnchecked: true } : {}) }
+    return { available: true, tasks, quietHours, ...(someHidden ? { someHidden: true } : {}), ...(unchecked ? { quietUnchecked: true } : {}) }
   }
 
   // Edit: a paused task stays paused with its new content; an active one is updated in
