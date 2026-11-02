@@ -47,6 +47,14 @@ export async function fileKind(path) {
   }
 }
 
+// A temp name a write lands through is a leaf like the file it becomes (temp-name sweep): the
+// `writeFile` follows a link at the last component, so a link left at `<file>.<pid>.tmp` would take
+// the bytes outside the home and the `rename` after them would put the link where the file belongs.
+// `absent` is a writer's to create and a plain leftover under this host's own pid is replaceable;
+// anything else refuses the write before the first byte. The destination itself needs no such
+// check: `rename` replaces the name, link included, instead of writing through it.
+export const tempWritable = (path) => fileKindSync(path) !== 'other'
+
 export function fileKindSync(path) {
   try {
     return fileKindOf(lstatSync(path))

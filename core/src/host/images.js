@@ -6,6 +6,7 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
+import { tempWritable } from './real-dir.js'
 import { splitRef } from './text.js'
 
 export function offloadTargets(session, beforeSeq) {
@@ -131,6 +132,9 @@ export function install(rt) {
     ocrWriting = ocrWriting.then(async () => {
       await mkdir(home, { recursive: true })
       const temp = `${ocrPath}.${process.pid}.tmp`
+      // The temp name is a leaf like the cache: a link there would take the readings outside
+      // the home and the rename would put the link over ocr.json (temp-name sweep).
+      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the OCR cache was not written there.`)
       await writeFile(temp, snapshot, 'utf8')
       await rename(temp, ocrPath)
     }).catch(error => rt.warn('ds-bot: OCR cache write failed: %s', error))

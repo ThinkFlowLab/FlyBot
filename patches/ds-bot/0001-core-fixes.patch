@@ -4854,7 +4854,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 diff --git a/src/host/images.js b/src/host/images.js
 --- a/src/host/images.js
 +++ b/src/host/images.js
-@@ -2,7 +2,7 @@
+@@ -2,10 +2,11 @@
  // reaches a model that cannot read them, each image becomes text from a vision model.
  // Texts are kept per attachment, so later requests repeat the same words and the
  // prompt cache still hits.
@@ -4863,6 +4863,10 @@ diff --git a/src/host/images.js b/src/host/images.js
  import { join } from 'node:path'
  import { BlockAssembler } from '@deepseek-ai/dsh-llm'
  import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
++import { tempWritable } from './real-dir.js'
+ import { splitRef } from './text.js'
+ 
+ export function offloadTargets(session, beforeSeq) {
 @@ -27,6 +27,56 @@ export function offloadTargets(session, beforeSeq) {
    return targets
  }
@@ -4920,6 +4924,16 @@ diff --git a/src/host/images.js b/src/host/images.js
  export function install(rt) {
    const { ctx, config, home } = rt
  
+@@ -81,6 +81,9 @@ export function install(rt) {
+     ocrWriting = ocrWriting.then(async () => {
+       await mkdir(home, { recursive: true })
+       const temp = `${ocrPath}.${process.pid}.tmp`
++      // The temp name is a leaf like the cache: a link there would take the readings outside
++      // the home and the rename would put the link over ocr.json (temp-name sweep).
++      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the OCR cache was not written there.`)
+       await writeFile(temp, snapshot, 'utf8')
+       await rename(temp, ocrPath)
+     }).catch(error => rt.warn('ds-bot: OCR cache write failed: %s', error))
 @@ -128,16 +128,18 @@ export function install(rt) {
      return ocrPending.get(id)
    }
@@ -10773,18 +10787,19 @@ diff --git a/test/i18n.test.js b/test/i18n.test.js
 diff --git a/test/images.test.js b/test/images.test.js
 --- a/test/images.test.js
 +++ b/test/images.test.js
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,10 @@
  import assert from 'node:assert/strict'
-+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 +import { tmpdir } from 'node:os'
 +import { join } from 'node:path'
  import { test } from 'node:test'
 -import { offloadTargets } from '../src/host/images.js'
-+import { attachmentFilePath, attachmentObjectPath, imagePlaceholder, offloadTargets } from '../src/host/images.js'
++import { attachmentFilePath, attachmentObjectPath, imagePlaceholder, install, offloadTargets } from '../src/host/images.js'
++import { fakeContext } from './fake-ctx.js'
  
  test('offloadTargets selects live images from prior user and tool messages', () => {
    const events = [
-@@ -32,3 +32,83 @@ test('offloadTargets selects live images from prior user and tool messages', ()
+@@ -32,3 +32,152 @@ test('offloadTargets selects live images from prior user and tool messages', ()
      { seq: 2, imageIndexes: [0] },
    ])
  })
@@ -10867,6 +10882,75 @@ diff --git a/test/images.test.js b/test/images.test.js
 +
 +  // An unnamed image keeps the sha prefix the host has always shown.
 +  assert.match(imagePlaceholder({ attachmentId: id }), /\[Image sha256:bdc77c70:/)
++})
++
++// The OCR cache lands through `<home>/ocr.json.<pid>.tmp` and is renamed into place. That temp name
++// is a leaf like the cache (temp-name sweep): `writeFile` follows a link there, so a pre-set link
++// would take the cache outside the home and the rename would put the link where `ocr.json` belongs.
++const OCR_ATTACHMENT = { attachmentId: `sha256:${'b'.repeat(64)}`, name: 'triangle.png' }
++
++function ocrRuntime(t) {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-images-ocr-'))
++  const warnings = []
++  const ctx = fakeContext()
++  Object.assign(ctx, {
++    llm: {
++      listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }],
++      listModels: async () => [{ id: 'vision', input: ['text', 'image'] }],
++      resolveModelInfo: async () => ({ inputModalities: ['text', 'image'] }),
++      stream: async function* () {
++        yield { type: 'text-delta', index: 0, text: 'A red triangle.' }
++        yield { type: 'finish', reason: { kind: 'stop' } }
++      },
++    },
++  })
++  const rt = {
++    ctx,
++    home,
++    config: {},
++    warn: (...args) => warnings.push(args.join(' ')),
++    load: async () => {},
++    readOnly: () => undefined,
++    roomOf: () => 'r1',
++    isBotSession: () => true,
++    ownRequest: () => false,
++    catalog: async () => [{ ref: 'deepseek/vision', name: 'Vision', input: ['image'] }],
++    defaultRef: () => 'deepseek/vision',
++    tagUsage: messages => messages,
++  }
++  install(rt)
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  return { rt, home, warnings }
++}
++
++// The cache write is queued after the reading, so wait for the effect instead of guessing a delay.
++async function waitFor(check) {
++  for (let i = 0; i < 300; i += 1) {
++    if (await check()) return
++    await new Promise(resolve => setTimeout(resolve, 10))
++  }
++}
++
++test('a linked OCR cache temp name does not take the cache; ocr.json stays a plain file', async (t) => {
++  const { rt, home, warnings } = ocrRuntime(t)
++  const outside = join(home, 'outside-ocr.txt')
++  writeFileSync(outside, 'OUTSIDE\n')
++  symlinkSync(outside, join(home, `ocr.json.${process.pid}.tmp`))
++  await rt.imagesForGroup([OCR_ATTACHMENT], 'r1')
++  await waitFor(() => readFileSync(outside, 'utf8') !== 'OUTSIDE\n' || warnings.length > 0)
++  assert.equal(readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the file behind the temp link is not written through')
++  const cache = join(home, 'ocr.json')
++  assert.equal(existsSync(cache) ? lstatSync(cache).isSymbolicLink() : false, false, 'the cache is not a link')
++  assert.ok(warnings.some(line => /not a plain file/.test(line)), warnings.join('\n'))
++})
++
++test('an ordinary OCR cache temp name is written and renamed as before', async (t) => {
++  const { rt, home, warnings } = ocrRuntime(t)
++  await rt.imagesForGroup([OCR_ATTACHMENT], 'r1')
++  const cache = join(home, 'ocr.json')
++  await waitFor(() => existsSync(cache))
++  assert.equal(warnings.length, 0)
++  assert.equal(JSON.parse(readFileSync(cache, 'utf8'))[OCR_ATTACHMENT.attachmentId].text, 'A red triangle.')
 +})
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js

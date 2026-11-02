@@ -784,7 +784,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,50 @@
+@@ -1,21 +1,51 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
@@ -798,6 +798,7 @@ diff --git a/src/host/store.js b/src/host/store.js
  import { homeLock } from './home-lock.js'
 -import { currentColor, normalize, unquote } from './text.js'
 +import { openJournal } from './journal.js'
++import { tempWritable } from './real-dir.js'
 +import { codePoints, currentColor, normalize, unquote } from './text.js'
 +
 +// The saved team's format version. Version 2 (#47) adds the identity schema: member
@@ -1548,7 +1549,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,11 +235,37 @@ export function install(rt) {
+@@ -235,16 +235,45 @@ export function install(rt) {
      return warnReadOnly()
    }
  
@@ -1586,6 +1587,14 @@ diff --git a/src/host/store.js b/src/host/store.js
      state.revision += 1
      state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
      const snapshot = JSON.stringify(state, null, 2)
+     const run = writing.then(async () => {
+       const temp = `${statePath}.${process.pid}.tmp`
++      // The temp name is a leaf like the state file itself: a link there would take the team
++      // outside the home and the rename would put the link over state.json (temp-name sweep).
++      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the Bot team was not written there.`)
+       try {
+         await mkdir(home, { recursive: true })
+         const ensureLock = () => {
 @@ -260,9 +260,10 @@ export function install(rt) {
          ensureLock()
          await rename(temp, statePath)
