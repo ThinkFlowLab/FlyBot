@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const WORKBENCH_ENDPOINTS = new Set([
+  'personal-agent-history', 'personal-agent-create', 'personal-agent-read', 'personal-agent-list', 'personal-agent-join', 'personal-agent-default', 'personal-agent-participations', 'personal-agent-leave', 'personal-agent-retire',
   'personal-space', 'auth-mode', 'platform-login', 'auth-whoami', 'auth-revoke', 'auth-invite', 'auth-redeem', 'workbench-state',
   'project-repositories', 'project-repository-link', 'project-repository-unlink', 'project-close-request', 'project-close-prepare', 'project-close-confirm',
   'projects', 'project-create', 'project-read', 'project-detail', 'project-board', 'project-members', 'project-role',

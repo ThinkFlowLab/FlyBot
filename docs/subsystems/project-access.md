@@ -243,3 +243,7 @@ handlers; integration does not reinstall earlier direct handlers ahead of it.
 ## Project convergence integration
 
 Project convergence #2171 adds closed as a read-only lifecycle: authorized members retain history/final-record reads; create, configure, run and acceptance permissions are refused. Scoped Project reads include goal/scope, repository associations and the public closure record, excluding confirmation secrets.
+
+## Independent personal-agent integration
+
+Independent personal-agent endpoints enforce their own current-user ownership and current membership on join/default selection. Watch grant validation also checks a linked carrier participation so retirement cannot keep using delegated rights.

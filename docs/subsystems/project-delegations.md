@@ -71,3 +71,11 @@ Task history and previous Attempts remain intact.
 Repair R6 background Chief jobs use the explicitly configured current human and
 fresh principal checks, separate from private watch grants and browser cookies.
 Revoked authority or policy revision rejects late decisions.
+
+## Independent agent participation
+
+#2170 associates legacy private carriers with user-owned agents and isolated Project
+participations. Grant validation rechecks active participation; leave/retire revokes
+only matching carrier grants after persistence and uses existing stop handling.
+Default-agent selection does not transfer a grant to a different carrier. Private
+histories remain readable to their owner without reactivating execution authority.

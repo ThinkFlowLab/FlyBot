@@ -954,3 +954,7 @@ S3 installs project-inputs after Effects and before callers. It shares the exist
 ## Project convergence integration
 
 Project convergence #2171 routes repository/closure operations through channel/authz to project-lifecycle.js. Snapshot migration imports legacy repository associations once. There is no new listener, database or timer in this stage; existing personal/group APIs are unchanged.
+
+## Independent personal-agent integration
+
+Personal-agent endpoint dispatch and load migration reuse the existing store and channel. Private identity reads are allowed on a read-only host, writes are refused. No additional listener, credentials, scheduler or background worker is introduced.

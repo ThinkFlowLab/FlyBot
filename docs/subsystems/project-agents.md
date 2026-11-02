@@ -359,3 +359,7 @@ registration. Dormant native DSH turn/end events must not consume the scheduled 
 job during that setup window; only its fenced SDK callback may finish it. The
 regression injects that event before a worker ID exists, then requires exactly one
 completion from the actual bound callback. Native-only execution retains its events.
+
+## Independent personal-agent integration
+
+Independent personal identities (#2170) now own per-Project participations/carriers. Legacy IDs and private memory/transcripts remain in place; privateIdentity resolves the selected participation. Native tools validate active participation before and after async authorization. See [personal agents](personal-agents.md).

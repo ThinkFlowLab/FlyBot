@@ -458,3 +458,7 @@ TaskView does not expose private conversation state through the compact board.
 ## Project convergence integration
 
 Project convergence #2171 admits the six repository/closure endpoints through the restricted gateway. Each reaches the same domain service with authenticated membership and operation-specific authority; exposing a route does not grant configure or Owner confirmation rights.
+
+## Independent personal-agent integration
+
+The restricted gateway admits independent personal-agent registration/read/participation/history/lifecycle operations; each handler enforces current user ownership and scoped Project authority. No UI or control-plane change is made.

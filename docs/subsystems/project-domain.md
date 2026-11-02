@@ -169,3 +169,7 @@ confirmed stop/reconciliation stays in the execution service. It adds no require
 to finish Tasks before closing. Legacy delete/archive cannot erase or relabel a closed
 Project. This stage preserves legacy interfaces; full role-change proposals/approval
 and dynamic execution compatibility remain tracked with role/execution convergence.
+
+## Independent personal-agent integration
+
+Load migration also relates legacy private Project agents to independent user identities and participation scopes; it preserves Task/Run and private carrier history. Personal-agent native endpoints enter through the same authenticated service before Project-scoped routing.

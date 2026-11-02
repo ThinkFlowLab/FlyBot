@@ -1,5 +1,13 @@
 # FlyBot — Roadmap
 
+## Independent personal-agent foundation — 2026-11-02
+
+#2170 introduces user-owned identities, per-Project participation/default routing,
+and migration that retains private carrier IDs, notes, conversations and Sessions.
+Leaving/retiring revokes only that agent's grants and preserves private history.
+External descriptors remain unverified; authentication/transport and actual provider
+acceptance are #2183/#2185, compatibility #2186. This is source work, not live rollout.
+
 ## Backend convergence — 2026-11-02
 
 Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 starts with repository relations and Owner closure; role-governance acceptance remains tracked.
