@@ -1052,6 +1052,94 @@ test('#602 (2026-11-01): a T0/T1 pull request with no PASS is stopped by a revie
   assert.match(r.reasons.join('; '), /6561490254/)
 })
 
+// ---- #2119: "Request changes" is the one refusal a person can write without typing anything, and it
+// carried no text for the stop reader to match: the guard dropped every review with an empty body on the
+// way in, so the review state never reached `stopRequestAt` and the answer was ALLOW. The state is a
+// fourth face — the review's own verdict — and it is read like the other three. The fixture is the one
+// above (`reviewNote`), which already carries `state`; only the state and the empty body are new.
+test('#2119: a review requesting changes stops the enqueue with no body, and names the review', () => {
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [reviewNote({ id: 6561490260, state: 'CHANGES_REQUESTED', body: '' })] })
+  assert.equal(r.ok, false, 'an empty-body "Request changes" is a stop, not a review with nothing to say')
+  assert.match(r.reasons.join('; '), /review 6561490260 by hugo asked for changes/)
+  assert.equal(r.stopRequest?.id, 6561490260, 'the refusal names the review a reader has to answer')
+})
+
+test('#2119: the same review with the COMMENTED state and no body leaves the decision alone', () => {
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [reviewNote({ id: 6561490266, state: 'COMMENTED', body: '' })] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'a comment-only review asks for nothing')
+})
+
+test('#2119: a later APPROVED review by the same login clears the request, and the record says which review cleared it', () => {
+  const refused = reviewNote({ id: 6561490260, state: 'CHANGES_REQUESTED', body: '' })
+  const cleared = reviewNote({ id: 6561490261, state: 'APPROVED', body: '', at: '2026-11-01T17:45:00Z' })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [refused, cleared] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'review 6561490261 (APPROVED, 17:45:00Z) cleared the request review 6561490260 made')
+  // And the same pair the other way round stays a request: an approval is only an answer to a request it
+  // follows, never a licence to ignore one written after it.
+  const later = reviewNote({ id: 6561490262, state: 'CHANGES_REQUESTED', body: '', at: '2026-11-01T17:50:00Z' })
+  const after = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [cleared, later] })
+  assert.equal(after.ok, false)
+  assert.match(after.reasons.join('; '), /review 6561490262 by hugo asked for changes/)
+})
+
+test("#2119: another login's approval does not answer the request, and a comment that lets the tip merge does", () => {
+  const refused = reviewNote({ id: 6561490260, state: 'CHANGES_REQUESTED', body: '' })
+  // A different person approving is not the reviewer changing their mind: the request still stands.
+  const outsider = reviewNote({ id: 6561490270, login: 'someone-else', state: 'APPROVED', body: '', at: '2026-11-01T17:45:00Z' })
+  const still = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [refused, outsider] })
+  assert.equal(still.ok, false, 'only the login that asked can take it back with a review')
+  assert.match(still.reasons.join('; '), /review 6561490260 by hugo asked for changes/)
+  // The third way out the issue names: a newer comment that lets this tip merge. It is the same
+  // `LIFT_REQUEST` path a written stop already answers to, so a state stop is not wedged waiting for a
+  // second trip through the review UI.
+  const lifted = note({ id: 6561490271, body: 'Covered now — merge it.', at: '2026-11-01T17:50:00Z' })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z'), lifted], reviews: [refused] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'comment 6561490271 (17:50:00Z) cleared the request review 6561490260 made')
+})
+
+test('#2119: a dismissal clears the request it dismissed, and a request older than the PASS does not apply', () => {
+  const refused = reviewNote({ id: 6561490260, state: 'CHANGES_REQUESTED', body: '' })
+  const dismissed = reviewNote({ id: 6561490263, state: 'DISMISSED', body: '', at: '2026-11-01T17:45:00Z' })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviews: [refused, dismissed] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  const early = reviewNote({ id: 6561490264, state: 'CHANGES_REQUESTED', body: '', at: '2026-11-01T17:00:00Z' })
+  // The window opens at the conclusion this decision used, so the PASS needs its id — the handle
+  // `conclusionAt` reads the time from (#1112).
+  const after = run({ comments: [comment(report(), '2026-11-01T17:35:30Z', { id: 6561490265 })], reviews: [early] })
+  assert.equal(after.ok, true, 'the PASS at 17:35:30Z answered the request written at 17:00:00Z')
+})
+
+test('#2119: a review request and its approval do not answer a request written before them', () => {
+  // The two kinds of request are read in one pass over the same list, and they are not the same request:
+  // the review UI answers a review, a comment answers a comment. A `CHANGES_REQUESTED` row that lands
+  // after a written hold is the later request; the same login's later `APPROVED` answers that review and
+  // leaves the hold standing, because the hold was never written as a review.
+  const pass = comment(report(), '2026-11-01T17:35:30Z')
+  const hold = note({ id: 6561490280, body: '**hold** — the second file is still wrong', at: '2026-11-01T17:38:00Z' })
+  const asked = reviewNote({ id: 6561490281, state: 'CHANGES_REQUESTED', body: '', at: '2026-11-01T17:38:11Z' })
+  const approved = reviewNote({ id: 6561490282, state: 'APPROVED', body: '', at: '2026-11-01T17:45:00Z' })
+  const both = run({ comments: [pass, hold], reviews: [asked] })
+  assert.equal(both.ok, false, 'the review is a request too, and it is the later of the two')
+  assert.match(both.reasons.join('; '), /review 6561490281 by hugo asked for changes/, 'the later request is the one named')
+  const cleared = run({ comments: [pass, hold], reviews: [asked, approved] })
+  assert.equal(cleared.ok, false, 'approving the review answers the review, not the hold written before it')
+  assert.match(cleared.reasons.join('; '), /comment 6561490280 by hugo/, 'the hold is still the request that stands')
+  assert.equal(cleared.stopRequest?.id, 6561490280)
+  // A third person's hold is answered the same way: the review approval never touched it.
+  const other = note({ id: 6561490283, login: 'someone-else', body: '**hold** — please do not merge this tip', at: '2026-11-01T17:38:00Z' })
+  const third = run({ comments: [pass, other], reviews: [asked, approved] })
+  assert.equal(third.ok, false, "another login's review approval does not answer a hold it never wrote")
+  assert.equal(third.stopRequest?.id, 6561490283)
+  // A dismissal is the same answer as an approval: it dismisses the review, not the comment.
+  const dismissed = reviewNote({ id: 6561490284, state: 'DISMISSED', body: '', at: '2026-11-01T17:45:00Z' })
+  const gone = run({ comments: [pass, hold], reviews: [asked, dismissed] })
+  assert.equal(gone.ok, false, 'the dismissal does not lift a request that was not a review')
+  assert.equal(gone.stopRequest?.id, 6561490280)
+})
+
 // The third face the API offers: a comment written on one line of the diff (`pulls/{pr}/comments`). It
 // carries the same `body` and `user` as the other two, and `created_at` where a review carries
 // `submitted_at`. A person reaching for the line that is wrong writes the request there, so it reaches

@@ -200,7 +200,8 @@ const runGate = (fixture) => runGateVia(fixture).result
 // The comment id is the handle a refusal names (#1112), and #602 (2026-11-01) names the stop it reads.
 let commentId = 5000
 const apiComment = (body, at, id = commentId++) => ({ id, user: { login: 'reviewer-agent', type: 'User' }, body, created_at: at, author_association: 'MEMBER' })
-const apiReview = (body, at) => ({ user: { login: 'reviewer-agent', type: 'User' }, body, submitted_at: at, author_association: 'MEMBER' })
+const apiReview = (body, at, { id, login = 'reviewer-agent', type = 'User', state, association = 'MEMBER' } = {}) =>
+  ({ ...(id == null ? {} : { id }), user: { login, type }, body, submitted_at: at, author_association: association, ...(state == null ? {} : { state }) })
 
 const firstLine = (verdict, tip = HEAD) => [
   `Verdict: ${verdict} at ${tip}`,
@@ -307,6 +308,19 @@ test('#602 (2026-11-01): an inline stop older than the PASS at this tip does not
 test('#602 (2026-11-01): a stop older than the PASS at this tip does not refuse the entry', () => {
   const result = runGate({ comments: [stopComment({ at: '2026-11-01T17:00:00Z' }), apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z')] })
   assert.equal(result.ok, true, result.reasons.join('; '))
+})
+
+// ---- #2119: the same empty-body "Request changes", read at the last moment before the merge. `merge-gate`
+// builds its own `reports` from the same three endpoints, so it dropped the review state the same way the
+// guard did and answered ok for a pull request a person had rejected without typing. One case is enough
+// here: the clearing rules are `stopRequestAt`'s and are pinned in `enqueue-guard.test.mjs`.
+test('#2119: a review requesting changes with no body refuses the queue entry', () => {
+  const result = runGate({
+    comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z')],
+    reviews: [apiReview('', '2026-11-01T17:38:11Z', { id: 6561490260, login: 'hugo', association: 'CONTRIBUTOR', state: 'CHANGES_REQUESTED' })],
+  })
+  assert.equal(result.ok, false, 'a queue entry is stopped by "Request changes" with no text')
+  assert.match(result.reasons.join('; '), /review 6561490260 by hugo asked for changes/)
 })
 
 test('#637: hold still refuses through main()', () => {

@@ -67,8 +67,10 @@ export function decidePull({ gh = realGh, env = process.env, repo: repoOption, p
   const reports = [
     ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ id: c.id, kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
-      .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ id: v.id, kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
+      // #2119: a review's state is part of the record, and an empty body must not drop the row — "Request
+      // changes" is the one refusal a person writes without typing. The text readers see `''` and find no
+      // sentence, so the row adds a request and never a conclusion.
+      .map((v) => ({ id: v.id, kind: 'review', state: v.state, login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
     // #2091: a comment written on one line of the diff is a third place a person can write, and the stop
     // request is read from all three. `kind: 'review-comment'` keeps it out of the conclusion readers
     // (`isConclusionSource`), which is the half that does not change: it is a request, never a verdict.
