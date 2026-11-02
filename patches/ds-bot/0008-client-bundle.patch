@@ -10580,6 +10580,10 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
+-    }
+-    if (source.kind === "schedule") {
+-      const prompts = reminderPrompts(contentText(data.content));
+-      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
 +function dropLabel(column) {
 +  if (column === "in-progress") return t("Start task");
 +  if (column === "done") return t("Complete task");
@@ -10602,10 +10606,6 @@ diff --git a/client.js b/client.js
 +      map.set(id, []);
 +      order.push(id);
      }
--    if (source.kind === "schedule") {
--      const prompts = reminderPrompts(contentText(data.content));
--      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
--    }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 +    map.get(id).push(task);
@@ -11274,81 +11274,20 @@ diff --git a/client.js b/client.js
 -  }, [done, sessionId, callId]);
 -  let replies = live.replies;
 -  if (done) {
-+  }, [onClose]);
-+  const items = projectMenuItems(project);
-+  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
-+    "div",
-+    {
-+      ref,
-+      className: "bt-project-menu",
-+      role: "menu",
-+      "aria-label": t("My role"),
-+      style: { left: `${x}px`, top: `${y}px` },
-+      "data-project-id": String(project?.id ?? "")
-+    },
-+    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
-+    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
-+      key: item.role,
-+      type: "button",
-+      role: "menuitemradio",
-+      className: "bt-project-menu-item",
-+      "aria-checked": item.current ? "true" : "false",
-+      disabled: !item.pick,
-+      onClick: () => {
-+        if (item.pick) onPick(item.role);
-+        else onClose();
-+      }
-+    }, item.label))
-+  ), document.body);
-+}
-+function ProjectsNav({ wide = true, request, onOpen } = {}) {
-+  const read = request ?? call;
-+  const open = (0, import_react16.useCallback)((id) => {
-+    if (onOpen) {
-+      onOpen(id);
-+      return;
-+    }
-+    if (typeof window !== "undefined") window.location.hash = projectHash(id);
-+  }, [onOpen]);
-+  const [expanded, setExpanded] = (0, import_react16.useState)(false);
-+  const [projects, setProjects] = (0, import_react16.useState)(null);
-+  const [error, setError] = (0, import_react16.useState)("");
-+  const [note, setNote] = (0, import_react16.useState)("");
-+  const [menu, setMenu] = (0, import_react16.useState)(null);
-+  const load = (0, import_react16.useCallback)(async () => {
-     try {
+-    try {
 -      replies = JSON.parse(contentText(content)).replies ?? [];
 -    } catch {
 -      replies = [];
-+      const listing = await read("projects");
-+      const list = Array.isArray(listing?.projects) ? listing.projects : [];
-+      setProjects(list);
-+      setError("");
-+    } catch (failure) {
-+      setProjects([]);
-+      setError(failure?.message ?? String(failure));
-     }
+-    }
 -  }
 -  const pending = done || !live.speaking ? [] : [live.speaking];
 -  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
 -  if (replies.length === 0 && pending.length === 0) return null;
 -  const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
-+  }, [read]);
-+  (0, import_react16.useEffect)(() => {
-+    if (!expanded) return;
-+    void load();
-+  }, [expanded, load]);
-+  const toggle = () => {
-+    setNote("");
-+    if (!wide) {
-+      void open("");
-+      return;
-+    }
-+    setExpanded((value) => !value);
-+  };
-+  const listed = expanded && wide;
-+  return (0, import_react16.createElement)(
++  }, [onClose]);
++  const items = projectMenuItems(project);
++  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
      "div",
 -    { className: "bt-group-replies" },
 -    replies.map((reply, index) => {
@@ -11394,9 +11333,71 @@ diff --git a/client.js b/client.js
 -            (0, import_react6.createElement)("span", { className: "bt-event-name" }, t(reply.kind === "working" ? "{name} started on it" : "{name} paused for your approval", { name: bot.name }))
 -          )
 -        );
--      }
++    {
++      ref,
++      className: "bt-project-menu",
++      role: "menu",
++      "aria-label": t("My role"),
++      style: { left: `${x}px`, top: `${y}px` },
++      "data-project-id": String(project?.id ?? "")
++    },
++    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
++    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
++      key: item.role,
++      type: "button",
++      role: "menuitemradio",
++      className: "bt-project-menu-item",
++      "aria-checked": item.current ? "true" : "false",
++      disabled: !item.pick,
++      onClick: () => {
++        if (item.pick) onPick(item.role);
++        else onClose();
+       }
 -      if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
++    }, item.label))
++  ), document.body);
++}
++function ProjectsNav({ wide = true, request, onOpen } = {}) {
++  const read = request ?? call;
++  const open = (0, import_react16.useCallback)((id) => {
++    if (onOpen) {
++      onOpen(id);
++      return;
++    }
++    if (typeof window !== "undefined") window.location.hash = projectHash(id);
++  }, [onOpen]);
++  const [expanded, setExpanded] = (0, import_react16.useState)(false);
++  const [projects, setProjects] = (0, import_react16.useState)(null);
++  const [error, setError] = (0, import_react16.useState)("");
++  const [note, setNote] = (0, import_react16.useState)("");
++  const [menu, setMenu] = (0, import_react16.useState)(null);
++  const load = (0, import_react16.useCallback)(async () => {
++    try {
++      const listing = await read("projects");
++      const list = Array.isArray(listing?.projects) ? listing.projects : [];
++      setProjects(list);
++      setError("");
++    } catch (failure) {
++      setProjects([]);
++      setError(failure?.message ?? String(failure));
++    }
++  }, [read]);
++  (0, import_react16.useEffect)(() => {
++    if (!expanded) return;
++    void load();
++  }, [expanded, load]);
++  const toggle = () => {
++    setNote("");
++    if (!wide) {
++      void open("");
++      return;
++    }
++    setExpanded((value) => !value);
++  };
++  const listed = expanded && wide;
++  return (0, import_react16.createElement)(
++    "div",
 +    { className: "bt-projects" },
 +    (0, import_react16.createElement)(
 +      "button",
@@ -11765,21 +11766,6 @@ diff --git a/client.js b/client.js
 -        observer.disconnect();
 -        column = next;
 -        if (column) observer.observe(column, { childList: true, subtree: true });
--      }
--      if (!column) return;
--      const items = [...column.querySelectorAll(":scope > [data-chat-flow-key]")];
--      let last = -1;
--      items.forEach((item, index) => {
--        if (seen.has(item)) last = index;
--      });
--      const fresh = items.filter((item) => !seen.has(item) && item.offsetHeight > 0);
--      for (const item of fresh) seen.add(item);
--      if (last < 0 || Date.now() - started < 800 || fresh.length > 3) return;
--      for (const item of fresh) {
--        if (items.indexOf(item) < last) continue;
--        const reply = [void 0, "assistant-step", "tool-call"].includes(item.dataset.chatFlowKind);
--        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
--        item.addEventListener("animationend", settle);
 +function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, useSessionRetainInfo, useWork, wide, marked }) {
 +  const id = room2.id;
 +  const fallback = useSessions((list) => nameMentions(previewOf(list, id, [], [], botNames(roster)), roster));
@@ -11817,6 +11803,20 @@ diff --git a/client.js b/client.js
 +        event.preventDefault();
 +        actions.openMenu({ kind: "room", id, x: event.clientX, y: event.clientY });
        }
+-      if (!column) return;
+-      const items = [...column.querySelectorAll(":scope > [data-chat-flow-key]")];
+-      let last = -1;
+-      items.forEach((item, index) => {
+-        if (seen.has(item)) last = index;
+-      });
+-      const fresh = items.filter((item) => !seen.has(item) && item.offsetHeight > 0);
+-      for (const item of fresh) seen.add(item);
+-      if (last < 0 || Date.now() - started < 800 || fresh.length > 3) return;
+-      for (const item of fresh) {
+-        if (items.indexOf(item) < last) continue;
+-        const reply = [void 0, "assistant-step", "tool-call"].includes(item.dataset.chatFlowKind);
+-        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
+-        item.addEventListener("animationend", settle);
 +    },
 +    (0, import_react17.createElement)(RoomAvatar, { room: room2, roster, size: 36 }),
 +    pinned && !wide ? (0, import_react17.createElement)(PinMark) : null,
@@ -11842,7 +11842,7 @@ diff --git a/client.js b/client.js
 +      if (!keep || value.trim() === "" || value.trim() === session.title) {
 +        actions.endAgentRename();
 +        return;
-+      }
+       }
 +      void (async () => {
 +        try {
 +          await actions.renameAgentSession(agent.id, session.id, value);
@@ -13973,6 +13973,21 @@ diff --git a/client.js b/client.js
 +    if (target !== "") onOpen?.(target);
    };
 -  requestAnimationFrame(look);
+-}
+-function pressSettingsShortcut() {
+-  const binding = shellShortcuts?.catalog.getSnapshot().find((row) => row.id === "settings.open")?.binding;
+-  if (!binding) return;
+-  const held = new Set(binding.modifiers);
+-  window.dispatchEvent(new KeyboardEvent("keydown", {
+-    code: binding.code,
+-    key: binding.code === "Comma" ? "," : "",
+-    bubbles: true,
+-    cancelable: true,
+-    ctrlKey: held.has("control"),
+-    altKey: held.has("alt"),
+-    shiftKey: held.has("shift"),
+-    metaKey: held.has("meta")
+-  }));
 +  if (id === "") return null;
 +  return (0, import_react19.createElement)("button", {
 +    type: "button",
@@ -14015,108 +14030,6 @@ diff --git a/client.js b/client.js
 +    (0, import_react19.createElement)(ProjectQueueGroups, { view, onOpen }),
 +    (0, import_react19.createElement)(ProjectDoneGroup, { view, onOpen }),
 +    (0, import_react19.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
-+  );
- }
--function pressSettingsShortcut() {
--  const binding = shellShortcuts?.catalog.getSnapshot().find((row) => row.id === "settings.open")?.binding;
--  if (!binding) return;
--  const held = new Set(binding.modifiers);
--  window.dispatchEvent(new KeyboardEvent("keydown", {
--    code: binding.code,
--    key: binding.code === "Comma" ? "," : "",
--    bubbles: true,
--    cancelable: true,
--    ctrlKey: held.has("control"),
--    altKey: held.has("alt"),
--    shiftKey: held.has("shift"),
--    metaKey: held.has("meta")
--  }));
-+function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
-+  const save = request ?? call;
-+  const [kind, setKind] = (0, import_react19.useState)("bot");
-+  const [memberId, setMemberId] = (0, import_react19.useState)("");
-+  const [note, setNote] = (0, import_react19.useState)("");
-+  const noteLength = memoryLength(note);
-+  const noteOver = noteLength > MEMORY_TEXT_MAX;
-+  const noteSaveDisabled = text(note) === "" || noteOver;
-+  const [assistantOff, setAssistantOff] = (0, import_react19.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
-+  const [status, setStatus] = (0, import_react19.useState)("");
-+  const id = text(project?.id);
-+  const run = async (endpoint, payload, done) => {
-+    try {
-+      const result = await save(endpoint, payload);
-+      setStatus(done);
-+      onSaved?.(result);
-+      return result;
-+    } catch (error) {
-+      setStatus(hostText(error?.message ?? String(error)));
-+      return null;
-+    }
-+  };
-+  return (0, import_react19.createElement)(
-+    "div",
-+    { className: "bt-project-panel", "data-panel": "project-settings" },
-+    (0, import_react19.createElement)("h3", null, t("Project settings")),
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-project-field" },
-+      (0, import_react19.createElement)("label", { htmlFor: "bt-project-member-id" }, t("Bind a member to this Project")),
-+      (0, import_react19.createElement)(
-+        "div",
-+        { className: "bt-project-row-actions" },
-+        (0, import_react19.createElement)(
-+          "select",
-+          { "aria-label": t("Member kind"), value: kind, onChange: (event) => setKind(event.target.value) },
-+          (0, import_react19.createElement)("option", { value: "bot" }, t("Bot")),
-+          (0, import_react19.createElement)("option", { value: "group" }, t("Group"))
-+        ),
-+        (0, import_react19.createElement)("input", { id: "bt-project-member-id", value: memberId, placeholder: t("Member id"), onChange: (event) => setMemberId(event.target.value) }),
-+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-bind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: id }, t("Member bound.")) }, t("Bind")),
-+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-unbind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: null }, t("Member unbound.")) }, t("Unbind"))
-+      )
-+    ),
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-project-field" },
-+      (0, import_react19.createElement)("label", null, t("Project Assistant")),
-+      (0, import_react19.createElement)(
-+        "div",
-+        { className: "bt-project-row-actions" },
-+        (0, import_react19.createElement)("label", null, (0, import_react19.createElement)("input", { type: "checkbox", "data-action": "assistant-off", checked: assistantOff, onChange: (event) => setAssistantOff(event.target.checked) }), " ", t("Pause the daily digest")),
-+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-assistant-save", onClick: () => run("project-assistant-owner", { id, settings: { off: assistantOff === true } }, t("Assistant settings saved.")) }, t("Save"))
-+      )
-+    ),
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-project-field" },
-+      // The host knows two memory kinds; the free text the panel takes is recorded as a decision,
-+      // never as a third kind the host would refuse (#1820).
-+      (0, import_react19.createElement)("label", { htmlFor: "bt-project-note" }, t("Add to the assistant memory")),
-+      (0, import_react19.createElement)("textarea", { id: "bt-project-note", value: note, onChange: (event) => setNote(event.target.value) }),
-+      (0, import_react19.createElement)("div", { className: "bt-project-count", "data-role": "project-memory-count", "data-over": noteOver ? "true" : "false" }, `${noteLength}/${MEMORY_TEXT_MAX}`),
-+      (0, import_react19.createElement)(
-+        "div",
-+        { className: "bt-project-row-actions" },
-+        (0, import_react19.createElement)("button", {
-+          type: "button",
-+          className: "bt-soft bt-soft-sm",
-+          "data-action": "project-memory-save",
-+          disabled: noteSaveDisabled,
-+          // A disabled button draws no click, but the guard is what a keyboard or a stale tree
-+          // could still reach: neither state sends a request or writes anything.
-+          onClick: () => {
-+            if (noteSaveDisabled) return;
-+            run("project-memory-write", { id, kind: "decision", text: text(note) }, t("Memory saved."));
-+          }
-+        }, t("Save memory"))
-+      )
-+    ),
-+    (0, import_react19.createElement)("div", { className: "bt-project-status-line", role: "status" }, status),
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-project-row-actions" },
-+      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
-+    )
 +  );
  }
 -function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
@@ -14169,11 +14082,27 @@ diff --git a/client.js b/client.js
 -    const rect = button.current?.getBoundingClientRect();
 -    if (rect) setBox({ left: rect.left, bottom: window.innerHeight - rect.top + 5 });
 -    setOpen((value) => !value);
-+function ProjectMembersPanel({ project, rows, onClose } = {}) {
-+  const owners = [];
-+  const add = (id) => {
-+    const clean = text(id);
-+    if (clean !== "" && !owners.includes(clean)) owners.push(clean);
++function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
++  const save = request ?? call;
++  const [kind, setKind] = (0, import_react19.useState)("bot");
++  const [memberId, setMemberId] = (0, import_react19.useState)("");
++  const [note, setNote] = (0, import_react19.useState)("");
++  const noteLength = memoryLength(note);
++  const noteOver = noteLength > MEMORY_TEXT_MAX;
++  const noteSaveDisabled = text(note) === "" || noteOver;
++  const [assistantOff, setAssistantOff] = (0, import_react19.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
++  const [status, setStatus] = (0, import_react19.useState)("");
++  const id = text(project?.id);
++  const run = async (endpoint, payload, done) => {
++    try {
++      const result = await save(endpoint, payload);
++      setStatus(done);
++      onSaved?.(result);
++      return result;
++    } catch (error) {
++      setStatus(hostText(error?.message ?? String(error)));
++      return null;
++    }
    };
 -  const groups = [
 -    [
@@ -14193,6 +14122,90 @@ diff --git a/client.js b/client.js
 -      "button",
 -      { ref: button, type: "button", className: "bt-account", "aria-label": t("Account"), "aria-haspopup": "menu", "aria-expanded": open, onClick: toggle },
 -      (0, import_react8.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react8.createElement)(BotMark, { look: MAIN_LOOK, size: 24 }))
++  return (0, import_react19.createElement)(
++    "div",
++    { className: "bt-project-panel", "data-panel": "project-settings" },
++    (0, import_react19.createElement)("h3", null, t("Project settings")),
++    (0, import_react19.createElement)(
++      "div",
++      { className: "bt-project-field" },
++      (0, import_react19.createElement)("label", { htmlFor: "bt-project-member-id" }, t("Bind a member to this Project")),
++      (0, import_react19.createElement)(
++        "div",
++        { className: "bt-project-row-actions" },
++        (0, import_react19.createElement)(
++          "select",
++          { "aria-label": t("Member kind"), value: kind, onChange: (event) => setKind(event.target.value) },
++          (0, import_react19.createElement)("option", { value: "bot" }, t("Bot")),
++          (0, import_react19.createElement)("option", { value: "group" }, t("Group"))
++        ),
++        (0, import_react19.createElement)("input", { id: "bt-project-member-id", value: memberId, placeholder: t("Member id"), onChange: (event) => setMemberId(event.target.value) }),
++        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-bind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: id }, t("Member bound.")) }, t("Bind")),
++        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-unbind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: null }, t("Member unbound.")) }, t("Unbind"))
++      )
+     ),
+-    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
++    (0, import_react19.createElement)(
+       "div",
+-      { className: "bt-menu bt-menu-up bt-account-menu", role: "menu", "aria-label": t("Account"), style: box },
+-      groups.map((group, index) => (0, import_react8.createElement)(
+-        import_react8.Fragment,
+-        { key: index },
+-        index > 0 ? (0, import_react8.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
+-        group.map(([label, Icon, run, hint]) => (0, import_react8.createElement)("button", {
+-          key: label,
++      { className: "bt-project-field" },
++      (0, import_react19.createElement)("label", null, t("Project Assistant")),
++      (0, import_react19.createElement)(
++        "div",
++        { className: "bt-project-row-actions" },
++        (0, import_react19.createElement)("label", null, (0, import_react19.createElement)("input", { type: "checkbox", "data-action": "assistant-off", checked: assistantOff, onChange: (event) => setAssistantOff(event.target.checked) }), " ", t("Pause the daily digest")),
++        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-assistant-save", onClick: () => run("project-assistant-owner", { id, settings: { off: assistantOff === true } }, t("Assistant settings saved.")) }, t("Save"))
++      )
++    ),
++    (0, import_react19.createElement)(
++      "div",
++      { className: "bt-project-field" },
++      // The host knows two memory kinds; the free text the panel takes is recorded as a decision,
++      // never as a third kind the host would refuse (#1820).
++      (0, import_react19.createElement)("label", { htmlFor: "bt-project-note" }, t("Add to the assistant memory")),
++      (0, import_react19.createElement)("textarea", { id: "bt-project-note", value: note, onChange: (event) => setNote(event.target.value) }),
++      (0, import_react19.createElement)("div", { className: "bt-project-count", "data-role": "project-memory-count", "data-over": noteOver ? "true" : "false" }, `${noteLength}/${MEMORY_TEXT_MAX}`),
++      (0, import_react19.createElement)(
++        "div",
++        { className: "bt-project-row-actions" },
++        (0, import_react19.createElement)("button", {
+           type: "button",
+-          role: "menuitem",
++          className: "bt-soft bt-soft-sm",
++          "data-action": "project-memory-save",
++          disabled: noteSaveDisabled,
++          // A disabled button draws no click, but the guard is what a keyboard or a stale tree
++          // could still reach: neither state sends a request or writes anything.
+           onClick: () => {
+-            setOpen(false);
+-            void Promise.resolve(run()).catch((error) => actions.reportError(error, "menu"));
++            if (noteSaveDisabled) return;
++            run("project-memory-write", { id, kind: "decision", text: text(note) }, t("Memory saved."));
+           }
+-        }, (0, import_react8.createElement)(Icon), (0, import_react8.createElement)("span", { className: "bt-menu-label" }, label), hint ? (0, import_react8.createElement)("span", { className: "bt-menu-hint" }, hint) : null))
++        }, t("Save memory"))
++      )
++    ),
++    (0, import_react19.createElement)("div", { className: "bt-project-status-line", role: "status" }, status),
++    (0, import_react19.createElement)(
++      "div",
++      { className: "bt-project-row-actions" },
++      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
++    )
++  );
++}
++function ProjectMembersPanel({ project, rows, onClose } = {}) {
++  const owners = [];
++  const add = (id) => {
++    const clean = text(id);
++    if (clean !== "" && !owners.includes(clean)) owners.push(clean);
++  };
 +  add(project?.ownerUserId);
 +  for (const id of Array.isArray(project?.ownerUserIds) ? project.ownerUserIds : []) add(id);
 +  const boardMembers = [];
@@ -14225,29 +14238,13 @@ diff --git a/client.js b/client.js
 +        { key: `board:${name}`, className: "bt-project-member", "data-member-role": "board", "data-member-id": name },
 +        (0, import_react19.createElement)("span", null, `@${name}`),
 +        (0, import_react19.createElement)("span", { className: "bt-project-member-kind" }, t("On the board"))
-+      ))
-     ),
--    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
+       ))
+-    ), document.body) : null
++    ),
 +    owners.length === 0 && boardMembers.length === 0 && chief === "" ? (0, import_react19.createElement)("div", { className: "bt-project-empty" }, t("No member is named yet.")) : null,
 +    (0, import_react19.createElement)("p", { className: "bt-project-note" }, t("Member management is not part of this slice; owners and the members their cards name are listed here.")),
 +    (0, import_react19.createElement)(
-       "div",
--      { className: "bt-menu bt-menu-up bt-account-menu", role: "menu", "aria-label": t("Account"), style: box },
--      groups.map((group, index) => (0, import_react8.createElement)(
--        import_react8.Fragment,
--        { key: index },
--        index > 0 ? (0, import_react8.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
--        group.map(([label, Icon, run, hint]) => (0, import_react8.createElement)("button", {
--          key: label,
--          type: "button",
--          role: "menuitem",
--          onClick: () => {
--            setOpen(false);
--            void Promise.resolve(run()).catch((error) => actions.reportError(error, "menu"));
--          }
--        }, (0, import_react8.createElement)(Icon), (0, import_react8.createElement)("span", { className: "bt-menu-label" }, label), hint ? (0, import_react8.createElement)("span", { className: "bt-menu-hint" }, hint) : null))
--      ))
--    ), document.body) : null
++      "div",
 +      { className: "bt-project-row-actions" },
 +      (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +    )
@@ -16160,7 +16157,7 @@ diff --git a/client.js b/client.js
      }
      case "cron":
        return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
-@@ -6896,11 +6896,30 @@ function timingText(task) {
+@@ -6896,11 +6896,33 @@ function timingText(task) {
        return "";
    }
  }
@@ -16189,37 +16186,55 @@ diff --git a/client.js b/client.js
 +      return t("Last run {time}", { time });
 +  }
 +}
-+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
++var lockedWindow = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
++function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
 +  const [confirming, setConfirming] = (0, import_react25.useState)(false);
 +  const [busy, setBusy] = (0, import_react25.useState)(false);
++  const [rowError, setRowError] = (0, import_react25.useState)("");
++  const refuse = (error) => setRowError(hostText(error?.message ?? String(error)));
 +  (0, import_react25.useEffect)(() => {
      if (!confirming) return void 0;
      const timer = setTimeout(() => setConfirming(false), 3e3);
      return () => clearTimeout(timer);
-@@ -6913,20 +6913,49 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -6911,22 +6911,65 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+       return;
+     }
      setBusy(true);
-     void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
-   };
+-    void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
++    setRowError("");
++    void actions.scheduleDelete(task.sessionId, task.id).then((next) => {
++      setBusy(false);
++      setRowError("");
++      onView(next);
++    }, (error) => {
++      setBusy(false);
++      refuse(error);
++    });
++  };
 +  const toggle = () => {
 +    setBusy(true);
++    setRowError("");
 +    const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
 +    void step(task.sessionId, task.id).then((next) => {
 +      setBusy(false);
++      setRowError("");
 +      onView(next);
-+    }, () => setBusy(false));
++    }, (error) => {
++      setBusy(false);
++      refuse(error);
++    });
 +  };
-+  const [retryError, setRetryError] = (0, import_react25.useState)("");
 +  const retry = () => {
 +    setBusy(true);
-+    setRetryError("");
++    setRowError("");
 +    void actions.scheduleRetry(task.sessionId, task.id).then((next) => {
 +      setBusy(false);
 +      onView(next);
 +    }, (error) => {
 +      setBusy(false);
-+      setRetryError(hostText(error?.message ?? String(error)));
++      refuse(error);
 +    });
-+  };
+   };
    const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
 -  return (0, import_react15.createElement)(
 +  const stoppable = task.status === "active" || task.status === "paused";
@@ -16242,16 +16257,18 @@ diff --git a/client.js b/client.js
 +      (0, import_react25.createElement)("span", { className: "bt-set-hint" }, [timingText(task), room2 ? t("in {name}", { name: room2.name }) : ""].filter(Boolean).join(" · ")),
 +      task.prompt && task.prompt !== task.title ? (0, import_react25.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null,
 +      last ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": failed || void 0 }, last) : null,
-+      retryError ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, retryError) : null
++      rowError ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, rowError) : null
      ),
 -    (0, import_react15.createElement)("span", { className: "bt-task-next" }, nextText(task)),
 -    (0, import_react15.createElement)("button", {
 +    (0, import_react25.createElement)("span", { className: "bt-task-next" }, nextText(task)),
-+    failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
-+    onEdit ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react25.createElement)(PencilIcon)) : null,
-+    onCopy ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react25.createElement)(DuplicateIcon)) : null,
-+    stoppable ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
-+    (0, import_react25.createElement)("button", {
++    // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
++    // disabling: a disabled button still says this window can do it.
++    !locked && failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
++    !locked && onEdit ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react25.createElement)(PencilIcon)) : null,
++    !locked && onCopy ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react25.createElement)(DuplicateIcon)) : null,
++    !locked && stoppable ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
++    locked ? null : (0, import_react25.createElement)("button", {
        type: "button",
        className: "bt-mini bt-task-remove",
        "data-confirm": confirming || void 0,
@@ -16331,7 +16348,7 @@ diff --git a/client.js b/client.js
      setBusy(true);
      setError("");
      let when3;
-@@ -6975,151 +6975,336 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -6975,151 +6975,341 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        setBusy(false);
        return;
      }
@@ -16428,7 +16445,7 @@ diff --git a/client.js b/client.js
      ),
 -    error ? (0, import_react15.createElement)("div", { className: "bt-set-row" }, (0, import_react15.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
 -    (0, import_react15.createElement)(
-+    error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
++    error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
 +    (0, import_react25.createElement)(
        "div",
        { className: "bt-set-row bt-task-foot" },
@@ -16463,7 +16480,7 @@ diff --git a/client.js b/client.js
 +    (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
 +  );
 +}
-+function QuietHoursCard({ view, actions }) {
++function QuietHoursCard({ view, actions, locked }) {
 +  const quiet = view.quietHours ?? { on: false };
 +  const [busy, setBusy] = (0, import_react25.useState)(false);
 +  const [error, setError] = (0, import_react25.useState)("");
@@ -16502,7 +16519,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react25.createElement)("span", { className: "bt-bs-label" }, quiet.on ? t("On, {from}–{to}", { from: quiet.from, to: quiet.to }) : t("Off")),
 +          (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A new or edited task cannot be due inside the window. It never mutes a task that already exists."))
 +        ),
-+        (0, import_react25.createElement)("button", {
++        locked ? null : (0, import_react25.createElement)("button", {
 +          type: "button",
 +          className: "bt-soft bt-soft-sm",
 +          disabled: busy,
@@ -16510,7 +16527,7 @@ diff --git a/client.js b/client.js
 +          onClick: () => save(quiet.on ? { on: false } : { on: true, from, to })
 +        }, quiet.on ? t("Turn off") : t("Turn on"))
 +      ),
-+      quiet.on ? (0, import_react25.createElement)(
++      quiet.on && !locked ? (0, import_react25.createElement)(
 +        "div",
 +        { className: "bt-set-row bt-bs-row" },
 +        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Window"))),
@@ -16523,7 +16540,7 @@ diff --git a/client.js b/client.js
 +          (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => save({ on: true, from, to }) }, t("Save window"))
 +        )
 +      ) : null,
-+      error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
++      error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
 +      quiet.on && unchecked ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep."))) : null
 +    )
    );
@@ -16535,6 +16552,7 @@ diff --git a/client.js b/client.js
 -  if (!view.available) return (0, import_react15.createElement)(AutomationOff);
 +  const [adding, setAdding] = (0, import_react25.useState)(Boolean(start));
 +  const [editing, setEditing] = (0, import_react25.useState)(null);
++  const locked = lockedWindow(roster);
 +  const refused = schedulesReadFailure(view?.readFailure);
 +  if (refused !== null) return (0, import_react25.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
 +  if (view === null) return (0, import_react25.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
@@ -16557,8 +16575,10 @@ diff --git a/client.js b/client.js
    return [
 -    adding ? (0, import_react15.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react15.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react15.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => setAdding(true) }, (0, import_react15.createElement)(PlusIcon), t("New task"))),
 -    byChat.length === 0 && !adding ? (0, import_react15.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react15.createElement)("div", { className: "bt-set-row" }, (0, import_react15.createElement)("span", { className: "bt-set-hint" }, t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react15.createElement)(
-+    (0, import_react25.createElement)(QuietHoursCard, { key: "quiet", view, actions }),
-+    adding ? (0, import_react25.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react25.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
++    (0, import_react25.createElement)(QuietHoursCard, { key: "quiet", view, actions, locked }),
++    // A locked window draws no create control and opens no form (#2232): the header already says
++    // why, and a button the host refuses is the defect this page had.
++    locked ? null : adding ? (0, import_react25.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react25.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
 +      setEditing(null);
 +      setAdding(true);
 +    } }, (0, import_react25.createElement)(PlusIcon), t("New task"))),
@@ -16568,15 +16588,15 @@ diff --git a/client.js b/client.js
 -      (0, import_react15.createElement)("h3", { className: "bt-task-head" }, avatar, name),
 -      (0, import_react15.createElement)("div", { className: "bt-set-card" }, tasks.map((task) => (0, import_react15.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish })))
 +      (0, import_react25.createElement)("h3", { className: "bt-task-head" }, avatar, name),
-+      (0, import_react25.createElement)(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
++      (0, import_react25.createElement)(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
      ))
    ];
  }
-+function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
-+  const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
++function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
++  const open = !locked && editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
 +  const [copying, setCopying] = (0, import_react25.useState)(null);
 +  const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
-+  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react25.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
++  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react25.createElement)(TaskRow, { key: task.id, task, actions, roster, locked, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
 +  return (0, import_react25.createElement)(
 +    import_react25.Fragment,
 +    null,
@@ -16624,6 +16644,7 @@ diff --git a/client.js b/client.js
  function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions);
 +  const [editing, setEditing] = (0, import_react25.useState)(null);
++  const locked = lockedWindow(roster);
 +  const refused = schedulesReadFailure(view?.readFailure);
 +  if (refused !== null) {
 +    return (0, import_react25.createElement)(
@@ -16667,7 +16688,8 @@ diff --git a/client.js b/client.js
 +      editing,
 +      roster,
 +      actions,
-+      onEdit: setEditing,
++      locked,
++      onEdit: locked ? void 0 : setEditing,
 +      onDone: (next) => {
 +        publish(next);
 +        setEditing(null);

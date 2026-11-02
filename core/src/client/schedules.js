@@ -117,9 +117,17 @@ export function lastRunText(run) {
   }
 }
 
-function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
+// The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
+// the sentence, and this page draws no write the host would refuse.
+const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
+
+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
+  // One refusal slot per row (#2232): a rejected Pause, Resume, Delete or Retry says the host's own
+  // sentence here, in the alert the row already had for Retry.
+  const [rowError, setRowError] = useState('')
+  const refuse = error => setRowError(hostText(error?.message ?? String(error)))
   useEffect(() => {
     if (!confirming) return undefined
     const timer = setTimeout(() => setConfirming(false), 3000)
@@ -128,18 +136,22 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
   const remove = () => {
     if (!confirming) { setConfirming(true); return }
     setBusy(true)
-    void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
+    setRowError('')
+    void actions.scheduleDelete(task.sessionId, task.id)
+      .then((next) => { setBusy(false); setRowError(''); onView(next) }, (error) => { setBusy(false); refuse(error) })
   }
   const toggle = () => {
     setBusy(true)
+    setRowError('')
     const step = task.status === 'paused' ? actions.scheduleResume : actions.schedulePause
-    void step(task.sessionId, task.id).then((next) => { setBusy(false); onView(next) }, () => setBusy(false))
+    void step(task.sessionId, task.id)
+      .then((next) => { setBusy(false); setRowError(''); onView(next) }, (error) => { setBusy(false); refuse(error) })
   }
-  const [retryError, setRetryError] = useState('')
   const retry = () => {
     setBusy(true)
-    setRetryError('')
-    void actions.scheduleRetry(task.sessionId, task.id).then((next) => { setBusy(false); onView(next) }, (error) => { setBusy(false); setRetryError(hostText(error?.message ?? String(error))) })
+    setRowError('')
+    void actions.scheduleRetry(task.sessionId, task.id)
+      .then((next) => { setBusy(false); onView(next) }, (error) => { setBusy(false); refuse(error) })
   }
   const room = task.roomId ? roster.roomsById[task.roomId] : undefined
   const stoppable = task.status === 'active' || task.status === 'paused'
@@ -152,13 +164,15 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
       h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
       task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null,
       last ? h('span', { className: 'bt-task-last', 'data-failed': failed || undefined }, last) : null,
-      retryError ? h('span', { className: 'bt-task-last', 'data-failed': '', role: 'alert' }, retryError) : null),
+      rowError ? h('span', { className: 'bt-task-last', 'data-failed': '', role: 'alert' }, rowError) : null),
     h('span', { className: 'bt-task-next' }, nextText(task)),
-    failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
-    onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
-    onCopy ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Copy to another Bot or group chat'), title: t('Copy to…'), onClick: () => onCopy(task) }, h(DuplicateIcon)) : null,
-    stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
-    h('button', {
+    // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
+    // disabling: a disabled button still says this window can do it.
+    !locked && failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
+    !locked && onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
+    !locked && onCopy ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Copy to another Bot or group chat'), title: t('Copy to…'), onClick: () => onCopy(task) }, h(DuplicateIcon)) : null,
+    !locked && stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,
+    locked ? null : h('button', {
       type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
       'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
     }, confirming ? t('Delete') : h(TrashIcon)))
@@ -265,7 +279,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
           h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
           h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
             UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
-    error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
+    error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error)) : null,
     h('div', { className: 'bt-set-row bt-task-foot' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
       h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' },
@@ -291,7 +305,7 @@ function AutomationOff({ actions }) {
 // Quiet hours (#1166): a window checked when a task is created or edited, never a mute —
 // nothing here runs at delivery time. A repeat or cron task can still fire inside it, and
 // the card says so instead of claiming a silence FlyBot cannot keep.
-function QuietHoursCard({ view, actions }) {
+function QuietHoursCard({ view, actions, locked }) {
   const quiet = view.quietHours ?? { on: false }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -323,18 +337,18 @@ function QuietHoursCard({ view, actions }) {
         h('span', { className: 'bt-set-copy' },
           h('span', { className: 'bt-bs-label' }, quiet.on ? t('On, {from}–{to}', { from: quiet.from, to: quiet.to }) : t('Off')),
           h('span', { className: 'bt-set-hint' }, t('A new or edited task cannot be due inside the window. It never mutes a task that already exists.'))),
-        h('button', {
+        locked ? null : h('button', {
           type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'aria-pressed': quiet.on,
           onClick: () => save(quiet.on ? { on: false } : { on: true, from, to }),
         }, quiet.on ? t('Turn off') : t('Turn on'))),
-      quiet.on ? h('div', { className: 'bt-set-row bt-bs-row' },
+      quiet.on && !locked ? h('div', { className: 'bt-set-row bt-bs-row' },
         h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Window'))),
         h('div', { className: 'bt-task-when' },
           h('input', { className: 'bt-input bt-task-time', type: 'time', value: from, 'aria-label': t('Quiet hours start'), disabled: busy, onChange: event => setFrom(event.target.value) }),
           h('span', { className: 'bt-task-every' }, '–'),
           h('input', { className: 'bt-input bt-task-time', type: 'time', value: to, 'aria-label': t('Quiet hours end'), disabled: busy, onChange: event => setTo(event.target.value) }),
           h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => save({ on: true, from, to }) }, t('Save window')))) : null,
-      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
+      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error)) : null,
       quiet.on && unchecked
         ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep.')))
         : null))
@@ -344,6 +358,7 @@ export function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions)
   const [adding, setAdding] = useState(Boolean(start))
   const [editing, setEditing] = useState(null)
+  const locked = lockedWindow(roster)
   const refused = schedulesReadFailure(view?.readFailure)
   if (refused !== null) return h('div', { className: 'bt-set-hint bt-danger', role: 'status' }, refused)
   if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
@@ -355,27 +370,30 @@ export function SchedulesPage({ roster, actions, start }) {
     ...roster.rooms.map(room => [room.id, h(RoomAvatar, { room, roster, size: 18 }), room.name, view.tasks.filter(task => task.botId === undefined && task.roomId === room.id)]),
   ].filter(([, , , tasks]) => tasks.length > 0)
   return [
-    h(QuietHoursCard, { key: 'quiet', view, actions }),
-    adding
-      ? h(TaskForm, { key: 'form', roster, actions, start, onDone: shown, onCancel: () => setAdding(false) })
-      : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),
+    h(QuietHoursCard, { key: 'quiet', view, actions, locked }),
+    // A locked window draws no create control and opens no form (#2232): the header already says
+    // why, and a button the host refuses is the defect this page had.
+    locked ? null
+      : adding
+        ? h(TaskForm, { key: 'form', roster, actions, start, onDone: shown, onCancel: () => setAdding(false) })
+        : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => { setEditing(null); setAdding(true) } }, h(PlusIcon), t('New task'))),
     byChat.length === 0 && !adding
       // #2112: the list is narrowed to the caller's rows, so an empty page can mean "another
       // member scheduled something". `someHidden` is the host saying it dropped such a row.
       ? h('div', { key: 'none', className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, view.someHidden ? t('No scheduled tasks you can see. Another member\'s tasks stay hidden.') : t('No scheduled tasks yet.'))))
       : byChat.map(([id, avatar, name, tasks]) => h('section', { key: id, className: 'bt-set-section' },
           h('h3', { className: 'bt-task-head' }, avatar, name),
-          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
+          h(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
   ]
 }
 
 // One chat's rows; the task being edited opens the form in its place, and so does the one
 // being copied, which opens only the target picker.
-function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
-  const open = editing ? tasks.find(task => task.id === editing.id && task.sessionId === editing.sessionId) : undefined
+function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
+  const open = !locked && editing ? tasks.find(task => task.id === editing.id && task.sessionId === editing.sessionId) : undefined
   const [copying, setCopying] = useState(null)
   const source = copying ? tasks.find(task => task.id === copying.id && task.sessionId === copying.sessionId) : undefined
-  const rows = tasks.filter(task => task !== open && task !== source).map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : undefined }))
+  const rows = tasks.filter(task => task !== open && task !== source).map(task => h(TaskRow, { key: task.id, task, actions, roster, locked, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : undefined }))
   return h(Fragment, null,
     open ? h(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
     source ? h(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => { setCopying(null); onDone(next) }, onCancel: () => setCopying(null) }) : null,
@@ -416,6 +434,9 @@ export function CopyRow({ task, roster, actions, onView, onCancel }) {
 export function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions)
   const [editing, setEditing] = useState(null)
+  // A locked window keeps the list and its New task row: that row only opens the settings list,
+  // which draws no create control once this page respects the lock (#2232).
+  const locked = lockedWindow(roster)
   const refused = schedulesReadFailure(view?.readFailure)
   if (refused !== null) {
     return h('section', { className: 'bt-set-section' },
@@ -433,7 +454,7 @@ export function BotSchedules({ bot, roster, actions }) {
             h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page.'))),
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openPlugins(actions) }, t('Open Plugins'))))
       : h(TaskList, {
-          tasks, editing, roster, actions, onEdit: setEditing,
+          tasks, editing, roster, actions, locked, onEdit: locked ? undefined : setEditing,
           onDone: (next) => { publish(next); setEditing(null) },
           onCancel: () => setEditing(null),
           extra: [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
