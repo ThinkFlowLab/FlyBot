@@ -139,3 +139,32 @@ produces follow-up tasks carrying that file as evidence. `blocked` states the bl
 sentence and writes nothing. A Project Assistant may take a position but never closes the meeting or
 writes the decision; the Chief or the owner does. The meeting record itself stays in the existing
 store, and the file it archives is the durable part.
+
+## 9. Changing a gate needs a second person
+
+The acceptance gates — `merge-gate`, `review-gate`, `pass-label`, `risk-gate`,
+`scripts/self-test-catalog.mjs`, and the checker and workflow step that enforce this rule — are
+listed in [`policy/gates.json`](../policy/gates.json). A pull request that edits one of them, or
+anything under `policy/`, must carry one line in its body:
+
+```
+Policy-sign: <comment id or url>
+```
+
+The comment it names must be on that pull request, must have been written by someone other than the
+pull request's author, and must name the tip it signs — the head sha, in full or abbreviated to at
+least twelve characters. A GitHub bot account cannot sign. `Test`'s `Gate change signature` step runs
+before the suite, so a missing line, a comment that is not on the pull request, a self-signature, or a
+comment written for another tip fails the pull request. Anyone else with comment access can sign, and
+editing the body is the whole ceremony: no new workflow, no threshold changes, no merge path.
+
+A signature signs one head, not one pull request: every new tip needs a new comment and a new line.
+That is the price of binding, and it is the point — a signature that survived a push would let an
+author sign a reviewable change set and then push another one under it.
+
+The cost is accepted and is real: a gate change — including our own Bots' pull requests — waits for a
+second person to comment before it can merge, so the Lead of the round that owns the pull request asks
+for the signature and adds the line. A line written into the body after the check went green starts no
+new run; the step reads the body on the next push and on the queue entry. The step runs in the `test`
+job of every pull request and fails closed when it cannot read the pull request at all, so a GitHub API
+outage reddens `tests-ok` for every pull request, not only the ones that change a gate.

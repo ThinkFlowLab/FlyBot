@@ -1,0 +1,15 @@
+{
+  "$comment": "The acceptance gates judge this repository and live in the same repository they judge (#2054). A pull request that changes one of these files, or anything under policy/, must carry `Policy-sign: <comment id or url>` in its body, and that comment must have been written by someone other than the pull request's author. The checker itself and the workflow that runs it are listed too: a rule that does not cover its own switch is advice, not a gate. An entry ending in `/` is a directory, so a new file under policy/ is covered without a second edit.",
+  "line": "Policy-sign: <comment id or url>",
+  "signer": "someone other than the pull request's author; a GitHub bot account cannot sign",
+  "gateFiles": [
+    ".github/scripts/merge-gate.mjs",
+    ".github/scripts/review-gate.mjs",
+    ".github/scripts/pass-label.mjs",
+    ".github/scripts/risk-gate.mjs",
+    "scripts/self-test-catalog.mjs",
+    ".github/scripts/policy-sign.mjs",
+    ".github/workflows/test.yml",
+    "policy/"
+  ]
+}
