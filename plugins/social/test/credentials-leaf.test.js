@@ -138,6 +138,59 @@ test('a refused .bak write on a server switch leaves the old credentials file ex
   assert.match(String(failure?.message ?? 'no failure: the start went on'), /not a plain file/, 'the start says why it did not finish')
 })
 
+// Onboarding is a real home on the server: it costs a round-trip and a home that cannot be reached
+// once the token is dropped. A credentials path that cannot be written refuses before it, not after.
+test('a linked credentials path is refused before onboarding: no server call, and no file appears', async (t) => {
+  for (const shape of ['dangling', 'outside']) {
+    const home = homeOf(t)
+    const path = join(home, 'flybot-social.json')
+    let expected
+    if (shape === 'dangling') {
+      symlinkSync(join(home, 'missing-target.json'), path)
+      expected = ['flybot-social.json']
+    } else {
+      const outside = join(home, 'notes.txt')
+      writeFileSync(outside, 'not a credentials file')
+      symlinkSync(outside, path)
+      expected = ['flybot-social.json', 'notes.txt']
+    }
+    quiet(t)
+    const asked = []
+    const onboarded = async (url) => {
+      asked.push(String(url))
+      return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const { failure } = await settle(() => startSocial({}, { server: 'https://social.test', credentialsPath: path, onboard: true, fetch: onboarded }))
+    assert.equal(asked.length, 0, `${shape}: the server was not asked for a home`)
+    assert.equal(failure?.code, 'bot/refused', `${shape}: the start refuses, it does not finish`)
+    assert.match(String(failure?.message ?? 'no failure: the start went on'), /not a plain file/, `${shape}: the refusal says why`)
+    assert.equal(lstatSync(path).isSymbolicLink(), true, `${shape}: the link is left exactly as it was found`)
+    assert.deepEqual(readdirSync(home).sort(), expected, `${shape}: no file is created beside it`)
+  }
+})
+
+test('an absent or plain credentials path still onboards exactly once and writes the file', async (t) => {
+  for (const shape of ['absent', 'plain']) {
+    const home = homeOf(t)
+    const path = join(home, 'flybot-social.json')
+    if (shape === 'plain') writeFileSync(path, 'not a credentials file')
+    quiet(t)
+    const asked = []
+    const onboarded = async (url) => {
+      asked.push(String(url))
+      return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    // The layer below `startSocial` is not built here: the write happens before it, so this stub
+    // stops the start there and leaves the two facts under test intact.
+    const service = { scope() { throw new Error('the plugin scope is not built in this test') } }
+    const { failure } = await settle(() => startSocial(service, { server: 'https://social.test', credentialsPath: path, onboard: true, fetch: onboarded }))
+    assert.equal(asked.length, 1, `${shape}: exactly one home is asked for`)
+    assert.match(String(failure?.message ?? 'no failure: the start went on'), /plugin scope is not built in this test/, `${shape}: the start gets past the write`)
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).token, 'new-token', `${shape}: the token that was just minted is kept`)
+    assert.equal(lstatSync(path).isFile() && lstatSync(path).isSymbolicLink() === false, true, `${shape}: the credentials file is a plain file of its own`)
+  }
+})
+
 test('the settings file goes through the same leaf check, and the credentials beside it stay readable', (t) => {
   const home = homeOf(t)
   const outside = outsideFile(home)

@@ -304,7 +304,7 @@ test('a settled read lists factory pipelines and your own, and opens the flowcha
   assert.match(text(opened), /Parallel branch/)
   const wires = all(opened).filter((entry) => entry.type === 'path' && typeof entry.props?.d === 'string' && entry.props.d.startsWith('M '))
   assert.equal(wires.length, factory.edges.length)
-  assert.match(wires[0].props.d, /C /)
+  assert.match(wires[0].props.d, /M .* L /)
   // A factory graph has no run, so every seat is idle — not a fake queue.
   assert.match(text(opened), /Idle/)
   assert.doesNotMatch(text(opened), /Queued/)
@@ -807,4 +807,234 @@ test('#1810: a failed poll shows the error line and Retry, not an empty page', a
   } finally {
     process.off('unhandledRejection', onUnhandled)
   }
+})
+
+// #2122: the run canvas drew every wire as the same symmetric cubic between card
+// centres (same mid point, same tangent), so a fork's two arms, a join's two arms and
+// every back edge collapsed onto one stroke; a wire whose endpoints shared an x became
+// a straight vertical that ran through whatever card sat between them. The routes are
+// pinned here by the path each wire actually carries, not by the node positions.
+const runGraph = {
+  id: 'wf-run',
+  name: 'Run lane',
+  description: 'A fork, a join and a return path.',
+  chain: 'Triage → Claim ‖ 取证 → Gate → Escalate',
+  nodes: [
+    { id: 'triage', name: 'Triage', role: '分诊', x: 0, y: 0 },
+    { id: 'claim', name: 'Claim', role: '认领', x: -94, y: 108 },
+    { id: 'forensics', name: '取证', role: '真机取证', x: 94, y: 159 },
+    { id: 'gate', name: 'Gate', role: '门禁', x: 0, y: 267 },
+    { id: 'escalate', name: 'Escalate', role: '升级', x: 0, y: 360 },
+  ],
+  edges: [
+    { from: 'triage', to: 'claim' },
+    { from: 'triage', to: 'forensics' },
+    { from: 'claim', to: 'gate' },
+    { from: 'forensics', to: 'gate' },
+    { from: 'gate', to: 'escalate' },
+    { from: 'escalate', to: 'claim' },
+  ],
+  layers: [['triage'], ['claim', 'forensics'], ['gate'], ['escalate']],
+}
+const runPack = { ok: true, templates: [], workflows: [runGraph] }
+const CARD_W = 168
+const cubicAt = (a, b, c, d, t) => {
+  const u = 1 - t
+  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d
+}
+// Every curve is flattened into points about 2px apart, so distance and run length can
+// be measured on the drawn stroke rather than on its control points.
+function flattenPath(d) {
+  const tokens = String(d).match(/[MLCQ]|-?\d+(?:\.\d+)?/g) ?? []
+  const points = []
+  let x = 0
+  let y = 0
+  let at = 0
+  while (at < tokens.length) {
+    const op = tokens[at]
+    if (op === 'M') {
+      x = Number(tokens[at + 1])
+      y = Number(tokens[at + 2])
+      points.push([x, y])
+      at += 3
+      continue
+    }
+    if (op === 'L' || op === 'Q') {
+      const nx = Number(tokens[at + 1])
+      const ny = Number(tokens[at + 2])
+      const steps = Math.max(1, Math.ceil(Math.hypot(nx - x, ny - y) / 2))
+      for (let step = 1; step <= steps; step += 1) points.push([x + ((nx - x) * step) / steps, y + ((ny - y) * step) / steps])
+      x = nx
+      y = ny
+      at += op === 'Q' ? 5 : 3
+      continue
+    }
+    if (op === 'C') {
+      const [x1, y1, x2, y2, x3, y3] = tokens.slice(at + 1, at + 7).map(Number)
+      const sx = x
+      const sy = y
+      for (let step = 1; step <= 48; step += 1) {
+        const t = step / 48
+        points.push([cubicAt(sx, x1, x2, x3, t), cubicAt(sy, y1, y2, y3, t)])
+      }
+      x = x3
+      y = y3
+      at += 7
+      continue
+    }
+    at += 1
+  }
+  return points
+}
+const wireOf = (tree, from, to) => all(tree).find((entry) => entry.props?.markerEnd === 'url(#bt-wf-arrow)'
+  && String(entry.props.key ?? '') === `${from}>${to}`)
+const cardsOf = (tree, heights = {}) => new Map(all(tree)
+  .filter((entry) => typeof entry.props?.['data-node'] === 'string')
+  .map((entry) => {
+    const top = entry.props.style.top
+    return [entry.props['data-node'], {
+      id: entry.props['data-node'],
+      left: entry.props.style.left,
+      top,
+      right: entry.props.style.left + CARD_W,
+      bottom: top + (heights[entry.props['data-node']] ?? 72),
+    }]
+  }))
+const insideCard = (card, [x, y]) => x > card.left + 0.5 && x < card.right - 0.5 && y > card.top + 0.5 && y < card.bottom - 0.5
+
+test('#2122: every wire leaves a port and never cuts through a card', () => {
+  const tree = renderView({ phase: 'ready', pack: runPack, opened: { source: 'own', id: runGraph.id }, error: '', editing: false })
+  const cards = cardsOf(tree)
+  const failures = []
+  for (const edge of runGraph.edges) {
+    const wire = wireOf(tree, edge.from, edge.to)
+    assert.ok(wire, `the wire ${edge.from}>${edge.to} renders`)
+    const from = cards.get(edge.from)
+    const to = cards.get(edge.to)
+    const points = flattenPath(wire.props.d)
+    const first = points[0]
+    const last = points[points.length - 1]
+    // A forward edge runs port-to-port down the bottom and top edges; a back edge (its
+    // target above its source) leaves and lands on the right edge, so it can loop.
+    const back = to.top < from.top
+    if (back) {
+      if (first[0] !== from.right || last[0] !== to.right) failures.push(`${edge.from}>${edge.to} is a back edge but does not leave ${edge.from} and land on ${edge.to} at their right edges (${first} -> ${last})`)
+    } else {
+      if (first[0] !== (from.left + from.right) / 2 || first[1] !== from.bottom) failures.push(`${edge.from}>${edge.to} does not leave ${edge.from}'s bottom port (${first} instead of [${(from.left + from.right) / 2}, ${from.bottom}])`)
+      if (last[0] !== (to.left + to.right) / 2 || last[1] !== to.top) failures.push(`${edge.from}>${edge.to} does not land on ${edge.to}'s top port (${last} instead of [${(to.left + to.right) / 2}, ${to.top}])`)
+    }
+    for (const card of cards.values()) {
+      const hit = points.find((point) => insideCard(card, point))
+      if (hit) failures.push(`${edge.from}>${edge.to} crosses ${card.id} at [${hit[0].toFixed(1)}, ${hit[1].toFixed(1)}]`)
+    }
+  }
+  assert.deepEqual(failures, [], failures.join('\n'))
+})
+
+test('#2122: a back edge is a visible loop outside the cards, not a stub', () => {
+  const tree = renderView({ phase: 'ready', pack: runPack, opened: { source: 'own', id: runGraph.id }, error: '', editing: false })
+  const cards = cardsOf(tree)
+  const rightMost = Math.max(...[...cards.values()].map((card) => card.right))
+  const wire = wireOf(tree, 'escalate', 'claim')
+  assert.ok(wire, 'the back edge renders')
+  const points = flattenPath(wire.props.d)
+  const reach = Math.max(...points.map((point) => point[0]))
+  assert.ok(reach > rightMost + 3, `the loop turns outside every card (reached ${reach.toFixed(1)}, the cards end at ${rightMost})`)
+  const from = cards.get('escalate')
+  const to = cards.get('claim')
+  assert.ok(points[0][0] === from.right && points[0][1] > from.top && points[0][1] < from.bottom,
+    `the loop leaves Escalate's right edge (${points[0]})`)
+  assert.ok(points[points.length - 1][0] === to.right && points[points.length - 1][1] > to.top && points[points.length - 1][1] < to.bottom,
+    `the loop lands on Claim's right edge (${points[points.length - 1]})`)
+})
+
+test('#2122: no two wires share one stroke for more than 20px', () => {
+  const tree = renderView({ phase: 'ready', pack: runPack, opened: { source: 'own', id: runGraph.id }, error: '', editing: false })
+  const routed = runGraph.edges.map((edge) => ({ key: `${edge.from}>${edge.to}`, points: flattenPath(wireOf(tree, edge.from, edge.to).props.d) }))
+  const closeRuns = []
+  for (let a = 0; a < routed.length; a += 1) {
+    for (let b = a + 1; b < routed.length; b += 1) {
+      const one = routed[a]
+      const two = routed[b]
+      let run = 0
+      let worst = 0
+      for (let at = 0; at < one.points.length; at += 1) {
+        const point = one.points[at]
+        const near = two.points.some((other) => Math.hypot(point[0] - other[0], point[1] - other[1]) < 3)
+        const step = at === 0 ? 0 : Math.hypot(point[0] - one.points[at - 1][0], point[1] - one.points[at - 1][1])
+        run = near ? run + step : 0
+        worst = Math.max(worst, run)
+      }
+      if (worst > 20) closeRuns.push(`${one.key} and ${two.key} run within 3px for ${worst.toFixed(1)}px`)
+    }
+  }
+  assert.deepEqual(closeRuns, [], closeRuns.join('\n'))
+})
+
+test('#2122: the dashed parallel frame is built from the measured cards, not 72px', () => {
+  // The run card grows with its status chip and its two text lines, so the authored
+  // 72px metric is a floor. A host that knows the measured heights seeds them the way
+  // `canvasWidth` seeds the width; the browser measurement wins on the next frame.
+  const heights = { claim: 96, forensics: 88 }
+  const tree = renderView({
+    phase: 'ready', pack: runPack, opened: { source: 'own', id: runGraph.id }, error: '', editing: false,
+    cardHeights: heights,
+  })
+  const frame = all(tree).find((entry) => entry.props?.className === 'bt-wf-par')
+  assert.ok(frame, 'the parallel frame renders')
+  const cards = cardsOf(tree, heights)
+  const pair = ['claim', 'forensics'].map((id) => cards.get(id))
+  const left = Math.min(...pair.map((card) => card.left))
+  const right = Math.max(...pair.map((card) => card.right))
+  const top = Math.min(...pair.map((card) => card.top))
+  const bottom = Math.max(...pair.map((card) => card.bottom))
+  const box = { left: frame.props.style.left, top: frame.props.style.top }
+  box.right = box.left + frame.props.style.width
+  box.bottom = box.top + frame.props.style.height
+  const margins = [left - box.left, box.right - right, top - box.top, box.bottom - bottom]
+  assert.ok(margins.every((margin) => margin > 0), `the frame ${JSON.stringify(box)} encloses the measured cards ${JSON.stringify({ left, right, top, bottom })}: margins ${margins}`)
+  assert.deepEqual(margins, [margins[0], margins[0], margins[0], margins[0]], `the four margins are equal (${margins})`)
+  // The wire into the frame's cards uses the measured bottom edge too.
+  const join = flattenPath(wireOf(tree, 'claim', 'gate').props.d)
+  assert.equal(join[0][1], 108 + heights.claim, 'the wire leaves the measured bottom of the card')
+})
+
+test('#2122: a card between two cards on one column sends the wire round it', () => {
+  // The fork/join graph keeps every intervening card off a wire's own column, so it
+  // cannot reach this: when the lane search gave up the forward route fell back onto
+  // the column and ran as one vertical from the source's bottom port to the target's
+  // top port, straight through the card sitting between them. Same x, one card between.
+  const stackGraph = {
+    id: 'wf-stack',
+    name: 'Stacked lane',
+    description: 'One column, with a card between.',
+    chain: 'A → C',
+    nodes: [
+      { id: 'a', name: 'A', role: '甲', x: 0, y: 0 },
+      { id: 'b', name: 'B', role: '乙', x: 0, y: 120 },
+      { id: 'c', name: 'C', role: '丙', x: 0, y: 260 },
+    ],
+    edges: [{ from: 'a', to: 'c' }],
+    layers: [['a'], ['b'], ['c']],
+  }
+  const tree = renderView({
+    phase: 'ready',
+    pack: { ok: true, templates: [], workflows: [stackGraph] },
+    opened: { source: 'own', id: stackGraph.id },
+    error: '', editing: false,
+  })
+  const cards = cardsOf(tree)
+  const wire = wireOf(tree, 'a', 'c')
+  assert.ok(wire, 'the wire a>c renders')
+  const points = flattenPath(wire.props.d)
+  const between = cards.get('b')
+  const hit = points.find((point) => insideCard(between, point))
+  assert.equal(hit, undefined, `the wire a>c runs through the card between them: ${wire.props.d}`)
+  // Round the card, not along its edge: the route has to leave the column they share.
+  const reach = Math.max(...points.map((point) => Math.abs(point[0])))
+  assert.ok(reach > CARD_W / 2 + 3, `the wire a>c stays on the shared column (reached ${reach.toFixed(1)}, the card edge is at ${CARD_W / 2}): ${wire.props.d}`)
+  const from = cards.get('a')
+  const to = cards.get('c')
+  assert.deepEqual(points[0], [(from.left + from.right) / 2, from.bottom], "the wire leaves A's bottom port")
+  assert.deepEqual(points[points.length - 1], [(to.left + to.right) / 2, to.top], "the wire lands on C's top port")
 })

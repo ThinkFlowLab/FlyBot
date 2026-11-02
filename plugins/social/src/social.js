@@ -487,14 +487,16 @@ const leafWritable = (path) => {
   } catch (error) { return error?.code === 'ENOENT' }
 }
 const refusedLeaves = new Set()
-export const writeCredentials = (path, value) => {
-  if (!leafWritable(path)) {
-    if (!refusedLeaves.has(path)) {
-      refusedLeaves.add(path)
-      console.warn('flybot-social:', `${path} is not a plain file, so nothing was written there`)
-    }
-    throw Object.assign(new Error(`Not saved: ${path} is not a plain file of its own, so nothing was written there.`), { code: 'bot/refused' })
+// The one refusal both the write and the check before onboarding raise, so the two cannot drift.
+const refuseLeaf = (path) => {
+  if (!refusedLeaves.has(path)) {
+    refusedLeaves.add(path)
+    console.warn('flybot-social:', `${path} is not a plain file, so nothing was written there`)
   }
+  return Object.assign(new Error(`Not saved: ${path} is not a plain file of its own, so nothing was written there.`), { code: 'bot/refused' })
+}
+export const writeCredentials = (path, value) => {
+  if (!leafWritable(path)) throw refuseLeaf(path)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(value, null, 2), { mode: 0o600 })
   try { chmodSync(path, 0o600) } catch { console.warn('flybot-social:', 'credentials mode not tightened:', path) }
@@ -4707,6 +4709,9 @@ export async function startSocial(service, config = {}) {
     }
   }
   if (credentials === undefined && explicit === undefined && config.server && config.onboard !== false) {
+    // Asked before the onboarding, not after it: that call is a real home on the server, and a start
+    // that cannot keep the token it is given must not spend one (and a round-trip) on every boot.
+    if (config.credentialsPath && !leafWritable(config.credentialsPath)) throw refuseLeaf(config.credentialsPath)
     credentials = { ...(await onboardHome({ server: config.server, displayName: config.displayName ?? 'FlyBot', webhookUrl: config.webhookUrl, fetch: config.fetch })), server: serverKey(config.server) }
     if (config.credentialsPath) {
       // Another server's credentials stay, under their server, for switching back.

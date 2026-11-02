@@ -123,23 +123,136 @@ function hitNode(event) {
 // be negative. The wire box is shifted by SPAN so those points stay inside the
 // SVG viewport; overflow:visible is not reliable for a stroke on the edge.
 const WIRE_SPAN = 480
-const NODE_WIRE_OUT = 56
 // The plane keeps its authored 960px coordinates; only the display is scaled to
 // the canvas (#1752), and cards, frames and wires share that one transform.
 const CARD_HALF = 84
 const CARD_H = 72
 const FRAME_SIDE = 108
-const FRAME_LABEL = 18
-const FRAME_FOOT = 10
 const MIN_FIT = 0.5
+// #2122: a wire is routed on its own lane. Each edge leaves its port, turns onto a
+// lane no other wire holds, and joins the target's port; a back edge (its target
+// above its source) leaves and lands on the right edges and loops outside every
+// card, so it is a visible return path instead of a flattened stub. A parallel frame
+// is the union of the measured cards plus one margin on every side; 72px is a floor.
+const WIRE_GAP = 14
+const WIRE_LANE = 12
+const FRAME_PAD = 16
+// #2122: a lane has to clear half a card plus the gap, or it runs along the card's
+// own edge. The search used to stop at ±5 lanes (±60px), inside a 168px card, so a
+// card on the wire's column covered every candidate and the route fell back onto it.
+const LANE_REACH = Math.ceil((CARD_HALF + WIRE_GAP) / WIRE_LANE) + 1
+const LANE_STEPS = [0]
+for (let step = 1; step <= LANE_REACH; step += 1) LANE_STEPS.push(step, -step)
 
-function wirePath(from, to) {
-  const x1 = from.x + WIRE_SPAN
-  const y1 = from.y + NODE_WIRE_OUT
-  const x2 = to.x + WIRE_SPAN
-  const y2 = to.y
-  const mid = (y1 + y2) / 2
-  return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
+export function cardBoxes(nodes, heights = {}) {
+  const boxes = new Map()
+  for (const node of nodes ?? []) {
+    const height = Number(heights?.[node.id]) > 0 ? Number(heights[node.id]) : CARD_H
+    const top = node.y ?? 0
+    boxes.set(node.id, { id: node.id, cx: node.x ?? 0, top, bottom: top + height, height })
+  }
+  return boxes
+}
+
+const rightOf = (box) => box.cx + CARD_HALF
+const leftOf = (box) => box.cx - CARD_HALF
+
+function cutsCard(boxes, x1, y1, x2, y2, from, to) {
+  const minX = Math.min(x1, x2)
+  const maxX = Math.max(x1, x2)
+  const minY = Math.min(y1, y2)
+  const maxY = Math.max(y1, y2)
+  return boxes.some((box) => box !== from && box !== to
+    && maxX > leftOf(box) + 1 && minX < rightOf(box) - 1 && maxY > box.top + 1 && minY < box.bottom - 1)
+}
+
+function laneFor(base, yA, yB, boxes, from, to, taken) {
+  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < yB && yA < lane.yB)
+    && !boxes.some((box) => box !== from && box !== to
+      && Math.abs(x - box.cx) < CARD_HALF + WIRE_GAP && yA < box.bottom && yB > box.top)
+  for (const step of LANE_STEPS) if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE
+  // Every lane within reach is held by another wire; walk further out rather than
+  // dropping this one back onto the column the cards sit on.
+  for (let step = LANE_REACH + 1; step <= LANE_REACH * 3; step += 1) {
+    if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE
+    if (open(base - step * WIRE_LANE)) return base - step * WIRE_LANE
+  }
+  return base
+}
+
+export function wireRoutes(nodes, edges, heights = {}) {
+  const boxes = [...cardBoxes(nodes, heights).values()]
+  const byId = new Map(boxes.map((box) => [box.id, box]))
+  const drawn = (edges ?? [])
+    .map((edge, index) => ({ index, from: byId.get(edge.from), to: byId.get(edge.to) }))
+    .filter((item) => item.from && item.to)
+  const rightMost = boxes.length ? Math.max(...boxes.map(rightOf)) : 0
+  const taken = []
+  const routes = []
+  drawn.filter((item) => item.to.top < item.from.top)
+    .sort((a, b) => a.from.top - b.from.top || a.index - b.index)
+    .forEach((item, at) => {
+      const x1 = rightOf(item.from)
+      const x2 = rightOf(item.to)
+      const y1 = item.from.top + item.from.height / 2
+      const y2 = item.to.top + item.to.height / 2
+      const lane = rightMost + WIRE_GAP + at * WIRE_LANE
+      routes.push({
+        key: `${item.from.id}>${item.to.id}`,
+        back: true,
+        d: `M ${x1} ${y1} L ${lane} ${y1} L ${lane} ${y2} L ${x2} ${y2}`,
+      })
+      taken.push({ x: lane, yA: Math.min(y1, y2), yB: Math.max(y1, y2) })
+    })
+  // A back edge turns at its cards' centres; a forward edge keeps clear of them.
+  const centres = []
+  for (const item of drawn.filter((one) => one.to.top < one.from.top)) centres.push(item.from.top + item.from.height / 2, item.to.top + item.to.height / 2)
+  const clearOf = (y, push) => (centres.some((centre) => Math.abs(centre - y) < 4) ? y + push * 8 : y)
+  for (const item of drawn.filter((one) => one.to.top >= one.from.top)) {
+    const x1 = item.from.cx
+    const x2 = item.to.cx
+    const y1 = item.from.bottom
+    const y2 = item.to.top
+    const gap = Math.max(0, Math.min(WIRE_GAP, (y2 - y1) / 2))
+    const yA = clearOf(y1 + gap, 1)
+    const yB = clearOf(y2 - gap, -1)
+    const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken)
+    taken.push({ x: lane, yA, yB })
+    // Round a card on the column even when the lane search found nothing: a straight
+    // run between two cards that share an x is only allowed when nothing sits between.
+    const straight = Math.abs(lane - x1) < 0.5 && Math.abs(lane - x2) < 0.5
+      && !cutsCard(boxes, x1, y1, x2, y2, item.from, item.to)
+    routes.push({
+      key: `${item.from.id}>${item.to.id}`,
+      back: false,
+      d: straight
+        ? `M ${x1} ${y1} L ${x1} ${y2}`
+        : `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`,
+    })
+  }
+  return routes
+}
+
+export function parallelFrames(nodes, layers, heights = {}) {
+  const boxes = cardBoxes(nodes, heights)
+  const frames = []
+  for (const layer of layers ?? []) {
+    if (!Array.isArray(layer) || layer.length < 2) continue
+    const members = layer.map((id) => boxes.get(id)).filter(Boolean)
+    if (members.length < 2) continue
+    const left = Math.min(...members.map(leftOf)) - FRAME_PAD
+    const right = Math.max(...members.map(rightOf)) + FRAME_PAD
+    const top = Math.min(...members.map((box) => box.top)) - FRAME_PAD
+    const bottom = Math.max(...members.map((box) => box.bottom)) + FRAME_PAD
+    frames.push({ key: layer.join('+'), left, top, width: right - left, height: bottom - top })
+  }
+  return frames
+}
+
+function sameHeights(one, two) {
+  if (!one || !two) return false
+  const keys = Object.keys(two)
+  return keys.length === Object.keys(one).length && keys.every((key) => one[key] === two[key])
 }
 
 // A canvas narrower than the graph shrinks the whole plane, so the frame, the
@@ -179,22 +292,29 @@ export function measureCanvasWidth(el) {
   return Number.isFinite(width) && width > 0 ? width : 0
 }
 
-function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }) {
+function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, cardHeights: knownHeights = null }) {
   const gesture = useRef(null)
   const canvasRef = useRef(null)
   const [measuredWidth, setCanvasWidth] = useState(0)
+  const [measuredHeights, setCardHeights] = useState(null)
   const nodes = graph.nodes ?? []
   const edges = graph.edges ?? []
   // A live run names every seat. A definition with no run is idle, the way the
   // flowchart looks before anyone presses play — not a queue of work.
   const status = graph.run?.nodeStatus ?? null
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id))
-  const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0)
   // A host that already knows the width (the editor's tests, an embed) seeds it; the
-  // measurement below still wins, so a resize is followed on the next frame.
+  // measurement below still wins, so a resize is followed on the next frame. Card
+  // heights work the same way: the authored 72px is a floor until a card is measured.
   const canvasWidth = measuredWidth || knownWidth
+  const heights = measuredHeights ?? knownHeights ?? {}
+  const boxes = cardBoxes(nodes, heights)
+  const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + (boxes.get(node.id)?.height ?? CARD_H) + 78), 0)
   const { scale, pad } = fitLayout(nodes, canvasWidth)
   const drawnHeight = Math.round(height * scale)
+  const routes = wireRoutes(nodes, edges, heights)
+  const frames = parallelFrames(nodes, graph.layers, heights)
+  const nodeKey = nodes.map((node) => node.id).join(',')
   useEffect(() => {
     const el = canvasRef.current
     const measure = () => {
@@ -207,6 +327,26 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
     observer.observe(el)
     return () => observer.disconnect()
   }, [canvasWidth])
+  // The frame and the wires follow the card as it really is: a status chip and two
+  // text lines make it taller than the authored 72px, and a wire that leaves the
+  // authored bottom cuts through the card below it (#2122).
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el || typeof el.querySelectorAll !== 'function') return undefined
+    const measure = () => {
+      const next = {}
+      for (const card of el.querySelectorAll('[data-node]')) {
+        const cardHeight = card.offsetHeight
+        if (cardHeight > 0) next[card.dataset.node] = cardHeight
+      }
+      setCardHeights((previous) => (sameHeights(previous, next) ? previous : next))
+    }
+    measure()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(measure)
+    for (const card of el.querySelectorAll('[data-node]')) observer.observe(card)
+    return () => observer.disconnect()
+  }, [nodeKey, scale])
   const end = (event) => {
     const current = gesture.current
     gesture.current = null
@@ -258,24 +398,14 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
         h('marker', {
           id: 'bt-wf-arrow', viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto',
         }, h('path', { d: 'M0 0 10 5 0 10z' }))),
-      edges.map((edge) => {
-        const from = nodes.find((node) => node.id === edge.from)
-        const to = nodes.find((node) => node.id === edge.to)
-        if (!from || !to) return null
-        return h('path', { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: 'url(#bt-wf-arrow)' })
-      })),
-      (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
-        const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean)
-        if (members.length < 2) return null
-        const left = Math.min(...members.map((node) => node.x ?? 0)) - FRAME_SIDE
-        const right = Math.max(...members.map((node) => node.x ?? 0)) + FRAME_SIDE
-        const top = Math.min(...members.map((node) => node.y ?? 0)) - FRAME_LABEL
-        const bottom = Math.max(...members.map((node) => node.y ?? 0)) + CARD_H + FRAME_FOOT
-        return h('div', {
-          key: layer.join('+'), className: 'bt-wf-par',
-          style: { left, top, width: right - left, height: bottom - top },
-        }, h('div', { className: 'bt-wf-plabel' }, t('Parallel branch, then join')))
-      }),
+      h('g', { transform: `translate(${WIRE_SPAN} 0)` }, routes.map((route) => h('path', {
+        key: route.key, d: route.d, markerEnd: 'url(#bt-wf-arrow)',
+        'data-route': route.back ? 'back' : 'forward',
+      })))),
+      frames.map((frame) => h('div', {
+        key: frame.key, className: 'bt-wf-par',
+        style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
+      }, h('div', { className: 'bt-wf-plabel' }, t('Parallel branch, then join')))),
       nodes.map((node) => {
         const state = status ? (status[node.id] ?? 'queued') : 'idle'
         return h('div', {
@@ -333,7 +463,7 @@ function alertCopy(error) {
   return error || t('Could not read workflows')
 }
 
-export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, canvasWidth = 0, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
+export function WorkflowsView({ phase = 'loading', pack = null, error = '', opened = null, editing = false, roster = null, canvasWidth = 0, cardHeights = null, onOpen, onBack, onEditing, onRetry, onUse, onCommit, onRename, onDelete }) {
   const graph = phase === 'ready' ? openedGraph(pack, opened) : null
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
@@ -374,7 +504,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
       (graph.nodes ?? []).length === 0
         ? h('p', { className: 'bt-wf-status' }, t('This workflow has no flowchart yet.'))
         : h(GraphCanvas, {
-          graph, roster, onCommit, width: canvasWidth,
+          graph, roster, onCommit, width: canvasWidth, cardHeights,
           editing: opened?.source === 'own' && editing === true,
         })) : null)
 }
