@@ -271,6 +271,10 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
   const write = async (snapshot, actor) => {
     await opened
     if (stopped || snapshot === lastText) return
+    // #2074: the same question `open()` asks, asked again when the write runs. A folder that was
+    // real at start-up can be a link by now, and appending through it would put this snapshot in
+    // a folder the team never named.
+    if (await dirKind(dirname(path)) === 'other') throw new JournalError('the journal folder is not a plain directory')
     const next = JSON.parse(snapshot)
     const changes = lastText === undefined ? [{ op: 'base', next }] : diffState(JSON.parse(lastText), next)
     const t = now()
@@ -297,6 +301,15 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
       bytes = Buffer.byteLength(whole)
       oldest = kept[1]?.t
     } else {
+      // #2074: an append goes to a plain file this host owns and nothing else — a link standing in
+      // for the file would have the snapshot appended to whatever file it names.
+      let info
+      try {
+        info = await lstat(path)
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      if (info !== undefined && (info.isSymbolicLink() || !info.isFile())) throw new JournalError('the journal path is not a plain file')
       await appendFile(path, text, { mode: 0o600 })
       bytes += added
       oldest = firstChange

@@ -343,3 +343,64 @@ test('a real journal folder still records (#2056)', async () => {
   }
   rmSync(home, { recursive: true, force: true })
 })
+
+// The start-up answer has to hold when the write runs too (#2074): a folder or a file the host
+// opened as its own can be swapped for a link while it runs, and appending through it would put a
+// snapshot in a folder or a file the team never named. The same question is asked again per write.
+test('a journal folder swapped for a link after start-up records nothing and writes nothing outside the home (#2074)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const folder = join(home, 'journal')
+  mkdirSync(folder)
+  const path = join(folder, 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.deepEqual(warnings, [], 'the folder is this host\'s own at start-up')
+  rmSync(folder, { recursive: true, force: true })
+  symlinkSync(outside, folder, 'dir')
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(warnings.length, 1, 'the folder that is a link now is refused when the write runs')
+  assert.match(warnings[0], /not recording/)
+  assert.deepEqual(readdirSync(outside), [], 'nothing is written into the folder the link names')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal file swapped for a link after start-up is left byte-for-byte unchanged (#2074)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.txt')
+  writeFileSync(target, 'PRIVATE LINE\n')
+  const folder = join(home, 'journal')
+  mkdirSync(folder)
+  const path = join(folder, 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.deepEqual(warnings, [])
+  rmSync(path)
+  symlinkSync(target, path)
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(readFileSync(target, 'utf8'), 'PRIVATE LINE\n', 'the file behind the link is not appended to')
+  assert.equal(warnings.length, 1, 'the file that is a link now is refused when the write runs')
+  assert.match(warnings[0], /not recording/)
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal that is still its own folder and file keeps recording (#2074 control)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.deepEqual(warnings, [])
+  const text = readFileSync(path, 'utf8')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 2 }))
+  assert.equal(lstatSync(path).isSymbolicLink(), false)
+  if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
+  rmSync(home, { recursive: true, force: true })
+})
