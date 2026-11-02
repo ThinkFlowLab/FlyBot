@@ -14,6 +14,13 @@ const SHORT = 12
 // first real one wrote `- \`RECORD_ONLY\` matches … a record written only in Chinese would not keep the
 // pull request out` — must not freeze itself (#687). A bullet or a quote line is allowed, but nothing
 // may follow the marker on it except its other language half.
+// #2091: a comment written on one line of the diff (`pulls/{pr}/comments`, `kind: 'review-comment'`) is a
+// request and never a conclusion. `stopRequestAt` reads all three faces, because a person's "do not
+// merge" is the same request in whichever box it is typed; the conclusion readers take the two faces a
+// Verifier block is written in, so adding the third input cannot add a way to record a PASS. One
+// predicate, used by every reader that parses a body for a conclusion.
+export const isConclusionSource = (r) => r?.kind !== 'review-comment'
+
 const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|queue)(?:\s*[/／]\s*仅记录[、,，]?\s*禁止入队)?|仅记录[、,，]?\s*禁止入队)\s*[.。]?\s*$/im
 // AGENTS.md → Claim: a pull request says `Fixes #N` in its body, and one issue carries one pull request.
 // #718: a pull request with no issue behind it, or with no `agent-pr` label, is not the routine's work at
@@ -221,6 +228,7 @@ export function recordOnlyAt(reports, head) {
   const target = String(head ?? '').toLowerCase()
   if (!target) return null
   const at = (reports ?? [])
+    .filter(isConclusionSource)
     .map((r, i) => ({ r, i, parsed: parseReport(r.body) }))
     .filter(({ parsed }) => parsed.verdict && parsed.tip && target === parsed.tip)
     .map((x) => ({ ...x, t: Date.parse(x.r.at ?? 0) || 0 }))

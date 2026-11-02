@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { adminsFor, decide, loadPolicy } from './review-gate.mjs'
 import { loadSigners } from './verdict-signature.mjs'
 import { createGate, loadRules } from './risk-gate.mjs'
-import { guard } from './enqueue-rules.mjs'
+import { guard, isConclusionSource } from './enqueue-rules.mjs'
 
 const SHORT = 12
 const HOLD = 'hold'
@@ -118,10 +118,14 @@ export function judge({ labels, files, head, author, reports, policy, expectedHe
   // (#640, INC point 2): a refusal here would stop every routine fix and every release.
   const tier = fileList(files).length ? computedTier(files) : null
   const exempt = exemptFromPass({ tier, files })
+  // #2091: a conclusion is written in one of the two faces the API has for it — an issue comment or a
+  // review body. A line-anchored review comment reaches `guard()` as a request only, so it is dropped
+  // here, before `decide` and `adminsFor`, and cannot become a verdict or a permission lookup.
+  const conclusionReports = (reports ?? []).filter(isConclusionSource)
   // A tier that needs no PASS also needs no permission lookup.
   const verdict = exempt
     ? { ok: true, verdict: null, by: null, exempt: true }
-    : decide({ head: target, author, reports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers, gh, changedPaths: fileNames(files), sameChangeSet })
+    : decide({ head: target, author, reports: conclusionReports, policy, body, owners, admins: admins ?? adminsFor({ gh, repo, reports: conclusionReports, policy, author }), repo, pr, signers, gh, changedPaths: fileNames(files), sameChangeSet })
   if (!verdict.ok) reasons.push(verdict.reason)
   // A report says what the queue entry would refuse; only the queue entry refuses. Fail a
   // `pull_request` run and it keeps failing after the INC it names is answered by a PASS, because a
@@ -219,6 +223,12 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
       .filter((v) => (v.body ?? '').trim())
       .map((v) => ({ id: v.id, kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
+    // #2091: a comment written on one line of the diff is a third place a person can write, and the stop
+    // request is read from all three. `kind: 'review-comment'` keeps it out of the conclusion readers
+    // (`isConclusionSource`), which is the half that does not change: it is a request, never a verdict.
+    ...list(`repos/${repo}/pulls/${pr}/comments?per_page=100`)
+      .filter((c) => (c.body ?? '').trim())
+      .map((c) => ({ id: c.id, kind: 'review-comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
   ]
 
   // The whole file record, not just the name: the T0/T1 exemption is computed from the diff by the

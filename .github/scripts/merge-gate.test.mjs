@@ -162,28 +162,40 @@ const checkpointFor = (text, files = [], pr = 637) => {
   return ['<!-- flybot:checkpoint -->', '\u0060\u0060\u0060json', JSON.stringify(fields, null, 2), '\u0060\u0060\u0060', '<!-- /flybot:checkpoint -->'].join('\n')
 }
 const bodyWithCheckpoint = (text, files = [], pr = 637) => (/<!-- flybot:checkpoint -->/.test(text) ? text : `${text}\n${checkpointFor(text, files, pr)}`)
-const fakeGh = ({ comments, reviews = [], labels = ['agent-pr'], files = [], head = HEAD, body = null, pr = 637, headRepo = 'ThinkFlowLab/FlyBot', draft = false, merged = false }) => (...args) => {
-  const path = args[args.length - 1]
-  const text = bodyWithCheckpoint(body ?? `${HEADERS}Fixes #${pr}\n`, files, pr)
-  const pull = { head: { sha: head, repo: { full_name: headRepo } }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })), body: text, draft, merged }
-  if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
-  if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
-  if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
-  if (/\/pulls\/\d+$/.test(path)) return JSON.stringify(pull)
-  throw new Error('fake gh: unexpected ' + path)
+const fakeGh = ({ comments, reviews = [], reviewComments = [], labels = ['agent-pr'], files = [], head = HEAD, body = null, pr = 637, headRepo = 'ThinkFlowLab/FlyBot', draft = false, merged = false }) => {
+  const calls = []
+  const gh = (...args) => {
+    const path = args[args.length - 1]
+    calls.push(path)
+    const text = bodyWithCheckpoint(body ?? `${HEADERS}Fixes #${pr}\n`, files, pr)
+    const pull = { head: { sha: head, repo: { full_name: headRepo } }, user: { login: 'opener' }, labels: labels.map((name) => ({ name })), body: text, draft, merged }
+    if (path.includes('/files')) return (files ?? []).map((filename) => JSON.stringify({ filename })).join('\n')
+    // The line-anchored comments are their own endpoint: one array for both would let an issue comment
+    // answer as an inline one and make a test green for the wrong reason.
+    if (/\/pulls\/\d+\/comments/.test(path)) return [reviewComments].flat().map((entry) => JSON.stringify(entry)).join('\n')
+    if (path.includes('/comments')) return [comments].flat().map((entry) => JSON.stringify(entry)).join('\n')
+    if (path.includes('/reviews')) return [reviews].flat().map((entry) => JSON.stringify(entry)).join('\n')
+    if (/\/pulls\/\d+$/.test(path)) return JSON.stringify(pull)
+    throw new Error('fake gh: unexpected ' + path)
+  }
+  gh.calls = calls
+  return gh
 }
 
-const runGate = (fixture) => {
+const runGateVia = (fixture) => {
   const policy = join(mkdtempSync(join(tmpdir(), 'merge-gate-policy-')), 'review-policy.json')
   writeFileSync(policy, JSON.stringify({ reviewers: ['reviewer-agent'], selfReview: [], writers: ['Reviewer'] }))
-  return main({
-  gh: fakeGh(fixture),
+  const gh = fakeGh(fixture)
+  const result = main({
+  gh,
   env: { GITHUB_STEP_SUMMARY: '', REVIEW_POLICY: policy },
   repo: 'ThinkFlowLab/FlyBot',
   pr: 637,
   headRef: ENTRY,
   })
+  return { result, gh }
 }
+const runGate = (fixture) => runGateVia(fixture).result
 
 // The comment id is the handle a refusal names (#1112), and #602 (2026-11-01) names the stop it reads.
 let commentId = 5000
@@ -260,6 +272,36 @@ test('#602 (2026-11-01): a comment asking not to merge refuses the queue entry, 
   const author = runGate({ comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z'), stopComment({ id: 2, login: 'opener', type: 'Bot' })] })
   assert.equal(author.ok, false)
   assert.match(author.reasons.join('; '), /comment 2 by opener/)
+})
+
+// The third face: a comment written on one line of the diff (`pulls/{pr}/comments`). It reaches the stop
+// reader like the other two, and only that reader — a Verifier block written there is not a conclusion
+// (#2091).
+const apiInlineComment = ({ id = 6561490257, login = 'hugo', type = 'User', body = '@Birfy — **please do not merge this tip.** This line reads the wrong list.', at = '2026-11-01T17:38:11Z', association = 'CONTRIBUTOR', path = 'core/src/client/kanban.js', line = 422 } = {}) =>
+  ({ id, user: { login, type }, body, created_at: at, author_association: association, path, line })
+
+test('#602 (2026-11-01): an inline review comment asking not to merge refuses the queue entry, through main()', () => {
+  const { result, gh } = runGateVia({ comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z')], reviewComments: [apiInlineComment()] })
+  assert.equal(result.ok, false, 'a request written on one line of the diff is the same request')
+  assert.match(result.reasons.join('; '), /asks not to merge this pull request: comment 6561490257/)
+  // The two faces come from their own endpoints, so this cannot be green because an issue comment answered
+  // for the inline one.
+  assert.ok(gh.calls.some((path) => /\/issues\/637\/comments/.test(path)), 'the issue comments are read')
+  assert.ok(gh.calls.some((path) => /\/pulls\/637\/comments/.test(path)), 'the line-anchored comments are read as their own face')
+})
+
+test('#602 (2026-11-01): a conclusion written on one line of the diff is a request reader only, never a verdict', () => {
+  const { result } = runGateVia({
+    comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z', 9101)],
+    reviewComments: [apiInlineComment({ id: 9102, login: 'reviewer-agent', association: 'MEMBER', body: firstLine('PASS') })],
+  })
+  assert.equal(result.ok, true, result.reasons.join('; '))
+  assert.equal(result.verdict.id, 9101, 'the conclusion is the issue comment, not the line-anchored one')
+})
+
+test('#602 (2026-11-01): an inline stop older than the PASS at this tip does not refuse the entry', () => {
+  const result = runGate({ comments: [apiComment(firstLine('PASS'), '2026-11-01T17:35:30Z')], reviewComments: [apiInlineComment({ at: '2026-11-01T17:00:00Z' })] })
+  assert.equal(result.ok, true, result.reasons.join('; '))
 })
 
 test('#602 (2026-11-01): a stop older than the PASS at this tip does not refuse the entry', () => {
