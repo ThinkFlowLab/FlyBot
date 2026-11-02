@@ -165,7 +165,9 @@ test('the writer stops recording and leaves the file when its journal does not r
   const home = tempHome()
   const path = join(home, 'journal', 'state.jsonl')
   mkdirSync(join(home, 'journal'))
-  const broken = `${JSON.stringify({ seq: 1, t: 1, op: 'base', next: { version: 2 } })}\n{"seq":2,"t":`
+  // A complete line that does not parse is the journal refusing itself; a half-written last line
+  // is the crash shape the recovery keeps the prefix of (#2166), so this fixture stays whole.
+  const broken = `${JSON.stringify({ seq: 1, t: 1, op: 'base', next: { version: 2 } })}\n{"seq":2,"t":}\n`
   writeFileSync(path, broken)
   const warnings = []
   const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
@@ -667,4 +669,52 @@ test('a journal reopened after its file was removed starts with a base (#2154)',
   assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 3 }))
   rmSync(home, { recursive: true, force: true })
   rmSync(outside, { recursive: true, force: true })
+})
+
+// A crash between the bytes of two appends leaves the last line half written, and replay refuses
+// a file that does not end on a line boundary. That refusal was permanent: every start and every
+// save failed until a person deleted the journal. Only that shape is repaired — the complete prefix
+// must be a journal replay accepts — and recording continues from the kept lines.
+test('a journal a crash left with half a last line keeps its complete prefix and records again (#2166)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const base = { seq: 1, t: 1, op: 'base', next: { version: 2, revision: 1 }, actor: 'host' }
+  const set = { seq: 2, t: 2, op: 'set', key: ['revision'], prev: 1, next: 2, actor: 'host' }
+  writeFileSync(path, `${lines([base, set])}{"seq":3,"t":3,"op":"del`)
+  const warnings = []
+  // A clock near the fixture's times: an aged journal would be pruned on the first write, which
+  // would fold the kept prefix into a base line and make the seq assertions say nothing.
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')), now: () => 3 })
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  assert.deepEqual(journal.status(), { recording: true })
+  const text = readFileSync(path, 'utf8')
+  assert.ok(text.endsWith('\n'), 'the repaired file ends on a line boundary')
+  assert.equal(text.includes('{"seq":3,"t":3,"op":"del'), false, 'the half line is gone')
+  const entries = parseJournal(text)
+  assert.deepEqual(entries.map(entry => entry.seq), [1, 2, 3], 'the seq continues from the kept prefix')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 3 }))
+  assert.equal(warnings.length, 1, 'the dropped half line is announced once')
+  assert.match(warnings[0], /dropped an incomplete last line left by a crash/)
+  if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
+  rmSync(home, { recursive: true, force: true })
+})
+
+// The recovery is only for a half-written last line: a complete line that does not parse above it
+// is still the journal refusing itself, and the file is left exactly as it was.
+test('a journal with a broken line above the last one stays refused and is left as it was (#2166)', async () => {
+  const home = tempHome()
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const base = { seq: 1, t: 1, op: 'base', next: { version: 2, revision: 1 }, actor: 'host' }
+  const broken = `${lines([base])}{"seq":2,"t":2,"op":"se\n`
+  writeFileSync(path, broken)
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(journal.status().recording, false)
+  assert.equal(readFileSync(path, 'utf8'), broken, 'a broken line above the last one is never trimmed away')
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /not recording/)
+  rmSync(home, { recursive: true, force: true })
 })
