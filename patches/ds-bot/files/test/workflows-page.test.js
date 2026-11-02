@@ -1275,4 +1275,109 @@ test('a forward edge to the next row clears taller cards on both sides of its so
     assert.equal(route.back, false, 'an edge to a lower row takes the forward branch')
     assertWireClearsRow(route, cards, points, 'b', 'd')
   }
+})// #2164: the factory layout seats rows 108 apart and columns 188 apart, so a 48px card's own
+// bottom leaves 60px to the next row while a card beside it can reach past that row's top. There
+// is then no corridor under that row to run in, and the turn used to land inside the cards below.
+// The clamp keeps it one pixel above that row's top instead — except on the one boundary where
+// the row's lowest bottom sits exactly on that top, which keeps the turn the wire always had.
+test('a forward edge into the next row keeps the factory row pitch clear (#2164)', () => {
+  // 113 and up has no measurement: the tallest card measured is a 40-character CJK name at 112px
+  // (see the CJK case below), so 120/140/160 are the upper-bound guard for this regression scan
+  // rather than a shape either measurement saw.
+  for (const heights of [{ a: 48, b: 120, c: 72, d: 72 }, { a: 48, b: 140, c: 72, d: 72 }, { a: 48, b: 160, c: 72, d: 72 }]) {
+    const nodes = [
+      { id: 'a', name: 'A', x: 0, y: 0 },
+      { id: 'b', name: 'B', x: 188, y: 0 },
+      { id: 'c', name: 'C', x: 0, y: 108 },
+      { id: 'd', name: 'D', x: 188, y: 108 },
+    ]
+    const edges = [{ from: 'a', to: 'c' }, { from: 'a', to: 'd' }]
+    // The two cards share a column, so the wire drops straight through the gap above the next
+    // row instead of rounding a taller neighbour there is no room to get around.
+    const straight = rowRoute(nodes, edges, 'a', 'c', heights)
+    assert.equal(straight.route.back, false, 'an edge to a lower row takes the forward branch')
+    assert.equal(straight.route.d, 'M 0 48 L 0 108', `a>c keeps the factory-pitch route (${straight.route.d})`)
+    // The diagonal pair cannot reach the target's top port without crossing the tall card above
+    // it, so matching the base crossing is the floor here; it must not also enter the next row.
+    const diagonal = rowRoute(nodes, edges, 'a', 'd', heights)
+    assert.equal(diagonal.route.back, false, 'an edge to a lower row takes the forward branch')
+    const failures = crossingsOf(diagonal.points, diagonal.cards, 'a', 'd').map((hit) => hit.split(' ')[0])
+    assert.deepEqual(failures.filter((id) => id !== 'b'), [],
+      `a>d enters no card but the tall neighbour beside it (${diagonal.route.d})`)
+    // The turn is clamped one pixel above the next row's top, and nothing is drawn below that
+    // top: a run at it would lie along the next row's own top edge.
+    const turn = diagonal.points.filter((point) => point[0] === 0).pop()[1]
+    assert.ok(turn <= 107, `a>d turns above the next row (${diagonal.route.d})`)
+    const below = diagonal.points.filter((point) => point[1] > 108)
+    assert.deepEqual(below, [], `a>d never draws into the next row (${diagonal.route.d})`)
+  }
+  // The boundary: a neighbour whose bottom sits exactly on the next row's top leaves a corridor
+  // of 0, and the turn stays on that edge — the route the wire had before the factory pitch was
+  // broken, byte for byte. Pulling it one pixel up would draw it into the row below, which is the
+  // one thing this clamp must not start doing (main's route at this height crosses no card; one
+  // pixel higher would cross one).
+  const edgeNodes = [
+    { id: 'a', name: 'A', x: 0, y: 0 },
+    { id: 'b', name: 'B', x: 188, y: 0 },
+    { id: 'c', name: 'C', x: 0, y: 108 },
+    { id: 'd', name: 'D', x: 188, y: 108 },
+  ]
+  const edge = rowRoute(edgeNodes, [{ from: 'a', to: 'd' }], 'a', 'd', { a: 48, b: 108, c: 72, d: 72 })
+  assert.equal(edge.route.d, 'M 0 48 L 0 108 L 94 108 L 94 108 L 188 108 L 188 108',
+    `a>d keeps the edge turn when the corridor closes (${edge.route.d})`)
+  assert.deepEqual(crossingsOf(edge.points, edge.cards, 'a', 'd'), [], `a>d crosses nothing at room 0 (${edge.route.d})`)
+})
+// #2164: a card beside the source can stop short of the next row's top and still be taller than
+// the source. With the shipped stylesheet that is every height from 47px (a short latin name) to
+// 112px (a 40-character CJK name) — 30–38 latin characters measure 92px and 25–32 CJK characters
+// measure 96px. Those leave a corridor under the row, and the run must turn inside it: at the
+// source's own height it would head through the neighbour's body and out the other side.
+test('a forward edge into the next row turns in the corridor under a taller neighbour (#2164)', () => {
+  for (const b of [92, 96]) {
+    const nodes = [
+      { id: 'a', name: 'A', x: 0, y: 0 },
+      { id: 'b', name: 'B', x: 188, y: 0 },
+      { id: 'd', name: 'D', x: 188, y: 108 },
+    ]
+    const edges = [{ from: 'a', to: 'd' }]
+    const { route, cards, points } = rowRoute(nodes, edges, 'a', 'd', { a: 48, b, d: 72 })
+    assert.equal(route.back, false, 'an edge to a lower row takes the forward branch')
+    assert.deepEqual(crossingsOf(points, cards, 'a', 'd'), [], `a>d clears the ${b}px neighbour (${route.d})`)
+    // Every stretch that crosses the neighbour's column runs in the corridor under it: past that
+    // card's bottom and still above the next row's top.
+    const across = points.filter((point) => point[0] > 0 && point[0] < 188).map((point) => point[1])
+    assert.ok(across.length > 0, `a>d crosses the neighbour's column (${route.d})`)
+    assert.ok(Math.min(...across) > cards.get('b').bottom,
+      `a>d runs under the ${b}px neighbour (${route.d})`)
+    assert.ok(Math.max(...across) < cards.get('d').top,
+      `a>d turns above the next row (${route.d})`)
+    assert.equal(Math.min(...across), 108 - (108 - b) / 2, `a>d halves the corridor under it (${route.d})`)
+  }
+})
+// #2164: the tallest card measured so far. A Bot name is cut at 40 characters
+// (`core/src/host/roster.js:65`) and a CJK name wraps in a 112px-wide box at 8 characters a
+// line; two independent readings of a 40-character Chinese name are Product 111 and Test 112,
+// and this fixture takes the larger of the two. At 112 the whole 108px row pitch is used up and
+// the row's lowest bottom sits past the next row's top, so the turn is clamped a pixel above it.
+// The whole 108–112 band is treated as reachable: nothing in it may cross a card main does not.
+const CJK_BOT_NAME = '自动发布巡检机器人负责在每次构建完成后核对全部流水线的运行状态并生成一份摘要报告'
+test('a forward edge into the next row turns above the tallest CJK named card (#2164)', () => {
+  assert.equal([...CJK_BOT_NAME].length, 40, 'the fixture name is the 40-character limit')
+  const nodes = [
+    { id: 'a', name: 'A', x: 0, y: 0 },
+    { id: 'b', name: CJK_BOT_NAME, x: 188, y: 0 },
+    { id: 'd', name: 'D', x: 188, y: 108 },
+  ]
+  const edges = [{ from: 'a', to: 'd' }]
+  // 40 Chinese characters in the shipped stylesheet: measured 112px in headless chromium.
+  const { route, cards, points } = rowRoute(nodes, edges, 'a', 'd', { a: 48, b: 112, d: 72 })
+  assert.equal(route.back, false, 'an edge to a lower row takes the forward branch')
+  // The neighbour reaches past the next row's top, so no route can clear it: one crossing is the
+  // floor the base route already had, and the row below must stay untouched.
+  const failures = crossingsOf(points, cards, 'a', 'd').map((hit) => hit.split(' ')[0])
+  assert.deepEqual(failures, ['b'], `a>d is no worse than the base route (${route.d})`)
+  const turn = points.filter((point) => point[0] === 0).pop()[1]
+  assert.equal(turn, cards.get('d').top - 1, `a>d turns one pixel above the next row (${route.d})`)
+  const below = points.filter((point) => point[1] > cards.get('d').top)
+  assert.deepEqual(below, [], `a>d never draws into the next row (${route.d})`)
 })

@@ -261,12 +261,24 @@ export function wireRoutes(nodes, edges, heights = {}) {
     // below its lowest measured bottom and above the target's top. The same height serves a
     // run that leaves the row for one below: a corridor measured from the source alone runs
     // through a taller neighbour of that row.
+    // #2164: the factory seats rows 108 apart, so a card beside a 48px source that reaches past
+    // the next row's top leaves no corridor under that row to run in. Measure the corridor from
+    // that row's lowest bottom anyway and halve whatever is left, rather than dropping back to a
+    // run at the source's own height through the middle of the neighbour: at or below zero the
+    // corridor height is the row's own bottom, and the clamp below decides where the turn goes.
     const sameRow = y2 - y1 <= 0
     const rowBottom = Math.max(...boxes
       .filter((box) => Math.abs(box.top - item.from.top) <= 1.5)
       .map((box) => box.bottom))
-    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, (y2 - rowBottom) / 2))
-    const yA = clearOf(rowBottom + gap, 1)
+    const room = y2 - rowBottom
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, room / 2))
+    const corridor = clearOf(rowBottom + gap, 1)
+    // The run may not reach the target's top: that draws the turn on the card's own border, and
+    // above it the corridor folds back over itself. A row whose lowest bottom sits exactly on
+    // that top is the one exception — the turn stays on the edge, as it always did, because a
+    // pixel higher would draw the wire into the row below where it never went before.
+    const cap = sameRow ? Infinity : (room === 0 ? y2 : y2 - 1)
+    const yA = sameRow ? corridor : Math.max(y1, Math.min(corridor, cap))
     const yB = clearOf(y2 - gap, -1)
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken)
     taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) })
