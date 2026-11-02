@@ -1,1 +1,0 @@
-A message with no text painted a row of its own: a turn that ended in tool calls only left the Bot avatar and a bubble holding nothing under the trace row. An empty or whitespace-only text is now no row at all, in a Bot's own chat, a group chat, a friend's line and the exchange sheet; a line that carries files keeps them and loses only the empty bubble.

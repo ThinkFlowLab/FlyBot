@@ -1,1 +1,0 @@
-A Condition (`when`) or Loop (`until`) link in Settings → Workflow graphs now offers the output names the **From** node declares instead of asking for one to be typed, so a name the host would refuse is never submitted; **Add link** waits for a declared name, and a node that declares no outputs keeps the text box ([#2178](https://github.com/ThinkFlowLab/FlyBot/issues/2178)).
