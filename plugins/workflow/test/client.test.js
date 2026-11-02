@@ -3412,3 +3412,87 @@ test('#2187: a read-only window still reads the graph through workflow/state', a
   assert.deepEqual(alertsOf(settings), [], 'no refusal banner for a page that wrote nothing')
   settings.unmount()
 })
+
+// #2193: a confirmation dialog that the host refuses must keep the host's own
+// sentence inside the dialog. It used to land in the sidebar behind the mask, so
+// the dialog stayed on screen with nothing in it saying why.
+const refusal = 'That Bot is already in this workflow'
+
+function refusedRename() {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    if (name === 'workflow/rename') return { ok: false, error: refusal }
+    return { ok: true, workflows: [graph] }
+  }
+  return { graph, call }
+}
+
+test('#2193: a refused rename keeps its dialog open and shows the host sentence inside it', async () => {
+  const { call } = refusedRename()
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+  row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Rename')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the rename dialog is open')
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-dark')[0].props.onClick()
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'a refused rename leaves the dialog open')
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal])
+  view.unmount()
+})
+
+test('#2193: a refused delete keeps its dialog open and shows the host sentence inside it', async () => {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    if (name === 'workflow/delete') return { ok: false, error: refusal }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+  row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Delete')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the delete dialog is open')
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-danger')[0].props.onClick()
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'a refused delete leaves the dialog open')
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal])
+  view.unmount()
+})
+
+test('#2193: a refused create keeps its dialog open and shows the host sentence inside it', async () => {
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [], templates: [] }
+    if (name === 'workflow/create') return { ok: false, error: refusal }
+    return { ok: true, workflows: [] }
+  }
+  const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Bot One' }] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'New')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the create dialog is open')
+  findAll(dialog, node => node.type === 'input' && node.props?.value === '')[0]?.props.onChange({ target: { value: 'Lane B' } })
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  findAll(dialog, node => node.type === 'button' && textOf(node) === 'Add a Bot')[0].props.onClick()
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-dark')[0].props.onClick()
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'a refused create leaves the dialog open')
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal])
+  view.unmount()
+})
