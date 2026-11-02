@@ -115,12 +115,16 @@ function cleanWhen(value, allowElse) {
 // A loop is the only edge that may cycle. max is how many times the body runs
 // (1–8, default 3). until stops early when that output equals eq.
 // An onFail edge recovers from failure by returning to the from node.
+//
+// #2155: a `when`/`until` that is present but cannot be honoured is a refusal, not an absent one.
+// Dropping it made the edge unconditional, so a run took a branch the author asked to guard.
 function cleanEdge(edge) {
   const from = String(edge?.from ?? '')
   const to = String(edge?.to ?? '')
   if (edge?.loop === true) {
     const max = Number(edge.max)
     const until = cleanWhen(edge.until, false)
+    if (!until && edge.until != null) throw new Error('A loop needs an output name like "ready" to stop early')
     return {
       from,
       to,
@@ -139,6 +143,7 @@ function cleanEdge(edge) {
     }
   }
   const when = cleanWhen(edge.when, true)
+  if (!when && edge.when != null) throw new Error('A condition link needs an output name like "ready"')
   return { from, to, ...(when ? { when } : {}) }
 }
 

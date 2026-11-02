@@ -1758,7 +1758,8 @@ window.__ModuleLoader__.load({
                   value: edgeForm.until.eq,
                   onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, eq: event.target.value } }),
                 })) : null,
-              h('button', { type: 'button', className: 'wf-btn wf-pri', disabled: !edgeForm.from || !edgeForm.to, onClick: addEdge }, tr('Add link')))) : null) : null)
+              // #2155: a Condition link with no output name cannot be honoured, so it is not offered.
+              h('button', { type: 'button', className: 'wf-btn wf-pri', disabled: !edgeForm.from || !edgeForm.to || (edgeForm.kind === 'condition' && !String(edgeForm.until.output ?? '').trim()), onClick: addEdge }, tr('Add link')))) : null) : null)
     }
 
     function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit, roster }) {
