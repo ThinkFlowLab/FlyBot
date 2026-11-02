@@ -1070,7 +1070,7 @@ export function install(rt) {
   const isAdminOf = (room, id) => id !== undefined && room.admin === id
 
   Object.assign(rt, {
-    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
+    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, journal,
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,

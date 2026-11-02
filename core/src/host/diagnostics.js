@@ -81,7 +81,10 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
     row('Read-only', facts.readOnly),
   ].filter(Boolean)
   const recent = entries.slice(-REPORT_ENTRIES)
-  const out = [...lines, '']
+  // The journal is only mentioned while the host runs one: an off journal is not a fact about
+  // this host, and a stopped one is exactly what a report about a bug it was meant to catch misses.
+  const journal = facts.stateJournal === undefined ? [] : ['', `state journal: ${facts.stateJournal}`]
+  const out = [...lines, ...journal, '']
   out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
   if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
   const stacks = recent.filter(entry => entry.stack).slice(-3)
@@ -221,6 +224,7 @@ export function install(rt) {
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
     const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
     const groups = Object.keys(rt.state.rooms).length
+    const journal = rt.journal?.status()
     return {
       botVersion: ownVersion(),
       dshVersion: dshVersion(),
@@ -229,6 +233,7 @@ export function install(rt) {
       team: `${count(bots.length, 'Bot', 'Bots')}, ${rt.state.mainBotIds.length} Main, ${count(groups, 'group chat', 'group chats')}`,
       models: models.length > 0 ? models.join(', ') : undefined,
       readOnly: rt.readOnly?.() ? 'yes, another dsh holds the team' : undefined,
+      stateJournal: journal === undefined ? undefined : journal.recording ? 'recording' : `stopped (${clean(journal.because)})`,
     }
   }
 
