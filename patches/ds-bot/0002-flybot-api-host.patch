@@ -699,12 +699,13 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,50 @@
+@@ -1,21 +1,51 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
 -import { mkdirSync, statSync } from 'node:fs'
 +import { install as installProjects } from './project-service.js'
++import { createProjectStateStorage } from './project-state-storage.js'
 +import { constants, mkdirSync, statSync } from 'node:fs'
  import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
@@ -754,17 +755,31 @@ diff --git a/src/host/store.js b/src/host/store.js
 
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
-@@ -50,12 +50,88 @@ export function install(rt) {
+@@ -27,8 +27,11 @@ export function install(rt) {
+   let stopped = false
+   // mtime and size of the state.json this host last read or wrote.
+   let seen = ''
++  let storage
+   const stamp = () => {
+     try {
++      const current = storage?.stamp()
++      if (current !== null && current !== undefined) return current
+       const { mtimeMs, size } = statSync(statePath)
+       return `${mtimeMs}:${size}`
+     } catch {
+@@ -50,13 +50,90 @@ export function install(rt) {
      }
    }
    const readOnly = () => {
 -    if (stuck !== undefined) return `The Bot team file ${statePath} could not be read (${stuck}). DS Bot does not change it; fix or move the file and reload.`
++    if (storage?.sqlite && lockBroken) return 'SQLite state requires an intact exclusive home lock; fix locking and reload.'
 +    if (stuck !== undefined) return `The Bot team file ${statePath} could not be read (${stuck}). FlyBot does not change it; fix or move the file and reload.`
      if (holder === undefined) return undefined
      const where = holder.pid ? `pid ${holder.pid}${holder.host ? ` on ${holder.host}` : ''}` : 'unknown process'
      return `The Bot team in ${home} is open in another dsh (Web or Desktop, ${where}). This window shows the team but cannot change it; close the other one and reload.`
    }
 
+-  const readFileState = async () => {
 +  // A version-1 team predates member records: it carries no `members` and no per-Bot
 +  // `ownerId`. Ownership fields on it are not something the migration can trust, so the
 +  // file is refused (fail closed) instead of being guessed at.
@@ -841,10 +856,11 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    return undefined
 +  }
 +
-   const readFileState = async () => {
++  const readJsonState = async () => {
      let contents
      try {
-@@ -87,10 +87,32 @@ export function install(rt) {
+       contents = await readFile(statePath, 'utf8')
+@@ -87,13 +87,59 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -860,10 +876,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
 +        return undefined
 +      }
-       stuck = undefined
-       return parsed
-     }
--    stuck = 'saved by a newer DS Bot; update DS Bot'
++      stuck = undefined
++      return parsed
++    }
 +    if (parsed?.version === STATE_VERSION) {
 +      const problem = ownershipProblem(parsed)
 +      if (problem !== undefined) {
@@ -871,13 +886,41 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: state %s was refused: %s', statePath, problem)
 +        return undefined
 +      }
-+      stuck = undefined
-+      return parsed
-+    }
+       stuck = undefined
+       return parsed
+     }
+-    stuck = 'saved by a newer DS Bot; update DS Bot'
 +    stuck = 'saved by a newer FlyBot; update FlyBot'
      return undefined
    }
 
++  const validateSqliteState = parsed => {
++    if (parsed?.version !== STATE_VERSION) throw new Error('Unsupported SQLite state version')
++    const problem = ownershipProblem(parsed)
++    if (problem !== undefined) throw new Error(`Malformed SQLite ownership: ${problem}`)
++  }
++  storage = createProjectStateStorage({ home, statePath, mode: config.stateStorage, validate: validateSqliteState,
++    ensureWriter() { if (lockBroken || holder !== undefined || !lock.owns()) throw Object.assign(new Error('SQLite state needs the current exclusive home lock'), { code: 'ELOCKLOST' }) } })
++  const readFileState = async () => {
++    try {
++      const result = await storage.read({ writer: holder === undefined && !lockBroken, readLegacy: readJsonState })
++      if (result.sqlite) { stuck = undefined; seen = stamp() }
++      return result.state
++    } catch (error) {
++      stuck = error.message; seen = stamp()
++      warn('ds-bot: durable state was refused: %s', error)
++      return undefined
++    }
++  }
++  const initializeStorage = () => {
++    if (holder !== undefined || stuck !== undefined) return false
++    try { return storage.initialize(state) }
++    catch (error) { stuck = error.message; warn('ds-bot: SQLite migration was refused: %s', error); return false }
++  }
++
+   // Fill `state` from the saved file and bring an older team up to date. Returns the
+   // groups whose Session titles still need the new name.
+   const adopt = (parsed) => {
 @@ -104,6 +104,20 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
@@ -923,7 +966,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,12 +161,94 @@ export function install(rt) {
+@@ -161,18 +161,101 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1019,7 +1062,15 @@ diff --git a/src/host/store.js b/src/host/store.js
    const load = () => loaded ??= (async () => {
      claimLock()
      if (holder !== undefined) warn('ds-bot: %s', readOnly())
-@@ -185,14 +185,24 @@ export function install(rt) {
+     const { migrated, stale } = adopt(await readFileState())
+     if (holder !== undefined) return
+-    if (migrated && stuck === undefined) {
++    const initialized = initializeStorage()
++    if ((migrated || initialized) && stuck === undefined) {
+       // A failed write must not poison `loaded`: the migrated state stays in
+       // memory and the next save() writes it.
+       try {
+@@ -185,16 +185,27 @@ export function install(rt) {
      for (const room of stale) void rt.retitleRoom(room)
    })()
 
@@ -1044,7 +1095,24 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        announceTakeover(previous)
          warnedReadOnly = false
          adopt(await readFileState())
++        initializeStorage()
          return
+       }
+     } else if (!lockBroken && !lock.owns()) {
+@@ -208,11 +208,12 @@ export function install(rt) {
+         // written while no host held it.
+         warnedReadOnly = false
+         adopt(await readFileState())
++        initializeStorage()
+         return
+       }
+       warn('ds-bot: %s', readOnly())
+     }
+-    if ((stuck !== undefined || holder !== undefined) && stamp() !== seen) adopt(await readFileState())
++    if ((stuck !== undefined || holder !== undefined) && stamp() !== seen) { adopt(await readFileState()); initializeStorage() }
+   }
+
+   const warnReadOnly = () => {
 @@ -235,13 +235,40 @@ export function install(rt) {
      return warnReadOnly()
    }
@@ -1086,10 +1154,19 @@ diff --git a/src/host/store.js b/src/host/store.js
      const snapshot = JSON.stringify(state, null, 2)
      const run = writing.then(async () => {
        const temp = `${statePath}.${process.pid}.tmp`
-@@ -259,10 +259,12 @@ export function install(rt) {
-         await writeFile(temp, snapshot, 'utf8')
+@@ -256,13 +256,18 @@ export function install(rt) {
+           }
+         }
          ensureLock()
-         await rename(temp, statePath)
+-        await writeFile(temp, snapshot, 'utf8')
+-        ensureLock()
+-        await rename(temp, statePath)
++        if (storage.sqlite) storage.write(snapshot)
++        else {
++          await writeFile(temp, snapshot, 'utf8')
++          ensureLock()
++          await rename(temp, statePath)
++        }
 +        rt.projectEffects?.saved(effectSnapshot)
          seen = stamp()
 +        await journal?.record(snapshot)
@@ -1130,7 +1207,8 @@ diff --git a/src/host/store.js b/src/host/store.js
 +
    ctx.effect(() => () => {
      stopped = true
-     return writing.finally(() => lock.release())
+-    return writing.finally(() => lock.release())
++    return writing.finally(() => { try { storage.close() } finally { lock.release() } })
    }, 'ds-bot: state lock')
 
 -  const botOf = id => (id === undefined ? undefined : state.bots[id])
@@ -1163,7 +1241,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,28 @@ export function install(rt) {
+@@ -335,23 +335,29 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1189,6 +1267,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    Object.assign(rt, {
 -    state, load, save, refresh, readOnly,
 +    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
++    stateStorage: { status: () => storage.status(), changes: options => storage.changes(options) },
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,

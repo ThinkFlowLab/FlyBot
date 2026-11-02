@@ -643,3 +643,7 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 #2179 runtime follow-up: native Chief facts refresh is fixed in original #2177 PR2225 (410127580). The Workflow gateway now enforces Chief admission and excludes Chief control jobs from execution quota. Real DSH queue verification uses actual Chief decisions and an isolated host-verification latch to test queue/revocation without timing assumptions.
 
 #2179 follow-up: Chief dependency waivers/substitutions retain exact outcome versions and explicit judgement evidence. Accepted child code enters the existing durable integration gates before parent execution; source admission is not merging or parent acceptance. Actual Git multi-parent sealing tests use deterministic child acceptance fixtures. Full real-provider parallel collaboration and native physical restoration remain pending.
+
+### 2026-11-03 — Transactional state (#2182)
+
+Opt-in SQL retains the original Store/services and saves domain facts plus Effects atomically. JSON becomes a newer-version migration guard, with verified import/recovery and offline export/rollback; no dual writable snapshots. Histories are normalized and large immutable payloads hash-referenced. Routine state updates/views make no additional model calls or Project-position changes. Full-state hydration/scanning remains; storage growth is distinct from #2177 context budgets. No live migration or provider-loop claim.

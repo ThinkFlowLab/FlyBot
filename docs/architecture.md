@@ -175,3 +175,11 @@ it does not grant SDK shared-ref access, replace a PR or substitute for verifica
 The [shared context contract](subsystems/project-context.md) separates fixed role rules, retrieved memory, working summaries and original sources, with configured model/Harness envelopes and original native/SDK lifecycle management.
 
 Project Task contracts extend original Task records with Chief admission, versioned requirements, independent child dependencies and a parent continuation. Existing Effects commit proposals/waits and dispatch after persistence; existing pools serialize the single parent resume. Child completion never accepts the parent or approves a code merge. See [Project Task lifecycle](subsystems/project-task-lifecycle.md).
+
+## Runtime storage convergence (#2182)
+
+The original Store can persist its canonical domain records and Effects in one
+SQLite transaction while retaining existing service objects. Legacy JSON is selected
+until explicitly migrated; a versioned guard prevents two writable authorities.
+History rows and immutable payload files separate storage growth from bounded model
+context. See [transactional storage and offline migration](subsystems/project-state-storage.md).

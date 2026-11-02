@@ -664,3 +664,7 @@ Seen 1× while implementing #2179. Reusing old group aggregation would accept ca
 #2179 policy-budget regression: active memory plus historical progress reports exceeded the existing complete-role-policy budget. Retain active invariants, archive dated candidate/run narratives with a source link, and preserve their full text. Do not raise the context ceiling, silently truncate required guidance, or reuse archived test counts as current evidence.
 
 #2179 integration regression: `git rev-parse MERGE_HEAD` returns only the first parent of an octopus merge. Validate every bounded registered MERGE_HEAD entry before sealing; an admitted first source cannot conceal an unapproved second parent. Preserve the staged index on rejection.
+
+### 2026-11-03 — Migration must distinguish unfinished import from missing current data
+
+An interrupted prepared SQL migration may recover its verified import; an active database that disappears must fail closed, not silently revive the old import. Publish a newer-version JSON guard before initialization, validate one authority, and retain a fenced resumable rollback marker across partial moves. A transaction commit must precede Effects acknowledgement without a fallible post-commit read masking that proof.
