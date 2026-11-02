@@ -216,6 +216,7 @@ export function createProjectPools(rt) {
     if (Number.isFinite(limit) && (c.usage?.steps ?? 0) >= limit) { c.status = 'blocked'; c.block = { reason: 'Handoff refused (quota): execution step quota is exhausted', at: Date.now() }; await rt.save(); throw refuse(c.block.reason) }
     const claim = { id: `claim-${randomUUID()}`, botId, generation: ++c.generation, taskId: task.id, projectId: task.projectId, attemptId: c.attemptId, status: 'active', createdAt: Date.now() }
     c.usage ??= {}; c.usage.steps = (c.usage.steps ?? 0) + 1
+    if (receipt.purpose === 'children-completed' && task.projectTask?.wait?.status === 'queued') Object.assign(task.projectTask.wait, { status: 'resumed', resumedClaimId: claim.id, resumedAt: Date.now() })
     c.claim = claim; c.status = 'claimed'; receipt.status = 'accepted'; receipt.acceptedAt = Date.now(); receipt.claimId = claim.id
     receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(requestId ? { requestId } : {}), ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
     await rt.save()
@@ -456,6 +457,13 @@ export function createProjectPools(rt) {
     if (c.status !== 'waiting-children' || c.claim?.id !== wait.claimId || c.claim.status !== 'completed' || c.claim.workerId && !c.claim.exitConfirmed) throw refuse('Parent continuation is not released')
     const ready = rt.projectTaskLifecycle.ready(task)
     if (!ready) throw new EffectDeferred('Child results are not yet adjudicated', { waitingFor: 'children' })
+    // A sealed pre-split candidate is immutable. Continue in a successor Attempt,
+    // preserving the Task-role Session rather than editing accepted evidence.
+    if (targetOf(task.projectId, wait.botId).role === 'developer' && c.kind === 'code') {
+      const existing = rt.state.projectAttempts?.[task.deliveryAttemptId]
+      if (existing && existing.id !== c.attemptId && existing.feedback?.previousAttemptId === c.attemptId && rt.state.projectAttempts[c.attemptId]?.supersededBy === existing.id) c.attemptId = existing.id
+      else c.attemptId = await adapter.rework?.({ task, claim: c.claim, reason: `Integrate adjudicated child results: ${wait.resumePoint}` }) ?? c.attemptId
+    }
     const previous = wait.status
     wait.status = 'queued'
     try {

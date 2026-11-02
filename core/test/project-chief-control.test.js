@@ -36,7 +36,7 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture({ modern = false } = {}) {
+async function controlFixture({ modern = false, dependency = false } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
@@ -52,6 +52,13 @@ async function controlFixture({ modern = false } = {}) {
     rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture())
     rt.projectScheduler = { wake() {}, request: async () => { ++accepted; return { admitted: true } } }
     installLifecycle(rt)
+    if (dependency) {
+      const { createTaskContract, addTaskDependencies } = await import('../src/host/project-task-lifecycle.js')
+      const child = { id: 'child', projectId: 'p', title: 'Cancelled independent goal', criteria: 'Independent result', status: 'cancelled' }
+      createTaskContract(child, { impact: child.title }); rt.state.tasks.child = child
+      task.collaboration = { status: 'waiting-children', generation: 1, initiatedBy: 'owner', history: [], claim: { id: 'parent-source', status: 'completed', botId: 'p:developer', exitConfirmed: true } }
+      addTaskDependencies(rt.state, task, ['child'], { id: 'parent-wait', botId: 'p:developer', claimId: 'parent-source', resumePoint: 'Integrate actual remaining evidence' })
+    }
     await control.request('p', 'intake', { requirementRevision: 1 }, task.id)
   }
   await control.pump()
@@ -188,4 +195,19 @@ test('Chief admission rejects changed requirements and revoked authority before 
   await g.rt.projectEffects.drain()
   assert.equal(g.accepted(), 0)
   await g.rt.projectEffects.close()
+})
+
+test('protected Chief callback can judge a cancelled dependency without closing either the child or parent', async () => {
+  const f = await controlFixture({ modern: true, dependency: true })
+  const snapshot = f.request.projectFacts.tasks[0].taskContract.dependencies[0].current
+  assert.equal(snapshot.status, 'cancelled')
+  await f.request.onResult(f.result({ action: 'resolve-dependency', reason: 'The parent can satisfy its original criteria using the recorded alternative design', dependency: { taskId: 'child', version: snapshot.version, evidence: ['Verified current design decision reference'] } }))
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'done')
+  assert.equal(f.task.projectTask.dependencies[0].status, 'waived')
+  assert.equal(f.task.projectTask.wait.status, 'ready')
+  assert.equal(f.rt.state.tasks.child.status, 'cancelled')
+  assert.equal(f.task.status, 'open')
+  assert.equal(Object.values(f.rt.state.projectEffects).filter(row => row.kind === 'task.resume').length, 1)
+  assert.equal(f.accepted(), 0)
+  await f.rt.projectEffects.close()
 })

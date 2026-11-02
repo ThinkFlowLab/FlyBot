@@ -33,7 +33,7 @@ and supplemental inputs are distinct from lowering acceptance requirements.
 
 `task.change.request` accepts a member's cancellation/reopen/revision request and
 asks Chief to judge it. It does not apply the change itself. Chief cancellation
-refuses an active execution claim; any unconfirmed historical lease remains held
+refuses an unrelated active execution claim; its own scoped Chief claim can record cancellation without claiming that its worker has exited; any unconfirmed historical lease remains held
 and must reconcile before new execution. It never treats unknown exit as release. Reopening records the previous result and adjudication, retains the
 original requirements and logical role Sessions, and schedules another Attempt.
 New goals require another Task. An unresolved active cancellation needs the existing
@@ -60,7 +60,7 @@ means the result has not yet been integrated into the parent's candidate.
 The existing outbox stages a stable `task.resume` only after all waits are satisfied.
 Pool serialization and the stable `children-<wait>` Handoff request prevent duplicate
 parent admission, including repeated callbacks and restart replay. The receiving
-role uses the same parent Task/Attempt/workspace and logical Session, reads its own
+role uses the same parent Task and logical Session, retaining an unsealed Attempt/workspace or creating a successor from a sealed candidate. It reads its own
 summary and child result references, and continues integration. All children ending
 never closes the parent. Current dependency state is checked again before execution
 and Chief completion. Required code integration still uses the existing pinned-source
@@ -90,3 +90,24 @@ Execution start retains the authenticated initiating principal/session, never th
 Attempts pin the complete Project requirements revision, including impact/scope. A scope-only change invalidates old completion evidence even if title and criteria are unchanged. Rework after a revision creates a successor with the new requirements snapshot, retaining the prior version and logical Task-role Session.
 
 A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.
+
+
+## Exceptional dependency judgement
+
+Chief snapshots carry each linked dependency's exact current version. Protected
+`resolve-dependency` decisions require that version, a reason and bounded evidence
+references. Chief may waive a condition explicitly, or substitute a same-Project,
+Chief-accepted result with its own exact outcome version. The decision records
+`chief-judgement-not-host-tests` and never accepts the failed/cancelled original
+child or closes the parent. A changed/reopened replacement invalidates the waiver
+and blocks integration again. Formal cancellation or reopening of a linked child
+stages one dependency-review request to the resident Chief; ordinary operations do
+not call a model to reconsider Project positioning.
+
+Wait IDs cannot be reused. A later split preserves the previous wait and dependency
+records in history. Resume remains idempotent across retries. A sealed pre-split
+candidate continues in one successor Attempt without editing the original evidence;
+Task-role context remains stable. The accepted-child source admission protocol is
+specified in project-delivery.md. A plan changed after a parent has resumed requires
+execution stopping/reconciliation; current guards refuse stale integration rather
+than pretending the changed wait has completed.

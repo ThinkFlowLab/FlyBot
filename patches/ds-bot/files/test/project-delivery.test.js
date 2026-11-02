@@ -8,6 +8,8 @@ import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { roleExecutionPrompt } from '../src/host/project-role-policy.js'
 import { createProjectDelivery } from '../src/host/project-delivery.js'
+import { createTaskContract, admitTask, addTaskDependencies } from '../src/host/project-task-lifecycle.js'
+import { childResultSources } from '../src/host/project-child-inputs.js'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applyWorkflow } from '../../plugins/workflow/index.js'
 import { createWorkflowService } from '../../plugins/workflow/src/service.js'
@@ -1411,4 +1413,117 @@ test('a failed Project Attempt blocks its Task without cancelling or closing the
   assert.equal(task.projectTask.block.attemptId, f.attempt().id)
   assert.equal(task.projectTask.admission.status, 'accepted')
   assert.equal(task.completedBy, undefined)
+})
+
+async function secondIntegrationSource(f) {
+  git(f.repository, ['switch', '-c', 'second-input', f.base])
+  writeFileSync(join(f.repository, 'code.test.mjs'), readFileSync(join(f.repository, 'code.test.mjs'), 'utf8') + '// Independent child regression coverage.\n')
+  git(f.repository, ['add', 'code.test.mjs']); git(f.repository, ['commit', '-m', 'Independent test change'])
+  const sha = git(f.repository, ['rev-parse', 'HEAD']), ref = 'refs/remotes/operator/second-input'
+  git(f.repository, ['update-ref', ref, sha]); git(f.repository, ['switch', 'main'])
+  return { sha, ref }
+}
+
+test('every pending merge head needs admission; a second unapproved head cannot hide behind the first', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false }), second = await secondIntegrationSource(f)
+  const saved = (await integrationCall(f, 'query', 'attempt.integration-state', {})).result
+  await integrationCall(f, 'command', 'attempt.integration-bind', { inputs: [{ ref: f.ref, sha: f.source }], generation: saved.generation, expectedWorkspace: saved.snapshot })
+  git(f.path, ['merge', '--no-commit', '--no-ff', f.source, second.sha])
+  const before = indexBytes(f)
+  await assert.rejects(f.rt.projectDelivery.completePoolRole({ task: f.task, claim: { attemptId: f.attempt.id }, role: 'developer', outputs: {} }), /not a pinned upstream or approved/)
+  assert.equal(indexBytes(f), before)
+  assert.equal(f.attempt.candidateSha, undefined)
+})
+
+test('an actual multi-source Git merge seals every approved parent and its exact tree', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false }), second = await secondIntegrationSource(f)
+  const saved = (await integrationCall(f, 'query', 'attempt.integration-state', {})).result
+  await integrationCall(f, 'command', 'attempt.integration-bind', { inputs: [{ ref: f.ref, sha: f.source }, second], generation: saved.generation, expectedWorkspace: saved.snapshot })
+  git(f.path, ['merge', '--no-commit', '--no-ff', f.source, second.sha])
+  await f.rt.projectDelivery.completePoolRole({ task: f.task, claim: { attemptId: f.attempt.id }, role: 'developer', outputs: {} })
+  const parents = git(f.path, ['show', '-s', '--format=%P', f.attempt.candidateSha]).split(' ')
+  assert.deepEqual(new Set(parents), new Set([f.seed, f.source, second.sha]))
+  assert.match(readFileSync(join(f.path, 'backend.mjs'), 'utf8'), /serviceVersion/)
+  assert.match(readFileSync(join(f.path, 'code.test.mjs'), 'utf8'), /Independent child/)
+})
+
+// Child acceptance records below are deterministic host fixtures. The Git merges,
+// Effects persistence, permission checks and candidate sealing are actual operations.
+async function childIntegrationFixture(t) {
+  const f = await additionalIntegrationFixture(t, { merge: false }), second = await secondIntegrationSource(f)
+  f.task.projectTaskKind = 'code'
+  createTaskContract(f.task, { impact: 'Integrate independent Project improvements' })
+  admitTask(f.task, { id: 'admit-parent', projectId: 'p1', taskId: f.task.id, executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Fixture admission' })
+  f.attempt.requirement.projectTaskRevision = f.task.projectTask.requirements.revision
+  const children = [f.source, second.sha].map((sha, index) => {
+    const id = `fixture-child-${index}`, decisionId = `fixture-accepted-${index}`, attemptId = `fixture-child-attempt-${index}`
+    const child = { id, projectId: 'p1', projectTaskKind: 'code', title: 'Independent improvement', criteria: 'Corresponding tests pass', status: 'accepted', deliveryAttemptId: attemptId, completedBy: { kind: 'chief', decisionId } }
+    createTaskContract(child, { impact: 'Independent test result' })
+    f.rt.state.tasks[id] = child
+    f.rt.state.projectAttempts[attemptId] = { id: attemptId, projectId: 'p1', taskId: id, status: 'accepted', acceptedViaChief: decisionId, candidateSha: sha, requirement: { repository: 'example/demo', projectTaskRevision: 1 }, evidence: {
+      implementation: { sha }, tests: { sha, passed: true, sha256: 'b'.repeat(64) }, review: { sha, verdict: 'approve' },
+    } }
+    return child
+  })
+  addTaskDependencies(f.rt.state, f.task, children.map(row => row.id), { id: 'parallel-fixture', botId: f.developer.id, claimId: 'released-source', resumePoint: 'Integrate both child results' })
+  f.task.projectTask.wait.status = 'resumed'
+  const claim = { id: 'parent-reserved', botId: f.developer.id, attemptId: f.attempt.id, generation: f.task.collaboration.generation, status: 'active' }
+  f.task.collaboration.claim = claim
+  f.task.collaboration.status = 'working'
+  await f.rt.save()
+  return { ...f, children, claim, sources: childResultSources(f.rt.state, f.task, 'example/demo') }
+}
+
+test('a reserved parent admits only accepted child sources and seals their actual integrated tree', async t => {
+  const f = await childIntegrationFixture(t), before = indexBytes(f), generation = f.claim.generation
+  const admitted = await f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim)
+  assert.equal(admitted.admission.origin, 'project-child-results')
+  assert.equal(admitted.admission.sourcesFingerprint.length, 64)
+  assert.equal(admitted.admission.childResults.length, 2)
+  assert.equal(f.task.collaboration.generation, generation)
+  assert.equal(indexBytes(f), before)
+  assert.equal(f.attempt.candidateSha, undefined)
+  for (const source of f.sources) assert.equal(git(f.repository, ['rev-parse', source.ref]), source.sha)
+  assert.equal((await f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim)).already, true)
+  git(f.path, ['merge', '--no-commit', '--no-ff', ...f.sources.map(row => row.sha)])
+  const tree = git(f.path, ['write-tree'])
+  await f.rt.projectDelivery.completePoolRole({ task: f.task, claim: f.claim, role: 'developer', outputs: { implementation: 'Both child improvements integrated' } })
+  const sha = f.attempt.candidateSha
+  assert.equal(git(f.path, ['rev-parse', sha + '^{tree}']), tree)
+  assert.deepEqual(new Set(git(f.path, ['show', '-s', '--format=%P', sha]).split(' ')), new Set([f.seed, ...f.sources.map(row => row.sha)]))
+  assert.notEqual(f.task.status, 'accepted')
+})
+
+test('child admission cannot forge configure permission or overwrite a moved source ref', async t => {
+  const f = await childIntegrationFixture(t)
+  await assert.rejects(integrationCall(f, 'command', 'attempt.integration-bind', { inputs: f.sources, generation: f.claim.generation, expectedWorkspace: null, origin: 'project-child-results' }, bob), /permission|access|forbidden|role|configure/i)
+  const source = f.sources[0]
+  git(f.repository, ['update-ref', source.ref, f.base])
+  await assert.rejects(f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim), /reference moved/)
+  assert.equal(git(f.repository, ['rev-parse', source.ref]), f.base)
+  assert.equal(f.attempt.integrationAdmissions, undefined)
+})
+
+test('uncommitted source intent, an active writer, or revoked child evidence cannot admit parent inputs', async t => {
+  const f = await childIntegrationFixture(t), originalSave = f.rt.save
+  f.rt.save = async () => { throw new Error('fixture disk unavailable') }
+  await assert.rejects(f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim), /disk unavailable/)
+  for (const source of f.sources) assert.throws(() => git(f.repository, ['rev-parse', '--verify', source.ref]))
+  f.rt.save = originalSave
+  f.claim.workerId = 'still-running'
+  await assert.rejects(f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim), /unstarted parent claim/)
+  delete f.claim.workerId
+  f.rt.state.projectAttempts[f.children[0].deliveryAttemptId].evidence.tests.passed = false
+  await assert.rejects(f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim), /unverified/)
+  assert.equal(f.attempt.integrationAdmissions, undefined)
+})
+
+test('a parent cannot seal skipped or subsequently invalidated child integrations', async t => {
+  const f = await childIntegrationFixture(t)
+  await assert.rejects(f.rt.projectDelivery.completePoolRole({ task: f.task, claim: f.claim, role: 'developer', outputs: {} }), /durable source admission/)
+  await f.rt.projectDelivery.admitChildInputs(f.task.id, f.claim)
+  await assert.rejects(f.rt.projectDelivery.completePoolRole({ task: f.task, claim: f.claim, role: 'developer', outputs: {} }), /integration|integrat|ancestor/i)
+  f.children[0].status = 'open'
+  await assert.rejects(f.rt.projectDelivery.completePoolRole({ task: f.task, claim: f.claim, role: 'developer', outputs: {} }), /invalidated|unresolved|child/i)
+  assert.equal(f.attempt.candidateSha, undefined)
 })

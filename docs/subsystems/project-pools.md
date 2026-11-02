@@ -167,3 +167,6 @@ it neither transfers initiative nor creates a Task. See [context](project-contex
 ## Project Task lifecycle convergence (#2179)
 
 Project Tasks may split independent children after actual source exit, preserving their own work summary and waiting continuation. The released parent has no active claim. Chief-adjudicated dependency results create one stable children-completed Handoff back to the original role/Attempt. Pool serialization, receipt replay and source-exit fencing also apply to parent resume; child cancellation/failure is not success. See [Task lifecycle](project-task-lifecycle.md).
+
+
+#2179 follow-up: After adjudicated child results, continuation reuses the original logical role. An unsealed Attempt remains; a sealed candidate requires one successor Attempt seeded from that candidate. Replay reuses the recorded successor and stable children-wait Handoff. Claiming records the wait as resumed, preserving its original released claim reference.

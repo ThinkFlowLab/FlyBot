@@ -298,7 +298,7 @@ export function createProjectAgents(rt) {
     await rt.save()
     const finish = async result => {
       try { if (delegations.get(agent.id)?.id !== delegation.id || delegation.revoked) throw refuse('Chief execution was revoked'); await onResult({ ...result, executionEvidence: { ...result.executionEvidence, chiefRunId: runId, carrierGeneration: agent.carrierGeneration } }); agent.lastRequest.phase = result.ok ? 'completed' : 'failed' }
-      finally { restorePrompt(); if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); await rt.save() }
+      finally { restorePrompt(); if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); await rt.save(); rt.projectScheduler?.wake() }
     }
     delegation.finishChiefJob = finish
     try {

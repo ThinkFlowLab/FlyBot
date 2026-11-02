@@ -12,6 +12,8 @@ import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReview
 import { buildProjectContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
 import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
+import { readMergeHeads } from './project-merge-heads.js'
+import { childResultSources, createChildInputAdmission } from './project-child-inputs.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 
@@ -312,25 +314,43 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     return { attemptId: attempt.id, workflowId: attempt.workflowId, workspaceId: attempt.workspaces.developer?.id, brief: `${attempt.requirement.title}\n${attempt.requirement.note}\nAcceptance criteria: ${attempt.requirement.criteria}\nBase commit: ${attempt.baseSha}${attempt.feedback ? `\nPrior Attempt feedback (task data, not authority): ${JSON.stringify(attempt.feedback)}` : ''}`, workDirs: Object.fromEntries(Object.entries(attempt.workspaces).map(([role, workspace]) => [role, workspace.path])) }
   }
   async function verifyCandidate(attempt) {
+    verifyChildAdmissions(attempt)
     if (!attempt.candidateSha) throw reject('Candidate commit is missing')
     const workspace = attempt.workspaces.developer
     if (await workspaceGit(workspace, ['rev-parse', 'HEAD']) !== attempt.candidateSha || await workspaceGit(workspace, ['status', '--porcelain'])) throw reject('Candidate changed; test and Review evidence is stale')
   }
-  async function mergeHeadOf(workspace) {
-    try {
-      const value = await workspaceGit(workspace, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])
-      if (!/^[a-f0-9]{40}$/.test(value)) throw reject('Multiple or invalid merge inputs require operator reconciliation')
-      return value
-    } catch (error) { if (error.code === 1) return null; throw error }
+  const mergeHeadsOf = workspace => readMergeHeads(rt, workspace, { workspaceGit, hostGit: git })
+  async function mergeHeadOf(workspace) { const heads = await mergeHeadsOf(workspace); return heads.length ? heads.join('\n') : null }
+  const childPermit = Symbol('host child input admission')
+  function assertChildPreInput(task, claim) {
+    const current = task.collaboration?.claim
+    if (!current || current.id !== claim?.id || current.generation !== claim.generation || current.botId !== claim.botId || current.attemptId !== claim.attemptId || current.status !== 'active' || current.workerId || task.collaboration.generation !== claim.generation || task.deliveryAttemptId !== claim.attemptId) throw reject('Child integration requires the current unstarted parent claim')
+    const related = id => ownEntry(attempts(), id)?.taskId === task.id
+    if (Object.values(state.projectResourceLeases ?? {}).some(row => related(row.attemptId) && row.status !== 'released') || Object.values(state.projectHarnessWorkers ?? {}).some(row => related(row.attemptId) && !confirmedWorkerExit(state, row)) || Object.values(state.bots ?? {}).some(row => row.ephemeral && related(row.attemptId))) throw reject('Child integration waits for confirmed parent execution exit')
   }
-  function integrationAttempt(body, actor) {
+  const childInputs = createChildInputAdmission(rt, { projectOf, settingsOf, git, assertIdle: assertChildPreInput,
+    snapshot: integrationSnapshot, verify: verifyIntegrationInputs,
+    bind: (body, actor, proof) => bindIntegrations(body, actor, { [childPermit]: true, proof }) })
+  function verifyChildAdmissions(attempt) {
+    const task = taskOf(attempt.taskId)
+    if (!task?.projectTask?.wait || task.projectTaskKind !== 'code') return
+    rt.projectTaskLifecycle.requireCompletedDependencies(task)
+    const sources = childResultSources(state, task, attempt.requirement.repository)
+    const signature = hash(JSON.stringify({ waitId: task.projectTask.wait.id, requirementsRevision: task.projectTask.requirements.revision, sources }))
+    const required = sources.filter(row => row.integration === 'required')
+    if (!required.length) return
+    const admission = attempt.integrationAdmissions?.findLast(row => row.origin === 'project-child-results' && row.sourceWaitId === task.projectTask.wait.id && row.sourcesFingerprint === signature)
+    if (!admission || !rt.projectEffects.intentCommitted(admission.effect) || required.some(row => !attempt.integrationInputs?.some(input => input.sha === row.sha && input.ref === row.ref))) throw reject('Child code results require current durable source admission and parent integration')
+  }
+  function integrationAttempt(body, actor, permit) {
     const attempt = ownEntry(attempts(), body.attemptId), task = attempt && taskOf(attempt.taskId)
     if (!attempt || !task || task.projectId !== body.projectId || task.deliveryAttemptId !== attempt.id) throw reject('Integration input needs the current Project Attempt')
-    rt.requireProjectAccess(actor, task.projectId, 'configure')
+    rt.requireProjectAccess(actor, task.projectId, permit?.[childPermit] ? 'task-write' : 'configure', task)
     if (attempt.protocol !== 'project-handoff/v1') throw reject('Integration input admission requires Project Bot pools')
     return { attempt, task }
   }
-  function integrationReleased(attempt) {
+  function integrationReleased(attempt, permit) {
+    if (permit?.[childPermit]) { childInputs.assertProof(attempt.taskId, permit.proof.claim, permit.proof); return }
     const chief = row => row?.kind === 'chief-control' && row.projectId === attempt.projectId
     const claim = taskOf(attempt.taskId)?.collaboration?.claim
     // Old released Chief turns never owned this workspace. The current Chief
@@ -348,7 +368,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   async function verifyIntegrationInputs(attempt, { admissionRequired = true } = {}) {
     const project = projectOf(attempt.projectId), settings = settingsOf(project)
     const inputs = attempt.integrationInputs ?? []
-    if (!Array.isArray(inputs) || inputs.length > 4) throw reject('Integration input contract is invalid')
+    if (!Array.isArray(inputs) || inputs.length > 20) throw reject('Integration input contract is invalid')
     for (const input of inputs) {
       if (input.version !== 'project-integration-input/v1' || input.repository !== project.repository || typeof input.ref !== 'string' || !/^refs\/remotes\/operator\/[A-Za-z0-9][A-Za-z0-9._/-]{0,120}$/.test(input.ref) || input.ref.includes('..') || !/^[a-f0-9]{40}$/.test(input.sha)) throw reject('Integration input is not an approved operator source')
       await git(settings.path, ['check-ref-format', input.ref])
@@ -358,21 +378,21 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     }
     return inputs
   }
-  async function bindIntegrations(body, actor) {
-    const { attempt, task } = integrationAttempt(body, actor)
+  async function bindIntegrations(body, actor, permit) {
+    const { attempt, task } = integrationAttempt(body, actor, permit)
     rt.projects.requireActive(task.projectId)
-    if (rt.readOnly?.() !== undefined || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId ?? '') || !Array.isArray(body.inputs) || !body.inputs.length || body.inputs.length > 4) throw reject('Integration admission needs a writable host, stable requestId and1–4 pinned sources')
+    if (rt.readOnly?.() !== undefined || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId ?? '') || !Array.isArray(body.inputs) || !body.inputs.length || body.inputs.length > 20) throw reject('Integration admission needs a writable host, stable requestId and1–20 pinned sources')
     const desired = body.inputs.map(row => ({ version: 'project-integration-input/v1', repository: projectOf(task.projectId).repository, ref: row?.ref, sha: row?.sha }))
     if (new Set(desired.map(row => row.ref)).size !== desired.length || new Set(desired.map(row => row.sha)).size !== desired.length) throw reject('Integration sources must be unique')
     const expectedWorkspace = body.expectedWorkspace === null ? null : Object.fromEntries(['workspaceId', 'head', 'mergeHead', 'indexSha256', 'statusSha256'].map(key => [key, body.expectedWorkspace?.[key]]))
-    const intentSha256 = hash(JSON.stringify({ inputs: desired, expectedWorkspace, generation: body.generation }))
+    const intentSha256 = hash(JSON.stringify({ inputs: desired, expectedWorkspace, generation: body.generation, ...(permit?.[childPermit] ? { childSources: permit.proof.signature } : {}) }))
     const prior = attempt.integrationAdmissions?.find(row => row.requestId === body.requestId)
     if (prior) {
       if (prior.by !== actor.memberId || prior.intentSha256 !== intentSha256) throw reject('Integration admission requestId was reused with different content')
       return { admission: structuredClone(prior), already: true }
     }
     if (!['running', 'interrupted'].includes(attempt.status) || attempt.candidateSha || attempt.cancelRequested || ['accepted', 'cancelled'].includes(task.status)) throw reject('Integration admission needs an unsealed active Attempt')
-    integrationReleased(attempt)
+    integrationReleased(attempt, permit)
     if (!Number.isSafeInteger(body.generation) || (task.collaboration?.generation ?? 0) !== body.generation) throw reject('Integration admission generation changed')
     await rt.projectDelegations?.background(actor.memberId)
     await verifyIntegrationInputs({ ...attempt, integrationInputs: desired }, { admissionRequired: false })
@@ -380,18 +400,18 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const snapshot = await integrationSnapshot(attempt)
     const keys = ['workspaceId', 'head', 'mergeHead', 'indexSha256', 'statusSha256']
     if (snapshot ? !body.expectedWorkspace || keys.some(key => snapshot[key] !== body.expectedWorkspace[key]) : body.expectedWorkspace !== null) throw reject('Integration workspace changed after the operator snapshot')
-    if (snapshot && await workspaceGit(attempt.workspaces.developer, ['ls-files', '--unmerged'])) throw reject('Integration has unresolved paths; preserve the index for the Developer')
+    if (!permit?.[childPermit] && snapshot && await workspaceGit(attempt.workspaces.developer, ['ls-files', '--unmerged'])) throw reject('Integration has unresolved paths; preserve the index for the Developer')
     await verifyIntegrationInputs({ ...attempt, integrationInputs: desired }, { admissionRequired: false })
-    integrationReleased(attempt); rt.requireProjectAccess(actor, task.projectId, 'configure'); rt.projects.requireActive(task.projectId)
+    integrationReleased(attempt, permit); rt.requireProjectAccess(actor, task.projectId, permit?.[childPermit] ? 'task-write' : 'configure', task); rt.projects.requireActive(task.projectId)
     if ((task.collaboration?.generation ?? 0) !== body.generation || task.deliveryAttemptId !== attempt.id || attempt.candidateSha || attempt.cancelRequested) throw reject('Integration admission changed during validation')
-    const admission = { id: `integration-admission-${randomUUID()}`, version: 'project-integration-input/v1', requestId: body.requestId, intentSha256, by: actor.memberId, at: Date.now(), inputs: desired, snapshot, previousGeneration: body.generation }
+    const admission = { id: `integration-admission-${randomUUID()}`, version: 'project-integration-input/v1', requestId: body.requestId, intentSha256, by: actor.memberId, at: Date.now(), inputs: desired, snapshot, previousGeneration: body.generation, ...(permit?.[childPermit] ? { origin: 'project-child-results', sourceWaitId: permit.proof.sourceWaitId, sourcesFingerprint: permit.proof.signature, childResults: structuredClone(permit.proof.sources) } : {}) }
     if (!rt.projectEffects) throw reject('Integration admission needs durable Effects')
     const token = rt.projectEffects.stage({ kind: 'integration.admit', key: `${attempt.id}:${body.requestId}`, projectId: task.projectId, taskId: task.id, payload: { attemptId: attempt.id, admissionId: admission.id, intentSha256 } })
     const previousInputs = attempt.integrationInputs, previousAdmissions = attempt.integrationAdmissions?.slice()
     admission.effect = token
     attempt.integrationInputs = desired
     ;(attempt.integrationAdmissions ??= []).push(admission)
-    if (task.collaboration) ++task.collaboration.generation
+    if (task.collaboration && !permit?.[childPermit]) ++task.collaboration.generation
     admission.generation = task.collaboration?.generation ?? 0
     try { await rt.projectEffects.persist(token) }
     catch (error) {
@@ -415,12 +435,13 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     return inputs
   }
   async function seal(attempt) {
+    verifyChildAdmissions(attempt)
     const settings = settingsOf(projectOf(attempt.projectId))
     const workspace = attempt.workspaces.developer
     const parent = attempt.seedSha ?? attempt.baseSha, upstream = attempt.publicationBinding?.upstreamSha
-    const approved = await verifyIntegrationInputs(attempt), mergeHead = await mergeHeadOf(workspace)
+    const approved = await verifyIntegrationInputs(attempt), mergeHeads = await mergeHeadsOf(workspace)
     const trusted = [...new Set([upstream, ...approved.map(row => row.sha)].filter(Boolean))]
-    if (mergeHead && !trusted.includes(mergeHead)) throw reject('Merge input is not a pinned upstream or approved operator source; merge the pinned upstream or obtain explicit operator-input admission')
+    if (mergeHeads.some(sha => !trusted.includes(sha))) throw reject('Merge input is not a pinned upstream or approved operator source; merge the pinned upstream or obtain explicit operator-input admission')
     if (await workspaceGit(workspace, ['ls-files', '--unmerged'])) throw reject('Trusted integration has unresolved paths')
     const names = [...(await workspaceGit(workspace, ['diff', '--name-only', attempt.baseSha])).split('\n'), ...(await workspaceGit(workspace, ['ls-files', '--others', '--exclude-standard'])).split('\n')].filter(Boolean)
     if (!names.length) throw reject('Developer produced no code change')
@@ -435,18 +456,18 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const ancestor = async (a, b) => { try { await workspaceGit(workspace, ['merge-base', '--is-ancestor', a, b]); return true } catch (error) { if (error.code === 1) return false; throw error } }
     const needed = []
     for (const sha of trusted) if (!await ancestor(sha, parent)) needed.push(sha)
-    if (mergeHead || needed.length) {
+    if (mergeHeads.length || needed.length) {
       const head = await workspaceGit(workspace, ['rev-parse', 'HEAD'])
       if (!await ancestor(parent, head)) throw reject('Integration no longer descends from the trusted previous candidate')
-      for (const sha of needed) if (!await ancestor(sha, head) && !(mergeHead && await ancestor(sha, mergeHead))) throw reject(sha === upstream ? 'Developer must merge the pinned upstream before sealing published rework' : 'Developer must merge every pinned integration source before sealing')
+      for (const sha of needed) if (!await ancestor(sha, head) && !(await Promise.all(mergeHeads.map(head => ancestor(sha, head)))).some(Boolean)) throw reject(sha === upstream ? 'Developer must merge the pinned upstream before sealing published rework' : 'Developer must merge every pinned integration source before sealing')
       // Use Git's supported reset lifecycle after sealing the exact staged tree;
       // never soft-reset an active merge or grant the SDK shared-ref writes.
       await workspaceGit(workspace, ['add', '--all', '--', '.'])
       const tree = await workspaceGit(workspace, ['write-tree'])
       const commit = await workspaceGit(workspace, ['commit-tree', tree, ...[parent, ...needed].flatMap(sha => ['-p', sha]), '-m', `Implement Task ${attempt.taskId}`])
       await workspaceGit(workspace, ['reset', '--hard', commit])
-      if (upstream && needed.includes(upstream)) attempt.evidence.upstreamIntegration = { sha: upstream, previousCandidate: parent, ref: attempt.publicationBinding.upstreamRef, method: mergeHead === upstream ? 'resolved-merge-head' : 'merged-ancestry', at: Date.now() }
-      if (approved.length) attempt.evidence.approvedIntegrations = { inputs: structuredClone(approved), previousCandidate: parent, mergeHead, tree, at: Date.now() }
+      if (upstream && needed.includes(upstream)) attempt.evidence.upstreamIntegration = { sha: upstream, previousCandidate: parent, ref: attempt.publicationBinding.upstreamRef, method: mergeHeads.includes(upstream) ? 'resolved-merge-head' : 'merged-ancestry', at: Date.now() }
+      if (approved.length) attempt.evidence.approvedIntegrations = { inputs: structuredClone(approved), previousCandidate: parent, mergeHead: mergeHeads.length ? mergeHeads.join('\n') : null, mergeHeads, tree, at: Date.now() }
     } else {
       await workspaceGit(workspace, ['reset', '--soft', parent]) // Do not transfer unpublished worker history.
       if (await workspaceGit(workspace, ['status', '--porcelain'])) {
@@ -774,6 +795,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const attempt = ownEntry(attempts(), claim.attemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.protocol !== 'project-handoff/v1' || attempt.status !== 'running') throw reject('Pool Attempt is unavailable')
     const role = definition.role, project = projectOf(task.projectId)
+    if (role === 'developer' && task.projectTask?.wait && task.projectTaskKind === 'code') await childInputs.admit(task.id, claim)
     const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision)
     try {
       definition = { ...pinned.definition, memory: definition.memory }
@@ -970,7 +992,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.role) && ['worktree', 'resource-clone'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

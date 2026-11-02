@@ -1,10 +1,12 @@
 // Project semantics on the original Task records. No separate queue or store.
 import { ownEntry } from './store.js'
+import { createHash } from 'node:crypto'
 import { stageRoleSummary, rollbackRoleSummary } from './project-context-memory.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 const VERSION = 'project-task/v1'
 const fail = message => Object.assign(new Error(message), { code: 'bot/task-contract' })
 const copy = value => structuredClone(value)
+const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const bounded = (value, name, max = 2000) => {
   if (typeof value !== 'string' || !value.trim() || Array.from(value).length > max) throw fail(`${name} requires bounded nonempty text`)
   return value.trim()
@@ -69,6 +71,8 @@ export function addTaskDependencies(state, task, ids, wait) {
     if (child.projectTask.parentTaskId && child.projectTask.parentTaskId !== task.id) throw fail('Child Task already belongs to another parent')
     return child
   })
+  if (row.wait?.id === wait.id || row.waitHistory?.some(previous => previous.wait.id === wait.id)) throw fail('Task wait ID was reused for another execution')
+  if (row.wait) (row.waitHistory ??= []).push({ wait: copy(row.wait), dependencies: copy(row.dependencies), at: Date.now() })
   row.dependencies = ids.map(taskId => ({ taskId, status: 'waiting' }))
   row.wait = { ...copy(wait), status: 'waiting', at: Date.now() }
   for (const child of children) { child.projectTask.parentTaskId = task.id; dependencyResult(state, child) }
@@ -78,7 +82,16 @@ export function dependencyResult(state, child) {
   const parent = ownEntry(state.tasks ?? {}, child.projectTask?.parentTaskId)
   if (!parent || parent.projectId !== child.projectId) return false
   const dependency = parent.projectTask?.dependencies.find(row => row.taskId === child.id)
-  if (!dependency || dependency.status === 'waived') return false
+  if (!dependency) return false
+  if (dependency.status === 'waived') {
+    const result = dependency.result
+    if (!result?.replacementTaskId) return false
+    const replacement = ownEntry(state.tasks ?? {}, result.replacementTaskId)
+    if (replacement && replacement.projectId === parent.projectId && replacement.status === 'accepted' && replacement.completedBy?.kind === 'chief' && dependencyFact(state, parent, replacement.id, { linked: false }).outcomeVersion === result.replacementVersion) return false
+    dependency.status = 'waiting'; dependency.invalidatedResolution = copy(dependency.resolution); delete dependency.result
+    if (parent.projectTask.wait?.status === 'ready') parent.projectTask.wait.status = 'waiting'
+    return true
+  }
   // A failed Attempt, cancelled child, or unadjudicated result never satisfies a wait.
   if (child.status !== 'accepted' || child.completedBy?.kind !== 'chief' || !child.completedBy.decisionId) {
     dependency.status = 'waiting'; delete dependency.result
@@ -89,6 +102,55 @@ export function dependencyResult(state, child) {
   dependency.result = { taskId: child.id, decisionId: child.completedBy.decisionId, requirementsRevision: child.projectTask.requirements.revision,
     result: copy(child.result ?? null), attemptId: child.deliveryAttemptId ?? null, candidateSha: ownEntry(state.projectAttempts ?? {}, child.deliveryAttemptId)?.candidateSha ?? null, integrated: false }
   return true
+}
+function outcomeData(state, child) {
+  const attempt = ownEntry(state.projectAttempts ?? {}, child.deliveryAttemptId)
+  if (attempt && (attempt.projectId !== child.projectId || attempt.taskId !== child.id)) return null
+  if (child.projectTask && (child.projectTask.version !== VERSION || !Number.isSafeInteger(child.projectTask.requirements?.revision))) return null
+  return { projectId: child.projectId, taskId: child.id, status: child.status, requirementsRevision: child.projectTask?.requirements.revision ?? null,
+    decisionId: child.completedBy?.decisionId ?? child.projectTask?.results.at(-1)?.decision?.id ?? null,
+    attemptId: child.deliveryAttemptId ?? null, candidateSha: attempt?.candidateSha ?? null, repository: attempt?.requirement?.repository ?? null }
+}
+export function dependencyFact(state, parent, taskId, { linked = true } = {}) {
+  const child = ownEntry(state.tasks ?? {}, taskId)
+  if (ownEntry(state.tasks ?? {}, parent.id)?.projectId !== parent.projectId || !child || child.projectId !== parent.projectId) throw fail('Dependency is unavailable in this Project')
+  if (linked && !parent.projectTask?.dependencies.some(row => row.taskId === taskId)) throw fail('Task is not a current dependency')
+  const outcome = outcomeData(state, child)
+  if (!outcome) throw fail('Dependency outcome contract or Attempt scope is unavailable')
+  const data = { ...outcome, parentTaskId: parent.id, parentRequirementsRevision: parent.projectTask?.requirements.revision ?? null }
+  return { ...data, version: fingerprint(data), outcomeVersion: fingerprint(outcome) }
+}
+export function taskOutcome(state, task) {
+  const data = outcomeData(state, task)
+  return data ? { ...data, version: fingerprint(data) } : { projectId: task.projectId, taskId: task.id, status: task.status, available: false, version: null }
+}
+export function resolveDependency(state, parent, body, decision) {
+  chief(parent, decision)
+  const row = contract(parent), dependency = row.dependencies.find(item => item.taskId === body?.taskId)
+  if (!dependency || !['waiting', 'ready'].includes(row.wait?.status)) throw fail('Dependency wait changed or already resumed')
+  const source = dependencyFact(state, parent, body.taskId)
+  if (source.version !== body.version) throw fail('Dependency outcome changed after the Chief snapshot')
+  if (!Array.isArray(body.evidence) || !body.evidence.length || body.evidence.length > 8) throw fail('Dependency resolution requires explicit evidence references')
+  const evidence = body.evidence.map(value => bounded(value, 'Resolution evidence', 300))
+  const intent = { taskId: body.taskId, version: body.version, evidence, replacementTaskId: body.replacementTaskId ?? null, replacementVersion: body.replacementVersion ?? null }
+  if (dependency.resolution?.decisionId === decision.id) {
+    if (dependency.resolution.intentSha256 !== fingerprint(intent)) throw fail('Dependency decision ID was reused with another intent')
+    return copy(dependency)
+  }
+  let replacement
+  if (body.replacementTaskId !== undefined) {
+    replacement = dependencyFact(state, parent, body.replacementTaskId, { linked: false })
+    const task = ownEntry(state.tasks, body.replacementTaskId)
+    if (task.status !== 'accepted' || task.completedBy?.kind !== 'chief' || !task.completedBy.decisionId) throw fail('An accepted replacement with Chief evidence is required')
+    if (descendant(state, task.id, parent.id)) throw fail('Replacement creates a Task dependency cycle')
+    if (body.replacementVersion !== replacement.outcomeVersion) throw fail('Replacement outcome changed after the Chief snapshot')
+  }
+  dependency.status = 'waived'
+  dependency.resolution = { decisionId: decision.id, runId: decision.runId, reason: decision.reason, evidence, sourceVersion: source.version, intentSha256: fingerprint(intent), at: Date.now() }
+  dependency.result = { kind: 'chief-resolution', taskId: body.taskId, sourceTaskId: replacement?.taskId ?? null, decisionId: decision.id,
+    ...(replacement ? { replacementTaskId: replacement.taskId, replacementVersion: replacement.outcomeVersion } : {}),
+    candidateSha: replacement?.candidateSha ?? null, evidence, reason: decision.reason, verification: 'chief-judgement-not-host-tests', integrated: false }
+  return copy(dependency)
 }
 export function readyTaskWait(state, task) {
   const row = contract(task), wait = row.wait
@@ -105,11 +167,13 @@ export function readyTaskWait(state, task) {
 export function cancelTask(task, decision) {
   chief(task, decision)
   const row = contract(task)
-  if (task.collaboration?.claim?.status === 'active') throw fail('Active execution must stop before cancellation')
+  const claim = task.collaboration?.claim
+  if (claim?.status === 'active' && claim.chiefRunId !== decision.runId) throw fail('Active execution must stop before cancellation')
   if (row.results.some(result => result.decision?.id === decision.id)) return false
   if (task.status === 'accepted') throw fail('Completed Task must be reopened before cancellation')
   row.results.push({ status: 'cancelled', reason: decision.reason, decision: copy(decision), at: Date.now() })
   task.status = 'cancelled'
+  if (claim?.chiefRunId === decision.runId) claim.status = 'completed'
   if (task.collaboration) { task.collaboration.status = 'cancelled'; ++task.collaboration.generation }
   return true
 }
@@ -185,6 +249,9 @@ export function createProjectTaskLifecycle(rt) {
         reopenTask(task, audit)
         dependencyResult(rt.state, task)
         token = stageStart(task, audit)
+      } else if (audit.action === 'resolve-dependency') {
+        resolveDependency(rt.state, task, changes.dependency, audit)
+        token = stageOwnResume(task) ?? rt.projectEffects.stage({ kind: 'task.transition', key: audit.id, projectId: task.projectId, taskId: task.id, payload: { decisionId: audit.id, action: audit.action } })
       } else if (audit.action === 'cancel') {
         cancelTask(task, audit)
         dependencyResult(rt.state, task)
@@ -241,13 +308,23 @@ export function createProjectTaskLifecycle(rt) {
     }
     return { status: 'waiting-children', childTaskIds: children.map(child => child.id), wait: copy(task.projectTask.wait) }
   }
+  function stageOwnResume(task) {
+    const ready = readyTaskWait(rt.state, task)
+    if (!ready) return null
+    return rt.projectEffects.stage({ kind: 'task.resume', key: `${task.id}:${ready.id}`, projectId: task.projectId, taskId: task.id, payload: { waitId: ready.id } })
+  }
   function stageDependencyResume(child) {
     if (!child.projectTask?.parentTaskId) return null
     const parent = taskOf(child.projectTask.parentTaskId)
     dependencyResult(rt.state, child)
-    const ready = readyTaskWait(rt.state, parent)
-    if (!ready) return null
-    return rt.projectEffects.stage({ kind: 'task.resume', key: `${parent.id}:${ready.id}`, projectId: parent.projectId, taskId: parent.id, payload: { waitId: ready.id } })
+    const resume = stageOwnResume(parent)
+    if (resume) return resume
+    if (parent.collaboration?.status !== 'waiting-children' || !(child.status === 'cancelled' || child.status === 'open' && child.projectTask?.results.at(-1)?.decision?.action === 'reopen') || !['waiting', 'ready'].includes(parent.projectTask.wait?.status)) return null
+    // A formal cancellation or reopening changes the dependency plan; this is
+    // a semantic Chief decision, not a model call for each execution event.
+    const outcome = dependencyFact(rt.state, parent, child.id)
+    return rt.projectEffects.stage({ kind: 'task.dependency-review', key: `${parent.id}:${parent.projectTask.wait.id}:${child.id}:${outcome.version}`, projectId: parent.projectId, taskId: parent.id,
+      payload: { waitId: parent.projectTask.wait.id, childTaskId: child.id, version: outcome.version } })
   }
   async function requestChange(body, actor) {
     const task = taskOf(body.taskId)
@@ -291,6 +368,13 @@ export function install(rt) {
     await rt.projectDelegations.background(actor.memberId, actor.sessionId)
     rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
     return rt.projectScheduler.request({ taskId: task.id, requestId: `chief-${effect.payload.decisionId}` }, actor)
+  } })
+  rt.projectEffects.register('task.dependency-review', { async run(effect) {
+    const task = rt.projectTaskLifecycle.taskOf(effect.taskId), wait = task.projectTask?.wait
+    if (task.collaboration?.status !== 'waiting-children' || wait?.id !== effect.payload.waitId || !['waiting', 'ready'].includes(wait.status) || dependencyFact(rt.state, task, effect.payload.childTaskId).version !== effect.payload.version) throw new EffectCancelled('Dependency condition changed or parent already resumed')
+    if (!rt.state.projectChiefPolicies?.[task.projectId]?.enabled) throw new EffectDeferred('Chief dependency authority is not configured', { waitingFor: 'configuration' })
+    const run = await rt.projectChiefControl.request(task.projectId, 'dependency-review', effect.payload, task.id)
+    return { chiefRunId: run.id }
   } })
   rt.projectEffects.register('task.resume', { async run(effect) {
     const task = rt.projectTaskLifecycle.taskOf(effect.taskId)

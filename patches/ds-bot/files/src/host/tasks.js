@@ -15,6 +15,7 @@
 // A returned result may also be cancelled before acceptance. Cancelled and failed
 // are terminal, and accepted is reachable only from result-ready. A cancelled or
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
+import { taskOutcome } from './project-task-lifecycle.js'
 import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
 import { retiredBot } from './store.js'
@@ -387,6 +388,7 @@ export function install(rt) {
     const { claimCue, ...row } = task
     return {
       ...row,
+      ...(task.projectId && ownEntry(state.tasks, task.id) === task ? { outcome: taskOutcome(state, task) } : {}),
       actors: [...task.actors ?? []],
       ...(botRecord(task.ownerBotId)?.name ? { ownerBotName: botRecord(task.ownerBotId).name } : {}),
       ...(parent?.title ? { parentTitle: parent.title } : {}),

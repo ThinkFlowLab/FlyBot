@@ -1,6 +1,7 @@
 // One application boundary over existing Project services; no second executor/store.
 import { ownEntry } from './store.js'
 import { createHash } from 'node:crypto'
+import { taskOutcome } from './project-task-lifecycle.js'
 import { inspectionFacts } from './project-chief-control.js'
 import { EFFECT_PROTOCOL } from './project-effects.js'
 
@@ -74,7 +75,7 @@ export function taskView(state, task, { activity = {} } = {}) {
   }
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
-  return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, publication: 'published', phase, waitingFor, reason,
+  return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
     botId: c?.botId ?? null, currentRole, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
     contract: task.projectTask ? structuredClone(task.projectTask) : null,
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,

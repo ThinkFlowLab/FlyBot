@@ -427,3 +427,6 @@ Native resident Chief jobs now send the current protocol and scoped facts in eac
 ## Project Task lifecycle convergence (#2179)
 
 Project Task proposals carry explicit impact and scope fields alongside title and criteria. Publishing authorized work does not itself admit it to execution: the resident Chief must validate its requirements first. Consultation remains outside Task creation.
+
+
+#2179 follow-up: Finishing a Chief job wakes the existing Project scheduler after its scoped prompt restoration, delegation removal and state save. This is an event-driven wakeup, not a new scheduler or hardcoded inspection timer.

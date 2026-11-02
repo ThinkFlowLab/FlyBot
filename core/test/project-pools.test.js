@@ -465,3 +465,57 @@ test('restart replays committed child completion into one parent Handoff without
   assert.equal(parent.collaboration.claim.id, resumed.id)
   await g.rt.projectEffects.close()
 })
+
+test('cancelled child asks Chief to review the parent plan once without falsely satisfying the dependency', async () => {
+  const f = await projectTaskFixture()
+  await f.admit(); const claim = await f.claim()
+  const split = await f.pool.decide('task', claim, { action: 'split', reason: 'Independent work', requestId: 'review-wait', resumePoint: 'Integrate actual child outcome', children: [
+    { title: 'Child goal', criteria: 'Actual result verified', impact: 'Project correctness' },
+  ] })
+  const child = f.rt.state.tasks[split.childTaskIds[0]]
+  assert.equal(f.rt.projectTaskLifecycle.stageDependencyResume(child), null, 'A new proposed child is not an exceptional reopening')
+  child.status = 'cancelled'; child.projectTask.results.push({ status: 'cancelled', decision: { id: 'cancelled-child', action: 'cancel' } })
+  let requests = 0
+  f.rt.state.projectChiefPolicies = { p: { enabled: true } }
+  f.rt.projectChiefControl = { request: async (projectId, kind, source, taskId) => { assert.equal(projectId, 'p'); assert.equal(kind, 'dependency-review'); assert.equal(taskId, 'task'); assert.equal(source.childTaskId, child.id); ++requests; return { id: 'review-parent' } } }
+  const token = f.rt.projectTaskLifecycle.stageDependencyResume(child)
+  assert.equal(f.rt.state.projectEffects[token.id].kind, 'task.dependency-review')
+  await f.rt.projectEffects.persist(token)
+  await f.rt.projectEffects.drain()
+  await f.rt.projectEffects.persist(f.rt.projectTaskLifecycle.stageDependencyResume(child))
+  await f.rt.projectEffects.drain()
+  assert.equal(requests, 1)
+  assert.equal(f.task.projectTask.dependencies[0].status, 'waiting')
+  assert.equal(f.task.collaboration.status, 'waiting-children')
+  assert.equal(child.status, 'cancelled')
+  await f.rt.projectEffects.close()
+})
+
+test('a sealed parent resumes through one successor Attempt while retaining its logical role continuation', async () => {
+  const f = await projectTaskFixture()
+  await f.admit()
+  const claim = await f.claim()
+  const split = await f.pool.decide('task', claim, { action: 'split', reason: 'Independent validation goal', requestId: 'sealed-split', resumePoint: 'Integrate the accepted result', children: [{ title: 'Validate independent module', criteria: 'Module result accepted', impact: 'Validate the Project module' }] })
+  const child = f.rt.state.tasks[split.childTaskIds[0]]
+  child.status = 'accepted'; child.completedBy = { kind: 'chief', decisionId: 'accepted-independent-result' }
+  f.rt.projectTaskLifecycle.stageDependencyResume(child)
+  f.rt.state.projectAttempts = { [claim.attemptId]: { id: claim.attemptId, taskId: 'task', candidateSha: 'a'.repeat(40) } }
+  let successors = 0
+  f.adapter.rework = async () => {
+    ++successors
+    const next = { id: 'successor', taskId: 'task', feedback: { previousAttemptId: claim.attemptId } }
+    f.rt.state.projectAttempts[next.id] = next
+    f.rt.state.projectAttempts[claim.attemptId].supersededBy = next.id
+    f.task.deliveryAttemptId = next.id
+    return next.id
+  }
+  const first = await f.pool.resumeChildren('task', 'sealed-split')
+  assert.equal((await f.pool.resumeChildren('task', 'sealed-split')).id, first.id)
+  assert.equal(successors, 1)
+  assert.equal(first.attemptId, 'successor')
+  assert.equal(first.to, 'p:developer')
+  assert.equal(f.task.collaboration.attemptId, 'successor')
+  assert.equal(f.rt.state.projectAttempts[claim.attemptId].candidateSha, 'a'.repeat(40))
+  assert.notEqual(f.task.status, 'accepted')
+  await f.rt.projectEffects.close()
+})

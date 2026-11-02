@@ -193,3 +193,6 @@ scoped to the current claim. Detailed source/context reads retain existing auth.
 The task.change.request command submits revise/cancel/reopen suggestions for Chief judgement and returns applied:false plus the Chief run. Task views distinguish awaiting admission and waiting children. Split is a trusted role command, never a public role-token entry. See [Task lifecycle](project-task-lifecycle.md).
 
 A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.
+
+
+#2179 follow-up: Task views include a derived outcome reference and version for exact Chief-approved dependency replacement. This scoped metadata does not confer merge, closure or authority. Durable public receipts and bounded event/history interfaces remain #2185.
