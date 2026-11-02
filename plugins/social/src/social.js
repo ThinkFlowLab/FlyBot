@@ -4699,7 +4699,8 @@ export async function startSocial(service, config = {}) {
   // server (a file from before this check is bound to the configured server on first
   // use), and an explicit token (config or FLYBOT_SOCIAL_TOKEN) always wins.
   const explicit = config.token ?? process.env.FLYBOT_SOCIAL_TOKEN
-  let credentials = config.credentialsPath ? readCredentials(config.credentialsPath) : undefined
+  const saved = config.credentialsPath ? readCredentials(config.credentialsPath) : undefined
+  let credentials = saved
   if (credentials && config.server) {
     if (credentials.server === undefined) {
       credentials = { ...credentials, server: serverKey(config.server) }
@@ -4711,14 +4712,18 @@ export async function startSocial(service, config = {}) {
   if (credentials === undefined && explicit === undefined && config.server && config.onboard !== false) {
     // Asked before the onboarding, not after it: that call is a real home on the server, and a start
     // that cannot keep the token it is given must not spend one (and a round-trip) on every boot.
+    // Both leaves this start writes are named from what is already on disk, a local read before the
+    // call: the credentials file itself, and the `.bak` copy another server's credentials are kept
+    // under.
     if (config.credentialsPath && !leafWritable(config.credentialsPath)) throw refuseLeaf(config.credentialsPath)
+    const backup = config.credentialsPath && saved?.token && saved.server && serverKey(saved.server) !== serverKey(config.server)
+      ? `${config.credentialsPath}.${createHash('sha256').update(serverKey(saved.server)).digest('hex').slice(0, 8)}`
+      : undefined
+    if (backup && !leafWritable(backup)) throw refuseLeaf(backup)
     credentials = { ...(await onboardHome({ server: config.server, displayName: config.displayName ?? 'FlyBot', webhookUrl: config.webhookUrl, fetch: config.fetch })), server: serverKey(config.server) }
     if (config.credentialsPath) {
       // Another server's credentials stay, under their server, for switching back.
-      const previous = readCredentials(config.credentialsPath)
-      if (previous?.token && previous.server && serverKey(previous.server) !== serverKey(config.server)) {
-        writeCredentials(`${config.credentialsPath}.${createHash('sha256').update(serverKey(previous.server)).digest('hex').slice(0, 8)}`, previous)
-      }
+      if (backup) writeCredentials(backup, saved)
       writeCredentials(config.credentialsPath, credentials)
     }
   }
