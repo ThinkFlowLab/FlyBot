@@ -272,9 +272,33 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
   }
   const opened = open().catch(stop)
 
+  // One failed open — at start-up, or from a write that failed later — used to retire the
+  // journal for the rest of the run, so a single bad moment lost every later change of the
+  // session. The next save asks once more whether it can record again; a writer that still
+  // refuses stays stopped and only that save's write is skipped, and the asking is silent so a
+  // refusal is announced once, as `stop()` always did.
+  const reopen = async () => {
+    // A file that was removed to repair the folder must not continue the seq of the file that is
+    // gone: this restarts from the same empty state a fresh writer has, so the next line is a base.
+    lastText = undefined
+    seq = 0
+    bytes = 0
+    oldest = undefined
+    try {
+      await open()
+      stopped = false
+      because = undefined
+      return true
+    } catch (error) {
+      because = `${path} is not recording: ${error}`
+      return false
+    }
+  }
+
   const write = async (snapshot, actor) => {
     await opened
-    if (stopped || snapshot === lastText) return
+    if (stopped && !(await reopen())) return
+    if (snapshot === lastText) return
     // #2074: the same question `open()` asks, asked again when the write runs. A folder that was
     // real at start-up can be a link by now, and appending through it would put this snapshot in
     // a folder the team never named.
