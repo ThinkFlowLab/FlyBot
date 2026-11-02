@@ -16558,8 +16558,8 @@ function wireRoutes(nodes, edges, heights = {}) {
     const y1 = item.from.bottom;
     const y2 = item.to.top;
     const sameRow = y2 - y1 <= 0;
-    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, (y2 - y1) / 2);
-    const rowBottom = sameRow ? Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom)) : y1;
+    const rowBottom = Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom));
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, Math.max(0, (y2 - rowBottom) / 2));
     const yA = clearOf(rowBottom + gap, 1);
     const yB = clearOf(y2 - gap, -1);
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken);
