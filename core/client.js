@@ -879,6 +879,7 @@ var ZH = {
   "{n} line of reasoning": "{n} 行思考内容",
   "{n} lines of reasoning": "{n} 行思考内容",
   "Earlier messages": "更早的消息",
+  Connections: "连线",
   "Loading earlier messages…": "正在加载更早的消息…",
   "Couldn’t load earlier messages · Retry": "更早的消息没加载出来 · 重试",
   "Load earlier": "加载更早的消息",
@@ -4486,6 +4487,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-wires{position:absolute;left:calc(-1 * var(--bt-wf-wire-span,480px));top:0;width:calc(2 * var(--bt-wf-wire-span,480px));overflow:visible;pointer-events:none}
 .bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
 .bt-wf-wires marker path{fill:var(--bt-ink-3);stroke:none}
+.bt-wf-wires path[data-active]{stroke:var(--bt-accent);stroke-width:2.4}
+.bt-wf-wires path[data-dim]{opacity:.16}
+.bt-wf-hit{cursor:help}
 .bt-wf-node{position:absolute;width:168px;box-sizing:border-box;border:1px solid var(--bt-line);background:var(--bt-card);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px}
 @keyframes bt-wf-node-live{0%,100%{border-color:var(--bt-accent);box-shadow:0 0 0 2px rgba(77,107,254,.18),0 0 0 0 rgba(77,107,254,.2)}50%{border-color:rgba(77,107,254,.85);box-shadow:0 0 0 3px rgba(77,107,254,.35),0 0 14px 2px rgba(77,107,254,.22)}}
 .bt-wf-node.running{border-color:var(--bt-accent);animation:bt-wf-node-live 1.5s ease-in-out infinite}
@@ -16592,6 +16596,7 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
   const canvasRef = (0, import_react37.useRef)(null);
   const [measuredWidth, setCanvasWidth] = (0, import_react37.useState)(0);
   const [measuredHeights, setCardHeights] = (0, import_react37.useState)(null);
+  const [pointedWire, setPointedWire] = (0, import_react37.useState)(null);
   const nodes = graph.nodes ?? [];
   const edges = graph.edges ?? [];
   const status = graph.run?.nodeStatus ?? null;
@@ -16696,11 +16701,18 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
         (0, import_react37.createElement)(
           "div",
           { className: "bt-wf-plane", "data-plane": "1", style: { height, "--bt-wf-wire-span": `${WIRE_SPAN}px` } },
+          // P-395: every wire says which two cards it joins, and carries a 10px transparent
+          // hit path of its own: two wires that end at the same port are one stroke to the
+          // eye, so pointing at one has to be a hit test on that route, not on the stroke.
+          // The layer is no longer `aria-hidden`: each route is a named image, and the
+          // pointer marks the one under it while the rest recede. The geometry stays
+          // wireRoutes' own; this layer only adds a hit target and its name.
           (0, import_react37.createElement)(
             "svg",
             {
               className: "bt-wf-wires",
-              "aria-hidden": true,
+              role: "group",
+              "aria-label": t("Connections"),
               width: WIRE_SPAN * 2,
               height,
               viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`
@@ -16718,12 +16730,39 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
                 orient: "auto"
               }, (0, import_react37.createElement)("path", { d: "M0 0 10 5 0 10z" }))
             ),
-            (0, import_react37.createElement)("g", { transform: `translate(${WIRE_SPAN} 0)` }, routes.map((route) => (0, import_react37.createElement)("path", {
-              key: route.key,
-              d: route.d,
-              markerEnd: "url(#bt-wf-arrow)",
-              "data-route": route.back ? "back" : "forward"
-            })))
+            (0, import_react37.createElement)("g", { transform: `translate(${WIRE_SPAN} 0)` }, routes.map((route) => {
+              const active = pointedWire === route.key;
+              const dim = pointedWire !== null && !active;
+              const [from, to] = String(route.key).split(">");
+              const name = (id) => nodes.find((node) => node.id === id)?.name ?? id;
+              const label = `${name(from)} → ${name(to)}`;
+              const state = {
+                "data-key": route.key,
+                "data-active": active ? "" : void 0,
+                "data-dim": dim ? "" : void 0
+              };
+              return [
+                (0, import_react37.createElement)("path", {
+                  key: route.key,
+                  d: route.d,
+                  markerEnd: "url(#bt-wf-arrow)",
+                  "data-route": route.back ? "back" : "forward",
+                  ...state
+                }),
+                (0, import_react37.createElement)("path", {
+                  key: `${route.key}:hit`,
+                  className: "bt-wf-hit",
+                  d: route.d,
+                  ...state,
+                  "data-hit": "1",
+                  role: "img",
+                  "aria-label": label,
+                  style: { pointerEvents: "stroke", stroke: "transparent", strokeWidth: 10, fill: "none" },
+                  onPointerEnter: () => setPointedWire(route.key),
+                  onPointerLeave: () => setPointedWire((current) => current === route.key ? null : current)
+                }, (0, import_react37.createElement)("title", null, label))
+              ];
+            }))
           ),
           frames.map((frame) => (0, import_react37.createElement)("div", {
             key: frame.key,

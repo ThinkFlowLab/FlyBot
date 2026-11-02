@@ -302,7 +302,9 @@ test('a settled read lists factory pipelines and your own, and opens the flowcha
   const nodes = all(opened).filter((entry) => entry.props?.['data-node']).map((entry) => entry.props['data-node']).sort()
   assert.deepEqual(nodes, ['coder', 'planner', 'reviewer', 'tester'])
   assert.match(text(opened), /Parallel branch/)
-  const wires = all(opened).filter((entry) => entry.type === 'path' && typeof entry.props?.d === 'string' && entry.props.d.startsWith('M '))
+  // P-395 adds a hit path per route, so this counts the drawn stroke: one per edge.
+  const wires = all(opened).filter((entry) => entry.type === 'path' && entry.props?.['data-route'] !== undefined
+    && typeof entry.props?.d === 'string' && entry.props.d.startsWith('M '))
   assert.equal(wires.length, factory.edges.length)
   assert.match(wires[0].props.d, /M .* L /)
   // A factory graph has no run, so every seat is idle — not a fake queue.
@@ -1037,4 +1039,92 @@ test('#2122: a card between two cards on one column sends the wire round it', ()
   const to = cards.get('c')
   assert.deepEqual(points[0], [(from.left + from.right) / 2, from.bottom], "the wire leaves A's bottom port")
   assert.deepEqual(points[points.length - 1], [(to.left + to.right) / 2, to.top], "the wire lands on C's top port")
+})
+
+// P-395: two wires that end at the same port are one stroke to the eye, and the SVG was
+// `aria-hidden` with no per-wire name, so a narration that says "Reviewer hands it back"
+// left no way to point at which wire. Every route now carries a hit path of its own that
+// names the two cards it joins and points at itself while the pointer is on it. Read-only,
+// that is all it does: no commit.
+const wireName = (graph, from, to) => {
+  const name = (id) => graph.nodes.find((node) => node.id === id)?.name ?? id
+  return `${name(from)} → ${name(to)}`
+}
+const hitOf = (tree, from, to) => all(tree).find((entry) => entry.props?.['data-hit'] !== undefined
+  && entry.props?.['data-key'] === `${from}>${to}`)
+const drawnWireOf = (tree, from, to) => all(tree).find((entry) => entry.props?.markerEnd === 'url(#bt-wf-arrow)'
+  && entry.props?.['data-key'] === `${from}>${to}`)
+// A view whose state setters re-render: hovering a wire is a setter, and the assert has to
+// see the tree the second render produced.
+function mountView(props) {
+  runtime.reset()
+  let tree = renderTree(h(WorkflowsView, props))
+  const render = () => {
+    for (let guard = 0; guard < 10; guard += 1) {
+      tree = renderTree(h(WorkflowsView, props))
+      if (!runtime.dirty) break
+    }
+    return tree
+  }
+  return { get tree() { return tree }, render }
+}
+const flowView = (props = {}) => ({ phase: 'ready', pack: runPack, opened: { source: 'own', id: runGraph.id }, error: '', editing: false, ...props })
+
+test('P-395: every wire joins two named cards, and a hit path names them', () => {
+  const tree = renderView(flowView())
+  const failures = []
+  for (const edge of runGraph.edges) {
+    const key = `${edge.from}>${edge.to}`
+    const hit = hitOf(tree, edge.from, edge.to)
+    if (!hit) { failures.push(`${key} has no hit path of its own`); continue }
+    if (hit.props['data-key'] !== key) failures.push(`${key} hit path is keyed ${JSON.stringify(hit.props['data-key'])}`)
+    if (hit.props.style?.strokeWidth !== 10) failures.push(`${key} hit path is ${hit.props.style?.strokeWidth}px wide, not 10`)
+    const title = all(hit).find((entry) => entry.type === 'title')
+    const label = title ? text(title) : ''
+    if (label !== wireName(runGraph, edge.from, edge.to)) failures.push(`${key} names ${JSON.stringify(label)}, not ${JSON.stringify(wireName(runGraph, edge.from, edge.to))}`)
+  }
+  assert.deepEqual(failures, [], failures.join('\n'))
+})
+
+test('P-395: hovering one wire points at it and dims the others, then lets them all go', () => {
+  const view = mountView(flowView())
+  const hit = hitOf(view.tree, 'triage', 'claim')
+  assert.ok(hit, 'the triage>claim wire has a hit path to hover')
+  hit.props.onPointerEnter({})
+  view.render()
+  const failures = []
+  for (const edge of runGraph.edges) {
+    const key = `${edge.from}>${edge.to}`
+    const wire = drawnWireOf(view.tree, edge.from, edge.to)
+    if (!wire) { failures.push(`${key} is not drawn`); continue }
+    if (key === 'triage>claim') {
+      if (wire.props['data-active'] === undefined) failures.push(`${key} is not marked active while the pointer is on it`)
+      if (wire.props['data-dim'] !== undefined) failures.push(`${key} is dimmed while the pointer is on it`)
+    } else {
+      if (wire.props['data-dim'] === undefined) failures.push(`${key} is not dimmed while another wire is pointed at`)
+      if (wire.props['data-active'] !== undefined) failures.push(`${key} is marked active while the pointer is elsewhere`)
+    }
+  }
+  assert.deepEqual(failures, [], failures.join('\n'))
+  const pointed = hitOf(view.tree, 'triage', 'claim')
+  pointed.props.onPointerLeave({})
+  view.render()
+  const leftover = all(view.tree).filter((entry) => entry.type === 'path'
+    && entry.props?.['data-key'] && (entry.props['data-active'] !== undefined || entry.props['data-dim'] !== undefined))
+  assert.deepEqual(leftover.map((entry) => entry.props['data-key']), [], 'nothing stays pointed at after the pointer leaves')
+})
+
+test('P-395: a read-only graph commits nothing when a wire is hovered or clicked', async () => {
+  let commits = 0
+  const view = mountView(flowView({ onCommit: () => { commits += 1 } }))
+  const hit = hitOf(view.tree, 'triage', 'claim')
+  assert.ok(hit, 'a wire has a hit path to point at')
+  hit.props.onPointerEnter({})
+  view.render()
+  const now = hitOf(view.tree, 'triage', 'claim')
+  now.props.onPointerDown?.({ preventDefault() {}, stopPropagation() {}, target: { dataset: {} } })
+  now.props.onPointerUp?.({ preventDefault() {}, stopPropagation() {}, target: { dataset: {} } })
+  now.props.onClick?.({ preventDefault() {}, stopPropagation() {}, target: { dataset: {} } })
+  view.render()
+  assert.equal(commits, 0, 'a read-only flowchart commits nothing from a wire')
 })

@@ -553,6 +553,9 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-wf-wires{position:absolute;left:calc(-1 * var(--bt-wf-wire-span,480px));top:0;width:calc(2 * var(--bt-wf-wire-span,480px));overflow:visible;pointer-events:none}
 .bt-wf-wires path{fill:none;stroke:var(--bt-ink-3);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
 .bt-wf-wires marker path{fill:var(--bt-ink-3);stroke:none}
+.bt-wf-wires path[data-active]{stroke:var(--bt-accent);stroke-width:2.4}
+.bt-wf-wires path[data-dim]{opacity:.16}
+.bt-wf-hit{cursor:help}
 .bt-wf-node{position:absolute;width:168px;box-sizing:border-box;border:1px solid var(--bt-line);background:var(--bt-card);border-radius:12px;padding:8px 9px;display:flex;align-items:center;gap:8px}
 @keyframes bt-wf-node-live{0%,100%{border-color:var(--bt-accent);box-shadow:0 0 0 2px rgba(77,107,254,.18),0 0 0 0 rgba(77,107,254,.2)}50%{border-color:rgba(77,107,254,.85);box-shadow:0 0 0 3px rgba(77,107,254,.35),0 0 14px 2px rgba(77,107,254,.22)}}
 .bt-wf-node.running{border-color:var(--bt-accent);animation:bt-wf-node-live 1.5s ease-in-out infinite}

@@ -297,6 +297,9 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
   const canvasRef = useRef(null)
   const [measuredWidth, setCanvasWidth] = useState(0)
   const [measuredHeights, setCardHeights] = useState(null)
+  // P-395: the wire the pointer is on, so its own stroke can be pointed at and the
+  // others can recede. It is read by the pointer alone and commits nothing.
+  const [pointedWire, setPointedWire] = useState(null)
   const nodes = graph.nodes ?? []
   const edges = graph.edges ?? []
   // A live run names every seat. A definition with no run is idle, the way the
@@ -390,18 +393,45 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0, 
     h('div', { className: 'bt-wf-stage', style: pad > 0 ? { height: drawnHeight, paddingLeft: pad } : { height: drawnHeight } },
       h('div', { className: 'bt-wf-fit', style: { height, transform: `scale(${scale})` } },
         h('div', { className: 'bt-wf-plane', 'data-plane': '1', style: { height, '--bt-wf-wire-span': `${WIRE_SPAN}px` } },
+      // P-395: every wire says which two cards it joins, and carries a 10px transparent
+      // hit path of its own: two wires that end at the same port are one stroke to the
+      // eye, so pointing at one has to be a hit test on that route, not on the stroke.
+      // The layer is no longer `aria-hidden`: each route is a named image, and the
+      // pointer marks the one under it while the rest recede. The geometry stays
+      // wireRoutes' own; this layer only adds a hit target and its name.
       h('svg', {
-        className: 'bt-wf-wires', 'aria-hidden': true,
+        className: 'bt-wf-wires', role: 'group', 'aria-label': t('Connections'),
         width: WIRE_SPAN * 2, height, viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`,
       },
       h('defs', null,
         h('marker', {
           id: 'bt-wf-arrow', viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto',
         }, h('path', { d: 'M0 0 10 5 0 10z' }))),
-      h('g', { transform: `translate(${WIRE_SPAN} 0)` }, routes.map((route) => h('path', {
-        key: route.key, d: route.d, markerEnd: 'url(#bt-wf-arrow)',
-        'data-route': route.back ? 'back' : 'forward',
-      })))),
+      h('g', { transform: `translate(${WIRE_SPAN} 0)` }, routes.map((route) => {
+        const active = pointedWire === route.key
+        const dim = pointedWire !== null && !active
+        const [from, to] = String(route.key).split('>')
+        const name = (id) => nodes.find((node) => node.id === id)?.name ?? id
+        const label = `${name(from)} → ${name(to)}`
+        const state = {
+          'data-key': route.key,
+          'data-active': active ? '' : undefined,
+          'data-dim': dim ? '' : undefined,
+        }
+        return [
+          h('path', {
+            key: route.key, d: route.d, markerEnd: 'url(#bt-wf-arrow)',
+            'data-route': route.back ? 'back' : 'forward', ...state,
+          }),
+          h('path', {
+            key: `${route.key}:hit`, className: 'bt-wf-hit', d: route.d, ...state,
+            'data-hit': '1', role: 'img', 'aria-label': label,
+            style: { pointerEvents: 'stroke', stroke: 'transparent', strokeWidth: 10, fill: 'none' },
+            onPointerEnter: () => setPointedWire(route.key),
+            onPointerLeave: () => setPointedWire((current) => (current === route.key ? null : current)),
+          }, h('title', null, label)),
+        ]
+      }))),
       frames.map((frame) => h('div', {
         key: frame.key, className: 'bt-wf-par',
         style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
