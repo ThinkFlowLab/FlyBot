@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -139,4 +139,83 @@ test('the segment file holds records and names only', (t) => {
   trace.flush(); trace.close()
   const data = JSON.parse(readFileSync(join(dir, 'trace-000001.json'), 'utf8'))
   assert.deepEqual(Object.keys(data).sort(), ['names', 'records', 'segment', 'startedAt', 'version'])
+})
+
+// A temporary name that is a link or a directory is not the writer's to replace: the write
+// would land outside (a link) or crash (a directory), and the rename after it would put the
+// link where the segment belongs. The refusal names the name and touches nothing.
+const OUTSIDE = 'outside keeps its own bytes\n'
+const GOOD_SEGMENT = JSON.stringify({ version: 1, segment: 1, startedAt: 1, names: {}, records: [{ r: 'm', t: 1, id: 'old' }] })
+const refusedWrite = ({ shape, seed }) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-timeline-store-'))
+  const dir = join(root, 'trace')
+  mkdirSync(dir)
+  const outside = join(root, 'outside.txt')
+  writeFileSync(outside, OUTSIDE)
+  const temporary = join(dir, 'trace-000001.json.tmp')
+  const segment = join(dir, 'trace-000001.json')
+  if (seed) writeFileSync(segment, seed)
+  if (shape === 'symlink') symlinkSync(outside, temporary)
+  else if (shape === 'hardlink') linkSync(outside, temporary)
+  else mkdirSync(temporary)
+  const warnings = []
+  const trace = openTrace({ dir, now: () => 10_000, warn: (...args) => warnings.push(args.join(' ')) })
+  trace.append(rec(9_000))
+  const flushed = trace.flush()
+  const facts = {
+    flushed,
+    warnings,
+    outside: readFileSync(outside, 'utf8'),
+    segment: existsSync(segment) ? readFileSync(segment, 'utf8') : null,
+    temp: (() => { try { const info = lstatSync(temporary); return { link: info.isSymbolicLink(), dir: info.isDirectory() } } catch { return null } })(),
+  }
+  trace.close()
+  rmSync(root, { recursive: true, force: true })
+  return facts
+}
+
+for (const shape of ['symlink', 'hardlink', 'directory']) {
+  test(`a ${shape} at the temporary name refuses the write and changes nothing`, () => {
+    // Nothing made yet: the segment is not created, and the bytes behind the name are untouched.
+    const absent = refusedWrite({ shape })
+    assert.equal(absent.flushed, false)
+    assert.equal(absent.segment, null)
+    assert.equal(absent.outside, OUTSIDE)
+    assert.equal(absent.warnings.length, 1)
+    assert.match(absent.warnings[0], /trace-000001\.json\.tmp is not a plain file of its own/)
+    // The refused name is left exactly as it was, not cleaned up and not replaced.
+    assert.ok(absent.temp?.link === (shape === 'symlink') && absent.temp?.dir === (shape === 'directory'))
+    // A segment already there keeps its bytes: the rename never happens either.
+    const existing = refusedWrite({ shape, seed: GOOD_SEGMENT })
+    assert.equal(existing.flushed, false)
+    assert.equal(existing.segment, GOOD_SEGMENT)
+    assert.equal(existing.outside, OUTSIDE)
+    assert.equal(existing.warnings.length, 1)
+    assert.match(existing.warnings[0], /is not a plain file of its own/)
+  })
+}
+
+test('a missing temporary name is a writer’s to create', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const trace = openTrace({ dir, now: () => 10_000 })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), true)
+  assert.equal(JSON.parse(readFileSync(join(dir, 'trace-000001.json'), 'utf8')).records.length, 1)
+  assert.ok(!existsSync(join(dir, 'trace-000001.json.tmp')))
+  trace.close()
+})
+
+test('a plain temporary file a crashed writer left behind (one name) is overwritten', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const temporary = join(dir, 'trace-000001.json.tmp')
+  writeFileSync(temporary, 'half a write')
+  assert.equal(lstatSync(temporary).nlink, 1)
+  const trace = openTrace({ dir, now: () => 10_000 })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), true)
+  assert.ok(!existsSync(temporary))
+  assert.equal(JSON.parse(readFileSync(join(dir, 'trace-000001.json'), 'utf8')).records.length, 1)
+  trace.close()
 })
