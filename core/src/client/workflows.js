@@ -166,6 +166,36 @@ function cutsCard(boxes, x1, y1, x2, y2, from, to) {
     && maxX > leftOf(box) + 1 && minX < rightOf(box) - 1 && maxY > box.top + 1 && minY < box.bottom - 1)
 }
 
+// #2126 turned a back edge at the two cards' centres: one run left the source's right
+// edge and one landed on the target's. A parallel layer seats a card on that same row,
+// so either run crossed it — and the card, drawn on top, hid the wire, which then read
+// as a link to the neighbour. Each turn now runs in the gap just outside its own card's
+// row, and walks further out until nothing sits on it.
+function clearRun(boxes, id, y, xa, xb, dir) {
+  const lo = Math.min(xa, xb)
+  const hi = Math.max(xa, xb)
+  let level = y
+  for (let step = 0; step < LANE_REACH * 4; step += 1) {
+    const blocked = boxes.some((box) => box.id !== id
+      && hi > leftOf(box) + 1 && lo < rightOf(box) - 1
+      && level > box.top + 1 && level < box.bottom - 1)
+    if (!blocked) return level
+    level += dir * WIRE_LANE
+  }
+  return level
+}
+
+function rowGap(boxes, box, dir) {
+  const edge = dir < 0 ? box.top : box.bottom
+  const others = boxes.filter((one) => one.id !== box.id
+    && (dir < 0 ? one.bottom <= box.top + 1 : one.top >= box.bottom - 1))
+  if (!others.length) return edge + dir * WIRE_GAP
+  const near = dir < 0
+    ? Math.max(...others.map((one) => one.bottom))
+    : Math.min(...others.map((one) => one.top))
+  return (near + edge) / 2
+}
+
 function laneFor(base, yA, yB, boxes, from, to, taken) {
   const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < yB && yA < lane.yB)
     && !boxes.some((box) => box !== from && box !== to
@@ -197,12 +227,14 @@ export function wireRoutes(nodes, edges, heights = {}) {
       const y1 = item.from.top + item.from.height / 2
       const y2 = item.to.top + item.to.height / 2
       const lane = rightMost + WIRE_GAP + at * WIRE_LANE
+      const yA = clearRun(boxes, item.from.id, rowGap(boxes, item.from, -1), x1, lane, -1)
+      const yB = clearRun(boxes, item.to.id, rowGap(boxes, item.to, 1), x2, lane, 1)
       routes.push({
         key: `${item.from.id}>${item.to.id}`,
         back: true,
-        d: `M ${x1} ${y1} L ${lane} ${y1} L ${lane} ${y2} L ${x2} ${y2}`,
+        d: `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`,
       })
-      taken.push({ x: lane, yA: Math.min(y1, y2), yB: Math.max(y1, y2) })
+      taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) })
     })
   // A back edge turns at its cards' centres; a forward edge keeps clear of them.
   const centres = []
