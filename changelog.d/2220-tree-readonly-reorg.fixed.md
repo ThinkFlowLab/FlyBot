@@ -1,0 +1,1 @@
+The reorganization notice in the sidebar no longer offers `Undo` and `Dismiss` in a read-only window: the card still shows what the last run changed and what an undo kept, but the two buttons are writes the host refuses, so they are not drawn while `roster.readOnly` is set ([#2220](https://github.com/ThinkFlowLab/FlyBot/issues/2220)).

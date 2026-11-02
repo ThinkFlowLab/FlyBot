@@ -427,8 +427,8 @@ window.__ModuleLoader__.load({
       if (!run || overview.dismissed === run.id || now - run.at > NOTICE_DAYS * 24 * 60 * 60 * 1000) return null
       return run
     }
-    /** The notice body (pure, for tests): title, what moved, Undo / Dismiss. */
-    function ReorgCard({ run, busy = false, note = null, onUndo, onDismiss }) {
+    /** The notice body (pure, for tests): title, what moved, Undo / Dismiss (neither while locked). */
+    function ReorgCard({ run, busy = false, note = null, locked = false, onUndo, onDismiss }) {
       const lines = run.summary ?? []
       const undone = Boolean(run.undone)
       return h('div', { className: 'flybot-reorg', role: 'status', 'aria-label': 'Tree reorganized' },
@@ -436,17 +436,21 @@ window.__ModuleLoader__.load({
         h('ul', { className: 'flybot-reorg-list' }, ...lines.slice(0, NOTICE_LINES).map((line, i) => h('li', { key: i }, line)),
           lines.length > NOTICE_LINES ? h('li', { key: 'more' }, `and ${lines.length - NOTICE_LINES} more`) : null),
         undone && run.undone.kept?.length ? h('div', { className: 'flybot-reorg-note' }, `Kept: ${run.undone.kept.join('; ')}`) : null,
-        h('div', { className: 'flybot-reorg-actions' },
+        locked ? null : h('div', { className: 'flybot-reorg-actions' },
           undone ? null : h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onUndo }, 'Undo'),
           h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onDismiss }, 'Dismiss')),
         note ? h('div', { className: 'flybot-reorg-note', role: 'alert' }, note) : null)
     }
     function makeReorgNotice(flybot) {
-      return function ReorgNotice() {
+      return function ReorgNotice({ roster }) {
         useReorgStyles()
         const [overview, setOverview] = useState(null)
         const [busy, setBusy] = useState(false)
         const [note, setNote] = useState(null)
+        // The notice is a read (`tree/reorg`), so a read-only window keeps it; `tree/undo` and
+        // `tree/dismiss` are writes the host refuses there, so it offers neither (#2220). Same
+        // trimmed signal the workflow page uses for its own write entries (#2200).
+        const locked = (typeof roster?.readOnly === 'string' ? roster.readOnly.trim() : '') !== ''
         const load = useCallback(() => { Promise.resolve(flybot.call('tree/reorg', {})).then(v => setOverview(v ?? null), () => { /* an older host has no endpoint: no notice */ }) }, [])
         useEffect(() => {
           load()
@@ -466,7 +470,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           load()
         }
-        return h(ReorgCard, { run, busy, note, onUndo: act('tree/undo'), onDismiss: act('tree/dismiss') })
+        return h(ReorgCard, { run, busy, note, locked, onUndo: act('tree/undo'), onDismiss: act('tree/dismiss') })
       }
     }
     // The tag after a Bot's row: 'idle' (no activity for a long time) or 'archived' (out of the tree;
