@@ -94,3 +94,21 @@ test('role execution experience stays unverified, versions its source and cannot
   stagePublicRoleMemory(input.state, { projectId: 'p', body: { role: 'developer', memoryId: first.id, text: 'Use the verified host check', classification: 'fact', source: { kind: 'human', reference: 'Reviewed test evidence' } }, actor: { memberId: 'owner' }, idFactory: () => 'unused' })
   assert.throws(() => stageExecutionMemory(input.state, { ...note, claim: { ...input.claim, id: 'third-role-claim' } }), /Human-controlled/)
 })
+
+test('first summary and experience staging can roll back, while concurrent memory changes are retained', async () => {
+  const { stageExecutionMemory, rollbackExecutionMemory } = await import('../src/host/project-context-memory.js')
+  const input = fixture(), staged = stageRoleSummary(input.state, input)
+  assert.equal(rollbackRoleSummary(input.state, staged), true)
+  assert.equal(readRoleSummary(input.state, 'p', 't', 'developer'), null)
+  const note = { ...input, requestId: 'one-note', factKey: 'scope', text: 'A claim needs current authority' }
+  const first = stageExecutionMemory(input.state, note)
+  assert.equal(rollbackExecutionMemory(input.state, first), true)
+  assert.equal(Object.keys(input.state.projectRoleMemory).length, 0)
+  stageExecutionMemory(input.state, note)
+  const next = stageExecutionMemory(input.state, { ...note, claim: { ...input.claim, id: 'new-claim' }, text: 'A current generation also matters' })
+  assert.equal(rollbackExecutionMemory(input.state, next), true)
+  const changed = stageExecutionMemory(input.state, { ...note, claim: { ...input.claim, id: 'third-claim' } })
+  input.state.projectRoleMemory[changed.id].status = 'archived'
+  assert.equal(rollbackExecutionMemory(input.state, changed), false)
+  assert.equal(rollbackExecutionMemory(input.state, null), false)
+})

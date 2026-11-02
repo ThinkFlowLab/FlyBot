@@ -777,3 +777,23 @@ test('context tools keep large histories bounded and read exact private sources 
   rt.state.tasks.foreign = { id: 'foreign', projectId: 'p2', title: 'Other project source' }
   await assert.rejects(rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task', id: 'foreign' } }), /another Project/)
 })
+
+test('bounded source reads keep public messages/knowledge and memory revisions in the active Project', async t => {
+  const { rt } = await setup(t)
+  const mine = (await get(rt, alice)).mine
+  await message(rt, alice)
+  rt.state.projectAgentTranscripts['public-p1'] = [{ id: 'public-msg', kind: 'user', text: 'Explicit public discussion', at: 1 }]
+  await rt.projectEndpoint('project-knowledge-write', { projectId: 'p1', text: 'Published current fact' }, alice)
+  const fact = rt.state.projectKnowledge.p1[0]
+  const memory = (await rt.projectEndpoint('project-role-memory-write', { projectId: 'p1', role: 'developer', text: 'Original role fact', source: { kind: 'human', reference: 'Original decision' } }, alice)).memory
+  await rt.projectEndpoint('project-role-memory-write', { projectId: 'p1', role: 'developer', memoryId: memory.id, text: 'Revised role fact', source: { kind: 'human', reference: 'Reviewed follow-up' } }, alice)
+  const read = sourceRequest => rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest })
+  assert.match((await read({ kind: 'public-message', id: 'public-msg' })).contextPage.text, /Explicit public discussion/)
+  assert.match((await read({ kind: 'knowledge', id: fact.id })).contextPage.text, /Published current fact/)
+  assert.match((await read({ kind: 'role-memory', id: memory.id })).contextPage.text, /Revised role fact/)
+  assert.match((await read({ kind: 'role-memory', id: memory.id, revision: 1 })).contextPage.text, /Original role fact/)
+  await assert.rejects(read({ kind: 'role-memory', id: memory.id, revision: 99 }), /unavailable/)
+  await assert.rejects(read({ kind: 'unknown' }), /Unknown/)
+  rt.state.projectRoleMemory.foreign = { id: 'foreign', projectId: 'p2', role: 'developer', text: 'Foreign public note' }
+  await assert.rejects(read({ kind: 'role-memory', id: 'foreign' }), /another Project/)
+})

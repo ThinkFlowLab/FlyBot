@@ -143,3 +143,13 @@ Native Task-role physical Session restoration remains #2184; new process identit
 not called restored context merely because it shares a logical Task id. SQLite/delta
 storage and archive normalization remain #2182; bounded model injection does not mean
 the existing historical JSON store is already normalized or migrated.
+
+The isolated real-Codex acceptance at runtime source `a9ff63b6eeb298333d5a08251dddfe6d80e1b480`
+used the existing operator-selected `gpt-6.1-sol` profile with a declared test budget.
+Two fresh workers changed fixture code and passed independent host Node tests; the
+returned worker resumed the same backend Session after a changed caller prompt,
+read its saved work summary, and recovered a conversation-only marker absent from
+repository files. Both workers confirmed stop and process exit before release.
+A large-output command completed with the configured CLI history cap. This proves
+SDK continuation under this controlled task, not a full Chief/pool run, an observed
+compaction event, an exact provider context-window measurement, or native restoration.

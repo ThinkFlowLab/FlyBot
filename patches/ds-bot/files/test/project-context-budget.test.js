@@ -52,3 +52,12 @@ test('context tool pages share a result budget, retain immutable hashes and cann
   assert.throws(() => contextValuePage(source, budget, { offset: -1 }), /offset/)
   assert.throws(() => fitContextToolResult({ mandatory: 'Required constraints '.repeat(200) }, budget), /mandatory/)
 })
+
+test('budget resolution selects only the actual Project owner resource profile', async () => {
+  const rt = { config: { projectContext: { models: { 'actual-profile-model': { windowTokens: 20000 } } } }, readProject: id => { assert.equal(id, 'p'); return { ownerUserId: 'owner' } },
+    projectResources: { setting: (projectId, resourceId) => { assert.equal(projectId, 'p'); assert.equal(resourceId, 'r'); return { profiles: { owner: { codex: { model: 'actual-profile-model' } }, other: { codex: { model: 'foreign-model' } } } } } } }
+  const result = await resolveContextBudget(rt, { model: 'native-default', execution: { harness: 'codex' } }, { projectId: 'p', resourceId: 'r' })
+  assert.equal(result.model, 'actual-profile-model')
+  assert.equal(result.windowTokens, 20000)
+  assert.throws(() => createContextBudget({ harnesses: { codex: null } }, { harness: 'codex' }), /object/)
+})
