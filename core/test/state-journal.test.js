@@ -584,3 +584,87 @@ test('a rotation still replaces a plain journal file of this host\'s own (#2146 
   if (posix) assert.equal(statSync(path).mode & 0o777, 0o600)
   rmSync(home, { recursive: true, force: true })
 })
+
+// A journal that stopped — a failed open at start-up, or a write that failed later — used to
+// stay stopped for the rest of the run, so one bad moment retired the whole session's record. The
+// next save asks once more whether it can record again: a journal that can now record appends the
+// change that save was about to lose, and one that still refuses stays stopped without failing it.
+test('a stopped journal opens once more on the next save and records again (#2154)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const other = join(outside, 'other-name.jsonl')
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  assert.equal(parseJournal(readFileSync(path, 'utf8')).length, 1)
+  // A second name on the journal file makes the append refuse it: recording stops, file intact.
+  linkSync(path, other)
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(journal.status().recording, false)
+  assert.equal(parseJournal(readFileSync(path, 'utf8')).length, 1, 'the refused save recorded nothing')
+  // The user removes the second name; the next save asks the journal once more.
+  rmSync(other)
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  assert.deepEqual(journal.status(), { recording: true })
+  const text = readFileSync(path, 'utf8')
+  assert.equal(parseJournal(text).length, 2, 'the recovering save appended one entry')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 3 }))
+  assert.equal(warnings.length, 1, 'the refusal was announced once; the retry does not announce it again')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal whose open keeps failing retries once per save and never blocks the save (#2154)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const target = join(outside, 'someone-else.txt')
+  writeFileSync(target, 'PRIVATE LINE\n')
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  symlinkSync(target, path)
+  const warnings = []
+  const journal = openJournal({ path, warn: (...args) => warnings.push(args.join(' ')) })
+  // If a save retried until it worked, a path that keeps refusing would never come back.
+  const saveWithin = snapshot => Promise.race([
+    journal.record(snapshot).then(() => 'returned'),
+    new Promise(resolve => setTimeout(() => resolve('still retrying'), 2000)),
+  ])
+  for (const revision of [1, 2, 3]) {
+    assert.equal(await saveWithin(stateText({ version: 2, revision })), 'returned', `save ${revision} returns instead of retrying in a loop`)
+  }
+  assert.equal(journal.status().recording, false, 'a journal that still refuses stays stopped')
+  assert.equal(readFileSync(target, 'utf8'), 'PRIVATE LINE\n', 'nothing is written through the link')
+  // The link goes away; the next save asks once more and records, so the retry is per save, not once.
+  rmSync(path)
+  assert.equal(await saveWithin(stateText({ version: 2, revision: 4 })), 'returned')
+  assert.deepEqual(journal.status(), { recording: true })
+  const text = readFileSync(path, 'utf8')
+  assert.equal(parseJournal(text).length, 1)
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 4 }))
+  assert.equal(warnings.length, 1, 'the start-up refusal was announced once; a retry does not repeat it')
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
+
+test('a journal reopened after its file was removed starts with a base (#2154)', async () => {
+  const home = tempHome()
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-journal-outside-'))
+  const other = join(outside, 'other-name.jsonl')
+  mkdirSync(join(home, 'journal'))
+  const path = join(home, 'journal', 'state.jsonl')
+  const journal = openJournal({ path, warn: () => {} })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  linkSync(path, other)
+  await journal.record(stateText({ version: 2, revision: 2 }))
+  assert.equal(journal.status().recording, false)
+  // The user repairs the folder by deleting the journal file itself; the next save starts a new one.
+  rmSync(path)
+  await journal.record(stateText({ version: 2, revision: 3 }))
+  const text = readFileSync(path, 'utf8')
+  assert.equal(parseJournal(text)[0].op, 'base', 'a journal that starts over begins with a base')
+  assert.equal(stateText(replayTo(text)), stateText({ version: 2, revision: 3 }))
+  rmSync(home, { recursive: true, force: true })
+  rmSync(outside, { recursive: true, force: true })
+})
