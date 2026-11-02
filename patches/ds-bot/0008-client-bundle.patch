@@ -5135,7 +5135,7 @@ diff --git a/client.js b/client.js
  .bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
  .bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
  .bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
-@@ -2595,2914 +2595,6774 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2595,2914 +2595,6783 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  :is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
  @media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
  `;
@@ -10041,6 +10041,12 @@ diff --git a/client.js b/client.js
 +  const bot = roster?.byId?.[task?.ownerBotId];
 +  return Boolean(bot && !bot.remote && (!bot.ownerId || bot.ownerId === me));
 +}
++var TERMINAL_STATUSES = /* @__PURE__ */ new Set(["accepted", "cancelled", "failed"]);
++function finishedAt(task) {
++  const terminal = (task?.actors ?? []).find((entry) => TERMINAL_STATUSES.has(entry?.status));
++  if (Number.isFinite(terminal?.at)) return terminal.at;
++  return Number.isFinite(task?.updatedAt) ? task.updatedAt : void 0;
++}
 +function priorityLabel(priority) {
 +  if (priority === "urgent") return t("Highest");
 +  if (priority === "high") return t("High");
@@ -10189,6 +10195,7 @@ diff --git a/client.js b/client.js
 +  const who = botName(roster, task);
 +  const question = task.waitingFor === "input" ? task.inputRequest?.question : "";
 +  const overall = task.kind === "group";
++  const finished = column === "done" ? finishedAt(task) : void 0;
 +  return (0, import_react15.createElement)(BoardCard, {
 +    card: taskCard(task),
 +    skin: TASK_SKIN,
@@ -10214,6 +10221,7 @@ diff --git a/client.js b/client.js
 +      "span",
 +      { className: "bt-board-foot" },
 +      who ? (0, import_react15.createElement)("span", { className: "bt-board-who" }, who) : null,
++      Number.isFinite(finished) && finished > 0 ? (0, import_react15.createElement)("span", { key: "finished", className: "bt-board-when" }, relativeShort(finished)) : null,
 +      (0, import_react15.createElement)(
          "span",
 -        { className: "bt-set-control" },
@@ -10682,6 +10690,7 @@ diff --git a/client.js b/client.js
 +.bt-board-note{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 +.bt-board-foot{display:flex;align-items:center;gap:8px}
 +.bt-board-who{flex:none;max-width:40%;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-board-when{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap}
 +.bt-board-progress{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}
 +.bt-board-progress-bar{flex:1 1 auto;height:4px;border-radius:999px;background:var(--bt-line);overflow:hidden}
 +.bt-board-progress-bar>span{display:block;height:100%;background:var(--bt-accent)}

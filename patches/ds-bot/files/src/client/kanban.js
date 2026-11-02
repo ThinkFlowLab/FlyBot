@@ -8,6 +8,7 @@ import { BoardCard as BoardCardFrame, TASK_SKIN } from './board-card.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
 import { t } from './i18n.js'
+import { relativeShort } from './text.js'
 
 const POLL_MS = 15_000
 
@@ -111,6 +112,19 @@ export function canMoveTask(roster, task) {
   if (!me) return true
   const bot = roster?.byId?.[task?.ownerBotId]
   return Boolean(bot && !bot.remote && (!bot.ownerId || bot.ownerId === me))
+}
+
+// When a card in the Done column finished. `updatedAt` is not that moment: `record()` in
+// `src/host/tasks.js:267-270` stamps it on every transition and again on a plain edit (`:1456`,
+// `by: 'updated'`), so a card touched after it finished would claim the later time. The first
+// terminal entry in `actors` is the transition that ended the task (none of the three has a way
+// back out, `:30-39`), while a later entry of the same status is that edit. A row written before
+// this history existed falls back to `updatedAt`.
+const TERMINAL_STATUSES = new Set(['accepted', 'cancelled', 'failed'])
+function finishedAt(task) {
+  const terminal = (task?.actors ?? []).find(entry => TERMINAL_STATUSES.has(entry?.status))
+  if (Number.isFinite(terminal?.at)) return terminal.at
+  return Number.isFinite(task?.updatedAt) ? task.updatedAt : undefined
 }
 
 function priorityLabel(priority) {
@@ -234,6 +248,9 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   const who = botName(roster, task)
   const question = task.waitingFor === 'input' ? task.inputRequest?.question : ''
   const overall = task.kind === 'group'
+  // A finished card says when it finished; the other columns keep the footer they had.
+  // `relativeShort(undefined)` prints `Invalid Date` and `0` prints 1970, so neither draws.
+  const finished = column === 'done' ? finishedAt(task) : undefined
   return h(BoardCardFrame, {
     card: taskCard(task),
     skin: TASK_SKIN,
@@ -257,6 +274,7 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
     ],
     footer: h('span', { className: 'bt-board-foot' },
       who ? h('span', { className: 'bt-board-who' }, who) : null,
+      Number.isFinite(finished) && finished > 0 ? h('span', { key: 'finished', className: 'bt-board-when' }, relativeShort(finished)) : null,
       h('span', { className: 'bt-board-progress' },
         h('span', { className: 'bt-board-progress-bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': progress, 'aria-label': t('Progress') },
           h('span', { style: { width: `${progress}%` } })),
@@ -491,6 +509,7 @@ export const KANBAN_CSS = `
 .bt-board-note{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 .bt-board-foot{display:flex;align-items:center;gap:8px}
 .bt-board-who{flex:none;max-width:40%;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-board-when{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap}
 .bt-board-progress{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}
 .bt-board-progress-bar{flex:1 1 auto;height:4px;border-radius:999px;background:var(--bt-line);overflow:hidden}
 .bt-board-progress-bar>span{display:block;height:100%;background:var(--bt-accent)}

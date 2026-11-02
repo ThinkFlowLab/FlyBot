@@ -645,3 +645,69 @@ test('#2069: a room board reached from a Bot board counts each active card once 
   assert.equal(byClass(board.column('done'), 'bt-board-card').length, 1, 'the room\'s finished card is drawn once')
   assert.equal(board.railMeta('s'), '1/2', 'the rail counts the drawn active card once, plus the archive page')
 })
+
+// The Done column says when a card finished; the other columns leave the footer alone.
+const HOUR = 3_600_000
+const MINUTE = 60_000
+const cardIn = (column, id) => all(column).find(node => node.props?.['data-task'] === id)
+const whenOf = (column, id) => {
+  const node = byClass(cardIn(column, id), 'bt-board-when')[0]
+  return node === undefined ? undefined : textOf(node)
+}
+// A card finished 2 h 5 min ago and edited a minute ago: `updatedAt` and the last actor entry both
+// say `1 min`; only the first terminal entry knows when the card really finished.
+const editedAfterFinish = (id, extra = {}, status = 'accepted') => task(id, status, {
+  title: 'Finished and edited', progress: 100,
+  updatedAt: Date.now() - MINUTE,
+  actors: [
+    { status: 'working', at: Date.now() - 10 * MINUTE },
+    { status, at: Date.now() - 125 * MINUTE },
+    { status, at: Date.now() - MINUTE, by: 'updated' },
+  ],
+  ...extra,
+})
+
+// A: the stamp is the first terminal actor entry, not the last one and not `updatedAt`.
+test('a Done card says when it finished, from the first terminal actor entry', () => {
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [editedAfterFinish('task-done111111')])
+  assert.equal(whenOf(board.column('done'), 'task-done111111'), '2 h')
+})
+
+// B: an unfinished card keeps the footer it had.
+test('an In progress card carries no finish time', () => {
+  const working = task('task-work222222', 'working', {
+    title: 'Still working', ownerBotId: 's', progress: 40, updatedAt: Date.now() - MINUTE,
+    actors: [{ status: 'working', at: Date.now() - 10 * MINUTE }],
+  })
+  const board = boardWith({ kind: 'bot', botId: 's' }, [working], [])
+  const column = board.column('in-progress')
+  assert.equal(byClass(cardIn(column, 'task-work222222'), 'bt-board-when').length, 0)
+  assert.match(textOf(cardIn(column, 'task-work222222')), /40%/)
+})
+
+// C: a row written before the actor history existed falls back to `updatedAt`.
+test('a Done card with no actor entry falls back to updatedAt', () => {
+  const old = task('task-done333333', 'accepted', {
+    title: 'Finished before the history', ownerBotId: 's', progress: 100, updatedAt: Date.now() - 3 * HOUR,
+  })
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [old])
+  assert.equal(whenOf(board.column('done'), 'task-done333333'), '3 h')
+})
+
+// D: no stamp at all draws nothing — `relativeShort(undefined)` is `Invalid Date`, and 0 is 1970.
+test('a Done card without a usable timestamp draws no time and no Invalid Date', () => {
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [
+    task('task-done444444', 'accepted', { title: 'No stamp', ownerBotId: 's', progress: 100, updatedAt: undefined }),
+    task('task-done555555', 'accepted', { title: 'Zero stamp', ownerBotId: 's', progress: 100, updatedAt: 0 }),
+  ])
+  for (const id of ['task-done444444', 'task-done555555']) {
+    assert.equal(byClass(cardIn(board.column('done'), id), 'bt-board-when').length, 0)
+    assert.doesNotMatch(textOf(cardIn(board.column('done'), id)), /Invalid Date/)
+  }
+})
+
+// E: a room board draws the same node on its Done cards.
+test('a room board Done card says when it finished too', () => {
+  const board = boardWith({ kind: 'group', roomId: 'war' }, [], [editedAfterFinish('task-done666666', { ownerBotId: 'a' })])
+  assert.equal(whenOf(board.column('done'), 'task-done666666'), '2 h')
+})

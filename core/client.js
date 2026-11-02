@@ -8804,6 +8804,12 @@ function canMoveTask(roster, task) {
   const bot = roster?.byId?.[task?.ownerBotId];
   return Boolean(bot && !bot.remote && (!bot.ownerId || bot.ownerId === me));
 }
+var TERMINAL_STATUSES = /* @__PURE__ */ new Set(["accepted", "cancelled", "failed"]);
+function finishedAt(task) {
+  const terminal = (task?.actors ?? []).find((entry) => TERMINAL_STATUSES.has(entry?.status));
+  if (Number.isFinite(terminal?.at)) return terminal.at;
+  return Number.isFinite(task?.updatedAt) ? task.updatedAt : void 0;
+}
 function priorityLabel(priority) {
   if (priority === "urgent") return t("Highest");
   if (priority === "high") return t("High");
@@ -8920,6 +8926,7 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
   const who = botName(roster, task);
   const question = task.waitingFor === "input" ? task.inputRequest?.question : "";
   const overall = task.kind === "group";
+  const finished = column === "done" ? finishedAt(task) : void 0;
   return (0, import_react15.createElement)(BoardCard, {
     card: taskCard(task),
     skin: TASK_SKIN,
@@ -8945,6 +8952,7 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
       "span",
       { className: "bt-board-foot" },
       who ? (0, import_react15.createElement)("span", { className: "bt-board-who" }, who) : null,
+      Number.isFinite(finished) && finished > 0 ? (0, import_react15.createElement)("span", { key: "finished", className: "bt-board-when" }, relativeShort(finished)) : null,
       (0, import_react15.createElement)(
         "span",
         { className: "bt-board-progress" },
@@ -9232,6 +9240,7 @@ var KANBAN_CSS = `
 .bt-board-note{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 .bt-board-foot{display:flex;align-items:center;gap:8px}
 .bt-board-who{flex:none;max-width:40%;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-board-when{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);white-space:nowrap}
 .bt-board-progress{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}
 .bt-board-progress-bar{flex:1 1 auto;height:4px;border-radius:999px;background:var(--bt-line);overflow:hidden}
 .bt-board-progress-bar>span{display:block;height:100%;background:var(--bt-accent)}
