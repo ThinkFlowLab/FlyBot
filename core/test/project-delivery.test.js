@@ -292,7 +292,9 @@ test('temporary role context freezes memory, repository instructions and session
   fixture.rt.bindProject({ kind: 'run', id: first.runId, projectId: 'p1', status: 'failed', taskId: fixture.task.id, attemptId: first.id })
   await fixture.start('session-second')
   assert.notEqual(fixture.attempt().roleSessions.developer.id, descriptor.id)
-  assert.match(fixture.attempt().roleSessions.developer.context.text, /New persona/)
+  assert.doesNotMatch(fixture.attempt().roleSessions.developer.context.text, /New persona/)
+  assert.equal(fixture.attempt().roleSessions.developer.definitionRef, descriptor.definitionRef)
+  assert.equal(fixture.attempt().roleSessions.developer.definitionChange.retainedOriginalDefinition, true)
   assert.match(fixture.attempt().roleSessions.developer.context.text, /previousAttemptId/)
 })
 
@@ -790,7 +792,7 @@ test('failed context admission preserves an existing unsealed developer workspac
   const path=a.workspaces.developer.path
   writeFileSync(join(path,'code.mjs'),'export const preserved = true;\n')
   a.seedSha=a.baseSha
-  dev.instructions='x'.repeat(49000) // Required persona cannot be summarized away.
+  a.feedback='x'.repeat(49000) // Required current Task input cannot be summarized away.
   await assert.rejects(f.rt.projectDelivery.preparePoolRole(task,{id:'second',attemptId:a.id,generation:2},dev),/exceeds/)
   assert.equal(readFileSync(join(path,'code.mjs'),'utf8'),'export const preserved = true;\n')
   assert.equal(a.preparationFailures.at(-1).releasedBeforeExternalStart,false)

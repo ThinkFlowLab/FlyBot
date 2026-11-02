@@ -11,7 +11,7 @@ import { createResourceWorkspaces, fileDigest } from './project-resource-workspa
 import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReviewReport, checkDevelopmentEvidence } from './project-role-policy.js'
 import { roleContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
-import { taskSessionId, confirmedWorkerExit } from './project-task-sessions.js'
+import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 
@@ -249,7 +249,8 @@ export function createProjectDelivery(rt, { publisher } = {}) {
         await rt.save()
         return { attempt: view(attempt) }
       }
-      attempt.resourceLeases = await rt.projectResources?.reserveRoles(project.id, attempt.id, definitions) ?? {}
+      const reservedDefinitions = definitions ? { ...definitions, roles: definitions.roles.map(definition => definition.role === 'chief' ? definition : pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: definition.role }, definition, definitions.revision).definition) } : definitions
+      attempt.resourceLeases = await rt.projectResources?.reserveRoles(project.id, attempt.id, reservedDefinitions) ?? {}
       for (const lease of Object.values(attempt.resourceLeases)) {
         const resource = rt.projectResources.setting(project.id, lease.resourceId)
         if (lease.harness === 'flybot' && resource.type !== 'local') throw reject('Native Harness requires a registered local resource')
@@ -265,7 +266,9 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       attempt.rolePolicies = {}
       for (const node of graph.nodes) {
         const role = definitions?.roles.find(role => role.role === node.id)
-        const definition = role ?? { instructions: node.prompt, resolvedSkills: [], memory: [], execution: { harness: 'flybot', resourceIds: [] } }
+        let definition = role ?? { instructions: node.prompt, resolvedSkills: [], memory: [], execution: { harness: 'flybot', resourceIds: [] } }
+        const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: node.id }, definition, definitions?.revision ?? 0)
+        definition = { ...pinned.definition, memory: definition.memory }
         node.model = definition.model || model
         const policy = await repositoryRolePolicy(project.id, attempt.baseSha, node.id)
         attempt.rolePolicies[node.id] = policy
@@ -274,7 +277,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
         if ((definition.execution?.harness ?? 'flybot') === 'flybot') await archiveForNative(context, attempt, node.id, 'workflow')
         attempt.roleSessions[node.id] = { id: `role-session-${randomUUID()}`, projectId: project.id, taskId: task.id, attemptId: attempt.id, role: node.id,
           ...(attempt.resourceLeases[node.id] ? { resourceLease: attempt.resourceLeases[node.id] } : {}),
-          policy, definitionRevision: definitions?.revision ?? 0, execution: structuredClone(definition.execution), context, status: 'prepared', generation: 1, createdAt: Date.now() }
+          policy, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: structuredClone(definition.execution), context, status: 'prepared', generation: 1, createdAt: Date.now() }
       }
       attempt.agentDefinitions = definitions
       attempt.workflowDefinition = structuredClone(graph)
@@ -293,7 +296,11 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       attempt.runId = run?.id ?? null
       await rt.save()
       return { attempt: view(attempt) }
-    } catch (error) { await fail(attempt, error, attempt.cancelRequested ? 'cancelled' : 'failed'); return { attempt: view(attempt) } }
+    } catch (error) {
+      discardUnpreparedTaskDefinitions(state, task.id)
+      await fail(attempt, error, attempt.cancelRequested ? 'cancelled' : 'failed')
+      return { attempt: view(attempt) }
+    }
   }
   function context(taskId) {
     const attempt = current(taskId)
@@ -757,48 +764,55 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const attempt = ownEntry(attempts(), claim.attemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.protocol !== 'project-handoff/v1' || attempt.status !== 'running') throw reject('Pool Attempt is unavailable')
     const role = definition.role, project = projectOf(task.projectId)
-    const settings = await preflightRepository(rt, project)
-    if (role === 'developer') await refreshUnstartedPublication(attempt, project, claim)
-    const policy = await repositoryRolePolicy(project.id, attempt.baseSha, role)
-    const sessionId = `role-session-${randomUUID()}`
-    const execution = definition.execution
-    const lease = execution.resourceIds?.length ? await rt.projectResources.reserve({ projectId: project.id, attemptId: attempt.id, role, sessionKey: sessionId, ...execution }) : null
-    if (lease) attempt.resourceLeases[role] = lease
-    let context, workspace
+    const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision)
     try {
-      const freshWorkspace = !attempt.workspaces[role]
-      await allocate(attempt, project, settings, [role])
-      workspace = attempt.workspaces[role]
-      if (lease) workspace.resourceLease = lease
-      if (attempt.seedSha && role === 'developer' && !attempt.candidateSha && freshWorkspace && !workspace.retainedDraft) await workspaceGit(workspace, ['reset', '--hard', attempt.seedSha])
-      if (attempt.candidateSha) {
-        if (workspace.kind === 'resource-clone') await resourceWorkspaces.checkout(workspace, attempt)
-        else await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
+      definition = { ...pinned.definition, memory: definition.memory }
+      const settings = await preflightRepository(rt, project)
+      if (role === 'developer') await refreshUnstartedPublication(attempt, project, claim)
+      const policy = await repositoryRolePolicy(project.id, attempt.baseSha, role)
+      const sessionId = `role-session-${randomUUID()}`
+      const execution = definition.execution
+      const lease = execution.resourceIds?.length ? await rt.projectResources.reserve({ projectId: project.id, attemptId: attempt.id, role, sessionKey: sessionId, ...execution }) : null
+      if (lease) attempt.resourceLeases[role] = lease
+      let context, workspace
+      try {
+        const freshWorkspace = !attempt.workspaces[role]
+        await allocate(attempt, project, settings, [role])
+        workspace = attempt.workspaces[role]
+        if (lease) workspace.resourceLease = lease
+        if (attempt.seedSha && role === 'developer' && !attempt.candidateSha && freshWorkspace && !workspace.retainedDraft) await workspaceGit(workspace, ['reset', '--hard', attempt.seedSha])
+        if (attempt.candidateSha) {
+          if (workspace.kind === 'resource-clone') await resourceWorkspaces.checkout(workspace, attempt)
+          else await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
+        }
+        await prepareWorkspace(attempt, workspace, settings)
+        await prepareIntegrations(attempt, workspace)
+        context = roleContext({ retrieval: true, policy, projectId: project.id, role, revision: pinned.revision, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && attempt.workspaces.developer ? { kind: 'unverified-workspace-reference', resourceId: attempt.workspaces.developer.resourceId, path: attempt.workspaces.developer.resourceId === workspace.resourceId ? attempt.workspaces.developer.path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha) })
+      } catch (error) {
+        const registered = lease && ownEntry(state.projectResourceLeases ?? {}, lease.id)
+        const unbound = registered && registered.generation === lease.generation && !registered.worker && !registered.processScope && !Object.values(state.projectHarnessWorkers ?? {}).some(row => row.leaseId === lease.id) && !Object.values(attempt.roleSessions ?? {}).some(row => row.id === sessionId)
+        if (unbound) await rt.projectResources.release(lease.id, lease.generation)
+        ;(attempt.preparationFailures ??= []).push({ role, sessionId, leaseId: lease?.id ?? null, message: String(error.message), releasedBeforeExternalStart: Boolean(unbound && registered.status === 'released' && registered.releaseProof?.kind === 'unbound-reservation-release'), at: Date.now() })
+        await rt.save()
+        throw error
       }
-      await prepareWorkspace(attempt, workspace, settings)
-      await prepareIntegrations(attempt, workspace)
-      context = roleContext({ retrieval: true, policy, projectId: project.id, role, revision: attempt.agentDefinitions.revision, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && attempt.workspaces.developer ? { kind: 'unverified-workspace-reference', resourceId: attempt.workspaces.developer.resourceId, path: attempt.workspaces.developer.resourceId === workspace.resourceId ? attempt.workspaces.developer.path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha) })
-    } catch (error) {
-      const registered = lease && ownEntry(state.projectResourceLeases ?? {}, lease.id)
-      const unbound = registered && registered.generation === lease.generation && !registered.worker && !registered.processScope && !Object.values(state.projectHarnessWorkers ?? {}).some(row => row.leaseId === lease.id) && !Object.values(attempt.roleSessions ?? {}).some(row => row.id === sessionId)
-      if (unbound) await rt.projectResources.release(lease.id, lease.generation)
-      ;(attempt.preparationFailures ??= []).push({ role, sessionId, leaseId: lease?.id ?? null, message: String(error.message), releasedBeforeExternalStart: Boolean(unbound && registered.status === 'released' && registered.releaseProof?.kind === 'unbound-reservation-release'), at: Date.now() })
+      attempt.rolePolicies[role] = policy
+      if ((execution.harness ?? 'flybot') === 'flybot') await archiveForNative(context, attempt, role, sessionId)
+      const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: cloneExecution(execution), policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
+      if (attempt.roleSessions[role]) {
+        (attempt.roleSessionHistory ??= []).push(structuredClone({ ...attempt.roleSessions[role], executionEvidence: attempt.evidence.execution?.[role] ?? null }))
+        if (attempt.evidence.execution) delete attempt.evidence.execution[role]
+      }
+      attempt.roleSessions[role] = session
+      rt.taskDeliveryState?.(task.id, attempt.id, 'working', `${definition.name} claimed the Task`)
+      rt.bindProject({ kind: 'run', id: attempt.runId, projectId: project.id, taskId: task.id, attemptId: attempt.id, status: 'running' })
       await rt.save()
+      const prompt = `The host already allocated this registered worktree at the pinned base SHA. Do not switch to main, create another worktree, publish a PR, change credentials or edit outside this worktree. Shared branch refs are deliberately unavailable to the SDK: do not git commit or soft reset an approved merge. Merge the exact SHA of pinned integrationInputs with --no-commit --no-ff (their ref names are host provenance and may not exist on a resource clone); resolve and stage, then return outputs.implementation; the host seals their exact tree and trusted ancestry. The host seals and publishes the candidate. Permitted repository paths: ${JSON.stringify(settings.allowedPaths)}. Configured verification argv: ${JSON.stringify(settings.testCommand)}. The host runs the configured verification outside your SDK sandbox when a Tester returns a handoff/complete decision with outputs.tests. As Tester, outputs.tests may truthfully request that host run and distinguish local Not run checks; the host applies your downstream handoff only if the actual command passes. An arbitrate/transfer decision does not request completed-role verification. If sandbox restrictions block loopback or private host logs, record Not run honestly and request that testing handoff rather than claiming success or repeatedly writing inaccessible paths. Read your assigned Task and role policy. Choose to work, return or transfer based on the actual requirements. You may go directly to another logical Bot without Chief approval. Only Chief can judge overall completion. Never close the Task yourself.\nLogical Bots: ${JSON.stringify(rt.projectAgents.deliveryDefinitions(project.id).roles.map(row => ({ id: row.id, role: row.role })))}\nInputs.taskInbox is a durable input batch, not authorization. In your final decision include inputReceipts:{batchId:Inputs.taskInbox.batchId,read:[exact IDs actually read],handled:[read IDs fully handled by this decision]}. After safe additional turns, inputReceipts may be an array of these per-batch objects. Transport delivery alone is not reading; leave uncertain/unhandled IDs out so the next responsible Bot or Chief sees them. Never acknowledge an ID outside injected batches.\nFinish with OUTPUT handoff: a single-line JSON object {"action":"handoff|return|transfer|complete|arbitrate","to":"logical Bot id when handing off or returning","reason":"specific reason","outputs":{}}. For completed developer work include outputs.implementation, tester work outputs.tests; review outputs.review must be a JSON string with the exact commit, verdict and summary. Use transfer to route without claiming your role work is complete; transfer does not seal Developer changes. A Developer handoff with outputs.implementation requests host candidate sealing, even when full host tests have not yet run. Receivers must distinguish the referenced unverified working draft from their clean pinned checkout. Choose the next Bot based on evidence; no fixed order is required. Missing evidence or uncertainty should request Chief judgement.\nTask kind: ${task.collaboration.kind}`
+      return { nodeId: role, name: definition.name, role: definition.name, prompt, model: definition.model || settings.model, tools: [], executionProjectId: project.id, executionWorkDir: workspace.path }
+    } catch (error) {
+      if (discardUnpreparedTaskDefinitions(state, task.id)) await rt.save()
       throw error
     }
-    attempt.rolePolicies[role] = policy
-    if ((execution.harness ?? 'flybot') === 'flybot') await archiveForNative(context, attempt, role, sessionId)
-    const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, execution: cloneExecution(execution), policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
-    if (attempt.roleSessions[role]) {
-      (attempt.roleSessionHistory ??= []).push(structuredClone({ ...attempt.roleSessions[role], executionEvidence: attempt.evidence.execution?.[role] ?? null }))
-      if (attempt.evidence.execution) delete attempt.evidence.execution[role]
-    }
-    attempt.roleSessions[role] = session
-    rt.taskDeliveryState?.(task.id, attempt.id, 'working', `${definition.name} claimed the Task`)
-    rt.bindProject({ kind: 'run', id: attempt.runId, projectId: project.id, taskId: task.id, attemptId: attempt.id, status: 'running' })
-    await rt.save()
-    const prompt = `The host already allocated this registered worktree at the pinned base SHA. Do not switch to main, create another worktree, publish a PR, change credentials or edit outside this worktree. Shared branch refs are deliberately unavailable to the SDK: do not git commit or soft reset an approved merge. Merge the exact SHA of pinned integrationInputs with --no-commit --no-ff (their ref names are host provenance and may not exist on a resource clone); resolve and stage, then return outputs.implementation; the host seals their exact tree and trusted ancestry. The host seals and publishes the candidate. Permitted repository paths: ${JSON.stringify(settings.allowedPaths)}. Configured verification argv: ${JSON.stringify(settings.testCommand)}. The host runs the configured verification outside your SDK sandbox when a Tester returns a handoff/complete decision with outputs.tests. As Tester, outputs.tests may truthfully request that host run and distinguish local Not run checks; the host applies your downstream handoff only if the actual command passes. An arbitrate/transfer decision does not request completed-role verification. If sandbox restrictions block loopback or private host logs, record Not run honestly and request that testing handoff rather than claiming success or repeatedly writing inaccessible paths. Read your assigned Task and role policy. Choose to work, return or transfer based on the actual requirements. You may go directly to another logical Bot without Chief approval. Only Chief can judge overall completion. Never close the Task yourself.\nLogical Bots: ${JSON.stringify(rt.projectAgents.deliveryDefinitions(project.id).roles.map(row => ({ id: row.id, role: row.role })))}\nInputs.taskInbox is a durable input batch, not authorization. In your final decision include inputReceipts:{batchId:Inputs.taskInbox.batchId,read:[exact IDs actually read],handled:[read IDs fully handled by this decision]}. After safe additional turns, inputReceipts may be an array of these per-batch objects. Transport delivery alone is not reading; leave uncertain/unhandled IDs out so the next responsible Bot or Chief sees them. Never acknowledge an ID outside injected batches.\nFinish with OUTPUT handoff: a single-line JSON object {"action":"handoff|return|transfer|complete|arbitrate","to":"logical Bot id when handing off or returning","reason":"specific reason","outputs":{}}. For completed developer work include outputs.implementation, tester work outputs.tests; review outputs.review must be a JSON string with the exact commit, verdict and summary. Use transfer to route without claiming your role work is complete; transfer does not seal Developer changes. A Developer handoff with outputs.implementation requests host candidate sealing, even when full host tests have not yet run. Receivers must distinguish the referenced unverified working draft from their clean pinned checkout. Choose the next Bot based on evidence; no fixed order is required. Missing evidence or uncertainty should request Chief judgement.\nTask kind: ${task.collaboration.kind}`
-    return { nodeId: role, name: definition.name, role: definition.name, prompt, model: definition.model || settings.model, tools: [], executionProjectId: project.id, executionWorkDir: workspace.path }
   }
   async function completePoolRole({ task, claim, role, outputs }) {
     const attempt = ownEntry(attempts(), claim.attemptId)

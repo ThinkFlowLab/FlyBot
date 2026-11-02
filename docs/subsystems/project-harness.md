@@ -57,7 +57,7 @@ installation in the target environment. An environment probe is not an auth prob
 One temporary SDK worker maps to one existing Workflow node and one resource lease.
 Saved worker evidence names Project/Task/Attempt/role/Harness/version/resource/principal,
 lease generation, cwd, backend Session/thread and event log. Input continuation resumes
-that backend Session in the same bound cwd. New Attempts create fresh workers/threads.
+that backend Session in the same bound cwd. New Attempts create fresh worker processes; compatible Task-role bindings retain the original backend thread.
 
 Codex uses streamed events, read-only/workspace-write sandbox by role, external command network and web search
 denied and approvalPolicy=never. The exec SDK does not provide an interactive approval
@@ -183,7 +183,7 @@ are provisioned by the host, rather than asking a read-only Reviewer to install 
 
 
 ## Task-role SDK continuation and scoped context
-`project-task-sessions.js` owns stable Project/Task/role logical IDs and binding checks; state.projectTaskSessions persists backend bindings through ordinary store snapshots. Worker records retain logicalSessionId, bindingKey, continuedFrom or rotationReason. Same binding resumes a thread only after prior worker stop-ack/process-exit or an exact host-confirmed prior systemd invocation exit, with a matching released lease. Binding includes Harness/resource/principal/cwd/profile locations/baseURL/model/persona. A changed binding starts a new backend thread under the same logical Session; no cwd or principal migration. Worker/claim/generation/log identities remain distinct. Mandatory current candidate/criteria/context are supplied on every turn; a complete unchanged policy already in the resumed thread is referenced by verified digest instead of duplicated.
+`project-task-sessions.js` owns stable Project/Task/role logical IDs and binding checks; state.projectTaskSessions persists backend bindings through ordinary store snapshots. Worker records retain logicalSessionId, bindingKey, continuedFrom and an optional legacy-key migration marker. Same binding resumes a thread only after prior worker stop-ack/process-exit or an exact host-confirmed prior systemd invocation exit, with a matching released lease. Binding includes Harness/resource/principal/cwd/profile locations/baseURL/model/persona. An incompatible latest binding raises `bot/context-resume`; it cannot silently reset or select an older matching thread. No cwd or principal migration is implied. Worker/claim/generation/log identities remain distinct. Mandatory current candidate/criteria/context are supplied on every turn; a complete unchanged policy already in the resumed thread is referenced by verified digest instead of duplicated.
 
 Codex exec/SDK retains its own automatic history compaction, with no custom compact threshold or second DSH engine. Native DSH retains original parts/steward behavior. Native per-execution carriers retain Task logical identity and source archives; this does not claim persistent native-carrier reuse across Attempts.
 
@@ -216,3 +216,39 @@ only when worker ID/generation, Project/Attempt/role/resource and both worker/le
 stop proofs match a released SDK lease exactly. Unknown/unreachable exits, missing
 proofs and mismatched leases remain refused. This preserves historical failure
 attribution without blocking every future integration admission for the same Task.
+
+
+## Execution convergence — #2184
+
+Task-role identity remains stable across Attempts. A content-addressed public
+`projectRoleDefinitionSnapshots` record pins persona, resolved skills and execution
+contract on first preparation; Session/Task records reference its id/hash/revision.
+Dynamic memory and current Task feedback remain per-turn inputs. A failed preparation
+without any prepared Session or observed worker drops only the unused pin; history
+and shared snapshots are retained. Existing prepared Sessions keep their version.
+Current role retirement, revoked shell permission, Harness change or removal of the
+previous resource from the approved pool prevents further execution. Definition
+changes appear in the returned Session context rather than replacing the persona.
+
+`spawn` prepares a worker and records the exact Task/Attempt/role/logical Session,
+resource/profile/Harness and lease generation. `dispatch` persists the running marker
+before writing model input and rechecks cancellation/lease generation after saving.
+A no-op save cannot authorize dispatch. The first observed backend Session is indexed,
+including failed/partial turns; a later retry cannot fall back to older completed
+context. If execution might have started but no backend id is known, recovery is
+explicitly blocked. Only a proven unstarted, released process may be skipped.
+Legacy prompt-based keys migrate only with matching environment and validated,
+scoped original role context; original worker/binding proofs are preserved.
+
+The existing service methods remain the lifecycle seam: delivery `preparePoolRole`,
+Harness `spawn`/`dispatch`, `input`/`taskInputWake`, `release`, and existing query views.
+`capabilities(harness)` reports implementation support independently of installation,
+login or successful inference: Codex/Claude support same-binding SDK continuation,
+between-turn input and abort/stop with acknowledged process exit. Native uses existing
+Bot turns/removal; native Task-role restoration is not yet advertised. Cross-Harness
+restoration is unsupported. An SDK capability declaration is not real-provider proof.
+
+This stage has subprocess/SDK-adapter regression coverage, not a new real-model run.
+Native Task-role continuation, unified public receipts/events (#2185), transactionally
+committed Effects (#2182), parent resumption (#2179), and final real-task validation
+remain explicit acceptance work. No second executor or scheduler is introduced.

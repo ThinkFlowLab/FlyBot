@@ -405,3 +405,13 @@ Delivery documentation follow-up: root README links the operation guide and full
 v1 API reference (parameters/results/permissions/replay/errors). Current JSON CLI,
 in-process service and incomplete real watch/UI acceptance remain explicit; no
 standalone frontend, OpenAPI service or runtime migration is implied.
+
+
+### Backend convergence #2184 — 2026-11-03
+
+SDK Task-role binding hardening: pinned shared definition snapshots, latest observed
+partial-thread recovery, verified legacy-key adoption, durable dispatch intent,
+explicit incompatible recovery, current rights/resource checks and truthful adapter
+capabilities. Native Task-role context restoration, parent waits, transactional Effects
+and external command receipts remain dependent acceptance; no live-provider or deploy
+claim from controlled process tests. README/API rewrite remains last (#2189).

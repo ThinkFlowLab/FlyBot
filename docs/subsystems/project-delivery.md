@@ -461,3 +461,14 @@ Attempt after all role workers/leases/native occupancy are confirmed released,
 whether its worktree is clean or dirty. A clean operator-restart checkpoint must
 not manufacture a successor and discard its Attempt-scoped integration admission.
 Explicit returns/rework and unknown worker occupancy retain existing isolation.
+
+
+### Pinned Task-role definitions — #2184
+
+Pool and legacy Workflow preparation pin public role definitions before resource
+reservation, with shared content-addressed snapshots and scalar Session references.
+Retries use the original persona/skills, current memory and explicit change metadata;
+they still enforce current execution permission/resource availability. Preparation
+failure clears an unused definition pin only if no Session/worker exists. Workspace
+drafts, original prepared contexts and Attempt evidence remain untouched. SDK resume
+and unknown-exit recovery follow [the Harness contract](project-harness.md).

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createProjectEffects } from '../src/host/project-effects.js'
 import { install as installProjectInputs } from '../src/host/project-inputs.js'
 import { createProjectResources } from '../src/host/project-resources.js'
-import { createProjectHarness, handoffFrame } from '../src/host/project-harness.js'
+import { createProjectHarness, handoffFrame, harnessCapabilities } from '../src/host/project-harness.js'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'flybot-harness-contract-'))
@@ -21,17 +21,17 @@ lines.on('line',line=>{const m=JSON.parse(line);
  if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);}
  if(m.type==='start') {
   write({type:'sdk-event',event:{type:'thread.started',thread_id:'bound-thread'}});
-  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
+  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
   write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});
  }
 });`)
-  const session = { id: 's', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', execution: { harness: 'codex' }, context: { text: 'Frozen criteria and role memory' }, resourceLease: { id: 'l', resourceId: 'r', generation: 1 } }
+  const session = { id: 's', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', definition: { role: 'developer', instructions: 'Stable developer convention', skills: [] }, execution: { harness: 'codex' }, context: { text: 'Frozen criteria and role memory' }, resourceLease: { id: 'l', resourceId: 'r', generation: 1 } }
   const workspace = { id: 'w', projectId: 'p', attemptId: 'a', role: 'developer', path: cwd }
   const rt = { home: root, state: { tasks: { t: { id: 't', projectId: 'p' } }, projectResourceLeases: { l: { id: 'l', resourceId: 'r', projectId: 'p', attemptId: 'a', generation: 1, status: 'reserved' } } },
-    config: { projectResources: { r: { type: 'local', root, capacity: 1, runtimeDir, allowedProjectOwnerIds: ['owner'], profiles: { owner: { codex: { home: join(root, 'profile'), configDir: join(root, 'profile/codex'), model: 'test-model', envRefs: { OPENAI_API_KEY: 'FLYBOT_TEST_HARNESS_SECRET' } } } } } } },
+    config: { projectResources: { r: { type: 'local', root, capacity: 1, runtimeDir, harnesses: ['codex'], allowedProjectOwnerIds: ['owner'], profiles: { owner: { codex: { home: join(root, 'profile'), configDir: join(root, 'profile/codex'), model: 'test-model', envRefs: { OPENAI_API_KEY: 'FLYBOT_TEST_HARNESS_SECRET' } } } } } } },
     save: async () => {}, warn() {}, readProject: () => ({ id: 'p', ownerUserId: 'owner' }), requireProjectAccess(actor) { if (actor.memberId !== 'owner') throw new Error('Access denied') },
     projectDelivery: { ownsWorkspace: (projectId, path) => projectId === 'p' && path === cwd ? workspace : null, sessionFor: () => session,
-      bindSession: async (_workspace, bot) => rt.projectResources.markStarted('l', 1, { kind: 'sdk', handle: bot.id }), releaseSession: async () => {} } }
+      bindSession: async (_workspace, bot) => rt.projectResources.markStarted(session.resourceLease.id, session.resourceLease.generation, { kind: 'sdk', handle: bot.id }), releaseSession: async () => {} } }
   process.env.FLYBOT_TEST_HARNESS_SECRET = 'unit-credential-opaque-value'
   rt.projectResources = createProjectResources(rt)
   const harness = createProjectHarness(rt)
@@ -348,4 +348,53 @@ test('a result callback failing after confirmed release cannot poison the worker
   assert.equal(row.releaseProof.kind,'sdk-stop-ack-and-process-exit')
   assert.equal(rt.projectResources.occupied('r'),0)
   assert.equal(row.failure,undefined)
+})
+
+
+test('changed caller prompt resumes the Task-role SDK thread when its role definition is unchanged', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const first = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Initial Task requirement' })
+  const completed = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: first, taskId: 't', brief: 'Initial work', outputs: [{ name: 'implementation' }] })
+  await completed
+  await harness.release(first)
+  const session = rt.projectDelivery.sessionFor()
+  session.id = 'returned-role-session'
+  session.attemptId = 'second-attempt'
+  rt.state.projectResourceHealth = { r: { status: 'ready' } }
+  rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready' } }
+  session.resourceLease = await rt.projectResources.reserve({ projectId: 'p', attemptId: session.attemptId, role: 'developer', sessionKey: session.id, harness: 'codex', resourceIds: ['r'] })
+  const next = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Tester returned the Task with new feedback and changed candidate facts' })
+  assert.equal(rt.state.projectHarnessWorkers[next].continuedFrom, first)
+  assert.equal(rt.state.projectHarnessWorkers[next].backendSessionId, 'bound-thread')
+  const returned = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: next, taskId: 't', brief: 'Continue previous work', outputs: [{ name: 'implementation' }] })
+  await returned
+  assert.match(await readFile(rt.state.projectHarnessWorkers[next].eventLog, 'utf8'), /"resumeSessionId":"bound-thread"/)
+})
+
+test('a no-op state save cannot authorize SDK input, and the unstarted process remains releasable', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'No uncommitted input' })
+  rt.savesQueued = () => 0
+  await assert.rejects(harness.dispatch({ botId: id, taskId: 't', brief: 'Must not be sent', outputs: [{ name: 'implementation' }] }), /commit a state snapshot/)
+  assert.equal(rt.state.projectHarnessWorkers[id].backendSessionId, undefined)
+  assert.equal(rt.state.projectHarnessWorkers[id].executionStartedAt, null)
+  await harness.release(id)
+  assert.equal(rt.projectResources.occupied('r'), 0)
+})
+
+
+test('Harness capability inspection distinguishes SDK support, native limitations and unknown adapters', () => {
+  for (const harness of ['codex', 'claude-agent']) {
+    const capabilities = harnessCapabilities(harness)
+    assert.equal(capabilities.taskRoleResume, true)
+    assert.equal(capabilities.crossHarnessResume, false)
+    assert.equal(capabilities.input, 'between-sdk-turns')
+    capabilities.taskRoleResume = false
+    assert.equal(harnessCapabilities(harness).taskRoleResume, true)
+  }
+  assert.equal(harnessCapabilities('flybot').taskRoleResume, false)
+  assert.equal(harnessCapabilities('flybot').sdkVersion, null)
+  assert.throws(() => harnessCapabilities('unknown'), /Unknown/)
 })

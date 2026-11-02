@@ -751,3 +751,16 @@ and its verified1811 production baseline; it does not merge or replace current
 upstream main3dde8e14. README checkout targets this repository/branch. This is
 a snapshot handoff, not a new main-targeting implementation PR or an upstream
 compatibility PASS. Runtime/private configuration and the frontend flow are untouched.
+
+
+### Task-role execution convergence — 2026-11-03 (#2184)
+
+Task-role SDK retries retain pinned public persona/skills and the latest observed
+backend context across Attempts. Dynamic input is not a definition identity. A
+binding incompatibility or unknown old execution fails visibly; no silent fresh
+Session or rollback to older context. Definition snapshots are shared by digest,
+current rights still revoke execution, failed unused preparations release their
+pins, and model input follows a durable-save/cancellation barrier. Existing
+Harness/lease/Workflow services remain authoritative. Adapter capability inspection
+reports native Task-role continuation as pending; no new real-provider validation,
+public service protocol, SQL transaction, deployment or frontend change is claimed.
