@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 import { DICTIONARY } from '../src/client/i18n.js'
+import { normalizeGraph } from '../../plugins/workflow/src/graph.js'
+import { deliveryWorkflow } from '../../plugins/workflow/src/template.js'
 
 const { outputFiles } = await build({
   stdin: {
@@ -1037,4 +1039,54 @@ test('#2122: a card between two cards on one column sends the wire round it', ()
   const to = cards.get('c')
   assert.deepEqual(points[0], [(from.left + from.right) / 2, from.bottom], "the wire leaves A's bottom port")
   assert.deepEqual(points[points.length - 1], [(to.left + to.right) / 2, to.top], "the wire lands on C's top port")
+})
+
+// #2126 routed a back edge as two straight horizontal runs at the two cards' centres.
+// A parallel layer seats a card on that same row, so either run passes through it and
+// the card, drawn on top, hides the wire: the delivery template's Reviewer ‖ Tester row
+// is that exact case, and `loop` is the edge the sidebar's Add link → Loop creates.
+const loopRoute = (from, to, height) => {
+  const delivery = normalizeGraph(deliveryWorkflow())
+  const graph = normalizeGraph({ ...delivery, edges: [...delivery.edges, { from, to, loop: true, max: 3 }] })
+  const heights = height ? Object.fromEntries(graph.nodes.map((node) => [node.id, height])) : {}
+  const route = wf.wireRoutes(graph.nodes, graph.edges, heights).find((one) => one.key === `${from}>${to}`)
+  const cards = new Map(graph.nodes.map((node) => [node.id, {
+    id: node.id,
+    left: node.x - CARD_W / 2,
+    right: node.x + CARD_W / 2,
+    top: node.y,
+    bottom: node.y + (heights[node.id] ?? 72),
+  }]))
+  return { graph, route, cards, points: route ? flattenPath(route.d) : [] }
+}
+const crossingsOf = (route, cards, from, to) => {
+  const failures = []
+  for (const card of cards.values()) {
+    if (card.id === from || card.id === to) continue
+    const hit = route.find((point) => insideCard(card, point))
+    if (hit) failures.push(`${card.id} at [${hit[0].toFixed(1)}, ${hit[1].toFixed(1)}]`)
+  }
+  return failures
+}
+test('#2138: a back edge out of a parallel layer clears the card beside it', () => {
+  for (const height of [undefined, 48, 96]) {
+    const { route, cards, points } = loopRoute('deployer', 'reviewer', height)
+    assert.ok(route, `deployer>reviewer renders (height ${height ?? 72})`)
+    assert.equal(route.back, true, 'deployer>reviewer is a back edge')
+    const failures = crossingsOf(points, cards, 'deployer', 'reviewer')
+    assert.deepEqual(failures, [], `deployer>reviewer runs through ${failures.join(', ')} (height ${height ?? 72}): ${route.d}`)
+    // The run that crosses the row happens in the gap above it, so the loop still
+    // turns outside every card.
+    const rightMost = Math.max(...[...cards.values()].map((card) => card.right))
+    assert.ok(Math.max(...points.map((point) => point[0])) > rightMost + 3, `the loop turns outside every card (${route.d})`)
+  }
+})
+test('#2138: a back edge that leaves a parallel layer clears the card beside it', () => {
+  for (const height of [undefined, 48, 96]) {
+    const { route, cards, points } = loopRoute('reviewer', 'coder', height)
+    assert.ok(route, `reviewer>coder renders (height ${height ?? 72})`)
+    assert.equal(route.back, true, 'reviewer>coder is a back edge')
+    const failures = crossingsOf(points, cards, 'reviewer', 'coder')
+    assert.deepEqual(failures, [], `reviewer>coder runs through ${failures.join(', ')} (height ${height ?? 72}): ${route.d}`)
+  }
 })
