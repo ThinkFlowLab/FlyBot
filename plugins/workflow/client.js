@@ -1518,7 +1518,7 @@ window.__ModuleLoader__.load({
     }
 
     // Settings → Workflow graphs: canvas-first with per-node inspector
-    function WorkflowSettings({ call }) {
+    function WorkflowSettings({ roster, call }) {
       const [pack, setPack] = useState(null)
       const [workflowId, setWorkflowId] = useState('')
       const [selectedNode, setSelectedNode] = useState(null)
@@ -1560,6 +1560,13 @@ window.__ModuleLoader__.load({
       }, [])
 
       const workflows = pack?.workflows ?? []
+      // P-414: while another dsh holds the team, core's channel refuses every write here with
+      // `bot/read-only`. The page offered the edit surface anyway, so a change was made and then
+      // dropped. The host names the window in `roster.readOnly`; while that is set the page shows
+      // the sentence and offers no control it cannot save.
+      const readOnlyReason = String(roster?.readOnly ?? '').trim()
+      const locked = readOnlyReason !== ''
+      const editingNow = locked ? false : editing
       const current = workflows.find(item => item.id === workflowId) ?? workflows[0]
       const nodes = current?.nodes ?? []
       const edges = current?.edges ?? []
@@ -1567,7 +1574,7 @@ window.__ModuleLoader__.load({
       const toolsKey = current && selected ? `${current.id}:${selected.id}` : ''
       
       const save = (nodes, edges) => {
-        if (!current) return
+        if (!current || locked) return
         void settledCall(call, 'workflow/graph', { workflowId: current.id, nodes, edges }, 'Could not save this workflow').then(value => {
           if (value?.ok === false) { setError(value.error ?? tr('Could not save this workflow')); return }
           if (value?.workflows) { setPack(value); setError('') }
@@ -1581,7 +1588,7 @@ window.__ModuleLoader__.load({
       // The binding is stored with the graph it belongs to: one save carries the
       // nodes, the edges and the Project, and null clears it.
       const setProject = (projectId) => {
-        if (!current) return
+        if (!current || locked) return
         void settledCall(call, 'workflow/graph', { workflowId: current.id, nodes, edges, projectId }, 'Could not save this workflow').then(value => {
           if (value?.ok === false) { setError(value.error ?? tr('Could not save this workflow')); return }
           if (value?.workflows) { setPack(value); setError('') }
@@ -1606,6 +1613,7 @@ window.__ModuleLoader__.load({
       }, [])
       
       const commitTools = (nodeId, text) => {
+        if (locked) return
         const next = text.split(',').map(item => item.trim()).filter(Boolean)
         const saved = nodes.find(node => node.id === nodeId)?.tools ?? []
         if (next.length === saved.length && next.every((item, index) => item === saved[index])) return
@@ -1646,6 +1654,7 @@ window.__ModuleLoader__.load({
       
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
+        locked ? h('div', { className: 'wf-muted wf-read-only', role: 'status' }, readOnlyReason) : null,
         error && !pack && !loading
           ? h('button', { type: 'button', className: 'wf-btn', onClick: () => setAttempt(value => value + 1) }, tr('Try again'))
           : null,
@@ -1664,6 +1673,7 @@ window.__ModuleLoader__.load({
               h('select', {
                 'aria-label': tr('Project'),
                 value: current.projectId ?? '',
+                disabled: locked,
                 onChange: (event) => setProject(event.target.value || null),
               },
                 h('option', { value: '' }, tr('Unassigned')),
@@ -1673,7 +1683,9 @@ window.__ModuleLoader__.load({
               h('select', {
                 'aria-label': tr('Model'),
                 value: current.model || '',
+                disabled: locked,
                 onChange: (event) => {
+                  if (locked) return
                   const model = event.target.value || null
                   void settledCall(call, 'workflow/set-model', { workflowId: current.id, model }, 'Could not change the model').then(value => {
                     if (value?.ok === false) { setError(value.error ?? tr('Could not change the model')); return }
@@ -1691,7 +1703,9 @@ window.__ModuleLoader__.load({
                 min: 1,
                 max: 8,
                 value: current.maxConcurrent ?? 2,
+                disabled: locked,
                 onChange: (event) => {
+                  if (locked) return
                   const maxConcurrent = Number(event.target.value)
                   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) return
                   void Promise.resolve(call('workflow/concurrency', { workflowId: current.id, maxConcurrent })).then(value => {
@@ -1700,19 +1714,19 @@ window.__ModuleLoader__.load({
                   })
                 },
               })),
-            h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
+            locked ? null : h('button', { type: 'button', className: 'wf-btn', onClick: () => setEditing(!editing) },
               editing ? tr('Finish editing') : tr('Edit')),
-            editing && !error ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
+            editingNow && !error ? h('span', { className: 'wf-autosave-hint' }, tr('Changes are saved automatically')) : null),
           h('div', { className: 'wf-canvas-main' },
             h(GraphCanvas, {
               workflow: current,
-              editing,
+              editing: editingNow,
               selectedNode,
               onSelectNode: setSelectedNode,
               onCommit: ({ nodes, edges }) => save(nodes, edges),
               roster: pack?.roster
             })),
-          editing && selected ? h('div', { className: 'wf-inspector' },
+          editingNow && selected ? h('div', { className: 'wf-inspector' },
             h('h3', null, tr('Node settings')),
             h('div', { className: 'wf-inspector-content' },
               h('label', { className: 'wf-field' },
@@ -1751,7 +1765,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'wf-tools-help', 'data-flybot': 'node-tools-note' },
                   h('span', null, 'Names the connectors this run Bot may use: github grants mcp__github__*, composio grants the Composio connector. File and shell access is always full, like a normal Bot, and a node that names no connector gets none.'),
                   h('span', { lang: 'zh-CN' }, '这里填这个节点 Bot 能用的连接器：github 对应 mcp__github__*，composio 对应 Composio 连接器。文件与 shell 权限始终与普通 Bot 相同（完全放开）；不填连接器时这个节点一个都拿不到。'))))) : null,
-          editing && nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
+          editingNow && nodes.length >= 2 ? h('div', { className: 'wf-edge-form' },
             h('h3', null, tr('Add link')),
             h('div', { className: 'wf-edge-fields' },
               h('label', { className: 'wf-field' },
