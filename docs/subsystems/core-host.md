@@ -950,3 +950,7 @@ S2 store snapshots capture effect generation/revision metadata and acknowledge i
 ## Durable Task inbox integration (S3)
 
 S3 installs project-inputs after Effects and before callers. It shares the existing state snapshots, scopes all service input operations to current Project/Task and introduces no timer/executor. See [Task input contract](project-inputs.md).
+
+## Project convergence integration
+
+Project convergence #2171 routes repository/closure operations through channel/authz to project-lifecycle.js. Snapshot migration imports legacy repository associations once. There is no new listener, database or timer in this stage; existing personal/group APIs are unchanged.

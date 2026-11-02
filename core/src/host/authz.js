@@ -68,6 +68,7 @@ const TASK_ENDPOINTS = new Set([
   // same rows through the same bindings, so it sits with them; leaving it out was #1713 — every
   // other wiring point was present, and a signed-in host answered `bot/not-found: Unknown
   // endpoint project-board` while `project-read` and `project-of` answered ALLOW.
+  'project-repositories', 'project-repository-link', 'project-repository-unlink', 'project-close-request', 'project-close-prepare', 'project-close-confirm',
   'project-detail', 'project-archive', 'project-workspace-create', 'projects', 'project-create', 'project-read', 'project-bind', 'project-of', 'project-board',
   // The team dossier (#1864) is a read over the same Project and the same bindings: the owner
   // decided on 2026-10-30 that persona and memory are shared by the Project's members, so it sits

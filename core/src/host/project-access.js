@@ -17,6 +17,7 @@ export function install(rt) {
     const role = actor?.memberId ? roleOf(project, actor.memberId) : null
     if (!project || !role) return false
     if (action === 'read') return true
+    if (project.status === 'closed') return false
     if (project.status === 'deleted') return false
     if (action === 'manage' || action === 'roles') return role === 'owner'
     if (action === 'invite' || action === 'configure') return role === 'owner' || role === 'maintainer'
@@ -31,6 +32,9 @@ export function install(rt) {
   }
   const invites = () => (state.projectInvites ??= {})
   const safeProject = (project, actor) => ({ id: project.id, name: project.name, repository: project.repository ?? null,
+    description: project.description ?? '', goal: project.goal ?? '', scope: project.scope ?? '',
+    repositories: rt.projectLifecycle.list(project.id).map(row => ({ ...row })),
+    ...(project.closure ? { closure: { closedBy: project.closure.closedBy, closedAt: project.closure.closedAt, finalRecord: project.closure.finalRecord, unfinishedTasks: project.closure.unfinishedTasks } } : {}),
     defaultBranch: project.defaultBranch ?? 'main', workDir: project.workDir ?? null,
     status: project.status, createdAt: project.createdAt, updatedAt: project.updatedAt,
     role: roleOf(project, actor?.memberId), quota: project.quota ?? { maxConcurrent: 2 } })

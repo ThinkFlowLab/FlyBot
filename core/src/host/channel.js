@@ -229,7 +229,7 @@ export function install(rt) {
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
   // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-  const READS = new Set(['project-rooms', 'project-room-read', 'project-task-pools', 'project-chief-state', 'project-github-read', 'auth-mode', 'workbench-state', 'project-resources', 'projects', 'project-read', 'project-board', 'project-members', 'project-task-detail', 'project-attempt-log', 'project-detail', 'state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows'])
+  const READS = new Set(['project-repositories', 'project-rooms', 'project-room-read', 'project-task-pools', 'project-chief-state', 'project-github-read', 'auth-mode', 'workbench-state', 'project-resources', 'projects', 'project-read', 'project-board', 'project-members', 'project-task-detail', 'project-attempt-log', 'project-detail', 'state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows'])
 
   // A chat reference chip names a Session whose snapshot rides to every recipient of
   // the message, so the author must be able to read what they share (#53, #106).
@@ -823,6 +823,12 @@ export function install(rt) {
         case 'project-execution-input':
         case 'project-resource-environment-check':
         case 'projects':
+        case 'project-repositories':
+        case 'project-repository-link':
+        case 'project-repository-unlink':
+        case 'project-close-request':
+        case 'project-close-prepare':
+        case 'project-close-confirm':
         case 'project-development':
         case 'project-task-pools':
         case 'project-chief-question':
