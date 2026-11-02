@@ -1,1 +1,0 @@
-A window that holds the team read-only no longer offers **Edit** on Settings → Workflows: the page draws the host's own read-only sentence in its place, drops rename and delete, and never asks the host to save a graph, so a layout is not built only for the save to be refused ([#2176](https://github.com/ThinkFlowLab/FlyBot/issues/2176)).

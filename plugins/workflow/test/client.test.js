@@ -3562,6 +3562,124 @@ test('#2200: the read-only page stays locked and leaves the sentence to the host
   view.unmount()
 })
 
+// #2213: the Stage a list row opens. #2200 took the write entries off the list and #2187 off
+// the Settings graph page, but the Stage never received `locked`: Hand a task, Re-match,
+// Pause/Stop, Edit and the drag palette all drew, and every press was refused behind the mask.
+const STAGE_GRAPH = () => ({
+  ...delivery(), id: 'lane-a', name: 'Lane A',
+  heldTasks: ['t-9'], heldTaskCount: 1,
+})
+
+async function mountStage(roster, graph = STAGE_GRAPH(), calls = []) {
+  const view = mount(client.Section, { roster, call: sidebarHost(graph, calls), actions: {} })
+  await settle()
+  laneRow(view).props.onClick()
+  await settle()
+  return { view, calls }
+}
+
+const buttonsOf = view => findAll(view.tree, node => node.type === 'button')
+const countButton = (view, label) => buttonsOf(view).filter(node => (label === 'Reset' ? textOf(node).endsWith('Reset') : textOf(node) === label)).length
+const WRITE_LABELS = ['Hand a task to a Workflow', 'Re-match', 'Pause', 'Resume', 'Stop', 'Edit', 'Finish editing', 'Reset']
+
+async function openDrawerTabs(view, ...tabs) {
+  button(view.tree, 'Progress')?.props.onClick()
+  await settle()
+  for (const tab of tabs) { button(view.tree, tab)?.props.onClick(); await settle() }
+}
+
+test('#2213: a read-only Stage draws no write entry and says why', async () => {
+  const { view, calls } = await mountStage({ bots: [], readOnly: READ_ONLY_REASON })
+  assert.ok(findAll(view.tree, node => node.props?.className === 'wf-stage').length > 0, 'the row still opens the Stage')
+  const offered = []
+  for (const label of WRITE_LABELS) {
+    const n = countButton(view, label)
+    if (n) offered.push(`${label} x${n}`)
+  }
+  await openDrawerTabs(view, 'Flow')
+  for (const label of WRITE_LABELS) {
+    const n = countButton(view, label)
+    if (n && !offered.some(item => item.startsWith(`${label} `))) offered.push(`${label} x${n}`)
+  }
+  // A reader in this window can still press what the page wrongly offers: take Edit if it is
+  // there, so the drag palette this bug also leaves open is exercised, not just inferred.
+  if (button(view.tree, 'Edit')) { button(view.tree, 'Edit').props.onClick(); await settle() }
+  if (findAll(view.tree, node => node.props?.className === 'wf-palette').length) offered.push('wf-palette')
+  assert.deepEqual(offered, [], 'a read-only Stage offers no write entry')
+  const why = findAll(view.tree, node => node.props?.role === 'status').map(textOf)
+  assert.ok(why.some(text => text.includes(READ_ONLY_REASON)), 'the Stage says why in the host\'s own words')
+  assert.deepEqual(calls.filter(item => item.name !== 'workflow/state'), [], 'nothing was written from the Stage')
+  view.unmount()
+})
+
+test('#2213: a read-only Stage still opens, reads and shows Progress / Flow', async () => {
+  const { view } = await mountStage({ bots: [], readOnly: READ_ONLY_REASON })
+  assert.ok(button(view.tree, 'Progress'), 'Progress still opens the runs')
+  assert.ok(button(view.tree, 'Flow'), 'Flow still draws the run')
+  button(view.tree, 'Flow').props.onClick()
+  await settle()
+  assert.ok(findAll(view.tree, node => node.props?.['data-node'] === 'coder').length > 0, 'the flow still draws its nodes')
+  view.unmount()
+})
+
+test('#2213: a writable Stage keeps every write entry', async () => {
+  for (const roster of [{ bots: [] }, { bots: [], readOnly: '' }, { bots: [], readOnly: '   ' }]) {
+    const why = `roster.readOnly=${JSON.stringify(roster.readOnly)}`
+    const { view } = await mountStage(roster)
+    for (const label of ['Hand a task to a Workflow', 'Re-match', 'Pause', 'Stop']) {
+      assert.ok(countButton(view, label) > 0, `${label} stays (${why})`)
+    }
+    await openDrawerTabs(view, 'Flow')
+    assert.ok(countButton(view, 'Edit') > 0, `Edit stays (${why})`)
+    assert.ok(countButton(view, 'Reset') > 0, `Reset stays (${why})`)
+    button(view.tree, 'Edit').props.onClick()
+    await settle()
+    assert.ok(findAll(view.tree, node => node.props?.className === 'wf-palette').length > 0, `the drag palette opens (${why})`)
+    view.unmount()
+  }
+})
+
+test('#2213: a writable Stage keeps Resume on a paused run', async () => {
+  const graph = { ...STAGE_GRAPH(), run: { ...delivery().run, paused: true } }
+  const { view } = await mountStage({ bots: [] }, graph)
+  assert.ok(countButton(view, 'Resume') > 0, 'Resume stays on a paused run')
+  view.unmount()
+})
+
+// #2213: Hand a task had a second door. `__flybot__.openWorkflowAssign` opens the same
+// dialog for the host's own callers, and it never read the window's lock: with the Stage
+// button gone, a read-only window could still get the dialog (and its Assign) through it.
+const withFlybotRoot = async (fn) => {
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {}
+  try { return await fn() } finally { globalThis.__flybot__ = prev }
+}
+
+test('#2213: a read-only window cannot open the assign dialog through __flybot__', async () => {
+  await withFlybotRoot(async () => {
+    const { view } = await mountStage({ bots: [], readOnly: READ_ONLY_REASON })
+    const open = globalThis.__flybot__.openWorkflowAssign
+    assert.equal(typeof open, 'function', 'the host still finds the entry')
+    open()
+    await settle()
+    assert.equal(findAll(view.tree, node => node.props?.role === 'dialog').length, 0, 'no assign dialog in a read-only window')
+    view.unmount()
+  })
+})
+
+test('#2213: a writable window still opens the assign dialog through __flybot__', async () => {
+  for (const roster of [{ bots: [] }, { bots: [], readOnly: '' }, { bots: [], readOnly: '   ' }]) {
+    const why = `roster.readOnly=${JSON.stringify(roster.readOnly)}`
+    await withFlybotRoot(async () => {
+      const { view } = await mountStage(roster)
+      globalThis.__flybot__.openWorkflowAssign()
+      await settle()
+      assert.equal(findAll(view.tree, node => node.props?.role === 'dialog').length, 1, `the assign dialog opens (${why})`)
+      view.unmount()
+    })
+  }
+})
+
 // #2202: one refusal, one announcement. `role="alert"` is a live region, so a copy left behind
 // the mask is still read out beside the dialog's own copy. These assertions count over the whole
 // tree (`alertsOf`), never inside the dialog — counting inside the dialog is exactly what let the

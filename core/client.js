@@ -2509,12 +2509,16 @@ var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team se
 var currentPart = (bot) => bot.sessionId ?? bot.id;
 function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
   const bot = last ? roster.byId[last.botId] : void 0;
-  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot);
-  if (bot && stay) return last.sessionId;
   const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
-  if (held) return last.sessionId;
   const main = roster.byId[mainId];
-  return main ? currentPart(main) : mainId;
+  const destinations = [
+    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : void 0,
+    bot && stay ? last.sessionId : void 0,
+    held ? last.sessionId : void 0,
+    main ? currentPart(main) : mainId
+  ].filter((id) => id !== void 0);
+  if (sessions === void 0) return destinations[0];
+  return destinations.find((id) => sessions.byId?.[id] !== void 0);
 }
 function reminderPrompts(text2) {
   const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
@@ -10618,6 +10622,11 @@ var MEMORY_TEXT_MAX = 600;
 var memoryLength = (value) => [...text(value)].length;
 var DONE_COLUMN = "done";
 var boardOfRow = (row, task) => {
+  const stated = row?.board;
+  if (stated !== null && typeof stated === "object") {
+    const id = text(stated.id);
+    if (id !== "" && (stated.kind === "group" || stated.kind === "bot")) return { kind: stated.kind, id };
+  }
   if (task === void 0) return null;
   if (row.source === "group") {
     const id = text(task.origin?.roomId);
@@ -10724,8 +10733,8 @@ function projectBoardView({ project, rows, done, canManage, tasks, decisions, me
       assignee: text(row.assignee) || null,
       runId: text(row.runId) || null,
       nodeId: text(row.nodeId) || null,
-      title: text(task?.title) || text(task?.note) || null,
-      priority: text(task?.priority) || null,
+      title: text(row.title) || text(task?.title) || text(task?.note) || null,
+      priority: text(row.priority) || text(task?.priority) || null,
       audit: text(row.audit) || null,
       // #1831: who is doing the card, and who is speaking for whom. Both are host truth;
       // a card carrying neither renders exactly as before.
@@ -22427,8 +22436,9 @@ function apply(ctx) {
     landOn: async (id, last, { stay = false, view = "" } = {}) => {
       if (last) await pull().catch(() => {
       });
-      setPlain(false);
       const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() });
+      if (target === void 0) return noteNavigation("refused", id, last?.sessionId);
+      setPlain(false);
       noteNavigation("landOn", target, last?.sessionId);
       expected = target;
       ctx.uiWorkspace.openSession(target);

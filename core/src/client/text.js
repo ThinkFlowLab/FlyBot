@@ -84,12 +84,22 @@ export const currentPart = bot => bot.sessionId ?? bot.id
 // and still goes to the Main Bot.
 export function landingPart(roster, last, mainId, { stay = false, view = '', sessions } = {}) {
   const bot = last ? roster.byId[last.botId] : undefined
-  if (bot && currentPart(bot) !== last.sessionId) return currentPart(bot)
-  if (bot && stay) return last.sessionId
+  // In this order: the Bot's current part, the chat the view held, the Main Bot.
   const held = last !== null && last !== undefined && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== undefined
-  if (held) return last.sessionId
   const main = roster.byId[mainId]
-  return main ? currentPart(main) : mainId
+  const destinations = [
+    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : undefined,
+    bot && stay ? last.sessionId : undefined,
+    held ? last.sessionId : undefined,
+    main ? currentPart(main) : mainId,
+  ].filter(id => id !== undefined)
+  // A caller that passed no session list gets the id fallback above, as it always did.
+  if (sessions === undefined) return destinations[0]
+  // #1306: the shell throws synchronously on an id its session list does not know
+  // (`sessions.retain: unknown session`), and this landing runs from a timer with no click behind it.
+  // With the list in hand only a destination that list knows is returned: a fresh part it has not
+  // caught up with falls back to the chat it replaced, and nothing known at all is `undefined`.
+  return destinations.find(id => sessions.byId?.[id] !== undefined)
 }
 // The prompts in a due scheduled task's message. DSH frames it for the model: one
 // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.

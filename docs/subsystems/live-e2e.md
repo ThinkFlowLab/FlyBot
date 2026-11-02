@@ -39,6 +39,10 @@ suite is one of its columns, not the map's owner.
 - When the key is absent altogether, `live-e2e.yml` skips the six steps that need it and
   warns instead of failing every night (#794). A skipped run proves nothing about the
   suite, and the run summary says exactly that; a failure inside the suite still fails.
+- One reading of the key is shared by the three places that judge it — the preflight, the
+  bench start and the run guard (`dev/live-e2e/key.mjs`): a key under 16 characters or the
+  mock's is skipped with its own warning, never passed to a bench that refuses it. A key
+  long enough but not real is not detected here; only the endpoint can say that (#2214).
 - The mock suites stay separate: this bench never starts the mock model, and the mock
   benches never gain a real key.
 - Evidence is an explicit allow-list that passed the sanitizer (no `token=` URLs, no

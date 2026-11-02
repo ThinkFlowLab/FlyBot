@@ -100,9 +100,9 @@ test('a Project board reads a group card and a run-created card without repeatin
     const rows = (await rt.projectBoard('project-p1')).rows
     assert.equal(rows.length, 2)
     const group = rows.find(row => row.id === 'task-group')
-    assert.deepEqual(group, { id: 'task-group', source: 'group', column: 'in-progress', assignee: 'Writer', updatedAt: 10, runId: 'run-2', nodeId: 'planner' })
+    assert.deepEqual(group, { id: 'task-group', source: 'group', title: 'Ship it', priority: 'normal', board: { kind: 'group', id: 'r1' }, column: 'in-progress', assignee: 'Writer', updatedAt: 10, runId: 'run-2', nodeId: 'planner' })
     const run = rows.find(row => row.id === 'task-run')
-    assert.deepEqual(run, { id: 'task-run', source: 'workflow', column: 'in-progress', assignee: null, updatedAt: 20, runId: 'run-1', nodeId: 'writer' })
+    assert.deepEqual(run, { id: 'task-run', source: 'workflow', title: 'Run card', priority: 'normal', board: null, column: 'in-progress', assignee: null, updatedAt: 20, runId: 'run-1', nodeId: 'writer' })
     // Never the same task twice.
     assert.equal(new Set(rows.map(row => row.id)).size, rows.length)
   } finally {
@@ -110,6 +110,51 @@ test('a Project board reads a group card and a run-created card without repeatin
     await stop()
   }
 })
+
+// P-167: a finished card is still a card. The `tasks` read lists open cards only, so the Done
+// column has no task record to join against — the row itself has to carry the text and the
+// priority, or the card draws as `#<id>` with no priority at all.
+test('a finished card carries its title and priority on the row the Done column draws', async () => {
+  const team = seed()
+  team.tasks['task-done'] = { id: 'task-done', kind: 'group', status: 'accepted', ownerBotId: 'a', origin: { roomId: 'r1' }, assignee: 'Writer', title: 'Ship the release', priority: 'high', createdAt: 3, updatedAt: 4 }
+  const { rt, stop } = await start(undefined, team)
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const card = board.done.find(row => row.id === 'task-done')
+    assert.equal(card.title, 'Ship the release')
+    assert.equal(card.priority, 'high')
+    // The read the page joins against keeps open cards only, so a finished card is not in it.
+    const listed = await rt.taskEndpoint('tasks', {}, null)
+    assert.equal(listed.some(task => task.id === 'task-done'), false)
+  } finally {
+    await stop()
+  }
+})
+
+// #2198: a row names the board it opens, so the Done column is not a shelf of dead cards. With no
+// `tasks` record to join, the client had no way to derive the board and the card drew without a
+// click at all; the row carries it, and a run-carried row keeps naming none of its own.
+test('a finished card names the board it opens on the row the Done column draws', async () => {
+  const team = seed()
+  team.tasks['task-done'] = { id: 'task-done', kind: 'group', status: 'accepted', ownerBotId: 'a', origin: { roomId: 'r1' }, assignee: 'Writer', title: 'Ship the release', priority: 'high', createdAt: 3, updatedAt: 4 }
+  const { rt, stop } = await start(undefined, team)
+  const off = rt.onProjectProvider(({ hasTask }) => [
+    { taskId: 'task-run', runId: 'run-1' },
+  ].filter(row => hasTask(row.taskId)))
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const card = board.done.find(row => row.id === 'task-done')
+    assert.deepEqual(card.board, { kind: 'group', id: 'r1' })
+    // The run carried this card in, and `source: 'workflow'` is the run's binding, not a board.
+    const runCard = board.rows.find(row => row.id === 'task-run')
+    assert.equal(runCard.source, 'workflow')
+    assert.equal(runCard.board, null)
+  } finally {
+    off()
+    await stop()
+  }
+})
+
 
 test('the board takes its token from the host secret store and its zone from the call', async () => {
   const { rt, stop } = await start()

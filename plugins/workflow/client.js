@@ -510,7 +510,7 @@ window.__ModuleLoader__.load({
         })))
     }
 
-    function RunStrip({ workflow, run, focused, onFocus, onPause, onResume, onStop, onTab, onOpenDrawer }) {
+    function RunStrip({ workflow, run, focused, locked, onFocus, onPause, onResume, onStop, onTab, onOpenDrawer }) {
       const running = (run.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
       const chipClass = run.status === 'done' ? 'done' : (run.status === 'failed' ? 'failed' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued')))
       const chipLabel = run.status === 'done' ? tr('Done') : (run.status === 'failed' ? tr('Failed') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued'))))
@@ -539,16 +539,16 @@ window.__ModuleLoader__.load({
         h('div', { className: 'wf-strip-progress', 'aria-label': tr('Progress'), title: tr('Progress') },
           h('div', { className: 'wf-segs' }, (run.marks ?? []).map((mark, index) => h('span', { key: index, className: `wf-seg ${mark}` })))),
         h('div', { className: 'wf-strip-actions' },
-          run.status === 'running' ? (run.paused
+          locked ? null : (run.status === 'running' ? (run.paused
             ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-pri', onClick: (event) => { stopBubble(event); onResume?.(run.id) } }, tr('Resume'))
-            : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); onPause?.(run.id) } }, tr('Pause'))) : null,
-          run.status === 'running' ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-danger-outline', onClick: (event) => { stopBubble(event); onStop?.(run.id) } }, tr('Stop')) : null,
+            : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); onPause?.(run.id) } }, tr('Pause'))) : null),
+          locked ? null : (run.status === 'running' ? h('button', { type: 'button', className: 'wf-btn wf-sm wf-danger-outline', onClick: (event) => { stopBubble(event); onStop?.(run.id) } }, tr('Stop')) : null),
           h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onOpenDrawer?.(); onTab('runs') } }, tr('Progress')),
           h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: (event) => { stopBubble(event); focus(); onOpenDrawer?.(); onTab('flow') } }, tr('Flow'))))
     }
 
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
-    function Stage({ workflow, roster, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop, onRematch }) {
+    function Stage({ workflow, roster, locked, readOnlyReason, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop, onRematch }) {
       const chatRef = useRef(null)
       const chatFoot = useRef({ height: 0, shown: 0 })
       const liveRuns = liveStageRuns(workflow)
@@ -575,20 +575,21 @@ window.__ModuleLoader__.load({
               h('span', { className: 'wf-pill-name' }, workflow.name),
               h('span', { className: 'wf-chev', 'aria-hidden': true }, '▾')),
             h('div', { className: 'wf-actions' },
-              h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
+              locked ? null : h('button', { type: 'button', className: 'wf-btn wf-pri', onClick: onAssign }, tr('Hand a task to a Workflow')))),
+          locked ? h('div', { className: 'wf-muted wf-read-only', role: 'status' }, readOnlyReason) : null,
           showSummary ? h('div', { className: 'wf-strip wf-strip-summary' },
             h('span', { className: 'wf-chip queued' }, tr('{count} running · queue {depth}', { count: workflow.activeCount ?? liveRuns.length, depth: workflow.queueDepth ?? 0 }))) : null,
           held.length > 0 ? h('div', { className: 'wf-held' },
             h('div', { className: 'wf-held-head' }, tr('Tasks this workflow holds')),
             held.map(taskId => h('div', { className: 'wf-held-row', key: taskId },
               h('span', { className: 'wf-held-id', title: taskId }, taskId),
-              h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onRematch?.(taskId) }, tr('Re-match')))),
+              locked ? null : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onRematch?.(taskId) }, tr('Re-match')))),
             (workflow.heldTaskCount ?? held.length) > held.length
               ? h('div', { className: 'wf-held-more' }, tr('{count} more held tasks', { count: (workflow.heldTaskCount ?? held.length) - held.length }))
               : null) : null,
           liveRuns.length > 0 ? h('div', { className: 'wf-strips' },
             liveRuns.map(run => h(RunStrip, {
-              key: run.id, workflow, run, focused: viewRun?.id === run.id,
+              key: run.id, workflow, run, focused: viewRun?.id === run.id, locked,
               onFocus: onFocusRun, onPause, onResume, onStop, onTab, onOpenDrawer,
             }))) : null,
           visible.length > 0 ? h('div', { className: 'wf-chat', ref: chatRef },
@@ -597,7 +598,7 @@ window.__ModuleLoader__.load({
         drawer ? h('aside', { className: 'wf-drawer' },
           h('div', { className: 'wf-dr-head' },
             h('button', { type: 'button', className: 'wf-icon', 'aria-label': tr('Close'), onClick: onCloseDrawer }, '×')),
-          h(DrawerBody, { workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit, viewRun })) : null)
+          h(DrawerBody, { workflow, roster, tab, locked, onTab, onReset, onTip, editing, onToggleEdit, onCommit, viewRun })) : null)
     }
 
     function Bubble({ message, workflow, roster }) {
@@ -617,7 +618,7 @@ window.__ModuleLoader__.load({
             message.attachments?.length ? h('div', { className: 'wf-att' }, message.attachments.map(name => h('span', { key: name }, name))) : null)))
     }
 
-    function DrawerBody({ workflow, roster, tab, onTab, onReset, onTip, editing, onToggleEdit, onCommit, viewRun }) {
+    function DrawerBody({ workflow, roster, tab, locked, onTab, onReset, onTip, editing, onToggleEdit, onCommit, viewRun }) {
       const run = viewRun?.live === true ? viewRun : null
       // The Flow tab paints the run the stage already has — the live run if there is
       // one, else the last one — so an idle workflow shows its last result, the same
@@ -632,10 +633,10 @@ window.__ModuleLoader__.load({
           ['flow', 'details', 'runs'].map(key => h('button', {
             key, type: 'button', role: 'tab', 'aria-selected': tab === key, className: tab === key ? 'on' : '', onClick: () => onTab(key),
           }, tr(key === 'flow' ? 'Flow' : key === 'details' ? 'Details' : 'Runs')))),
-        tab === 'flow' ? h(Flow, { workflow, run, nodeStatus, roster, onTip, editing, onCommit }) : null,
+        tab === 'flow' ? h(Flow, { workflow, run, nodeStatus, roster, onTip, editing: locked ? false : editing, onCommit }) : null,
         tab === 'details' ? h(Details, { workflow, roster }) : null,
         tab === 'runs' ? h(Runs, { workflow }) : null,
-        h('div', { className: 'wf-ctl' },
+        locked ? null : h('div', { className: 'wf-ctl' },
           h('button', { type: 'button', className: 'wf-btn', onClick: onReset }, `↺ ${tr('Reset')}`),
           h('button', { type: 'button', className: 'wf-btn', onClick: onToggleEdit }, editing ? tr('Finish editing') : tr('Edit'))))
     }
@@ -2002,9 +2003,14 @@ window.__ModuleLoader__.load({
         const prev = root.openWorkflowAssign
         // #1457: this path opened the dialog without ever loading the board, so it could only
         // ever show the frozen empty state.
-        root.openWorkflowAssign = () => { setAssignOpen(true); setOpenId(id => id); void loadTasks() }
+        // #2213: the Stage's Hand a task button is gone in a read-only window, and this second
+        // door must not open the dialog it no longer offers.
+        root.openWorkflowAssign = () => {
+          if (locked) return
+          setAssignOpen(true); setOpenId(id => id); void loadTasks()
+        }
         return () => { root.openWorkflowAssign = prev }
-      }, [])
+      }, [locked])
       
       // One poll: while a run is live, for the Bot replies that advance nodes, and while a
       // read error is showing, so a refused read is retried. Two effects used to test the
@@ -2212,7 +2218,7 @@ window.__ModuleLoader__.load({
         error && !renaming && !deleting && !creating ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         readError ? h('div', { className: 'wf-err', role: 'alert' }, readError) : null,
         open ? portal(h(Stage, {
-          workflow: open, roster, stageLeft, drawer, tab, focusedRunId,
+          workflow: open, roster, locked, readOnlyReason, stageLeft, drawer, tab, focusedRunId,
           onFocusRun: setFocusedRunId,
           editing,
           onToggleEdit: () => { setEditing(value => !value); setDrawer(true); setTab('flow') },
