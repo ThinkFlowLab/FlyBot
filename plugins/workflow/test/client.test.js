@@ -3366,13 +3366,13 @@ async function mountReadOnly(graph, calls) {
   return settings
 }
 
-test('#2187: a read-only window offers no Edit control and shows the host reason', async () => {
+test('#2187: a read-only window offers no Edit control and leaves the sentence to the host', async () => {
   const calls = []
   const settings = await mountReadOnly(delivery(), calls)
   assert.equal(button(settings.tree, 'Edit'), undefined, 'a read-only window offers no Edit control')
-  const statuses = findAll(settings.tree, node => node.props?.role === 'status')
-  assert.ok(statuses.length > 0, 'the page says why the graph cannot change')
-  assert.ok(statuses.some(node => textOf(node).includes(READ_ONLY_REASON)), 'in the host\'s own words')
+  // #2202: the host's Settings header already draws `roster.readOnly` once for every page it
+  // shows (`core/src/client/settings.js`, `.bt-hint.bt-read-only`), so this page draws no copy.
+  assert.deepEqual(findAll(settings.tree, node => String(node.props?.className ?? '').includes('wf-read-only')), [], 'the page draws no second copy of the host sentence')
   settings.unmount()
 })
 
@@ -3551,10 +3551,124 @@ test('#2200: a writable window keeps New, Rename, Delete and Hand a task', async
   }
 })
 
-test('#2200: the host sentence #2187 put on the page is still there', async () => {
+test('#2200: the read-only page stays locked and leaves the sentence to the host header', async () => {
   const view = mount(client.WorkflowSettings, { call: sidebarHost(LIST_GRAPH(), []), roster: { bots: [], readOnly: READ_ONLY_REASON } })
   await settle()
-  const statuses = findAll(view.tree, node => node.props?.role === 'status')
-  assert.ok(statuses.some(node => textOf(node).includes(READ_ONLY_REASON)), 'the page still says why in the host\'s own words')
+  // #2202: `roster.readOnly` is drawn once by the host's Settings header for every page it shows
+  // (`core/src/client/settings.js` `bt-read-only`), so this page must not print it again.
+  assert.equal(textOf(view.tree).includes(READ_ONLY_REASON), false, 'the host sentence is left to the header, not printed here')
+  const model = findAll(view.tree, node => node.type === 'select' && node.props?.['aria-label'] === 'Model')[0]
+  assert.equal(model.props.disabled, true, 'and the page is still locked for writing')
   view.unmount()
+})
+
+// #2202: one refusal, one announcement. `role="alert"` is a live region, so a copy left behind
+// the mask is still read out beside the dialog's own copy. These assertions count over the whole
+// tree (`alertsOf`), never inside the dialog — counting inside the dialog is exactly what let the
+// duplicate through in #2193's tests.
+test('#2202: a refused rename is announced once, and inside its dialog', async () => {
+  const { call } = refusedRename()
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+  row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Rename')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the rename dialog is open')
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-dark')[0].props.onClick()
+  await settle()
+  assert.deepEqual(alertsOf(view), [refusal], 'the whole tree carries the refusal exactly once')
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal], 'and that one announcement is inside the open dialog')
+  view.unmount()
+})
+
+test('#2202: a refused delete is announced once, and inside its dialog', async () => {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    if (name === 'workflow/delete') return { ok: false, error: refusal }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+  row.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Delete')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the delete dialog is open')
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-danger')[0].props.onClick()
+  await settle()
+  assert.deepEqual(alertsOf(view), [refusal], 'the whole tree carries the refusal exactly once')
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal], 'and that one announcement is inside the open dialog')
+  view.unmount()
+})
+
+test('#2202: a refused create is announced once, and inside its dialog', async () => {
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [], templates: [] }
+    if (name === 'workflow/create') return { ok: false, error: refusal }
+    return { ok: true, workflows: [] }
+  }
+  const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Bot One' }] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node) === 'New')[0].props.onClick()
+  await settle()
+  let dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  findAll(dialog, node => node.type === 'input' && node.props?.value === '')[0]?.props.onChange({ target: { value: 'Lane B' } })
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  findAll(dialog, node => node.type === 'button' && textOf(node) === 'Add a Bot')[0].props.onClick()
+  await settle()
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  findAll(dialog, node => node.type === 'button' && node.props?.className === 'wf-btn wf-dark')[0].props.onClick()
+  await settle()
+  assert.deepEqual(alertsOf(view), [refusal], 'the whole tree carries the refusal exactly once')
+  dialog = findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  assert.ok(dialog, 'the create dialog is still open')
+  assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal], 'and that one announcement is inside the open dialog')
+  view.unmount()
+})
+
+test('#2202: a refusal with no dialog still reports once on the page', async (t) => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    const call = async (name) => {
+      if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+      if (name === 'workflow/reset') throw new Error('The reset was refused')
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    t.after(() => view.unmount())
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Flow')[0].props.onClick()
+    button(view.tree, '↺ Reset').props.onClick()
+    await settle()
+    assert.deepEqual(alertsOf(view), ['The reset was refused'], 'no dialog holds this sentence, so the page reports it once')
+    assert.deepEqual(findAll(view.tree, node => node.props?.role === 'dialog'), [], 'and no dialog was opened')
+    assert.deepEqual(unhandled, [])
+  })
+})
+
+// #2202: one read-only window, one sentence. The host's Settings header draws `roster.readOnly`
+// once for every page it shows (`core/src/client/settings.js` `bt-read-only`); this page used to
+// print the same sentence again inside its own scroll box. The composition itself is pinned by
+// the core test that came with #2204 — here the plugin only proves it draws no copy of its own.
+test('#2202: the plugin Settings page draws no read-only sentence of its own', async () => {
+  const calls = []
+  const settings = await mountReadOnly(delivery(), calls)
+  assert.deepEqual(findAll(settings.tree, node => String(node.props?.className ?? '').includes('wf-read-only')), [], 'no wf-read-only node is drawn')
+  assert.equal(textOf(settings.tree).includes(READ_ONLY_REASON), false, 'and the host sentence is not printed here a second time')
+  // The rest of the read-only page is unchanged: its controls stay disabled and nothing writes.
+  const project = findAll(settings.tree, node => node.type === 'select' && node.props?.['aria-label'] === 'Project')[0]
+  assert.equal(project.props.disabled, true, 'a read-only page still disables its controls')
+  assert.deepEqual(calls.filter(item => item.name !== 'workflow/state'), [], 'and still writes nothing')
+  settings.unmount()
 })

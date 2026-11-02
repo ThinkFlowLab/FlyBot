@@ -1657,7 +1657,6 @@ window.__ModuleLoader__.load({
       
       return h('div', { className: 'wf-settings-canvas', 'data-flybot': 'workflow-settings' },
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
-        locked ? h('div', { className: 'wf-muted wf-read-only', role: 'status' }, readOnlyReason) : null,
         error && !pack && !loading
           ? h('button', { type: 'button', className: 'wf-btn', onClick: () => setAttempt(value => value + 1) }, tr('Try again'))
           : null,
@@ -2206,7 +2205,11 @@ window.__ModuleLoader__.load({
         locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
-        error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
+        // #2202: `role="alert"` is a live region, so a copy behind the mask is still read out.
+        // While Rename, Delete or Create holds this same refusal in its own dialog, that dialog
+        // carries the only announcement; the section draws no second copy of the same sentence.
+        // A refusal with no dialog open is reported here as before.
+        error && !renaming && !deleting && !creating ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         readError ? h('div', { className: 'wf-err', role: 'alert' }, readError) : null,
         open ? portal(h(Stage, {
           workflow: open, roster, stageLeft, drawer, tab, focusedRunId,
