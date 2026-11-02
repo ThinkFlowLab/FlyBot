@@ -14105,3 +14105,52 @@ for (const [name, tools, expectation] of [
     assert.equal(granted.length, 1, 'exactly one grant was sent')
   })
 }
+
+// #2219: `social/face-open` is declared `{ read: true }`, so a read-only window may call it — but a
+// past room whose local mirror is gone made it write one (`rooms.upsertFace`). The read half stays:
+// the stored past view comes back and the list does not grow; a writable window keeps today exactly.
+async function pastRoomWindow(t, { readOnly }) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-social-2219-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const settingsPath = join(dir, 'settings.json')
+  writeFileSync(settingsPath, JSON.stringify({
+    pastFaceRooms: [{
+      faceRoomId: 'frm_gone', name: 'Old room', status: 'closed', endedAt: '2026-11-01T10:00:00Z',
+      members: [{ handle: '@guest.eve.home', displayName: 'Eve' }, { handle: '@pete.home', displayName: 'Pete' }],
+    }],
+  }))
+  const server = withFaceRooms(mockServer())
+  const view = readOnly
+    ? new Proxy(ctx.flybot, { get: (target, key) => (key === 'readOnly' ? () => true : key === 'scope' ? (name) => new Proxy(target.scope(name), { get: (inner, k) => (k === 'readOnly' ? () => true : inner[k]) }) : target[key]) })
+    : ctx.flybot
+  const social = createSocial(view, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  return { ctx, call }
+}
+
+test('#2219: a read-only window opens a past room without writing a local mirror', async (t) => {
+  const { ctx, call } = await pastRoomWindow(t, { readOnly: true })
+  assert.equal(ctx.flybot.rooms.ofFace?.('frm_gone'), undefined, 'no mirror before the call')
+  const before = ctx.flybot.rooms.list().length
+  const opened = (await call('flybot/social/face-open', { faceRoomId: 'frm_gone' })).value
+  assert.equal(ctx.flybot.rooms.list().length, before, 'a read-only window creates no room')
+  assert.equal(opened?.readOnly, true, 'the answer says the window is read-only')
+  assert.equal(opened?.name, 'Old room', 'the stored room is still named for the reader')
+  assert.deepEqual(opened?.members?.map(member => member.displayName), ['Eve', 'Pete'], 'the stored members still come back')
+  assert.equal(opened?.roomId, undefined, 'no local room id is handed out')
+})
+
+test('#2219: a writable window still opens a past room by creating its mirror', async (t) => {
+  const { ctx, call } = await pastRoomWindow(t, { readOnly: false })
+  const before = ctx.flybot.rooms.list().length
+  const opened = (await call('flybot/social/face-open', { faceRoomId: 'frm_gone' })).value
+  assert.equal(ctx.flybot.rooms.list().length, before + 1, 'a writable window creates the mirror as today')
+  assert.ok(opened?.roomId, 'the new local room is handed back')
+})
