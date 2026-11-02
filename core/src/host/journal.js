@@ -291,6 +291,17 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
     const added = Buffer.byteLength(text)
     const firstChange = oldest ?? fresh.find(entry => entry.op !== 'base')?.t
     if (lastText !== undefined && (bytes + added > maxBytes || (firstChange !== undefined && t - firstChange > maxAgeMs))) {
+      // #2146: a rotation reads the file before it replaces it, so it asks the same question the
+      // append asks. A link standing in for the file would have another file's lines read as the
+      // team's history, and the rename would drop the other name; only a file with this one name
+      // is this host's own.
+      let info
+      try {
+        info = await lstat(path)
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      if (info !== undefined && (info.isSymbolicLink() || !info.isFile() || info.nlink !== 1)) throw new JournalError('the journal path is not a plain file')
       const kept = pruneEntries([...parseJournal(await readFile(path, 'utf8')), ...fresh], { now: t, maxBytes, maxAgeMs })
       const whole = kept.map(lineOf).join('')
       if (Buffer.byteLength(whole) > maxBytes) throw new JournalError('the team alone is larger than the journal cap')
