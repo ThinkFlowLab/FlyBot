@@ -219,3 +219,67 @@ test('credential pages are bounded and malformed or future credential protocols 
   credential.version = 'future/v2'
   assert.equal((await http(one.token, 'projects')).ok, false)
 })
+
+test('safe external consultation uses the authenticated agent mailbox and cannot borrow another agent history', async t => {
+  const { rt, http } = await setup(t)
+  rt.deliver = async ({ sessionId, exchangeId }) => rt.projectAgents.onEvent({ id: sessionId }, { type: 'exchange/start', data: { exchangeId } })
+  const connection = await external(rt)
+  const response = await http(connection.token, 'project-consultation-ask', { projectId: 'p1', requestId: 'safe-question', text: 'What is the shared project goal?' })
+  assert.equal(response.ok, true, JSON.stringify(response))
+  assert.equal(response.value.consultation.agentId, connection.agent.id)
+  assert.equal(response.value.consultation.initiativeTransferred, false)
+  assert.equal(Object.keys(rt.state.tasks).length, 0)
+  const other = await external(rt)
+  const query = { projectId: 'p1', consultationId: response.value.consultation.id, agentId: connection.agent.id }
+  assert.equal((await http(other.token, 'project-consultation-get', query)).ok, false)
+  assert.equal((await http(connection.token, 'project-consultation-get', query)).ok, true)
+  const envelope = await http(connection.token, 'project-development', { version: 'project-development/v1', kind: 'query', projectId: 'p1', name: 'consultation.get', payload: { consultationId: query.consultationId } })
+  assert.equal(envelope.ok, true)
+  assert.equal(envelope.value.result.consultation.id, query.consultationId)
+  assert.equal((await http(connection.token, 'project-consultation-ask', { ...query, projectId: 'p2', requestId: 'foreign-question', text: 'Cross project?' })).ok, false)
+  await api(rt, 'personal-agent-token-revoke', { credentialId: connection.credential.id, agentId: connection.agent.id })
+  assert.equal((await http(connection.token, 'project-consultation-get', query)).ok, false)
+})
+
+test('Chief contacts a selected personal agent first; safe suggestions require human approval and watch replies use existing input admission', async t => {
+  const { rt, http } = await setup(t)
+  const connection = await external(rt)
+  await api(rt, 'personal-agent-default', { projectId: 'p1', agentId: connection.agent.id })
+  rt.projectChiefControl.requireJobActor = actor => { assert.equal(actor.chiefJobId, 'test-chief-run') }
+  const task = { id: 't', projectId: 'p1', requesterId: 'alice', title: 'Implement the selected solution', status: 'open', collaboration: { status: 'blocked', initiatedBy: 'alice', history: [], generation: 1 } }
+  rt.state.tasks.t = task
+  const ask = async (id, requiresHuman = false) => {
+    const recipient = rt.projectAgents.contactUser(task, { id, reason: 'Which approved option should we use?', requiresHuman }, { memberId: 'alice', chiefJobId: 'test-chief-run' })
+    task.chiefQuestion = { decisionId: id, reason: 'Which option?', recipient }
+    await rt.save()
+    return recipient
+  }
+  const recipient = await ask('decision-one')
+  assert.equal(recipient.kind, 'personal-agent')
+  assert.equal(recipient.agentId, connection.agent.id)
+  const inbox = await http(connection.token, 'project-consultation-list', { projectId: 'p1' })
+  assert.equal(inbox.value.items[0].direction, 'incoming')
+  assert.equal(inbox.value.items[0].linkedTaskId, 't')
+  const answer = { projectId: 'p1', consultationId: recipient.consultationId, requestId: 'one-answer', text: 'Choose the smaller approved change', publish: true }
+  const safe = await http(connection.token, 'project-consultation-reply', answer)
+  assert.equal(safe.ok, true, JSON.stringify(safe))
+  assert.equal(safe.value.published, false)
+  assert.equal(safe.value.requiresUserApproval, true)
+  assert.equal(Object.keys(rt.state.projectTaskInputs ?? {}).length, 0)
+  const approved = await api(rt, 'project-consultation-reply', { ...answer, agentId: connection.agent.id })
+  assert.equal(approved.published, true)
+  assert.equal((await api(rt, 'project-consultation-reply', { ...answer, agentId: connection.agent.id })).input.id, approved.input.id)
+  assert.equal(Object.keys(rt.state.projectTaskInputs).length, 1)
+  assert.equal(task.collaboration.status, 'blocked', 'Explicit advice is new input; Chief still decides the next execution')
+  await api(rt, 'personal-agent-delegation-set', { projectId: 'p1', agentId: connection.agent.id, mode: 'watch' })
+  const second = await ask('decision-two')
+  const watched = await http(connection.token, 'project-consultation-reply', { ...answer, consultationId: second.consultationId })
+  assert.equal(watched.ok, true, JSON.stringify(watched))
+  assert.equal(watched.value.published, true)
+  const third = await ask('decision-personal', true)
+  const personalOnly = await http(connection.token, 'project-consultation-reply', { ...answer, consultationId: third.consultationId })
+  assert.equal(personalOnly.value.published, false)
+  assert.equal(personalOnly.value.requiresUserApproval, true)
+  assert.equal(task.status, 'open')
+  assert.equal(Object.keys(rt.state.tasks).length, 1)
+})

@@ -149,6 +149,7 @@ export function createProjectChiefControl(rt) {
       if (task.collaboration) { task.collaboration.status = 'blocked'; task.collaboration.block = { reason, chiefDecisionId: audit.id, at: Date.now() } }
       if (task.collaboration?.claim?.chiefRunId === run.id) task.collaboration.claim.status = 'waiting-human'
       task.chiefQuestion = { decisionId: audit.id, reason, at: Date.now() }
+      task.chiefQuestion.recipient = rt.projectAgents.contactUser?.(task, { id: audit.id, reason, requiresHuman: decision.requiresHuman === true }, actor) ?? { kind: 'human', memberId: task.collaboration?.initiatedBy ?? actor.memberId }
     } else if (decision.action === 'close') {
       if (!Array.isArray(decision.criteria) || !decision.criteria.length || decision.criteria.some(row => row?.passed !== true || typeof row.criterion !== 'string' || !row.criterion.trim() || typeof row.evidence !== 'string' || !row.evidence.trim())) throw refuse('Chief closure needs explicit acceptance-criteria evidence')
       await rt.projectDelivery.chiefAccept({ taskId: task.id, expectedSha: saved.candidateSha, decision: audit }, actor)

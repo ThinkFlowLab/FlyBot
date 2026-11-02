@@ -764,3 +764,19 @@ pins, and model input follows a durable-save/cancellation barrier. Existing
 Harness/lease/Workflow services remain authoritative. Adapter capability inspection
 reports native Task-role continuation as pending; no new real-provider validation,
 public service protocol, SQL transaction, deployment or frontend change is claimed.
+
+
+### Collaboration contract convergence — 2026-11-03 (#2175)
+
+Expose durable Task handoffs through one scoped contract projection, with distinct
+pending/accepted/processed/revoked/invalidated states, source/target context references,
+actual claim/worker binding, initiative fences and predecessor/successor history.
+Idempotent trusted offer/accept ports reuse pools; unresolved old writers cannot be
+bypassed by Chief rerouting to another resource. Consultation is a separate private
+protocol over retained transcripts, without Task creation or initiative transfer.
+Chief prefers an active personal agent for user questions: safe answers require user
+publication, watch answers use existing inbox rights; only committed Effects may wake
+an authorized native watch. External clients have isolated mailboxes, not fabricated
+provider sessions. SDK process/HTTP tests and real-provider acceptance remain distinct.
+Native restoration/context bounds, transaction events and parent waits stay on their
+original dependent issues; no control-plane, deployment or frontend changes.

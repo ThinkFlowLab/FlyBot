@@ -585,3 +585,128 @@ test('a safe personal agent can recommend closure without a Task or Owner confir
   assert.equal(Object.keys(rt.state.tasks).length, before)
   assert.equal(rt.readProject('p1').status, 'active')
 })
+
+test('consultation APIs expose private durable question/reply records without Task initiative transfer', async t => {
+  const { rt } = await setup(t)
+  const original = await get(rt, alice)
+  const request = { projectId: 'p1', requestId: 'consultation-query', text: 'Explain the current architecture' }
+  const result = await rt.projectEndpoint('project-consultation-ask', request, alice)
+  assert.equal(result.consultation.version, 'project-consultation/v1')
+  assert.equal(result.consultation.initiativeTransferred, false)
+  assert.equal(Object.keys(rt.state.tasks).length, 0)
+  const id = result.consultation.id
+  const chief = Object.values(rt.state.projectAgents).find(row => row.conversationHandoffId === id)
+  rt.projectAgents.onEvent({ id: chief.sessionId }, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Scoped architecture answer' }] } } })
+  const view = await rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: id }, alice)
+  assert.equal(view.consultation.replies.at(-1).text, 'Scoped architecture answer')
+  assert.equal(view.consultation.returnTo, original.mine.id)
+  const list = await rt.projectEndpoint('project-consultation-list', { projectId: 'p1' }, alice)
+  assert.equal(list.items[0].id, id)
+  await assert.rejects(rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: id }, bob), /Unknown/)
+  assert.equal((await rt.projectEndpoint('project-consultation-list', { projectId: 'p1' }, bob)).items.length, 0)
+  const replay = await rt.projectEndpoint('project-consultation-ask', request, alice)
+  assert.equal(replay.consultation.id, id)
+  assert.equal(replay.already, true)
+  assert.equal(Object.keys(rt.state.tasks).length, 0)
+})
+
+test('an external personal agent can consult Chief through its own mailbox without a native agent or private-history borrowing', async t => {
+  const { rt } = await setup(t)
+  await get(rt, alice)
+  await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: 'DEFAULT_AGENT_PRIVATE_SECRET' }, alice)
+  const { agent } = await rt.projectEndpoint('personal-agent-create', { name: 'External client', kind: 'external', provider: 'client', endpoint: 'https://example.test/agent' }, alice)
+  await rt.projectEndpoint('personal-agent-join', { agentId: agent.id, projectId: 'p1' }, alice)
+  const request = { projectId: 'p1', agentId: agent.id, requestId: 'external-consult', text: 'Which shared goal is active?' }
+  const reply = await rt.projectEndpoint('project-consultation-ask', request, alice)
+  const carrier = rt.state.projectAgents[reply.consultation.returnTo]
+  assert.equal(carrier.personalAgentId, agent.id)
+  assert.equal(carrier.botId, undefined)
+  assert.equal(JSON.stringify(reply).includes('DEFAULT_AGENT_PRIVATE_SECRET'), false)
+  const chief = Object.values(rt.state.projectAgents).find(row => row.conversationHandoffId === reply.consultation.id)
+  rt.projectAgents.onEvent({ id: chief.sessionId }, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Shared goal reply' }] } } })
+  const view = await rt.projectEndpoint('project-consultation-get', { ...request, consultationId: reply.consultation.id }, alice)
+  assert.equal(view.consultation.replies.at(-1).text, 'Shared goal reply')
+  await assert.rejects(rt.projectEndpoint('project-consultation-get', { ...request, consultationId: reply.consultation.id }, bob), /owner|access|Unknown/i)
+  assert.equal(Object.keys(rt.state.tasks).length, 0)
+})
+
+test('consultation queries do not allocate missing agents and reject malformed pages, stale or forged replies', async t => {
+  const { rt } = await setup(t)
+  await assert.rejects(rt.projectAgents.consultation('unsupported', { projectId: 'p1' }, alice), /Unknown/ )
+  const before = JSON.stringify(rt.state.projectAgents)
+  assert.deepEqual((await rt.projectEndpoint('project-consultation-list', { projectId: 'p1' }, bob)).items, [])
+  assert.equal(JSON.stringify(rt.state.projectAgents), before)
+  await assert.rejects(rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: 'missing' }, bob), /Unknown/)
+  const request = { projectId: 'p1', requestId: 'bounded-consult', text: 'Explain the current goal' }
+  const { consultation } = await rt.projectEndpoint('project-consultation-ask', request, alice)
+  for (const body of [{ limit: 0 }, { limit: 101 }, { after: 'foreign' }]) await assert.rejects(rt.projectEndpoint('project-consultation-list', { projectId: 'p1', ...body }, alice), /limit|cursor/)
+  await assert.rejects(rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: consultation.id, offset: -1 }, alice), /page/)
+  await assert.rejects(rt.projectEndpoint('project-consultation-reply', { projectId: 'p1', consultationId: consultation.id, requestId: 'spoof', text: 'Pretend to be Chief', publish: true }, alice), /Chief executor/)
+  await assert.rejects(rt.projectEndpoint('project-consultation-list', { projectId: 'p1', agentId: 'unknown' }, alice), /participation/)
+  const peer = await get(rt, bob)
+  await assert.rejects(rt.projectEndpoint('project-consultation-list', { projectId: 'p1', agentId: peer.mine.personalAgentId }, alice), /owner/)
+})
+
+test('personal-agent notifications run only after commit, reuse watch authority and do not borrow a changed default', async t => {
+  const { rt } = await setup(t)
+  const original = await get(rt, alice)
+  await rt.projectEndpoint('project-agent-mode', { projectId: 'p1', mode: 'watch' }, alice)
+  rt.projectChiefControl.requireJobActor = actor => { assert.equal(actor.chiefJobId, 'chief-run') }
+  const actor = { ...alice, chiefJobId: 'chief-run' }
+  const task = { id: 'notify-task', projectId: 'p1', status: 'open', requesterId: alice.memberId }
+  rt.state.tasks[task.id] = task
+  let wakes = 0
+  rt.projectAgents.wakeWatch = async (projectId, memberId, text, carrierId) => {
+    wakes++
+    assert.equal(projectId, 'p1')
+    assert.equal(memberId, alice.memberId)
+    assert.equal(carrierId, original.mine.id)
+    assert.match(text, /project_agent_consultations/)
+    return { agent: { id: carrierId } }
+  }
+  const question = { id: 'question-one', reason: 'Clarify the planned behavior' }
+  const recipient = rt.projectAgents.contactUser(task, question, actor)
+  assert.equal(rt.projectAgents.contactUser(task, question, actor).consultationId, recipient.consultationId)
+  task.chiefQuestion = { decisionId: question.id, recipient }
+  await rt.projectEffects.drain()
+  assert.equal(wakes, 0)
+  await rt.save()
+  await rt.projectEffects.drain()
+  assert.equal(wakes, 1)
+  await rt.projectEffects.drain()
+  assert.equal(wakes, 1)
+  const next = rt.projectAgents.contactUser(task, { id: 'question-two', reason: 'Another scoped question' }, actor)
+  task.chiefQuestion = { decisionId: 'question-two', recipient: next }
+  await rt.save()
+  const { agent } = await rt.projectEndpoint('personal-agent-create', { name: 'Another assistant' }, alice)
+  await rt.projectEndpoint('personal-agent-join', { projectId: 'p1', agentId: agent.id }, alice)
+  await rt.projectEndpoint('personal-agent-default', { projectId: 'p1', agentId: agent.id }, alice)
+  await rt.projectEffects.drain()
+  assert.equal(wakes, 1)
+  const ended = rt.projectAgents.contactUser(task, { id: 'question-ended', reason: 'This question will be cancelled' }, actor)
+  task.chiefQuestion = { decisionId: 'question-ended', recipient: ended }
+  await rt.save()
+  delete task.chiefQuestion
+  await rt.projectEffects.drain()
+  assert.equal(rt.state.projectEffects[ended.effectId].status, 'cancelled')
+  const noAgent = { ...task, requesterId: bob.memberId }
+  assert.equal(rt.projectAgents.contactUser(noAgent, { id: 'no-agent', reason: 'Ask the current human' }, actor).kind, 'human')
+})
+
+test('a busy native watch defers its committed notification without exhausting retries', async t => {
+  const { rt } = await setup(t)
+  await get(rt, alice)
+  await rt.projectEndpoint('project-agent-mode', { projectId: 'p1', mode: 'watch' }, alice)
+  rt.projectChiefControl.requireJobActor = () => {}
+  const task = { id: 'busy-notify', projectId: 'p1', requesterId: alice.memberId, status: 'open' }
+  rt.state.tasks[task.id] = task
+  const recipient = rt.projectAgents.contactUser(task, { id: 'busy-question', reason: 'Clarify a current choice' }, { ...alice, chiefJobId: 'chief-run' })
+  task.chiefQuestion = { decisionId: 'busy-question', recipient }
+  rt.projectAgents.wakeWatch = async () => { throw Object.assign(new Error('Already answering'), { code: 'bot/busy' }) }
+  await rt.save()
+  await rt.projectEffects.drain()
+  const effect = rt.state.projectEffects[recipient.effectId]
+  assert.equal(effect.status, 'pending')
+  assert.equal(effect.failures, 0)
+  assert.equal(effect.waitingFor, 'agent')
+})

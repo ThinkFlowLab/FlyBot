@@ -146,3 +146,12 @@ it active after the job/SDK exited falsely blocks manager source admission. This
 is not execution-exit proof: running jobs, held leases, unknown workers and other
 current claims still block through their existing checks. Task/Attempt/generation,
 audit and workspace remain intact; no ownership is granted by the status change.
+
+
+Needs-human decisions now retain a private consultation recipient: prefer the
+initiator's active default personal agent, fall back to the current human, and
+retain any explicit personal-only answer restriction. Notification is staged in the
+existing Effects service with the decision; native watch authority is revalidated at
+execution. Safe suggestions require explicit user publication, while watch answers
+use ordinary Task input admission. Chief retains Task initiative and decides whether
+the answer resolves the block. See [consultation protocol](project-agents.md).

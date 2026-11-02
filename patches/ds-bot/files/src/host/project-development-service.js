@@ -11,6 +11,8 @@ const stableId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.
 const sameTask = (row, task) => Boolean(row && row.projectId === task.projectId && row.taskId === task.id)
 const roles = new Set(['chief', 'developer', 'tester', 'reviewer'])
 const operations = Object.freeze({
+  'consultation.reply': 'project-consultation-reply', 'consultation.ask': 'project-consultation-ask', 'consultation.get': 'project-consultation-get', 'consultation.list': 'project-consultation-list',
+  'handoff.get': 'project-handoff-get', 'handoff.list': 'project-handoff-list',
   'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
   'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
@@ -25,7 +27,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -47,7 +49,7 @@ export function taskView(state, task, { activity = {} } = {}) {
   if (task.status === 'accepted') phase = 'accepted'
   else if (task.status === 'cancelled' || c?.status === 'cancelled' || attempt?.status === 'cancelled') phase = 'cancelled'
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
-  else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = 'owner'; reason = task.chiefQuestion.reason }
+  else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
   else if (queue) { phase = queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
@@ -166,6 +168,9 @@ export function createDevelopmentService(rt) {
     if (endpoint === 'project-execution-input') return rt.projectHarness.input(body, actor)
     if (endpoint === 'project-agent-proposal-apply') return rt.projectAgents.endpoint(endpoint, body, actor)
     if (endpoint === 'project-task-detail') return detail(body, actor)
+    if (['project-consultation-reply', 'project-consultation-ask', 'project-consultation-get', 'project-consultation-list'].includes(endpoint)) return rt.projectAgents.consultation(endpoint, body, actor)
+    if (endpoint === 'project-handoff-get') return { handoff: rt.projectPools.get(body.taskId, body.handoffId, actor) }
+    if (endpoint === 'project-handoff-list') return rt.projectPools.list(body.taskId, actor, body)
     if (endpoint === 'project-task-pools') {
       rt.requireProjectAccess(actor, body.projectId)
       return { pools: rt.projectAgents.deliveryDefinitions(body.projectId).roles.map(role => ({ botId: role.id, role: role.role, tasks: rt.projectPools.available(body.projectId, role.id, actor) })) }
@@ -224,7 +229,9 @@ export function createDevelopmentService(rt) {
     // Trusted host ports. Public HTTP never accepts role tokens or model results.
     roleResult: row => rt.projectPools.result(row),
     roleCommand(body) {
-      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate'].includes(body.name)) throw failure('Unsupported role command')
+      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate', 'handoff.accept', 'handoff.offer'].includes(body.name)) throw failure('Unsupported role command')
+      if (body.name === 'handoff.accept') return rt.projectPools.accept(body.taskId, body.botId, body.handoffId, body.requestId)
+      if (body.name === 'handoff.offer') return rt.projectPools.decide(body.taskId, body.claim, { ...body.payload, requestId: body.requestId })
       if (body.name === 'claim') return rt.projectPools.claim(body.taskId, body.botId)
       return rt.projectPools.decide(body.taskId, body.claim, { ...body.payload, action: body.name, requestId: body.requestId })
     },

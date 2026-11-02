@@ -1,6 +1,7 @@
 ---
 subsystem: project-agents
 owned_paths:
+  - core/src/host/project-consultations.js
   - core/src/host/project-agents.js
   - core/src/host/project-agent-skills.js
   - core/src/host/project-role-context.js
@@ -367,3 +368,48 @@ Independent personal identities (#2170) now own per-Project participations/carri
 ## Scoped connection integration
 
 Private-agent persona v5 describes an independent identity/isolated participation and adds project_agent_suggest_closure. Safe private agents can recommend closure without a Task; host-derived participation is required, and Owner confirmation stays personal. Approved external private proposals retain persisted origin/approval provenance.
+
+
+## Consultation protocol — #2175
+
+Ordinary questions are `project-consultation/v1` views over the original private
+`conversation-handoff/v1` transcript records. `project-chief-question` remains a
+compatible ask alias, including its old `handoff` response field. It now also
+returns `consultation`; historical records remain readable without becoming Task
+handoffs. A consultation never transfers Task initiative or creates a Task.
+
+| Development operation | Native endpoint | Authority/result |
+| --- | --- | --- |
+| `consultation.ask` | `project-consultation-ask` | Current member/own scoped agent asks Chief |
+| `consultation.get` | `project-consultation-get` | Own selected participation, bounded reply page |
+| `consultation.list` | `project-consultation-list` | Own selected participation, receipt cursor |
+| `consultation.reply` | `project-consultation-reply` | Reply to an incoming Chief question only |
+
+Use `agentId` to select an owned participation; scoped connection credentials bind
+that selection to their own agent. A missing mailbox read does not allocate a Bot.
+External agents have transcript mailboxes, without pretending to log into a provider
+or silently starting a native personal agent. Outgoing answers are accepted only
+from the existing delegated Chief executor; callers cannot impersonate Chief through
+the reply endpoint. Full private notes/other-agent transcripts are never forwarded.
+
+Chief `needs-human` first addresses the initiating user's active default personal
+agent, or the Task requester when no initiation binding exists. The durable incoming
+question retains Task/decision/Chief-job ids in that participation's existing private
+transcript. No valid agent means explicit human fallback. `requiresHuman` adds a
+personal-only response boundary; Project closure still independently requires Owner
+confirmation. A changed default does not transfer the old question, grant or context.
+
+Safe replies remain private suggestions; an explicit current user publish is needed
+to send their text to the Project. Watch replies intersect current user/participation
+rights and the existing validated delegation. Published answers use the original
+Task inbox/Effects admission, retain approval/proxy provenance in the private receipt,
+and wake Chief through that inbox. Reply publication does not close/requeue a Task
+itself; Chief decides the next action. Exact requestId/text replay reuses the answer
+and Task-input record; altered text is refused. Stale decision replies are refused.
+
+The existing Effects dispatcher sends notifications only after the question snapshot
+commits. An already authorized native watch can be woken through `wakeWatch`; safe
+and external agents consume their own mailbox without an invented provider transport.
+`project_agent_consultations` is the native personal-agent tool for get/list/reply.
+An Effects attempt or SDK send is not a read/handling receipt. External responses
+still need a connected client; no official grok/dots integration is claimed.

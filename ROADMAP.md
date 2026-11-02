@@ -415,3 +415,19 @@ explicit incompatible recovery, current rights/resource checks and truthful adap
 capabilities. Native Task-role context restoration, parent waits, transactional Effects
 and external command receipts remain dependent acceptance; no live-provider or deploy
 claim from controlled process tests. README/API rewrite remains last (#2189).
+
+
+### Collaboration contract convergence — 2026-11-03 (#2175)
+
+Expose durable Task handoffs through one scoped contract projection, with distinct
+pending/accepted/processed/revoked/invalidated states, source/target context references,
+actual claim/worker binding, initiative fences and predecessor/successor history.
+Idempotent trusted offer/accept ports reuse pools; unresolved old writers cannot be
+bypassed by Chief rerouting to another resource. Consultation is a separate private
+protocol over retained transcripts, without Task creation or initiative transfer.
+Chief prefers an active personal agent for user questions: safe answers require user
+publication, watch answers use existing inbox rights; only committed Effects may wake
+an authorized native watch. External clients have isolated mailboxes, not fabricated
+provider sessions. SDK process/HTTP tests and real-provider acceptance remain distinct.
+Native restoration/context bounds, transaction events and parent waits stay on their
+original dependent issues; no control-plane, deployment or frontend changes.

@@ -7,7 +7,7 @@ import { WORKBENCH_ENDPOINTS } from './workbench-gateway.js'
 const hash = value => createHash('sha256').update(value).digest('hex')
 const refusal = (message, code = 'bot/forbidden') => Object.assign(new Error(message), { code })
 const endpoints = new Set(['personal-agent-token-create', 'personal-agent-token-list', 'personal-agent-token-revoke', 'personal-agent-delegation-set', 'personal-agent-propose-task'])
-const reads = new Set(['projects', 'project-read', 'project-detail', 'project-board', 'project-members', 'project-repositories', 'project-task-detail', 'project-attempt-log', 'project-task-pools', 'project-chief-state'])
+const reads = new Set(['project-handoff-get', 'project-handoff-list', 'project-consultation-get', 'project-consultation-list', 'projects', 'project-read', 'project-detail', 'project-board', 'project-members', 'project-repositories', 'project-task-detail', 'project-attempt-log', 'project-task-pools', 'project-chief-state'])
 const reserved = new Set(['project-agent-mode', 'project-agent-proposal-apply', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-agent-stop', 'project-delete', 'project-archive', 'project-close-prepare', 'project-close-confirm'])
 const publicCredential = row => ({ version: row.version, id: row.id, agentId: row.agentId, projectIds: [...row.projectIds], createdAt: row.createdAt, expiresAt: row.expiresAt, status: row.status })
 const bounded = (value, name, max) => {
@@ -66,12 +66,12 @@ export function install(rt) {
       try {
         current(actor)
         if (['auth-whoami', 'auth-revoke', 'projects'].includes(endpoint)) return nativeAuthorize(actor, endpoint, body)
-        if (endpoint === 'personal-agent-propose-task' || endpoint === 'project-close-request') scope(actor, body.projectId)
+        if (['personal-agent-propose-task', 'project-close-request', 'project-consultation-ask', 'project-consultation-reply', 'project-chief-question'].includes(endpoint)) scope(actor, body.projectId)
         else if (reads.has(endpoint)) {
           const projectId = body.projectId ?? body.id ?? ownEntry(state.tasks, body.taskId)?.projectId ?? ownEntry(state.projectAttempts ?? {}, body.attemptId)?.projectId
           scope(actor, projectId)
         } else if (endpoint === 'project-agents' && body.view === 'summary') scope(actor, body.projectId)
-        else if (endpoint === 'project-development' && rt.projectDevelopment.isQuery(body)) scope(actor, body.projectId)
+        else if (endpoint === 'project-development' && (rt.projectDevelopment.isQuery(body) || body.kind === 'command' && ['consultation.ask', 'consultation.reply'].includes(body.name))) scope(actor, body.projectId)
         else {
           const projectId = body.projectId ?? ownEntry(state.tasks, body.id ?? body.taskId)?.projectId ?? ownEntry(state.projectAttempts ?? {}, body.attemptId)?.projectId ?? ownEntry(state.projectQueue ?? {}, body.queueId)?.projectId ?? body.id
           const { grant } = scope(actor, projectId)

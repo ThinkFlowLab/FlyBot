@@ -172,3 +172,12 @@ and [workflow/private-agent/state guide](../development-service-guide.md). Their
 operation index follows this module's 12 queries and21 commands; native creation
 and personal-agent endpoints are labeled separately. Documentation adds no role
 result/claim HTTP route, new state writer or additional authority.
+
+
+#2175 adds query operations `handoff.get`, `handoff.list`, `consultation.get`,
+`consultation.list` and commands `consultation.ask`, `consultation.reply` to the same
+v1 envelope. Their native aliases call identical services and keep current Project,
+Task and owned-participation checks. Safe external agents may ask questions or save
+private advice; publishing an answer requires human approval or current watch rights.
+Role `handoff.offer/accept` are trusted host ports, never public commands. See
+[pool contracts](project-pools.md) and [consultations](project-agents.md).
