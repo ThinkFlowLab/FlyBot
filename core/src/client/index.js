@@ -451,8 +451,11 @@ export function apply(ctx) {
     // was archived for a fresh one, the view goes on in the fresh one.
     landOn: async (id, last, { stay = false, view = '' } = {}) => {
       if (last) await pull().catch(() => { /* a stale team list is fixed by the next pull */ })
-      setPlain(false)
       const target = landingPart(roster.getSnapshot(), last, id, { stay, view, sessions: ctx.sessions.list.getSnapshot() })
+      // #1306: no destination the session list knows. The shell would throw, and this call comes from
+      // a 400 ms timer with no click behind it; leaving the view where it is keeps the page quiet.
+      if (target === undefined) return noteNavigation('refused', id, last?.sessionId)
+      setPlain(false)
       noteNavigation('landOn', target, last?.sessionId)
       expected = target
       ctx.uiWorkspace.openSession(target)
