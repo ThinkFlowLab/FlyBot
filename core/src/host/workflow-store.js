@@ -72,7 +72,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     }
     return false
   }
-  const refuseNotFile = (file) => ({ ok: false, code: 'workflow/not-a-file', message: `the workflow file ${file} is not a plain file, so nothing is written there`, problems: [] })
+  const refuseNotFile = (file) => ({ ok: false, code: 'workflow/not-a-file', message: `the workflow file ${file} is not a plain file of its own, so nothing is written there`, problems: [] })
   // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
   // may be someone's hand-edit that does not parse: one broken file must not take the list down.
   const ownFiles = () => {
@@ -257,7 +257,7 @@ export function install(rt) {
   // The once-per-file warning for a refused write is deduped inside the store (#2079); this
   // callback only prints, so one file is named once however many saves hit it.
   const warnNotFile = (file) => {
-    rt.warn?.('ds-bot: workflow file is not a plain file %s; nothing is written there', file)
+    rt.warn?.('ds-bot: workflow file is not a plain file of its own %s; nothing is written there', file)
   }
   // A file that does not parse is skipped on every read, so it would repeat this line on every
   // read too: the store is rebuilt when the workspace moves, so the set lives here, with the one

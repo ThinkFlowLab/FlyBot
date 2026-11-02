@@ -4834,7 +4834,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 +  const refuseLeaf = () => {
 +    if (refusedLeaf) return
 +    refusedLeaf = true
-+    console.error('[ds-bot] diagnostics log is not a plain file; nothing was written there')
++    console.error('[ds-bot] diagnostics log is not a plain file of its own; nothing was written there')
 +  }
 +
    const append = (entry) => {
@@ -11712,7 +11712,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,761 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,801 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -12473,6 +12473,46 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  const warned = lines.filter(line => line.includes('not a plain file'))
 +  assert.equal(warned.length, 1, 'said once for the temp name')
 +  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
++})
++
++// #2159: a hard link at the journal is a plain file to `lstat` while its bytes are also a name
++// outside the home, so the append would land in the shared inode. The leaf is asked with the same
++// predicate as the writer's temp name (#2114): that one record is dropped with one warning, the
++// other name keeps its bytes, and the memory write itself still lands — the journal is a side
++// channel.
++test('#2159: a hard-linked journal file takes no record, and the memory write still lands', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  const target = join(outside, 'journal.jsonl')
++  writeFileSync(target, 'PRE-EXISTING LINE\n')
++  mkdirSync(join(home, 'memory'), { recursive: true })
++  const journalPath = join(home, 'memory', 'journal.jsonl')
++  linkSync(target, journalPath)
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const lines = []
++  const original = console.error
++  console.error = (...args) => { lines.push(args.join(' ')) }
++  t.after(() => { console.error = original })
++  const { tool, call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /^Saved to the team memory/)
++  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /^Saved to the team memory/)
++  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the shared inode keeps its bytes')
++  assert.equal(lstatSync(journalPath).nlink, 2, 'the journal is still another name of the same file')
++  const written = readFileSync(join(home, 'memory', 'team', 'MEMORY.md'), 'utf8')
++  assert.match(written, /- Ship on Friday/, 'the first entry still landed in the memory file')
++  assert.match(written, /- Ship on Monday/, 'the second entry still landed in the memory file')
++  const warned = lines.filter(line => line.includes('journal'))
++  assert.equal(warned.length, 1, 'one warning per file per process, not one per record')
++  assert.ok(warned[0].includes(journalPath), `the warning names the file: ${warned[0]}`)
++  assert.match(warned[0], /not a plain file of its own/)
++
++  // The control: with one name the journal records again, so the refusal is about this file only.
++  rmSync(journalPath)
++  await tool('remember', { text: 'Ship on Tuesday', scope: 'team' }, 'g3')
++  const recorded = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
++  assert.deepEqual(recorded.map(record => record.op), ['add'], 'the record lands once the file carries one name')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js

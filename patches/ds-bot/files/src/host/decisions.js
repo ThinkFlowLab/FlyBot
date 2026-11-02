@@ -53,7 +53,7 @@ export function install(rt) {
     if (await fileKind(path) !== 'other') return true
     if (!refusedLeaf) {
       refusedLeaf = true
-      rt.warn('ds-bot: the decision log is not a plain file, so a decision was not written to it')
+      rt.warn('ds-bot: the decision log is not a plain file of its own, so a decision was not written to it')
     }
     return false
   }
@@ -159,7 +159,7 @@ export function install(rt) {
       const wrote = await record(entry)
       // A refused leaf drops the line, so the answer and the feed say the same thing: nothing was
       // recorded. A write that failed for another reason keeps its old shape (a warning, an answer).
-      if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file.'
+      if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file of its own.'
       // The feed payload drops the id to a safe shape and adds the live botId (a consumer keys by it).
       rt.fireFeed?.('decision', { botId, option, choice, ...(why ? { why } : {}), time: entry.time })
       if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${path}.tmp is not a plain file of its own.`

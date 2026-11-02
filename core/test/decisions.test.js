@@ -212,3 +212,37 @@ test('#P-hardlink: a hard link at the trim temp name does not take the trim', as
   assert.match(warnings[0], /decisions\.jsonl\.tmp/)
   assert.match(warnings[0], /not a plain file/)
 })
+
+// #2159: a hard link at the log is a plain file to `lstat` while its bytes are also a name outside
+// the home, so an append would land in the shared inode. The leaf is asked with the same predicate
+// as the trim's temp name (#2114): the line is dropped, one warning names the file, the Bot is told
+// it was not recorded, and the other name keeps its bytes.
+test('#2159: a hard-linked decision log is refused, not written through', async (t) => {
+  const { ctx, home, tool, events, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-hardlink-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const target = join(elsewhere, 'decisions.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const leaf = join(home, 'decisions.jsonl')
+  linkSync(target, leaf)
+
+  const warnings = []
+  ctx.logger.warn = (...args) => warnings.push(args.join(' '))
+  const first = await tool('record_decision', { option: 'Keep the shared inode', choice: 'rejected' })
+  const second = await tool('record_decision', { option: 'Try it again', choice: 'used' })
+  assert.equal(readFileSync(target, 'utf8'), before, 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(leaf).nlink, 2, 'the log is still another name of the same file')
+  assert.match(first, /Not recorded/, 'the Bot is told the decision is not on disk')
+  assert.match(second, /Not recorded/)
+  assert.match(first, /not a plain file of its own/, 'a hard link is a plain file, so the answer says whose it is not')
+  assert.equal(warnings.length, 1, 'one warning, not one for every refused record')
+  assert.match(warnings[0], /not a plain file of its own/)
+  assert.deepEqual(events, [], 'a decision that is not on disk is not announced on the feed')
+
+  // The control: with one name the log records again, so the refusal is about this file, not a latch.
+  rmSync(leaf)
+  assert.match(await tool('record_decision', { option: 'Write it now', choice: 'used' }), /^Recorded:/)
+  assert.equal(readFileSync(leaf, 'utf8').trim().split('\n').length, 1)
+})

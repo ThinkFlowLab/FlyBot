@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
@@ -471,4 +471,50 @@ test('a browser error is noted once, repeats are counted, and clear empties the 
 
 test('Report on GitHub opens a new issue in FlyBot\'s own repository', () => {
   assert.equal(ISSUES_URL, 'https://github.com/ThinkFlowLab/FlyBot/issues/new')
+})
+
+// #2159: a hard link at the log is a plain file to `lstat` while its bytes are also a name outside
+// the home, so the append and the truncate would land in the shared inode. The leaf is asked with
+// the same predicate as the temp name (#2114): the line is dropped, `clear` leaves the other name
+// untouched, and one line on stderr says so without printing the home folder.
+test('#2159: a hard-linked diagnostics log is refused, and clear does not truncate the shared inode', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-hardlink-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const target = join(elsewhere, 'diagnostics.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const leaf = join(home, 'logs', 'diagnostics.jsonl')
+  linkSync(target, leaf)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: first entry')
+  rt.warn('ds-bot: second entry')
+  await rt.dispose()
+  const afterWrites = readFileSync(target, 'utf8')
+  const entries = await rt.diagnostics.entries()
+  await rt.diagnostics.clear()
+  const afterClear = readFileSync(target, 'utf8')
+  quiet.mock.restore()
+
+  assert.equal(afterWrites, before, 'the shared inode keeps its bytes')
+  assert.equal(afterClear, before, 'clear does not truncate the shared inode')
+  assert.equal(lstatSync(leaf).nlink, 2, 'the log is still another name of the same file')
+  assert.deepEqual(entries.map(entry => entry.text), ['first entry', 'second entry'], 'the entries are still readable in memory')
+  const refusals = stderr.filter(line => /not a plain file of its own/.test(line))
+  assert.equal(refusals.length, 1, 'one refusal, not one for every dropped line')
+  assert.equal(refusals[0].includes(home), false, 'the refusal does not print the home folder')
+
+  // The control: a leaf of one name is written and cleared as before.
+  rmSync(leaf)
+  const plain = host(home)
+  plain.warn('ds-bot: after the shared name is gone')
+  await plain.dispose()
+  assert.match(readFileSync(leaf, 'utf8'), /after the shared name is gone/)
+  await plain.diagnostics.clear()
+  assert.equal(readFileSync(leaf, 'utf8'), '')
 })
