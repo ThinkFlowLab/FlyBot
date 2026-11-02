@@ -4975,10 +4975,10 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +  // appended — and anything else drops that one record, once per file and process. The entry write
 +  // itself still lands: the journal is a side channel, so saving memory never depends on it.
 +  const warnedFiles = new Set()
-+  const warnFile = (path) => {
++  const warnFile = (path, what = 'memory journal', effect = 'dropping the record') => {
 +    if (warnedFiles.has(path)) return
 +    warnedFiles.add(path)
-+    rt.warn('ds-bot: memory journal is not a plain file %s; dropping the record', path)
++    rt.warn(`ds-bot: ${what} is not a plain file %s; ${effect}`, path)
 +  }
 +  // The one answer for "what is this folder": every segment from `memory/` down is asked on its
 +  // own, because `lstat` follows a link above the last component — `memory/bots` or a
@@ -5020,7 +5020,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const readText = (path) => {
      try {
        return readFileSync(path, 'utf8')
-@@ -433,22 +433,32 @@ export function install(rt) {
+@@ -433,34 +433,60 @@ export function install(rt) {
        return ''
      }
    }
@@ -5057,7 +5057,21 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const limitOf = file => (file.topic === undefined ? MEMORY_LIMITS.main : MEMORY_LIMITS.topic)
    const fileName = file => (file.topic === undefined ? MAIN : `topic [[${file.topic}]]`)
  
-@@ -459,8 +459,13 @@ export function install(rt) {
++  // A write lands through a temp name first, and `writeFile` follows a link at that name just as it
++  // would follow one at the file's own (#2097): the bytes would go outside the home and the
++  // `rename` after them would put the link where the memory file belongs. The temp name is a leaf
++  // too, asked like the journal's file — absent is ours to create, anything else refuses the write
++  // before it starts, says so once, and leaves the memory file as it was. Asking and then writing
++  // still leaves a window in which the name can change: this closes a link that is already there,
++  // not the race.
+   async function writeText(path, text) {
+     await mkdir(dirname(path), { recursive: true })
+     const temp = `${path}.${process.pid}.tmp`
++    if (fileKindSync(temp) === 'other') {
++      warnFile(temp, 'the memory write', 'nothing is written there')
++      throw new Error(`Not saved: ${temp} is not a plain file, so nothing is written there.`)
++    }
+     await writeFile(temp, text, 'utf8')
      await rename(temp, path)
    }
    async function journal(record) {
@@ -5199,7 +5213,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      return [
        '# Your memory',
        memoryRules(reviewOn),
-@@ -685,10 +685,12 @@ export function install(rt) {
+@@ -685,14 +685,22 @@ export function install(rt) {
      const kept = frozen.get(sessionId)
      if (kept !== undefined && kept.includes(rule)) return kept
      const path = snapshotPath(sessionId)
@@ -5213,7 +5227,19 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +      if (rt.readOnly() === undefined && writeFolder(snapshotsDir)) {
          try {
            mkdirSync(dirname(path), { recursive: true })
-           writeFileSync(`${path}.tmp`, text, 'utf8')
+-          writeFileSync(`${path}.tmp`, text, 'utf8')
+-          renameSync(`${path}.tmp`, path)
++          // The snapshot's temp name is a leaf like the entry's (#2097): a link left there would
++          // take the frozen memory outside and then replace the snapshot with the link.
++          const temp = `${path}.tmp`
++          if (fileKindSync(temp) === 'other') warnFile(temp, 'the memory snapshot', 'nothing is written there')
++          else {
++            writeFileSync(temp, text, 'utf8')
++            renameSync(temp, path)
++          }
+         } catch (error) {
+           rt.warn('ds-bot: memory snapshot for %s not saved: %s', bot.name, error)
+         }
 @@ -705,6 +705,7 @@ export function install(rt) {
    function renewMemory(sessionId) {
      if (sessionId === undefined) return
@@ -11137,13 +11163,16 @@ diff --git a/test/member-status.test.js b/test/member-status.test.js
 diff --git a/test/memory.test.js b/test/memory.test.js
 --- a/test/memory.test.js
 +++ b/test/memory.test.js
-@@ -1,5 +1,5 @@
+@@ -1,7 +1,7 @@
  import assert from 'node:assert/strict'
 -import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
++import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
  import { hostname, tmpdir } from 'node:os'
- import { join } from 'node:path'
+-import { join } from 'node:path'
++import { dirname, join } from 'node:path'
  import { test } from 'node:test'
+ import { apply } from '../index.js'
+ import {
 @@ -176,6 +176,15 @@ function start({ home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-')), replies =
  }
  
@@ -11376,7 +11405,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,601 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,661 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -11882,6 +11911,66 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  const warned = lines.filter(line => line.includes('journal'))
 +  assert.equal(warned.length, 1, 'one warning per file per process, not one per record')
 +  assert.ok(warned[0].includes(join(home, 'memory', 'journal.jsonl')), `the warning names the file: ${warned[0]}`)
++})
++
++// #2097: the leaf guard asks the file it means to write, but a writer writes a temp name first
++// and `writeFile` follows a link at that name too — then `rename` moves the link into place, so the
++// memory file ends up naming a file outside the home and the entry lands there. The temp name is
++// asked the same way: absent is a writer's to create, anything else refuses before the write.
++test('#2097: a link left at a writer\'s temp name takes no entry, and the memory file stays as it was', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  const target = join(outside, 'taken.md')
++  writeFileSync(target, 'PRE-EXISTING LINE\n')
++  const written = join(home, 'memory', 'team', 'MEMORY.md')
++  mkdirSync(dirname(written), { recursive: true })
++  writeFileSync(written, '# Memory\n\n- Kept by hand [added: 2026-10-01]\n')
++  const temp = `${written}.${process.pid}.tmp`
++  symlinkSync(target, temp, 'file')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const lines = []
++  const original = console.error
++  console.error = (...args) => { lines.push(args.join(' ')) }
++  t.after(() => { console.error = original })
++  const { tool, stop } = start({ home })
++  t.after(() => stop())
++  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
++  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
++  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
++  assert.equal(lstatSync(written).isSymbolicLink(), false, 'the memory file is still a plain file, not the link')
++  assert.equal(readFileSync(written, 'utf8'), '# Memory\n\n- Kept by hand [added: 2026-10-01]\n', 'the memory file kept what it had')
++  const warned = lines.filter(line => line.includes('not a plain file'))
++  assert.equal(warned.length, 1, 'one warning per temp name per process, not one per attempt')
++  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
++})
++
++// #2097: the snapshot writer has a temp name of its own (`<snapshot>.tmp`), with the same hole:
++// a link left there takes the frozen memory outside and then replaces the snapshot with the link.
++test('#2097: a link left at the snapshot temp name is not written through', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  const target = join(outside, 'snapshot.md')
++  writeFileSync(target, 'PRE-EXISTING LINE\n')
++  const snapshots = join(home, 'memory', 'snapshots')
++  mkdirSync(snapshots, { recursive: true })
++  const snapshot = join(snapshots, 'b2.md')
++  const temp = `${snapshot}.tmp`
++  symlinkSync(target, temp, 'file')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  const lines = []
++  const original = console.error
++  console.error = (...args) => { lines.push(args.join(' ')) }
++  t.after(() => { console.error = original })
++  const { section, call, stop } = start({ home })
++  t.after(() => stop())
++  await call('state', {})
++  const text = section('b2')
++  assert.match(text, /The team memory is shared by every Bot/, 'the section is built even when it cannot be frozen')
++  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
++  assert.equal(existsSync(snapshot), false, 'the link was not renamed into the snapshot place')
++  const warned = lines.filter(line => line.includes('not a plain file'))
++  assert.equal(warned.length, 1, 'said once for the temp name')
++  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
 +})
 +
 +// The rule above is one resolver, and these two cases keep it one. The first names every path

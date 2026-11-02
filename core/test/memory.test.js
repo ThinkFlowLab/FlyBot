@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 import {
@@ -1661,6 +1661,66 @@ test('#2079: a linked journal file takes no record, and the memory write still l
   const warned = lines.filter(line => line.includes('journal'))
   assert.equal(warned.length, 1, 'one warning per file per process, not one per record')
   assert.ok(warned[0].includes(join(home, 'memory', 'journal.jsonl')), `the warning names the file: ${warned[0]}`)
+})
+
+// #2097: the leaf guard asks the file it means to write, but a writer writes a temp name first
+// and `writeFile` follows a link at that name too — then `rename` moves the link into place, so the
+// memory file ends up naming a file outside the home and the entry lands there. The temp name is
+// asked the same way: absent is a writer's to create, anything else refuses before the write.
+test('#2097: a link left at a writer\'s temp name takes no entry, and the memory file stays as it was', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  const target = join(outside, 'taken.md')
+  writeFileSync(target, 'PRE-EXISTING LINE\n')
+  const written = join(home, 'memory', 'team', 'MEMORY.md')
+  mkdirSync(dirname(written), { recursive: true })
+  writeFileSync(written, '# Memory\n\n- Kept by hand [added: 2026-10-01]\n')
+  const temp = `${written}.${process.pid}.tmp`
+  symlinkSync(target, temp, 'file')
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { tool, stop } = start({ home })
+  t.after(() => stop())
+  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
+  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
+  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
+  assert.equal(lstatSync(written).isSymbolicLink(), false, 'the memory file is still a plain file, not the link')
+  assert.equal(readFileSync(written, 'utf8'), '# Memory\n\n- Kept by hand [added: 2026-10-01]\n', 'the memory file kept what it had')
+  const warned = lines.filter(line => line.includes('not a plain file'))
+  assert.equal(warned.length, 1, 'one warning per temp name per process, not one per attempt')
+  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
+})
+
+// #2097: the snapshot writer has a temp name of its own (`<snapshot>.tmp`), with the same hole:
+// a link left there takes the frozen memory outside and then replaces the snapshot with the link.
+test('#2097: a link left at the snapshot temp name is not written through', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  const target = join(outside, 'snapshot.md')
+  writeFileSync(target, 'PRE-EXISTING LINE\n')
+  const snapshots = join(home, 'memory', 'snapshots')
+  mkdirSync(snapshots, { recursive: true })
+  const snapshot = join(snapshots, 'b2.md')
+  const temp = `${snapshot}.tmp`
+  symlinkSync(target, temp, 'file')
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { section, call, stop } = start({ home })
+  t.after(() => stop())
+  await call('state', {})
+  const text = section('b2')
+  assert.match(text, /The team memory is shared by every Bot/, 'the section is built even when it cannot be frozen')
+  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
+  assert.equal(existsSync(snapshot), false, 'the link was not renamed into the snapshot place')
+  const warned = lines.filter(line => line.includes('not a plain file'))
+  assert.equal(warned.length, 1, 'said once for the temp name')
+  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
 })
 
 // The rule above is one resolver, and these two cases keep it one. The first names every path

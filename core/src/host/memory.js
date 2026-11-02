@@ -450,10 +450,10 @@ export function install(rt) {
   // appended — and anything else drops that one record, once per file and process. The entry write
   // itself still lands: the journal is a side channel, so saving memory never depends on it.
   const warnedFiles = new Set()
-  const warnFile = (path) => {
+  const warnFile = (path, what = 'memory journal', effect = 'dropping the record') => {
     if (warnedFiles.has(path)) return
     warnedFiles.add(path)
-    rt.warn('ds-bot: memory journal is not a plain file %s; dropping the record', path)
+    rt.warn(`ds-bot: ${what} is not a plain file %s; ${effect}`, path)
   }
   // The one answer for "what is this folder": every segment from `memory/` down is asked on its
   // own, because `lstat` follows a link above the last component — `memory/bots` or a
@@ -529,9 +529,20 @@ export function install(rt) {
   const limitOf = file => (file.topic === undefined ? MEMORY_LIMITS.main : MEMORY_LIMITS.topic)
   const fileName = file => (file.topic === undefined ? MAIN : `topic [[${file.topic}]]`)
 
+  // A write lands through a temp name first, and `writeFile` follows a link at that name just as it
+  // would follow one at the file's own (#2097): the bytes would go outside the home and the
+  // `rename` after them would put the link where the memory file belongs. The temp name is a leaf
+  // too, asked like the journal's file — absent is ours to create, anything else refuses the write
+  // before it starts, says so once, and leaves the memory file as it was. Asking and then writing
+  // still leaves a window in which the name can change: this closes a link that is already there,
+  // not the race.
   async function writeText(path, text) {
     await mkdir(dirname(path), { recursive: true })
     const temp = `${path}.${process.pid}.tmp`
+    if (fileKindSync(temp) === 'other') {
+      warnFile(temp, 'the memory write', 'nothing is written there')
+      throw new Error(`Not saved: ${temp} is not a plain file, so nothing is written there.`)
+    }
     await writeFile(temp, text, 'utf8')
     await rename(temp, path)
   }
@@ -803,8 +814,14 @@ export function install(rt) {
       if (rt.readOnly() === undefined && writeFolder(snapshotsDir)) {
         try {
           mkdirSync(dirname(path), { recursive: true })
-          writeFileSync(`${path}.tmp`, text, 'utf8')
-          renameSync(`${path}.tmp`, path)
+          // The snapshot's temp name is a leaf like the entry's (#2097): a link left there would
+          // take the frozen memory outside and then replace the snapshot with the link.
+          const temp = `${path}.tmp`
+          if (fileKindSync(temp) === 'other') warnFile(temp, 'the memory snapshot', 'nothing is written there')
+          else {
+            writeFileSync(temp, text, 'utf8')
+            renameSync(temp, path)
+          }
         } catch (error) {
           rt.warn('ds-bot: memory snapshot for %s not saved: %s', bot.name, error)
         }
