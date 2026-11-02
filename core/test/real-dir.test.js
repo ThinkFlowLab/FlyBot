@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { dirKind, dirKindSync } from '../src/host/real-dir.js'
+import { dirKind, dirKindSync, fileKind, fileKindSync } from '../src/host/real-dir.js'
 
 function bench() {
   const dir = mkdtempSync(join(tmpdir(), 'ds-bot-real-dir-'))
@@ -50,5 +50,24 @@ test('#2055: a real directory is real, and a path that is not there is absent', 
     assert.equal(dirKindSync(join(dir, 'decisions')), 'real')
     assert.equal(await dirKind(join(dir, 'no-such-entry')), 'absent', 'a missing path is the state a writer may create and a reader skips')
     assert.equal(dirKindSync(join(dir, 'no-such-entry')), 'absent')
+  } finally { done() }
+})
+
+// #2079: the same three states, asked about the leaf a writer appends to. `lstat` does not follow
+// the last component, so a link here is `other` rather than the file it names.
+test('#2079: a leaf file is real, absent, or other, and a link is never a file here', async () => {
+  const { dir, outside, done } = bench()
+  try {
+    writeFileSync(join(dir, 'plain.jsonl'), 'x\n')
+    assert.equal(await fileKind(join(dir, 'plain.jsonl')), 'real', 'a plain non-link file is the one a writer may append to')
+    assert.equal(fileKindSync(join(dir, 'plain.jsonl')), 'real')
+    assert.equal(await fileKind(join(dir, 'missing.jsonl')), 'absent', 'a missing file is still a writer\'s to create')
+    assert.equal(fileKindSync(join(dir, 'missing.jsonl')), 'absent')
+    symlinkSync(join(outside, 'target.jsonl'), join(dir, 'linked.jsonl'))
+    assert.equal(await fileKind(join(dir, 'linked.jsonl')), 'other', 'the link itself is not a file, so nothing is written through it')
+    assert.equal(fileKindSync(join(dir, 'linked.jsonl')), 'other')
+    mkdirSync(join(dir, 'a-folder'))
+    assert.equal(await fileKind(join(dir, 'a-folder')), 'other', 'a directory where a file belongs is refused too')
+    assert.equal(fileKindSync(join(dir, 'a-folder')), 'other')
   } finally { done() }
 })

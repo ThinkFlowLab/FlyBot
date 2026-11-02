@@ -1632,6 +1632,37 @@ test('#2068: a missing memory folder is still created by a write', async (t) => 
   assert.match(readFileSync(join(home, 'memory', 'team', 'MEMORY.md'), 'utf8'), /- Ship on Friday/)
 })
 
+// #2079: the journal's folder is not the only entry that can be a link — `journal.jsonl` itself
+// may be one, and appending follows it into a file outside the home. The leaf is asked like the
+// folder: an absent file is created, a plain file is appended, anything else drops that one
+// record, once per file and process. The memory write itself still lands: the journal is a side
+// channel, so saving memory must never depend on it.
+test('#2079: a linked journal file takes no record, and the memory write still lands', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  const target = join(outside, 'journal.jsonl')
+  writeFileSync(target, 'PRE-EXISTING LINE\n')
+  mkdirSync(join(home, 'memory'), { recursive: true })
+  symlinkSync(target, join(home, 'memory', 'journal.jsonl'), 'file')
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { tool, call, stop } = start({ home })
+  t.after(() => stop())
+  await call('state', {})
+  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /^Saved to the team memory/)
+  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /^Saved to the team memory/)
+  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
+  const written = readFileSync(join(home, 'memory', 'team', 'MEMORY.md'), 'utf8')
+  assert.match(written, /- Ship on Friday/, 'the first entry still landed')
+  assert.match(written, /- Ship on Monday/, 'the second entry still landed')
+  const warned = lines.filter(line => line.includes('journal'))
+  assert.equal(warned.length, 1, 'one warning per file per process, not one per record')
+  assert.ok(warned[0].includes(join(home, 'memory', 'journal.jsonl')), `the warning names the file: ${warned[0]}`)
+})
+
 // The rule above is one resolver, and these two cases keep it one. The first names every path
 // this module builds under `memory/`; the second ties each of those functions to a behaviour
 // probe that runs it against a linked folder — a list alone would still be green after a new

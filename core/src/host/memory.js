@@ -32,7 +32,7 @@ import { codePointStart, cut } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
-import { dirKindSync } from './real-dir.js'
+import { dirKindSync, fileKindSync } from './real-dir.js'
 
 // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
 // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
@@ -444,6 +444,17 @@ export function install(rt) {
     warnedFolders.add(dir)
     rt.warn('ds-bot: memory folder is not a plain directory %s; keeping it empty', dir)
   }
+  // The journal's own file is the one entry a folder check cannot vouch for (#2079): `appendFile`
+  // follows a link at the last component, so a `journal.jsonl` naming a file outside the home would
+  // take the record. The leaf is asked like the folder — absent is created, a plain file is
+  // appended — and anything else drops that one record, once per file and process. The entry write
+  // itself still lands: the journal is a side channel, so saving memory never depends on it.
+  const warnedFiles = new Set()
+  const warnFile = (path) => {
+    if (warnedFiles.has(path)) return
+    warnedFiles.add(path)
+    rt.warn('ds-bot: memory journal is not a plain file %s; dropping the record', path)
+  }
   // The one answer for "what is this folder": every segment from `memory/` down is asked on its
   // own, because `lstat` follows a link above the last component — `memory/bots` or a
   // `memory/snapshots` that is a link reads and writes as a real folder through it otherwise.
@@ -526,8 +537,12 @@ export function install(rt) {
   }
   async function journal(record) {
     if (!writeFolder(root)) return
+    if (fileKindSync(journalPath) === 'other') {
+      warnFile(journalPath)
+      return
+    }
     await mkdir(root, { recursive: true })
-    await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, 'utf8')
+    await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, { encoding: 'utf8', mode: 0o600 })
   }
   let writing = Promise.resolve()
   const queued = (job) => {

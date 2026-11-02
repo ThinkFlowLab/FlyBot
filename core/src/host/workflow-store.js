@@ -20,7 +20,7 @@ import { copyOfPreset, isPresetId, isWorkflowId, workflowBytes, WORKFLOW_DIR } f
 import { previewNode } from '../shared/workflow-preview.js'
 import { repoDevWorkflow } from '../shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../shared/workflow-blank.js'
-import { dirKindSync } from './real-dir.js'
+import { dirKindSync, fileKindSync } from './real-dir.js'
 
 // The shipped presets, as definitions. `PRESET_IDS` in `workflow-doc.js` names the same two; a test
 // asserts they cannot drift apart.
@@ -37,7 +37,7 @@ const summary = (definition, source) => ({
   columns: normaliseWorkflow(definition).nodes.filter((node) => node.column !== false).length,
 })
 
-export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warnFolder = () => {}, skipped = () => {} } = {}) {
+export function createWorkflowStore({ dir, presets = PRESETS, team = () => null, factsFor = () => ({ ok: false, why: 'this host has no fact reader' }), warnFolder = () => {}, warnFile = () => {}, skipped = () => {} } = {}) {
   if (typeof dir !== 'string' || dir === '') throw new Error('a workflow store needs a directory')
   const fileFor = (id) => join(dir, `${id}.json`)
 
@@ -59,6 +59,20 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     return false
   }
   const refuseWritable = () => ({ ok: false, code: 'workflow/not-a-folder', message: `the workflow folder ${dir} is not a plain directory, so nothing is written there`, problems: [] })
+  // The file is asked too (#2079): `writeFileSync` follows a link at the last component, so a
+  // `mine.json` or `project.json` that is a link would write into the file it names. An absent file
+  // is still created; a link or a directory is refused, and the warning names the file once.
+  const warnedFiles = new Set()
+  const fileWritable = (file) => {
+    const kind = fileKindSync(file)
+    if (kind === 'real' || kind === 'absent') return true
+    if (!warnedFiles.has(file)) {
+      warnedFiles.add(file)
+      warnFile(file)
+    }
+    return false
+  }
+  const refuseNotFile = (file) => ({ ok: false, code: 'workflow/not-a-file', message: `the workflow file ${file} is not a plain file, so nothing is written there`, problems: [] })
   // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
   // may be someone's hand-edit that does not parse: one broken file must not take the list down.
   const ownFiles = () => {
@@ -157,16 +171,18 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     if (problems.length > 0) return { ok: false, code: 'workflow/invalid', message: problems[0].message, problems }
     const bytes = workflowBytes(def)
     if (!folderWritable()) return refuseWritable()
+    const path = fileFor(def.id)
+    if (!fileWritable(path)) return refuseNotFile(path)
     const previous = (() => {
       try {
-        return readFileSync(fileFor(def.id), 'utf8')
+        return readFileSync(path, 'utf8')
       } catch {
         return null
       }
     })()
     if (previous !== bytes) {
       mkdirSync(dir, { recursive: true })
-      writeFileSync(fileFor(def.id), bytes)
+      writeFileSync(path, bytes, { mode: 0o600 })
     }
     return { ok: true, id: def.id, bytes, changed: previous !== bytes, ...list() }
   }
@@ -184,8 +200,10 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const found = readDefinition(String(id ?? ''))
     if (found === null) return { ok: false, code: 'workflow/not-found', message: `there is no workflow "${id}"`, problems: [] }
     if (!folderWritable()) return refuseWritable()
+    const path = join(dir, PROJECT_FILE)
+    if (!fileWritable(path)) return refuseNotFile(path)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, PROJECT_FILE), `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`)
+    writeFileSync(path, `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`, { mode: 0o600 })
     return { ok: true, ...list() }
   }
 
@@ -236,6 +254,11 @@ export function install(rt) {
     warnedFolders.add(dir)
     rt.warn?.('ds-bot: workflow folder is not a plain directory %s; keeping it empty', dir)
   }
+  // The once-per-file warning for a refused write is deduped inside the store (#2079); this
+  // callback only prints, so one file is named once however many saves hit it.
+  const warnNotFile = (file) => {
+    rt.warn?.('ds-bot: workflow file is not a plain file %s; nothing is written there', file)
+  }
   // A file that does not parse is skipped on every read, so it would repeat this line on every
   // read too: the store is rebuilt when the workspace moves, so the set lives here, with the one
   // above, and a file is named once per process.
@@ -248,7 +271,7 @@ export function install(rt) {
   const store = () => {
     const dir = dirFor()
     if (dir === null) return null
-    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, warnFolder, skipped: warnSkipped, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
+    if (rt.workflowStore?.dir !== dir) rt.workflowStore = createWorkflowStore({ dir, team, warnFolder, warnFile: warnNotFile, skipped: warnSkipped, factsFor: rt.workflowFactsFor ?? (() => ({ ok: false, why: 'this host has no fact reader' })) })
     return rt.workflowStore
   }
   rt.workflowEndpoint = async (endpoint, body = {}) => {

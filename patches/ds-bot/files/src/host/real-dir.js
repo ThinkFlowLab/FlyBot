@@ -30,3 +30,27 @@ export function dirKindSync(path) {
     return error?.code === 'ENOENT' ? 'absent' : 'other'
   }
 }
+
+// The leaf of a path is asked the same way (#2079): `lstat` does not follow the last component, so
+// a link there reports `isSymbolicLink()`, never a file. The three states keep their meanings: a
+// missing file is a writer's to create, a plain non-link file is written, and a link, a directory
+// or a check that could not run is refused rather than written through.
+const fileKindOf = info => info === undefined
+  ? 'absent'
+  : info.isFile() && !info.isSymbolicLink() ? 'real' : 'other'
+
+export async function fileKind(path) {
+  try {
+    return fileKindOf(await lstat(path))
+  } catch (error) {
+    return error?.code === 'ENOENT' ? 'absent' : 'other'
+  }
+}
+
+export function fileKindSync(path) {
+  try {
+    return fileKindOf(lstatSync(path))
+  } catch (error) {
+    return error?.code === 'ENOENT' ? 'absent' : 'other'
+  }
+}
