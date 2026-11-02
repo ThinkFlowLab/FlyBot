@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
       'One Bot (as before)': '单个 Bot（原有方式）',
       'Concurrent runs': '同时运行',
       '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
+      '{name} · {count} running': '{name} · {count} 个在运行',
       Reset: '重置',
       Flow: '流程图',
       Details: 'Details',
@@ -1953,6 +1954,11 @@ window.__ModuleLoader__.load({
       // `bot/read-only`, so the reader would press a control that cannot work (#2200).
       const readOnlyReason = typeof roster?.readOnly === 'string' ? roster.readOnly.trim() : ''
       const locked = readOnlyReason !== ''
+      // #2222: the roster can land after this section mounts -- a cold window starts on the
+      // empty roster and the read-only sentence arrives a tick later -- so the mount effect
+      // below asks what the latest render saw rather than what its first render baked in.
+      const lockedRef = useRef(locked)
+      lockedRef.current = locked
 
       const stageCall = (name, body, fallback) => settledCall(call, name, body, fallback)
 
@@ -1981,11 +1987,17 @@ window.__ModuleLoader__.load({
           } catch (loadError) {
             void loadError
           }
+          // #2222: a read-only window must not write. The board read below only feeds
+          // `workflow/ingest`, a claim/match write the host refuses; the Project read
+          // above stays so the Project filter still fills.
+          if (lockedRef.current) return
           try {
             const rows = await host('tasks', {})
             if (!Array.isArray(rows) || gone) return
             for (const task of rows) {
               if (!task || task.status !== 'open') continue
+              // The same late roster can land between two cards.
+              if (lockedRef.current) return
               const value = await call('workflow/ingest', task)
               if (gone) return
               if (value?.workflows) setPack(value)
@@ -2195,6 +2207,9 @@ window.__ModuleLoader__.load({
         workflows.length > 0 && shown.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows in this Project')) : null,
         shown.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
+          // A row with live runs says how many: the dot is colour only, and a
+          // reader who cannot see it still needs the number (P-433).
+          'aria-label': (item.activeCount ?? 0) > 0 ? tr('{name} · {count} running', { name: item.name, count: item.activeCount }) : undefined,
           onClick: () => { setOpenId(item.id) },
           onContextMenu: locked ? undefined : (event) => {
             event.preventDefault()
@@ -2207,7 +2222,9 @@ window.__ModuleLoader__.load({
             h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, 'Workflow'),
               h('span', { className: `wf-proj${projectName(item.projectId) ? '' : ' none'}` }, projectName(item.projectId) || tr('Unassigned'))),
             h('span', { className: 'wf-t2' }, sidebarPreview(item))),
-          (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
+          (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live-wrap', 'aria-hidden': true },
+            h('span', { className: 'wf-live' }),
+            h('span', { className: 'wf-live-n' }, String(item.activeCount))) : null)),
         locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
@@ -2320,6 +2337,8 @@ window.__ModuleLoader__.load({
 .wf-t2,.wf-chain{display:block;font-size:12px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wf-badge{font-size:9.5px;padding:0 5px;border-radius:4px;background:color-mix(in srgb,var(--bt-accent,#4d6bfe) 12%,transparent);color:var(--bt-accent,#4d6bfe);line-height:15px}
 .wf-live{width:7px;height:7px;border-radius:50%;background:var(--bt-accent,#4d6bfe);flex:none}
+.wf-live-wrap{display:flex;align-items:center;gap:4px;flex:none}
+.wf-live-n{font-size:10px;font-weight:650;line-height:1;color:var(--bt-accent,#4d6bfe)}
 .wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none;overflow:hidden;padding:2px;box-sizing:border-box}
 .wf-mini-flow{display:block;max-width:100%;max-height:100%}
 .wf-mini-flow-compact{width:100%;height:100%}
