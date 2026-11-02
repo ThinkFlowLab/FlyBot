@@ -375,7 +375,7 @@ export function install(rt) {
     const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
     if (held !== undefined) await service.create(toSession, request)
     else await copyRow(sourceSession, sourceId, toSession)
-    return schedulesView()
+    return schedulesView(actor)
   }
 
   // The row write itself. `put`, `get` and the `tasks` row shape are the same private API
@@ -400,7 +400,11 @@ export function install(rt) {
     throw invalid('The task could not be copied. Try again')
   }
 
-  async function schedulesView() {
+  // `actor` narrows the rows to that caller's own; the page asks every 30 seconds with the
+  // member's session, so the answer is the list a member may read, not the host's catalog. A row
+  // is read exactly as a task's source is read (`sourceOf`): unenforced, the whole host answers as
+  // it always did; enforced, another owner's row and an actor-less call both stay out.
+  async function schedulesView(actor) {
     const quietHours = quietNow()
     if (service === null) return { available: false, tasks: [], quietHours }
     // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
@@ -408,13 +412,13 @@ export function install(rt) {
     const tasks = []
     for (const entry of await service.catalog()) {
       const owner = ownerOf(entry.sessionId)
-      if (!known(owner)) continue
+      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
       const lastRun = lastRunOf(entry)
       tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
     for (const entry of Object.values(paused())) {
       const owner = ownerOf(entry.sessionId)
-      if (!known(owner)) continue
+      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
       const lastRun = lastRunOf({ id: entry.id })
       tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
     }
@@ -440,7 +444,7 @@ export function install(rt) {
       if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
       paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
       await rt.save()
-      return schedulesView()
+      return schedulesView(actor)
     }
     // DSH's update compares the exact record `list` gives (active tasks only).
     const active = (await service.list({ sessionId })).find(entry => entry.id === id)
@@ -454,22 +458,22 @@ export function install(rt) {
       const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
       const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
       if (result?.record === undefined) throw invalid(UPDATE_MISSES[result?.code] ?? result?.message ?? 'The task could not be saved')
-      return schedulesView()
+      return schedulesView(actor)
     }
     if (timing.at !== undefined && Date.parse(timing.at) <= Date.now()) throw invalid('Pick a time in the future')
     await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
     await service.delete({ sessionId, id })
-    return schedulesView()
+    return schedulesView(actor)
   }
 
   // Pause: the record is saved in FlyBot's state before DSH lets the task go, so a
   // failed delete leaves it running and never loses it.
-  async function pauseSchedule(body) {
+  async function pauseSchedule(body, actor) {
     ensureService()
     const sessionId = String(body.sessionId ?? '')
     const id = String(body.id ?? '')
     if (ownerOf(sessionId) === undefined) throw invalid('No such task')
-    if (pausedEntry(sessionId, id) !== undefined) return schedulesView()
+    if (pausedEntry(sessionId, id) !== undefined) return schedulesView(actor)
     const record = await findRecord(sessionId, id)
     if (record === undefined) throw invalid('No such task')
     if (record.status !== 'active') throw invalid('This task has finished')
@@ -485,7 +489,7 @@ export function install(rt) {
       await rt.save()
       throw error
     }
-    return schedulesView()
+    return schedulesView(actor)
   }
 
   // Retiring a Bot disarms what its own chat already holds — every part of it, current and
@@ -534,7 +538,7 @@ export function install(rt) {
 
   // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
   // the paused copy. A one-time task whose time has passed waits for an edit.
-  async function resumeSchedule(body) {
+  async function resumeSchedule(body, actor) {
     ensureService()
     const sessionId = String(body.sessionId ?? '')
     const held = pausedEntry(sessionId, String(body.id ?? ''))
@@ -549,12 +553,12 @@ export function install(rt) {
     await service.create(sessionFor(owner), request)
     delete paused()[held.id]
     await rt.save()
-    return schedulesView()
+    return schedulesView(actor)
   }
 
   // Retry: the task's prompt once now, to the Bot's current part or the group, as a run of
   // that task. DSH's own times are untouched: no missed time is delivered again.
-  async function retrySchedule(body) {
+  async function retrySchedule(body, actor) {
     ensureService()
     const sessionId = String(body.sessionId ?? '')
     const owner = ownerOf(sessionId)
@@ -580,7 +584,7 @@ export function install(rt) {
       }
       throw error
     }
-    return schedulesView()
+    return schedulesView(actor)
   }
 
   // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
@@ -637,7 +641,7 @@ export function install(rt) {
   }))
 
   const endpoints = {
-    schedules: () => schedulesView(),
+    schedules: (body, actor) => schedulesView(actor),
     async 'schedule-create'(body, actor) {
       ensureService()
       if (body.copyFrom !== undefined) return copySchedule(body, actor)
@@ -645,22 +649,22 @@ export function install(rt) {
       const timing = selectorOf(body.when)
       refuseDuringQuietHours(timing, body.when?.timeZone)
       await service.create(sessionId, { title, prompt, ...timing })
-      return schedulesView()
+      return schedulesView(actor)
     },
     'schedule-update': (body, actor) => updateSchedule(body, actor),
-    'schedule-pause': body => pauseSchedule(body),
-    'schedule-resume': body => resumeSchedule(body),
-    'schedule-retry': body => retrySchedule(body),
-    async 'schedule-delete'(body) {
+    'schedule-pause': (body, actor) => pauseSchedule(body, actor),
+    'schedule-resume': (body, actor) => resumeSchedule(body, actor),
+    'schedule-retry': (body, actor) => retrySchedule(body, actor),
+    async 'schedule-delete'(body, actor) {
       ensureService()
       if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
       if (pausedEntry(body.sessionId, body.id) !== undefined) {
         delete paused()[body.id]
         await rt.save()
-        return schedulesView()
+        return schedulesView(actor)
       }
       await service.delete({ sessionId: body.sessionId, id: body.id })
-      return schedulesView()
+      return schedulesView(actor)
     },
   }
 

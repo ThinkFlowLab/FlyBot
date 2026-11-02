@@ -940,6 +940,65 @@ test('#1321: with nobody signed in the single-human path still copies across Bot
   assert.equal([...schedule.tasks.values()].at(-1).sessionId, 'b1')
 })
 
+// The page asks for the list with no payload at all (`actions.schedules()` → `call('schedules')`),
+// and a host with a member signed in answered `bot/forbidden`: the empty answer left the page on
+// "Loading…" for good. Listing tasks is a read — any signed-in member may ask, and the rows are
+// narrowed to their own in the data layer, where the answer is built.
+test('with a member signed in, the scheduled-task list answers without a sessionId', async (t) => {
+  const { ctx, home, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
+  const listed = await callAs('schedules', null, 'tok-a')
+  assert.equal(listed.ok, true, JSON.stringify(listed))
+  assert.equal(listed.value.available, true)
+  assert.deepEqual(listed.value.tasks, [])
+})
+
+// #1321 draws the line at ownership for a task's text; the list crossed it: every known Bot's
+// task came back to whoever asked, so a member read another owner's titles and prompts. The
+// rows a member is handed are their own, on both sides.
+test('the scheduled-task list carries only the caller’s own rows', async (t) => {
+  const { ctx, home, rt, callAs } = signedIn(t)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await signedInNow(rt, callAs)
+  const mine = await callAs('schedule-create', { target: 'a1', title: 'My reminder', prompt: 'My own words', when: DAILY }, 'tok-a')
+  assert.equal(mine.ok, true, JSON.stringify(mine))
+  const theirs = await callAs('schedule-create', { target: 'b1', title: 'Their reminder', prompt: 'Their own words', when: DAILY }, 'tok-b')
+  assert.equal(theirs.ok, true, JSON.stringify(theirs))
+
+  // The row set is built in the data layer, where the caller is known: that is the answer a
+  // route hands back, so it is read there — the gate is what test ① above is about.
+  const listedA = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
+  assert.deepEqual(listedA.tasks.map(task => task.title), ['My reminder'])
+  const wire = JSON.stringify(listedA)
+  assert.ok(!wire.includes('Their reminder'), 'the other owner’s task is not on the list')
+  assert.ok(!wire.includes('Their own words'), 'nor a word of its prompt')
+  assert.ok(!wire.includes('b1'), 'nor its Session')
+
+  const listedB = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
+  assert.deepEqual(listedB.tasks.map(task => task.title), ['Their reminder'])
+
+  // Fail closed: with scoping on, a call that arrives with no actor reads nobody's rows.
+  const hostWide = await rt.scheduleEndpoint('schedules', {}, undefined)
+  assert.deepEqual(hostWide.tasks, [])
+})
+
+// A one-person install never signed anyone in: `authzEnforced()` is false and the list answers
+// what it always answered. The read is narrowed only where scoping is on — narrowing it when
+// nobody is signed in would be the same "empty list" this change is about, under another cause.
+test('with nobody signed in, the scheduled-task list still answers the host’s tasks', async (t) => {
+  const schedule = scheduleService()
+  const { ctx, home, rt, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  assert.equal(rt.authzEnforced(), false, 'a one-person install has no member session')
+  const made = await call('schedule-create', { target: 'w1', title: 'Standup', prompt: 'Sum up', when: DAILY })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const listed = await rt.scheduleEndpoint('schedules', {}, null)
+  assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
+  assert.equal(listed.available, true)
+})
+
 // #1895: a task name's 120-character bound counts code points, so a name of emoji is
 // measured the way a reader sees it instead of at double length.
 test('a task name counts code points against its 120-character bound (#1895)', async (t) => {

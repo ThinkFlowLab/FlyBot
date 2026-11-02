@@ -234,13 +234,18 @@ export function install(rt) {
     // The Bot exists but the Session index has not been rebuilt yet; a task on it must resolve as
     // that Bot's own Session, or the schedule path refuses it as somebody else's.
     rt.chatOwners?.set(sessionId, botId)
+    // The host asks on the assistant's own behalf, and a host with a member signed in narrows the
+    // list it answers with to the caller's rows: the digest belongs to that Bot's owner, so the
+    // owner goes down with the request the way the channel sends the caller for an edit (#1321).
+    const owner = rt.botOf?.(botId)?.ownerId
+    const actor = owner === undefined ? undefined : { memberId: owner }
     try {
       const view = await rt.scheduleEndpoint('schedule-create', {
         target: botId,
         title: DIGEST_TITLE,
         prompt: DIGEST_PROMPT,
         when: { kind: 'daily', time: DIGEST_TIME, timeZone: DIGEST_ZONE },
-      })
+      }, actor)
       const row = (view?.tasks ?? []).find(task => task.sessionId === sessionId && task.title === DIGEST_TITLE)
       return { scheduleId: row?.id ?? null }
     } catch (error) {

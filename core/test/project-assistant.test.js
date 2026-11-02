@@ -263,6 +263,25 @@ test('project-create makes exactly one 09:00 Asia/Shanghai task and project-dele
   }
 })
 
+// A host with a member signed in narrows every schedule answer to the caller's rows, and the
+// digest is created by the host itself: the assistant's owner has to go down with that request,
+// or the create succeeds and the row it just wrote is not in the answer the host reads back —
+// the Project would then be re-scheduled on every reconcile.
+test('with owner scoping on, project-create still records the digest it scheduled', async () => {
+  const { rt, service, stop } = await start()
+  try {
+    rt.state.authSessions = { 's-a': { memberId: 'owner-1', tokenHash: 'a' } }
+    assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
+    const project = await created(rt, { name: 'Scoped', ownerUserId: 'owner-1' })
+    assert.equal(service.created.length, 1, 'one digest was scheduled')
+    assert.equal(project.assistant.scheduleId, 'schedule-1', 'and the host knows the row it wrote')
+    await rt.projectEndpoint('project-delete', { id: project.id })
+    assert.equal(service.tasks.size, 0)
+  } finally {
+    await stop()
+  }
+})
+
 test('a Project created while automation is off gets its 09:00 digest when the service appears (#1751)', async () => {
   const { rt, service, attachSchedule, stop } = await start({ schedule: false })
   try {

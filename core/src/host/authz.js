@@ -42,7 +42,7 @@ const SHARED_BLOCKED = new Set([
 const BOT_TARGETED = new Set([
   'update-bot', 'delete-bot', 'duplicate-bot', 'set-flags', 'bot-capability',
   'memory-view', 'memory-ask', 'memory-forget',
-  'schedules', 'schedule-create', 'schedule-update', 'schedule-pause', 'schedule-resume', 'schedule-retry', 'schedule-delete',
+  'schedule-create', 'schedule-update', 'schedule-pause', 'schedule-resume', 'schedule-retry', 'schedule-delete',
   'stop-member-work', 'set-main', 'test-model',
 ])
 
@@ -281,8 +281,15 @@ export function install(rt) {
       return grant !== undefined && grant.ownerId === actor.memberId ? ALLOW : deny('bot/forbidden', 'You did not give that approval')
     }
 
+    // Listing scheduled tasks is a read, not an action on one Session: the page asks with no
+    // payload at all (`call('schedules')`), so a Session-keyed gate refused every list a
+    // signed-in member ever asked for. Any signed-in actor may list, and the data layer
+    // answers only their own rows (`schedulesView(actor)` in schedules.js). The `schedule-*`
+    // writes keep their Session and target gates below, unchanged.
+    if (ep === 'schedules') return ALLOW
+
     if (BOT_TARGETED.has(ep)) {
-      if (ep === 'schedules' || ep.startsWith('schedule-')) {
+      if (ep.startsWith('schedule-')) {
         // The create endpoint keys off `body.target` (Bot or room id); `sessionId` is
         // the list/delete key. Checking only sessionId would allow a foreign target
         // paired with an owned session (#106). An edit needs both: the task's Session
