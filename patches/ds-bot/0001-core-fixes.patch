@@ -1323,6 +1323,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
+@@ -557,6 +557,7 @@ const ZH = {
+   'The summary could not be written: {reason}': '摘要没能生成：{reason}',
+   '{name} has not saved anything yet': '{name} 还没有记住任何内容',
+   'Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.': 'Bot 会记住长期的偏好、做过的决定，以及你让它记住的事。可以在下面告诉 {name}，也可以在对话里说。',
++  'The memory folder {path} is not a plain directory, so it cannot be read.': '记忆文件夹 {path} 不是普通目录，里面的内容读不到。',
+   'Team memory': '团队记忆',
+   'Every Bot reads it': '所有 Bot 都会读',
+   'MEMORY.md, which every conversation reads': 'MEMORY.md，每次对话都会读',
 @@ -568,7 +568,6 @@ const ZH = {
    Remove: '删除',
    'Ask or update': '询问或更新',
@@ -1890,6 +1898,14 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
+@@ -5,6 +5,7 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState
+ import { useEscape } from './overlay-hooks.js'
+ import { ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DotsIcon, MemoryIcon, TrashIcon } from './icons.js'
+ import { dateLocale, hostText, t } from './i18n.js'
++import { memoryEmptyNotice } from './memory-empty.js'
+ import { summaryBlocks } from './text.js'
+ import { useLinger } from './motion.js'
+ 
 @@ -27,7 +27,7 @@ export function useMemoryCount(botId, actions) {
      countListeners.add(listener)
      listener()
@@ -1899,6 +1915,17 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
      return () => { stop = true; countListeners.delete(listener) }
    }, [botId])
    return count
+@@ -66,8 +66,10 @@ function Skeleton({ label }) {
+ 
+ function Summary({ bot, view, regenerate }) {
+   if (view.entries.length === 0) {
++    const notice = memoryEmptyNotice(view)
+     return h('div', { className: 'bt-mem-empty' },
+       h('div', { className: 'bt-mem-empty-mark' }, h(MemoryIcon)),
++      notice === null ? null : h('div', { className: 'bt-mem-empty-text', role: 'status' }, notice),
+       h('div', { className: 'bt-mem-empty-title' }, t('{name} has not saved anything yet', { name: bot.name })),
+       h('div', { className: 'bt-mem-empty-text' }, t('Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.', { name: bot.name })))
+   }
 diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 --- a/src/client/model-menu.js
 +++ b/src/client/model-menu.js
@@ -4991,7 +5018,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const journalPath = join(root, 'journal.jsonl')
    const dayFormat = new Intl.DateTimeFormat('en-CA', { ...(config.timeZone ? { timeZone: config.timeZone } : {}), year: 'numeric', month: '2-digit', day: '2-digit' })
    const today = () => dayFormat.format(Date.now())
-@@ -425,6 +425,64 @@ export function install(rt) {
+@@ -425,6 +425,72 @@ export function install(rt) {
    const dirOf = scope => (scope.kind === 'team' ? join(root, 'team') : join(root, 'bots', safeId(scope.botId)))
    const scopeKey = scope => (scope.kind === 'team' ? 'team' : `bot:${scope.botId}`)
  
@@ -5052,6 +5079,14 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +    const dir = dirOf(scope)
 +    return readFolder(dir) ? dir : undefined
 +  }
++  // A refused folder answers exactly what a missing one answers, so the panel cannot tell "nothing
++  // was ever saved" from "this home could not be read" (#2101). The view says which scopes were
++  // refused and which folder failed; only `other` counts, because `absent` is the ordinary empty
++  // home a first-run Bot has.
++  const blockedScopes = (scopes) => scopes.flatMap((scope) => {
++    const { kind, at } = folderKind(dirOf(scope))
++    return kind === 'other' ? [{ scope: scope.kind === 'team' ? 'team' : 'own', path: at }] : []
++  })
 +
    const readText = (path) => {
      try {
@@ -5404,7 +5439,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      })().catch((error) => {
        summaryFailures.set(bot.id, { hash, model, message: error?.message ?? String(error) })
        rt.warn('ds-bot: memory summary for %s failed: %s', bot.name, error)
-@@ -1004,11 +1004,11 @@ export function install(rt) {
+@@ -1004,14 +1004,15 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -5418,6 +5453,10 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        limits: MEMORY_LIMITS,
        summary: entries.length > 0 && saved !== undefined ? { text: saved.text, at: saved.at } : null,
        fresh: entries.length === 0 || saved?.hash === hash,
++      blocked: blockedScopes([ownScope(bot.id), TEAM]),
+       summarizing: summarizing.has(bot.id),
+       error: failed !== undefined && !summarizing.has(bot.id) ? failed.message : null,
+     }
 @@ -1020,7 +1020,7 @@ export function install(rt) {
    async function memoryAsk(body) {
      const bot = rt.botOf(String(body.botId ?? ''))
@@ -11427,7 +11466,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,661 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,702 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -11784,6 +11823,46 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.ok(warned[0].includes(join(home, 'memory')), `the warning names the folder: ${warned[0]}`)
 +})
 +
++// #2101: a refused folder and a folder that was never written answer the same `entries: []`, so the
++// view now carries the scopes it could not read; without it the panel asks the user to save
++// something that cannot be saved.
++test('#2068: a refused memory folder is named on the memory view, not read as nothing saved (#2101)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
++  mkdirSync(join(outside, 'bots', 'b2'), { recursive: true })
++  writeFileSync(join(outside, 'bots', 'b2', 'MEMORY.md'), '# Memory\n\n- an entry from outside the home\n')
++  t.after(() => rmSync(outside, { recursive: true, force: true }))
++  symlinkSync(outside, join(home, 'memory'), 'dir')
++  const folderWarnings = captureWarnings(t)
++  const { call, stop } = start({ home })
++  t.after(() => stop())
++  const view = (await call('memory-view', { botId: 'b2' })).value
++  assert.deepEqual(view.entries, [], 'a refused folder still reads as no entries')
++  assert.deepEqual(view.blocked, [
++    { scope: 'own', path: join(home, 'memory') },
++    { scope: 'team', path: join(home, 'memory') },
++  ], 'both scopes name the folder that failed, which is the link itself')
++  assert.equal(view.fresh, true)
++  assert.equal(folderWarnings().length, 1, 'one warning per folder and process, as before')
++})
++
++test('#2101: a plain or missing memory folder blocks nothing', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
++  mkdirSync(join(home, 'memory', 'bots', 'b2'), { recursive: true })
++  mkdirSync(join(home, 'memory', 'team'), { recursive: true })
++  const plain = start({ home })
++  t.after(() => plain.stop())
++  const empty = (await plain.call('memory-view', { botId: 'b2' })).value
++  assert.deepEqual(empty.entries, [])
++  assert.deepEqual(empty.blocked, [], 'an empty folder is not a refused one')
++  assert.equal(empty.fresh, true)
++  // A home whose `memory/` was never created is the ordinary first-run state, not a refusal.
++  const fresh = start()
++  t.after(() => fresh.stop())
++  const absent = (await fresh.call('memory-view', { botId: 'b2' })).value
++  assert.deepEqual(absent.blocked, [])
++})
++
 +test('#2068: a linked summaries folder is not a saved summary', async (t) => {
 +  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
 +  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
@@ -12015,6 +12094,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  readFolder: 'a linked bots folder reads nothing for a Bot, and says so once',
 +  writeFolder: 'a linked team folder refuses an entry write instead of writing into it',
 +  scopeDir: 'a linked bots folder reads nothing for a Bot, and says so once',
++  blockedScopes: 'a refused memory folder is named on the memory view, not read as nothing saved (#2101)',
 +  loadScope: 'a linked bots folder reads nothing for a Bot, and says so once',
 +  readMainOf: 'a linked bots folder reads nothing for a Bot, and says so once',
 +  writable: 'a linked team folder refuses an entry write instead of writing into it',

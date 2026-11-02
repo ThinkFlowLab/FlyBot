@@ -491,6 +491,14 @@ export function install(rt) {
     const dir = dirOf(scope)
     return readFolder(dir) ? dir : undefined
   }
+  // A refused folder answers exactly what a missing one answers, so the panel cannot tell "nothing
+  // was ever saved" from "this home could not be read" (#2101). The view says which scopes were
+  // refused and which folder failed; only `other` counts, because `absent` is the ordinary empty
+  // home a first-run Bot has.
+  const blockedScopes = (scopes) => scopes.flatMap((scope) => {
+    const { kind, at } = folderKind(dirOf(scope))
+    return kind === 'other' ? [{ scope: scope.kind === 'team' ? 'team' : 'own', path: at }] : []
+  })
 
   const readText = (path) => {
     try {
@@ -1183,6 +1191,7 @@ export function install(rt) {
       limits: MEMORY_LIMITS,
       summary: entries.length > 0 && saved !== undefined ? { text: saved.text, at: saved.at } : null,
       fresh: entries.length === 0 || saved?.hash === hash,
+      blocked: blockedScopes([ownScope(bot.id), TEAM]),
       summarizing: summarizing.has(bot.id),
       error: failed !== undefined && !summarizing.has(bot.id) ? failed.message : null,
     }

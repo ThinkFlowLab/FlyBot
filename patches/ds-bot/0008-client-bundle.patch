@@ -729,6 +729,14 @@ diff --git a/client.js b/client.js
    "Save key": "保存密钥",
    "Keys your Bots asked for. Bots never see the values: they use them as ": "你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ",
    " in their shell, and every value is replaced by ": " 使用，而且发给模型之前，每个值都会被替换成 ",
+@@ -610,6 +610,7 @@ var ZH = {
+   "The summary could not be written: {reason}": "摘要没能生成：{reason}",
+   "{name} has not saved anything yet": "{name} 还没有记住任何内容",
+   "Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.": "Bot 会记住长期的偏好、做过的决定，以及你让它记住的事。可以在下面告诉 {name}，也可以在对话里说。",
++  "The memory folder {path} is not a plain directory, so it cannot be read.": "记忆文件夹 {path} 不是普通目录，里面的内容读不到。",
+   "Team memory": "团队记忆",
+   "Every Bot reads it": "所有 Bot 都会读",
+   "MEMORY.md, which every conversation reads": "MEMORY.md，每次对话都会读",
 @@ -621,7 +621,6 @@ var ZH = {
    Remove: "删除",
    "Ask or update": "询问或更新",
@@ -13428,46 +13436,6 @@ diff --git a/client.js b/client.js
 -    return () => {
 -      window.removeEventListener("mousedown", onDown);
 -      window.removeEventListener("keydown", onKey, true);
--    };
--  }, [open]);
--  const phase = update?.phase ?? "idle";
--  const dsh = update?.dsh;
--  const dshPhase = dsh?.phase ?? "idle";
--  const dshRow = showsDshRow(dsh, update?.app);
--  if (!update?.available && !dshRow && phase === "idle" && dshPhase === "idle") return null;
--  const cloudPhase = phase === "installing" || dshPhase === "installing" ? "installing" : phase !== "idle" ? phase : dshPhase;
--  const toggle = () => {
--    const rect = button.current?.getBoundingClientRect();
--    if (rect) setBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), top: rect.bottom + 6 });
--    setOpen((value) => !value);
--  };
--  const start = () => {
--    setError("");
--    void actions.installUpdate().catch((failure) => setError(hostText(failure?.message ?? String(failure))));
--  };
--  const startDsh = () => {
--    setDshError("");
--    void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
--  };
--  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
--  const message = error || (phase === "failed" ? update.error : "");
--  const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
--  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update DS Bot {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
--  return (0, import_react8.createElement)(
--    import_react8.Fragment,
--    null,
--    (0, import_react8.createElement)("button", {
--      ref: button,
--      type: "button",
--      className: "bt-round bt-update",
--      "data-phase": cloudPhase,
--      "aria-label": label,
--      title: label,
--      "aria-haspopup": "dialog",
--      "aria-expanded": open,
--      onClick: toggle
--    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
--    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +function ProjectBoardRows({ view, onOpen }) {
 +  if (view.empty) return (0, import_react19.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
 +  return view.groups.map((group) => (0, import_react19.createElement)(
@@ -13530,7 +13498,46 @@ diff --git a/client.js b/client.js
 +      lastActivityAt: Number.isFinite(row.lastActivityAt) ? row.lastActivityAt : null,
 +      overdue: Number.isFinite(row.sinceMs) && row.sinceMs > RUNNING_OVERDUE_MS,
 +      board: boardOfRow({ source: text(row.source) }, task)
-+    };
+     };
+-  }, [open]);
+-  const phase = update?.phase ?? "idle";
+-  const dsh = update?.dsh;
+-  const dshPhase = dsh?.phase ?? "idle";
+-  const dshRow = showsDshRow(dsh, update?.app);
+-  if (!update?.available && !dshRow && phase === "idle" && dshPhase === "idle") return null;
+-  const cloudPhase = phase === "installing" || dshPhase === "installing" ? "installing" : phase !== "idle" ? phase : dshPhase;
+-  const toggle = () => {
+-    const rect = button.current?.getBoundingClientRect();
+-    if (rect) setBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), top: rect.bottom + 6 });
+-    setOpen((value) => !value);
+-  };
+-  const start = () => {
+-    setError("");
+-    void actions.installUpdate().catch((failure) => setError(hostText(failure?.message ?? String(failure))));
+-  };
+-  const startDsh = () => {
+-    setDshError("");
+-    void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
+-  };
+-  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
+-  const message = error || (phase === "failed" ? update.error : "");
+-  const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
+-  const dshText = dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : dsh?.available === false && dsh?.blockedBy ? t("Update DS Bot {version} first.", { version: dsh.blockedBy }) : t("You have {version}.", { version: dsh?.current });
+-  return (0, import_react8.createElement)(
+-    import_react8.Fragment,
+-    null,
+-    (0, import_react8.createElement)("button", {
+-      ref: button,
+-      type: "button",
+-      className: "bt-round bt-update",
+-      "data-phase": cloudPhase,
+-      "aria-label": label,
+-      title: label,
+-      "aria-haspopup": "dialog",
+-      "aria-expanded": open,
+-      onClick: toggle
+-    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
+-    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +  });
 +  return {
 +    available: source?.ok === true,
@@ -16986,7 +16993,7 @@ diff --git a/client.js b/client.js
        key: item.name,
        label: item.name,
        hint: attached.has(item.name) ? statusText(statuses[item.name]) : void 0,
-@@ -7372,9 +7372,55 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
+@@ -7372,9 +7372,63 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
    );
  }
  
@@ -17034,6 +17041,14 @@ diff --git a/client.js b/client.js
 +      (0, import_react27.createElement)(BotSwitch, { bot, connector, name: connector.name, actions, run, SwitchRow: SwitchRow2 })
 +    ))
 +  );
++}
++
++// src/client/memory-empty.js
++function memoryEmptyNotice(view) {
++  if ((view?.entries?.length ?? 0) > 0) return null;
++  const paths = [...new Set((view?.blocked ?? []).map((item) => typeof item?.path === "string" ? item.path : "").filter((path) => path !== ""))];
++  if (paths.length === 0) return null;
++  return t("The memory folder {path} is not a plain directory, so it cannot be read.", { path: paths.join(", ") });
 +}
 +
  // src/client/memory-panel.js
@@ -17084,7 +17099,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
-@@ -7428,45 +7428,45 @@ function ago(at, now) {
+@@ -7428,45 +7428,47 @@ function ago(at, now) {
    return format.format(-Math.round(hours / 24), "day");
  }
  function Skeleton({ label }) {
@@ -17112,6 +17127,7 @@ diff --git a/client.js b/client.js
  function Summary({ bot, view, regenerate }) {
    if (view.entries.length === 0) {
 -    return (0, import_react17.createElement)(
++    const notice = memoryEmptyNotice(view);
 +    return (0, import_react28.createElement)(
        "div",
        { className: "bt-mem-empty" },
@@ -17119,6 +17135,7 @@ diff --git a/client.js b/client.js
 -      (0, import_react17.createElement)("div", { className: "bt-mem-empty-title" }, t("{name} has not saved anything yet", { name: bot.name })),
 -      (0, import_react17.createElement)("div", { className: "bt-mem-empty-text" }, t("Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.", { name: bot.name }))
 +      (0, import_react28.createElement)("div", { className: "bt-mem-empty-mark" }, (0, import_react28.createElement)(MemoryIcon)),
++      notice === null ? null : (0, import_react28.createElement)("div", { className: "bt-mem-empty-text", role: "status" }, notice),
 +      (0, import_react28.createElement)("div", { className: "bt-mem-empty-title" }, t("{name} has not saved anything yet", { name: bot.name })),
 +      (0, import_react28.createElement)("div", { className: "bt-mem-empty-text" }, t("Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.", { name: bot.name }))
      );

@@ -1512,6 +1512,46 @@ test('#2068: a linked memory folder does not hand a snapshot to the prompt', asy
   assert.ok(warned[0].includes(join(home, 'memory')), `the warning names the folder: ${warned[0]}`)
 })
 
+// #2101: a refused folder and a folder that was never written answer the same `entries: []`, so the
+// view now carries the scopes it could not read; without it the panel asks the user to save
+// something that cannot be saved.
+test('#2068: a refused memory folder is named on the memory view, not read as nothing saved (#2101)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  mkdirSync(join(outside, 'bots', 'b2'), { recursive: true })
+  writeFileSync(join(outside, 'bots', 'b2', 'MEMORY.md'), '# Memory\n\n- an entry from outside the home\n')
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  symlinkSync(outside, join(home, 'memory'), 'dir')
+  const folderWarnings = captureWarnings(t)
+  const { call, stop } = start({ home })
+  t.after(() => stop())
+  const view = (await call('memory-view', { botId: 'b2' })).value
+  assert.deepEqual(view.entries, [], 'a refused folder still reads as no entries')
+  assert.deepEqual(view.blocked, [
+    { scope: 'own', path: join(home, 'memory') },
+    { scope: 'team', path: join(home, 'memory') },
+  ], 'both scopes name the folder that failed, which is the link itself')
+  assert.equal(view.fresh, true)
+  assert.equal(folderWarnings().length, 1, 'one warning per folder and process, as before')
+})
+
+test('#2101: a plain or missing memory folder blocks nothing', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  mkdirSync(join(home, 'memory', 'bots', 'b2'), { recursive: true })
+  mkdirSync(join(home, 'memory', 'team'), { recursive: true })
+  const plain = start({ home })
+  t.after(() => plain.stop())
+  const empty = (await plain.call('memory-view', { botId: 'b2' })).value
+  assert.deepEqual(empty.entries, [])
+  assert.deepEqual(empty.blocked, [], 'an empty folder is not a refused one')
+  assert.equal(empty.fresh, true)
+  // A home whose `memory/` was never created is the ordinary first-run state, not a refusal.
+  const fresh = start()
+  t.after(() => fresh.stop())
+  const absent = (await fresh.call('memory-view', { botId: 'b2' })).value
+  assert.deepEqual(absent.blocked, [])
+})
+
 test('#2068: a linked summaries folder is not a saved summary', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
   const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
@@ -1743,6 +1783,7 @@ const MEMORY_PROBES = {
   readFolder: 'a linked bots folder reads nothing for a Bot, and says so once',
   writeFolder: 'a linked team folder refuses an entry write instead of writing into it',
   scopeDir: 'a linked bots folder reads nothing for a Bot, and says so once',
+  blockedScopes: 'a refused memory folder is named on the memory view, not read as nothing saved (#2101)',
   loadScope: 'a linked bots folder reads nothing for a Bot, and says so once',
   readMainOf: 'a linked bots folder reads nothing for a Bot, and says so once',
   writable: 'a linked team folder refuses an entry write instead of writing into it',
