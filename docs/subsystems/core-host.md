@@ -238,7 +238,7 @@ An admin's `@` used to be the room's control plane: every `@Dev #1234 rebase and
 
 ### Decisions a Bot records (#396)
 
-- `src/host/decisions.js` gives a Bot one small tool, `record_decision({ option, choice, why })` (`choice` is `used` or `rejected`), so a "considered and rejected" choice a reviewer cannot otherwise see is written down. The host appends one JSON line per decision to `<home>/decisions.jsonl` (bounded on disk at the newest 2000 lines and 1 MB, trimmed by the host as it appends; a read parses at most 1 MB; one write at a time; a write failure is a warning, never a turn failure) and fires the entry on the activity feed as `decision`. A Bot has no tool to edit or delete a past entry.
+- `src/host/decisions.js` gives a Bot one small tool, `record_decision({ option, choice, why })` (`choice` is `used` or `rejected`), so a "considered and rejected" choice a reviewer cannot otherwise see is written down. The host appends one JSON line per decision to `<home>/decisions.jsonl` (bounded on disk at the newest 2000 lines and 1 MB, trimmed by the host as it appends; a read parses at most 1 MB; one write at a time; a write failure is a warning, never a turn failure) and fires the entry on the activity feed as `decision`. A Bot has no tool to edit or delete a past entry. The log is one leaf file beside the home, so a write asks the leaf first ([#2089](https://github.com/ThinkFlowLab/FlyBot/issues/2089)): when `decisions.jsonl` is a link — or anything other than a plain file — the line is dropped, the refusal is one warning, and the tool answers `Not recorded: the decision log is not a plain file.` instead of reporting a line that is not on disk, while an absent file is still created.
 - **Opt-in** (`config.decisions`): with the flag off the tool is not registered, nothing is written and no event is fired, so a default install is unchanged. A key, token or password in the text is refused (`looksSecret`), so the log needs no secret. Tests: `core/test/decisions.test.js`.
 
 ### Tasks
@@ -405,6 +405,7 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 ### Diagnostics
 
 - Host diagnostics never depend on `ctx.logger`: DSH may export no logger, and a test or plugin-local host may carry one without `warn`. `rt.warn` still writes stderr and the diagnostics log in that case (`src/host/diagnostics.js`). Plugins reach the same log through `flybot.warn` (#68); see [plugin-runtime](plugin-runtime.md).
+- The log itself is one leaf file under the home, and a write asks it before it appends ([#2089](https://github.com/ThinkFlowLab/FlyBot/issues/2089)): when `logs/diagnostics.jsonl` is a link — or anything other than a plain file — the line is dropped with one line on stderr that carries no home folder, the entries stay readable in memory, and `clear` leaves a file behind such a link untouched rather than truncating it.
 
 ### Untrusted fences in every shared room
 

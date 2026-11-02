@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
@@ -114,6 +114,43 @@ test('dispose waits for the queued log appends (#1983)', async (t) => {
   await rt.dispose()
   const lines = readFileSync(join(home, 'logs', 'diagnostics.jsonl'), 'utf8').trim().split('\n')
   assert.equal(lines.length, 500, 'every warning queued before dispose is on disk when it resolves')
+})
+
+// The log is one leaf file under the home, so a link there is not a place to write — the rule the
+// journal keeps (#2074) and the memory side record keeps (#2079). A refusal drops the line and says
+// so once; the entries stay readable in memory, and `clear` must not truncate what is behind the link.
+test('a linked diagnostics log is refused, not written through', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const target = join(elsewhere, 'diagnostics.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const leaf = join(home, 'logs', 'diagnostics.jsonl')
+  symlinkSync(target, leaf)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: first entry')
+  rt.warn('ds-bot: second entry')
+  await rt.dispose()
+  const afterWrites = readFileSync(target, 'utf8')
+  const entries = await rt.diagnostics.entries()
+  await rt.diagnostics.clear()
+  const afterClear = readFileSync(target, 'utf8')
+  quiet.mock.restore()
+
+  assert.equal(afterWrites, before, 'the file behind the link is not written through')
+  assert.equal(afterClear, before, 'clear does not truncate what is behind the link')
+  assert.equal(lstatSync(leaf).isSymbolicLink(), true, 'the link is still the leaf')
+  assert.equal(readlinkSync(leaf), target)
+  assert.deepEqual(entries.map(entry => entry.text), ['first entry', 'second entry'], 'the entries are still readable in memory')
+  const refusals = stderr.filter(line => /not a plain file/.test(line))
+  assert.equal(refusals.length, 1, 'one refusal, not one for every dropped line')
+  assert.equal(refusals[0].includes(home), false, 'the refusal does not print the home folder')
 })
 
 // #1916: the browser-log lines in the report are bounded, and those bounds are code-unit ones:
