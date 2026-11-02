@@ -713,3 +713,10 @@ Attempt after all role workers/leases/native occupancy are confirmed released,
 whether its worktree is clean or dirty. A clean operator-restart checkpoint must
 not manufacture a successor and discard its Attempt-scoped integration admission.
 Explicit returns/rework and unknown worker occupancy retain existing isolation.
+
+
+Delivery branch documentation now includes a source-matched API reference for all
+12 v1 queries/21 commands and selected native authentication/Project/private-agent
+entrypoints, plus a workflow/private safe-watch/state guide. It distinguishes
+TaskView from stored lifecycle, actual records from fixture validation and ordinary
+questions from impactful Tasks. This does not change runtime, enable watch or add UI.

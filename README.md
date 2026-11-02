@@ -15,6 +15,21 @@ Chief 是常驻 Project 身份，角色执行保留人设、Skills、长期记�
 身份认证复用原账号服务，但调用 API 不需要进入 control-plane 管理页面或工作台。
 尚无独立进程发行包、Swagger/OpenAPI 页面。最新前端 Task40/PR48 的后续候选不包含在本分支中。
 
+## 使用说明导航
+
+| 想做什么 | 从哪里开始 |
+| --- | --- |
+| 连接服务、登录、执行第一个查询 | 本README第2节 |
+| 创建并启动任务、查询进度、追加反馈 | 本README第3–4节 |
+| 查每个接口的参数、响应、权限、重试和错误 | [完整API参考：12查询 / 21命令](docs/development-service-api.md) |
+| 理解个人代理、安全/值守、Bot交接与Chief裁定 | [操作流程指南](docs/development-service-guide.md) |
+| 理解Project/Task状态保存在哪里、如何变化 | [状态承载与TaskView](docs/development-service-guide.md#状态由谁承载和更新) |
+| 从源码跑隔离演示、做恢复验证 | 本README第7–8节 |
+
+当前有工作台网页与直接HTTP接口；命令行的fb_dev输出JSON，没有独立交互式终端看板或Swagger页面。
+个人代理的私聊/问题交接有真实记录，完整值守开发闭环尚未实际验收；不要把存在接口当作所有场景已验证。
+公共Chief与个人项目代理是不同身份。任务发布、运行、候选验证、PR更新、Chief验收、合并/部署也不是同一步。
+
 ## 1. 获取代码
 
 ```bash
@@ -258,7 +273,8 @@ unset FLYBOT_SESSION
 | 等待资源、worker 退出或 Chief 裁定 | 查任务池、边界与日志；不能靠重复启动或删 state 绕过 |
 | 断线但远端可能已发布成功 | 查原 PR 与持久化 Effect；使用已支持的恢复接口，不另造成功回执 |
 
-完整字段与权限约束见[应用服务协议](docs/subsystems/project-development-service.md)、
+逐接口的参数、结果、权限、幂等与错误说明见[API参考](docs/development-service-api.md)。
+内部实现约束见[应用服务协议](docs/subsystems/project-development-service.md)、
 [任务输入](docs/subsystems/project-inputs.md)、[订阅](docs/subsystems/project-sources.md)、
 [持久化副作用](docs/subsystems/project-effects.md)、[执行边界](docs/subsystems/project-execution-boundary.md)。
 GitHub 订阅目前是原生定时轮询，不是一个外部 webhook URL。

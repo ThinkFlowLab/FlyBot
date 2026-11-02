@@ -1,4 +1,4 @@
-> 本交付分支的自动开发后端服务使用说明（启动、登录、API、验证）请先阅读 [README.md](README.md)。
+> 本交付分支的自动开发后端服务使用说明请先阅读 [README.md](README.md)；另见[逐接口参考](docs/development-service-api.md)及[个人代理/流程/状态指南](docs/development-service-guide.md)。
 
 <p align="center">
   <picture>

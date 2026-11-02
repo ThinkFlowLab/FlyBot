@@ -378,3 +378,9 @@ Actual shared-service browser/weak-network/screenshot acceptance stays outstandi
 Issue60 follow-up restores the completed-Chief deferral checkpoint discovered by
 real S4 frontend recovery. Keep all exit/lease guards and the current unsealed
 Attempt; recovery uses supported admission after a verified service checkpoint.
+
+
+Delivery documentation follow-up: root README links the operation guide and full
+v1 API reference (parameters/results/permissions/replay/errors). Current JSON CLI,
+in-process service and incomplete real watch/UI acceptance remain explicit; no
+standalone frontend, OpenAPI service or runtime migration is implied.

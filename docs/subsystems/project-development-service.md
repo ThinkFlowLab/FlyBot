@@ -165,3 +165,10 @@ invalidating old snapshots, and persists its integration.admit Effect with the
 source list. It never starts a worker, changes Git or grants candidate approval.
 The ordinary authenticated service/gateway remains the only HTTP entry; model text
 and raw worker callbacks cannot authorize integration parents.
+
+
+The delivery branch also supplies the [public API reference](../development-service-api.md)
+and [workflow/private-agent/state guide](../development-service-guide.md). Their
+operation index follows this module's 12 queries and21 commands; native creation
+and personal-agent endpoints are labeled separately. Documentation adds no role
+result/claim HTTP route, new state writer or additional authority.
