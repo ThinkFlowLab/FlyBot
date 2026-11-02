@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { looksSecret } from './memory.js'
-import { fileKind } from './real-dir.js'
+import { fileKind, tempWritable } from './real-dir.js'
 import { output } from './tools.js'
 
 const OPTION_MAX = 200
@@ -78,11 +78,11 @@ export function install(rt) {
     const next = kept.length > 0 ? `${kept.join('\n')}\n` : ''
     if (next !== text) {
       const tmp = `${path}.tmp`
-      if (await fileKind(tmp) === 'other') {
+      if (!tempWritable(tmp)) {
         trimRefused = true
         if (!refusedTemp) {
           refusedTemp = true
-          rt.warn('ds-bot: the decision log was not trimmed: %s is not a plain file', tmp)
+          rt.warn('ds-bot: the decision log was not trimmed: %s is not a plain file of its own', tmp)
         }
         return kept.length
       }
@@ -162,7 +162,7 @@ export function install(rt) {
       if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file.'
       // The feed payload drops the id to a safe shape and adds the live botId (a consumer keys by it).
       rt.fireFeed?.('decision', { botId, option, choice, ...(why ? { why } : {}), time: entry.time })
-      if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${path}.tmp is not a plain file.`
+      if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${path}.tmp is not a plain file of its own.`
       return `Recorded: ${choice} "${option}"${why ? ` — ${why}` : ''}.`
     },
   }))

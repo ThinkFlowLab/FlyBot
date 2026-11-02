@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -179,4 +179,36 @@ test('#2103: a linked temp name does not take the trim; the log stays a plain fi
   assert.equal(JSON.parse(kept.at(-1)).option, 'Trim normally')
   assert.equal(existsSync(`${plain}.tmp`), false, 'the healthy trim renames its temp name away')
   assert.deepEqual(healthyWarnings, [])
+})
+
+// The trim's temp name can be a hard link, which `lstat` reports as a plain file: the retained log
+// would be written into the inode the other name holds. It is refused before the write, warned
+// once, and the log keeps its lines.
+test('#P-hardlink: a hard link at the trim temp name does not take the trim', async (t) => {
+  const line = (n) => `${JSON.stringify({ time: 1_000 + n, bot: 'a', botName: 'Chief', option: `kept ${n}`, choice: 'used' })}\n`
+  const full = (n) => Array.from({ length: n }, (_, i) => line(i)).join('')
+
+  const { ctx, home, tool, stop } = await boot({ decisions: true })
+  t.after(stop)
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-decisions-tmp-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const target = join(elsewhere, 'outside.txt')
+  const before = 'PRE-EXISTING BYTES\n'
+  writeFileSync(target, before)
+  const log = join(home, 'decisions.jsonl')
+  writeFileSync(log, full(2_000))
+  linkSync(target, `${log}.tmp`)
+
+  const warnings = []
+  ctx.logger.warn = (...args) => warnings.push(args.join(' '))
+  const first = await tool('record_decision', { option: 'Trigger the trim', choice: 'used' })
+
+  assert.equal(readFileSync(target, 'utf8'), before, 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(target).nlink, 2, 'the outside file still carries the temp name')
+  const lines = readFileSync(log, 'utf8').split('\n').filter(Boolean)
+  assert.equal(lines.length, 2_001, 'the refused trim leaves the log as it was, plus the new line')
+  assert.doesNotMatch(first, /^Recorded:/, 'the answer does not claim a clean record')
+  assert.equal(warnings.length, 1, 'one warning for the temp name')
+  assert.match(warnings[0], /decisions\.jsonl\.tmp/)
+  assert.match(warnings[0], /not a plain file/)
 })

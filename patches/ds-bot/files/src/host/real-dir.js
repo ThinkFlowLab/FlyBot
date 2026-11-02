@@ -51,9 +51,19 @@ export async function fileKind(path) {
 // `writeFile` follows a link at the last component, so a link left at `<file>.<pid>.tmp` would take
 // the bytes outside the home and the `rename` after them would put the link where the file belongs.
 // `absent` is a writer's to create and a plain leftover under this host's own pid is replaceable;
-// anything else refuses the write before the first byte. The destination itself needs no such
-// check: `rename` replaces the name, link included, instead of writing through it.
-export const tempWritable = (path) => fileKindSync(path) !== 'other'
+// anything else refuses the write before the first byte. A hard link is a plain file to `lstat`
+// while its bytes are also a name outside this home (a write lands in the shared inode, not in a
+// link), so a name with another name (`nlink > 1`) is refused the same way; a crashed host's own
+// leftover is one name and stays replaceable. The destination itself needs no such check: `rename`
+// replaces the name, link included, instead of writing through it.
+export const tempWritable = (path) => {
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) {
+    return error?.code === 'ENOENT'
+  }
+}
 
 export function fileKindSync(path) {
   try {

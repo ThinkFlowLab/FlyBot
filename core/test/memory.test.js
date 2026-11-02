@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -1724,8 +1724,8 @@ test('#2097: a link left at a writer\'s temp name takes no entry, and the memory
   t.after(() => { console.error = original })
   const { tool, stop } = start({ home })
   t.after(() => stop())
-  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
-  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /is not a plain file, so nothing is written there/)
+  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /is not a plain file of its own, so nothing is written there/)
+  assert.match(await tool('remember', { text: 'Ship on Monday', scope: 'team' }, 'g3'), /is not a plain file of its own, so nothing is written there/)
   assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the file the link names is byte-identical')
   assert.equal(lstatSync(written).isSymbolicLink(), false, 'the memory file is still a plain file, not the link')
   assert.equal(readFileSync(written, 'utf8'), '# Memory\n\n- Kept by hand [added: 2026-10-01]\n', 'the memory file kept what it had')
@@ -1857,4 +1857,63 @@ test('#2068: a linked summaries folder gets no summary written through it', asyn
   await call('memory-view', { botId: 'b2', summarize: true })
   for (let i = 0; i < 50; i++) await settle()
   assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
+})
+
+// The temp name can be a hard link, which `lstat` reports as a plain file: the entry would land in
+// the inode the other name holds and the memory file would then name that shared file. A name that
+// is a file but not only this one is refused like a link, and the memory file keeps what it had.
+test('#P-hardlink: a hard link at a writer\'s temp name takes no entry', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  const target = join(outside, 'taken.md')
+  writeFileSync(target, 'PRE-EXISTING LINE\n')
+  const written = join(home, 'memory', 'team', 'MEMORY.md')
+  mkdirSync(dirname(written), { recursive: true })
+  writeFileSync(written, '# Memory\n\n- Kept by hand [added: 2026-10-01]\n')
+  const temp = `${written}.${process.pid}.tmp`
+  linkSync(target, temp)
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { tool, stop } = start({ home })
+  t.after(() => stop())
+  assert.match(await tool('remember', { text: 'Ship on Friday', scope: 'team' }, 'g3'), /is not a plain file of its own, so nothing is written there/)
+  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the shared inode is byte-identical')
+  assert.equal(lstatSync(target).nlink, 2, 'the outside file still carries the temp name')
+  assert.equal(readFileSync(written, 'utf8'), '# Memory\n\n- Kept by hand [added: 2026-10-01]\n', 'the memory file kept what it had')
+  const warned = lines.filter(line => line.includes('not a plain file'))
+  assert.equal(warned.length, 1, 'one warning per temp name per process')
+  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
+})
+
+// The snapshot's temp name carries the same shape: a hard link there would freeze the memory into
+// the shared inode and then put that file where the snapshot belongs.
+test('#P-hardlink: a hard link at the snapshot temp name is not written through', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
+  const outside = mkdtempSync(join(tmpdir(), 'ds-bot-memory-outside-'))
+  const target = join(outside, 'snapshot.md')
+  writeFileSync(target, 'PRE-EXISTING LINE\n')
+  const snapshots = join(home, 'memory', 'snapshots')
+  mkdirSync(snapshots, { recursive: true })
+  const snapshot = join(snapshots, 'b2.md')
+  const temp = `${snapshot}.tmp`
+  linkSync(target, temp)
+  t.after(() => rmSync(outside, { recursive: true, force: true }))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { section, call, stop } = start({ home })
+  t.after(() => stop())
+  await call('state', {})
+  const text = section('b2')
+  assert.match(text, /The team memory is shared by every Bot/, 'the section is built even when it cannot be frozen')
+  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'the shared inode is byte-identical')
+  assert.equal(lstatSync(target).nlink, 2, 'the outside file still carries the temp name')
+  assert.equal(existsSync(snapshot), false, 'the shared file was not renamed into the snapshot place')
+  const warned = lines.filter(line => line.includes('not a plain file'))
+  assert.equal(warned.length, 1, 'said once for the temp name')
+  assert.ok(warned[0].includes(temp), `the warning names the temp name: ${warned[0]}`)
 })
