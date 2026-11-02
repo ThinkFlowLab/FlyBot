@@ -304,7 +304,10 @@ test('a settled read lists factory pipelines and your own, and opens the flowcha
   assert.match(text(opened), /Parallel branch/)
   const wires = all(opened).filter((entry) => entry.type === 'path' && typeof entry.props?.d === 'string' && entry.props.d.startsWith('M '))
   assert.equal(wires.length, factory.edges.length)
-  assert.match(wires[0].props.d, /C /)
+  // #2122: a wire is a route out of the source's bottom port into the target's top
+  // port, not one symmetric cubic between the two card centres.
+  assert.match(wires[0].props.d, /^M 480 72 L /)
+  assert.doesNotMatch(wires[0].props.d, /C /)
   // A factory graph has no run, so every seat is idle — not a fake queue.
   assert.match(text(opened), /Idle/)
   assert.doesNotMatch(text(opened), /Queued/)

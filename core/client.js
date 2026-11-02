@@ -16446,20 +16446,159 @@ function hitNode(event) {
   return (nested ?? direct)?.dataset?.node || "";
 }
 var WIRE_SPAN = 480;
-var NODE_WIRE_OUT = 56;
+var WIRE_BLEED = 24;
 var CARD_HALF = 84;
 var CARD_H = 72;
 var FRAME_SIDE = 108;
-var FRAME_LABEL = 18;
-var FRAME_FOOT = 10;
+var FRAME_MARGIN = FRAME_SIDE - CARD_HALF;
 var MIN_FIT = 0.5;
-function wirePath(from, to) {
-  const x1 = from.x + WIRE_SPAN;
-  const y1 = from.y + NODE_WIRE_OUT;
-  const x2 = to.x + WIRE_SPAN;
-  const y2 = to.y;
-  const mid = (y1 + y2) / 2;
-  return `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
+var PORT_SPAN = 48;
+var LANE_STEP = 8;
+var EDGE_CLEAR = 4;
+function cardHeight(heights, node) {
+  const measured = heights?.[node.id];
+  return Number.isFinite(measured) && measured > 0 ? measured : CARD_H;
+}
+function cardBox(node, heights) {
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  return { left: x - CARD_HALF, right: x + CARD_HALF, top: y, bottom: y + cardHeight(heights, node) };
+}
+function portX(centre, index, count) {
+  if (count <= 1) return centre;
+  return centre - PORT_SPAN / 2 + PORT_SPAN * index / (count - 1);
+}
+function spanOverlap(a1, a2, b1, b2) {
+  return Math.min(Math.max(a1, a2), Math.max(b1, b2)) - Math.max(Math.min(a1, a2), Math.min(b1, b2));
+}
+function horizontalBlocked(boxes, x1, x2, y) {
+  return boxes.some((box) => y > box.top + EDGE_CLEAR && y < box.bottom - EDGE_CLEAR && spanOverlap(x1, x2, box.left, box.right) > 0);
+}
+function verticalBlocked(boxes, x, y1, y2) {
+  return boxes.some((box) => x > box.left + EDGE_CLEAR && x < box.right - EDGE_CLEAR && spanOverlap(y1, y2, box.top, box.bottom) > 0);
+}
+function laneClear(placed, y, x1, x2) {
+  return placed.every((lane) => Math.abs(lane.y - y) > 3 || spanOverlap(x1, x2, lane.x1, lane.x2) <= 20);
+}
+function verticalLaneClear(placed, x, y1, y2) {
+  return placed.every((lane) => Math.abs(lane.x - x) > 3 || spanOverlap(y1, y2, lane.y1, lane.y2) <= 20);
+}
+function wireChannel(boxes, x1, x2, start, step, limit) {
+  for (let y = start; step > 0 ? y <= limit : y >= limit; y += step) {
+    if (!horizontalBlocked(boxes, x1, x2, y)) return y;
+  }
+  return start;
+}
+function sideRoute(boxes, sx, sy, tx, ty, lane) {
+  const right = Math.max(...boxes.map((box) => box.right));
+  const left = Math.min(...boxes.map((box) => box.left));
+  const roomRight = WIRE_SPAN - 16 - right;
+  const roomLeft = left + WIRE_SPAN - 16;
+  const goRight = roomRight >= roomLeft;
+  const laneX = Math.min(WIRE_SPAN - 16, Math.max(
+    -WIRE_SPAN + 16,
+    goRight ? right + 12 + lane * LANE_STEP : left - 12 - lane * LANE_STEP
+  ));
+  const outY = wireChannel(boxes, sx, laneX, sy + 8, 2, sy + 64);
+  const inY = wireChannel(boxes, tx, laneX, ty - 8, -2, ty - 64);
+  return [[sx, sy], [sx, outY], [laneX, outY], [laneX, inY], [tx, inY], [tx, ty]];
+}
+function directRoute(boxes, sx, sy, tx, ty, placed) {
+  const mid = (sy + ty) / 2;
+  const candidates = [mid];
+  if (ty - sy > 12) {
+    for (let y = sy + 6; y <= ty - 6; y += 4) candidates.push(y);
+  }
+  candidates.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+  for (const y of candidates) {
+    if (horizontalBlocked(boxes, sx, tx, y)) continue;
+    if (verticalBlocked(boxes, sx, sy, y) || verticalBlocked(boxes, tx, y, ty)) continue;
+    if (!laneClear(placed.horizontal, y, sx, tx)) continue;
+    if (!verticalLaneClear(placed.vertical, sx, sy, y) || !verticalLaneClear(placed.vertical, tx, y, ty)) continue;
+    return [[sx, sy], [sx, y], [tx, y], [tx, ty]];
+  }
+  return null;
+}
+function pathOf(points, radius = 10) {
+  if (points.length < 2) return "";
+  const round = (value) => Math.round((value + WIRE_SPAN) * 10) / 10;
+  const plain = (value) => Math.round(value * 10) / 10;
+  let d = `M ${round(points[0][0])} ${plain(points[0][1])}`;
+  for (let at = 1; at < points.length; at += 1) {
+    const point = points[at];
+    if (at === points.length - 1) {
+      d += ` L ${round(point[0])} ${plain(point[1])}`;
+      continue;
+    }
+    const previous = points[at - 1];
+    const next = points[at + 1];
+    const inLength = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+    const outLength = Math.hypot(next[0] - point[0], next[1] - point[1]);
+    const bend = Math.min(radius, inLength / 2, outLength / 2);
+    if (bend < 1) {
+      d += ` L ${round(point[0])} ${plain(point[1])}`;
+      continue;
+    }
+    const beforeX = point[0] - (point[0] - previous[0]) / inLength * bend;
+    const beforeY = point[1] - (point[1] - previous[1]) / inLength * bend;
+    const afterX = point[0] + (next[0] - point[0]) / outLength * bend;
+    const afterY = point[1] + (next[1] - point[1]) / outLength * bend;
+    d += ` L ${round(beforeX)} ${plain(beforeY)} Q ${round(point[0])} ${plain(point[1])} ${round(afterX)} ${plain(afterY)}`;
+  }
+  return d;
+}
+function routeWires(nodes, edges, heights = {}) {
+  const list = nodes ?? [];
+  const byId = new Map(list.map((node) => [node.id, node]));
+  const boxes = list.map((node) => cardBox(node, heights));
+  const outgoing = /* @__PURE__ */ new Map();
+  const incoming = /* @__PURE__ */ new Map();
+  for (const edge of edges ?? []) {
+    outgoing.set(edge.from, (outgoing.get(edge.from) ?? 0) + 1);
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+  }
+  const seenOut = /* @__PURE__ */ new Map();
+  const seenIn = /* @__PURE__ */ new Map();
+  const placed = { horizontal: [], vertical: [] };
+  let sideLane = 0;
+  const routes = [];
+  for (const edge of edges ?? []) {
+    const from = byId.get(edge.from);
+    const to = byId.get(edge.to);
+    if (!from || !to) continue;
+    const outIndex = seenOut.get(edge.from) ?? 0;
+    seenOut.set(edge.from, outIndex + 1);
+    const inIndex = seenIn.get(edge.to) ?? 0;
+    seenIn.set(edge.to, inIndex + 1);
+    const source = cardBox(from, heights);
+    const target = cardBox(to, heights);
+    const sx = portX((source.left + source.right) / 2, outIndex, outgoing.get(edge.from) ?? 1);
+    const tx = portX((target.left + target.right) / 2, inIndex, incoming.get(edge.to) ?? 1);
+    const sy = source.bottom;
+    const ty = target.top;
+    const back = ty < source.top - 1;
+    let points = back ? null : directRoute(boxes, sx, sy, tx, ty, placed);
+    if (!points) points = sideRoute(boxes, sx, sy, tx, ty, sideLane++);
+    points = points.filter((point, at) => at === 0 || Math.abs(point[0] - points[at - 1][0]) > 1e-3 || Math.abs(point[1] - points[at - 1][1]) > 1e-3);
+    for (let at = 1; at < points.length; at += 1) {
+      const [x1, y1] = points[at - 1];
+      const [x2, y2] = points[at];
+      if (Math.abs(y1 - y2) < 1e-3 && Math.abs(x1 - x2) > 0) placed.horizontal.push({ y: y1, x1, x2 });
+      if (Math.abs(x1 - x2) < 1e-3 && Math.abs(y1 - y2) > 0) placed.vertical.push({ x: x1, y1, y2 });
+    }
+    routes.push({ from: edge.from, to: edge.to, back, points, d: pathOf(points) });
+  }
+  return routes;
+}
+function parallelFrame(members, heights = {}) {
+  const list = (members ?? []).filter(Boolean);
+  if (list.length === 0) return null;
+  const boxes = list.map((node) => cardBox(node, heights));
+  const left = Math.min(...boxes.map((box) => box.left)) - FRAME_MARGIN;
+  const right = Math.max(...boxes.map((box) => box.right)) + FRAME_MARGIN;
+  const top = Math.min(...boxes.map((box) => box.top)) - FRAME_MARGIN;
+  const bottom = Math.max(...boxes.map((box) => box.bottom)) + FRAME_MARGIN;
+  return { left, top, width: right - left, height: bottom - top };
 }
 function fitScale(nodes, width) {
   const reach = Math.max(0, ...(nodes ?? []).map((node) => Math.abs(node.x ?? 0) + FRAME_SIDE));
@@ -16494,6 +16633,31 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
   const status = graph.run?.nodeStatus ?? null;
   const locals = (roster?.bots ?? []).filter((bot) => bot && bot.remote !== true && !nodes.some((node) => node.botId === bot.id));
   const height = Math.max(420, ...nodes.map((node) => (node.y ?? 0) + 150), 0);
+  const cardElements = (0, import_react37.useRef)(null);
+  if (!cardElements.current) cardElements.current = /* @__PURE__ */ new Map();
+  const [cardHeights, setCardHeights] = (0, import_react37.useState)({});
+  const nodeKey = nodes.map((node) => node.id).join("|");
+  (0, import_react37.useEffect)(() => {
+    const measure = () => {
+      const next = {};
+      for (const [id, el] of cardElements.current) {
+        const size = el?.offsetHeight || el?.getBoundingClientRect?.().height;
+        if (Number.isFinite(size) && size > 0) next[id] = Math.round(size * 10) / 10;
+      }
+      setCardHeights((previous) => {
+        const ids = Object.keys(next);
+        if (ids.length === 0) return previous;
+        if (ids.length === Object.keys(previous).length && ids.every((id) => previous[id] === next[id])) return previous;
+        return next;
+      });
+    };
+    measure();
+    if (typeof ResizeObserver !== "function") return void 0;
+    const observer = new ResizeObserver(measure);
+    for (const el of cardElements.current.values()) observer.observe(el);
+    return () => observer.disconnect();
+  }, [nodeKey]);
+  const routes = routeWires(nodes, edges, cardHeights);
   const canvasWidth = measuredWidth || knownWidth;
   const { scale, pad: pad2 } = fitLayout(nodes, canvasWidth);
   const drawnHeight = Math.round(height * scale);
@@ -16577,8 +16741,9 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
               className: "bt-wf-wires",
               "aria-hidden": true,
               width: WIRE_SPAN * 2,
-              height,
-              viewBox: `0 0 ${WIRE_SPAN * 2} ${height}`
+              height: height + WIRE_BLEED,
+              viewBox: `0 ${-WIRE_BLEED} ${WIRE_SPAN * 2} ${height + WIRE_BLEED}`,
+              style: { top: -WIRE_BLEED }
             },
             (0, import_react37.createElement)(
               "defs",
@@ -16593,24 +16758,21 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
                 orient: "auto"
               }, (0, import_react37.createElement)("path", { d: "M0 0 10 5 0 10z" }))
             ),
-            edges.map((edge) => {
-              const from = nodes.find((node) => node.id === edge.from);
-              const to = nodes.find((node) => node.id === edge.to);
-              if (!from || !to) return null;
-              return (0, import_react37.createElement)("path", { key: `${edge.from}>${edge.to}`, d: wirePath(from, to), markerEnd: "url(#bt-wf-arrow)" });
-            })
+            routes.map((route) => (0, import_react37.createElement)("path", {
+              key: `${route.from}>${route.to}`,
+              d: route.d,
+              "data-wire": `${route.from}>${route.to}`,
+              markerEnd: "url(#bt-wf-arrow)"
+            }))
           ),
           (graph.layers ?? []).filter((layer) => layer.length > 1).map((layer) => {
             const members = layer.map((id) => nodes.find((node) => node.id === id)).filter(Boolean);
             if (members.length < 2) return null;
-            const left = Math.min(...members.map((node) => node.x ?? 0)) - FRAME_SIDE;
-            const right = Math.max(...members.map((node) => node.x ?? 0)) + FRAME_SIDE;
-            const top = Math.min(...members.map((node) => node.y ?? 0)) - FRAME_LABEL;
-            const bottom = Math.max(...members.map((node) => node.y ?? 0)) + CARD_H + FRAME_FOOT;
+            const frame = parallelFrame(members, cardHeights);
             return (0, import_react37.createElement)("div", {
               key: layer.join("+"),
               className: "bt-wf-par",
-              style: { left, top, width: right - left, height: bottom - top }
+              style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height }
             }, (0, import_react37.createElement)("div", { className: "bt-wf-plabel" }, t("Parallel branch, then join")));
           }),
           nodes.map((node) => {
@@ -16622,6 +16784,10 @@ function GraphCanvas({ graph, editing, roster, onCommit, width: knownWidth = 0 }
                 "data-node": node.id,
                 className: `bt-wf-node ${state}${editing ? " editing" : ""}`,
                 style: { left: (node.x ?? 0) - CARD_HALF, top: node.y ?? 0 },
+                ref: (el) => {
+                  if (el) cardElements.current.set(node.id, el);
+                  else cardElements.current.delete(node.id);
+                },
                 onPointerDown: (event) => {
                   if (!editing || event.target?.dataset?.port || event.target?.dataset?.remove) return;
                   gesture.current = { kind: "move", id: node.id, ox: event.clientX, oy: event.clientY, x: node.x ?? 0, y: node.y ?? 0 };
