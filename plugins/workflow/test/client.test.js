@@ -3000,3 +3000,76 @@ test('#1856: the settings picker binds a workflow to a Project and clears it', a
     globalThis.__flybot__ = prevHost
   }
 })
+
+// #2155: a Condition link needs an output name before Add link is enabled, and an unusable one is
+// refused by the host with its reason in wf-err instead of landing as a plain Link.
+test('#2155: a Condition link with a blank output name cannot be added, and a refusal shows its reason', async () => {
+  await withUnhandled(async (unhandled) => {
+    const graph = delivery()
+    let refusal = null
+    const calls = []
+    const call = async (name, body) => {
+      calls.push({ name, body })
+      if (name === 'workflow/state') return { workflows: [graph] }
+      if (name === 'workflow/graph' && refusal) return { ok: false, error: refusal }
+      return { ok: true, workflows: [graph] }
+    }
+    const settings = mount(client.WorkflowSettings, { call, roster: { bots: [] } })
+    await settle()
+    button(settings.tree, 'Edit').props.onClick()
+    await settle()
+    const pick = (label) => findAll(settings.tree, node => node.props?.['aria-label'] === label)[0]
+    const choose = async (label, value) => {
+      pick(label).props.onChange({ target: { value } })
+      await settle()
+    }
+    const fillEnds = async (output) => {
+      await choose('Kind', 'condition')
+      await choose('From node', 'coder')
+      await choose('To node', 'planner')
+      if (output !== null) await choose('when', output)
+    }
+    await fillEnds(null)
+    assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'a Condition link with a blank output name waits for one')
+    await choose('when', 'ready')
+    assert.equal(button(settings.tree, 'Add link').props.disabled, false)
+    button(settings.tree, 'Add link').props.onClick()
+    await settle()
+    const wired = calls.filter(item => item.name === 'workflow/graph').at(-1)
+    const edge = wired.body.edges.find(item => item.from === 'coder' && item.to === 'planner')
+    assert.deepEqual(edge.when, { output: 'ready', eq: '' })
+
+    refusal = 'A condition link needs an output name like "ready"'
+    await fillEnds('result_ok')
+    button(settings.tree, 'Add link').props.onClick()
+    await settle()
+    assert.deepEqual(alertsOf(settings), [refusal], 'the refusal is shown, not swallowed')
+    assert.deepEqual(unhandled, [])
+    settings.unmount()
+  })
+})
+
+// #2155 acceptance 6: the read-only flowchart is a drawing, not a control — a click there still
+// commits nothing, so a refusal added to the Settings form cannot leak an edit onto the drawer plane.
+test('#2155: a click on the read-only flowchart still commits nothing', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name) => {
+    calls.push(name)
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  await settle()
+  const card = findAll(view.tree, node => node.props?.['data-node'] === 'coder')[0]
+  assert.ok(card, 'the read-only plane draws the node')
+  assert.equal(card.props.onClick, undefined, 'a read-only card carries no click handler')
+  assert.equal(card.props.onPointerDown, undefined, 'a read-only card cannot start a drag')
+  card.props.onClick?.()
+  await settle()
+  assert.equal(calls.filter(name => name === 'workflow/graph').length, 0, 'a click on the read-only plane committed a graph')
+  view.unmount()
+})
