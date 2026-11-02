@@ -796,6 +796,7 @@ test('a blocked or result-ready card is not terminal and stays In progress', () 
 // `TERMINAL_STATUSES` would stamp the card with the moment it entered that state instead.
 test('a non-terminal actor entry does not end a Done card, even when it comes first', () => {
   const actors = [
+    { status: 'open', at: Date.now() - 330 * MINUTE },
     { status: 'claimed', at: Date.now() - 300 * MINUTE },
     { status: 'working', at: Date.now() - 270 * MINUTE },
     { status: 'blocked', at: Date.now() - 240 * MINUTE },
