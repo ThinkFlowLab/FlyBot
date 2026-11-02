@@ -3344,3 +3344,71 @@ test('#2178: a From node that declares no outputs keeps the text input', async (
   assert.deepEqual(edge.when, { output: 'ready', eq: '' }, 'the typed name is submitted as before')
   settings.unmount()
 })
+
+// #2187: the host hands the plugin page a `roster.readOnly` sentence while another dsh holds
+// the team, and core's channel refuses every write endpoint with `bot/read-only`. The page
+// must not offer the edit surface it cannot save, and it must say what the host said.
+const READ_ONLY_REASON = 'The Bot team in /home/x/.dsh/bot/team.json is open in another dsh (Web or Desktop, pid 4242). This window shows the team but cannot change it; close the other one and reload.'
+
+function readOnlyHost(graph, calls) {
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    // What core's channel returns before the plugin sees the call, in a read-only window.
+    return { ok: false, code: 'bot/read-only', error: READ_ONLY_REASON }
+  }
+  return call
+}
+
+async function mountReadOnly(graph, calls) {
+  const settings = mount(client.WorkflowSettings, { call: readOnlyHost(graph, calls), roster: { bots: [], readOnly: READ_ONLY_REASON } })
+  await settle()
+  return settings
+}
+
+test('#2187: a read-only window offers no Edit control and shows the host reason', async () => {
+  const calls = []
+  const settings = await mountReadOnly(delivery(), calls)
+  assert.equal(button(settings.tree, 'Edit'), undefined, 'a read-only window offers no Edit control')
+  const statuses = findAll(settings.tree, node => node.props?.role === 'status')
+  assert.ok(statuses.length > 0, 'the page says why the graph cannot change')
+  assert.ok(statuses.some(node => textOf(node).includes(READ_ONLY_REASON)), 'in the host\'s own words')
+  settings.unmount()
+})
+
+test('#2187: a read-only window never writes the graph from a drag', async () => {
+  const calls = []
+  const settings = await mountReadOnly(delivery(), calls)
+  // A user in this window can still try: take the edit control if the page wrongly offers
+  // one, then drag a card. Nothing may reach `workflow/graph`.
+  const opener = button(settings.tree, 'Edit')
+  if (opener) { opener.props.onClick(); await settle() }
+  const coder = findAll(settings.tree, node => node.props?.['data-node'] === 'coder')[0]
+  assert.ok(coder, 'the graph still draws its nodes')
+  coder.props.onPointerDown({ clientX: 10, clientY: 20, preventDefault() {}, stopPropagation() {}, target: { dataset: {} } })
+  const canvas = findAll(settings.tree, node => node.props?.className === 'wf-canvas-view')[0]
+  canvas.props.onPointerMove({ clientX: 58, clientY: 44 })
+  canvas.props.onPointerUp({ clientX: 58, clientY: 44, target: { dataset: {} } })
+  await settle()
+  assert.deepEqual(calls.filter(item => item.name === 'workflow/graph'), [], 'a drag writes nothing in a read-only window')
+  settings.unmount()
+})
+
+test('#2187: a read-only window offers no Add link and no wire port', async () => {
+  const calls = []
+  const settings = await mountReadOnly(delivery(), calls)
+  const opener = button(settings.tree, 'Edit')
+  if (opener) { opener.props.onClick(); await settle() }
+  assert.equal(button(settings.tree, 'Add link'), undefined, 'no Add link entry')
+  assert.equal(findAll(settings.tree, node => node.props?.['data-port'] === 'out').length, 0, 'no wire port to drag a link from')
+  settings.unmount()
+})
+
+test('#2187: a read-only window still reads the graph through workflow/state', async () => {
+  const calls = []
+  const settings = await mountReadOnly(delivery(), calls)
+  assert.equal(calls.filter(item => item.name === 'workflow/state').length, 1, 'the page still reads through workflow/state')
+  assert.ok(findAll(settings.tree, node => node.props?.['data-node'] === 'coder').length === 1, 'and draws what it read')
+  assert.deepEqual(alertsOf(settings), [], 'no refusal banner for a page that wrote nothing')
+  settings.unmount()
+})
