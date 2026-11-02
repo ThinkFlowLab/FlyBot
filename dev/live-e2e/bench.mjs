@@ -8,14 +8,16 @@
 // Data lives outside this checkout — `$LIVE_E2E_HOME`, else ~/.cache/flybot-live-e2e/<name> (never
 // under ~/.dsh; `reset` wipes the Bot team and Sessions before starting). A home inside the
 // checkout is refused: that workspace would hold the grader (#398). Environment: DEEPSEEK_API_KEY
-// (required; fails loudly when missing or the mock's), DEEPSEEK_BASE_URL (optional; defaults to the
-// official endpoint — point it at dev/llm-tap.mjs to record per-call usage), DSH_HARNESS (a
-// deepseek-harness checkout with its dependencies installed).
+// (required; fails loudly when the suite's own reading refuses it — see key.mjs),
+// DEEPSEEK_BASE_URL (optional; defaults to the official endpoint — point it at
+// dev/llm-tap.mjs to record per-call usage), DSH_HARNESS (a deepseek-harness checkout with
+// its dependencies installed).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { benchHome } from './integrity.mjs'
+import { keyProblem, keyReading } from './key.mjs'
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const [NAME, PORT_TEXT, ACTION = 'start'] = process.argv.slice(2)
@@ -29,7 +31,8 @@ const { home: HOME_DIR, problem: homeProblem } = benchHome({ name: NAME, root: R
 if (homeProblem) die(`${homeProblem}\n(the bench home must be outside ${ROOT}; export LIVE_E2E_HOME to choose it)`)
 
 const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
-if (!apiKey || apiKey === 'mock-key' || apiKey.length < 16) die('DEEPSEEK_API_KEY is missing, too short, or the mock\'s; a real key is required (never printed)')
+const key = keyReading(apiKey)
+if (!key.usable) die(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}; a real key is required (never printed)`)
 
 const harness = process.env.DSH_HARNESS ?? join(ROOT, 'deepseek-harness')
 if (!existsSync(join(harness, 'package.json'))) die(`no deepseek-harness checkout at ${harness}; set DSH_HARNESS (see CONTRIBUTING.md)`)

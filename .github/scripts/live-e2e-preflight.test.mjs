@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { SUMMARY, WARNING, plan } from './live-e2e-preflight.mjs'
 
 test('#794: a configured key runs the suite and says nothing', () => {
-  const step = plan('sk-live-e2e')
+  const step = plan('sk-live-e2e-0123456789abcdef')
   assert.equal(step.output, 'key=true')
   assert.equal(step.warning, null)
   assert.equal(step.summary, null)
@@ -52,10 +52,23 @@ test('#794: with a key the step writes key=true and adds no warning or summary',
   writeFileSync(summary, '')
   const result = spawnSync(process.execPath, [join(import.meta.dirname, 'live-e2e-preflight.mjs')], {
     encoding: 'utf8',
-    env: { PATH: process.env.PATH, DEEPSEEK_API_KEY: 'sk-live-e2e', GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
+    env: { PATH: process.env.PATH, DEEPSEEK_API_KEY: 'sk-live-e2e-0123456789abcdef', GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
   })
   assert.equal(result.status, 0)
   assert.equal(result.stdout, '')
   assert.equal(readFileSync(output, 'utf8').trim(), 'key=true')
   assert.equal(readFileSync(summary, 'utf8'), '')
+})
+
+test('a key that is present but unusable skips like a missing one, and says why', () => {
+  assert.equal(plan('   ').warning, WARNING, 'a blank secret is the same thing as no secret')
+  for (const key of ['mock-key', 'short', 'a'.repeat(15)]) {
+    const step = plan(key)
+    assert.equal(step.output, 'key=false', `the preflight lets ${JSON.stringify(key)} through`)
+    assert.match(step.warning, /^::warning /)
+    assert.match(step.warning, /not a usable key/)
+    assert.notEqual(step.warning, WARNING, 'a key someone set is a different warning from no key at all')
+    assert.match(step.summary, /not a usable key/)
+    assert.match(step.summary, /nothing to run, not because the suite passed/)
+  }
 })

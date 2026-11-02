@@ -1,5 +1,6 @@
 import { join } from "node:path"
 import { canonicalPath, isInside } from "./integrity.mjs"
+import { keyProblem, keyReading } from "./key.mjs"
 
 // The outcome contract and the report assembly for the #204 live runner. Pure code,
 // covered keyless by test/report.test.mjs.
@@ -30,10 +31,12 @@ export function budgetsFrom(env) {
 
 // Fail-closed checks on the run's inputs. A loopback base URL is the mock bench (or the
 // usage tap, which names the real upstream in LIVE_E2E_TAP_UPSTREAM); anything else
-// without a key, or with the mock's key, is refused rather than run.
+// without a usable key (dev/live-e2e/key.mjs, the reading the preflight and the bench start share)
+// is refused rather than run.
 export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoot, evidence, cwd }) {
   const problems = []
-  if (!apiKey || apiKey === 'mock-key' || apiKey.length < 16) problems.push('DEEPSEEK_API_KEY is missing, too short, or the mock key')
+  const key = keyReading(apiKey)
+  if (!key.usable) problems.push(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}`)
   let host = 'api.deepseek.com'
   let origin = 'default official endpoint'
   if (baseUrl) {

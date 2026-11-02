@@ -57,7 +57,7 @@ a real `DEEPSEEK_API_KEY` in the environment. Chrome comes from `CHROME_BIN`, el
 `google-chrome`/`chromium`(-`browser`) on PATH, else playwright's own download.
 
 ```sh
-export DEEPSEEK_API_KEY=...            # real key; the runner fails closed without it
+export DEEPSEEK_API_KEY=...            # real key (16+ chars, never the mock's); fails closed
 export LIVE_E2E_HOME="$HOME/.cache/flybot-live-e2e/live-e2e"   # outside the checkout
 node dev/live-e2e/bench.mjs live-e2e 3196 reset
 node dev/live-e2e/run.mjs "$LIVE_E2E_HOME" 3196 --model deepseek-official/deepseek-flash
