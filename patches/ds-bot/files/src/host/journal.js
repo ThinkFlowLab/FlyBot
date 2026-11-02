@@ -263,11 +263,34 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
     if (!info.isFile() || info.nlink !== 1) throw new JournalError('the journal path is not a plain file')
     await chmod(path, 0o600)
     const text = await readFile(path, 'utf8')
-    const entries = parseJournal(text)
+    // A crash between the bytes of two appends leaves the last line half written, and replay
+    // refuses a file that does not end on a line boundary. That refusal used to be permanent:
+    // every later start and every save failed until a person deleted the journal. Only that shape
+    // is repaired — the complete prefix must be a journal replay accepts — with the atomic
+    // replacement a rotation uses, so the kept lines still replay and recording continues from
+    // them. A broken line above the last one still refuses the whole file, and a half line on top
+    // of a prefix that does not replay is refused too.
+    let kept = text
+    let entries
+    if (text !== '' && !text.endsWith('\n')) {
+      kept = text.slice(0, text.lastIndexOf('\n') + 1)
+      entries = parseJournal(kept)
+      const temp = `${path}.${process.pid}.tmp`
+      try {
+        await writeFile(temp, kept, { mode: 0o600, flag: 'wx' })
+        await rename(temp, path)
+      } catch (error) {
+        await unlink(temp).catch(() => { /* the temp file may not exist */ })
+        throw error
+      }
+      warn('ds-bot: state journal %s', `${path} dropped an incomplete last line left by a crash`)
+    } else {
+      entries = parseJournal(text)
+    }
     if (entries.length === 0) return
     lastText = stateText(replayEntries(entries, Infinity))
     seq = entries.at(-1).seq
-    bytes = Buffer.byteLength(text)
+    bytes = Buffer.byteLength(kept)
     oldest = entries[1]?.t
   }
   const opened = open().catch(stop)
