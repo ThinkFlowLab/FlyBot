@@ -2199,6 +2199,103 @@ test('#457: a Bot whose face-room Auto-send is on has its clean held line approv
   assert.equal(approvals().length, 2)
 })
 
+// #1175: a co-seat is not an authorization. Bot Social holds a face-room line it would otherwise send
+// with `face_room_auto_send_off`, and only the face-room path clears that name: `autoSendFaceLine`
+// (`social.js:4574`) reads it through `holdAllowsFaceAutoSend`, and only while that Bot's own in-room
+// Auto-send switch is on. A room envelope is a different consent — the click that added the Bot — and
+// `autoSendRoomEnvelope` (`social.js:2043`) clears the blanket hold (#847) and an ordinary room `policy`
+// hold (#1113, #1118), never the switch; the comment above `FACE_ROOM_AUTO_SEND_OFF`
+// (`social.js:171-189`) says the same in one place. Two Bot homes sharing a row is not the owner
+// pressing that switch, so the room-share line has to come back `'kept'`, on its card.
+// `face_room_auto_send_off` = that Bot's own in-room Auto-send switch is off; `blanket` / `policy`
+// remainders mean the clearing path failed — that is the real bug.
+test('#1175: a co-seat is not the Auto-send switch: a room-share row held for `face_room_auto_send_off` stays on its card, and the same Bot in a face room clears it', async (t) => {
+  // The room this home seated a stranger's Bot in (#883): a room share goes under the room's id.
+  const seated = {
+    war: {
+      id: 'war', name: 'Launch plan', members: ['a', 'b'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+      participants: [
+        { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', id: 'b', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', remote: true, id: '@guest.eve.home', handle: '@guest.eve.home', ownerHome: '@eve.home', ownerName: 'Eve', displayName: 'Guest', role: 'member', admittedBy: 'ticket', ticket: 'TktSeatAbCdEfGhIjKlMnO', hostBotId: 'a', joinedSeq: 1, joinedAt: 1 },
+      ],
+    },
+  }
+  {
+    // The room-share half: `send_as_member` comes back pending with the switch's own reason on it.
+    const { ctx, call, home, stop } = await team({ rooms: seated })
+    t.after(stop)
+    const server = holdingServer({ holdReason: 'face_room_auto_send_off' })
+    const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath: join(home, 'flybot-social-settings.json') }, {
+      client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+      home: { id: 'h1', handle: '@danyang.home' },
+    })
+    t.after(() => social.dispose())
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    const envelope = `FLYBOT-ROOM-SHARE\n${JSON.stringify({ v: 1, op: 'line', roomId: 'war', text: 'we are in the same room' })}`
+    const refused = await ctx.flybot.bot.send({ from: 'a', to: '@guest.eve.home', text: envelope, via: 'room-share', meta: { roomId: 'war', scope: 'war' } })
+      .then(value => ({ value }), error => ({ error }))
+    // `pending_approval` is `autoSendRoomEnvelope` answering `'kept'`: `sendTicketShare` maps `kept` to
+    // that code and a hold Bot Social has not listed yet to `pending_unlisted`, so the row was read.
+    assert.equal(refused.error?.code, 'pending_approval', JSON.stringify(refused.value ?? refused.error?.message))
+    assert.equal(server.calls.some(c => c.name === 'decide_approval'), false, 'sharing the room approves nothing on Bot Social')
+    assert.equal(server.queue.length, 1, 'the hold is still pending for the owner')
+    const pending = (await call('flybot/social/status', {})).value.approvals
+    assert.equal(pending.length, 1, 'it waits on its card, where the owner decides it')
+    assert.equal(pending[0].holdReason, 'face_room_auto_send_off', 'the card names the switch, so the clearing path is visible')
+  }
+  {
+    // The face-room half: the same Bot, the same hold name, and its own in-room switch decides.
+    const { ctx, call, stop } = await team()
+    t.after(stop)
+    const server = withFaceRooms(mockServer())
+    // Bot Social's real shape for this hold (#457, #865): the switch's name, the blanket reason beside
+    // it, no finding of its own.
+    const heldItem = () => ({
+      approval_id: 'apr-face-1', kind: 'face_room_message', status: 'pending', sender_kind: 'bot', bot_id: 'm1',
+      room_id: 'frm_123456', hold_reason: 'face_room_auto_send_off', reasons: ['mvp.all_outbound_requires_approval'],
+      message: { payload: { text: 'hold me' } }, summary: 'To the room: hold me',
+    })
+    let queue = []
+    server.tools.list_approvals = () => ({ approvals: queue })
+    server.tools.decide_approval = a => {
+      if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+      queue = queue.filter(item => item.approval_id !== a.approval_id)
+      return { approval_id: a.approval_id, decision: a.decision }
+    }
+    let fanout
+    const origScope = ctx.flybot.scope.bind(ctx.flybot)
+    ctx.flybot.scope = (name) => {
+      const scoped = origScope(name)
+      const origOn = scoped.rooms.onFaceLine.bind(scoped.rooms)
+      scoped.rooms.onFaceLine = (fn) => { fanout = fn; return origOn(fn) }
+      return scoped
+    }
+    const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false }, {
+      client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+      home: { id: 'h1', handle: '@danyang.home' },
+    })
+    t.after(() => social.dispose())
+    await grantTeam(ctx.flybot)
+    await social.registerAll()
+    await call('flybot/social/face-join', { start: true, code: '123456' })
+    const room = ctx.flybot.rooms.ofFace('frm_123456')
+    // `hold me` is this mock's hold trigger (`withFaceRooms`); the text itself is not what is under test.
+    const line = () => ({ authorKind: 'bot', botId: 'a', authorId: 'a', who: 'Chief', text: 'hold me' })
+    const approvals = () => server.calls.filter(c => c.name === 'decide_approval' && c.args.confirm_code !== undefined)
+    // Switch off (the default): the line waits on its card, exactly like the room-share row above.
+    queue = [heldItem()]
+    assert.deepEqual(await fanout(room, line()), { held: true, approvalId: 'apr-face-1' })
+    assert.equal(approvals().length, 0)
+    // Switch on: the same hold name now leaves, because the owner pressed that switch for this Bot.
+    await call('flybot/social/face-auto', { botId: 'a', on: true })
+    queue = [heldItem()]
+    assert.equal(await fanout(room, line()), undefined)
+    assert.deepEqual(approvals().map(c => [c.args.approval_id, c.args.decision]), [['apr-face-1', 'approved']])
+  }
+})
+
 test('approvalView: outbound draft text is sanitized, friend requests stay out', () => {
   const view = approvalView({
     approval_id: 'apr1',
