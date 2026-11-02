@@ -179,6 +179,7 @@ const ZH = {
   '1 Bot': '1 个 Bot',
   '{count} Bots': '{count} 个 Bot',
   'Loading…': '加载中…',
+  'The scheduled tasks could not be read: {reason}': '定时任务读不出来：{reason}',
   'Edit Bot': '编辑 Bot',
   'Make Main Bot': '设为主 Bot',
   'Remove Main Bot role': '取消主 Bot',

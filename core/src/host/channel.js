@@ -517,7 +517,9 @@ export function install(rt) {
         case 'schedule-retry':
         case 'schedule-delete':
           await rt.load()
-          return ok(await rt.scheduleEndpoint(endpoint, body))
+          // The actor goes down with the request here too: the list and the view a write answers
+          // with are narrowed to this caller's rows in the data layer (schedules.js).
+          return ok(await rt.scheduleEndpoint(endpoint, body, actor))
         case 'schedule-create':
         case 'schedule-update': {
           await rt.load()

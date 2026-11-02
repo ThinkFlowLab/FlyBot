@@ -33,7 +33,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText } = module.exports
+const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText, schedulesReadFailure } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -579,4 +579,38 @@ test('#2039: an unread schedules view draws no room section either', () => {
   const actions = opened()
   seeded.push(null)
   assert.equal(RoomSchedules({ room: ROOM, actions }), null, 'no view yet is not "this room has no tasks"')
+})
+
+// A read that the host refuses used to be swallowed: the page kept `Loading…` and never said why.
+// The failure answers as a view, so every surface can tell "still reading" from "could not read".
+const REFUSED = { available: false, tasks: [], readFailure: 'You do not own that session' }
+
+test('a failed read is a sentence on the page, not Loading… for good', () => {
+  const actions = opened()
+  seeded.push(REFUSED)
+  const page = render(SchedulesPage({ roster: { bots: [], rooms: [] }, actions, start: null }))
+  const lines = text(page)
+  assert.ok(!lines.includes('Loading…'), 'the page says what happened instead of loading forever')
+  assert.ok(!lines.includes('Switch on Automation tasks on the Plugins page.'), 'and it is not read as "automation is off"')
+  assert.ok(lines.includes('The scheduled tasks could not be read: You do not own that session'))
+})
+
+test("a Bot's card says the read failed, and the details line stays quiet", () => {
+  const actions = opened()
+  seeded.push(REFUSED)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: { bots: [] }, actions }))
+  assert.ok(text(card).includes('The scheduled tasks could not be read: You do not own that session'))
+  assert.equal(buttonsOf(card).length, 0, 'no New task while the list could not be read')
+
+  seeded.push(REFUSED)
+  assert.equal(ScheduleSummary({ bot: { id: 'b1' }, actions }), null, 'no "add one" invitation from a read that failed')
+  seeded.push(REFUSED)
+  assert.equal(RoomSchedules({ room: ROOM, actions }), null)
+})
+
+test('the failure sentence is null while there is nothing to say', () => {
+  assert.equal(schedulesReadFailure(undefined), null)
+  assert.equal(schedulesReadFailure(null), null)
+  assert.equal(schedulesReadFailure(''), null)
+  assert.equal(schedulesReadFailure('HTTP 500'), 'The scheduled tasks could not be read: HTTP 500')
 })

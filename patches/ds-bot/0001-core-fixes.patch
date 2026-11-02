@@ -748,7 +748,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Content: '内容',
    'Referenced {labels}': '引用了 {labels}',
    ', ': '、',
-@@ -41,22 +41,78 @@ const ZH = {
+@@ -41,22 +41,79 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -758,6 +758,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  '1 Bot': '1 个 Bot',
 +  '{count} Bots': '{count} 个 Bot',
    'Loading…': '加载中…',
++  'The scheduled tasks could not be read: {reason}': '定时任务读不出来：{reason}',
    'Edit Bot': '编辑 Bot',
    'Make Main Bot': '设为主 Bot',
    'Remove Main Bot role': '取消主 Bot',
@@ -2142,7 +2143,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
-@@ -1,10 +1,13 @@
+@@ -1,22 +1,32 @@
  // Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
  // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 -// sends its prompt to the Bot's chat when it is due.
@@ -2159,6 +2160,47 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
  
+ const POLL_MS = 30_000
+ 
+ // One view for every surface that shows tasks; each asks again when it mounts.
++//
++// A read that fails is not a skeleton that never ends: it answers a view with `readFailure` set,
++// so the page says what went wrong instead of "Loading…" for as long as the host keeps refusing.
++// The next poll replaces it as soon as a read works again.
+ let shared = null
+ const listeners = new Set()
+ function publish(view) {
+   shared = view
+   for (const listener of listeners) listener(view)
+ }
++function publishFailure(error) {
++  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) })
++}
+ export function useSchedules(actions) {
+   const [view, setView] = useState(shared)
+   useEffect(() => {
+@@ -25,7 +25,7 @@ export function useSchedules(actions) {
+     let timer
+     const load = () => actions.schedules?.()
+       .then((next) => { if (!stopped) publish(next) })
+-      .catch(() => {})
++      .catch((error) => { if (!stopped) publishFailure(error) })
+       .finally(() => { if (!stopped) timer = setTimeout(load, POLL_MS) })
+     load()
+     return () => { stopped = true; clearTimeout(timer); listeners.delete(setView) }
+@@ -33,6 +33,12 @@ export function useSchedules(actions) {
+   return view
+ }
+ 
++// The sentence a failed read gets, or `null` while there is nothing to say. Pure, so the suite
++// can hold it without a renderer.
++export const schedulesReadFailure = failure => (typeof failure === 'string' && failure !== ''
++  ? t('The scheduled tasks could not be read: {reason}', { reason: failure })
++  : null)
++
+ const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+ const clock = time => String(time ?? '').slice(0, 5)
+ const when = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms)
 @@ -40,6 +40,12 @@ function dayAndTime(ms) {
    const sameYear = new Date(ms).getFullYear() === new Date().getFullYear()
    return when(ms, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -2268,8 +2310,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2293,7 +2334,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2365,7 +2407,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -166,72 +166,219 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -166,72 +166,228 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
      error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -2449,6 +2491,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    const view = useSchedules(actions)
    const [adding, setAdding] = useState(Boolean(start))
 +  const [editing, setEditing] = useState(null)
++  const refused = schedulesReadFailure(view?.readFailure)
++  if (refused !== null) return h('div', { className: 'bt-set-hint bt-danger', role: 'status' }, refused)
    if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
 -  if (!view.available) return h(AutomationOff)
 -  const shown = next => { publish(next); setAdding(false) }
@@ -2471,9 +2515,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-+  ]
-+}
-+
+   ]
+ }
+ 
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
@@ -2495,7 +2539,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-   ]
++  ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -2515,12 +2559,19 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
- }
- 
++}
++
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
 +  const [editing, setEditing] = useState(null)
++  const refused = schedulesReadFailure(view?.readFailure)
++  if (refused !== null) {
++    return h('section', { className: 'bt-set-section' },
++      h('h3', null, t('Scheduled tasks')),
++      h('div', { className: 'bt-set-card' }, h('div', { className: 'bt-set-row bt-bs-row' },
++        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint bt-danger', role: 'status' }, refused)))))
++  }
    if (view === null) return null
    const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
    return h('section', { className: 'bt-set-section' },
@@ -2573,7 +2624,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  // not "no tasks". The settings card above draws nothing for it; this line did the opposite and
 +  // offered the new-task form. `view.available === false` (Plugins off) is a different state and
 +  // keeps its own line below.
-+  if (view === null) return null
++  if (view === null || view.readFailure !== undefined) return null
 +  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
    return h('div', null,
 -    h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
@@ -2595,7 +2646,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +// settings list with no target, because a room id here would open the new-task form (#2030).
 +export function RoomSchedules({ room, actions }) {
 +  const view = useSchedules(actions)
-+  if (view === null || room.origin === 'face-to-face') return null
++  if (view === null || view.readFailure !== undefined || room.origin === 'face-to-face') return null
 +  const tasks = view.available ? view.tasks.filter(task => task.botId === undefined && task.roomId === room.id) : []
 +  if (tasks.length === 0) return null
 +  return h('div', null, h(SummaryLines, { tasks, actions }))
@@ -6349,7 +6400,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
    }
    if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
    else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
-@@ -89,63 +89,555 @@ export function install(rt) {
+@@ -89,63 +89,559 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -6386,7 +6437,10 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  // The Session a Bot's or group chat's new task goes to: the Bot's current part.
 +  const sessionFor = owner => (owner.botId !== undefined ? rt.chatOf(owner.botId) : owner.roomId)
 +  const ensureService = () => { if (service === null) throw invalid('Automation tasks are off in DSH') }
-+
+ 
+-  async function schedulesView() {
+-    if (service === null) return { available: false, tasks: [] }
+-    const tasks = []
 +  // Team quiet hours (#1166): a window the user set, checked when a task is created or
 +  // edited. It never mutes anything — a task that already fires inside the window keeps
 +  // firing, because DSH has no hook before a delivery (docs/subsystems/core-host.md).
@@ -6471,10 +6525,11 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  async function checkMissed(now = Date.now()) {
 +    if (service === null) return
 +    const seen = new Set()
-+    for (const entry of await service.catalog()) {
+     for (const entry of await service.catalog()) {
 +      if (entry.status !== 'active' || !(Date.parse(entry.scheduledAt) <= now) || entry.lastDelivery?.scheduledAt === entry.scheduledAt) continue
-+      const owner = ownerOf(entry.sessionId)
-+      if (!known(owner)) continue
+       const owner = ownerOf(entry.sessionId)
+       if (!known(owner)) continue
+-      tasks.push({ ...entry, ...owner })
 +      seen.add(entry.id)
 +      const first = due.get(entry.id)
 +      if (first?.scheduledAt !== entry.scheduledAt) { due.set(entry.id, { scheduledAt: entry.scheduledAt, since: now }); continue }
@@ -6551,7 +6606,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
 +    if (held !== undefined) await service.create(toSession, request)
 +    else await copyRow(sourceSession, sourceId, toSession)
-+    return schedulesView()
++    return schedulesView(actor)
 +  }
 +
 +  // The row write itself. `put`, `get` and the `tasks` row shape are the same private API
@@ -6575,24 +6630,26 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    }
 +    throw invalid('The task could not be copied. Try again')
 +  }
- 
-   async function schedulesView() {
--    if (service === null) return { available: false, tasks: [] }
++
++  // `actor` narrows the rows to that caller's own; the page asks every 30 seconds with the
++  // member's session, so the answer is the list a member may read, not the host's catalog. A row
++  // is read exactly as a task's source is read (`sourceOf`): unenforced, the whole host answers as
++  // it always did; enforced, another owner's row and an actor-less call both stay out.
++  async function schedulesView(actor) {
 +    const quietHours = quietNow()
 +    if (service === null) return { available: false, tasks: [], quietHours }
 +    // The page asks every 30 seconds, so a missed run shows without waiting for the timer.
 +    await checkMissed().catch(error => rt.warn('ds-bot: checking scheduled tasks failed: %s', error?.message ?? error))
-     const tasks = []
-     for (const entry of await service.catalog()) {
-       const owner = ownerOf(entry.sessionId)
-       if (!known(owner)) continue
--      tasks.push({ ...entry, ...owner })
++    const tasks = []
++    for (const entry of await service.catalog()) {
++      const owner = ownerOf(entry.sessionId)
++      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
 +      const lastRun = lastRunOf(entry)
 +      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
 +    }
 +    for (const entry of Object.values(paused())) {
 +      const owner = ownerOf(entry.sessionId)
-+      if (!known(owner)) continue
++      if (!known(owner) || sourceOf(entry.sessionId, actor) === undefined) continue
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
 +    }
@@ -6618,7 +6675,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
 +      paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
 +      await rt.save()
-+      return schedulesView()
++      return schedulesView(actor)
 +    }
 +    // DSH's update compares the exact record `list` gives (active tasks only).
 +    const active = (await service.list({ sessionId })).find(entry => entry.id === id)
@@ -6632,22 +6689,23 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
 +      const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
 +      if (result?.record === undefined) throw invalid(UPDATE_MISSES[result?.code] ?? result?.message ?? 'The task could not be saved')
-+      return schedulesView()
-+    }
++      return schedulesView(actor)
+     }
+-    return { available: true, tasks }
 +    if (timing.at !== undefined && Date.parse(timing.at) <= Date.now()) throw invalid('Pick a time in the future')
 +    await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
 +    await service.delete({ sessionId, id })
-+    return schedulesView()
-+  }
-+
++    return schedulesView(actor)
+   }
+ 
 +  // Pause: the record is saved in FlyBot's state before DSH lets the task go, so a
 +  // failed delete leaves it running and never loses it.
-+  async function pauseSchedule(body) {
++  async function pauseSchedule(body, actor) {
 +    ensureService()
 +    const sessionId = String(body.sessionId ?? '')
 +    const id = String(body.id ?? '')
 +    if (ownerOf(sessionId) === undefined) throw invalid('No such task')
-+    if (pausedEntry(sessionId, id) !== undefined) return schedulesView()
++    if (pausedEntry(sessionId, id) !== undefined) return schedulesView(actor)
 +    const record = await findRecord(sessionId, id)
 +    if (record === undefined) throw invalid('No such task')
 +    if (record.status !== 'active') throw invalid('This task has finished')
@@ -6663,7 +6721,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      await rt.save()
 +      throw error
 +    }
-+    return schedulesView()
++    return schedulesView(actor)
 +  }
 +
 +  // Retiring a Bot disarms what its own chat already holds — every part of it, current and
@@ -6690,8 +6748,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (request === null) continue
 +      paused()[row.id] = { id: row.id, sessionId: row.sessionId, record: { title: row.title, prompt: row.prompt, ...timingOf(timingPart(request)) }, pausedAt: Date.now() }
 +      held.push(row)
-     }
--    return { available: true, tasks }
++    }
 +    // The records are saved before DSH lets the rows go, exactly as pausing one task does.
 +    if (held.length > 0) await rt.save()
 +    let pausedCount = 0
@@ -6713,7 +6770,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +
 +  // Resume: DSH gets the task again, on the Bot's current part, before FlyBot forgets
 +  // the paused copy. A one-time task whose time has passed waits for an edit.
-+  async function resumeSchedule(body) {
++  async function resumeSchedule(body, actor) {
 +    ensureService()
 +    const sessionId = String(body.sessionId ?? '')
 +    const held = pausedEntry(sessionId, String(body.id ?? ''))
@@ -6728,12 +6785,12 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    await service.create(sessionFor(owner), request)
 +    delete paused()[held.id]
 +    await rt.save()
-+    return schedulesView()
++    return schedulesView(actor)
 +  }
 +
 +  // Retry: the task's prompt once now, to the Bot's current part or the group, as a run of
 +  // that task. DSH's own times are untouched: no missed time is delivered again.
-+  async function retrySchedule(body) {
++  async function retrySchedule(body, actor) {
 +    ensureService()
 +    const sessionId = String(body.sessionId ?? '')
 +    const owner = ownerOf(sessionId)
@@ -6759,9 +6816,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      }
 +      throw error
 +    }
-+    return schedulesView()
-   }
- 
++    return schedulesView(actor)
++  }
++
 +  // Which Session a task lives in, named as the Bot reads it: its own chat (now, or an
 +  // earlier part), or a group chat it speaks in (now, or an earlier part).
 +  const placeOf = (sessionId, botId) => {
@@ -6816,7 +6873,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +  }))
 +
    const endpoints = {
-     schedules: () => schedulesView(),
+-    schedules: () => schedulesView(),
 -    async 'schedule-create'(body) {
 -      if (service === null) throw invalid('Automation tasks are off in DSH')
 -      const bot = state.bots[body.target]
@@ -6828,6 +6885,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -      if (title.length > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
 -      if (prompt === '') throw invalid('Say what the Bot should do')
 -      await service.create(bot ? rt.chatOf(bot.id) : room.id, { title, prompt, ...selectorOf(body.when) })
+-      return schedulesView()
++    schedules: (body, actor) => schedulesView(actor),
 +    async 'schedule-create'(body, actor) {
 +      ensureService()
 +      if (body.copyFrom !== undefined) return copySchedule(body, actor)
@@ -6835,23 +6894,25 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const timing = selectorOf(body.when)
 +      refuseDuringQuietHours(timing, body.when?.timeZone)
 +      await service.create(sessionId, { title, prompt, ...timing })
-       return schedulesView()
++      return schedulesView(actor)
      },
-+    'schedule-update': (body, actor) => updateSchedule(body, actor),
-+    'schedule-pause': body => pauseSchedule(body),
-+    'schedule-resume': body => resumeSchedule(body),
-+    'schedule-retry': body => retrySchedule(body),
-     async 'schedule-delete'(body) {
+-    async 'schedule-delete'(body) {
 -      if (service === null) throw invalid('Automation tasks are off in DSH')
++    'schedule-update': (body, actor) => updateSchedule(body, actor),
++    'schedule-pause': (body, actor) => pauseSchedule(body, actor),
++    'schedule-resume': (body, actor) => resumeSchedule(body, actor),
++    'schedule-retry': (body, actor) => retrySchedule(body, actor),
++    async 'schedule-delete'(body, actor) {
 +      ensureService()
        if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
 +      if (pausedEntry(body.sessionId, body.id) !== undefined) {
 +        delete paused()[body.id]
 +        await rt.save()
-+        return schedulesView()
++        return schedulesView(actor)
 +      }
        await service.delete({ sessionId: body.sessionId, id: body.id })
-       return schedulesView()
+-      return schedulesView()
++      return schedulesView(actor)
      },
    }
  
@@ -12799,7 +12860,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,746 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,805 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -13529,6 +13590,65 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const copied = await callAs('schedule-create', { target: 'b1', copyFrom: { sessionId: 'a1', id } })
 +  assert.equal(copied.ok, true, JSON.stringify(copied))
 +  assert.equal([...schedule.tasks.values()].at(-1).sessionId, 'b1')
++})
++
++// The page asks for the list with no payload at all (`actions.schedules()` → `call('schedules')`),
++// and a host with a member signed in answered `bot/forbidden`: the empty answer left the page on
++// "Loading…" for good. Listing tasks is a read — any signed-in member may ask, and the rows are
++// narrowed to their own in the data layer, where the answer is built.
++test('with a member signed in, the scheduled-task list answers without a sessionId', async (t) => {
++  const { ctx, home, rt, callAs } = signedIn(t)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await signedInNow(rt, callAs)
++  assert.equal(rt.authzEnforced(), true, 'the guard is on in this case, or the assertion proves nothing')
++  const listed = await callAs('schedules', null, 'tok-a')
++  assert.equal(listed.ok, true, JSON.stringify(listed))
++  assert.equal(listed.value.available, true)
++  assert.deepEqual(listed.value.tasks, [])
++})
++
++// #1321 draws the line at ownership for a task's text; the list crossed it: every known Bot's
++// task came back to whoever asked, so a member read another owner's titles and prompts. The
++// rows a member is handed are their own, on both sides.
++test('the scheduled-task list carries only the caller’s own rows', async (t) => {
++  const { ctx, home, rt, callAs } = signedIn(t)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await signedInNow(rt, callAs)
++  const mine = await callAs('schedule-create', { target: 'a1', title: 'My reminder', prompt: 'My own words', when: DAILY }, 'tok-a')
++  assert.equal(mine.ok, true, JSON.stringify(mine))
++  const theirs = await callAs('schedule-create', { target: 'b1', title: 'Their reminder', prompt: 'Their own words', when: DAILY }, 'tok-b')
++  assert.equal(theirs.ok, true, JSON.stringify(theirs))
++
++  // The row set is built in the data layer, where the caller is known: that is the answer a
++  // route hands back, so it is read there — the gate is what test ① above is about.
++  const listedA = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-1' })
++  assert.deepEqual(listedA.tasks.map(task => task.title), ['My reminder'])
++  const wire = JSON.stringify(listedA)
++  assert.ok(!wire.includes('Their reminder'), 'the other owner’s task is not on the list')
++  assert.ok(!wire.includes('Their own words'), 'nor a word of its prompt')
++  assert.ok(!wire.includes('b1'), 'nor its Session')
++
++  const listedB = await rt.scheduleEndpoint('schedules', {}, { memberId: 'owner-2' })
++  assert.deepEqual(listedB.tasks.map(task => task.title), ['Their reminder'])
++
++  // Fail closed: with scoping on, a call that arrives with no actor reads nobody's rows.
++  const hostWide = await rt.scheduleEndpoint('schedules', {}, undefined)
++  assert.deepEqual(hostWide.tasks, [])
++})
++
++// A one-person install never signed anyone in: `authzEnforced()` is false and the list answers
++// what it always answered. The read is narrowed only where scoping is on — narrowing it when
++// nobody is signed in would be the same "empty list" this change is about, under another cause.
++test('with nobody signed in, the scheduled-task list still answers the host’s tasks', async (t) => {
++  const schedule = scheduleService()
++  const { ctx, home, rt, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  assert.equal(rt.authzEnforced(), false, 'a one-person install has no member session')
++  const made = await call('schedule-create', { target: 'w1', title: 'Standup', prompt: 'Sum up', when: DAILY })
++  assert.equal(made.ok, true, JSON.stringify(made))
++  const listed = await rt.scheduleEndpoint('schedules', {}, null)
++  assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
++  assert.equal(listed.available, true)
 +})
 +
 +// #1895: a task name's 120-character bound counts code points, so a name of emoji is

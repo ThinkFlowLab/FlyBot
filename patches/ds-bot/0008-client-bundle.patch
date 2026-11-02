@@ -157,7 +157,7 @@ diff --git a/client.js b/client.js
    Content: "内容",
    "Referenced {labels}": "引用了 {labels}",
    ", ": "、",
-@@ -78,21 +78,77 @@ var ZH = {
+@@ -78,21 +78,78 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -167,6 +167,7 @@ diff --git a/client.js b/client.js
 +  "1 Bot": "1 个 Bot",
 +  "{count} Bots": "{count} 个 Bot",
    "Loading…": "加载中…",
++  "The scheduled tasks could not be read: {reason}": "定时任务读不出来：{reason}",
    "Edit Bot": "编辑 Bot",
    "Make Main Bot": "设为主 Bot",
    "Remove Main Bot role": "取消主 Bot",
@@ -11110,6 +11111,20 @@ diff --git a/client.js b/client.js
 -      { key: bot.id ?? index, type: "button", onClick: () => onOpen?.(bot) },
 -      (0, import_react6.createElement)(BotMark, { bot, size: 16 }),
 -      bot.name
+-    ));
+-  });
+-  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
+-}
+-function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
+-  const lead = (0, import_react6.createElement)(
+-    "button",
+-    { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
+-    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
+-  );
+-  return (0, import_react6.createElement)(
+-    "div",
+-    { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
 +      {
 +        type: "button",
 +        className: "bt-tile",
@@ -11125,23 +11140,11 @@ diff --git a/client.js b/client.js
 +      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
 +      unread && !waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
 +      bot.role ? (0, import_react17.createElement)("span", { className: "bt-chip" }, bot.role) : null
-     ));
--  });
--  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
--}
--function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
--  const lead = (0, import_react6.createElement)(
++    ));
 +  }
 +  const unreadMark = wide && waiting && !active ? (0, import_react17.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react17.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null;
 +  const row = (0, import_react17.createElement)(
-     "button",
--    { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
--    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
--  );
--  return (0, import_react6.createElement)(
--    "div",
--    { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
++    "button",
 +    {
 +      type: "button",
 +      className: "bt-row",
@@ -11608,11 +11611,11 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
-     }
+-    }
 -    if (source.kind === "schedule") {
 -      const prompts = reminderPrompts(contentText(data.content));
 -      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
--    }
+     }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 -  }
@@ -12080,7 +12083,19 @@ diff --git a/client.js b/client.js
 -  };
 -  visit(root);
 -  return calls;
--}
++function ConnectApps({ wide, actions }) {
++  if (!wide) return null;
++  return (0, import_react17.createElement)(
++    "span",
++    { className: "bt-connect-wrap" },
++    (0, import_react17.createElement)(
++      "button",
++      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
++      (0, import_react17.createElement)(PlugIcon),
++      t("Connect apps")
++    )
++  );
+ }
 -function useShownCards(actions, sessionId, callIds) {
 -  const key = JSON.stringify(callIds);
 -  (0, import_react6.useLayoutEffect)(() => {
@@ -12089,7 +12104,14 @@ diff --git a/client.js b/client.js
 -    actions.noteCards(sessionId, ids, 1);
 -    return () => actions.noteCards(sessionId, ids, -1);
 -  }, [sessionId, key]);
--}
++function YouAvatar() {
++  return (0, import_react17.createElement)(
++    "span",
++    { className: "bt-you-wrap" },
++    (0, import_react17.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react17.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
++    (0, import_react17.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
++  );
+ }
 -function renderCall(call2, { sessionId, roster, actions, useUi, useWork, findBot }) {
 -  const tool = toolName(call2);
 -  const done = call2.kind === "tool-result";
@@ -12159,68 +12181,6 @@ diff --git a/client.js b/client.js
 -      if (!done) return null;
 -      const room2 = roster.rooms.find((entry) => entry.name === arg("group"));
 -      return room2 ? (0, import_react6.createElement)(GroupEvent, { prefix: t("Read"), room: room2, roster, actions }) : null;
--    }
--    case "remember":
--    case "forget":
--      return done && !call2.isError ? (0, import_react6.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call2.content), roster, actions, findBot }) : null;
--    default:
--      return null;
--  }
--}
--function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
--  const roster = useRoster((value) => value);
--  const root = node.data.root;
--  const turn = node.location?.turn?.turn ?? root.turn;
--  const hidden = isHiddenTurn(roster, sessionId, turn);
--  const findBot = (nameOrId) => roster.byId[nameOrId] ?? roster.bots.find((bot) => bot.name.toLowerCase() === String(nameOrId ?? "").toLowerCase());
--  const calls = hidden ? [] : callTree(root);
--  const drawn = calls.filter((call2) => DRAWN.has(toolName(call2)));
--  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call2) => call2.kind !== "tool-result");
--  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
--  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
--  useShownCards(actions, sessionId, drawn.filter((call2) => CARDS.has(toolName(call2)) && call2.callId).map((call2) => call2.callId));
--  if (drawn.length === 0) return null;
--  const env = { sessionId, roster, actions, useUi, useWork, findBot };
--  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
--}
--
--// src/client/activity-row.js
--var import_react7 = require("react");
--var import_react_dom2 = require("react-dom");
--var PHRASE_HOLD_MS = 800;
--var drawPhrase = (pool) => t(pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))]);
--function elapsedLabel(ms) {
--  const minutes = Math.floor(ms / 6e4);
--  if (minutes < 60) return `${Math.max(1, minutes)}m`;
--  const hours = Math.floor(minutes / 60);
--  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
-+function ConnectApps({ wide, actions }) {
-+  if (!wide) return null;
-+  return (0, import_react17.createElement)(
-+    "span",
-+    { className: "bt-connect-wrap" },
-+    (0, import_react17.createElement)(
-+      "button",
-+      { type: "button", className: "bt-connect bt-connect-foot", onClick: () => actions.openConnectors() },
-+      (0, import_react17.createElement)(PlugIcon),
-+      t("Connect apps")
-+    )
-+  );
- }
--function useRunningHost(active) {
--  const [host, setHost] = (0, import_react7.useState)(null);
--  (0, import_react7.useEffect)(() => {
--    if (!active) {
--      setHost(null);
--      return void 0;
-+function YouAvatar() {
-+  return (0, import_react17.createElement)(
-+    "span",
-+    { className: "bt-you-wrap" },
-+    (0, import_react17.createElement)("span", { className: "bt-you", "aria-hidden": true }, (0, import_react17.createElement)(BotMark, { look: MAIN_LOOK, size: 24 })),
-+    (0, import_react17.createElement)("span", { style: { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" } }, t("Settings"))
-+  );
-+}
 +var openShellSettings = null;
 +var openShellOnboarding = null;
 +var shellShortcuts = null;
@@ -12236,28 +12196,136 @@ diff --git a/client.js b/client.js
 +      openShellSettings();
 +      return;
      }
--    let frame = 0;
--    const find = () => {
--      frame = 0;
--      const node = document.querySelector("[data-chat-flow] > [data-chat-running]");
--      setHost((prev) => prev === node ? prev : node);
--    };
--    const observer = new MutationObserver(() => {
--      if (!frame) frame = requestAnimationFrame(find);
--    });
--    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
--    find();
--    return () => {
--      cancelAnimationFrame(frame);
--      observer.disconnect();
--    };
--  }, [active]);
--  return host;
+-    case "remember":
+-    case "forget":
+-      return done && !call2.isError ? (0, import_react6.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call2.content), roster, actions, findBot }) : null;
+-    default:
+-      return null;
+-  }
 +    const desktop = document.querySelector('button[aria-haspopup="menu"][data-signed-out]');
 +    if (desktop) openThroughMenu(desktop);
 +    else pressSettingsShortcut();
 +  });
  }
+-function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
+-  const roster = useRoster((value) => value);
+-  const root = node.data.root;
+-  const turn = node.location?.turn?.turn ?? root.turn;
+-  const hidden = isHiddenTurn(roster, sessionId, turn);
+-  const findBot = (nameOrId) => roster.byId[nameOrId] ?? roster.bots.find((bot) => bot.name.toLowerCase() === String(nameOrId ?? "").toLowerCase());
+-  const calls = hidden ? [] : callTree(root);
+-  const drawn = calls.filter((call2) => DRAWN.has(toolName(call2)));
+-  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call2) => call2.kind !== "tool-result");
+-  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
+-  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
+-  useShownCards(actions, sessionId, drawn.filter((call2) => CARDS.has(toolName(call2)) && call2.callId).map((call2) => call2.callId));
+-  if (drawn.length === 0) return null;
+-  const env = { sessionId, roster, actions, useUi, useWork, findBot };
+-  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
++function openHarnessOnboarding(id) {
++  requestAnimationFrame(() => {
++    if (openShellOnboarding) openShellOnboarding(id);
++    else openHarnessSettings();
++  });
+ }
+-
+-// src/client/activity-row.js
+-var import_react7 = require("react");
+-var import_react_dom2 = require("react-dom");
+-var PHRASE_HOLD_MS = 800;
+-var drawPhrase = (pool) => t(pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))]);
+-function elapsedLabel(ms) {
+-  const minutes = Math.floor(ms / 6e4);
+-  if (minutes < 60) return `${Math.max(1, minutes)}m`;
+-  const hours = Math.floor(minutes / 60);
+-  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
++var MODELS_STEP_ID = "flybot-models";
++var MODELS_STEP_ORDER = 1e3;
++function ModelsSettingsStep({ explicit, complete, openSection }) {
++  (0, import_react17.useLayoutEffect)(() => {
++    if (explicit) openSection("models");
++    complete();
++  }, []);
++  return null;
+ }
+-function useRunningHost(active) {
+-  const [host, setHost] = (0, import_react7.useState)(null);
+-  (0, import_react7.useEffect)(() => {
+-    if (!active) {
+-      setHost(null);
+-      return void 0;
+-    }
+-    let frame = 0;
+-    const find = () => {
+-      frame = 0;
+-      const node = document.querySelector("[data-chat-flow] > [data-chat-running]");
+-      setHost((prev) => prev === node ? prev : node);
++function openHarnessModels() {
++  openHarnessOnboarding(MODELS_STEP_ID);
++}
++function openThroughMenu(trigger) {
++  const before = new Set(document.querySelectorAll('[role="menu"]'));
++  trigger.click();
++  let frames = 0;
++  const look = () => {
++    const menu = [...document.querySelectorAll('[role="menu"]')].find((node) => !before.has(node));
++    const item = menu?.querySelector('button[role="menuitem"]');
++    if (item) item.click();
++    else if (++frames < 30) requestAnimationFrame(look);
++    else pressSettingsShortcut();
++  };
++  requestAnimationFrame(look);
++}
++function pressSettingsShortcut() {
++  const binding = shellShortcuts?.catalog.getSnapshot().find((row) => row.id === "settings.open")?.binding;
++  if (!binding) return;
++  const held = new Set(binding.modifiers);
++  window.dispatchEvent(new KeyboardEvent("keydown", {
++    code: binding.code,
++    key: binding.code === "Comma" ? "," : "",
++    bubbles: true,
++    cancelable: true,
++    ctrlKey: held.has("control"),
++    altKey: held.has("alt"),
++    shiftKey: held.has("shift"),
++    metaKey: held.has("meta")
++  }));
++}
++function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
++  const [open, setOpen] = (0, import_react17.useState)(false);
++  (0, import_react17.useLayoutEffect)(() => {
++    if (!seat) return void 0;
++    actions.seatAccount(true);
++    return () => actions.seatAccount(false);
++  }, [seat]);
++  const [box, setBox] = (0, import_react17.useState)(null);
++  const button = (0, import_react17.useRef)(null);
++  (0, import_react17.useEffect)(() => {
++    if (settingsOpen) setOpen(false);
++  }, [settingsOpen]);
++  (0, import_react17.useEffect)(() => {
++    if (!openSettings) return void 0;
++    openShellSettings = openSettings;
++    return () => {
++      if (openShellSettings === openSettings) openShellSettings = null;
+     };
+-    const observer = new MutationObserver(() => {
+-      if (!frame) frame = requestAnimationFrame(find);
+-    });
+-    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
+-    find();
++  }, [openSettings]);
++  (0, import_react17.useEffect)(() => {
++    if (!openOnboarding) return void 0;
++    openShellOnboarding = openOnboarding;
+     return () => {
+-      cancelAnimationFrame(frame);
+-      observer.disconnect();
++      if (openShellOnboarding === openOnboarding) openShellOnboarding = null;
+     };
+-  }, [active]);
+-  return host;
+-}
 -function useRowEntrances(replacing) {
 -  const check = (0, import_react7.useRef)(replacing);
 -  check.current = replacing;
@@ -12270,7 +12338,13 @@ diff --git a/client.js b/client.js
 -      if (event.target !== event.currentTarget || !/^bt-row/.test(event.animationName)) return;
 -      delete event.currentTarget.dataset.btEnter;
 -      event.currentTarget.removeEventListener("animationend", settle);
--    };
++  }, [openOnboarding]);
++  (0, import_react17.useEffect)(() => {
++    if (!open) return void 0;
++    const onDown = (event) => {
++      if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
++      setOpen(false);
+     };
 -    const scan = () => {
 -      frame = 0;
 -      const next = document.querySelector("[data-chat-flow]");
@@ -12293,8 +12367,13 @@ diff --git a/client.js b/client.js
 -        const reply = [void 0, "assistant-step", "tool-call"].includes(item.dataset.chatFlowKind);
 -        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
 -        item.addEventListener("animationend", settle);
--      }
--    };
++    const onKey = (event) => {
++      if (event.key === "Escape") {
++        event.stopPropagation();
++        setOpen(false);
++        button.current?.focus();
+       }
+     };
 -    const observer = new MutationObserver(() => {
 -      if (!frame) frame = requestAnimationFrame(scan);
 -    });
@@ -12303,21 +12382,8 @@ diff --git a/client.js b/client.js
 -      cancelAnimationFrame(frame);
 -      observer.disconnect();
 -    };
-+function openHarnessOnboarding(id) {
-+  requestAnimationFrame(() => {
-+    if (openShellOnboarding) openShellOnboarding(id);
-+    else openHarnessSettings();
-+  });
-+}
-+var MODELS_STEP_ID = "flybot-models";
-+var MODELS_STEP_ORDER = 1e3;
-+function ModelsSettingsStep({ explicit, complete, openSection }) {
-+  (0, import_react17.useLayoutEffect)(() => {
-+    if (explicit) openSection("models");
-+    complete();
-   }, []);
-+  return null;
- }
+-  }, []);
+-}
 -function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, useSession, actions }) {
 -  const roster = useRoster((value) => value);
 -  const running = useSessionStatus((map) => map.get(sessionId)?.running === true);
@@ -12406,9 +12472,7 @@ diff --git a/client.js b/client.js
 -      )
 -    )
 -  ), host);
-+function openHarnessModels() {
-+  openHarnessOnboarding(MODELS_STEP_ID);
- }
+-}
 -
 -// src/client/dsh-offer.js
 -var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
@@ -12418,19 +12482,7 @@ diff --git a/client.js b/client.js
 -  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
 -  if (dsh.kind === "npm") return true;
 -  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
-+function openThroughMenu(trigger) {
-+  const before = new Set(document.querySelectorAll('[role="menu"]'));
-+  trigger.click();
-+  let frames = 0;
-+  const look = () => {
-+    const menu = [...document.querySelectorAll('[role="menu"]')].find((node) => !before.has(node));
-+    const item = menu?.querySelector('button[role="menuitem"]');
-+    if (item) item.click();
-+    else if (++frames < 30) requestAnimationFrame(look);
-+    else pressSettingsShortcut();
-+  };
-+  requestAnimationFrame(look);
- }
+-}
 -
 -// src/client/sidebar.js
 -var import_react8 = require("react");
@@ -12440,21 +12492,7 @@ diff --git a/client.js b/client.js
 -  (0, import_react8.useEffect)(() => {
 -    if (active && marked) actions.clearUnread(id);
 -  }, [active, marked]);
-+function pressSettingsShortcut() {
-+  const binding = shellShortcuts?.catalog.getSnapshot().find((row) => row.id === "settings.open")?.binding;
-+  if (!binding) return;
-+  const held = new Set(binding.modifiers);
-+  window.dispatchEvent(new KeyboardEvent("keydown", {
-+    code: binding.code,
-+    key: binding.code === "Comma" ? "," : "",
-+    bubbles: true,
-+    cancelable: true,
-+    ctrlKey: held.has("control"),
-+    altKey: held.has("alt"),
-+    shiftKey: held.has("shift"),
-+    metaKey: held.has("meta")
-+  }));
- }
+-}
 -var PinMark = () => (0, import_react8.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react8.createElement)(PinMarkIcon));
 -var useApproval = (useWork, match) => useWork ? useWork((work) => (work.approvals ?? []).some(match)) : false;
 -var useGroupWork = (useWork, pick2) => useWork ? useWork((work) => pick2(work.rooms ?? {}).join(",")) : "";
@@ -12484,45 +12522,6 @@ diff --git a/client.js b/client.js
 -  const onContextMenu = (event) => {
 -    event.preventDefault();
 -    actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
-+function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
-+  const [open, setOpen] = (0, import_react17.useState)(false);
-+  (0, import_react17.useLayoutEffect)(() => {
-+    if (!seat) return void 0;
-+    actions.seatAccount(true);
-+    return () => actions.seatAccount(false);
-+  }, [seat]);
-+  const [box, setBox] = (0, import_react17.useState)(null);
-+  const button = (0, import_react17.useRef)(null);
-+  (0, import_react17.useEffect)(() => {
-+    if (settingsOpen) setOpen(false);
-+  }, [settingsOpen]);
-+  (0, import_react17.useEffect)(() => {
-+    if (!openSettings) return void 0;
-+    openShellSettings = openSettings;
-+    return () => {
-+      if (openShellSettings === openSettings) openShellSettings = null;
-+    };
-+  }, [openSettings]);
-+  (0, import_react17.useEffect)(() => {
-+    if (!openOnboarding) return void 0;
-+    openShellOnboarding = openOnboarding;
-+    return () => {
-+      if (openShellOnboarding === openOnboarding) openShellOnboarding = null;
-+    };
-+  }, [openOnboarding]);
-+  (0, import_react17.useEffect)(() => {
-+    if (!open) return void 0;
-+    const onDown = (event) => {
-+      if (event.target instanceof Element && (event.target.closest(".bt-account-menu") || button.current?.contains(event.target))) return;
-+      setOpen(false);
-+    };
-+    const onKey = (event) => {
-+      if (event.key === "Escape") {
-+        event.stopPropagation();
-+        setOpen(false);
-+        button.current?.focus();
-+      }
-+    };
 +    window.addEventListener("mousedown", onDown);
 +    window.addEventListener("keydown", onKey, true);
 +    return () => {
@@ -13518,7 +13517,15 @@ diff --git a/client.js b/client.js
 -  const startDsh = () => {
 -    setDshError("");
 -    void actions.installDshUpdate().catch((failure) => setDshError(hostText(failure?.message ?? String(failure))));
--  };
++  });
++  return {
++    available: source?.ok === true,
++    reason: text(source?.reason) || null,
++    cards: METRIC_CARDS.map((card) => ({ ...card, value: metricText(card.key, values[card.key]) })),
++    running,
++    empty: source === null,
++    emptyText: "No metrics read yet."
+   };
 -  const label = phase === "installing" ? t("Updating DS Bot…") : dshPhase === "installing" ? t("Updating DSH…") : phase === "installed" ? t("DS Bot {version} is installed. Restart DSH to use it.", { version: update.installed ?? update.latest }) : dshPhase === "installed" ? t("Restart DSH to start using DSH {version}.", { version: dsh.installed ?? dsh.verified }) : update?.available ? t("DS Bot {version} is available", { version: update.latest }) : t("DSH {version} is available", { version: dsh?.verified });
 -  const message = error || (phase === "failed" ? update.error : "");
 -  const dshMessage = dshError || (dshPhase === "failed" ? dsh?.error : "");
@@ -13538,15 +13545,6 @@ diff --git a/client.js b/client.js
 -      onClick: toggle
 -    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
 -    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
-+  });
-+  return {
-+    available: source?.ok === true,
-+    reason: text(source?.reason) || null,
-+    cards: METRIC_CARDS.map((card) => ({ ...card, value: metricText(card.key, values[card.key]) })),
-+    running,
-+    empty: source === null,
-+    emptyText: "No metrics read yet."
-+  };
 +}
 +function ProjectMetrics({ view }) {
 +  return (0, import_react19.createElement)(
@@ -14195,17 +14193,6 @@ diff --git a/client.js b/client.js
 +        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-bind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: id }, t("Member bound.")) }, t("Bind")),
 +        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-unbind", onClick: () => run("project-bind", { kind, id: text(memberId), projectId: null }, t("Member unbound.")) }, t("Unbind"))
 +      )
-+    ),
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-project-field" },
-+      (0, import_react19.createElement)("label", null, t("Project Assistant")),
-+      (0, import_react19.createElement)(
-+        "div",
-+        { className: "bt-project-row-actions" },
-+        (0, import_react19.createElement)("label", null, (0, import_react19.createElement)("input", { type: "checkbox", "data-action": "assistant-off", checked: assistantOff, onChange: (event) => setAssistantOff(event.target.checked) }), " ", t("Pause the daily digest")),
-+        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-assistant-save", onClick: () => run("project-assistant-owner", { id, settings: { off: assistantOff === true } }, t("Assistant settings saved.")) }, t("Save"))
-+      )
      ),
 -    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +    (0, import_react19.createElement)(
@@ -14217,6 +14204,17 @@ diff --git a/client.js b/client.js
 -        index > 0 ? (0, import_react8.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
 -        group.map(([label, Icon, run, hint]) => (0, import_react8.createElement)("button", {
 -          key: label,
++      { className: "bt-project-field" },
++      (0, import_react19.createElement)("label", null, t("Project Assistant")),
++      (0, import_react19.createElement)(
++        "div",
++        { className: "bt-project-row-actions" },
++        (0, import_react19.createElement)("label", null, (0, import_react19.createElement)("input", { type: "checkbox", "data-action": "assistant-off", checked: assistantOff, onChange: (event) => setAssistantOff(event.target.checked) }), " ", t("Pause the daily digest")),
++        (0, import_react19.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", "data-action": "project-assistant-save", onClick: () => run("project-assistant-owner", { id, settings: { off: assistantOff === true } }, t("Assistant settings saved.")) }, t("Save"))
++      )
++    ),
++    (0, import_react19.createElement)(
++      "div",
 +      { className: "bt-project-field" },
 +      // The host knows two memory kinds; the free text the panel takes is recorded as a decision,
 +      // never as a third kind the host would refuse (#1820).
@@ -15751,11 +15749,13 @@ diff --git a/client.js b/client.js
    ];
 -  return (0, import_react13.createElement)(
 +  return (0, import_react22.createElement)(
-+    "div",
-+    { className: "bt-model-dock" },
+     "div",
+     { className: "bt-model-dock" },
+-    (0, import_react13.createElement)(
 +    (0, import_react22.createElement)(
-+      "div",
-+      { className: "bt-astack", "data-lead": "" },
+       "div",
+       { className: "bt-astack", "data-lead": "" },
+-      (0, import_react13.createElement)(
 +      (0, import_react22.createElement)(
 +        "div",
 +        { className: "bt-msg" },
@@ -15773,14 +15773,11 @@ diff --git a/client.js b/client.js
 +}
 +function RemoteGoneDock({ bot }) {
 +  return (0, import_react22.createElement)(
-     "div",
--    { className: "bt-model-dock" },
--    (0, import_react13.createElement)(
++    "div",
 +    { className: "bt-model-dock", "data-flybot": "remote-gone" },
 +    (0, import_react22.createElement)(
-       "div",
-       { className: "bt-astack", "data-lead": "" },
--      (0, import_react13.createElement)(
++      "div",
++      { className: "bt-astack", "data-lead": "" },
 +      (0, import_react22.createElement)(
          "div",
          { className: "bt-msg" },
@@ -16123,7 +16120,7 @@ diff --git a/client.js b/client.js
      ), document.body) : null
    );
  }
-@@ -6830,8 +6830,8 @@ var FOLDER_CSS = `
+@@ -6830,25 +6830,29 @@ var FOLDER_CSS = `
  `;
  
  // src/client/schedules.js
@@ -16134,9 +16131,12 @@ diff --git a/client.js b/client.js
  var shared = null;
  var listeners = /* @__PURE__ */ new Set();
  function publish(view) {
-@@ -6839,8 +6839,8 @@ function publish(view) {
+   shared = view;
    for (const listener of listeners) listener(view);
  }
++function publishFailure(error) {
++  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) });
++}
  function useSchedules(actions) {
 -  const [view, setView] = (0, import_react15.useState)(shared);
 -  (0, import_react15.useEffect)(() => {
@@ -16145,15 +16145,25 @@ diff --git a/client.js b/client.js
      listeners.add(setView);
      let stopped = false;
      let timer;
-@@ -6848,7 +6848,7 @@ function useSchedules(actions) {
+     const load = () => actions.schedules?.().then((next) => {
        if (!stopped) publish(next);
-     }).catch(() => {
+-    }).catch(() => {
++    }).catch((error) => {
++      if (!stopped) publishFailure(error);
      }).finally(() => {
 -      if (!stopped) timer = setTimeout(load, POLL_MS);
 +      if (!stopped) timer = setTimeout(load, POLL_MS4);
      });
      load();
      return () => {
+@@ -6859,6 +6859,7 @@ function useSchedules(actions) {
+   }, []);
+   return view;
+ }
++var schedulesReadFailure = (failure) => typeof failure === "string" && failure !== "" ? t("The scheduled tasks could not be read: {reason}", { reason: failure }) : null;
+ var localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+ var clock2 = (time) => String(time ?? "").slice(0, 5);
+ var when2 = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms);
 @@ -6866,6 +6866,10 @@ function dayAndTime(ms) {
    const sameYear = new Date(ms).getFullYear() === (/* @__PURE__ */ new Date()).getFullYear();
    return when2(ms, { ...sameYear ? {} : { year: "numeric" }, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -16367,7 +16377,7 @@ diff --git a/client.js b/client.js
      setBusy(true);
      setError("");
      let when3;
-@@ -6975,151 +6975,321 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -6975,151 +6975,336 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
        setBusy(false);
        return;
      }
@@ -16571,6 +16581,8 @@ diff --git a/client.js b/client.js
 -  if (!view.available) return (0, import_react15.createElement)(AutomationOff);
 +  const [adding, setAdding] = (0, import_react25.useState)(Boolean(start));
 +  const [editing, setEditing] = (0, import_react25.useState)(null);
++  const refused = schedulesReadFailure(view?.readFailure);
++  if (refused !== null) return (0, import_react25.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
 +  if (view === null) return (0, import_react25.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
 +  if (!view.available) return (0, import_react25.createElement)(AutomationOff, { actions });
    const shown = (next) => {
@@ -16658,6 +16670,19 @@ diff --git a/client.js b/client.js
  function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions);
 +  const [editing, setEditing] = (0, import_react25.useState)(null);
++  const refused = schedulesReadFailure(view?.readFailure);
++  if (refused !== null) {
++    return (0, import_react25.createElement)(
++      "section",
++      { className: "bt-set-section" },
++      (0, import_react25.createElement)("h3", null, t("Scheduled tasks")),
++      (0, import_react25.createElement)("div", { className: "bt-set-card" }, (0, import_react25.createElement)(
++        "div",
++        { className: "bt-set-row bt-bs-row" },
++        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-set-hint bt-danger", role: "status" }, refused))
++      ))
++    );
++  }
    if (view === null) return null;
    const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
 -  return (0, import_react15.createElement)(
@@ -16723,7 +16748,7 @@ diff --git a/client.js b/client.js
    const view = useSchedules(actions);
 -  const tasks = view?.available ? view.tasks.filter((task) => task.botId === bot.id && task.status === "active") : [];
 -  return (0, import_react15.createElement)(
-+  if (view === null) return null;
++  if (view === null || view.readFailure !== void 0) return null;
 +  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
 +  return (0, import_react25.createElement)(
      "div",
@@ -16742,7 +16767,7 @@ diff --git a/client.js b/client.js
  }
 +function RoomSchedules({ room: room2, actions }) {
 +  const view = useSchedules(actions);
-+  if (view === null || room2.origin === "face-to-face") return null;
++  if (view === null || view.readFailure !== void 0 || room2.origin === "face-to-face") return null;
 +  const tasks = view.available ? view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id) : [];
 +  if (tasks.length === 0) return null;
 +  return (0, import_react25.createElement)("div", null, (0, import_react25.createElement)(SummaryLines, { tasks, actions }));

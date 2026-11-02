@@ -14,11 +14,18 @@ import { dateLocale, hostText, t } from './i18n.js'
 const POLL_MS = 30_000
 
 // One view for every surface that shows tasks; each asks again when it mounts.
+//
+// A read that fails is not a skeleton that never ends: it answers a view with `readFailure` set,
+// so the page says what went wrong instead of "Loading…" for as long as the host keeps refusing.
+// The next poll replaces it as soon as a read works again.
 let shared = null
 const listeners = new Set()
 function publish(view) {
   shared = view
   for (const listener of listeners) listener(view)
+}
+function publishFailure(error) {
+  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) })
 }
 export function useSchedules(actions) {
   const [view, setView] = useState(shared)
@@ -28,13 +35,19 @@ export function useSchedules(actions) {
     let timer
     const load = () => actions.schedules?.()
       .then((next) => { if (!stopped) publish(next) })
-      .catch(() => {})
+      .catch((error) => { if (!stopped) publishFailure(error) })
       .finally(() => { if (!stopped) timer = setTimeout(load, POLL_MS) })
     load()
     return () => { stopped = true; clearTimeout(timer); listeners.delete(setView) }
   }, [])
   return view
 }
+
+// The sentence a failed read gets, or `null` while there is nothing to say. Pure, so the suite
+// can hold it without a renderer.
+export const schedulesReadFailure = failure => (typeof failure === 'string' && failure !== ''
+  ? t('The scheduled tasks could not be read: {reason}', { reason: failure })
+  : null)
 
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 const clock = time => String(time ?? '').slice(0, 5)
@@ -331,6 +344,8 @@ export function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions)
   const [adding, setAdding] = useState(Boolean(start))
   const [editing, setEditing] = useState(null)
+  const refused = schedulesReadFailure(view?.readFailure)
+  if (refused !== null) return h('div', { className: 'bt-set-hint bt-danger', role: 'status' }, refused)
   if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
   if (!view.available) return h(AutomationOff, { actions })
   const shown = next => { publish(next); setAdding(false); setEditing(null) }
@@ -399,6 +414,13 @@ export function CopyRow({ task, roster, actions, onView, onCancel }) {
 export function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions)
   const [editing, setEditing] = useState(null)
+  const refused = schedulesReadFailure(view?.readFailure)
+  if (refused !== null) {
+    return h('section', { className: 'bt-set-section' },
+      h('h3', null, t('Scheduled tasks')),
+      h('div', { className: 'bt-set-card' }, h('div', { className: 'bt-set-row bt-bs-row' },
+        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint bt-danger', role: 'status' }, refused)))))
+  }
   if (view === null) return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
   return h('section', { className: 'bt-set-section' },
@@ -440,7 +462,7 @@ export function ScheduleSummary({ bot, actions }) {
   // not "no tasks". The settings card above draws nothing for it; this line did the opposite and
   // offered the new-task form. `view.available === false` (Plugins off) is a different state and
   // keeps its own line below.
-  if (view === null) return null
+  if (view === null || view.readFailure !== undefined) return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
   return h('div', null,
     tasks.length === 0
@@ -458,7 +480,7 @@ export function ScheduleSummary({ bot, actions }) {
 // settings list with no target, because a room id here would open the new-task form (#2030).
 export function RoomSchedules({ room, actions }) {
   const view = useSchedules(actions)
-  if (view === null || room.origin === 'face-to-face') return null
+  if (view === null || view.readFailure !== undefined || room.origin === 'face-to-face') return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === undefined && task.roomId === room.id) : []
   if (tasks.length === 0) return null
   return h('div', null, h(SummaryLines, { tasks, actions }))

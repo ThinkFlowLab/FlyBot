@@ -213,6 +213,7 @@ var ZH = {
   "1 Bot": "1 个 Bot",
   "{count} Bots": "{count} 个 Bot",
   "Loading…": "加载中…",
+  "The scheduled tasks could not be read: {reason}": "定时任务读不出来：{reason}",
   "Edit Bot": "编辑 Bot",
   "Make Main Bot": "设为主 Bot",
   "Remove Main Bot role": "取消主 Bot",
@@ -13122,6 +13123,9 @@ function publish(view) {
   shared = view;
   for (const listener of listeners) listener(view);
 }
+function publishFailure(error) {
+  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) });
+}
 function useSchedules(actions) {
   const [view, setView] = (0, import_react25.useState)(shared);
   (0, import_react25.useEffect)(() => {
@@ -13130,7 +13134,8 @@ function useSchedules(actions) {
     let timer;
     const load = () => actions.schedules?.().then((next) => {
       if (!stopped) publish(next);
-    }).catch(() => {
+    }).catch((error) => {
+      if (!stopped) publishFailure(error);
     }).finally(() => {
       if (!stopped) timer = setTimeout(load, POLL_MS4);
     });
@@ -13143,6 +13148,7 @@ function useSchedules(actions) {
   }, []);
   return view;
 }
+var schedulesReadFailure = (failure) => typeof failure === "string" && failure !== "" ? t("The scheduled tasks could not be read: {reason}", { reason: failure }) : null;
 var localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 var clock2 = (time) => String(time ?? "").slice(0, 5);
 var when2 = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms);
@@ -13497,6 +13503,8 @@ function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions);
   const [adding, setAdding] = (0, import_react25.useState)(Boolean(start));
   const [editing, setEditing] = (0, import_react25.useState)(null);
+  const refused = schedulesReadFailure(view?.readFailure);
+  if (refused !== null) return (0, import_react25.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
   if (view === null) return (0, import_react25.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
   if (!view.available) return (0, import_react25.createElement)(AutomationOff, { actions });
   const shown = (next) => {
@@ -13578,6 +13586,19 @@ function CopyRow({ task, roster, actions, onView, onCancel }) {
 function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions);
   const [editing, setEditing] = (0, import_react25.useState)(null);
+  const refused = schedulesReadFailure(view?.readFailure);
+  if (refused !== null) {
+    return (0, import_react25.createElement)(
+      "section",
+      { className: "bt-set-section" },
+      (0, import_react25.createElement)("h3", null, t("Scheduled tasks")),
+      (0, import_react25.createElement)("div", { className: "bt-set-card" }, (0, import_react25.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-set-hint bt-danger", role: "status" }, refused))
+      ))
+    );
+  }
   if (view === null) return null;
   const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
   return (0, import_react25.createElement)(
@@ -13631,7 +13652,7 @@ function SummaryLines({ tasks, actions }) {
 }
 function ScheduleSummary({ bot, actions }) {
   const view = useSchedules(actions);
-  if (view === null) return null;
+  if (view === null || view.readFailure !== void 0) return null;
   const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
   return (0, import_react25.createElement)(
     "div",
@@ -13642,7 +13663,7 @@ function ScheduleSummary({ bot, actions }) {
 }
 function RoomSchedules({ room: room2, actions }) {
   const view = useSchedules(actions);
-  if (view === null || room2.origin === "face-to-face") return null;
+  if (view === null || view.readFailure !== void 0 || room2.origin === "face-to-face") return null;
   const tasks = view.available ? view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id) : [];
   if (tasks.length === 0) return null;
   return (0, import_react25.createElement)("div", null, (0, import_react25.createElement)(SummaryLines, { tasks, actions }));
