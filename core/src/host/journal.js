@@ -256,7 +256,7 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
       if (error?.code === 'ENOENT') return
       throw error
     }
-    if (!info.isFile()) throw new JournalError('the journal path is not a plain file')
+    if (!info.isFile() || info.nlink !== 1) throw new JournalError('the journal path is not a plain file')
     await chmod(path, 0o600)
     const text = await readFile(path, 'utf8')
     const entries = parseJournal(text)
@@ -302,14 +302,15 @@ export function openJournal({ path, warn, now = Date.now, maxBytes = JOURNAL_MAX
       oldest = kept[1]?.t
     } else {
       // #2074: an append goes to a plain file this host owns and nothing else — a link standing in
-      // for the file would have the snapshot appended to whatever file it names.
+      // for the file would have the snapshot appended to whatever file it names, and a hard link's
+      // other name holds the same bytes, so only a file with this one name is this host's own.
       let info
       try {
         info = await lstat(path)
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error
       }
-      if (info !== undefined && (info.isSymbolicLink() || !info.isFile())) throw new JournalError('the journal path is not a plain file')
+      if (info !== undefined && (info.isSymbolicLink() || !info.isFile() || info.nlink !== 1)) throw new JournalError('the journal path is not a plain file')
       await appendFile(path, text, { mode: 0o600 })
       bytes += added
       oldest = firstChange
