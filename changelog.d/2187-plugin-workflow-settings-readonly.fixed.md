@@ -1,1 +1,0 @@
-While another dsh holds the Bot team, a window can only show it: Settings → Workflow graphs now says so in the host's own words and offers no **Edit**, **Add link** or wire port, instead of taking a change core refuses with `bot/read-only` and then drops ([#2187](https://github.com/ThinkFlowLab/FlyBot/issues/2187)).
