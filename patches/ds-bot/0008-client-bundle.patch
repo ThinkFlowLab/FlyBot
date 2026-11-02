@@ -10576,6 +10576,10 @@ diff --git a/client.js b/client.js
 -        onOpen: (bot) => actions.openExchange(selfId, bot.id),
 -        whole: true
 -      });
+-    }
+-    if (source.kind === "schedule") {
+-      const prompts = reminderPrompts(contentText(data.content));
+-      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
 +function dropLabel(column) {
 +  if (column === "in-progress") return t("Start task");
 +  if (column === "done") return t("Complete task");
@@ -10598,10 +10602,6 @@ diff --git a/client.js b/client.js
 +      map.set(id, []);
 +      order.push(id);
      }
--    if (source.kind === "schedule") {
--      const prompts = reminderPrompts(contentText(data.content));
--      return (0, import_react6.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
--    }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 +    map.get(id).push(task);
@@ -11270,81 +11270,20 @@ diff --git a/client.js b/client.js
 -  }, [done, sessionId, callId]);
 -  let replies = live.replies;
 -  if (done) {
-+  }, [onClose]);
-+  const items = projectMenuItems(project);
-+  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
-+    "div",
-+    {
-+      ref,
-+      className: "bt-project-menu",
-+      role: "menu",
-+      "aria-label": t("My role"),
-+      style: { left: `${x}px`, top: `${y}px` },
-+      "data-project-id": String(project?.id ?? "")
-+    },
-+    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
-+    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
-+      key: item.role,
-+      type: "button",
-+      role: "menuitemradio",
-+      className: "bt-project-menu-item",
-+      "aria-checked": item.current ? "true" : "false",
-+      disabled: !item.pick,
-+      onClick: () => {
-+        if (item.pick) onPick(item.role);
-+        else onClose();
-+      }
-+    }, item.label))
-+  ), document.body);
-+}
-+function ProjectsNav({ wide = true, request, onOpen } = {}) {
-+  const read = request ?? call;
-+  const open = (0, import_react16.useCallback)((id) => {
-+    if (onOpen) {
-+      onOpen(id);
-+      return;
-+    }
-+    if (typeof window !== "undefined") window.location.hash = projectHash(id);
-+  }, [onOpen]);
-+  const [expanded, setExpanded] = (0, import_react16.useState)(false);
-+  const [projects, setProjects] = (0, import_react16.useState)(null);
-+  const [error, setError] = (0, import_react16.useState)("");
-+  const [note, setNote] = (0, import_react16.useState)("");
-+  const [menu, setMenu] = (0, import_react16.useState)(null);
-+  const load = (0, import_react16.useCallback)(async () => {
-     try {
+-    try {
 -      replies = JSON.parse(contentText(content)).replies ?? [];
 -    } catch {
 -      replies = [];
-+      const listing = await read("projects");
-+      const list = Array.isArray(listing?.projects) ? listing.projects : [];
-+      setProjects(list);
-+      setError("");
-+    } catch (failure) {
-+      setProjects([]);
-+      setError(failure?.message ?? String(failure));
-     }
+-    }
 -  }
 -  const pending = done || !live.speaking ? [] : [live.speaking];
 -  const speakerTool = useWork?.((work) => work.bots?.[live.speaking]?.tool) ?? void 0;
 -  if (replies.length === 0 && pending.length === 0) return null;
 -  const room2 = roster.roomsById[sessionId];
 -  return (0, import_react6.createElement)(
-+  }, [read]);
-+  (0, import_react16.useEffect)(() => {
-+    if (!expanded) return;
-+    void load();
-+  }, [expanded, load]);
-+  const toggle = () => {
-+    setNote("");
-+    if (!wide) {
-+      void open("");
-+      return;
-+    }
-+    setExpanded((value) => !value);
-+  };
-+  const listed = expanded && wide;
-+  return (0, import_react16.createElement)(
++  }, [onClose]);
++  const items = projectMenuItems(project);
++  return (0, import_react_dom3.createPortal)((0, import_react16.createElement)(
      "div",
 -    { className: "bt-group-replies" },
 -    replies.map((reply, index) => {
@@ -11390,9 +11329,71 @@ diff --git a/client.js b/client.js
 -            (0, import_react6.createElement)("span", { className: "bt-event-name" }, t(reply.kind === "working" ? "{name} started on it" : "{name} paused for your approval", { name: bot.name }))
 -          )
 -        );
--      }
++    {
++      ref,
++      className: "bt-project-menu",
++      role: "menu",
++      "aria-label": t("My role"),
++      style: { left: `${x}px`, top: `${y}px` },
++      "data-project-id": String(project?.id ?? "")
++    },
++    (0, import_react16.createElement)("div", { className: "bt-projects-note" }, projectName(project)),
++    items.length === 0 ? (0, import_react16.createElement)("div", { className: "bt-projects-note" }, t("No role to switch here.")) : items.map((item) => (0, import_react16.createElement)("button", {
++      key: item.role,
++      type: "button",
++      role: "menuitemradio",
++      className: "bt-project-menu-item",
++      "aria-checked": item.current ? "true" : "false",
++      disabled: !item.pick,
++      onClick: () => {
++        if (item.pick) onPick(item.role);
++        else onClose();
+       }
 -      if (reply.kind === "stopped") {
 -        return (0, import_react6.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
++    }, item.label))
++  ), document.body);
++}
++function ProjectsNav({ wide = true, request, onOpen } = {}) {
++  const read = request ?? call;
++  const open = (0, import_react16.useCallback)((id) => {
++    if (onOpen) {
++      onOpen(id);
++      return;
++    }
++    if (typeof window !== "undefined") window.location.hash = projectHash(id);
++  }, [onOpen]);
++  const [expanded, setExpanded] = (0, import_react16.useState)(false);
++  const [projects, setProjects] = (0, import_react16.useState)(null);
++  const [error, setError] = (0, import_react16.useState)("");
++  const [note, setNote] = (0, import_react16.useState)("");
++  const [menu, setMenu] = (0, import_react16.useState)(null);
++  const load = (0, import_react16.useCallback)(async () => {
++    try {
++      const listing = await read("projects");
++      const list = Array.isArray(listing?.projects) ? listing.projects : [];
++      setProjects(list);
++      setError("");
++    } catch (failure) {
++      setProjects([]);
++      setError(failure?.message ?? String(failure));
++    }
++  }, [read]);
++  (0, import_react16.useEffect)(() => {
++    if (!expanded) return;
++    void load();
++  }, [expanded, load]);
++  const toggle = () => {
++    setNote("");
++    if (!wide) {
++      void open("");
++      return;
++    }
++    setExpanded((value) => !value);
++  };
++  const listed = expanded && wide;
++  return (0, import_react16.createElement)(
++    "div",
 +    { className: "bt-projects" },
 +    (0, import_react16.createElement)(
 +      "button",
@@ -19428,7 +19429,7 @@ diff --git a/client.js b/client.js
    const micLevel = useMicLevel(!speech && phase === "listening" && dictation.listening);
    const level = speech ? serviceLevel : micLevel;
    const markState = phase === "thinking" || phase === "transcribing" ? "thinking" : phase === "speaking" ? "sending" : "idle";
-@@ -8875,291 +8875,842 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
+@@ -8875,291 +8875,846 @@ function VoiceMode({ sessionId, roster, actions, useSessions, useSessionStatus }
    const openSetup = phase === "setup" ? actions.voiceSetup() : null;
    const caption = phase === "speaking" ? said : heard;
    const shownNote = note || dictation.note;
@@ -19687,7 +19688,7 @@ diff --git a/client.js b/client.js
 +      key: `${item.from.id}>${item.to.id}`,
 +      back: true,
 +      d: `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`
-     });
++    });
 +    taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) });
 +  });
 +  const centres = [];
@@ -19713,7 +19714,7 @@ diff --git a/client.js b/client.js
 +      key: `${item.from.id}>${item.to.id}`,
 +      back: false,
 +      d: straight ? `M ${x1} ${y1} L ${x1} ${y2}` : `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`
-+    });
+     });
 +  }
 +  return routes;
 +}
@@ -20134,7 +20135,7 @@ diff --git a/client.js b/client.js
 -    onClick
 -  }, (0, import_react23.createElement)(BotAvatar, { bot, size: 22, badge: false, live: false }), (0, import_react23.createElement)("span", { className: "bt-ng-name" }, bot.name), on && role === "radio" ? (0, import_react23.createElement)(AdminStar) : null);
 -  return (0, import_react23.createElement)(
-+function Row2({ item, source, onOpen, onRename, onDelete }) {
++function Row2({ item, source, onOpen, onRename, onDelete, editable = true }) {
 +  return (0, import_react37.createElement)(
 +    "button",
 +    {
@@ -20150,7 +20151,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react37.createElement)("span", null, item.name),
 +      (0, import_react37.createElement)("span", { className: "bt-set-hint" }, item.preview || chainOf(item) || item.description || "")
 +    ),
-+    source === "own" ? (0, import_react37.createElement)(
++    source === "own" && editable ? (0, import_react37.createElement)(
 +      "span",
 +      { className: "bt-set-actions" },
 +      (0, import_react37.createElement)("button", {
@@ -20186,7 +20187,9 @@ diff --git a/client.js b/client.js
 +  const templates = pack?.templates ?? [];
 +  const templateIds = new Set(templates.map((item) => item.id));
 +  const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id));
-+  const showUse = opened?.source === "factory" || opened?.fromFactory !== void 0;
++  const readOnly = typeof roster?.readOnly === "string" ? roster.readOnly.trim() : "";
++  const locked = readOnly !== "";
++  const showUse = !locked && (opened?.source === "factory" || opened?.fromFactory !== void 0);
 +  return (0, import_react37.createElement)(
      "div",
 -    { className: "bt-set-card bt-ng" },
@@ -20233,7 +20236,7 @@ diff --git a/client.js b/client.js
 +        (0, import_react37.createElement)(
 +          "div",
 +          { className: "bt-set-card" },
-+          yours.length === 0 ? (0, import_react37.createElement)("div", { className: "bt-set-row" }, (0, import_react37.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react37.createElement)(Row2, { key: item.id, item, source: "own", onOpen: () => onOpen?.(item, "own"), onRename, onDelete }))
++          yours.length === 0 ? (0, import_react37.createElement)("div", { className: "bt-set-row" }, (0, import_react37.createElement)("span", { className: "bt-set-hint" }, t("No workflows of your own yet."))) : yours.map((item) => (0, import_react37.createElement)(Row2, { key: item.id, item, source: "own", editable: !locked, onOpen: () => onOpen?.(item, "own"), onRename, onDelete }))
 +        )
        )
 -    ),
@@ -20252,7 +20255,7 @@ diff --git a/client.js b/client.js
 +        { className: "bt-wf-actions" },
 +        (0, import_react37.createElement)("button", { type: "button", onClick: () => onBack?.() }, t("Back")),
 +        showUse ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onUse?.(opened.source === "factory" ? opened.id : opened.fromFactory) }, t("Use this")) : null,
-+        opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
++        locked ? (0, import_react37.createElement)("span", { className: "bt-wf-status", role: "status" }, hostText(readOnly)) : opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
 +      ),
 +      (0, import_react37.createElement)("h3", { className: "bt-wf-title" }, graph.name),
 +      graph.description ? (0, import_react37.createElement)("p", { className: "bt-wf-hint" }, graph.description) : null,
@@ -20262,7 +20265,7 @@ diff --git a/client.js b/client.js
 +        onCommit,
 +        width: canvasWidth,
 +        cardHeights,
-+        editing: opened?.source === "own" && editing === true
++        editing: opened?.source === "own" && editing === true && !locked
 +      })
 +    ) : null
 +  );
@@ -20346,6 +20349,7 @@ diff --git a/client.js b/client.js
 -@media (prefers-reduced-motion:reduce){.bt-gs-pick{animation:none}}
 -`;
 +function WorkflowsPage({ call: call4, roster }) {
++  const readOnly = typeof roster?.readOnly === "string" && roster.readOnly.trim() ? roster.readOnly : "";
 +  const [phase, setPhase] = (0, import_react37.useState)("loading");
 +  const [pack, setPack] = (0, import_react37.useState)(null);
 +  const [error, setError] = (0, import_react37.useState)("");
@@ -20414,7 +20418,7 @@ diff --git a/client.js b/client.js
 +      setError("");
 +      if (made) {
 +        setOpened({ source: "own", id: made.id });
-+        setEditing(true);
++        setEditing(!readOnly);
 +      }
 +    }).catch((failure) => {
 +      setError(workflowCallError(failure, t("Could not copy this workflow")));
@@ -20460,6 +20464,7 @@ diff --git a/client.js b/client.js
 +  };
 +  const commit = (graph) => {
 +    if (!opened || opened.source !== "own") return;
++    if (readOnly) return;
 +    Promise.resolve(invoke("workflow/graph", { workflowId: opened.id, nodes: graph.nodes, edges: graph.edges })).then((value) => {
 +      const settled = settleWorkflowRead(value);
 +      if (settled.phase === "error") {
