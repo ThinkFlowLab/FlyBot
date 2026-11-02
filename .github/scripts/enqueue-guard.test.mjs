@@ -76,7 +76,7 @@ const withCheckpoint = (text, files) => {
   return `${text}\n${checkpoint({ issue, claim, files: names.length ? names : [HOST_FILE] })}`
 }
 
-const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false, branch = 'dev/fixture' } = {}) => {
+const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], reviewComments = [], labels = ['agent-pr'], files = [], head = HEAD, heads = null, author = 'opener', headRepo = 'ThinkFlowLab/FlyBot', permission = undefined, draft = false, merged = false, branch = 'dev/fixture' } = {}) => {
   // `raw` is for the tests about the checkpoint itself: they must be able to hand over a body without one.
   const given = body ?? `${HEADERS}Fixes #602\n`
   const text = raw ? given : withCheckpoint(given, files)
@@ -90,6 +90,9 @@ const fakeGh = ({ body = null, raw = false, comments = [], reviews = [], labels 
       return JSON.stringify({ permission, role_name: permission, user: { login: 'reviewed' } })
     }
     if (path.includes('/files')) return files.map((f) => JSON.stringify(typeof f === 'string' ? { filename: f } : f)).join('\n')
+    // The line-anchored comments are their own endpoint; without this branch the fixture would answer
+    // them with the issue comments and a test could not tell the two faces apart.
+    if (/\/pulls\/\d+\/comments/.test(path)) return reviewComments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/comments')) return comments.map((c) => JSON.stringify(c)).join('\n')
     if (path.includes('/reviews')) return reviews.map((r) => JSON.stringify(r)).join('\n')
     if (/\/pulls\/\d+$/.test(path)) {
@@ -1047,4 +1050,70 @@ test('#602 (2026-11-01): a T0/T1 pull request with no PASS is stopped by a revie
   assert.equal(r.ok, false)
   assert.match(r.reasons.join('; '), /asks not to merge this pull request/)
   assert.match(r.reasons.join('; '), /6561490254/)
+})
+
+// The third face the API offers: a comment written on one line of the diff (`pulls/{pr}/comments`). It
+// carries the same `body` and `user` as the other two, and `created_at` where a review carries
+// `submitted_at`. A person reaching for the line that is wrong writes the request there, so it reaches
+// the same reader — and it is the one face that is a request and never a conclusion (#2091).
+const inlineNote = ({ id = 6561490255, login = 'hugo', type = 'User', body = '@Birfy — **please do not merge this tip.** This line is the one that reads the wrong list.', at = '2026-11-01T17:38:11Z', association = 'CONTRIBUTOR', path = 'core/src/client/kanban.js', line = 422, replyTo = null } = {}) =>
+  ({ id, user: { login, type }, body, created_at: at, author_association: association, path, line, ...(replyTo == null ? {} : { in_reply_to_id: replyTo }) })
+
+test('#602 (2026-11-01): an inline review comment asking not to merge this tip refuses too, and names it', () => {
+  const gh = fakeGh({ files: [HOST_FILE], comments: [comment(report(), '2026-11-01T17:35:30Z')], reviewComments: [inlineNote()] })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, false, 'a request written on one line of the diff is the same request')
+  const text = r.reasons.join('; ')
+  assert.match(text, /asks not to merge this pull request/)
+  assert.match(text, /6561490255/, 'the refusal names the comment it read')
+  // The two faces are read from their own endpoints: a fixture that answers both from one array would
+  // let an issue comment pose as the inline one and make this case green for the wrong reason.
+  assert.ok(gh.calls.some((path) => /\/issues\/566\/comments/.test(path)), 'the issue comments are read')
+  assert.ok(gh.calls.some((path) => /\/pulls\/566\/comments/.test(path)), 'the line-anchored comments are read as their own face')
+})
+
+test('#602 (2026-11-01): an inline comment that only talks about the code is not a stop', () => {
+  const talk = inlineNote({ id: 6561490256, body: 'This branch reads `own` here — is that the list the room board draws?' })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviewComments: [talk] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#602 (2026-11-01): a conclusion written on one line of the diff is a request reader only, never a verdict', () => {
+  // A MEMBER can write a Verifier block in a line-anchored comment; it is still not one of the two faces a
+  // conclusion is written in. It neither passes nor stops: the issue comment's PASS stays the one read.
+  const gh = fakeGh({
+    files: [HOST_FILE],
+    comments: [comment(report(), '2026-11-01T17:35:30Z', { id: 9001 })],
+    reviewComments: [inlineNote({ id: 9002, login: 'reviewer-agent', association: 'MEMBER', body: report({ extra: ['**please do not merge this tip.**'] }) })],
+  })
+  const r = main({ gh, env: { REVIEW_POLICY: POLICY, GH_REPO: 'ThinkFlowLab/FlyBot', PR: '566' }, repo: 'ThinkFlowLab/FlyBot', pr: 566 })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'a body carrying a conclusion is not a stop')
+  assert.equal(r.verdict.id, 9001, 'the conclusion is the issue comment, not the line-anchored one')
+  assert.equal(r.verdict.by, 'reviewer-agent')
+})
+
+test('#602 (2026-11-01): a "record only" marker on one line of the diff does not hold the entry', () => {
+  // The marker is read from a body that parses as a conclusion (`recordOnlyAt`): a line-anchored comment
+  // is not one of the faces a conclusion is written in, so a Verifier block parked there cannot park the
+  // pull request either.
+  const parked = inlineNote({ id: 6561490257, login: 'reviewer-agent', association: 'MEMBER', body: report({ extra: ['Record only — do not merge'] }) })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviewComments: [parked] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('#602 (2026-11-01): a reply on an inline thread is the same request, and it is read once', () => {
+  const reply = inlineNote({ id: 6561490258, body: '@Birfy **please do not merge this tip** — the point above still stands.', replyTo: 6561490255 })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z')], reviewComments: [reply] })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.equal((r.reasons.join('; ').match(/6561490258/g) ?? []).length, 1, 'a reply is read once, not once per face')
+})
+
+test('#602 (2026-11-01): an inline stop written before the PASS at this tip is not this tip\'s hold', () => {
+  // The window is the one `stopRequestAt` already reads: a request older than the conclusion this
+  // decision used has been answered by that PASS. The third face inherits it rather than opening a wider
+  // window of its own.
+  const early = inlineNote({ id: 6561490259, at: '2026-11-01T17:00:00Z' })
+  const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z', { id: 9103 })], reviewComments: [early] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
 })
