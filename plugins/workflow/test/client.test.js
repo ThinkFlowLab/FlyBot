@@ -632,6 +632,175 @@ test('sidebar preview ignores a stale busy preview when nothing is live', async 
   view.unmount()
 })
 
+// #2222 A: the list row's live mark is a bare colour with no number, so a
+// read-only reader -- whose only live signal is this view -- cannot tell one
+// running run from five. The row draws the count beside the dot and carries it
+// in its accessible name; a quiet row draws neither.
+test('#2222: a live workflow row says how many runs are live', async () => {
+  const graph = delivery()
+  graph.activeCount = 3
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0]
+    assert.ok(row, 'the sidebar draws the workflow row')
+
+    const count = findAll(view.tree, node => node.props?.className === 'wf-live-n')
+    assert.equal(count.length, 1, 'one count stands beside the live dot')
+    assert.equal(textOf(count[0]), '3', 'the count is the number of live runs')
+    assert.ok(String(row.props['aria-label'] ?? '').includes('3'), 'the accessible name says how many runs are live')
+
+    row.props.onClick()
+    await settle()
+    const opened = findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0]
+    assert.ok(String(opened?.props.className).includes('on'), 'the row still opens the workflow')
+  } finally {
+    view.unmount()
+  }
+})
+
+// #2222 A: the count is the only thing a read-only window can act on -- its
+// reader cannot start or stop a run -- so the row keeps it while every write
+// entry is gone.
+test('#2222: a read-only window still reads how many runs are live', async () => {
+  const graph = delivery()
+  graph.activeCount = 2
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [], readOnly: 'Another window is using this Bot' }, call, actions: {} })
+  try {
+    await settle()
+    const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0]
+    assert.ok(row, 'the read-only sidebar still lists the workflow')
+    assert.ok(String(row.props['aria-label'] ?? '').includes('2'), 'the read-only row still names the live count')
+    assert.equal(textOf(findAll(view.tree, node => node.props?.className === 'wf-live-n')[0]), '2')
+    assert.equal(findAll(view.tree, node => node.type === 'button' && textOf(node) === 'New').length, 0, 'the window is locked')
+  } finally {
+    view.unmount()
+  }
+})
+
+// #2222 A: an idle row keeps its own text as the accessible name and draws no
+// dot, no count and no digit.
+test('#2222: a workflow row with nothing live draws no count and no live name', async () => {
+  const graph = delivery()
+  graph.activeCount = 0
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0]
+    assert.ok(row, 'the sidebar draws the workflow row')
+    assert.equal(findAll(view.tree, node => node.props?.className === 'wf-live' || node.props?.className === 'wf-live-n').length, 0, 'no dot and no count when nothing is live')
+    assert.equal(row.props['aria-label'], undefined, 'the row keeps its own text as the name')
+    assert.equal(/\d/.test(textOf(row)), false, 'an idle row carries no digit')
+  } finally {
+    view.unmount()
+  }
+})
+
+// #2222 B: opening the list in a read-only window used to write
+// `workflow/ingest` once per open card -- a write the reader never asked for,
+// and one the host refuses. The Project filter still fills (its read stays).
+test('#2222: a read-only mount sends no workflow/ingest, a writable one still ingests every open card', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const tasks = [
+    { id: 'task-1', title: 'one', status: 'open' },
+    { id: 'task-2', title: 'two', status: 'open' },
+    { id: 'task-3', title: 'three', status: 'open' },
+    { id: 'task-4', title: 'accepted already', status: 'accepted' },
+  ]
+  const hostCalls = []
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => {
+      hostCalls.push(channel)
+      if (channel === 'tasks') return tasks
+      if (channel === 'projects') return { projects: [] }
+      return []
+    },
+  }
+  try {
+    const readOnly = mount(client.Section, { roster: { bots: [], readOnly: 'Another window is using this Bot' }, call, actions: {} })
+    await settle()
+    assert.equal(calls.filter(item => item.name === 'workflow/ingest').length, 0, 'a read-only mount writes nothing')
+    assert.ok(hostCalls.includes('projects'), 'the Project filter still fills')
+    readOnly.unmount()
+
+    const writable = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const ingests = calls.filter(item => item.name === 'workflow/ingest')
+    assert.equal(ingests.length, 3, 'a writable mount still ingests every open card')
+    assert.deepEqual(ingests.map(item => item.body?.id), ['task-1', 'task-2', 'task-3'])
+    writable.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+// #2222 B: the roster lands after the mount. A cold window starts on the empty
+// roster (`ready: false`, no `readOnly`) and the read-only sentence arrives a
+// tick later, so an effect that baked `locked` in on its first render kept
+// writing after the window had gone read-only -- three `workflow/ingest` calls
+// for three open cards, every one of them refused by the host.
+test('#2222: a read-only roster that arrives after the mount still sends no workflow/ingest', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const tasks = [
+    { id: 'task-1', title: 'one', status: 'open' },
+    { id: 'task-2', title: 'two', status: 'open' },
+    { id: 'task-3', title: 'three', status: 'open' },
+  ]
+  let releaseProjects
+  const projectsGate = new Promise((resolve) => { releaseProjects = resolve })
+  const hostCalls = []
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => {
+      hostCalls.push(channel)
+      if (channel === 'projects') return projectsGate
+      if (channel === 'tasks') return tasks
+      return []
+    },
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [], ready: false }, call, actions: {} })
+    await settle()
+    assert.equal(hostCalls.includes('projects'), true, 'the mount reads the board so the Project filter can fill')
+
+    // The read-only sentence lands while that read is still in flight.
+    view.rerender({ roster: { bots: [], readOnly: 'Another window is using this Bot' } })
+    releaseProjects({ projects: [] })
+    await settle()
+
+    assert.equal(calls.filter(item => item.name === 'workflow/ingest').length, 0, 'a roster that went read-only mid-mount writes nothing')
+    assert.equal(hostCalls.includes('tasks'), false, 'the board read that only feeds ingest is skipped')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
 test('two concurrent live runs each show independent progress strips', () => {
   const workflow = {
     runs: [
