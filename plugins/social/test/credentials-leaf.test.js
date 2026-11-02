@@ -169,6 +169,57 @@ test('a linked credentials path is refused before onboarding: no server call, an
   }
 })
 
+// The `.bak` copy kept for another server is a leaf of its own, and its name follows from the file
+// already on disk — a local read — so it can be asked before the onboarding too, not after it.
+test('a linked .bak path is refused before onboarding: no server call, and no home is created', async (t) => {
+  const home = homeOf(t)
+  const path = join(home, 'flybot-social.json')
+  const old = JSON.stringify({ token: 'old-token', home: { id: 'h1', handle: '@me.home' }, server: 'https://old.example' })
+  writeFileSync(path, old)
+  const sha8 = createHash('sha256').update('https://old.example').digest('hex').slice(0, 8)
+  const outside = outsideFile(home)
+  const before = statSync(outside)
+  symlinkSync(outside, `${path}.${sha8}`)
+  quiet(t)
+  const asked = []
+  const onboarded = async (url) => {
+    asked.push(String(url))
+    return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const { failure } = await settle(() => startSocial({}, { server: 'https://new.test', credentialsPath: path, onboard: true, fetch: onboarded }))
+  assert.equal(asked.length, 0, 'the server was not asked for a home')
+  assert.equal(failure?.code, 'bot/refused', 'the start refuses, it does not finish')
+  assert.match(String(failure?.message ?? 'no failure: the start went on'), /not a plain file/, 'the refusal says why')
+  assert.equal(readFileSync(path, 'utf8'), old, 'the credentials in use are byte for byte what they were')
+  assert.equal(readFileSync(outside, 'utf8'), CREDENTIALS, 'nothing lands in the file behind the backup link')
+  assert.equal(statSync(outside).mtimeMs, before.mtimeMs, 'and the file behind it is not touched at all')
+  assert.deepEqual(readdirSync(home).sort(), ['flybot-social.json', `flybot-social.json.${sha8}`, 'outside.json'], 'no file is created beside them')
+})
+
+// The other side of the same shape: with the `.bak` name free, the home is asked once and the old
+// credentials land under their server, so the check above cannot pass by refusing every switch.
+test('a free .bak name still onboards once, and the old credentials are kept under their server', async (t) => {
+  const home = homeOf(t)
+  const path = join(home, 'flybot-social.json')
+  const old = JSON.stringify({ token: 'old-token', home: { id: 'h1', handle: '@me.home' }, server: 'https://old.example' })
+  writeFileSync(path, old)
+  const sha8 = createHash('sha256').update('https://old.example').digest('hex').slice(0, 8)
+  quiet(t)
+  const asked = []
+  const onboarded = async (url) => {
+    asked.push(String(url))
+    return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  // The layer below `startSocial` is not built here: the write happens before it, so this stub stops
+  // the start there and leaves the two facts under test intact.
+  const service = { scope() { throw new Error('the plugin scope is not built in this test') } }
+  const { failure } = await settle(() => startSocial(service, { server: 'https://new.test', credentialsPath: path, onboard: true, fetch: onboarded }))
+  assert.equal(asked.length, 1, 'exactly one home is asked for')
+  assert.deepEqual(JSON.parse(readFileSync(`${path}.${sha8}`, 'utf8')), JSON.parse(old), 'the old credentials are kept under their server')
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).token, 'new-token', 'the token that was just minted is kept')
+  assert.match(String(failure?.message ?? 'no failure: the start went on'), /plugin scope is not built in this test/, 'the start gets past the write')
+})
+
 test('an absent or plain credentials path still onboards exactly once and writes the file', async (t) => {
   for (const shape of ['absent', 'plain']) {
     const home = homeOf(t)
