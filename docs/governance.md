@@ -153,10 +153,13 @@ Policy-sign: <comment id or url>
 
 The comment it names must be on that pull request, must have been written by someone other than the
 pull request's author, and must name the tip it signs — the head sha, in full or abbreviated to at
-least twelve characters. A GitHub bot account cannot sign. `Test`'s `Gate change signature` step runs
-before the suite, so a missing line, a comment that is not on the pull request, a self-signature, or a
-comment written for another tip fails the pull request. Anyone else with comment access can sign, and
-editing the body is the whole ceremony: no new workflow, no threshold changes, no merge path.
+least twelve characters. A GitHub bot account cannot sign. `Test`'s `Gate change signature` step runs,
+before the suite, the copy of the checker checked out from the pull request's **base** commit — not the
+copy in the pull request's own tree — so a change that edits, weakens or deletes the checker is still
+judged by the one it started from. A missing line, a comment that is not on the pull request, a
+self-signature, or a comment written for another tip fails the pull request.
+Anyone else with comment access can sign, and editing the body is the whole ceremony: no new workflow,
+no threshold changes, no merge path.
 
 A signature signs one head, not one pull request: every new tip needs a new comment and a new line.
 That is the price of binding, and it is the point — a signature that survived a push would let an

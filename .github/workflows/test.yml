@@ -44,10 +44,20 @@ jobs:
       # policy/gates.json (#2054): a pull request that edits an acceptance gate carries
       # `Policy-sign: <comment id or url>` in its body, written by someone other than its author.
       # It runs before the suite: a gate change nobody else signed is not worth 20 minutes of tests.
+      # #2099: the checker comes from the base commit, not from the pull request's own tree, so a
+      # pull request that weakens or deletes `policy-sign.mjs` is still judged by the copy it started
+      # from. `merge-gate.yml` checks base out the same way. The `merge_group` half
+      # is required, not decoration: a queue run carries no `pull_request`, and an expression with
+      # only that half falls back to the sha that triggered the run, which is the pull request again.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
       - name: Gate change signature
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node .github/scripts/policy-sign.mjs
+        run: node base/.github/scripts/policy-sign.mjs
       - uses: ./.github/actions/flybot-tests
         with:
           node: '24'
