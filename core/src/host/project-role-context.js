@@ -163,7 +163,7 @@ export async function buildProjectContext(rt, input) {
       .map(row => ({ ...JSON.parse(row.text), id: row.id, revision: row.revision, sha256: row.sha256 }))
     if (!workingSummary.length) workingSummary = undefined
   } else if (workingSummary) summarySources = [{ id: workingSummary.id, text: JSON.stringify(workingSummary), revision: workingSummary.revision, sha256: workingSummary.sha256 }]
-  const projectFacts = { ...input.projectFacts, projectConstraints: { goal: project.goal ?? '', scope: project.scope ?? '' }, ...(task ? { currentTaskConstraints: { title: task.title, criteria: task.criteria ?? '' } } : {}) }
+  const projectFacts = { ...input.projectFacts, projectConstraints: { goal: project.goal ?? '', scope: project.scope ?? '' }, ...(task ? { currentTaskConstraints: { title: task.title, criteria: task.criteria ?? '', ...(task.projectTask ? { requirements: task.projectTask.requirements, continuation: task.projectTask.wait ?? null, childResults: task.projectTask.dependencies.map(row => ({ taskId: row.taskId, status: row.status, result: row.result ?? null })) } : {}) } } : {}) }
   if (projectFacts.chiefMemory?.topics) projectFacts.chiefMemory = { ...projectFacts.chiefMemory, topics: projectFacts.chiefMemory.topics.slice(0, 12), totalTopics: projectFacts.chiefMemory.topics.length, retrieval: 'Use memoryRequests with a topic or query; full own-topic records remain retained' }
   return roleContext({ ...input, budget, workingSummary, summarySources, projectFacts })
 }

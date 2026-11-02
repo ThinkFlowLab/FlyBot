@@ -10,7 +10,7 @@ import { mockModel } from './mock.mjs'
 import { checkLiveWorkbench } from './live-workbench.mjs'
 import { serveWorkbench } from './serve.mjs'
 import { checkWorkbench } from './workbench.mjs'
-import { checkQueue } from './queue.mjs'
+import { checkQueue, provisionQueueGate } from './queue.mjs'
 import { agentReply, checkAgents } from './agents.mjs'
 import { checkDelivery, deliveryReply, provisionDeliveryFixture } from './delivery.mjs'
 import { checkShared } from './shared.mjs'
@@ -71,6 +71,7 @@ async function main() {
   mkdirSync(workspace)
   mkdirSync(scratch)
   if (delivery) provisionDeliveryFixture(workspace, githubRepository)
+  const queueGate = queue ? provisionQueueGate(directory) : null
   const golden = join(directory, 'golden-test.mjs')
   if (live || codex) writeFileSync(golden, `import assert from 'node:assert/strict'; import {pathToFileURL} from 'node:url'; import {resolve} from 'node:path'; const {add}=await import(pathToFileURL(resolve('code.mjs'))); for(const [a,b] of [[2,3],[-7,2],[11,13],[0,0],[0,-4],[1.5,2.5]]) assert.equal(add(a,b),a+b); console.log('Immutable host addition tests passed'); if(process.argv.includes('--force-failure')) {console.error('Intentional host-test failure for negative acceptance');process.exit(9)}`)
   for (const entry of readdirSync(harness)) {
@@ -105,7 +106,7 @@ async function main() {
       ...(workbench && !live ? { projectResources: { 'demo-local': { type: 'local', root: directory, profileRoot: join(directory, 'private-sdk-profiles'), capacity: 2,
         allowedProjectOwnerIds: ['owner-1'], adminMemberIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'fixture-sdk-probe', baseUrl: 'http://127.0.0.1:1' } } } } } } : {}), ...(workbench ? { projectDemoMode: realModel ? 'real-provider' : 'deterministic-fixture' } : {}),
       ...(shared ? { controlPlane: { origin: shared.origin, ownerSubject: shared.ownerSubject } } : {}),
-      ...(delivery ? { projectDispatch: 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs'], allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
+      ...(delivery ? { projectDispatch: 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: queueGate?.command ?? (live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs']), allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
     writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 })
   }
   const child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
@@ -170,7 +171,7 @@ async function main() {
       return
     }
     if (queue) {
-      console.log(JSON.stringify(await checkQueue({ api, call, saved, waitFor })))
+      console.log(JSON.stringify(await checkQueue({ api, call, saved, waitFor, releaseVerification: queueGate.release })))
       return
     }
     if (delivery) {
@@ -208,8 +209,7 @@ async function main() {
     await waitFor(() => existsSync(join(teamWorkspace, 'proof.json')), 'real bash writes and test')
     await verifyArtifact(teamWorkspace)
     await waitFor(() => !saved().bots[ephemeral.id], 'ephemeral Bot cleanup')
-    const workflowSaved = json(join(home, 'bot/flybot-workflow/workflows.json'))
-    const completed = workflowSaved.lanes[workflow.id].last
+    const completed = await waitFor(() => json(join(home, 'bot/flybot-workflow/workflows.json')).lanes[workflow.id].last, 'persisted Workflow terminal checkpoint after worker cleanup')
     assert.equal(completed.status, 'done')
     assert.equal(completed.projectId, project.id)
     await waitFor(() => saved().projectExecutions[completed.id]?.status === 'done', 'canonical terminal Run report')

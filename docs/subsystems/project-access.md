@@ -260,3 +260,5 @@ grant Task publication: replies remain private unless a human approves or existi
 watch delegation and current permissions authorize explicit publishing. Agent id in a
 request cannot override the authenticated connection identity. A Task-role token is
 never a public HTTP actor. Legacy Chief question/consultation records remain private.
+
+New-contract Tasks cannot bypass Chief admission through legacy Project Workflow assign. Project concurrency counts execution Runs, not resident Chief control jobs, and excludes a waiting parent only after its registered leases and ephemeral workers have released. Legacy Workflow quota checks and default pool scheduling share that distinction.

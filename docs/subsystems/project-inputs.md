@@ -124,3 +124,7 @@ Verification precedes a released-checkpoint deployment; preserve the autonomous
 frontend Task/PR, existing UI adapters, account/credential configuration and all
 state/history. After inbox/effect state is written, rollback requires matching
 schema-aware reconciliation, not blind restoration of older code or state.
+
+## Project Task lifecycle convergence (#2179)
+
+Chief-confirmed requirement revisions become requirements-change inputs with Chief-decision provenance in the same existing inbox. Notification uses the original postcommit input.notify effect. Uncommitted input staging is discarded on confirmed rollback; a changed requirement version invalidates old delivery acceptance.

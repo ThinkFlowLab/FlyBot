@@ -18,6 +18,8 @@ import { EffectCancelled, EffectDeferred } from './project-effects.js'
 const exec = promisify(execFile)
 const hash = value => createHash('sha256').update(value).digest('hex')
 const ongoing = new Set(['preparing', 'running'])
+const requirementsOf = (task, repository) => ({ title: task.title, criteria: task.criteria ?? '', note: task.note ?? '', repository,
+  ...(task.projectTask ? { projectTaskRevision: task.projectTask.requirements.revision, impact: task.projectTask.requirements.impact, scope: task.projectTask.requirements.scope } : {}) })
 const reject = message => Object.assign(new Error(message), { code: 'bot/delivery' })
 const inside = (root, path) => { const rel = relative(root, path); return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) }
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => !/TOKEN|PASSWORD|SECRET|API_KEY|GIT_CONFIG|NODE_OPTIONS/.test(key)))
@@ -62,7 +64,8 @@ export function createProjectDelivery(rt, { publisher } = {}) {
         await rt.projectDelegations?.background(effect.payload.initiatedBy, task.collaboration?.sourceSessionId)
         rt.requireProjectAccess({ memberId: effect.payload.initiatedBy }, effect.projectId, 'task-write', task)
       } catch { throw new EffectCancelled('Publication initiator no longer has authority') }
-      if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw new EffectCancelled('Publication requirements changed')
+      if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
+    if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw new EffectCancelled('Publication requirements changed')
       if (!context.inline) {
         const workers = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === attempt.id)
         const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === attempt.id)
@@ -214,6 +217,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   async function start(body, actor) {
     const task = taskOf(body.taskId)
     if (!task?.projectId) throw reject('A delivery needs a Project Task')
+    rt.projectTaskLifecycle?.requireExecutable(task)
     const project = rt.requireProjectAccess(actor, task.projectId, 'create')
     rt.requireProjectAccess(actor, project.id, 'task-write', task)
     if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId)) throw reject('A delivery needs a stable requestId')
@@ -229,7 +233,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const at = Date.now()
     const attempt = { id: `attempt-${randomUUID()}`, projectId: project.id, taskId: task.id, requestKey,
       workflowVersion: DELIVERY_VERSION, status: 'preparing', initiatedBy: actor.memberId, executionOwnerId: project.ownerUserId,
-      requirement: { title: task.title, criteria: task.criteria ?? '', note: task.note ?? '', repository: project.repository },
+      requirement: requirementsOf(task, project.repository),
       ...(feedback ? { feedback } : {}), ...(publicationBinding ? { publicationBinding, seedSha: previous.candidateSha ?? previous.seedSha ?? publicationBinding.previousSha, baseSha: previous.baseSha } : {}), workspaces: {}, evidence: {}, createdAt: at, updatedAt: at }
     setEntry(attempts(), attempt.id, attempt)
     task.deliveryAttemptId = attempt.id
@@ -527,6 +531,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const task = taskOf(attempt.taskId)
     if (!task || task.deliveryAttemptId !== attempt.id || !['running', 'waiting-acceptance'].includes(attempt.status) || ['accepted', 'cancelled', 'failed'].includes(task.status) || attempt.cancelRequested) throw reject('Publication retry requires the current active Attempt')
     if (!attempt.publicationBinding) throw reject('Publication retry requires an existing PR binding')
+    if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
     if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; publication evidence is stale')
     const workers = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === attempt.id)
     const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === attempt.id)
@@ -595,6 +600,10 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const attempt = ownEntry(attempts(), body.attemptId)
     if (!attempt) throw reject('Unknown Attempt')
     rt.requireProjectAccess(actor, attempt.projectId, 'accept')
+    if (taskOf(attempt.taskId).projectTask) {
+      if (!actor.chiefJobId) throw reject('Only Chief adjudicates Project Task completion')
+      rt.projectChiefControl.requireJobActor(actor, attempt.projectId)
+    }
     if (attempt.status === 'accepted') return { attempt: view(attempt), already: true }
     if (attempt.protocol === 'project-handoff/v1' && attempt.chiefDecision?.verdict !== 'approve') throw reject('Chief arbitration is required before overall completion')
     if (attempt.status !== 'waiting-acceptance') throw reject('Attempt has not produced delivery evidence')
@@ -602,6 +611,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const task = taskOf(attempt.taskId)
     rt.projectInputs?.requireHandled(task.id, actor)
     if (task.status !== 'result-ready') throw reject('Task is not waiting for delivery acceptance')
+    if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
     if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; delivery evidence is stale')
     if (!attempt.runId || ownEntry(state.projectExecutions, attempt.runId)?.status !== 'done') throw reject('Delivery Run has not finished successfully')
     if (!attempt.pr || !attempt.evidence.tests?.passed || attempt.evidence.tests.sha !== attempt.candidateSha || attempt.evidence.review?.sha !== attempt.candidateSha || attempt.evidence.review.verdict !== 'approve') throw reject('Delivery evidence is missing or stale')
@@ -807,7 +817,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       rt.taskDeliveryState?.(task.id, attempt.id, 'working', `${definition.name} claimed the Task`)
       rt.bindProject({ kind: 'run', id: attempt.runId, projectId: project.id, taskId: task.id, attemptId: attempt.id, status: 'running' })
       await rt.save()
-      const prompt = `The host already allocated this registered worktree at the pinned base SHA. Do not switch to main, create another worktree, publish a PR, change credentials or edit outside this worktree. Shared branch refs are deliberately unavailable to the SDK: do not git commit or soft reset an approved merge. Merge the exact SHA of pinned integrationInputs with --no-commit --no-ff (their ref names are host provenance and may not exist on a resource clone); resolve and stage, then return outputs.implementation; the host seals their exact tree and trusted ancestry. The host seals and publishes the candidate. Permitted repository paths: ${JSON.stringify(settings.allowedPaths)}. Configured verification argv: ${JSON.stringify(settings.testCommand)}. The host runs the configured verification outside your SDK sandbox when a Tester returns a handoff/complete decision with outputs.tests. As Tester, outputs.tests may truthfully request that host run and distinguish local Not run checks; the host applies your downstream handoff only if the actual command passes. An arbitrate/transfer decision does not request completed-role verification. If sandbox restrictions block loopback or private host logs, record Not run honestly and request that testing handoff rather than claiming success or repeatedly writing inaccessible paths. Read your assigned Task and role policy. Choose to work, return or transfer based on the actual requirements. You may go directly to another logical Bot without Chief approval. Only Chief can judge overall completion. Never close the Task yourself.\nLogical Bots: ${JSON.stringify(rt.projectAgents.deliveryDefinitions(project.id).roles.map(row => ({ id: row.id, role: row.role })))}\nInputs.taskInbox is a durable input batch, not authorization. In your final decision include inputReceipts:{batchId:Inputs.taskInbox.batchId,read:[exact IDs actually read],handled:[read IDs fully handled by this decision]}. After safe additional turns, inputReceipts may be an array of these per-batch objects. Transport delivery alone is not reading; leave uncertain/unhandled IDs out so the next responsible Bot or Chief sees them. Never acknowledge an ID outside injected batches.\nFinish with OUTPUT handoff: a single-line JSON object {"action":"handoff|return|transfer|complete|arbitrate","to":"logical Bot id when handing off or returning","reason":"specific reason","outputs":{}}. For completed developer work include outputs.implementation, tester work outputs.tests; review outputs.review must be a JSON string with the exact commit, verdict and summary. Use transfer to route without claiming your role work is complete; transfer does not seal Developer changes. A Developer handoff with outputs.implementation requests host candidate sealing, even when full host tests have not yet run. Receivers must distinguish the referenced unverified working draft from their clean pinned checkout. Choose the next Bot based on evidence; no fixed order is required. Missing evidence or uncertainty should request Chief judgement.\nTask kind: ${task.collaboration.kind}`
+      const prompt = `The host already allocated this registered worktree at the pinned base SHA. Do not switch to main, create another worktree, publish a PR, change credentials or edit outside this worktree. Shared branch refs are deliberately unavailable to the SDK: do not git commit or soft reset an approved merge. Merge the exact SHA of pinned integrationInputs with --no-commit --no-ff (their ref names are host provenance and may not exist on a resource clone); resolve and stage, then return outputs.implementation; the host seals their exact tree and trusted ancestry. The host seals and publishes the candidate. Permitted repository paths: ${JSON.stringify(settings.allowedPaths)}. Configured verification argv: ${JSON.stringify(settings.testCommand)}. The host runs the configured verification outside your SDK sandbox when a Tester returns a handoff/complete decision with outputs.tests. As Tester, outputs.tests may truthfully request that host run and distinguish local Not run checks; the host applies your downstream handoff only if the actual command passes. An arbitrate/transfer decision does not request completed-role verification. If sandbox restrictions block loopback or private host logs, record Not run honestly and request that testing handoff rather than claiming success or repeatedly writing inaccessible paths. Read your assigned Task and role policy. Choose to work, return or transfer based on the actual requirements. You may go directly to another logical Bot without Chief approval. Only Chief can judge overall completion. Never close the Task yourself.\nLogical Bots: ${JSON.stringify(rt.projectAgents.deliveryDefinitions(project.id).roles.map(row => ({ id: row.id, role: row.role })))}\nInputs.taskInbox is a durable input batch, not authorization. In your final decision include inputReceipts:{batchId:Inputs.taskInbox.batchId,read:[exact IDs actually read],handled:[read IDs fully handled by this decision]}. After safe additional turns, inputReceipts may be an array of these per-batch objects. Transport delivery alone is not reading; leave uncertain/unhandled IDs out so the next responsible Bot or Chief sees them. Never acknowledge an ID outside injected batches.\nFinish with OUTPUT handoff: a single-line JSON object {"action":"handoff|return|transfer|complete|arbitrate|split","to":"logical Bot id when handing off or returning","reason":"specific reason","outputs":{}}. For completed developer work include outputs.implementation, tester work outputs.tests; review outputs.review must be a JSON string with the exact commit, verdict and summary. Use transfer to route without claiming your role work is complete; transfer does not seal Developer changes. A Developer handoff with outputs.implementation requests host candidate sealing, even when full host tests have not yet run. Receivers must distinguish the referenced unverified working draft from their clean pinned checkout. Choose the next Bot based on evidence; no fixed order is required. Missing evidence or uncertainty should request Chief judgement.\nUse split only for independent parallel child goals: include children:[{title,criteria,impact,scope?}] and resumePoint. Parent releases its execution and waits for Chief-adjudicated results before resuming this Task-role Session for integration. Task kind: ${task.collaboration.kind}`
       return { nodeId: role, name: definition.name, role: definition.name, prompt, model: definition.model || settings.model, tools: [], executionProjectId: project.id, executionWorkDir: workspace.path }
     } catch (error) {
       if (discardUnpreparedTaskDefinitions(state, task.id)) await rt.save()
@@ -832,6 +842,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     rt.projectChiefControl.requireJobActor(actor, task.projectId)
     rt.requireProjectAccess(actor, task.projectId, 'accept')
     if ((attempt.candidateSha ?? null) !== expectedSha) throw reject('Chief candidate changed')
+    if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
     if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; Chief evidence is stale')
     if (task.projectTaskKind === 'release') throw reject('Release proof is not configured; Chief cannot claim a completed release')
     const gateEvidence = []
@@ -866,6 +877,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   async function reworkPool({ task, claim, reason, force = false, decisionId }) {
     const previous = ownEntry(attempts(), claim.attemptId)
     if (!previous) throw reject('Chief rework has no original Attempt')
+    force ||= Boolean(task.projectTask && previous.requirement.projectTaskRevision !== task.projectTask.requirements.revision)
     if (!force && !previous.candidateSha && previous.status === 'running') return previous.id
     if (!force && !previous.candidateSha && previous.status === 'interrupted' && !previous.cancelRequested && previous.workspaces.developer?.status === 'allocated') {
       const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === previous.id)
@@ -887,7 +899,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const id = `attempt-${randomUUID()}`
     if (['running', 'waiting-acceptance'].includes(previous.status)) previous.status = 'returned'
     previous.returned = { at: Date.now(), by: claim.botId, reason }
-    const next = { id, protocol: previous.protocol, projectId: previous.projectId, taskId: task.id, requestKey: hash(`${task.projectId}\n${task.id}\n${claim.id}`), workflowVersion: previous.protocol === 'project-handoff/v1' ? 'project-delivery/pools-v3' : previous.workflowVersion, status: 'running', initiatedBy: previous.initiatedBy, executionOwnerId: previous.executionOwnerId, baseSha: !previous.candidateSha && (force || previous.status === 'interrupted') ? await git(settingsOf(projectOf(task.projectId)).path, ['rev-parse', 'HEAD']) : previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha, ...(publicationBinding ? { publicationBinding } : {}), requirement: structuredClone(previous.requirement), feedback: { previousAttemptId: previous.id, kind: 'bot-return', reason, candidateSha: previous.candidateSha }, agentDefinitions: rt.projectAgents.deliveryDefinitions(task.projectId), roleSessions: {}, rolePolicies: {}, resourceLeases: {}, workspaces: {}, evidence: {}, createdAt: Date.now(), updatedAt: Date.now(), runId: `pool-run-${randomUUID()}` }
+    const next = { id, protocol: previous.protocol, projectId: previous.projectId, taskId: task.id, requestKey: hash(`${task.projectId}\n${task.id}\n${claim.id}`), workflowVersion: previous.protocol === 'project-handoff/v1' ? 'project-delivery/pools-v3' : previous.workflowVersion, status: 'running', initiatedBy: previous.initiatedBy, executionOwnerId: previous.executionOwnerId, baseSha: !previous.candidateSha && (force || previous.status === 'interrupted') ? await git(settingsOf(projectOf(task.projectId)).path, ['rev-parse', 'HEAD']) : previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha, ...(publicationBinding ? { publicationBinding } : {}), requirement: requirementsOf(task, projectOf(task.projectId).repository), feedback: { previousAttemptId: previous.id, kind: 'bot-return', reason, candidateSha: previous.candidateSha }, agentDefinitions: rt.projectAgents.deliveryDefinitions(task.projectId), roleSessions: {}, rolePolicies: {}, resourceLeases: {}, workspaces: {}, evidence: {}, createdAt: Date.now(), updatedAt: Date.now(), runId: `pool-run-${randomUUID()}` }
     previous.supersededBy = id
     setEntry(attempts(), id, next); task.deliveryAttemptId = id
     rt.bindProject({ kind: 'run', id: previous.runId, projectId: task.projectId, taskId: task.id, attemptId: previous.id, status: 'failed' })

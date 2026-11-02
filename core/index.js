@@ -16,6 +16,7 @@ import * as projectChiefControl from './src/host/project-chief-control.js'
 import * as projectScheduledTasks from './src/host/project-scheduled-tasks.js'
 import * as projectDelegations from './src/host/project-delegations.js'
 import * as projectGithubRead from './src/host/project-github-read.js'
+import * as projectTaskLifecycle from './src/host/project-task-lifecycle.js'
 import * as projectPools from './src/host/project-pools.js'
 import * as projectScheduler from './src/host/project-scheduler.js'
 import * as workbenchState from './src/host/workbench-state.js'
@@ -82,7 +83,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, projectEffects, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
+const MODULES = [diagnostics, store, projectEffects, projectTaskLifecycle, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

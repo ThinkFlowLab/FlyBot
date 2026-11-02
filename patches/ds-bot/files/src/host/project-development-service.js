@@ -13,7 +13,7 @@ const roles = new Set(['chief', 'developer', 'tester', 'reviewer'])
 const operations = Object.freeze({
   'consultation.reply': 'project-consultation-reply', 'consultation.ask': 'project-consultation-ask', 'consultation.get': 'project-consultation-get', 'consultation.list': 'project-consultation-list',
   'handoff.get': 'project-handoff-get', 'handoff.list': 'project-handoff-list',
-  'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
+  'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
   'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
   'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
@@ -50,6 +50,8 @@ export function taskView(state, task, { activity = {} } = {}) {
   else if (task.status === 'cancelled' || c?.status === 'cancelled' || attempt?.status === 'cancelled') phase = 'cancelled'
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
+  else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = 'awaiting-chief'; waitingFor = 'admission' }
+  else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
   else if (queue) { phase = queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
@@ -59,6 +61,7 @@ export function taskView(state, task, { activity = {} } = {}) {
     else if (claim?.status === 'active' && (sdk?.status === 'running' || !sdk && nativeActive)) phase = 'running'
     else { phase = 'starting'; waitingFor = 'execution' }
   }
+  else if (task.projectTask?.block && task.status === 'blocked') { phase = 'blocked'; waitingFor = 'chief'; reason = task.projectTask.block.reason }
   else if (attempt?.status === 'waiting-acceptance') { phase = 'awaiting-acceptance'; waitingFor = 'owner' }
   else if (['failed', 'interrupted'].includes(attempt?.status) || task.status === 'failed') { phase = 'failed'; reason = attempt?.failure?.message ?? null }
   else if (run?.status === 'paused') { phase = 'paused'; waitingFor = 'owner' }
@@ -73,6 +76,7 @@ export function taskView(state, task, { activity = {} } = {}) {
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, publication: 'published', phase, waitingFor, reason,
     botId: c?.botId ?? null, currentRole, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
+    contract: task.projectTask ? structuredClone(task.projectTask) : null,
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
@@ -157,6 +161,7 @@ export function createDevelopmentService(rt) {
     if (endpoint === 'project-task-input') return rt.projectInputs.publish(body, actor)
     if (endpoint === 'project-github-comment') return rt.projectCredentials.endpoint(endpoint, body, actor)
     if (endpoint === 'project-effect-retry') return rt.projectEffects.retry(body, actor)
+    if (endpoint === 'project-task-change-request') return rt.projectTaskLifecycle.requestChange(body, actor)
     if (endpoint === 'project-task-run') return rt.projectScheduler.request(body, actor)
     if (endpoint === 'project-queue-cancel') return rt.projectScheduler.cancel(body, actor)
     if (endpoint === 'project-queue-retry') return rt.projectScheduler.retry(body, actor)
@@ -229,7 +234,7 @@ export function createDevelopmentService(rt) {
     // Trusted host ports. Public HTTP never accepts role tokens or model results.
     roleResult: row => rt.projectPools.result(row),
     roleCommand(body) {
-      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate', 'handoff.accept', 'handoff.offer', 'role.memory.record'].includes(body.name)) throw failure('Unsupported role command')
+      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate', 'handoff.accept', 'handoff.offer', 'role.memory.record', 'split'].includes(body.name)) throw failure('Unsupported role command')
       if (body.name === 'role.memory.record') return rt.projectPools.remember(body.taskId, body.claim, { ...body.payload, requestId: body.requestId })
       if (body.name === 'handoff.accept') return rt.projectPools.accept(body.taskId, body.botId, body.handoffId, body.requestId)
       if (body.name === 'handoff.offer') return rt.projectPools.decide(body.taskId, body.claim, { ...body.payload, requestId: body.requestId })

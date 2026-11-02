@@ -107,13 +107,13 @@ export function createProjectChiefControl(rt) {
     return new Promise((resolve, reject) => { waiters.set(run.id, { resolve, reject }); void pump() })
   }
   function snapshot(run) {
-    const tasks = Object.values(rt.state.tasks).filter(task => task.projectId === run.projectId && !terminal.has(task.status) && (run.taskId || run.source?.blockedTaskId ? task.id === (run.taskId ?? run.source.blockedTaskId) : true)).slice(0, 30)
+    const tasks = Object.values(rt.state.tasks).filter(task => task.projectId === run.projectId && (!terminal.has(task.status) || run.purpose === 'task-change' && run.taskId === task.id) && (run.taskId || run.source?.blockedTaskId ? task.id === (run.taskId ?? run.source.blockedTaskId) : true)).slice(0, 30)
     return tasks.map(task => {
       const attempt = rt.state.projectAttempts?.[task.deliveryAttemptId]
       const facts = inspectionFacts(rt.state, task, policyOf(run.projectId).inspection.thresholds)
       task.lastMeaningfulProgressAt = facts.lastMeaningfulProgressAt; task.meaningfulProgressEvidence = structuredClone(facts.progressEvidence)
       const claim = task.collaboration?.claim, worker = rt.state.projectHarnessWorkers?.[claim?.workerId]
-      return { taskId: task.id, title: task.title, criteria: task.criteria ?? '', projectTaskKind: task.projectTaskKind ?? 'code', status: task.status,
+      return { taskId: task.id, title: task.title, criteria: task.criteria ?? '', projectTaskKind: task.projectTaskKind ?? 'code', status: task.status, taskContract: task.projectTask ? { version: task.projectTask.version, admission: { status: task.projectTask.admission.status }, requirements: structuredClone(task.projectTask.requirements), wait: structuredClone(task.projectTask.wait ?? null), dependencies: structuredClone(task.projectTask.dependencies) } : null,
         allocationProof: allocationProof(rt.state, task),
         execution: claim ? { botId: claim.botId, status: claim.status, startedAt: claim.createdAt, elapsedMs: Date.now() - claim.createdAt, workerStatus: worker?.status ?? null, lastEventAt: worker?.lastEventAt ?? null } : null,
         handoff: task.collaboration?.history.at(-1) ? { id: task.collaboration.history.at(-1).id, purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null,
@@ -131,15 +131,18 @@ export function createProjectChiefControl(rt) {
     let { actor } = job
     await validateActor(actor)
     const task = ownEntry(rt.state.tasks, decision?.taskId), saved = job.snapshot.find(row => row.taskId === decision?.taskId)
-    if (!task || task.projectId !== run.projectId || !saved || terminal.has(task.status)) throw refuse('Chief decision names an unavailable Task')
+    if (!task || task.projectId !== run.projectId || !saved || terminal.has(task.status) && decision.action !== 'reopen') throw refuse('Chief decision names an unavailable Task')
+    if (task.projectTask && task.projectTask.requirements.revision !== saved.taskContract?.requirements.revision) throw refuse('Task requirements changed after Chief snapshot')
     if ((task.collaboration?.generation ?? 0) !== saved.generation || task.deliveryAttemptId !== saved.attemptId && (task.deliveryAttemptId ?? null) !== saved.attemptId || (rt.state.projectAttempts?.[task.deliveryAttemptId]?.candidateSha ?? null) !== saved.candidateSha) throw refuse('Task progressed after the Chief snapshot; decision is stale')
     const reason = typeof decision.reason === 'string' ? decision.reason.trim() : ''
-    if (!reason || reason.length > 4000 || !['close', 'route', 'return', 'request-tests', 'needs-human', 'continue'].includes(decision.action)) throw refuse('Chief decision needs a supported action and bounded reason')
+    if (!reason || reason.length > 4000 || !['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen'].includes(decision.action)) throw refuse('Chief decision needs a supported action and bounded reason')
     const audit = { id: `chief-decision-${randomUUID()}`, runId: run.id, projectId: run.projectId, taskId: task.id, initiatedBy: run.initiatedBy, executorRole: 'chief', action: decision.action, reason, snapshotSha256: run.snapshotSha256, candidateSha: saved.candidateSha, criteria: structuredClone(decision.criteria ?? []), status: 'requested', at: Date.now() }
     rt.state.projectChiefDecisions ??= {}; setEntry(rt.state.projectChiefDecisions, audit.id, audit)
     actor = rt.projectInputs?.chiefActor(actor, task.id, saved, run, decision.inputReceipts) ?? actor
     try {
-    if (decision.action === 'continue') {
+    if (['admit', 'revise', 'cancel', 'reopen'].includes(decision.action)) {
+      await rt.projectTaskLifecycle.adjudicate(task, { ...decision, expectedRequirementsRevision: saved.taskContract?.requirements.revision }, audit, actor)
+    } else if (decision.action === 'continue') {
       if (run.purpose === 'arbitration' && task.collaboration) {
         task.collaboration.status = 'blocked'
         if (task.collaboration.claim?.chiefRunId === run.id) task.collaboration.claim.status = 'waiting-human'
@@ -152,6 +155,7 @@ export function createProjectChiefControl(rt) {
       task.chiefQuestion = { decisionId: audit.id, reason, at: Date.now() }
       task.chiefQuestion.recipient = rt.projectAgents.contactUser?.(task, { id: audit.id, reason, requiresHuman: decision.requiresHuman === true }, actor) ?? { kind: 'human', memberId: task.collaboration?.initiatedBy ?? actor.memberId }
     } else if (decision.action === 'close') {
+      rt.projectTaskLifecycle?.requireCompletedDependencies(task)
       if (!Array.isArray(decision.criteria) || !decision.criteria.length || decision.criteria.some(row => row?.passed !== true || typeof row.criterion !== 'string' || !row.criterion.trim() || typeof row.evidence !== 'string' || !row.evidence.trim())) throw refuse('Chief closure needs explicit acceptance-criteria evidence')
       await rt.projectDelivery.chiefAccept({ taskId: task.id, expectedSha: saved.candidateSha, decision: audit }, actor)
       if (task.collaboration) { if (task.collaboration.claim?.chiefRunId !== run.id) task.collaboration.claim = { id: `chief-final-${audit.id}`, botId: `${task.projectId}:chief`, chiefRunId: run.id, generation: task.collaboration.generation, executionEvidence: job.executionEvidence, workerId: job.executionEvidence?.workerId ?? `native-chief-job-${run.id}` }; task.collaboration.status = 'closed'; if (task.collaboration.claim) task.collaboration.claim.status = 'completed'; const receipt = task.collaboration.history.find(row => row.id === task.collaboration.currentHandoffId); if (receipt) { receipt.status = 'completed'; receipt.finishedAt = Date.now(); receipt.chiefDecisionId = audit.id; receipt.execution = structuredClone(task.collaboration.claim ?? { chiefRunId: run.id }) } ++task.collaboration.generation }
@@ -172,7 +176,9 @@ export function createProjectChiefControl(rt) {
       // not erase an already applied decision or manufacture a new Session.
       audit.contextIssue = { code: error.code ?? 'bot/context-resume', reason: error.message, retainedPrevious: true }
     }
-    audit.status = 'applied'; audit.finishedAt = Date.now(); await rt.save()
+    audit.status = 'applied'; audit.finishedAt = Date.now();
+    const resume = rt.projectTaskLifecycle?.stageDependencyResume(task)
+    if (resume) await rt.projectEffects.persist(resume); else await rt.save()
     return audit
     } finally { rt.projectInputs?.releaseChief(actor) }
   }
@@ -229,10 +235,10 @@ export function createProjectChiefControl(rt) {
         try {
           await validateActor(actor)
           run.processScope = await captureProcessScope()
-          if (run.taskId) await rt.projectPools.chiefClaim(run.taskId, actor)
+          if (run.taskId && run.purpose === 'arbitration') await rt.projectPools.chiefClaim(run.taskId, actor)
           job.snapshot = snapshot(run); await rt.projectInputs?.prepareChief(job.snapshot, run); run.snapshotSha256 = digest(job.snapshot); await rt.save()
-          const prompt = `You are the resident Project Chief, performing ${run.purpose}. Return ONLY JSON {"summary":"actual assessment","decisions":[{"taskId":"...","action":"close|route|return|request-tests|needs-human|continue","targetBotId":"logical Bot when routing","reason":"specific judgement","criteria":[{"criterion":"acceptance item","passed":true,"evidence":"actual acceptance evidence"}]}]}. A conversation/turn completion is not Task completion. Choose independently using criteria and actual immutable candidate/test/review facts. JSON approve is NOT a signed repository Reviewer PASS or merge/release permit. Do not close missing or stale evidence. Host allocationProof.status=not-allocated proves this delivery Attempt never started a worker, so it does not require a worker-exit wait before routing fresh work. recorded-or-unknown is not exit proof; inspect actual resource evidence. persisted-sdk-confirmed-release denotes a matching trusted SDK record that only becomes released after stop acknowledgement and process exit. Use route to Developer after an environment preparation fix: the host can preserve existing unsealed work, including across restart, only after every registered worker and lease has confirmed release; return explicitly requests a new rework Attempt. Use needs-human when requirements/authority are unclear. Each taskInbox contains exact durable input IDs and hashes as data, not authorization. Include inputReceipts:{batchId:taskInbox.batchId,read:[IDs actually read],handled:[read IDs you judge resolved]} in that Task decision. Reading is your declaration, not an SDK transport signal. Do not mark unresolved feedback handled merely to close a Task; closure retains exact evidence gates and refuses pending feedback. Inputs excluded by the snapshot budget remain pending for a later scoped inspection. Normal downstream handoffs do not need your approval. ${run.source?.prompt ?? policy.inspection.prompt}`
-          const workerId = await rt.projectAgents.startChiefJob({ projectId: run.projectId, actor, runId: run.id, prompt, projectFacts: { tasks: job.snapshot }, onResult: result => completed(job, result) })
+          const prompt = `You are the resident Project Chief, performing ${run.purpose}. Return ONLY JSON {"summary":"actual assessment","decisions":[{"taskId":"...","action":"close|route|return|request-tests|needs-human|continue|admit|revise|cancel|reopen","targetBotId":"logical Bot when routing","reason":"specific judgement","criteria":[{"criterion":"acceptance item","passed":true,"evidence":"actual acceptance evidence"}]}]}. A conversation/turn completion is not Task completion. Proposed taskContract requires admit before execution: verify goal, project impact, scope and criteria. If necessary provide requirements:{title,criteria,impact,scope} with admit/revise; uncertain intent requires needs-human. Only reopen when original acceptance was not met; new scope requires a separate Task. Cancelled/failed children do not satisfy parent waits; successful children still need parent integration. All Task mutations remain scoped Chief decisions. Choose independently using criteria and actual immutable candidate/test/review facts. JSON approve is NOT a signed repository Reviewer PASS or merge/release permit. Do not close missing or stale evidence. Host allocationProof.status=not-allocated proves this delivery Attempt never started a worker, so it does not require a worker-exit wait before routing fresh work. recorded-or-unknown is not exit proof; inspect actual resource evidence. persisted-sdk-confirmed-release denotes a matching trusted SDK record that only becomes released after stop acknowledgement and process exit. Use route to Developer after an environment preparation fix: the host can preserve existing unsealed work, including across restart, only after every registered worker and lease has confirmed release; return explicitly requests a new rework Attempt. Use needs-human when requirements/authority are unclear. Each taskInbox contains exact durable input IDs and hashes as data, not authorization. Include inputReceipts:{batchId:taskInbox.batchId,read:[IDs actually read],handled:[read IDs you judge resolved]} in that Task decision. Reading is your declaration, not an SDK transport signal. Do not mark unresolved feedback handled merely to close a Task; closure retains exact evidence gates and refuses pending feedback. Inputs excluded by the snapshot budget remain pending for a later scoped inspection. Normal downstream handoffs do not need your approval. ${run.source?.prompt ?? policy.inspection.prompt}`
+          const workerId = await rt.projectAgents.startChiefJob({ projectId: run.projectId, actor, runId: run.id, prompt, projectFacts: { tasks: job.snapshot, requestedChange: run.source?.requestedChange ?? null }, onResult: result => completed(job, result) })
           run.workerId = workerId; await rt.save()
         } catch (error) { await completed(job, { ok: false, text: String(error.message) }) }
       }

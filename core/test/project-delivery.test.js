@@ -15,7 +15,7 @@ import { createWorkflowService } from '../../plugins/workflow/src/service.js'
 const alice = { memberId: 'owner-1' }
 const bob = { memberId: 'bob' }
 const git = (path, args) => execFileSync('git', args, { cwd: path, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-async function setup(t, testCommand = [process.execPath, '--test', 'code.test.mjs'], { sdkContract = false, pool = false } = {}) {
+async function setup(t, testCommand = [process.execPath, '--test', 'code.test.mjs'], { sdkContract = false, pool = false, modern = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'flybot-delivery-'))
   const home = join(directory, 'home')
   const repository = join(directory, 'repo')
@@ -28,7 +28,7 @@ async function setup(t, testCommand = [process.execPath, '--test', 'code.test.mj
   git(repository, ['add', '.']); git(repository, ['commit', '-m', 'Fixture base'])
   writeFileSync(join(home, 'state.json'), JSON.stringify({ version: 2, members: { 'owner-1': { id: 'owner-1' }, bob: { id: 'bob' } },
     bots: { a: { id: 'a', ownerId: 'owner-1', name: 'Chief', role: 'Chief', sessionId: 'a', projectId: 'p1' } }, mainBotIds: ['a'],
-    projects: { p1: { id: 'p1', name: 'Code', status: 'active', ownerUserId: 'owner-1', repository: 'example/demo', defaultBranch: 'main', roles: { members: ['bob'], maintainers: [] }, createdAt: 1, updatedAt: 1 } }, tasks: {}, rooms: {}, projectRuns: {} }))
+    projects: { p1: { id: 'p1', name: 'Code', status: 'active', ownerUserId: 'owner-1', repository: 'example/demo', defaultBranch: 'main', roles: { members: ['bob'], maintainers: [] }, createdAt: 1, updatedAt: 1 } }, tasks: modern ? {} : { 'legacy-code-task': { id: 'legacy-code-task', projectId: 'p1', ownerBotId: 'a', requesterId: 'bob', title: 'Fix addition', criteria: 'add(2,3) must equal 5', status: 'open', actors: [], createdAt: 1, updatedAt: 1 } }, rooms: {}, projectRuns: {} }))
   const ctx = fakeContext()
   Object.assign(ctx, { llm: { listProviders: () => [], listModels: async () => [] }, workspaceRegistry: { get: () => undefined, archiveSession: async () => {} },
     sessionController: { resolveAgent: async () => ({ agent: undefined }) }, sessions: { flush: async () => {} } })
@@ -50,7 +50,9 @@ async function setup(t, testCommand = [process.execPath, '--test', 'code.test.mj
   ctx.effect(() => () => workflow.dispose(), 'test workflow')
   }
   t.after(async () => { await ctx.dispose(); rmSync(directory, { recursive: true, force: true, maxRetries: 5 }) })
-  const task = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Fix addition', criteria: 'add(2,3) must equal 5' }, bob)
+  // Existing delivery regressions exercise persisted pre-contract Tasks, including legacy human acceptance.
+  // New admission semantics are covered with modern:true and the Chief/pool contract suites.
+  const task = modern ? await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Fix addition', criteria: 'add(2,3) must equal 5', impact: 'Repair Project arithmetic' }, bob) : rt.state.tasks['legacy-code-task']
   const start = requestId => rt.projectEndpoint('project-task-run', { taskId: task.id, requestId }, bob)
   const attempt = () => Object.values(rt.state.projectAttempts).at(-1)
   const gate = (role, outputs = {}) => rt.projectDelivery.gate({ taskId: task.id, workflowId: attempt().workflowId, runId: attempt().runId, nodeId: role, outputs })
@@ -167,7 +169,9 @@ test('cleanup refuses paths outside its owned root and independent Task worktree
   const fixture = await setup(t)
   await fixture.start('request-1')
   const first = fixture.attempt()
-  const other = await fixture.rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Another request' }, bob)
+  const other = await fixture.rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Another request', criteria: 'Separate checkout remains unchanged', impact: 'Independent Project change' }, bob)
+  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
+  admitTask(fixture.rt.state.tasks[other.id], { id: 'other-admission', projectId: 'p1', taskId: other.id, executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Independent requirements checked' })
   await fixture.rt.projectEndpoint('project-task-run', { taskId: other.id, requestId: 'other-1' }, bob)
   const second = fixture.attempt()
   assert.notEqual(first.workspaces.developer.path, second.workspaces.developer.path)
@@ -1351,4 +1355,60 @@ test('Chief non-rework recovery retains a clean interrupted Attempt and its appr
   assert.deepEqual(a.integrationInputs,before.inputs);assert.deepEqual(a.integrationAdmissions,before.admissions)
   assert.equal(git(path,['rev-parse','HEAD']),before.head);assert.equal(git(path,['status','--porcelain']),before.status)
   assert.equal(Object.keys(f.rt.state.projectAttempts).length,1)
+})
+
+test('new Project Tasks wait for Chief admission and cannot run or lower requirements through old endpoints', async t => {
+  const f = await setup(t, undefined, { modern: true })
+  const proposed = await f.start('pending')
+  assert.equal(proposed.waitingFor, 'chief')
+  assert.equal(f.attempt(), undefined)
+  await f.rt.taskBotDeleted('a', 'Source carrier was replaced')
+  assert.equal(f.rt.state.tasks[f.task.id].status, 'open')
+  assert.equal(f.rt.state.tasks[f.task.id].projectTask.carrierNotice.botId, 'a')
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', { taskId: f.task.id, requestId: 'bypass' }, bob), /Chief admission/)
+  await assert.rejects(f.rt.taskEndpoint('task-update', { id: f.task.id, criteria: 'Skip regression tests' }, bob), /Chief confirmation/)
+  await assert.rejects(f.rt.taskEndpoint('task-update', { id: f.task.id, column: 'done' }, alice), /Chief/)
+  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
+  const row = f.rt.state.tasks[f.task.id]
+  // Trusted pure decision fixture; actual Chief actor validation is covered in its callback suite.
+  admitTask(row, { id: 'admit-fixture', projectId: 'p1', taskId: row.id, executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Goal, impact and acceptance checked' })
+  const started = await f.start('accepted')
+  assert.equal(started.attempt.status, 'running')
+  await complete(f)
+  await assert.rejects(f.rt.projectEndpoint('project-task-accept', { attemptId: f.attempt().id }, alice), /Chief/)
+})
+
+test('changing only Project Task scope invalidates an Attempt acceptance snapshot', async t => {
+  const f = await setup(t, undefined, { modern: true })
+  const { admitTask, reviseTask } = await import('../src/host/project-task-lifecycle.js')
+  const task = f.rt.state.tasks[f.task.id]
+  const decision = { id: 'admitted', taskId: task.id, projectId: 'p1', executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Explicit requirements checked' }
+  admitTask(task, decision)
+  await f.start('versioned-requirements')
+  assert.equal(f.attempt().requirement.projectTaskRevision, 1)
+  reviseTask(task, { scope: 'Also include the negative-input path' }, { ...decision, id: 'revised-scope' })
+  assert.equal(task.criteria, f.attempt().requirement.criteria, 'Only scope changed; title/criteria comparisons are insufficient')
+  f.rt.projectChiefControl.requireJobActor = () => {} // Isolate evidence versioning; real Chief authorization has its own callback suite.
+  await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: task.id, expectedSha: null, decision }, { ...alice, chiefJobId: 'chief-fixture' }), /requirements version/i)
+  assert.notEqual(task.status, 'accepted')
+  const previous = f.attempt()
+  const nextId = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'rework', attemptId: previous.id, botId: 'p1:chief' }, reason: 'Implement the Chief-confirmed scope increment' })
+  assert.notEqual(nextId, previous.id)
+  assert.equal(f.rt.state.projectAttempts[nextId].requirement.projectTaskRevision, 2)
+  assert.equal(previous.requirement.projectTaskRevision, 1, 'Old evidence retains its original requirement version')
+})
+
+test('a failed Project Attempt blocks its Task without cancelling or closing the action commitment', async t => {
+  const f = await setup(t, [process.execPath, '-e', 'process.exit(9)'], { modern: true })
+  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
+  const task = f.rt.state.tasks[f.task.id]
+  admitTask(task, { id: 'admitted', taskId: task.id, projectId: 'p1', executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Requirements checked' })
+  await f.start('failed-attempt')
+  await implement(f)
+  await assert.rejects(f.gate('tester'), /tests failed/)
+  assert.equal(f.attempt().status, 'failed')
+  assert.equal(task.status, 'blocked')
+  assert.equal(task.projectTask.block.attemptId, f.attempt().id)
+  assert.equal(task.projectTask.admission.status, 'accepted')
+  assert.equal(task.completedBy, undefined)
 })

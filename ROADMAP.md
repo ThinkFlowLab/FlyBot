@@ -449,3 +449,9 @@ restore2184 and normalized SQL storage2182 remain separate acceptance; real SDK
 verification must name exact runtime source hashes, not borrow deterministic tests.
 
 #2177 follow-up: validate two sequential native Chief jobs against fresh per-turn facts while retaining the same resident Session; dependent Task admission runtime acceptance remains #2179.
+
+### 2026-11-03 — Project Task contract (#2179)
+
+New shared Tasks have Chief admission and versioned requirements. Existing Task/pool/Effects records carry independent child proposals, a released parent wait and one stable resume Handoff; child failure/cancellation never satisfies a wait. Original parent role context and workspaces are retained. Raw legacy board transitions cannot bypass the new contract, while persisted pre-contract Tasks keep their original semantics. Chief callback, rollback, exit and duplicate-resume tests are distinct from real-provider full child integration acceptance; native restore2184, storage2182 and public event/receipt2185 dependencies remain open. README simplification2189 remains last.
+
+#2179 retains legacy Workflow delivery compatibility while requiring Chief admission for new Tasks on either path. Chief runtime quota is independent of execution slots; waiting parent lease state remains authoritative. Full real-provider child integration and native physical restoration are still dependency acceptance, not implied by deterministic runtime tests.

@@ -177,3 +177,7 @@ Load migration also relates legacy private Project agents to independent user id
 ## Scoped connection integration
 
 Authenticated internal/external personal agents can suggest closure as their current member without gaining Owner confirmation rights. Suggestions record the stable personalAgentId; safe native private agents use a scoped suggestion tool. This addresses the proxy-suggestion integration from #2171; role proposal/approval remains pending.
+
+## Project Task lifecycle convergence (#2179)
+
+New Project Task cancellation follows Chief adjudication; old task-cancel cannot erase the Task commitment. Repository unlink and Owner double-check Project closure retain the same historical Task references, with unfinished work recorded rather than imposing a Task-clearing closure prerequisite.

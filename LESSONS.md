@@ -654,3 +654,11 @@ retain actual exit/lease checks and every other claim. A regression reproduces t
 old active label and verifies Task/Attempt/generation and blocked state survive.
 
 2026-11-03 Seen 1×: a resident native Session may retain its system definition after bot metadata changes. Put each current job protocol/facts in the actual turn input; keep prior context historical and preserve the Session. The explicit Task scope fence caught stale-job output during #2179 admission verification.
+
+### 2026-11-03 — A child result is neither parent completion nor integration
+
+Seen 1× while implementing #2179. Reusing old group aggregation would accept cancelled children and close the parent automatically. Project waits require Chief-adjudicated child outcomes and keep an explicit parent integration continuation. Releasing workers must also free the parent execution quota; an unknown lease still consumes it. Resuming the old claim must not manufacture a second source work-summary revision for the same completed execution.
+
+#2179 acceptance review: compare the complete requirements revision, not just title/criteria, before closing a candidate. A scope-only change still invalidates old evidence. A failed Attempt blocks the new Task commitment; it cannot silently become a terminal Task failure.
+
+#2179 policy-budget regression: active memory plus historical progress reports exceeded the existing complete-role-policy budget. Retain active invariants, archive dated candidate/run narratives with a source link, and preserve their full text. Do not raise the context ceiling, silently truncate required guidance, or reuse archived test counts as current evidence.

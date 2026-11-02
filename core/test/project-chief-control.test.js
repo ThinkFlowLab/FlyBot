@@ -36,13 +36,24 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture() {
+async function controlFixture({ modern = false } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
   const roles = ['chief', 'developer', 'tester', 'reviewer'].map(role => ({ id: `p:${role}`, role }))
   const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
   const control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
+  if (modern) {
+    const { createProjectEffects } = await import('../src/host/project-effects.js')
+    const { install: installLifecycle, createTaskContract } = await import('../src/host/project-task-lifecycle.js')
+    task.status = 'open'; task.requesterId = 'owner'; delete task.collaboration; delete task.deliveryAttemptId
+    createTaskContract(task, { impact: 'Repair the Project build' })
+    rt.projectEffects = createProjectEffects(rt)
+    rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture())
+    rt.projectScheduler = { wake() {}, request: async () => { ++accepted; return { admitted: true } } }
+    installLifecycle(rt)
+    await control.request('p', 'intake', { requirementRevision: 1 }, task.id)
+  }
   await control.pump()
   const result = overrides => ({ ok: true, text: JSON.stringify({ summary: 'Judgement', decisions: [{ taskId: 't', action: 'close', reason: 'Criteria met', criteria: [{ criterion: task.criteria, passed: true, evidence: 'Verified host facts' }], ...overrides }] }), executionEvidence: { kind: 'native-chief', chiefRunId: request.runId, carrierGeneration: 1, botId: 'chief', sessionId: 'chief' } })
   return { rt, task, control, request, result, accepted: () => accepted, revokeRole() { permitted = false } }
@@ -146,4 +157,35 @@ test('a needs-human decision records the personal-agent recipient without transf
   assert.equal(f.task.collaboration.status, 'blocked')
   assert.equal(f.task.collaboration.botId, 'p:chief')
   assert.equal(f.accepted(), 0)
+})
+
+test('actual Chief callback admits a new Task before the committed start effect can dispatch it', async () => {
+  const f = await controlFixture({ modern: true })
+  assert.equal(f.task.projectTask.admission.status, 'proposed')
+  assert.equal(f.accepted(), 0)
+  assert.equal(f.request.projectFacts.tasks[0].taskContract.requirements.impact, 'Repair the Project build')
+  await f.request.onResult(f.result({ action: 'admit', reason: 'Goal, impact, scope and criteria are clear' }))
+  assert.equal(f.task.projectTask.admission.status, 'accepted')
+  assert.equal(f.task.status, 'open')
+  assert.equal(f.accepted(), 0, 'admission itself does not run code before outbox dispatch')
+  await Promise.all([f.rt.projectEffects.drain(), f.rt.projectEffects.drain()])
+  assert.equal(f.accepted(), 1)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'done')
+  await f.rt.projectEffects.close()
+})
+
+test('Chief admission rejects changed requirements and revoked authority before queuing code', async () => {
+  const f = await controlFixture({ modern: true })
+  ++f.task.projectTask.requirements.revision
+  await f.request.onResult(f.result({ action: 'admit' }))
+  await f.rt.projectEffects.drain()
+  assert.equal(f.accepted(), 0)
+  assert.equal(f.task.projectTask.admission.status, 'proposed')
+  assert.match(f.rt.state.projectExecutions[f.request.runId].failure, /requirements changed/)
+  await f.rt.projectEffects.close()
+  const g = await controlFixture({ modern: true }); g.revokeRole()
+  await g.request.onResult(g.result({ action: 'admit' }))
+  await g.rt.projectEffects.drain()
+  assert.equal(g.accepted(), 0)
+  await g.rt.projectEffects.close()
 })

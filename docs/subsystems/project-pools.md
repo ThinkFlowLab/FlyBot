@@ -163,3 +163,7 @@ experience notes remain inference/unresolved/conflict and cannot overwrite human
 facts; bad optional notes record memoryIssue rather than cancelling valid work.
 Trusted role.memory.record uses the active claim and original Effects durability;
 it neither transfers initiative nor creates a Task. See [context](project-context.md).
+
+## Project Task lifecycle convergence (#2179)
+
+Project Tasks may split independent children after actual source exit, preserving their own work summary and waiting continuation. The released parent has no active claim. Chief-adjudicated dependency results create one stable children-completed Handoff back to the original role/Attempt. Pool serialization, receipt replay and source-exit fencing also apply to parent resume; child cancellation/failure is not success. See [Task lifecycle](project-task-lifecycle.md).

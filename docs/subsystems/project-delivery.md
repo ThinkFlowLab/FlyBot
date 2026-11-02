@@ -479,3 +479,11 @@ and current Task constraints, the role's own working summary, and bounded releva
 memory. Fixed persona/skills remain pinned; summary/memory data cannot alter rights.
 Task-role summary references and input-usage metadata survive returns. Native and
 SDK input preflights fail before inference if required input cannot fit.
+
+## Project Task lifecycle convergence (#2179)
+
+New Project Tasks require accepted Chief admission before allocation. New-contract completion rejects human acceptance before changing Attempt state; legacy persisted Tasks retain human acceptance. Parent split waits preserve the active Attempt/workspace and role binding for later integration. Child candidate references are not automatically approved integration sources or evidence that their code was merged.
+
+Attempts pin the complete Project requirements revision, including impact/scope. A scope-only change invalidates old completion evidence even if title and criteria are unchanged. Rework after a revision creates a successor with the new requirements snapshot, retaining the prior version and logical Task-role Session.
+
+A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.

@@ -162,3 +162,7 @@ the existing persistent public carrier. Summaries retain original Task constrain
 uncertainty and source evidence; later turns retrieve a bounded relevant subset.
 A summary failure records contextIssue and preserves the previous summary without
 erasing a decision already applied through the original gates. No new timer is added.
+
+## Project Task lifecycle convergence (#2179)
+
+Chief intake is separate from arbitration: only arbitration claims a Chief pool receipt. Snapshots include bounded current Task requirements, admission and child dependency references, and reject stale requirement revisions before mutation. Scoped admit/revise/cancel/reopen decisions use existing Effects and input notifications. Proposed work does not execute merely because a user published it.

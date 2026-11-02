@@ -187,3 +187,9 @@ Attempt views now include context budget/usage metadata without injecting full s
 archives into a default response. Trusted role.memory.record is an execution port,
 not a public command or permission. Its bounded experience remains unverified and
 scoped to the current claim. Detailed source/context reads retain existing auth.
+
+## Project Task lifecycle convergence (#2179)
+
+The task.change.request command submits revise/cancel/reopen suggestions for Chief judgement and returns applied:false plus the Chief run. Task views distinguish awaiting admission and waiting children. Split is a trusted role command, never a public role-token entry. See [Task lifecycle](project-task-lifecycle.md).
+
+A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.

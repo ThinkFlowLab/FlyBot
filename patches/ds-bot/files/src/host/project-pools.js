@@ -115,7 +115,7 @@ export function createProjectPools(rt) {
     row.predecessorId = c.currentHandoffId ?? null
     row.summary = summary ?? { completed: '', next: reason }
     if (sourceClaim) row.sourceExecution = clone(sourceClaim)
-    const workSummary = sourceClaim?.status === 'completed' && fromRole !== 'chief' ? stageRoleSummary(rt.state, { task, claim: sourceClaim, role: fromRole, summary: row.summary, receiptId: row.id }) : null
+    const workSummary = sourceClaim?.status === 'completed' && fromRole !== 'chief' && purpose !== 'children-completed' ? stageRoleSummary(rt.state, { task, claim: sourceClaim, role: fromRole, summary: row.summary, receiptId: row.id }) : null
     if (workSummary?.changed) row.workSummaryRef = clone(workSummary.logical.workSummaryRef)
     const learned = []
     if (experience !== undefined) {
@@ -165,6 +165,7 @@ export function createProjectPools(rt) {
   }
   async function admit(attempt, actor, { targetRole = 'developer', kind } = {}) {
     const task = taskOf(attempt.taskId)
+    rt.projectTaskLifecycle?.requireExecutable(task)
     if (kind && task.projectTaskKind && kind !== task.projectTaskKind) throw refuse('Task kind cannot change at execution admission')
     kind ??= task.projectTaskKind ?? 'code'
     rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
@@ -190,6 +191,7 @@ export function createProjectPools(rt) {
         return execution ? clone(execution) : { ...clone(prior.acceptance), id: prior.claimId, status: 'historical' }
       }
     }
+    rt.projectTaskLifecycle?.requireExecutable(task)
     if (!c || c.botId !== botId || c.status !== 'queued' || handoffId && c.currentHandoffId !== handoffId) return null
     await authority(task)
     const target = targetOf(task.projectId, botId), expectedGeneration = c.generation
@@ -226,15 +228,16 @@ export function createProjectPools(rt) {
       if (!prior.decision || prior.execution.status !== 'completed') throw refuse('Claim is stale or execution admission failed')
       await authority(task)
       if (prior.decision.intentHash !== intentHash(decision)) throw refuse('Execution decision idempotency key was reused with different content')
-      return clone(c.history.find(row => row.requestId === (decision.requestId ?? token.id)) ?? { status: 'blocked', reason: c.block?.reason })
+      return decision.action === 'split' && task.projectTask?.wait?.claimId === token.id ? { status: 'waiting-children', childTaskIds: task.projectTask.dependencies.map(row => row.taskId), wait: clone(task.projectTask.wait) } : clone(c.history.find(row => row.requestId === (decision.requestId ?? token.id)) ?? { status: 'blocked', reason: c.block?.reason })
     }
     const claim = await current(task, token)
     const action = decision?.action, reason = reasonOf(decision?.reason)
-    if (!['handoff', 'return', 'transfer', 'complete', 'arbitrate'].includes(action)) throw refuse('Bot must hand off, return, transfer or request Chief judgement')
+    if (!['handoff', 'return', 'transfer', 'complete', 'arbitrate', 'split'].includes(action)) throw refuse('Bot must hand off, return, transfer or request Chief judgement')
     const summary = { completed: decision.completed === undefined ? '' : reasonOf(decision.completed), next: decision.next === undefined ? reason : reasonOf(decision.next) }
     const role = targetOf(task.projectId, claim.botId).role
-    const next = ['complete', 'arbitrate'].includes(action) ? definitions(task.projectId).roles.find(row => row.role === 'chief') : targetOf(task.projectId, decision.to)
-    if (!next) throw refuse('Chief is not configured')
+    const children = action === 'split' ? rt.projectTaskLifecycle.prepareSplit(task, claim, decision) : null
+    const next = action === 'split' ? null : ['complete', 'arbitrate'].includes(action) ? definitions(task.projectId).roles.find(row => row.role === 'chief') : targetOf(task.projectId, decision.to)
+    if (!next && action !== 'split') throw refuse('Chief is not configured')
     // Stop confirmation precedes relinquishing the claim and capacity.
     if (claim.workerId) {
       if (!await adapter.release(claim.workerId)) throw refuse('Worker exit is unconfirmed; claim and capacity remain held')
@@ -252,6 +255,7 @@ export function createProjectPools(rt) {
     c.usage ??= {}; c.usage.ms = (c.usage.ms ?? 0) + Date.now() - claim.createdAt
     const usage = rt.state.projectHarnessWorkers?.[claim.workerId]?.usage
     c.usage.tokens = (c.usage.tokens ?? 0) + (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+    if (action === 'split') return rt.projectTaskLifecycle.commitSplit(task, claim, { ...decision, summary, role }, children)
     if (next.role === 'developer' && c.kind === 'code') c.attemptId = await adapter.rework?.({ task, claim, reason }) ?? c.attemptId
     try {
       return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation, summary, experience: decision.memory })
@@ -442,6 +446,23 @@ export function createProjectPools(rt) {
       c.status = 'blocked'; c.block = { reason: String(error.message), decisionId: body.decisionId, at: Date.now() }; await rt.save(); throw error
     }
   }
+  async function resumeChildren(taskId, waitId) {
+    const task = taskOf(taskId), c = task.collaboration, wait = task.projectTask?.wait
+    if (!wait || wait.id !== waitId) throw refuse('Parent continuation changed')
+    const requestId = `children-${wait.id}`
+    const prior = c.history.find(row => row.requestId === requestId)
+    if (prior) return clone(prior)
+    await authority(task)
+    if (c.status !== 'waiting-children' || c.claim?.id !== wait.claimId || c.claim.status !== 'completed' || c.claim.workerId && !c.claim.exitConfirmed) throw refuse('Parent continuation is not released')
+    const ready = rt.projectTaskLifecycle.ready(task)
+    if (!ready) throw new EffectDeferred('Child results are not yet adjudicated', { waitingFor: 'children' })
+    const previous = wait.status
+    wait.status = 'queued'
+    try {
+      return await offer(task, { from: wait.botId, to: wait.botId, reason: `Resume parent integration: ${wait.resumePoint}`, requestId, attemptId: c.attemptId, purpose: 'children-completed',
+        summary: { completed: 'Child results are available; integration and parent acceptance remain pending.', next: wait.resumePoint } })
+    } catch (error) { if (!c.history.some(row => row.requestId === requestId)) wait.status = previous; throw error }
+  }
   function recover() {
     if (recovered || rt.readOnly?.()) return false
     recovered = true
@@ -455,6 +476,8 @@ export function createProjectPools(rt) {
       const count = Object.keys(rt.state.projectEffects ?? {}).length
       for (const task of Object.values(rt.state.tasks)) {
         const c = task.collaboration
+        if (task.projectTask?.admission.status !== 'accepted' && task.projectTask && !['accepted', 'cancelled'].includes(task.status)) rt.projectTaskLifecycle.stageIntake(task)
+        if (task.projectTask?.parentTaskId) rt.projectTaskLifecycle.stageDependencyResume(task)
         if (!['queued', 'arbitration'].includes(c?.status)) continue
         const receipt = c.history?.find(row => row.id === c.currentHandoffId)
         if (receipt?.status === 'pending') {
@@ -467,6 +490,7 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
+    resumeChildren: (id, waitId) => serial(() => resumeChildren(id, waitId)),
     claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal, validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
