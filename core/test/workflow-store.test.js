@@ -3,7 +3,7 @@
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -362,4 +362,53 @@ test('#2068: a linked workflow folder refuses to be the default instead of writi
   assert.equal(set.ok, false)
   assert.equal(set.code, 'workflow/not-a-folder')
   assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link')
+})
+
+// #2079: `folderWritable` asks the folder, and a definition file that is itself a link was written
+// straight through it. The leaf is asked too: an absent file is created, a plain file is written,
+// a link or a directory is refused with its own code, and neither the link nor the file it names
+// is touched.
+test('#2079: a linked workflow file refuses a save instead of writing through it', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const outside = elsewhere(t, { 'mine.json': 'OUTSIDE BYTES\n' })
+  const link = join(dir, 'mine.json')
+  symlinkSync(join(outside, 'mine.json'), link, 'file')
+  const warnings = []
+  const store = createWorkflowStore({ dir, warnFile: (file) => warnings.push(file) })
+  for (let round = 0; round < 2; round++) {
+    const saved = store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } })
+    assert.equal(saved.ok, false)
+    assert.equal(saved.code, 'workflow/not-a-file')
+  }
+  assert.equal(readFileSync(join(outside, 'mine.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the file the link names is byte-identical')
+  assert.equal(lstatSync(link).isSymbolicLink(), true, 'the link is still a link')
+  assert.deepEqual([...new Set(warnings)], [link], 'the warning names the file, once')
+  // The control: an absent file is still created, with no group or world bits, as before.
+  unlinkSync(link)
+  assert.equal(store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } }).ok, true)
+  assert.equal(existsSync(link), true)
+  assert.equal(statSync(link).mode & 0o077, 0, 'a newly created definition is not group- or world-readable')
+})
+
+test('#2079: a linked project file refuses to become the default', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const outside = elsewhere(t, { 'project.json': 'OUTSIDE BYTES\n' })
+  const link = join(dir, 'project.json')
+  symlinkSync(join(outside, 'project.json'), link, 'file')
+  const warnings = []
+  const store = createWorkflowStore({ dir, warnFile: (file) => warnings.push(file) })
+  for (let round = 0; round < 2; round++) {
+    const set = store.setDefault({ id: 'blank' })
+    assert.equal(set.ok, false)
+    assert.equal(set.code, 'workflow/not-a-file')
+  }
+  assert.equal(readFileSync(join(outside, 'project.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the file the link names is byte-identical')
+  assert.equal(lstatSync(link).isSymbolicLink(), true, 'the link is still a link')
+  assert.deepEqual([...new Set(warnings)], [link], 'the warning names the file, once')
 })
