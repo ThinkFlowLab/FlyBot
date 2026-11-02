@@ -711,3 +711,52 @@ test('a room board Done card says when it finished too', () => {
   const board = boardWith({ kind: 'group', roomId: 'war' }, [], [editedAfterFinish('task-done666666', { ownerBotId: 'a' })])
   assert.equal(whenOf(board.column('done'), 'task-done666666'), '2 h')
 })
+
+// F: `cancelled` and `failed` are terminal too. #2077 wrote the set (`TERMINAL_STATUSES` in
+// `kanban.js`) and `COLUMN_OF` (`src/shared/task-board.js`) maps all three terminal statuses to
+// Done, but nothing asserted either, so removing `cancelled`/`failed` from the set left this file
+// green. A card that ended either way sits in Done and its stamp is the entry that ended it, never
+// the plain edit `updatedAt` names.
+test('a cancelled card is terminal: it sits in Done and says when it was cancelled', () => {
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [editedAfterFinish('task-cancel777777', {}, 'cancelled')])
+  const done = board.column('done')
+  assert.notEqual(cardIn(done, 'task-cancel777777'), undefined, 'a cancelled card is drawn in Done')
+  assert.equal(whenOf(done, 'task-cancel777777'), '2 h')
+})
+
+test('a failed card is terminal: it sits in Done and says when it failed', () => {
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [editedAfterFinish('task-failed888888', {}, 'failed')])
+  const done = board.column('done')
+  assert.notEqual(cardIn(done, 'task-failed888888'), undefined, 'a failed card is drawn in Done')
+  assert.equal(whenOf(done, 'task-failed888888'), '2 h')
+})
+
+// G: the other statuses are not terminal. `blocked` waits on a person and `result-ready` on its
+// requester (`task-board.js`), so both stay In progress and neither ends the card's history.
+test('a blocked or result-ready card is not terminal and stays In progress', () => {
+  const waiting = task('task-block999999', 'blocked', { title: 'Waiting on a person', ownerBotId: 's', progress: 20, updatedAt: 2 })
+  const ready = task('task-readyaaaaaa', 'result-ready', { title: 'Waiting on the result', ownerBotId: 's', progress: 80, updatedAt: 3 })
+  const board = boardWith({ kind: 'bot', botId: 's' }, [waiting, ready], [])
+  const idsIn = column => byClass(board.column(column), 'bt-board-card').map(node => node.props['data-task'])
+  assert.deepEqual(idsIn('in-progress'), ['task-readyaaaaaa', 'task-block999999'])
+  assert.deepEqual(idsIn('done'), [])
+  assert.deepEqual(idsIn('not-started'), [])
+})
+
+// H: a non-terminal actor entry ahead of the terminal one does not win the stamp, even when it is
+// the first entry. Adding `open`, `claimed`, `working`, `blocked` or `result-ready` to
+// `TERMINAL_STATUSES` would stamp the card with the moment it entered that state instead.
+test('a non-terminal actor entry does not end a Done card, even when it comes first', () => {
+  const actors = [
+    { status: 'claimed', at: Date.now() - 300 * MINUTE },
+    { status: 'working', at: Date.now() - 270 * MINUTE },
+    { status: 'blocked', at: Date.now() - 240 * MINUTE },
+    { status: 'result-ready', at: Date.now() - 180 * MINUTE },
+    { status: 'accepted', at: Date.now() - 125 * MINUTE },
+    { status: 'accepted', at: Date.now() - MINUTE, by: 'updated' },
+  ]
+  const board = boardWith({ kind: 'bot', botId: 's' }, [], [
+    task('task-done999999', 'accepted', { title: 'Finished after a block', ownerBotId: 's', progress: 100, updatedAt: Date.now() - MINUTE, actors }),
+  ])
+  assert.equal(whenOf(board.column('done'), 'task-done999999'), '2 h')
+})
