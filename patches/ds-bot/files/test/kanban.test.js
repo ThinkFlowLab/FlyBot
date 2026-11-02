@@ -435,6 +435,54 @@ test('P-364: a room board rail counts the room\'s active cards, not only its arc
   assert.equal(room.railMeta('a'), '0/1', 'a Bot with an active card and none finished is 0 of 1, not a blank rail')
 })
 
+// P-364 follow-up: `boardWith` seeds both board lists with the same cards when the scope is a room,
+// so no case could tell which list the rail's counts read. These arms seed them apart: a room board
+// whose `own` still holds the Bot board's read, and a Bot board reached after a room left its list
+// behind. Either mutation of `counts` (always `own`, always `groupTasks`) has to show here.
+const boardWithLists = (scope, own, groupActive, archive = []) => {
+  states.length = 0
+  states.push(scope, null, '', '', own, groupActive, archive)
+  const view = expand(KanbanDialog({ roster, actions: { closeBoard: () => {}, boardClose: () => {} } }))
+  const railMeta = id => {
+    const row = all(view).find(node => node.props?.['data-id'] === id)
+    const meta = byClass(row, 'bt-board-rail-meta')[0]
+    return meta ? textOf(meta) : ''
+  }
+  return { view, railMeta }
+}
+
+test('P-364: the rail counts the list the board draws, never the one the other scope left behind', () => {
+  // A room board: `own` still holds the Bot board's read (one open card for Writer), the room's
+  // list holds Writer's three active cards and Chief's one. The rail counts the room's list.
+  const staleOwn = [task('task-open-stale', 'open', { title: 'Stale for s', ownerBotId: 's', createdAt: 1, updatedAt: 2 })]
+  const roomList = [
+    task('task-open-s', 'open', { title: 'Open for s', ownerBotId: 's', createdAt: 3, updatedAt: 4 }),
+    task('task-working-s', 'working', { title: 'Working for s', ownerBotId: 's', createdAt: 5, updatedAt: 6 }),
+    task('task-open-s-2', 'open', { title: 'Another for s', ownerBotId: 's', createdAt: 7, updatedAt: 8 }),
+    task('task-open-a', 'open', { title: 'Open for a', ownerBotId: 'a', createdAt: 9, updatedAt: 10 }),
+  ]
+  const room = boardWithLists({ kind: 'group', roomId: 'war' }, staleOwn, roomList)
+  assert.equal(room.railMeta('s'), '0/3', 'the room board counts the room\'s three, not the stale single card')
+  assert.equal(room.railMeta('a'), '0/1', 'a Bot that only appears in the room\'s list is counted from it')
+  assert.notEqual(room.railMeta('s'), '0/1', 'the stale Bot board read is not what the rail counts')
+
+  // A Bot board: `own` holds Writer's two active cards, the room's list still holds four. The rail
+  // counts the Bot's two, so one direction's mutation cannot hide behind the other's.
+  const ownList = [
+    task('task-open-s', 'open', { title: 'Open for s', ownerBotId: 's', createdAt: 1, updatedAt: 2 }),
+    task('task-working-s', 'working', { title: 'Working for s', ownerBotId: 's', createdAt: 3, updatedAt: 4 }),
+  ]
+  const leftRoom = [
+    task('task-open-s', 'open', { title: 'Open for s', ownerBotId: 's', createdAt: 5, updatedAt: 6 }),
+    task('task-working-s', 'working', { title: 'Working for s', ownerBotId: 's', createdAt: 7, updatedAt: 8 }),
+    task('task-open-s-2', 'open', { title: 'Another for s', ownerBotId: 's', createdAt: 9, updatedAt: 10 }),
+    task('task-open-s-3', 'open', { title: 'Yet another for s', ownerBotId: 's', createdAt: 11, updatedAt: 12 }),
+  ]
+  const bot = boardWithLists({ kind: 'bot', botId: 's' }, ownList, leftRoom)
+  assert.equal(bot.railMeta('s'), '0/2', 'the Bot board counts its own two, not the room list still in state')
+  assert.notEqual(bot.railMeta('s'), '0/4', 'the room list is not what a Bot board counts')
+})
+
 // P-360: the rail switch from one Bot to another. The fake React at the top of this file hands an
 // effect back to the test and never re-runs one, so a switch case written against it passes whatever
 // the hook does (#1810). This is a second, stateful context: hook slots per component, an effect
