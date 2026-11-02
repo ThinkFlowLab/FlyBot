@@ -13956,11 +13956,16 @@ function BotConnectorsCard({ bot, roster, actions, run, Card: Card2, SwitchRow: 
 }
 
 // src/client/memory-empty.js
+var blockedPaths = (view) => [...new Set((view?.blocked ?? []).map((item) => typeof item?.path === "string" ? item.path : "").filter((path) => path !== ""))];
+var blockedSentence = (paths) => t("The memory folder {path} is not a plain directory, so it cannot be read.", { path: paths.join(", ") });
 function memoryEmptyNotice(view) {
   if ((view?.entries?.length ?? 0) > 0) return null;
-  const paths = [...new Set((view?.blocked ?? []).map((item) => typeof item?.path === "string" ? item.path : "").filter((path) => path !== ""))];
+  return memoryBlockedNotice(view);
+}
+function memoryBlockedNotice(view) {
+  const paths = blockedPaths(view);
   if (paths.length === 0) return null;
-  return t("The memory folder {path} is not a plain directory, so it cannot be read.", { path: paths.join(", ") });
+  return blockedSentence(paths);
 }
 
 // src/client/memory-panel.js
@@ -14051,10 +14056,13 @@ function Summary({ bot, view, regenerate }) {
     (0, import_react28.createElement)("span", null, view.summary ? t("The summary is out of date: {reason}", { reason: hostText(view.error) }) : t("The summary could not be written: {reason}", { reason: hostText(view.error) })),
     (0, import_react28.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: regenerate }, t("Try again"))
   ) : null;
-  if (!view.summary) return (0, import_react28.createElement)(import_react28.Fragment, null, failed, failed ? null : (0, import_react28.createElement)(Skeleton, { label: t("Writing the summary…") }));
+  const refused = memoryBlockedNotice(view);
+  const blocked = refused === null ? null : (0, import_react28.createElement)("div", { className: "bt-mem-empty-text", role: "status" }, refused);
+  if (!view.summary) return (0, import_react28.createElement)(import_react28.Fragment, null, blocked, failed, failed ? null : (0, import_react28.createElement)(Skeleton, { label: t("Writing the summary…") }));
   return (0, import_react28.createElement)(
     import_react28.Fragment,
     null,
+    blocked,
     failed,
     (0, import_react28.createElement)(
       "div",
@@ -14110,6 +14118,7 @@ function EntryRow({ entry, remove }) {
 }
 function Entries({ bot, view, remove }) {
   const groups = groupEntries(view.entries);
+  const refused = memoryBlockedNotice(view);
   const sections = [
     { scope: "own", title: t("{name}'s memory", { name: bot.name }), size: view.sizes.own },
     { scope: "team", title: t("Team memory"), hint: t("Every Bot reads it"), size: view.sizes.team }
@@ -14117,6 +14126,7 @@ function Entries({ bot, view, remove }) {
   return (0, import_react28.createElement)(
     "div",
     { className: "bt-mem-entries" },
+    refused === null ? null : (0, import_react28.createElement)("div", { className: "bt-mem-empty-text", role: "status" }, refused),
     sections.map((section) => (0, import_react28.createElement)(
       "section",
       { key: section.scope, className: "bt-mem-section" },
