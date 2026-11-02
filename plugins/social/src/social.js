@@ -27,7 +27,7 @@
 // - Backward compat: without a home, config.botId + token use the per-bot identity
 //   (start_conversation / send_message) as before.
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
@@ -472,7 +472,27 @@ export function registerUnavailable(service, reason) {
 export const readCredentials = (path) => {
   try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return undefined }
 }
+// The credentials file is one leaf of its own, and so are the `.bak` copy kept for another server
+// and `flybot-social-settings.json`: all three go through this one function. `lstat` does not follow
+// the last component, so a link left at the path reports itself and is refused before the first
+// byte — the token, the owner id and the display name stay where they are, and a link naming a file
+// outside the team folder takes nothing there. A hard link is a plain file to `lstat` but shares its
+// bytes with another name (`nlink > 1`), so it refuses too. Absent is ours to create.
+const leafWritable = (path) => {
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) { return error?.code === 'ENOENT' }
+}
+const refusedLeaves = new Set()
 export const writeCredentials = (path, value) => {
+  if (!leafWritable(path)) {
+    if (!refusedLeaves.has(path)) {
+      refusedLeaves.add(path)
+      console.warn('flybot-social:', `${path} is not a plain file, so nothing was written there`)
+    }
+    throw Object.assign(new Error(`Not saved: ${path} is not a plain file of its own, so nothing was written there.`), { code: 'bot/refused' })
+  }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(value, null, 2), { mode: 0o600 })
   try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }
