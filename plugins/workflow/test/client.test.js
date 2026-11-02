@@ -3255,3 +3255,92 @@ test('#2173: a pair the graph does not have still saves and shows', async () => 
   assert.deepEqual(alertsOf(settings), [], 'and nothing is refused')
   settings.unmount()
 })
+
+// #2178: a From node declares the outputs it produces, so a Condition (`when`) or Loop (`until`)
+// link must offer exactly those names instead of a text box the host later refuses (graph.js:146
+// `cleanWhen` + PORT_RE). A node with no declared outputs keeps the text box (#2155).
+function graphDeclaringOutputs(names) {
+  const graph = delivery()
+  return {
+    ...graph,
+    nodes: graph.nodes.map(node => node.id === 'coder' ? { ...node, outputs: names.map(name => ({ name, type: 'string' })) } : node),
+  }
+}
+
+const outputNames = (control) => findAll(control, node => node.type === 'option').map(node => String(node.props.value)).filter(value => value !== '')
+
+test('#2178: a Condition link offers the names the From node declares, and nothing else', async () => {
+  await withUnhandled(async (unhandled) => {
+    const calls = []
+    const { settings, choose, graphCalls } = await openAddLinkForm(graphDeclaringOutputs(['verdict', 'summary']), calls)
+    await choose('Kind', 'condition')
+    await choose('From node', 'coder')
+    await choose('To node', 'planner')
+    const when = findAll(settings.tree, node => node.props?.['aria-label'] === 'when')[0]
+    assert.equal(when.type, 'select', 'the name is chosen from what the node declares, not typed')
+    assert.deepEqual(outputNames(when), ['verdict', 'summary'], 'exactly the declared names are offered')
+    assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'Add link waits for a declared name')
+    await choose('when', 'verdict')
+    assert.equal(button(settings.tree, 'Add link').props.disabled, false, 'a declared name enables the save')
+    button(settings.tree, 'Add link').props.onClick()
+    await settle()
+    const edge = graphCalls().at(-1).body.edges.find(item => item.from === 'coder' && item.to === 'planner')
+    assert.deepEqual(edge.when, { output: 'verdict', eq: '' }, 'the chosen declared name is what is submitted')
+    assert.deepEqual(unhandled, [])
+    settings.unmount()
+  })
+})
+
+test('#2178: a Loop link takes its until name from the From node declarations too', async () => {
+  await withUnhandled(async (unhandled) => {
+    const calls = []
+    const { settings, choose, graphCalls } = await openAddLinkForm(graphDeclaringOutputs(['verdict', 'summary']), calls)
+    await choose('Kind', 'loop')
+    await choose('From node', 'coder')
+    await choose('To node', 'planner')
+    await choose('Max iterations', '3')
+    const until = findAll(settings.tree, node => node.props?.['aria-label'] === 'until')[0]
+    assert.equal(until.type, 'select', 'a Loop reads the same declared names')
+    assert.deepEqual(outputNames(until), ['verdict', 'summary'])
+    assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'an until the node does not declare cannot be submitted')
+    await choose('until', 'summary')
+    button(settings.tree, 'Add link').props.onClick()
+    await settle()
+    const edge = graphCalls().at(-1).body.edges.find(item => item.from === 'coder' && item.to === 'planner')
+    assert.equal(edge.loop, true)
+    assert.equal(edge.max, 3)
+    assert.deepEqual(edge.until, { output: 'summary', eq: '' })
+    assert.deepEqual(unhandled, [])
+    settings.unmount()
+  })
+})
+
+test('#2178: a declared-outputs From node has no free-text path for an undeclared name', async () => {
+  const calls = []
+  const { settings, choose } = await openAddLinkForm(graphDeclaringOutputs(['verdict', 'summary']), calls)
+  await choose('Kind', 'condition')
+  await choose('From node', 'coder')
+  await choose('To node', 'planner')
+  const typed = findAll(settings.tree, node => node.type === 'input' && node.props?.['aria-label'] === 'when')
+  assert.deepEqual(typed, [], 'the name cannot be typed, so an undeclared one cannot reach the save')
+  const when = findAll(settings.tree, node => node.props?.['aria-label'] === 'when')[0]
+  assert.equal(when.props.value, '', 'nothing is chosen yet')
+  assert.equal(button(settings.tree, 'Add link').props.disabled, true, 'Add link tells the author a name is still missing')
+  settings.unmount()
+})
+
+test('#2178: a From node that declares no outputs keeps the text input', async () => {
+  const calls = []
+  const { settings, choose, graphCalls } = await openAddLinkForm(delivery(), calls)
+  await choose('Kind', 'condition')
+  await choose('From node', 'writer')
+  await choose('To node', 'deployer')
+  const when = findAll(settings.tree, node => node.props?.['aria-label'] === 'when')[0]
+  assert.equal(when.type, 'input', 'an older graph without outputs still takes a condition link')
+  await choose('when', 'ready')
+  button(settings.tree, 'Add link').props.onClick()
+  await settle()
+  const edge = graphCalls().at(-1).body.edges.find(item => item.from === 'writer' && item.to === 'deployer')
+  assert.deepEqual(edge.when, { output: 'ready', eq: '' }, 'the typed name is submitted as before')
+  settings.unmount()
+})

@@ -16,6 +16,8 @@ A host call on that page that throws, rejects, or never answers ends on the page
 
 The **Add link** row applies the drawer's pair rule before it saves (#2173): a pair the graph already lists is a no-op, another kind over that same pair names the kind already there instead of submitting, and the **To** list marks the targets the chosen node already reaches. The host still refuses a duplicated pair — the form is what stops producing one.
 
+A Condition (`when`) or Loop (`until`) link takes its output name from the **From** node's declared `outputs` (#2178): the field is a select over exactly those names, **Add link** waits for one, and a node that declares none keeps the text box for an older graph. The host still refuses a name it cannot honour — `cleanWhen` and `PORT_RE` are unchanged.
+
 ## Owns
 
 Everything in `plugins/workflow/`: the graph rules, the run store, the matcher, the browser chat and the flowchart canvas.

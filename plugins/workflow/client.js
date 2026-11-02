@@ -96,6 +96,7 @@ window.__ModuleLoader__.load({
       'From node': '起点',
       'To node': '终点',
       'Pick a node': '选择一个节点',
+      'Pick an output': '选择一个输出',
       Link: '连线',
       Condition: '条件',
       Loop: '循环',
@@ -1591,6 +1592,11 @@ window.__ModuleLoader__.load({
       // #2173: the To list says which targets the chosen From already reaches, so a repeat is
       // visible before the form submits it.
       const linkedTargets = new Set(edgeForm.from ? edges.filter(edge => edge.from === edgeForm.from).map(edge => edge.to) : [])
+      // #2178: a node declares the outputs it produces, and the host keeps a Condition / Loop name
+      // only when it is one of them (graph.js `cleanWhen` + PORT_RE). The form offers exactly those
+      // names, and a node that declares none keeps the text box an older graph needs.
+      const fromNode = nodes.find(node => node.id === edgeForm.from)
+      const declaredOutputs = (fromNode?.outputs ?? []).map(port => port?.name).filter(name => typeof name === 'string' && name)
       const [toolsDraft, setToolsDraft] = useState(null)
       const toolsTimer = useRef(null)
       const toolsCommit = useRef(null)
@@ -1760,7 +1766,8 @@ window.__ModuleLoader__.load({
                 h('select', {
                   'aria-label': tr('From node'),
                   value: edgeForm.from,
-                  onChange: (event) => setEdgeForm({ ...edgeForm, from: event.target.value }),
+                  // #2178: the name belongs to the node it came from, so a new From drops it.
+                  onChange: (event) => setEdgeForm({ ...edgeForm, from: event.target.value, until: { ...edgeForm.until, output: '' } }),
                 }, h('option', { value: '' }, tr('Pick a node')), nodes.map(node => h('option', { key: node.id, value: node.id }, node.name)))),
               h('label', { className: 'wf-field' },
                 h('span', null, tr('To node')),
@@ -1780,7 +1787,11 @@ window.__ModuleLoader__.load({
                 })) : null,
               edgeForm.kind === 'loop' || edgeForm.kind === 'condition' ? h('label', { className: 'wf-field' },
                 h('span', null, edgeForm.kind === 'loop' ? tr('until') : tr('when')),
-                h('input', {
+                declaredOutputs.length ? h('select', {
+                  'aria-label': edgeForm.kind === 'loop' ? tr('until') : tr('when'),
+                  value: edgeForm.until.output,
+                  onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, output: event.target.value } }),
+                }, h('option', { value: '' }, tr('Pick an output')), declaredOutputs.map(name => h('option', { key: name, value: name }, name))) : h('input', {
                   'aria-label': edgeForm.kind === 'loop' ? tr('until') : tr('when'),
                   value: edgeForm.until.output,
                   onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, output: event.target.value } }),
@@ -1792,8 +1803,9 @@ window.__ModuleLoader__.load({
                   value: edgeForm.until.eq,
                   onChange: (event) => setEdgeForm({ ...edgeForm, until: { ...edgeForm.until, eq: event.target.value } }),
                 })) : null,
-              // #2155: a Condition link with no output name cannot be honoured, so it is not offered.
-              h('button', { type: 'button', className: 'wf-btn wf-pri', disabled: !edgeForm.from || !edgeForm.to || (edgeForm.kind === 'condition' && !String(edgeForm.until.output ?? '').trim()), onClick: addEdge }, tr('Add link')))) : null) : null)
+              // #2155/#2178: a Condition or Loop link with no output name cannot be honoured, so it
+              // is not offered; with a declared-outputs node the name can only be one it declares.
+              h('button', { type: 'button', className: 'wf-btn wf-pri', disabled: !edgeForm.from || !edgeForm.to || ((edgeForm.kind === 'condition' || edgeForm.kind === 'loop') && !String(edgeForm.until.output ?? '').trim()), onClick: addEdge }, tr('Add link')))) : null) : null)
     }
 
     function GraphCanvas({ workflow, editing, selectedNode, onSelectNode, onCommit, roster }) {
