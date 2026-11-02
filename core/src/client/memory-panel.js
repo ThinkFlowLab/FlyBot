@@ -5,6 +5,7 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState 
 import { useEscape } from './overlay-hooks.js'
 import { ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DotsIcon, MemoryIcon, TrashIcon } from './icons.js'
 import { dateLocale, hostText, t } from './i18n.js'
+import { memoryEmptyNotice } from './memory-empty.js'
 import { summaryBlocks } from './text.js'
 import { useLinger } from './motion.js'
 
@@ -66,8 +67,10 @@ function Skeleton({ label }) {
 
 function Summary({ bot, view, regenerate }) {
   if (view.entries.length === 0) {
+    const notice = memoryEmptyNotice(view)
     return h('div', { className: 'bt-mem-empty' },
       h('div', { className: 'bt-mem-empty-mark' }, h(MemoryIcon)),
+      notice === null ? null : h('div', { className: 'bt-mem-empty-text', role: 'status' }, notice),
       h('div', { className: 'bt-mem-empty-title' }, t('{name} has not saved anything yet', { name: bot.name })),
       h('div', { className: 'bt-mem-empty-text' }, t('Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.', { name: bot.name })))
   }

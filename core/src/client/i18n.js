@@ -1012,6 +1012,7 @@ const ZH = {
   'The summary could not be written: {reason}': '摘要没能生成：{reason}',
   '{name} has not saved anything yet': '{name} 还没有记住任何内容',
   'Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.': 'Bot 会记住长期的偏好、做过的决定，以及你让它记住的事。可以在下面告诉 {name}，也可以在对话里说。',
+  'The memory folder {path} is not a plain directory, so it cannot be read.': '记忆文件夹 {path} 不是普通目录，里面的内容读不到。',
   'Team memory': '团队记忆',
   'Every Bot reads it': '所有 Bot 都会读',
   'MEMORY.md, which every conversation reads': 'MEMORY.md，每次对话都会读',
