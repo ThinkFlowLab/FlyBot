@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -184,4 +184,22 @@ test('an ordinary OCR cache temp name is written and renamed as before', async (
   await waitFor(() => existsSync(cache))
   assert.equal(warnings.length, 0)
   assert.equal(JSON.parse(readFileSync(cache, 'utf8'))[OCR_ATTACHMENT.attachmentId].text, 'A red triangle.')
+})
+
+// The temp name can be a hard link: `lstat` reports a plain file, so the link check alone lets the
+// cache land in the inode the other name holds. The refusal names the temp path and leaves both
+// files as they were.
+test('a hard link at the OCR cache temp name does not take the cache', async (t) => {
+  const { rt, home, warnings } = ocrRuntime(t)
+  const outside = join(home, 'outside-ocr.txt')
+  writeFileSync(outside, 'OUTSIDE\n')
+  linkSync(outside, join(home, `ocr.json.${process.pid}.tmp`))
+  await rt.imagesForGroup([OCR_ATTACHMENT], 'r1')
+  await waitFor(() => warnings.length > 0)
+  assert.equal(readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(outside).nlink, 2, 'the outside file still carries the temp name')
+  const cache = join(home, 'ocr.json')
+  assert.equal(existsSync(cache), false, 'the cache is not created from the shared file')
+  assert.ok(warnings.some(line => /not a plain file/.test(line)), warnings.join('\n'))
+  assert.ok(warnings.some(line => line.includes(`${cache}.${process.pid}.tmp`)), 'the warning names the temp path')
 })

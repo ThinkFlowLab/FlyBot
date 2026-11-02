@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -160,4 +160,24 @@ test('a linked defaults temp name does not take the offer; the file is not creat
   assert.equal(readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the file behind the temp link is not written through')
   assert.equal(existsSync(file) ? lstatSync(file).isSymbolicLink() : false, false, 'the defaults file is not a link')
   assert.ok(warnings.some(line => /not a plain file/.test(line)), warnings.join('\n'))
+})
+
+// The temp name can be a hard link, which `lstat` reports as a plain file: the offer would land in
+// the inode the other name holds. It is refused before the write, once, and the bundle is not
+// switched on.
+test('a hard link at the defaults temp name keeps the offer unwritten', async (t) => {
+  const file = scratch(t)
+  const outside = join(dirname(file), 'outside-defaults.json')
+  writeFileSync(outside, 'OUTSIDE\n')
+  linkSync(outside, `${file}.${process.pid}.tmp`)
+  const warnings = []
+  const plugins = manager()
+  const outcome = await offerBundle({ manager: plugins, profile: 'web', file, warn: (...args) => warnings.push(args.join(' ')) })
+  assert.equal(outcome, 'unrecorded')
+  assert.equal(plugins.on, false, 'the bundle is not switched on')
+  assert.equal(readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the shared inode keeps its bytes')
+  assert.equal(lstatSync(outside).nlink, 2, 'the outside file still carries the temp name')
+  assert.equal(existsSync(file), false, 'the defaults file is not created')
+  assert.ok(warnings.some(line => /not a plain file/.test(line)), warnings.join('\n'))
+  assert.ok(warnings.some(line => line.includes(`${file}.${process.pid}.tmp`)), 'the warning names the temp path')
 })

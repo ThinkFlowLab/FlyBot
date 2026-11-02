@@ -32,7 +32,7 @@ import { codePointStart, cut } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
-import { dirKindSync, fileKindSync } from './real-dir.js'
+import { dirKindSync, fileKindSync, tempWritable } from './real-dir.js'
 
 // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
 // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
@@ -453,7 +453,7 @@ export function install(rt) {
   const warnFile = (path, what = 'memory journal', effect = 'dropping the record') => {
     if (warnedFiles.has(path)) return
     warnedFiles.add(path)
-    rt.warn(`ds-bot: ${what} is not a plain file %s; ${effect}`, path)
+    rt.warn(`ds-bot: ${what} is not a plain file of its own %s; ${effect}`, path)
   }
   // The one answer for "what is this folder": every segment from `memory/` down is asked on its
   // own, because `lstat` follows a link above the last component — `memory/bots` or a
@@ -547,9 +547,9 @@ export function install(rt) {
   async function writeText(path, text) {
     await mkdir(dirname(path), { recursive: true })
     const temp = `${path}.${process.pid}.tmp`
-    if (fileKindSync(temp) === 'other') {
+    if (!tempWritable(temp)) {
       warnFile(temp, 'the memory write', 'nothing is written there')
-      throw new Error(`Not saved: ${temp} is not a plain file, so nothing is written there.`)
+      throw new Error(`Not saved: ${temp} is not a plain file of its own, so nothing is written there.`)
     }
     await writeFile(temp, text, 'utf8')
     await rename(temp, path)
@@ -825,7 +825,7 @@ export function install(rt) {
           // The snapshot's temp name is a leaf like the entry's (#2097): a link left there would
           // take the frozen memory outside and then replace the snapshot with the link.
           const temp = `${path}.tmp`
-          if (fileKindSync(temp) === 'other') warnFile(temp, 'the memory snapshot', 'nothing is written there')
+          if (!tempWritable(temp)) warnFile(temp, 'the memory snapshot', 'nothing is written there')
           else {
             writeFileSync(temp, text, 'utf8')
             renameSync(temp, path)

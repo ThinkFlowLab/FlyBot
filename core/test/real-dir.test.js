@@ -3,11 +3,11 @@
 // states: a real directory here, nothing there at all, or something else that must not be read
 // through. `#2056` / `#2057` call the same function instead of writing the check again.
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { dirKind, dirKindSync, fileKind, fileKindSync } from '../src/host/real-dir.js'
+import { dirKind, dirKindSync, fileKind, fileKindSync, tempWritable } from '../src/host/real-dir.js'
 
 function bench() {
   const dir = mkdtempSync(join(tmpdir(), 'ds-bot-real-dir-'))
@@ -69,5 +69,30 @@ test('#2079: a leaf file is real, absent, or other, and a link is never a file h
     mkdirSync(join(dir, 'a-folder'))
     assert.equal(await fileKind(join(dir, 'a-folder')), 'other', 'a directory where a file belongs is refused too')
     assert.equal(fileKindSync(join(dir, 'a-folder')), 'other')
+  } finally { done() }
+})
+
+// The temp name a write lands through is asked in one place (temp-name sweep). A missing name is the
+// writer's to create and the plain leftover of this host's own crash is replaceable, so a rejected
+// write never leaves a name that locks the file forever; a link, a folder, or a file another name
+// also holds (`nlink 2`, which `lstat` reports as a plain file) refuses before the first byte.
+test('#P-hardlink: a temp name is writable only when it is absent or a plain file of its own', () => {
+  const { dir, outside, done } = bench()
+  try {
+    const temp = join(dir, 'state.json.123.tmp')
+    assert.equal(tempWritable(temp), true, 'absent is a writer\'s to create')
+    writeFileSync(join(dir, 'not-a-dir'), 'x')
+    assert.equal(tempWritable(join(dir, 'not-a-dir', 'state.json.123.tmp')), false, 'a check that cannot run (ENOTDIR) is not a licence')
+    writeFileSync(temp, 'left by a crash\n')
+    assert.equal(tempWritable(temp), true, 'a plain leftover under this host\'s own pid is replaceable')
+    const shared = join(outside, 'shared.md')
+    writeFileSync(shared, 'OUTSIDE\n')
+    linkSync(shared, join(dir, 'shared.json.123.tmp'))
+    assert.equal(tempWritable(join(dir, 'shared.json.123.tmp')), false, 'a hard link shares its bytes with a name outside this home')
+    assert.equal(tempWritable(shared), false, 'and the other name is the same inode, both report nlink 2')
+    symlinkSync(shared, join(dir, 'linked.json.123.tmp'))
+    assert.equal(tempWritable(join(dir, 'linked.json.123.tmp')), false, 'a link is not a file here')
+    mkdirSync(join(dir, 'folder.json.123.tmp'))
+    assert.equal(tempWritable(join(dir, 'folder.json.123.tmp')), false, 'a folder where a file belongs is refused too')
   } finally { done() }
 })

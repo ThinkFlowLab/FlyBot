@@ -355,3 +355,24 @@ test('a link at the state file itself is replaced, not written through', async (
   assert.equal(fs.lstatSync(statePath).isSymbolicLink(), false, 'the link is replaced by the saved file')
   assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).prefs.sweep, 'kept')
 })
+
+// The temp name can also be a hard link: `lstat` reports a plain file, so a link-only check lets it
+// through and the save lands in the inode the other name holds (`nlink 2`). A name that is a file
+// but not only this one is refused the same way; the leftover plain temp of a crashed host (one
+// name, `nlink 1`) stays replaceable, which the next test keeps.
+test('a hard link at the state temp name is refused; the save never reaches the shared file', async (t) => {
+  const { rt, home, statePath, warnings } = runtime(t)
+  await rt.load()
+  await rt.save()
+  const before = fs.readFileSync(statePath, 'utf8')
+  const outside = join(home, 'outside-state.json')
+  fs.writeFileSync(outside, 'OUTSIDE\n')
+  fs.linkSync(outside, `${statePath}.${process.pid}.tmp`)
+  rt.state.prefs.sweep = 'not saved'
+  await assert.rejects(rt.save())
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the shared inode keeps its bytes')
+  assert.equal(fs.lstatSync(outside).nlink, 2, 'the outside file still carries the temp name')
+  assert.equal(fs.readFileSync(statePath, 'utf8'), before, 'the state file kept what it had')
+  assert.ok(warnings.some(line => /not a plain file/.test(line.join(' '))), 'the refusal is named')
+  assert.ok(warnings.some(line => line.join(' ').includes(`${statePath}.${process.pid}.tmp`)), 'the warning names the temp path')
+})

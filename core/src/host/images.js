@@ -134,7 +134,7 @@ export function install(rt) {
       const temp = `${ocrPath}.${process.pid}.tmp`
       // The temp name is a leaf like the cache: a link there would take the readings outside
       // the home and the rename would put the link over ocr.json (temp-name sweep).
-      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the OCR cache was not written there.`)
+      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so the OCR cache was not written there.`)
       await writeFile(temp, snapshot, 'utf8')
       await rename(temp, ocrPath)
     }).catch(error => rt.warn('ds-bot: OCR cache write failed: %s', error))

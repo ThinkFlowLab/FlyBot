@@ -37,7 +37,7 @@ async function writeOffers(file, offers) {
   const temp = `${file}.${process.pid}.tmp`
   // The temp name is a leaf like the defaults file: a link there would take the offer outside
   // the team folder and the rename would put the link over dsh-defaults.json (temp-name sweep).
-  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so nothing was written there.`)
+  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so nothing was written there.`)
   try {
     await writeFile(temp, `${JSON.stringify({ version: 1, offers }, null, 2)}\n`, 'utf8')
     await rename(temp, file)

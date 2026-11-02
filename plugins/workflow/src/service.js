@@ -192,7 +192,10 @@ function blankRun(workflow, task, now, history = []) {
 // the link where the store belongs. Absent is ours to create, a plain leftover is replaceable, and
 // anything else refuses the write before the first byte.
 const tempWritable = (path) => {
-  try { return lstatSync(path).isFile() } catch (error) { return error?.code === 'ENOENT' }
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) { return error?.code === 'ENOENT' }
 }
 
 export function createWorkflowService({
@@ -319,7 +322,7 @@ export function createWorkflowService({
     state.seq = seq
     mkdirSync(dir, { recursive: true })
     const tmp = `${file}.${process.pid}.tmp`
-    if (!tempWritable(tmp)) throw new Error(`Not saved: ${tmp} is not a plain file, so the workflow store was not written there.`)
+    if (!tempWritable(tmp)) throw new Error(`Not saved: ${tmp} is not a plain file of its own, so the workflow store was not written there.`)
     writeFileSync(tmp, JSON.stringify(state))
     renameSync(tmp, file)
   }

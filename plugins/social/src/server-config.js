@@ -70,15 +70,19 @@ export async function probeServer(server, { fetch: fetchImpl = socialFetch, time
 // The temp name a private file lands through is a leaf like the file itself (temp-name sweep): a
 // link left at `<file>.<pid>.tmp` would take the contents outside the team folder and the rename
 // would put the link where the file belongs. Absent is ours to create, a plain leftover is
-// replaceable, and anything else refuses the write before the first byte.
+// replaceable, and anything else refuses the write before the first byte. A hard link is a plain
+// file to `lstat` but shares its bytes with another name (`nlink > 1`), so it refuses too.
 const tempWritable = (path) => {
-  try { return lstatSync(path).isFile() } catch (error) { return error?.code === 'ENOENT' }
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) { return error?.code === 'ENOENT' }
 }
 
 const writePrivate = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })
   const temp = `${path}.${process.pid}.tmp`
-  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so nothing was written there.`)
+  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so nothing was written there.`)
   writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 })
   renameSync(temp, path)
   try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }

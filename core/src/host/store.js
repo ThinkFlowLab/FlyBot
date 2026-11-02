@@ -928,7 +928,7 @@ export function install(rt) {
       const temp = `${statePath}.${process.pid}.tmp`
       // The temp name is a leaf like the state file itself: a link there would take the team
       // outside the home and the rename would put the link over state.json (temp-name sweep).
-      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the Bot team was not written there.`)
+      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so the Bot team was not written there.`)
       try {
         await mkdir(home, { recursive: true })
         const ensureLock = () => {
