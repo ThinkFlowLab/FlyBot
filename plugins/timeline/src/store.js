@@ -13,7 +13,7 @@
 //
 // The trace holds ids, times, outcomes and cleaned names: never message text, tool
 // arguments or output, so there is no secret in it to protect (the files are 0600 anyway).
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const TRACE_VERSION = 1
@@ -56,8 +56,22 @@ function acquire(dir) {
   throw new TraceLocked(`could not take the writer lock in ${dir}`)
 }
 
+// The temporary name is a leaf: `open(..., 'w')` follows a link left at it, so a symbolic link
+// would take the bytes outside this directory and the rename after them would put the link where
+// the segment belongs, and a hard link would write into an inode another name still holds. A
+// missing name is this writer's to create and the plain temp a crashed writer left behind (one
+// name) is replaceable; anything else refuses before the first byte. A plugin source may not
+// import `core/`, so the same five-line check lives here too.
+const tempWritable = (path) => {
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) { return error?.code === 'ENOENT' }
+}
+
 function writeWhole(dir, path, value) {
   const temporary = `${path}.tmp`
+  if (!tempWritable(temporary)) throw new Error(`Not saved: ${temporary} is not a plain file of its own, so the trace segment was not written there.`)
   const file = openSync(temporary, 'w', 0o600)
   try { writeFileSync(file, JSON.stringify(value)); fsyncSync(file) } finally { closeSync(file) }
   renameSync(temporary, path)
