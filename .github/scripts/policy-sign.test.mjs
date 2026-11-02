@@ -116,6 +116,47 @@ test('#2054: a signature written by a bot account is refused', () => {
   assert.match(verdict.reason, /bot account/)
 })
 
+// #2093: the two files that decide whether a pull request may enter the merge queue are gates too.
+// A pull request that loosens `enqueue-rules.mjs` or the guard that posts its verdict can otherwise
+// merge with nobody else's signature, while one that touches `merge-gate.mjs` cannot.
+test('#2093: a change to the enqueue guard needs another person\'s signature', () => {
+  const file = '.github/scripts/enqueue-guard.mjs'
+  const unsigned = judge({ files: ['core/src/x.js', file], body: 'Fixes #1\n\nEases the queue gate.', ...PR, head: HEAD, comments: [], policy })
+  assert.equal(unsigned.ok, false, 'the guard that decides what may enter the queue is a gate file')
+  assert.match(unsigned.reason, /`Policy-sign:`/)
+  assert.match(unsigned.reason, /enqueue-guard\.mjs/, 'the refusal names the file that made the signature required')
+
+  const stale = judge({
+    files: [file],
+    body: 'Fixes #1\n\nPolicy-sign: 42',
+    ...PR,
+    head: HEAD,
+    comments: [{ id: 42, body: `ok at ${OTHER_TIP}`, user: { login: 'Birfy', type: 'User' } }],
+    policy,
+  })
+  assert.equal(stale.ok, false, 'a signature for another tip is refused here exactly as for merge-gate.mjs')
+  assert.match(stale.reason, /does not name this tip/)
+})
+
+test('#2093: a change to the enqueue rules needs another person\'s signature', () => {
+  const file = '.github/scripts/enqueue-rules.mjs'
+  const unsigned = judge({ files: [file], body: 'Fixes #1\n\nEases the queue rules.', ...PR, head: HEAD, comments: [], policy })
+  assert.equal(unsigned.ok, false, 'the rules the guard reads are a gate file')
+  assert.match(unsigned.reason, /`Policy-sign:`/)
+  assert.match(unsigned.reason, /enqueue-rules\.mjs/, 'the refusal names the file that made the signature required')
+
+  const stale = judge({
+    files: [file],
+    body: 'Fixes #1\n\nPolicy-sign: 42',
+    ...PR,
+    head: HEAD,
+    comments: [{ id: 42, body: `ok at ${OTHER_TIP}`, user: { login: 'Birfy', type: 'User' } }],
+    policy,
+  })
+  assert.equal(stale.ok, false, 'a signature for another tip is refused here exactly as for merge-gate.mjs')
+  assert.match(stale.reason, /does not name this tip/)
+})
+
 test('#2054: the line is read from the body only, on its own line', () => {
   assert.equal(parseSignature('Fixes #1\n\nPolicy-sign: 42\n'), '42')
   assert.equal(parseSignature('Fixes #1\n\n> Policy-sign: 42'), undefined, 'a quoted line is prose, not the signature')
