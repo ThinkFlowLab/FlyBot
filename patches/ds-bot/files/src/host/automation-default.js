@@ -8,6 +8,7 @@
 // A DSH that does not offer the bundle is left alone, and so is a second dsh on the same data.
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tempWritable } from './real-dir.js'
 
 export const SCHEDULE_BUNDLE = '@deepseek-ai/dsh-experimental-schedule-bundle'
 const MARKER = 'dsh-defaults.json'
@@ -34,6 +35,9 @@ export async function readOffers(file) {
 async function writeOffers(file, offers) {
   await mkdir(join(file, '..'), { recursive: true })
   const temp = `${file}.${process.pid}.tmp`
+  // The temp name is a leaf like the defaults file: a link there would take the offer outside
+  // the team folder and the rename would put the link over dsh-defaults.json (temp-name sweep).
+  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so nothing was written there.`)
   try {
     await writeFile(temp, `${JSON.stringify({ version: 1, offers }, null, 2)}\n`, 'utf8')
     await rename(temp, file)
@@ -50,7 +54,7 @@ async function writeOffers(file, offers) {
 //   'unrecorded'  the offer could not be written down, so nothing was changed
 //   'enabled'     switched on
 //   'failed'      the manager refused; the note is withdrawn so the next start tries again
-export async function offerBundle({ manager, bundle = SCHEDULE_BUNDLE, profile, file, now = () => new Date() }) {
+export async function offerBundle({ manager, bundle = SCHEDULE_BUNDLE, profile, file, now = () => new Date(), warn = () => {} }) {
   let offers
   try {
     offers = await readOffers(file)
@@ -70,7 +74,8 @@ export async function offerBundle({ manager, bundle = SCHEDULE_BUNDLE, profile, 
   }
   try {
     await note(now().toISOString())
-  } catch {
+  } catch (error) {
+    warn('ds-bot: the Automation tasks offer was not written down: %s', error?.message ?? error)
     return 'unrecorded'
   }
   if (entry.enabled === true) return 'already-on'
@@ -91,7 +96,7 @@ export function install(rt) {
     // The window that shows the team without owning it leaves the profile to the other one.
     if (rt.readOnly() !== undefined) return
     const profile = ctx.get?.('profileContext')?.name ?? 'default'
-    const outcome = await offerBundle({ manager: ctx.get?.('pluginManager'), profile, file: join(home, MARKER) })
+    const outcome = await offerBundle({ manager: ctx.get?.('pluginManager'), profile, file: join(home, MARKER), warn: rt.warn })
     if (outcome === 'failed') rt.warn('ds-bot: could not switch on Automation tasks; switch them on from the Plugins page')
   }
 

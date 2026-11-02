@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
+import { tempWritable } from './real-dir.js'
 import { codePoints, currentColor, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
@@ -925,6 +926,9 @@ export function install(rt) {
     const snapshot = JSON.stringify(state, null, 2)
     const run = writing.then(async () => {
       const temp = `${statePath}.${process.pid}.tmp`
+      // The temp name is a leaf like the state file itself: a link there would take the team
+      // outside the home and the rename would put the link over state.json (temp-name sweep).
+      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so the Bot team was not written there.`)
       try {
         await mkdir(home, { recursive: true })
         const ensureLock = () => {

@@ -541,7 +541,10 @@ test('a write that fails at save time archives the Session it made', async (t) =
   ctx.workspaceRegistry.archiveSession = async (id) => { archived.push(id); return archive(id) }
   const answer = await call('create-bot', { name: 'Phantom' })
   assert.equal(answer.ok, false)
-  assert.equal(answer.error.code, 'bot/internal')
+  // The temp-name guard refuses before `writeFile` reaches EISDIR, so the failure is a refusal
+  // that names the temp path; the rollback this test is about is unchanged.
+  assert.equal(answer.error.code, 'bot/refused')
+  assert.match(answer.error.message, /not a plain file/)
   assert.deepEqual(archived, created)
   const team = (await call('state', {})).value
   assert.equal(team.bots.some(bot => bot.name === 'Phantom'), false)

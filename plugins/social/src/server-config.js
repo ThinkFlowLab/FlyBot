@@ -8,7 +8,7 @@
 // on the local Bots (parked in `flybot-social-bots.<tag>.json` while another server is active).
 // Nothing here deletes a credentials file, and nothing here reads, returns or logs a token.
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { socialFetch } from './mcp-client.js'
 
@@ -67,9 +67,18 @@ export async function probeServer(server, { fetch: fetchImpl = socialFetch, time
   return { name: cleanLine(info.name, 60) || 'Bot Social', version: cleanLine(info.version, 30) || undefined, features }
 }
 
+// The temp name a private file lands through is a leaf like the file itself (temp-name sweep): a
+// link left at `<file>.<pid>.tmp` would take the contents outside the team folder and the rename
+// would put the link where the file belongs. Absent is ours to create, a plain leftover is
+// replaceable, and anything else refuses the write before the first byte.
+const tempWritable = (path) => {
+  try { return lstatSync(path).isFile() } catch (error) { return error?.code === 'ENOENT' }
+}
+
 const writePrivate = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })
   const temp = `${path}.${process.pid}.tmp`
+  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file, so nothing was written there.`)
   writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 })
   renameSync(temp, path)
   try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }

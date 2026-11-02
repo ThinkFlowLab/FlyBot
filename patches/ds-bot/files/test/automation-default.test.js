@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -141,4 +141,23 @@ test('config.automationTasks = false never offers it', (t) => {
   const { ctx, rt } = setup(t, { config: { automationTasks: false }, services: { pluginManager: manager() } })
   assert.equal(ctx.calls.includes('effect ds-bot: automation tasks default'), false)
   assert.equal(rt.offerAutomationTasks, undefined)
+})
+
+// The defaults file lands through `<file>.<pid>.tmp` and is renamed into place. The temp name is a
+// leaf like the file (temp-name sweep): a link left there would take the offer outside the team
+// folder and the rename would put the link where `dsh-defaults.json` belongs. A refused write is
+// reported once, and the offer is not recorded.
+test('a linked defaults temp name does not take the offer; the file is not created', async (t) => {
+  const file = scratch(t)
+  const outside = join(dirname(file), 'outside-defaults.json')
+  writeFileSync(outside, 'OUTSIDE\n')
+  symlinkSync(outside, `${file}.${process.pid}.tmp`)
+  const warnings = []
+  const plugins = manager()
+  const outcome = await offerBundle({ manager: plugins, profile: 'web', file, warn: (...args) => warnings.push(args.join(' ')) })
+  assert.equal(outcome, 'unrecorded')
+  assert.equal(plugins.on, false, 'the bundle is not switched on when the offer cannot be written down')
+  assert.equal(readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the file behind the temp link is not written through')
+  assert.equal(existsSync(file) ? lstatSync(file).isSymbolicLink() : false, false, 'the defaults file is not a link')
+  assert.ok(warnings.some(line => /not a plain file/.test(line)), warnings.join('\n'))
 })

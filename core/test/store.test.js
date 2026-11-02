@@ -68,7 +68,7 @@ test('a failed state write rejects and leaves the saved file unchanged', async (
   const original = fs.readFileSync(statePath)
   fs.mkdirSync(`${statePath}.${process.pid}.tmp`)
   rt.state.prefs.marker = 'not saved'
-  await assert.rejects(rt.save(), { code: 'EISDIR' })
+  await assert.rejects(rt.save())
   assert.deepEqual(fs.readFileSync(statePath), original)
 })
 
@@ -319,4 +319,39 @@ test('a roster id that is not an own key finds no Bot and no group (#1704)', asy
   assert.deepEqual(rt.findRooms('__proto__'), [], 'findRooms(__proto__) answered Object.prototype')
   assert.equal(rt.findBot('a').name, 'Chief')
   assert.equal(rt.findRooms('Ops')[0].id, 'r1')
+})
+
+// The state write lands through `<state>.json.<pid>.tmp` and then renames it into place. The temp
+// name is a leaf like the state file (temp-name sweep): `writeFile` would follow a link there, put
+// the team outside the home and then rename the link over the state file. Only the target is
+// replaced by `rename`, link included, never written through.
+test('a linked state temp name does not take the save; the state file stays a plain file', async (t) => {
+  const { rt, home, statePath, warnings } = runtime(t)
+  await rt.load()
+  const outside = join(home, 'outside-state.json')
+  fs.writeFileSync(outside, 'OUTSIDE\n')
+  fs.symlinkSync(outside, `${statePath}.${process.pid}.tmp`)
+  rt.state.prefs.sweep = 'not saved'
+  await assert.rejects(rt.save())
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the file behind the temp link is not written through')
+  assert.equal(fs.lstatSync(statePath).isSymbolicLink(), false, 'the state file is still a plain file')
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).prefs.sweep, undefined, 'the refused save did not land')
+  assert.ok(warnings.some(line => /not a plain file/.test(line.join(' '))), 'the refusal is named')
+})
+
+// The other half of the same shape: a link at the destination itself is replaced by the rename, so
+// it never needs the temp check. This is why the sweep only adds the temp name.
+test('a link at the state file itself is replaced, not written through', async (t) => {
+  const { rt, home, statePath } = runtime(t)
+  await rt.load()
+  await rt.save()
+  const outside = join(home, 'outside-state.json')
+  fs.writeFileSync(outside, 'OUTSIDE\n')
+  fs.rmSync(statePath)
+  fs.symlinkSync(outside, statePath)
+  rt.state.prefs.sweep = 'kept'
+  await rt.save()
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the rename never follows the target link')
+  assert.equal(fs.lstatSync(statePath).isSymbolicLink(), false, 'the link is replaced by the saved file')
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).prefs.sweep, 'kept')
 })

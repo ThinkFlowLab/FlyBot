@@ -3,7 +3,7 @@
 // (default 2). A live node stays running until its Bot replies.
 
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
@@ -187,6 +187,14 @@ function blankRun(workflow, task, now, history = []) {
   }
 }
 
+// The temp name the store lands through is a leaf like the store itself (temp-name sweep): a link
+// left at `<file>.<pid>.tmp` would take the workflows outside their folder and the rename would put
+// the link where the store belongs. Absent is ours to create, a plain leftover is replaceable, and
+// anything else refuses the write before the first byte.
+const tempWritable = (path) => {
+  try { return lstatSync(path).isFile() } catch (error) { return error?.code === 'ENOENT' }
+}
+
 export function createWorkflowService({
   dir, persist = true, now = () => Date.now(), bots = () => [], readOnly = () => false, warn = () => {}, tasksWired = false, spawn, release, dispatch,
   // #1856: the host's Project seam. `readProject(id)` answers the record or null; `bindRun(runId,
@@ -311,6 +319,7 @@ export function createWorkflowService({
     state.seq = seq
     mkdirSync(dir, { recursive: true })
     const tmp = `${file}.${process.pid}.tmp`
+    if (!tempWritable(tmp)) throw new Error(`Not saved: ${tmp} is not a plain file, so the workflow store was not written there.`)
     writeFileSync(tmp, JSON.stringify(state))
     renameSync(tmp, file)
   }
