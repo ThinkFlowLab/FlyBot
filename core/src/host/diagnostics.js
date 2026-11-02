@@ -233,7 +233,10 @@ export function install(rt) {
       node: process.version,
       team: `${count(bots.length, 'Bot', 'Bots')}, ${rt.state.mainBotIds.length} Main, ${count(groups, 'group chat', 'group chats')}`,
       models: models.length > 0 ? models.join(', ') : undefined,
-      readOnly: readOnly ? 'yes, another dsh holds the team' : undefined,
+      // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
+      // live state.lock are different faults, and the sidebar shows this same sentence, so the
+      // report must not compress both into "another dsh holds the team".
+      readOnly: readOnly ? clean(cut(readOnly, 200).text) : undefined,
       // The writer is opened before the lock is asked for, so in a window another dsh keeps
       // read-only `save()` returns before `journal.record()` and no line is written at all;
       // claiming `recording` there promises a line the file will not get. A journal that

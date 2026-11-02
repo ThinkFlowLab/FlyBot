@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
-import { homedir, tmpdir } from 'node:os'
+import { homedir, hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { ISSUES_URL, cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
 import { openJournal, stateText } from '../src/host/journal.js'
+import { install as installStore } from '../src/host/store.js'
 import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
 import { errorCode } from '../src/host/channel.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
@@ -309,7 +310,7 @@ test('a read-only window does not say the state journal is recording (#2153)', a
   const readOnly = () => 'Another dsh (pid 1 on host) holds the team'
   const journal = openJournal({ path: join(home, 'journal', 'state.jsonl'), warn: () => {} })
   const held = await host(home, { journal, readOnly, config: { diagnosticsFile: false } }).diagnostics.report({})
-  assert.match(held.markdown, /^\| Read-only \| yes, another dsh holds the team \|$/m)
+  assert.match(held.markdown, /^\| Read-only \| Another dsh \(pid 1 on host\) holds the team \|$/m)
   assert.doesNotMatch(held.markdown, /state journal: recording/)
   assert.match(held.markdown, /^state journal: paused \(this window is read-only\)$/m)
   assert.equal(held.facts.stateJournal, 'paused (this window is read-only)')
@@ -324,6 +325,70 @@ test('a read-only window does not say the state journal is recording (#2153)', a
   await stoppedJournal.record(stateText({ version: 2, revision: 1 }))
   const stoppedHeld = await host(home, { journal: stoppedJournal, readOnly, config: { diagnosticsFile: false } }).diagnostics.report({})
   assert.match(stoppedHeld.markdown, /^state journal: stopped \(.*not a plain file.*\)$/m)
+})
+
+// The Read-only row answered one constant for every window that may not write, but the store
+// answers three ways (#2153): `stuck` (the team file cannot be read) is not a live lock at all,
+// and a report that calls a newer or unreadable team file "another dsh holds the team" sends the
+// reader to close a host that is not running. These four build the real store and the real
+// diagnostics on one runtime, so the sentence is the one the host actually produces.
+async function realHost(t, { saved, locked = false } = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-ro-'))
+  const statePath = join(home, 'state.json')
+  if (saved === 'dir') mkdirSync(statePath)
+  else if (saved !== undefined) writeFileSync(statePath, JSON.stringify(saved))
+  // A lock file naming a live process is exactly what a second dsh leaves behind.
+  if (locked) writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: 1, host: hostname(), token: 'the-other-dsh' }))
+  const disposers = []
+  const rt = {
+    ctx: {
+      logger: { warn: () => {} },
+      effect(execute) {
+        const dispose = execute()
+        if (typeof dispose === 'function') disposers.push(dispose)
+      },
+    },
+    home,
+    statePath,
+    config: { diagnosticsFile: false },
+    autoRoomName: () => 'Room',
+    retitleRoom: async () => {},
+    warn: () => {},
+  }
+  installStore(rt)
+  await rt.load()
+  installDiagnostics(rt)
+  t.after(async () => {
+    await Promise.all(disposers.splice(0).map(dispose => dispose()))
+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+  })
+  return { home, readOnly: rt.readOnly(), report: await rt.diagnostics.report({}) }
+}
+
+test('the Read-only row says a newer team file needs an update, not that another dsh holds the team (#2167)', async (t) => {
+  const { home, readOnly, report } = await realHost(t, { saved: { version: 99 } })
+  assert.match(readOnly, /update FlyBot/)
+  assert.ok(report.markdown.includes(`| Read-only | The Bot team file ${join(home, 'state.json')} could not be read (saved by a newer FlyBot; update FlyBot). FlyBot does not change it; fix or move the file and reload. |`), report.markdown)
+  assert.doesNotMatch(report.markdown, /another dsh holds the team/)
+})
+
+test('the Read-only row says an unreadable team file could not be read, not that another dsh holds the team (#2167)', async (t) => {
+  const { report } = await realHost(t, { saved: 'dir' })
+  assert.match(report.markdown, /^\| Read-only \| The Bot team file .* could not be read \(EISDIR\)\. FlyBot does not change it; fix or move the file and reload\. \|$/m)
+  assert.doesNotMatch(report.markdown, /another dsh holds the team/)
+})
+
+test('the Read-only row keeps the other-dsh wording when a live lock names it (#2167)', async (t) => {
+  const { report } = await realHost(t, { locked: true })
+  assert.ok(report.markdown.includes('open in another dsh (Web or Desktop, pid 1 on '), report.markdown)
+  assert.match(report.markdown, /This window shows the team but cannot change it; close the other one and reload\./)
+  assert.doesNotMatch(report.markdown, /could not be read/)
+})
+
+test('a writable window has no Read-only row', async (t) => {
+  const { report } = await realHost(t)
+  assert.equal(report.facts.readOnly, undefined)
+  assert.doesNotMatch(report.markdown, /^\| Read-only \|/m)
 })
 
 test('reportMarkdown says when nothing went wrong', () => {
