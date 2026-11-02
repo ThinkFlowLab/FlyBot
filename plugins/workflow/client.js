@@ -1949,6 +1949,10 @@ window.__ModuleLoader__.load({
       const [projects, setProjects] = useState([])
       const [projectFilter, setProjectFilter] = useState('')
       const stageLeft = useConversationInset()
+      // A read-only window offers no write entry in this list: the host refuses each one with
+      // `bot/read-only`, so the reader would press a control that cannot work (#2200).
+      const readOnlyReason = typeof roster?.readOnly === 'string' ? roster.readOnly.trim() : ''
+      const locked = readOnlyReason !== ''
 
       const stageCall = (name, body, fallback) => settledCall(call, name, body, fallback)
 
@@ -2169,7 +2173,7 @@ window.__ModuleLoader__.load({
       return h('div', { 'data-flybot': 'workflow' },
         h('div', { className: 'wf-sec' },
           h('span', null, tr('Workflows')),
-          h('button', { type: 'button', className: 'wf-new', onClick: () => { setError(''); setCreating(true) } }, tr('New'))),
+          locked ? null : h('button', { type: 'button', className: 'wf-new', onClick: () => { setError(''); setCreating(true) } }, tr('New'))),
         workflows.length > 0 ? h('label', { className: 'wf-filter' },
           h('span', null, tr('Filter by Project')),
           h('select', {
@@ -2187,7 +2191,7 @@ window.__ModuleLoader__.load({
         shown.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
           onClick: () => { setOpenId(item.id) },
-          onContextMenu: (event) => {
+          onContextMenu: locked ? undefined : (event) => {
             event.preventDefault()
             event.stopPropagation?.()
             setRowMenu({ x: event.clientX, y: event.clientY, workflow: item })
@@ -2199,7 +2203,7 @@ window.__ModuleLoader__.load({
               h('span', { className: `wf-proj${projectName(item.projectId) ? '' : ' none'}` }, projectName(item.projectId) || tr('Unassigned'))),
             h('span', { className: 'wf-t2' }, sidebarPreview(item))),
           (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live', 'aria-hidden': true }) : null)),
-        h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
+        locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
@@ -2273,7 +2277,7 @@ window.__ModuleLoader__.load({
           h('div', null, tip.node.role),
           h('div', { className: 'wf-k' }, 'Instructions'),
           h('div', null, tip.node.instructions)) : null,
-        rowMenu ? portal(h('div', {
+        rowMenu && !locked ? portal(h('div', {
           className: 'wf-context-menu',
           style: { left: rowMenu.x, top: rowMenu.y },
           onPointerDown: (event) => event.stopPropagation(),

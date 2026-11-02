@@ -3496,3 +3496,65 @@ test('#2193: a refused create keeps its dialog open and shows the host sentence 
   assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal])
   view.unmount()
 })
+
+// #2200: the sidebar list is the other face of the same read-only window. #2187 took the edit
+// surface off the graph page; the list still offered New, the row menu's Rename and Delete, and
+// the Hand a task row, and the host refused every one of them behind the mask.
+const LIST_GRAPH = () => ({ ...delivery(), id: 'lane-a', name: 'Lane A' })
+
+function sidebarHost(graph, calls) {
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: false, code: 'bot/read-only', error: READ_ONLY_REASON }
+  }
+  return call
+}
+
+async function mountSidebar(roster, calls = []) {
+  const view = mount(client.Section, { roster, call: sidebarHost(LIST_GRAPH(), calls), actions: {} })
+  await settle()
+  return { view, calls }
+}
+
+const laneRow = view => findAll(view.tree, node => node.type === 'button' && textOf(node).includes('Lane A'))[0]
+
+test('#2200: a read-only window offers no New, no Rename, no Delete and no Hand a task', async () => {
+  const { view, calls } = await mountSidebar({ bots: [], readOnly: READ_ONLY_REASON })
+  assert.ok(laneRow(view), 'the list still draws what the host gave it')
+  const offered = []
+  if (button(view.tree, 'New')) offered.push('New')
+  if (button(view.tree, 'Hand a task to a Workflow')) offered.push('Hand a task')
+  laneRow(view).props.onContextMenu?.({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+  await settle()
+  if (button(view.tree, 'Rename')) offered.push('Rename')
+  if (button(view.tree, 'Delete')) offered.push('Delete')
+  assert.deepEqual(offered, [], 'a read-only window offers no write entry in the list')
+  assert.deepEqual(calls.filter(item => item.name !== 'workflow/state'), [], 'nothing was written from the list')
+  view.unmount()
+})
+
+test('#2200: a writable window keeps New, Rename, Delete and Hand a task', async () => {
+  for (const roster of [{ bots: [] }, { bots: [], readOnly: '' }, { bots: [], readOnly: '   ' }]) {
+    const { view } = await mountSidebar(roster)
+    const why = `roster.readOnly=${JSON.stringify(roster.readOnly)}`
+    assert.ok(button(view.tree, 'New'), `New stays when the window may write (${why})`)
+    assert.ok(button(view.tree, 'Hand a task to a Workflow'), `Hand a task stays (${why})`)
+    laneRow(view).props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10 })
+    await settle()
+    assert.ok(button(view.tree, 'Rename'), `Rename stays (${why})`)
+    assert.ok(button(view.tree, 'Delete'), `Delete stays (${why})`)
+    button(view.tree, 'New').props.onClick()
+    await settle()
+    assert.ok(findAll(view.tree, node => node.props?.role === 'dialog').length > 0, `New still opens the create dialog (${why})`)
+    view.unmount()
+  }
+})
+
+test('#2200: the host sentence #2187 put on the page is still there', async () => {
+  const view = mount(client.WorkflowSettings, { call: sidebarHost(LIST_GRAPH(), []), roster: { bots: [], readOnly: READ_ONLY_REASON } })
+  await settle()
+  const statuses = findAll(view.tree, node => node.props?.role === 'status')
+  assert.ok(statuses.some(node => textOf(node).includes(READ_ONLY_REASON)), 'the page still says why in the host\'s own words')
+  view.unmount()
+})

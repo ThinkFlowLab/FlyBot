@@ -1,0 +1,1 @@
+While another dsh holds the Bot team, the Workflow list in the sidebar no longer offers **New**, **Rename**, **Delete** or **Hand a task to a Workflow**: a read-only window shows the list only, instead of taking a change that core refuses with `bot/read-only` ([#2200](https://github.com/ThinkFlowLab/FlyBot/issues/2200)).
