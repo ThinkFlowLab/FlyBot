@@ -197,9 +197,18 @@ function rowGap(boxes, box, dir) {
 }
 
 function laneFor(base, yA, yB, boxes, from, to, taken) {
-  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < yB && yA < lane.yB)
-    && !boxes.some((box) => box !== from && box !== to
-      && Math.abs(x - box.cx) < CARD_HALF + WIRE_GAP && yA < box.bottom && yB > box.top)
+  // #2151: what a lane has to keep clear is an interval, so take its ends low-to-high
+  // first. A pair seated on one row hands us yA above yB, and an inverted interval
+  // overlaps no card at all — every slot then read as open and the lane fell back to
+  // the row's own column.
+  const lo = Math.min(yA, yB)
+  const hi = Math.max(yA, yB)
+  // The two ends are exempt from the comfort gap, not from their own body: a lane that
+  // runs outside the row crosses both cards' full height, so it may not be seated inside
+  // one of them — nor on its border — either (#2151).
+  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < hi && lo < lane.yB)
+    && !boxes.some((box) => Math.abs(x - box.cx) < CARD_HALF + (box === from || box === to ? 1 : WIRE_GAP)
+      && lo < box.bottom && hi > box.top)
   for (const step of LANE_STEPS) if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE
   // Every lane within reach is held by another wire; walk further out rather than
   // dropping this one back onto the column the cards sit on.
@@ -245,11 +254,19 @@ export function wireRoutes(nodes, edges, heights = {}) {
     const x2 = item.to.cx
     const y1 = item.from.bottom
     const y2 = item.to.top
-    const gap = Math.max(0, Math.min(WIRE_GAP, (y2 - y1) / 2))
-    const yA = clearOf(y1 + gap, 1)
+    // #2151: two cards on one row have no corridor between them — from.bottom sits at or
+    // below to.top — so a gap measured inside it is empty and both runs landed on the
+    // row's own edges, under the card beside them. Sit them outside the row instead:
+    // below its lowest measured bottom and above the target's top.
+    const sameRow = y2 - y1 <= 0
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, (y2 - y1) / 2)
+    const rowBottom = sameRow
+      ? Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom))
+      : y1
+    const yA = clearOf(rowBottom + gap, 1)
     const yB = clearOf(y2 - gap, -1)
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken)
-    taken.push({ x: lane, yA, yB })
+    taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) })
     // Round a card on the column even when the lane search found nothing: a straight
     // run between two cards that share an x is only allowed when nothing sits between.
     const straight = Math.abs(lane - x1) < 0.5 && Math.abs(lane - x2) < 0.5

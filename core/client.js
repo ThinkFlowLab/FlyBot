@@ -16517,7 +16517,9 @@ function rowGap(boxes, box, dir) {
   return (near + edge) / 2;
 }
 function laneFor(base, yA, yB, boxes, from, to, taken) {
-  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < yB && yA < lane.yB) && !boxes.some((box) => box !== from && box !== to && Math.abs(x - box.cx) < CARD_HALF + WIRE_GAP && yA < box.bottom && yB > box.top);
+  const lo = Math.min(yA, yB);
+  const hi = Math.max(yA, yB);
+  const open = (x) => !taken.some((lane) => Math.abs(lane.x - x) < WIRE_LANE - 0.5 && lane.yA < hi && lo < lane.yB) && !boxes.some((box) => Math.abs(x - box.cx) < CARD_HALF + (box === from || box === to ? 1 : WIRE_GAP) && lo < box.bottom && hi > box.top);
   for (const step of LANE_STEPS) if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE;
   for (let step = LANE_REACH + 1; step <= LANE_REACH * 3; step += 1) {
     if (open(base + step * WIRE_LANE)) return base + step * WIRE_LANE;
@@ -16555,11 +16557,13 @@ function wireRoutes(nodes, edges, heights = {}) {
     const x2 = item.to.cx;
     const y1 = item.from.bottom;
     const y2 = item.to.top;
-    const gap = Math.max(0, Math.min(WIRE_GAP, (y2 - y1) / 2));
-    const yA = clearOf(y1 + gap, 1);
+    const sameRow = y2 - y1 <= 0;
+    const gap = sameRow ? WIRE_GAP : Math.min(WIRE_GAP, (y2 - y1) / 2);
+    const rowBottom = sameRow ? Math.max(...boxes.filter((box) => Math.abs(box.top - item.from.top) <= 1.5).map((box) => box.bottom)) : y1;
+    const yA = clearOf(rowBottom + gap, 1);
     const yB = clearOf(y2 - gap, -1);
     const lane = laneFor((x1 + x2) / 2, yA, yB, boxes, item.from, item.to, taken);
-    taken.push({ x: lane, yA, yB });
+    taken.push({ x: lane, yA: Math.min(yA, yB), yB: Math.max(yA, yB) });
     const straight = Math.abs(lane - x1) < 0.5 && Math.abs(lane - x2) < 0.5 && !cutsCard(boxes, x1, y1, x2, y2, item.from, item.to);
     routes.push({
       key: `${item.from.id}>${item.to.id}`,
