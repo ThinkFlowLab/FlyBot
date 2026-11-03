@@ -1634,7 +1634,7 @@ test('sealed Attempt logs are bounded UTF-8 pages with exact hash and stale-curs
   a.evidence.tests = { log: path, sha256: createHash('sha256').update(text).digest('hex'), sha: 'a'.repeat(40) }
   const first = await f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id, limit: 64 }, alice)
   assert.ok(Buffer.byteLength(first.text) <= 64)
-  assert.equal(first.text.includes('�'), false)
+  assert.equal(first.text.includes('\uFFFD'), false)
   assert.ok(first.nextOffset > 0)
   const next = await f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id, offset: first.nextOffset, limit: 64, expectedSha256: first.sha256 }, alice)
   assert.equal(next.offset, first.nextOffset)
