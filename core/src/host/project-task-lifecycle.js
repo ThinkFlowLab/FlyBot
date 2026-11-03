@@ -1,5 +1,6 @@
 // Project semantics on the original Task records. No separate queue or store.
 import { ownEntry } from './store.js'
+import { taskRepository } from './project-task-repository.js'
 import { initialRoleTarget } from './project-role-admission.js'
 import { createHash } from 'node:crypto'
 import { stageRoleSummary, rollbackRoleSummary } from './project-context-memory.js'
@@ -12,6 +13,10 @@ const bounded = (value, name, max = 2000) => {
   if (typeof value !== 'string' || !value.trim() || Array.from(value).length > max) throw fail(`${name} requires bounded nonempty text`)
   return value.trim()
 }
+const repositoryValue = value => {
+  if (value === null || typeof value === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value) && value.length <= 200) return value
+  throw fail('Task repository must be owner/name or null')
+}
 const contract = task => {
   if (!task?.projectId || task.projectTask?.version !== VERSION) throw fail('Project Task contract is unavailable')
   return task.projectTask
@@ -22,7 +27,7 @@ function chief(task, decision) {
 }
 export function createTaskContract(task, body = {}) {
   if (task.projectTask) return contract(task)
-  const requirements = { revision: 1, title: task.title, criteria: task.criteria ?? '', impact: body.impact ?? '', scope: body.scope ?? '', at: Date.now() }
+  const requirements = { ...(body.repository !== undefined ? { repository: repositoryValue(body.repository) } : {}), revision: 1, title: task.title, criteria: task.criteria ?? '', impact: body.impact ?? '', scope: body.scope ?? '', at: Date.now() }
   for (const field of ['impact', 'scope']) if (requirements[field]) requirements[field] = bounded(requirements[field], field)
   task.projectTask = { version: VERSION, admission: { status: 'proposed', decisions: [] }, requirements, requirementsHistory: [], dependencies: [], results: [] }
   return task.projectTask
@@ -44,7 +49,8 @@ export function reviseTask(task, changes, decision) {
   if (['accepted', 'cancelled'].includes(task.status)) throw fail('Ended Task requirements cannot be rewritten')
   const next = { ...row.requirements }
   for (const key of ['title', 'criteria', 'impact', 'scope']) if (changes[key] !== undefined) next[key] = bounded(changes[key], key)
-  if (Object.keys(changes).some(key => !['title', 'criteria', 'impact', 'scope'].includes(key))) throw fail('Unsupported Task requirement change')
+  if (changes.repository !== undefined) next.repository = repositoryValue(changes.repository)
+  if (Object.keys(changes).some(key => !['title', 'criteria', 'impact', 'scope', 'repository'].includes(key))) throw fail('Unsupported Task requirement change')
   if (row.requirementsHistory.some(r => r.decisionId === decision.id) || row.requirements.decisionId === decision.id) return false
   row.requirementsHistory.push(copy(row.requirements))
   row.requirements = { ...next, revision: next.revision + 1, decisionId: decision.id, at: Date.now() }
@@ -222,8 +228,9 @@ export function createProjectTaskLifecycle(rt) {
   }
   function stageStart(task, decision, changes = {}) {
     const initialTarget = initialRoleTarget(rt, task, { targetRole: changes.targetRole })
+    const execution = rt.projects.repository ? taskRepository(rt, rt.projects.repository.get(task.projectId), task, changes) : null
     return rt.projectEffects.stage({ kind: 'task.start', key: decision.id, projectId: task.projectId, taskId: task.id,
-      payload: { decisionId: decision.id, ...(initialTarget ? { initialTarget } : {}), requirementsRevision: task.projectTask.requirements.revision, memberId: task.requesterId, sessionId: task.projectTask.executionRequester?.memberId === task.requesterId ? task.projectTask.executionRequester.sessionId : null } })
+      payload: { decisionId: decision.id, ...(execution ? { repositoryBinding: execution.binding } : {}), ...(initialTarget ? { initialTarget } : {}), requirementsRevision: task.projectTask.requirements.revision, memberId: task.requesterId, sessionId: task.projectTask.executionRequester?.memberId === task.requesterId ? task.projectTask.executionRequester.sessionId : null } })
   }
   async function adjudicate(task, changes, audit, actor) {
     await rt.projectChiefControl.validateActor(actor)
@@ -340,8 +347,8 @@ export function createProjectTaskLifecycle(rt) {
       if (body.action !== 'revise' || !body.requirements || typeof body.requirements !== 'object' || Array.isArray(body.requirements)) throw fail('Only revision requests carry requirements')
       requestedChange.requirements = {}
       for (const [key, value] of Object.entries(body.requirements)) {
-        if (!['title', 'criteria', 'impact', 'scope'].includes(key)) throw fail('Unsupported requirement')
-        requestedChange.requirements[key] = bounded(value, key)
+        if (!['title', 'criteria', 'impact', 'scope', 'repository'].includes(key)) throw fail('Unsupported requirement')
+        requestedChange.requirements[key] = key === 'repository' ? repositoryValue(value) : bounded(value, key)
       }
     }
     const source = { requestId: body.requestId, requestedChange }
@@ -370,7 +377,7 @@ export function install(rt) {
     const actor = { memberId: effect.payload.memberId, ...(effect.payload.sessionId ? { sessionId: effect.payload.sessionId } : {}) }
     await rt.projectDelegations.background(actor.memberId, actor.sessionId)
     rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
-    return rt.projectScheduler.request({ taskId: task.id, requestId: `chief-${effect.payload.decisionId}`, initialTarget: effect.payload.initialTarget }, actor)
+    return rt.projectScheduler.request({ taskId: task.id, requestId: `chief-${effect.payload.decisionId}`, initialTarget: effect.payload.initialTarget, repositoryBinding: effect.payload.repositoryBinding }, actor)
   } })
   rt.projectEffects.register('task.dependency-review', { async run(effect) {
     const task = rt.projectTaskLifecycle.taskOf(effect.taskId), wait = task.projectTask?.wait

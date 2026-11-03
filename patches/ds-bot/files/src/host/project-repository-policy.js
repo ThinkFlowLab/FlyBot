@@ -13,6 +13,7 @@ const relativePath = value => argument(value) && value.length > 0 && value === v
 export const repositoryAllowed = (settings, memberId) => Array.isArray(settings?.allowedProjectOwnerIds)
   ? settings.allowedProjectOwnerIds.includes(memberId) : memberId === 'owner-1'
 export function repositorySettings(rt, project) {
+  if (project.repository === null && project.executionKind === 'decision') return { model: rt.config.projectModel, allowedPaths: [], testCommand: [] }
   const settings = ownEntry(rt.config.projectRepositories ?? {}, project.repository)
   if (!settings || !repositoryAllowed(settings, project.ownerUserId)) throw Object.assign(new Error('Project repository/test capability is not provisioned for this owner'), { code: 'bot/delivery' })
   if (!argument(settings.path) || !isAbsolute(settings.path)) throw invalid('path')
@@ -46,6 +47,7 @@ async function writableDirectory(path) {
 export async function preflightRepository(rt, project) {
   executionProfile(rt.config)
   const settings = repositorySettings(rt, project)
+  if (project.repository === null && project.executionKind === 'decision') return settings
   let path
   try { path = await realpath(settings.path); if (!(await stat(path)).isDirectory()) throw invalid('path'); await access(path, constants.R_OK | constants.W_OK | constants.X_OK) }
   catch { throw invalid('path') }

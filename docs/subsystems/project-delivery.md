@@ -548,3 +548,9 @@ Composed #2179 execution checks include the canonical Task requirement revision.
 Explicit canonical Workflow delivery assigns only through the private exact-current-Attempt access port, preserving the original graph, quota and Run evidence. Public assign cannot create a parallel canonical execution. Pre-cutover Task IDs, parents, artifacts and active recovery remain authoritative. See [compatibility](project-compatibility.md).
 
 #2292: initial Attempts retain the approved initialTarget (logical role, Bot, capability, catalog and requirement revisions); preflight and pool admission revalidate it. Runtime code and frozen active role Sessions are unchanged by queue recovery.
+
+## Task repository and repository-free decisions (#2292)
+
+Task requirements may select repository (owner/name or null); Task creation/Chief revision preserve it. task.run can select an associated repository when requirements have not specified one. Start Effects, queues and Attempts retain repositoryBinding; all code workspace, policy, tests, publication, rework and child integration use this scope. Project defaults never rebind an existing Attempt. Removed/replaced associations and revoked operator capabilities stop further admission/current execution; historical references remain readable.
+
+Repository-free decision Tasks use registered local decision-directory Workspaces, ordinary role Sessions/resources/handoff, bounded hashed output evidence and Chief adjudication. They create no Git candidate or fake tests. Their local-resource limitation is explicit; remote directory transport is not implemented. Current role conventions and Project knowledge remain input, with no repository guidance invented. Cross-repository child code results remain exact external references; only same-repository sources enter the parent Git merge.

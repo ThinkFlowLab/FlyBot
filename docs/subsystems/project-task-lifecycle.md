@@ -117,3 +117,5 @@ than pretending the changed wait has completed.
 requireExecutable accepts an untyped shared Project Task only when the compatibility service recognizes its committed original identity. Absence of projectTask is no longer implicit admission. Explicit Chief adoption of inactive legacy work remains the existing adjudication capability; active work cannot change its contract.
 
 #2292: Chief admit/reopen can choose targetRole. The task.start Effect persists the resolved initialTarget with its requirement version; replay cannot silently choose a new catalog target or execute a superseded requirement revision.
+
+#2292 requirements support repository: owner/name or null. Chief-authorized revisions preserve the previous value in history and invalidate old requirement evidence. Initial start Effects pin the resolved association; repository-free decision work still requires ordinary Chief admission and overall completion judgement.

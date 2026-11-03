@@ -1,6 +1,7 @@
 // Persisted Project admission queue. The existing Workflow service still dispatches Runs.
 import { createHash, randomUUID } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
+import { taskRepository } from './project-task-repository.js'
 import { initialRoleTarget } from './project-role-admission.js'
 import { preflightRepository } from './project-repository-policy.js'
 const ACTIVE = new Set(['queued', 'running', 'working', 'paused', 'legacy'])
@@ -62,23 +63,27 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       return { admission: structuredClone(task.projectTask.admission), waitingFor: 'chief' }
     }
     rt.projectTaskLifecycle?.requireExecutable(task)
-    await preflight(rt, project)
+    const execution = taskRepository(rt, project, task, body)
+    await preflight(rt, execution.project)
     if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId)) throw error('A run needs a stable requestId')
     const requestKey = createHash('sha256').update(`${project.id}\n${task.id}\n${body.requestId}`).digest('hex')
     const prior = Object.values(state.projectAttempts ?? {}).find(attempt => attempt.requestKey === requestKey)
-    if (prior) return { attempt: structuredClone(prior), already: true }
+    if (prior) {
+      if (body.repository !== undefined && body.repository !== prior.requirement?.repository || body.targetRole !== undefined && prior.initialTarget && body.targetRole !== prior.initialTarget.role) throw error('Execution request content changed on replay')
+      return { attempt: structuredClone(prior), already: true }
+    }
     const queued = Object.values(entries()).find(entry => entry.requestKey === requestKey || entry.taskId === task.id && entry.status === 'waiting')
     if (queued) {
-      if (body.targetRole !== undefined && body.targetRole !== queued.initialTarget?.role) throw error('Queued request target cannot change on replay')
+      if (body.repository !== undefined && queued.repositoryBinding && body.repository !== queued.repositoryBinding.repository || body.targetRole !== undefined && body.targetRole !== queued.initialTarget?.role) throw error('Queued request target cannot change on replay')
       return { queue: structuredClone(queued), already: true }
     }
     if (['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended')
     if (Object.values(state.projectAttempts ?? {}).some(attempt => attempt.taskId === task.id && ['preparing', 'running', 'waiting-acceptance'].includes(attempt.status))) throw error('Task already has an active Attempt')
     const initialTarget = initialRoleTarget(rt, task, body)
     const resourceReason = resourceBlock(project.id, initialTarget)
-    if (slots(project.id) < quota(project) && !resourceReason) return rt.projectDelivery.endpoint('project-task-run', { ...body, ...(initialTarget ? { initialTarget } : {}) }, actor)
+    if (slots(project.id) < quota(project) && !resourceReason) return rt.projectDelivery.endpoint('project-task-run', { ...body, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}) }, actor)
     const entry = { id: `queue-${randomUUID()}`, projectId: project.id, taskId: task.id, requestId: body.requestId, requestKey,
-      memberId: actor.memberId, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
+      memberId: actor.memberId, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
     setEntry(entries(), entry.id, entry)
     await rt.save()
     return { queue: structuredClone(entry) }
@@ -92,8 +97,10 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       const project = rt.readProject(entry.projectId)
       if (!project || project.status !== 'active') { entry.status = 'blocked'; entry.reason = 'Project is archived or unavailable'; changed = true; continue }
       if (slots(project.id) >= quota(project)) continue
-      try { await preflight(rt, project) }
+      let execution
+      try { execution = taskRepository(rt, project, state.tasks[entry.taskId], { repositoryBinding: entry.repositoryBinding }); await preflight(rt, execution.project) }
       catch (failure) { entry.status = 'blocked'; entry.reason = failure.message; entry.updatedAt = Date.now(); changed = true; continue }
+      if (!entry.repositoryBinding) { entry.repositoryBinding = execution.binding; await rt.save() }
       let initialTarget
       try { initialTarget = initialRoleTarget(rt, state.tasks[entry.taskId], { initialTarget: entry.initialTarget }) }
       catch (failure) { entry.status = 'blocked'; entry.reason = failure.message; entry.updatedAt = Date.now(); changed = true; continue }
@@ -104,7 +111,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       entry.updatedAt = Date.now()
       await rt.save()
       try {
-        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId, initialTarget: entry.initialTarget }, { memberId: entry.memberId })
+        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId, repositoryBinding: entry.repositoryBinding, initialTarget: entry.initialTarget }, { memberId: entry.memberId })
         entry.status = result.attempt?.status === 'failed' ? 'failed' : 'started'
         entry.attemptId = result.attempt?.id ?? null
         if (result.attempt?.failure) entry.reason = result.attempt.failure.message
@@ -136,7 +143,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     if (!rt.projectCan(requester, entry.projectId, 'task-write', task)) throw error('Original requester no longer has Project authority')
     await rt.projectDelegations?.background(entry.memberId)
     const project = rt.requireProjectAccess(actor, entry.projectId, 'run-control')
-    await preflight(rt, project)
+    await preflight(rt, taskRepository(rt, project, task, { repositoryBinding: entry.repositoryBinding }).project)
     rt.requireProjectAccess(actor, entry.projectId, 'run-control')
     if (['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended')
     if (!rt.projectCan(requester, entry.projectId, 'task-write', task)) throw error('Original requester no longer has Project authority')

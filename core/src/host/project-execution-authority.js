@@ -1,4 +1,6 @@
 // Current authority limits retained execution context; it never replaces its persona.
+import { attemptProject } from './project-task-repository.js'
+import { repositorySettings } from './project-repository-policy.js'
 import { ownEntry } from './store.js'
 import { pinTaskRoleDefinition } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/execution-revoked' })
@@ -18,6 +20,7 @@ export async function requireExecutionAuthority(rt, session) {
     if (task.projectTask && attempt?.requirement?.projectTaskRevision !== task.projectTask.requirements.revision) throw refuse('Execution requirements version changed; stop the old Attempt before resuming')
     if (['accepted', 'cancelled'].includes(task.status)) throw refuse('Execution Task has ended')
     if (rt.readOnly?.() !== undefined) throw refuse('Execution lost its writable host authority')
+    if (attempt?.repositoryBinding) repositorySettings(rt, attemptProject(rt, rt.projects.repository.get(task.projectId), attempt))
   }
   current()
   if (memberId) {

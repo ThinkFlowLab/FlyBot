@@ -142,7 +142,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | role.decide | proposalId、expectedSha256、decision:approve/reject | 管；精确批准Chief提案，不能由提案Chief借Owner身份自批 |
 | task.propose | title；criteria/impact接纳前必需；scope/projectTaskKind/botId? | 创建唯一Task并提交Chief intake；当前成员发布权限；kind仅code/decision/release |
 | task.change.request | taskId、action:revise/cancel/reopen、reason；revise可带requirements | 写；仅请求Chief判断，不立即改承诺/关闭Task |
-| task.run | taskId, requestId, targetRole? | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
+| task.run | taskId, requestId, targetRole?, repository? | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
 | task.accept | attemptId | 旧兼容交付的人工验收；管；新Task最终关闭仍由Chief |
 | task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
 | attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
@@ -216,3 +216,5 @@ Accept: text/event-stream
 保留task-create、project-task-run、project-task-pools、project-chief-question等原接口，映射同一领域服务。
 新调用方优先v1命令以获得主体范围的持久回执。旧Group/track_tasks仅保留已提交旧任务及其返工，不得为新Project工作建立旁路；个人任务不受该Project切换限制。
 原public Bot人设/长期记忆可授权查看，个人代理/Chief私有记忆不会因此公开。具体保留对象和回退限制见[兼容盘点](subsystems/project-compatibility.md)。
+
+Task requirements accept optional repository (owner/name or null). An admitted explicit selection cannot be overridden by task.run. Cross-repository child outputs are references, not permission to merge into another repository. Repository-free decision Tasks currently execute on local resources.
