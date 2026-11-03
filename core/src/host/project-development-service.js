@@ -61,7 +61,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
   else if (nativeWorker?.status === 'stopping' || nativeWorker?.status === 'stop-unconfirmed') { phase = nativeWorker.status === 'stopping' ? 'stopping' : 'blocked'; waitingFor = 'worker-exit'; reason = c?.block?.reason ?? null }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
-  else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = 'awaiting-chief'; waitingFor = 'admission' }
+  else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = task.projectTask.admission.failure ? 'blocked' : 'awaiting-chief'; waitingFor = task.projectTask.admission.failure ? 'chief-recovery' : 'admission'; reason = task.projectTask.admission.failure?.reason ?? null }
   else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }

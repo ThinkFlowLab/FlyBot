@@ -237,3 +237,21 @@ test('validated Chief completion can publish bounded role proposals but cannot a
   assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'failed')
   assert.match(g.rt.state.projectExecutions[g.request.runId].failure, /bounded array/)
 })
+
+
+test('malformed Chief admission remains visible and a valid explicit retry clears only the active failure', async () => {
+  const f = await controlFixture({ modern: true })
+  assert.match(f.request.prompt, /requirements\.criteria.*string/)
+  await f.request.onResult(f.result({ action: 'admit', reason: 'Clarify scope', requirements: { criteria: ['Exact candidate passes'] } }))
+  assert.equal(f.task.projectTask.admission.status, 'proposed')
+  assert.match(f.task.projectTask.admission.failure.reason, /bounded nonempty text/)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed')
+  const { taskView } = await import('../src/host/project-development-service.js')
+  const view = taskView(f.rt.state, f.task)
+  assert.equal(view.phase, 'blocked'); assert.equal(view.waitingFor, 'chief-recovery')
+  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
+  admitTask(f.task, { id: 'valid-retry', projectId: 'p', taskId: 't', executorRole: 'chief', runId: 'retry-run', initiatedBy: 'owner', reason: 'Original string requirements are adequate' })
+  assert.equal(f.task.projectTask.admission.failure, undefined)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed', 'Historical failed run is preserved')
+  await f.rt.projectEffects.close()
+})

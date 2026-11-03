@@ -126,3 +126,5 @@ new autonomous worker, inspection timer, deployment or merge is performed.
 Operation names scope requestId, so different operations may reuse a key. When a key matches multiple operations, command.receipt/result require commandName (also supplied in resultRef); otherwise return bot/ambiguous-command. Retrying one invocation preserves its key; a deliberate new source.poll uses a fresh key. Confirmed replay preserves the original result and marks replayed:true, rather than rewriting its domain already flag.
 
 #2292 Attempt summaries include bounded release status/target and a release.status source reference; they exclude release notes, credential references and actor authentication metadata. Release commands reuse original command receipts and Effects.
+
+#2292 Task projections carry bounded Chief admission failure references and expose blocked/chief-recovery rather than an indefinite apparently pending admission. Successful admission clears that active marker while preserving historical execution failure.

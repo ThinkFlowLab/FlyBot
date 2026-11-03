@@ -1,1 +1,1 @@
-Add explicitly authorized GitHub release requests, durable reconciliation and verified release evidence for Chief Task completion.
+Add explicitly authorized GitHub release requests, durable reconciliation and verified release evidence for Chief Task completion. Surface malformed Chief admissions as explicit recoverable blocks while preserving strict requirement types.
