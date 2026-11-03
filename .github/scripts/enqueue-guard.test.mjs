@@ -1436,11 +1436,30 @@ test('#2291 n5-n7: a time or sequencing phrase further back than the lift still 
   for (const [i, body, at] of [
     [5, 'After the fix, all green. CI is green. You may merge this tip now.', '2026-11-03T09:45:00Z'],
     [6, 'It should be fine. Tests are green. You may merge this tip now.', '2026-11-03T09:45:01Z'],
-    [7, 'Following the merge, all green. You may merge this tip now.', '2026-11-03T09:45:02Z'],
+    [7, 'Following the merge, all green. CI is green. You may merge this tip now.', '2026-11-03T09:45:02Z'],
   ]) {
     const r = ordinaryYes(body, at)
     assert.equal(r.ok, true, `n${i} is an ordinary yes: ${r.reasons.join('; ')}`)
     assert.equal(r.stopRequest, null, `n${i} clears the hold`)
+  }
+})
+
+// The narrowed vocabulary is for the clauses further back only. Read next to the lift (the aa424db tip) it
+// dropped the bare negation and the temporal openings from a clause merged main still reads them in, and these
+// five — every one STOP on 6e5f79ade5 — cleared. They are the floor this fix may not dig under.
+test('#2291 k1-k5: a condition next to the lift keeps the reading merged main gives it', () => {
+  for (const [i, body, at] of [
+    [1, 'The second reader has not looked at it yet — you may merge this tip now.', '2026-11-03T10:00:00Z'],
+    [2, "The second reader hasn't signed off — you may merge this tip now.", '2026-11-03T10:00:01Z'],
+    [3, 'The second reader never re-ran it — you may merge this tip now.', '2026-11-03T10:00:02Z'],
+    [4, 'When the second reader signs off — you may merge this tip now.', '2026-11-03T10:00:03Z'],
+    [5, 'After the second reader re-runs — you may merge this tip now.', '2026-11-03T10:00:04Z'],
+  ]) {
+    const r = run({
+      comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597500100 + i, body, at })],
+    })
+    assert.equal(r.ok, false, `k${i} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${i} keeps the original hold`)
   }
 })
 
