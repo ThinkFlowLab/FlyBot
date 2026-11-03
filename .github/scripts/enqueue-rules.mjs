@@ -165,8 +165,11 @@ const STOP_REQUEST = new RegExp(
 )
 // `hold` as its own opening line — "Hold." / "Hold — the second reader is still unguarded" — is how the
 // request is usually shortened. Anywhere else the word is the label this repository already has, and
-// reading the label's name as a request would freeze every pull request that discusses one.
-const HOLD_LINE = /^[\s>*+-]*(?:hold|hold on|hold off)\b/im
+// reading the label's name as a request would freeze every pull request that discusses one. A line that
+// says the hold is over is the answer, not the request, so the word is not followed by its own clearing:
+// "Hold cleared — you may merge this tip now" was read as a hold while the same sentence mid-line cleared
+// (#2287 C1), and without its quotation it made itself the stop, naming its own id (#2287 F).
+const HOLD_LINE = /^[\s>*+-]*(?:hold|hold on|hold off)\b(?!\s*(?:(?:is|was|has been|had been|been|gets|got)\s+)?(?:clear|lift|answer|resol|gone|done)\w*)/im
 // The answer: read only after a stop in the same window, so this vocabulary cannot unblock anything alone.
 const LIFT_REQUEST = new RegExp(
   [
@@ -182,13 +185,42 @@ const withoutQuotes = (text) => String(text ?? '')
   .replace(/"[^"\n]*"/g, ' ')
   .replace(/“[^”\n]*”/g, ' ')
 
+// A lift clears a stop only when it is an unconditional yes. `LIFT_REQUEST` alone is not one: "I am not
+// asking you to lift the hold — you may merge this tip only after the second reader re-runs" and "You may
+// merge this tip once the second reader re-runs" both hit it and both *withhold* the answer (FlyBot Test on
+// #2282, 2026-11-03: the tip cleared a hold the base refused). Negation and condition words are not in
+// `STOP_REQUEST`, and `HOLD_LINE` reads an opening line only, so they are read here.
+//
+// The scan is per clause, not per body: a yes reads "No objections — you may merge this tip now" or "you may
+// merge this tip now; I am back after lunch", and a whole-body scan refused seven of eight ordinary answers
+// on `7bd71df5` (FlyBot Test, #2287). A clause that carries a lift phrase must be free of them, so the
+// withholding shapes still refuse: the condition sits in the same clause as the lift ("you may merge this
+// tip only after …"), and a negated lift takes the lift phrase with it ("not asking you to lift the hold").
+// Every clause that carries a lift is read, not just the first, because "Hold cleared — you may merge this
+// tip only after …" carries one on each side of the dash and is still an answer withheld.
+const CONDITIONAL = new RegExp(
+  [
+    String.raw`\b(?:not|never|cannot)\b`,
+    String.raw`n['’]t\b`,
+    String.raw`\b(?:only|after|once|until|unless|if|when|before|pending)\b`,
+    String.raw`\b(?:provided|providing|assuming)\b`,
+    String.raw`\b(?:as (?:long|soon) as|subject to|in case|depending on)\b`,
+    String.raw`(?:不要|暂不|先别|尚未|还没|之后|以后|若|如果|只有|还要)`,
+  ].join('|'),
+  'i',
+)
+// `.` `;` `:` `—` `!` `?` and a line break end a clause; the dash is one here so a sentence's two halves
+// are judged separately, which is what lets "No objections — you may merge" through.
+const CLAUSE = /[.;:!?—–\n]/
+const unconditionalLift = (text) => {
+  if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
+  return !text.split(CLAUSE).some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))
+}
+
 // A body that parses as a conclusion but asks only to lift a stop — no ask to stop of its own. This is the
 // lift that quotes the PASS it answers (#2246 on 2026-11-03); "record only — do not merge" in a PASS is the
 // marker `recordOnlyAt` reads, so it is not one of these.
-const responseOnly = (body) => {
-  const text = withoutQuotes(body)
-  return LIFT_REQUEST.test(text) && !STOP_REQUEST.test(text) && !HOLD_LINE.test(text)
-}
+const responseOnly = (body) => unconditionalLift(withoutQuotes(body))
 
 // The stop request still standing, or null. `since` is the timestamp of the conclusion the decision used, in
 // ms; null reads the whole list (no anchor, or one that cannot be read — a guard that cannot find the PASS it
@@ -217,7 +249,7 @@ export function stopRequestAt(reports, { author, since } = {}) {
       stop = { id: r.id, login: r.login, at: r.at ?? null, phrase: phrase.trim() }
       continue
     }
-    if (stop && LIFT_REQUEST.test(text)) stop = null
+    if (stop && unconditionalLift(text)) stop = null
   }
   return stop
 }
