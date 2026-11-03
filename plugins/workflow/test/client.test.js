@@ -2432,7 +2432,7 @@ test('#1457: the assign dialog selects the first loaded card and Assign posts it
     assert.equal(selected.length, 1, 'exactly one card is preselected')
     assert.ok(textOf(selected[0]).includes('Real board card one'))
 
-    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
     assert.ok(assign, 'Assign button')
     assert.equal(assign.props.disabled, false)
 
@@ -2465,7 +2465,7 @@ test('#1457: an empty board keeps Assign disabled, so the click is not a silent 
     findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
     await settle()
     assert.ok(textOf(view.tree).includes('No open tasks on the Tasks board.'))
-    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
     assert.equal(assign.props.disabled, true)
     assign.props.onClick()
     await settle()
@@ -2506,7 +2506,7 @@ test('#1458: a failed Tasks load shows the error and a Retry, never the empty-bo
     assert.ok(text.includes('host is busy'), 'the host message is shown')
     assert.ok(findAll(view.tree, node => String(node.props?.className ?? '').includes('wf-err')).length > 0)
 
-    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
     assert.equal(assign.props.disabled, true, 'Assign is not clickable while the load failed')
     assign.props.onClick()
     await settle()
@@ -2542,11 +2542,11 @@ test('#1458: Assign stays disabled while the Tasks board is still loading', asyn
     await settle()
     findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
     await settle()
-    const early = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    const early = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
     assert.equal(early.props.disabled, true, 'no click before the cards are there')
     release()
     await settle()
-    const later = findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+    const later = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
     assert.equal(later.props.disabled, false, 'clickable once a card is selected')
     view.unmount()
   } finally {
@@ -4075,7 +4075,7 @@ function assignCall(graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }, out
 }
 
 const dialogOf = view => findAll(view.tree, node => node.props?.role === 'dialog')[0]
-const assignOf = tree => findAll(tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+const assignOf = tree => findAll(tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
 
 async function openAssign(view) {
   findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
@@ -4400,6 +4400,77 @@ test('positive control: with a Workflow the first one is picked and Assign is li
     const dialog = await openAssign(view)
     assert.equal(pickedTargets(dialog).length, 1, 'the first Workflow is picked by default')
     assert.equal(assignOf(dialog).props.disabled, false, 'and Assign is live')
+    view.unmount()
+  })
+})
+
+// #2254: step 2 can hold two lanes with one name from two Projects, and the #2241 badge sits on
+// the target row only. The confirm button read "Assign" alone, so the last thing read before the
+// click could not say which lane the card goes to. It now repeats the picked target — the lane
+// with its Project, or the Bot — and the submit body stays exactly { workflowId, taskId, title }.
+const P463_LANES = [
+  { ...delivery(), id: 'lane-alpha', name: 'Release lane', projectId: 'project-alpha' },
+  { ...delivery(), id: 'lane-beta', name: 'Release lane', projectId: 'project-beta' },
+]
+
+function p463Call(outcome = () => ({ ok: true, workflows: P463_LANES })) {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: P463_LANES, templates: [] }
+    if (name === 'workflow/assign') return outcome()
+    return { ok: true, workflows: P463_LANES }
+  }
+  return { call, calls }
+}
+
+test('#2254: two lanes with one name: the confirm button names the picked lane and its Project', async () => {
+  const { call } = p463Call()
+  await withLaneHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    let dialog = await openAssign(view)
+    const before = textOf(assignOf(dialog))
+    assert.ok(before.includes('Alpha'), `the default lane's Project is on the button, saw ${before}`)
+    assert.equal(before.includes('Beta'), false, `and the other lane's Project is not, saw ${before}`)
+    targetsOf(dialog)[1].props.onClick()
+    await settle()
+    dialog = dialogOf(view)
+    const after = textOf(assignOf(dialog))
+    assert.ok(after.includes('Beta'), `the second lane's Project replaces it, saw ${after}`)
+    assert.equal(after.includes('Alpha'), false, `the first lane's Project is gone, saw ${after}`)
+    assert.ok(after.includes('Release lane'), `the button still names the lane, saw ${after}`)
+    view.unmount()
+  })
+})
+
+test('#2254: a Bot target names the Bot on the confirm button', async () => {
+  const { call } = assignCall()
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Writer Bot' }] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    targetsOf(dialog).find(node => textOf(node).includes('Writer Bot')).props.onClick()
+    await settle()
+    assert.equal(textOf(assignOf(dialogOf(view))), 'Assign to Writer Bot', 'the Bot is what the button names')
+    view.unmount()
+  })
+})
+
+test('#2254: the named confirm button posts the same assign body', async () => {
+  const { call, calls } = p463Call()
+  await withLaneHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    targetsOf(dialog)[1].props.onClick()
+    await settle()
+    assert.ok(textOf(assignOf(dialogOf(view))).includes('Beta'), 'precondition: the second lane is the target')
+    assignOf(dialogOf(view)).props.onClick()
+    await settle()
+    const posts = calls.filter(item => item.name === 'workflow/assign')
+    assert.equal(posts.length, 1, 'one assign is posted')
+    assert.deepEqual(posts[0].body, { workflowId: 'lane-beta', taskId: 'task-live-1', title: 'Real board card one' }, 'the submit body is unchanged')
     view.unmount()
   })
 })

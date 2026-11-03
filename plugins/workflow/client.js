@@ -33,6 +33,7 @@ window.__ModuleLoader__.load({
       'Pick who runs it': '选择执行者',
       Cancel: '取消',
       Assign: '确认分配',
+      'Assign to {target}': '确认分配给 {target}',
       Workflow: 'Workflow',
       'One Bot (as before)': '单个 Bot（原有方式）',
       'Concurrent runs': '同时运行',
@@ -1444,6 +1445,13 @@ window.__ModuleLoader__.load({
         seen.add(bot.name)
         return true
       })
+      // P-463: two lanes may share one name and differ only by Project, and the badge that tells
+      // them apart sits on the target row — not on the button pressed last. Name the picked
+      // target on the button itself: the lane with its Project, or the Bot.
+      const targetBot = target.startsWith('bot:') ? bots.find(bot => `bot:${bot.id}` === target) : null
+      const targetLane = targetBot ? null : workflows.find(item => item.id === target)
+      const laneProject = targetLane ? projectName(targetLane.projectId) : ''
+      const targetName = targetBot ? targetBot.name : targetLane ? (laneProject ? `${targetLane.name} · ${laneProject}` : targetLane.name) : ''
       const shownTasks = tasksExpanded ? tasks : tasks.slice(0, ASSIGN_VISIBLE)
       const shownBots = botsExpanded ? bots : bots.slice(0, ASSIGN_VISIBLE)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
@@ -1501,7 +1509,8 @@ window.__ModuleLoader__.load({
                 : null)),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
-            h('button', { type: 'button', className: 'wf-btn wf-dark', disabled: !canAssign, onClick: () => { if (canAssign) onConfirm({ taskId, target }) } }, tr('Assign')))))
+            h('button', { type: 'button', className: 'wf-btn wf-dark', disabled: !canAssign, onClick: () => { if (canAssign) onConfirm({ taskId, target }) } },
+              targetName ? tr('Assign to {target}', { target: targetName }) : tr('Assign')))))
     }
 
     function CreateModal({ roster, templates, onClose, onCreate, onTemplate, error }) {
