@@ -1,5 +1,9 @@
 # FlyBot：AI 协作开发后端
 
+第三方 Bot 接入：[OpenAPI 3.1 JSON](docs/openapi/flybot.openapi.json) ·
+[登录、授权与自主协作指南](docs/third-party-bot-integration.md)。规范覆盖公开网关的请求/响应、
+权限、前置条件、状态变化和恢复语义；外部代理使用人类签发的项目范围 Token。
+
 Project 管理项目、成员、角色与仓库；Chief 常驻协调，Dev/Reviewer/Tester
 按 Task 使用独立角色 Session，通过持久化 Handoff 自主接手、打回和转交。
 普通提问直接咨询 Chief，不创建 Task。个人 Chief、个人 Bot、群聊与私有记忆继续保留。
@@ -12,7 +16,7 @@ Project 管理项目、成员、角色与仓库；Chief 常驻协调，Dev/Revie
 需要 **Node.js22.22+、npm、Git**，首次安装需要访问 npm。Linux 是当前验证环境。
 
 ```bash
-git clone --branch feat/2189-backend-quickstart https://github.com/ThinkFlowLab/FlyBot.git
+git clone --branch delivery/ai-centric-development-service https://github.com/ThinkFlowLab/FlyBot.git
 cd FlyBot
 node scripts/backend.mjs init
 node scripts/backend.mjs start

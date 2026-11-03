@@ -29,8 +29,11 @@ execution ancestor through collaboration/context/Task/state/API branches.
 ## Active fork roadmap — 2026-10-31
 
 The earlier delivery snapshot at1811e3b8f consolidated S1–S6. Current persistent
-source deployment and API use follow the root README and #2189; OpenAPI remains
-unprovided. Backend delivery does not complete original frontend #41 acceptance
+source deployment and API use follow the root README and #2189. #2300 adds the
+machine-readable public OpenAPI contract and third-party onboarding guide, guarded
+by source inventory/schema and representative isolated HTTP conformance tests.
+Vendor-specific adapters and live external-provider acceptance remain separate.
+Backend delivery does not complete original frontend #41 acceptance
 or merge staged PRs.
 
 S6/#55 integrates current service stages with original native frontend work and

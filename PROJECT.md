@@ -10,6 +10,12 @@ Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 
 ## Agent connection authorization — 2026-11-03
 
+#2300 publishes the source-matched public [OpenAPI contract](docs/openapi/flybot.openapi.json)
+and [third-party Bot guide](docs/third-party-bot-integration.md). Human-issued FBA scope,
+safe/watch rights, same-principal receipts and host-only role execution remain distinct.
+This adds contract/docs and isolated HTTP conformance checks, not runtime authority,
+vendor callback adapters, service deployment or the deferred cross-repository loop.
+
 #2183 adds scoped agent credentials over the existing member-session HTTP channel,
 reuses per-participation safe/watch grants, and persists Task-origin provenance.
 Owner's closure confirmation remains personal; native/external personal agents may

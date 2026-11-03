@@ -4,12 +4,19 @@ owned_paths:
   - scripts/backend.mjs
   - scripts/backend-lib.mjs
   - scripts/backend-resolve.mjs
+  - scripts/openapi.mjs
+  - scripts/api-contracts.mjs
+  - scripts/api-contract-validation.mjs
+  - scripts/api-examples.mjs
+  - .github/scripts/openapi.test.mjs
   - .github/scripts/backend.test.mjs
   - .github/scripts/backend-docs.test.mjs
   - .github/scripts/backend-runtime.test.mjs
   - docs/backend-operations.md
   - docs/development-service-api.md
   - docs/development-service-guide.md
+  - docs/third-party-bot-integration.md
+  - docs/openapi/flybot.openapi.json
   - README.md
   - README.zh.md
   - README.native.md
@@ -69,3 +76,29 @@ init/install/start/restart acceptance. Neither is a real-provider developer loop
 production rollout, remote HTTPS deployment or browser/desktop acceptance.
 
 #2292 adds typed Release operations to the existing service; the complete documented contract and source-matched guard now enumerate25 queries/28 commands. Source deployment and command-line entry stay unchanged.
+
+## Public machine contract (#2300)
+
+The OpenAPI3.1 JSON describes the actual health, multiplexed POST and scoped SSE
+paths, not invented REST resources. Its discriminated request schemas cover all104
+gateway endpoints, all25queries/28commands and native personal/workflow variants
+(176dispatches). x-flybot-operations correlates each request with exact result and
+success schemas, human/FBA safe/watch predicates, server prerequisites, conditional
+state effects and domain/receipt recovery. Legacy server coercions are separate
+from the strict canonical client format; responses allow forward-compatible fields.
+Opaque upstream/source JSON is explicitly data, never authority.
+
+The catalog is reviewed against existing implementations. Generation refuses
+missing/extra public operations and records implementation hashes; --check detects
+artifact/source drift. It does not infer semantic correctness from names or hashes.
+Independent OpenAPI3.1/JSONSchema2020-12 validation supplements dependency-free
+vocabulary/negative-schema tests. The production-entry test now validates actual
+representative success/denial JSON and SSE snapshot frames against the contract.
+Deterministic inference remains labelled; this is not vendor adapter certification
+or coverage of every provider/resource/PTY/external-write branch.
+
+Human bootstrap/account management, FBA provisioning, watch authority, native
+personal/group privacy and trusted role execution remain separate. No new public
+credential endpoint, role-result ingress, runtime middleware, timer or deployment
+is introduced. An external descriptor remains unverified metadata, not a callback
+transport. Source API changes require deliberate catalog and guide review.

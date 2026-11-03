@@ -10,6 +10,7 @@ import { test } from 'node:test'
 import { backendConfig, callApi, connection, prepareBackend, readJson, root } from '../../scripts/backend-lib.mjs'
 import { mockModel } from '../../dev/demo/mock.mjs'
 import { agentReply } from '../../dev/demo/agents.mjs'
+import { readSpec, validateExchange, validate } from '../../scripts/api-contract-validation.mjs'
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function freePort() { const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port }
@@ -57,12 +58,42 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   const login = await run(['login', '--home', home], env)
   assert.match(login, /Authenticated/); assert.doesNotMatch(login + host.output(), /\?token=|sessionToken|isolated-test-provider/)
   const token = readJson(join(home, 'private/backend-session.json')).sessionToken
-  const transport = await connection(home), api = (endpoint, body = {}, who = token) => callApi(transport, endpoint, body, who)
+  const transport = await connection(home), spec = readSpec()
+  const api = async (endpoint, body = {}, who = token) => {
+    const value = await callApi(transport, endpoint, body, who)
+    validateExchange(spec, endpoint, body, { ok: true, value })
+    return value
+  }
   const dev = (kind, name, projectId, payload = {}, requestId) => api('project-development', { version: 'project-development/v1', kind, name, projectId, payload, ...(requestId ? { requestId } : {}) })
   const { project } = await api('project-create', { name: 'Persistent service' })
+  await api('auth-mode')
+  await api('auth-whoami')
+  assert.equal(await api('auth-whoami', {}, ''), null)
+  assert.equal(await api('auth-whoami', {}, 'invalid-example-token'), null)
+  await api('workbench-state')
+  await api('project-read', { id: project.id })
+  await api('project-detail', { id: project.id, view: 'summary' })
+  await api('project-members', { id: project.id })
+  await api('project-repositories', { projectId: project.id })
+  await api('personal-space', { operation: 'list' })
+  for (const name of ['roles', 'role.proposals', 'project.snapshot', 'events', 'chief.state', 'pools', 'effects', 'compatibility']) await dev('query', name, project.id)
+  const room = await api('project-room-create', { projectId: project.id, name: 'Contract room', roles: ['chief'], memberIds: [] })
+  await api('project-room-read', { projectId: project.id, roomId: room.id })
+  await api('project-rooms', { projectId: project.id })
+  await api('project-agents', { projectId: project.id, view: 'summary' })
+  await api('project-knowledge-write', { projectId: project.id, text: 'Contract fixture fact' })
+  await api('project-role-memory-write', { projectId: project.id, role: 'developer', text: 'Bounded role fact', source: { kind: 'human', reference: 'isolated-contract-test' } })
+  await api('project-agent-memory-write', { projectId: project.id, text: 'Private fixture note' })
+  await api('project-agent-history', { projectId: project.id, visibility: 'private' })
+  await api('project-resources', { projectId: project.id, view: 'summary' })
   const proposed = await dev('command', 'task.propose', project.id, { title: 'Project change', criteria: 'Result checked', impact: 'Keep project history' }, 'one-original-intent')
   const taskId = proposed.result.id
   assert.ok(taskId)
+  await dev('query', 'task.detail', project.id, { taskId })
+  await dev('query', 'handoff.list', project.id, { taskId })
+  await dev('query', 'task.history', project.id, { taskId, section: 'requirements' })
+  await dev('query', 'command.receipt', project.id, { commandRequestId: 'one-original-intent' })
+  await dev('query', 'command.result', project.id, { commandRequestId: 'one-original-intent', limit: 100 })
   assert.equal((await dev('query', 'task', project.id, { taskId })).result.task.phase, 'awaiting-chief')
   const inquiry = await dev('command', 'consultation.ask', project.id, { text: 'Explain the Project status without creating work' }, 'ordinary-question')
   assert.equal(inquiry.result.consultation.initiativeTransferred, false)
@@ -78,6 +109,17 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   const external = await api('personal-agent-create', { name: 'External protocol caller', kind: 'external', provider: 'http-contract', endpoint: 'https://agent.example.invalid/callback' })
   await api('personal-agent-join', { agentId: external.agent.id, projectId: project.id })
   const credential = await api('personal-agent-token-create', { agentId: external.agent.id, projectIds: [project.id] })
+  await api('personal-agent-token-list', { agentId: external.agent.id })
+  await api('personal-agent-read', { agentId: external.agent.id })
+  await api('personal-agent-list')
+  await api('personal-agent-participations')
+  await api('auth-whoami', {}, credential.token)
+  await api('project-development', { version: 'project-development/v1', kind: 'query', name: 'roles', projectId: project.id, payload: {} }, credential.token)
+  const refused = await fetch(`${transport.baseUrl}/api/bot`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-flybot-member-session': credential.token }, body: JSON.stringify({ endpoint: 'project-development', payload: { version: 'project-development/v1', kind: 'command', name: 'task.propose', projectId: project.id, requestId: 'safe-must-not-publish', payload: { title: 'Refused shared publication' } } }) })
+  assert.equal(refused.status, 200)
+  const denial = await refused.json()
+  validate(spec.components.schemas.DomainError, denial, spec)
+  assert.equal(denial.ok, false)
   const privateProposal = await api('personal-agent-propose-task', { projectId: project.id, title: 'Proposed by the independent agent', criteria: 'Owner reviews the proposal', impact: 'Retain explicit Project impact', scope: 'Transport mapping only', projectTaskKind: 'code', requestId: 'external-safe-proposal' }, credential.token)
   assert.equal(privateProposal.proposal.fields.impact, 'Retain explicit Project impact')
   assert.equal(privateProposal.proposal.fields.scope, 'Transport mapping only')
@@ -88,6 +130,7 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   const watched = await api('project-development', { version: 'project-development/v1', kind: 'command', name: 'task.propose', projectId: project.id, requestId: 'external-watch-intent', payload: { title: 'Delegated Project work', criteria: 'Current authority checked', impact: 'Exercise the delegated publish boundary' } }, credential.token)
   assert.ok(watched.result.id)
   await api('personal-agent-token-revoke', { credentialId: credential.credential.id })
+  assert.equal(await api('auth-whoami', {}, credential.token), null)
   await assert.rejects(api('project-read', { id: project.id }, credential.token), /unauthorized|forbidden/)
   const invitation = await api('auth-invite'), bob = await api('auth-redeem', { token: invitation.token, displayName: 'Bob' })
   await assert.rejects(api('project-read', { id: project.id }, bob.sessionToken), /forbidden/)
@@ -97,7 +140,9 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   const stream = await fetch(`${transport.baseUrl}/api/project-events?projectId=${project.id}`, { headers: { 'x-flybot-member-session': bob.sessionToken }, signal: AbortSignal.timeout(10000) })
   assert.equal(stream.status, 200)
   const reader = stream.body.getReader()
-  assert.match(new TextDecoder().decode((await reader.read()).value), /event: snapshot/)
+  const firstFrame = new TextDecoder().decode((await reader.read()).value)
+  assert.match(firstFrame, /event: snapshot/)
+  validate(spec.components.schemas.Snapshot, JSON.parse(/^data: (.*)$/m.exec(firstFrame)[1]), spec)
   await api('project-member-remove', { id: project.id, memberId: bob.memberId })
   let revoked = ''
   while (!revoked.includes('access-revoked')) { const next = await reader.read(); if (next.done) break; revoked += new TextDecoder().decode(next.value) }
