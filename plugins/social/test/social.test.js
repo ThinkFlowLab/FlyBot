@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -14153,4 +14153,90 @@ test('#2219: a writable window still opens a past room by creating its mirror', 
   const opened = (await call('flybot/social/face-open', { faceRoomId: 'frm_gone' })).value
   assert.equal(ctx.flybot.rooms.list().length, before + 1, 'a writable window creates the mirror as today')
   assert.ok(opened?.roomId, 'the new local room is handed back')
+})
+
+// #2231: `social/remote-bots` and `social/friends` are declared reads, and in a read-only window they
+// still reached `saveSettings`: the one-shot inbound backfill, the hidden-remote aging and the
+// accept-notice cleanup rewrote flybot-social-settings.json, so a window the host had just told
+// "close the other one and reload" kept editing the file the writable window owns. The save path is
+// the only place #2231 guards; the seven other `flybot.readOnly?.()` sites in social.js already drop
+// their writes. These fixtures keep their settings file in their own directory, so "did it write?"
+// is answered by the file itself and not by the team's home.
+function readOnlyFlybot(flybot) {
+  return new Proxy(flybot, { get: (target, key) => (key === 'readOnly' ? () => true : key === 'scope' ? (name) => new Proxy(target.scope(name), { get: (inner, k) => (k === 'readOnly' ? () => true : inner[k]) }) : target[key]) })
+}
+
+async function settingsWindow(t, { settingsPath, readOnly = false }) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(readOnly ? readOnlyFlybot(ctx.flybot) : ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await social.registerAll()
+  return { ctx, call, server }
+}
+
+const settingsSha = path => createHash('sha256').update(readFileSync(path)).digest('hex')
+
+test('#2231: a read-only window writes no settings file and still answers its reads', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-social-2231-a-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const settingsPath = join(dir, 'flybot-social-settings.json')
+  const { call } = await settingsWindow(t, { settingsPath, readOnly: true })
+  const remote = (await call('flybot/social/remote-bots', { fresh: true })).value
+  assert.equal(existsSync(settingsPath), false, 'a read-only read creates no settings file')
+  assert.deepEqual(remote.homes[0].bots.map(bot => bot.handle), ['@coder.bob.home', '@writer.bob.home'], 'the roster still comes back')
+  const friends = (await call('flybot/social/friends', { fresh: true })).value
+  assert.deepEqual(friends.map(bot => bot.handle), ['@coder.bob.home', '@writer.bob.home'], 'social/friends still answers')
+})
+
+test('#2231: a read-only window neither ages a hidden remote nor writes a stale copy back', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-social-2231-b-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const settingsPath = join(dir, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ autoAccept: {}, via: {}, inboundBots: {}, inboundBackfilled: true, hiddenRemotes: { '@gone.bob.home': { absentFetches: 0 } } }))
+  const before = settingsSha(settingsPath)
+  // Both windows read the file before either fetches, the way two open windows do; A then fetches
+  // twice (it would forget the hide) and B fetches once from its older copy (it would put it back).
+  const a = await settingsWindow(t, { settingsPath, readOnly: true })
+  const b = await settingsWindow(t, { settingsPath, readOnly: true })
+  await a.call('flybot/social/remote-bots', { fresh: true })
+  await a.call('flybot/social/remote-bots', { fresh: true })
+  await b.call('flybot/social/remote-bots', { fresh: true })
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.hiddenRemotes['@gone.bob.home'].absentFetches, 0, 'two read-only reads do not age the hide')
+  assert.equal(settingsSha(settingsPath), before, 'window B does not write its stale copy back over window A')
+})
+
+test('#2231: a writable window still persists the backfill its read derives', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-social-2231-c-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const settingsPath = join(dir, 'flybot-social-settings.json')
+  const { call } = await settingsWindow(t, { settingsPath })
+  await call('flybot/social/remote-bots', { fresh: true })
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.inboundBackfilled, true, 'the one-shot backfill still persists')
+  assert.deepEqual(Object.keys(saved.inboundBots ?? {}).sort(), ['@coder.bob.home', '@writer.bob.home'], 'the roster is seeded as inbound')
+})
+
+test('#2231: a writable window still ages a hidden remote and drops a settled accept notice', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-social-2231-d-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const settingsPath = join(dir, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({
+    autoAccept: {}, via: {}, inboundBots: {}, inboundBackfilled: true,
+    hiddenRemotes: { '@gone.bob.home': { absentFetches: 1 } },
+    acceptNotices: [{ id: 'n1', botId: 'a', from: '@coder.bob.home', botName: 'Coder' }, { id: 'n2', botId: 'a', from: '@nobody.x.home', botName: 'Nobody' }],
+  }))
+  const { call, server } = await settingsWindow(t, { settingsPath })
+  // A Bot that joined our invite is `replyOnly: false` on the roster; only that is evidence the peer
+  // shared a Bot back, so the notice for it is settled (#1054).
+  server.tools.list_remote_bots = () => ({ homes: [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob' }, bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder', replyOnly: false }] }] })
+  await call('flybot/social/remote-bots', { fresh: true })
+  const saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(saved.hiddenRemotes?.['@gone.bob.home'], undefined, 'a second absence still forgets the hide')
+  assert.deepEqual(saved.acceptNotices.map(notice => notice.id), ['n2'], 'the notice whose peer shared a Bot back is still dropped')
 })

@@ -680,7 +680,14 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   settings.hiddenRemotes ??= {}
   settings.inboundBots ??= {}
   settings.roomBots ??= {}
-  const saveSettings = () => { if (settingsPath) { try { writeCredentials(settingsPath, settings) } catch (error) { warn('settings not saved', error) } } }
+  // A read-only window keeps the derivation below but not the write (#2231): `social/remote-bots`
+  // and `social/friends` are reads, and the backfill, the hidden-remote aging and the accept-notice
+  // cleanup they reach used to rewrite the file the writable window owns. The seven other
+  // `flybot.readOnly?.()` sites in this file already drop their writes; this is the one save path.
+  const saveSettings = () => {
+    if (flybot.readOnly?.()) return
+    if (settingsPath) { try { writeCredentials(settingsPath, settings) } catch (error) { warn('settings not saved', error) } }
+  }
   // Unset: off. config.autoAccept: true makes it opt-out instead. New friends start in hold (#140).
   // Config keys may be written with or without '@' and in any case.
   const approvalHomes = Object.fromEntries(Object.entries(config.approval?.homes ?? {}).map(([key, value]) => [norm(key), value]))
