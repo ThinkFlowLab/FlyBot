@@ -222,3 +222,20 @@ test('queue restart preserves the chosen custom role and fences catalog or requi
   assert.equal(f.state.projectQueue[waiting.queue.id].status, 'blocked')
   assert.match(f.state.projectQueue[waiting.queue.id].reason, /catalog.*changed/)
 })
+
+
+test('capacity queue retains the selected repository across restart and refuses revoked associations', async () => {
+  const f = fixture(), link = { id: 'second', projectId: 'p1', repository: 'example/second', defaultBranch: 'main', createdAt: 10 }
+  f.state.projectRepositories = { second: link }; f.project.repositoriesVersion = 1
+  f.rt.config.projectRepositories['example/second'] = f.rt.config.projectRepositories['example/repo']
+  await f.scheduler.request({ taskId: 'one', requestId: 'one', repository: 'example/second' }, { memberId: 'bob' })
+  const queued = await f.scheduler.request({ taskId: 'two', requestId: 'two', repository: 'example/second' }, { memberId: 'bob' })
+  assert.equal(queued.queue.repositoryBinding.repository, 'example/second')
+  f.state.projectAttempts = {}; f.state.projectExecutions = {}
+  delete f.state.projectRepositories.second
+  const restarted = createProjectScheduler(f.rt, { preflight: async () => {} })
+  await restarted.wake()
+  assert.equal(f.state.projectQueue[queued.queue.id].status, 'blocked')
+  assert.match(f.state.projectQueue[queued.queue.id].reason, /not currently associated/)
+  assert.equal(Object.keys(f.state.projectAttempts).length, 0)
+})

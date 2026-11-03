@@ -49,7 +49,7 @@ export function createChildInputAdmission(rt, ports) {
     const task = ownEntry(rt.state.tasks ?? {}, taskId), attempt = ownEntry(rt.state.projectAttempts ?? {}, task?.deliveryAttemptId)
     if (!task?.projectTask?.wait || task.projectTaskKind !== 'code') return null
     if (!attempt || attempt.id !== claim?.attemptId || attempt.projectId !== task.projectId || attempt.taskId !== task.id) throw fail('Parent Attempt changed before child integration')
-    const project = ports.projectOf(task.projectId)
+    const project = ports.projectOf(task.projectId, attempt)
     if (attempt.requirement.repository !== project.repository) throw fail('Parent execution repository changed; explicit recovery is required')
     ports.assertIdle(task, claim)
     rt.projectTaskLifecycle.requireCompletedDependencies(task)

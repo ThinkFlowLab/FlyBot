@@ -1,6 +1,8 @@
 ---
 subsystem: project-workbench
 owned_paths:
+  - core/src/host/project-task-repository.js
+  - core/test/project-task-repository.test.js
   - core/src/host/project-scheduler.js
   - core/src/host/project-repository-policy.js
   - core/src/host/workbench-gateway.js
@@ -483,3 +485,5 @@ The legacy Workflow gateway now also excludes Chief control jobs from execution 
 The source backend launcher reuses this original gateway/UI and account/resource endpoints. auth-mode now waits for Store load and exposes only a writable boolean in addition to existing metadata; it reveals no private file paths. Startup refuses read-only/unsupported state rather than opening an apparently fresh writable service. No frontend assets/control-plane implementation changes. See [backend entry](backend-service.md).
 
 #2292 initial dispatch: `task.run` accepts optional `targetRole`. Waiting queue rows persist `initialTarget`, forward it after restart, and plan resources for that exact role. Changed catalog/requirements block instead of silently rerouting. `queue.retry` explicitly revalidates the selected role against current versions; optional targetRole selects another active role under existing manager authority and preserves the original requester. Legacy queue entries resolve and persist one initial choice before dispatch.
+
+#2292 repository scope: scheduler preflight/queued retries use the persisted Task repositoryBinding, not mutable Project defaults. Bindings identify the current Project association; removal/replacement blocks further execution. Legacy queues pin a choice before dispatch. Only repository-free decision Tasks bypass Git/test provisioning; code/release Tasks still require an associated operator-provisioned repository.

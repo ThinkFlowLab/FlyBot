@@ -1578,3 +1578,49 @@ test('approved custom role capabilities preserve logical identities while sealin
   assert.equal(attempt.evidence.review.logicalRole, reviewer)
   for (const role of Object.values(names)) assert.equal(attempt.roleSessions[role].logicalSessionId, Object.values(f.rt.state.projectTaskSessions).find(row => row.role === role).id)
 })
+
+
+test('Task execution selects an associated repository and retains it after the Project default changes', async t => {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  await f.rt.projectLifecycle.endpoint('project-repository-link', { projectId: 'p1', repository: 'example/second', defaultBranch: 'main' }, alice)
+  const second = join(f.directory, 'second-repo')
+  git(f.directory, ['clone', f.repository, second])
+  f.rt.config.projectRepositories['example/second'] = { ...f.rt.config.projectRepositories['example/demo'], path: second }
+  const started = await f.rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'other-repo', repository: 'example/second' }, bob)
+  assert.equal(started.attempt.requirement.repository, 'example/second')
+  f.rt.state.projects.p1.repository = 'unprovisioned/changed-default'
+  const attempt = f.rt.state.projectAttempts[started.attempt.id]
+  const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r => r.role === 'developer')
+  await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'repo-dev', attemptId: attempt.id, generation: 1 }, dev)
+  assert.equal(attempt.repositoryBinding.repository, 'example/second')
+  assert.equal(attempt.workspaces.developer.repository, second)
+  const association = Object.values(f.rt.state.projectRepositories).find(row => row.repository === 'example/second')
+  delete f.rt.state.projectRepositories[association.id]
+  await assert.rejects(f.rt.projectDelivery.preparePoolRole(f.task, { id: 'revoked-repo', attemptId: attempt.id, generation: 2 }, dev), /not currently associated/)
+  assert.equal(attempt.requirement.repository, 'example/second')
+})
+
+test('a repository-free decision Task prepares a scoped workspace and records verifiable outputs', async t => {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  f.rt.state.projects.p1.repository = null
+  f.task.projectTaskKind = 'decision'
+  const started = await f.start('decision-no-repo')
+  assert.equal(started.attempt.status, 'running')
+  const attempt = f.rt.state.projectAttempts[started.attempt.id]
+  const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r => r.role === 'developer')
+  const spec = await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'decision-dev', attemptId: attempt.id, generation: 1 }, dev)
+  assert.equal(attempt.baseSha, undefined)
+  assert.equal(attempt.workspaces.developer.kind, 'decision-directory')
+  assert.match(spec.prompt, /no repository/i)
+  await f.rt.projectDelivery.completePoolRole({ task: f.task, claim: { attemptId: attempt.id }, role: 'developer', outputs: { decision: 'Adopt the documented architecture with tradeoffs' } })
+  assert.ok(attempt.evidence.developer.sha256)
+  assert.equal(attempt.candidateSha, undefined)
+  f.rt.projectChiefControl.requireJobActor = () => {} // Chief identity validation is exercised by its own callback regressions.
+  f.rt.projectInputs.requireHandled = () => {} // Isolate decision-output acceptance from the input receipt suite.
+  f.rt.projectInputs.commitChief = () => {}
+  await f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: null, decision: { id: 'decision-accepted', reason: 'The recorded tradeoffs satisfy the requirements' } }, { ...alice, chiefJobId: 'fixture-chief' })
+  assert.equal(attempt.status, 'accepted')
+  assert.equal(f.task.completedBy.decisionId, 'decision-accepted')
+})
