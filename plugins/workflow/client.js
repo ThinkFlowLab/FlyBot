@@ -148,6 +148,7 @@ window.__ModuleLoader__.load({
       'Show less': '收起',
       'Show {count} more cards': '展开另外 {count} 张卡片',
       'Show {count} more Bots': '展开另外 {count} 个 Bot',
+      'Show {count} more held tasks': '展开另外持有中的 {count} 个任务',
       // Stage timeline (#1489). The key is the English line; service.js and
       // narrate.js keep the Chinese text only as the fallback for rows written
       // before the key existed.
@@ -553,11 +554,17 @@ window.__ModuleLoader__.load({
     }
 
     // Stage: view/control only — progress and flowchart; no message composer (#1459).
-    function Stage({ workflow, roster, locked, readOnlyReason, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop, onRematch }) {
+    function Stage({ workflow, roster, locked, readOnlyReason, stageLeft, drawer, tab, focusedRunId, onFocusRun, onCloseDrawer, onToggleDrawer, onOpenDrawer, onTab, onAssign, onTip, onReset, editing, onToggleEdit, onCommit, onPause, onResume, onStop, onRematch, onHeldMore }) {
       const chatRef = useRef(null)
       const chatFoot = useRef({ height: 0, shown: 0 })
       const liveRuns = liveStageRuns(workflow)
       const held = workflow.heldTasks ?? []
+      // #2256: the id list is a page. Folded, the reader sees the page the state read
+      // carries; unfolded, every id the host sent for the wider read.
+      const [heldWide, setHeldWide] = useState(false)
+      // Another lane is another page: switching folds whatever the last one had unfolded.
+      useEffect(() => { setHeldWide(false) }, [workflow.id])
+      const heldShown = heldWide ? held : held.slice(0, HELD_PAGE)
       const viewRun = resolveFocusedRun(workflow, focusedRunId)
       const showSummary = (workflow.queueDepth ?? 0) > 0 || liveRuns.length > 1
       const visible = stageMessages(workflow, workflow.messages, roster)
@@ -586,11 +593,16 @@ window.__ModuleLoader__.load({
             h('span', { className: 'wf-chip queued' }, tr('{count} running · queue {depth}', { count: workflow.activeCount ?? liveRuns.length, depth: workflow.queueDepth ?? 0 }))) : null,
           held.length > 0 ? h('div', { className: 'wf-held' },
             h('div', { className: 'wf-held-head' }, tr('Tasks this workflow holds')),
-            held.map(taskId => h('div', { className: 'wf-held-row', key: taskId },
+            heldShown.map(taskId => h('div', { className: 'wf-held-row', key: taskId },
               h('span', { className: 'wf-held-id', title: taskId }, taskId),
               locked ? null : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onRematch?.(taskId) }, tr('Re-match')))),
-            (workflow.heldTaskCount ?? held.length) > held.length
-              ? h('div', { className: 'wf-held-more' }, tr('{count} more held tasks', { count: (workflow.heldTaskCount ?? held.length) - held.length }))
+            // #2249 gave this page the one unfold control; #2256 puts the held ids behind
+            // it, so the rest of the list is reachable instead of being named and dropped.
+            heldWide || (workflow.heldTaskCount ?? held.length) > heldShown.length
+              ? h('button', {
+                type: 'button', className: 'wf-more wf-held-more', 'data-more': 'held', 'aria-expanded': heldWide,
+                onClick: () => { const next = !heldWide; setHeldWide(next); onHeldMore?.(next) },
+              }, heldWide ? tr('Show less') : tr('Show {count} more held tasks', { count: (workflow.heldTaskCount ?? held.length) - heldShown.length }))
               : null) : null,
           liveRuns.length > 0 ? h('div', { className: 'wf-strips' },
             liveRuns.map(run => h(RunStrip, {
@@ -1418,6 +1430,10 @@ window.__ModuleLoader__.load({
     }
 
     const ASSIGN_VISIBLE = 12
+    // #2256: the ids one lane may hold is a page too. The state read lists 20, and a
+    // reader who unfolds the rest asks for the widest page the host serves (200).
+    const HELD_PAGE = 20
+    const HELD_LIMIT = 200
 
     function AssignModal({ workflows, tasks, tasksStatus, tasksError, error, projects, roster, workflowId, onClose, onConfirm, onRetry }) {
       // #2241: two lanes drawn from different Projects read the same inside this dialog, so the
@@ -2001,8 +2017,14 @@ window.__ModuleLoader__.load({
 
       const [readError, setReadError] = useState('')
 
+      // #2256: unfolding a lane's held ids asks for the wider page, and the 2s poll keeps
+      // asking for it while it stays unfolded — otherwise the next read would fold it back.
+      const heldWideRef = useRef(false)
+      // A lane that is not open must not keep the wider read alive.
+      useEffect(() => { heldWideRef.current = false }, [openId])
+
       const refresh = async () => {
-        const value = await stageCall('workflow/state', undefined, 'The workflow host did not answer')
+        const value = await stageCall('workflow/state', heldWideRef.current ? { heldLimit: HELD_LIMIT } : undefined, 'The workflow host did not answer')
         if (value && Array.isArray(value.workflows)) { setPack(value); setReadError('') }
         else setReadError(value?.error ?? 'The workflow host did not answer')
         return value
@@ -2326,6 +2348,7 @@ window.__ModuleLoader__.load({
             })
           },
           onRematch: rematchTask,
+          onHeldMore: (wide) => { heldWideRef.current = wide; void refresh() },
         })) : null,
         assignOpen ? portal(h(AssignModal, {
           workflows, tasks, tasksStatus, tasksError, error, projects, roster, workflowId: openId || workflows[0]?.id,
@@ -2418,7 +2441,7 @@ window.__ModuleLoader__.load({
 .wf-held-head{font-size:12px;color:var(--bt-ink-2,#666)}
 .wf-held-row{display:flex;align-items:center;gap:8px;min-width:0}
 .wf-held-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
-.wf-held-more{font-size:12px;color:var(--bt-ink-2,#666)}
+.wf-held-more{font-size:12px;margin-top:2px}
 .wf-tk{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(360px,42vw)}.wf-meta{font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap}
 .wf-segs{display:flex;gap:3px;flex:1;min-width:80px}
 .wf-seg{height:5px;border-radius:3px;background:var(--bt-active,rgba(119,119,119,.17));flex:1}

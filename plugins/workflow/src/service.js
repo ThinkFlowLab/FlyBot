@@ -25,6 +25,9 @@ const MAX_ORPHANS = 50
 // How many held task ids a workflow lists in `workflow/state`; the count beside
 // them is always the whole truth (#1647).
 const MAX_HELD_TASKS = 20
+// #2256: that list is a page, so a reader can ask for the rest of it. `heldLimit`
+// is honoured up to this many ids — a wider page than the poll reads, never a full read.
+const MAX_HELD_LIMIT = 200
 // #1869: the fields `workflow/assign` reads. Anything else is named back in
 // `ignored`, because a typo (`brif`) used to be dropped in silence.
 const ASSIGN_FIELDS = new Set(['workflowId', 'taskId', 'id', 'title', 'brief', 'callerBotId', 'projectId', 'botId', 'handoff', 'handoffContext', 'acceptance', 'evidence'])
@@ -355,8 +358,17 @@ export function createWorkflowService({
     state.logs[workflowId] = log.slice(-MAX_MESSAGES)
   }
 
+  // How many ids one `workflow/state` read lists. Anything that is not a positive
+  // integer keeps the default page, and the cap keeps a reader from turning the poll
+  // into a full read (#2256).
+  function heldLimitOf(body) {
+    const value = Number(body?.heldLimit)
+    if (!Number.isInteger(value) || value < 1) return MAX_HELD_TASKS
+    return Math.min(value, MAX_HELD_LIMIT)
+  }
+
   // Task ids each workflow holds, sorted. `heldTaskCount` is the whole truth and
-  // the list beside it is capped (#1647); a Bot claim is not a workflow claim.
+  // the list beside it is a page (#1647, #2256); a Bot claim is not a workflow claim.
   function heldTaskIds() {
     const held = new Map()
     for (const [taskId, claim] of Object.entries(state.claims ?? {})) {
@@ -369,7 +381,7 @@ export function createWorkflowService({
     return held
   }
 
-  function present() {
+  function present(heldLimit = MAX_HELD_TASKS) {
     const roster = bots() ?? []
     const held = heldTaskIds()
     return {
@@ -403,7 +415,7 @@ export function createWorkflowService({
         preview: rowPreview(item, previewRun(item.id)),
         run: publicRun(item, displayRun(item.id)),
         messages: state.logs[item.id] ?? [],
-        heldTasks: (held.get(item.id) ?? []).slice(0, MAX_HELD_TASKS),
+        heldTasks: (held.get(item.id) ?? []).slice(0, heldLimit),
         heldTaskCount: (held.get(item.id) ?? []).length,
       }) }),
     }
@@ -1116,7 +1128,7 @@ export function createWorkflowService({
   }
 
   return {
-    state() { return present() },
+    state(body) { return present(heldLimitOf(body)) },
     rename(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')

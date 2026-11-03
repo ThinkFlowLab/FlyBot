@@ -4474,3 +4474,103 @@ test('#2254: the named confirm button posts the same assign body', async () => {
     view.unmount()
   })
 })
+
+// #2256: a lane that holds more cards than the state page lists drew 20 rows and then a
+// dead line — `3 more held tasks` as a plain div, with no `aria-expanded`, and the 21st id
+// not in the DOM at all. The line is now the #2249 `wf-more` control: it asks the host for
+// the wider page, draws every held id, and folds back to the first 20.
+test('#2256: the held list draws its rest behind a wf-more button that asks for the wider page', async () => {
+  const portals = []
+  const reactDom = {
+    createPortal(node, container) {
+      if (!container || container.nodeType !== 1) throw new Error('Target container is not a DOM element.')
+      portals.push(container)
+      return { type: 'portal', props: { container }, children: [node] }
+    },
+  }
+  const opened = loadClient(reactDom)
+  const body = { nodeType: 1 }
+  const prevBody = document.body
+  document.body = body
+  const ids = Array.from({ length: 23 }, (_, index) => `task-held-${String(index + 1).padStart(2, '0')}`)
+  const asked = []
+  const call = async (name, payload) => {
+    if (name !== 'workflow/state') return { ok: true }
+    asked.push(payload)
+    const limit = Number(payload?.heldLimit)
+    const shown = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 20
+    return { workflows: [{ ...delivery(), heldTasks: ids.slice(0, shown), heldTaskCount: ids.length }], templates: [] }
+  }
+  const view = mount(opened.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    await settle()
+
+    const rows = () => findAll(view.tree, node => node.props?.className === 'wf-held-row')
+    const more = () => findAll(view.tree, node => node.type === 'button' && node.props?.['data-more'] === 'held')
+    assert.equal(rows().length, 20, 'the first page is the 20 ids the state carries')
+    assert.equal(more().length, 1, 'the rest is a control, not a dead line')
+    assert.equal(more()[0].props['aria-expanded'], false, 'and it says it is folded')
+    assert.equal(textOf(more()[0]), 'Show 3 more held tasks')
+
+    more()[0].props.onClick()
+    await settle()
+    assert.deepEqual(asked.at(-1), { heldLimit: 200 }, 'unfolding asks the host for the wider page')
+    assert.equal(more()[0].props['aria-expanded'], true)
+    assert.equal(textOf(more()[0]), 'Show less')
+    assert.equal(rows().length, 23, 'every held id is drawn once unfolded')
+    const last = rows().at(-1)
+    assert.match(textOf(last), /task-held-23/, 'the 23rd id is in the DOM')
+    const rematch = findAll(last, node => node.type === 'button' && textOf(node) === 'Re-match')[0]
+    assert.ok(rematch, 'and the 23rd id is reachable, with the same Re-match every row has')
+    rematch.props.onClick()
+    await settle()
+    assert.deepEqual(asked.at(-1), { heldLimit: 200 }, 'a re-match keeps the page the reader unfolded')
+    assert.equal(rows().length, 23, 'so the row does not fold under the pointer')
+
+    more()[0].props.onClick()
+    await settle()
+    assert.deepEqual(asked.at(-1), undefined, 'folding asks for the default page again')
+    assert.equal(rows().length, 20)
+    assert.equal(more()[0].props['aria-expanded'], false)
+  } finally {
+    view.unmount()
+    document.body = prevBody
+  }
+})
+
+// #2256: within one page there is nothing to unfold, so the control must not appear —
+// and the block a reader sees is exactly what it was before this change.
+test('#2256: a lane within one page draws no more-row and keeps its held block as it was', async () => {
+  const portals = []
+  const reactDom = {
+    createPortal(node, container) {
+      portals.push(container)
+      return { type: 'portal', props: { container }, children: [node] }
+    },
+  }
+  const opened = loadClient(reactDom)
+  const body = { nodeType: 1 }
+  const prevBody = document.body
+  document.body = body
+  const ids = ['task-held-01', 'task-held-02', 'task-held-03']
+  const call = async (name) => {
+    if (name !== 'workflow/state') return { ok: true }
+    return { workflows: [{ ...delivery(), heldTasks: ids, heldTaskCount: ids.length }], templates: [] }
+  }
+  const view = mount(opened.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    await settle()
+    const block = findAll(view.tree, node => node.props?.className === 'wf-held')[0]
+    assert.ok(block, 'the held block is drawn')
+    assert.equal(findAll(view.tree, node => node.props?.['data-more'] === 'held').length, 0, 'a full page draws no more-row')
+    assert.equal(findAll(view.tree, node => node.props?.className === 'wf-held-row').length, 3)
+    assert.equal(textOf(block), `Tasks this workflow holds${ids.map(id => `${id}Re-match`).join('')}`, 'the block reads exactly as it did')
+  } finally {
+    view.unmount()
+    document.body = prevBody
+  }
+})
