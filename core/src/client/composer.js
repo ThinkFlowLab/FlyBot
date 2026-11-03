@@ -4,6 +4,7 @@ import { ChatsIcon, ClockIcon, MicIcon, PaperclipIcon, PeopleIcon, PlusIcon, Wav
 import { BotMark, markBotForMention } from './mark.js'
 import { useLinger } from './motion.js'
 import { t } from './i18n.js'
+import { lockedWindow } from './schedules.js'
 
 // -------------------------------------------------------------------------
 // Composer: dictation mic and the voice-chat button. The shell's send
@@ -136,6 +137,9 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
   }, [open])
   const target = roster.byId?.[sessionId]?.id ?? roster.roomsById?.[sessionId]?.id
   if (sessionId === undefined || target === undefined) return null
+  // A locked window draws no create entry: "Scheduled task" opened the settings list with this
+  // chat's id, which asks for the create form, and a locked page draws no form (#2232, P-457).
+  const locked = lockedWindow(roster)
   const toggle = () => {
     if (open) { setOpen(null); return }
     const rect = button.current.getBoundingClientRect()
@@ -144,10 +148,6 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
   const attach = () => {
     setOpen(null)
     button.current?.closest('[data-composer-card]')?.querySelector('input[type=file]')?.click()
-  }
-  const schedule = () => {
-    setOpen(null)
-    actions.openSettings('schedules', target)
   }
   // The chats open in the shell's "@" menu at the caret, so the pick lands where the
   // user was typing.
@@ -167,5 +167,5 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
     },
     h('button', { type: 'button', role: 'menuitem', onClick: attach }, h(PaperclipIcon), h('span', { className: 'bt-menu-label' }, t('Add files'))),
     canReference ? h('button', { type: 'button', role: 'menuitem', onMouseDown: keepComposerFocus, onClick: reference }, h(ChatsIcon), h('span', { className: 'bt-menu-label' }, t('Reference a chat'))) : null,
-    h('button', { type: 'button', role: 'menuitem', onClick: schedule }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')))), document.body) : null)
+    locked ? null : h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(null); actions.openSettings('schedules', target) } }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')))), document.body) : null)
 }

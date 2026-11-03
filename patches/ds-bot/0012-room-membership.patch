@@ -32,7 +32,7 @@ diff --git a/src/client/api.js b/src/client/api.js
 diff --git a/src/client/composer.js b/src/client/composer.js
 --- a/src/client/composer.js
 +++ b/src/client/composer.js
-@@ -1,7 +1,7 @@
+@@ -1,9 +1,10 @@
  import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
  import { createPortal } from 'react-dom'
  import { ChatsIcon, ClockIcon, MicIcon, PaperclipIcon, PeopleIcon, PlusIcon, WaveIcon } from './icons.js'
@@ -40,7 +40,10 @@ diff --git a/src/client/composer.js b/src/client/composer.js
 +import { BotMark, markBotForMention } from './mark.js'
  import { useLinger } from './motion.js'
  import { t } from './i18n.js'
++import { lockedWindow } from './schedules.js'
  
+ // -------------------------------------------------------------------------
+ // Composer: dictation mic and the voice-chat button. The shell's send
 @@ -53,6 +53,20 @@ export function useDictation(onText) {
    return { listening, note, start, stop }
  }
@@ -70,6 +73,34 @@ diff --git a/src/client/composer.js b/src/client/composer.js
 +    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => h(BotMark, { bot: markBotForMention(row.bot, roster.getSnapshot()), size }))
      return marks.get(id)
    }
+ }
+@@ -122,6 +122,9 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
+   }, [open])
+   const target = roster.byId?.[sessionId]?.id ?? roster.roomsById?.[sessionId]?.id
+   if (sessionId === undefined || target === undefined) return null
++  // A locked window draws no create entry: "Scheduled task" opened the settings list with this
++  // chat's id, which asks for the create form, and a locked page draws no form (#2232, P-457).
++  const locked = lockedWindow(roster)
+   const toggle = () => {
+     if (open) { setOpen(null); return }
+     const rect = button.current.getBoundingClientRect()
+@@ -131,10 +131,6 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
+     setOpen(null)
+     button.current?.closest('[data-composer-card]')?.querySelector('input[type=file]')?.click()
+   }
+-  const schedule = () => {
+-    setOpen(null)
+-    actions.openSettings('schedules', target)
+-  }
+   // The chats open in the shell's "@" menu at the caret, so the pick lands where the
+   // user was typing.
+   const reference = () => {
+@@ -153,5 +153,5 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
+     },
+     h('button', { type: 'button', role: 'menuitem', onClick: attach }, h(PaperclipIcon), h('span', { className: 'bt-menu-label' }, t('Add files'))),
+     canReference ? h('button', { type: 'button', role: 'menuitem', onMouseDown: keepComposerFocus, onClick: reference }, h(ChatsIcon), h('span', { className: 'bt-menu-label' }, t('Reference a chat'))) : null,
+-    h('button', { type: 'button', role: 'menuitem', onClick: schedule }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')))), document.body) : null)
++    locked ? null : h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(null); actions.openSettings('schedules', target) } }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')))), document.body) : null)
  }
 diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 --- a/src/client/details-drawer.js
@@ -337,9 +368,12 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
          h('div', { key: 'model', className: 'bt-drawer-model' },
            h('div', { className: 'bt-section-title' }, t('Model')),
            h(ModelMenu, { bot, roster, actions, run, wide: true }),
-@@ -245,5 +245,5 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+@@ -243,7 +243,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+         roster.memory === false ? null : h(MemoryRow, { key: 'memory', bot, actions }),
+         usage ? h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
            h('div', { className: 'bt-kv' }, h('span', null, bot.name), h('span', null, usage))) : null,
-         h(ScheduleSummary, { key: 'routines', bot, actions }),
+-        h(ScheduleSummary, { key: 'routines', bot, actions }),
++        h(ScheduleSummary, { key: 'routines', bot, roster, actions }),
        ] : null,
 -      bot && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
 +      bot && !bot.remote && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]

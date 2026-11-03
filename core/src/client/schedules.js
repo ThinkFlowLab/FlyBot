@@ -119,7 +119,7 @@ export function lastRunText(run) {
 
 // The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
 // the sentence, and this page draws no write the host would refuse.
-const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
+export const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
 
 function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
   const [confirming, setConfirming] = useState(false)
@@ -434,8 +434,9 @@ export function CopyRow({ task, roster, actions, onView, onCancel }) {
 export function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions)
   const [editing, setEditing] = useState(null)
-  // A locked window keeps the list and its New task row: that row only opens the settings list,
-  // which draws no create control once this page respects the lock (#2232).
+  // A locked window keeps the list but draws no New task row: the row opened the settings list
+  // with this Bot's id, which asks for the create form, and a locked page draws no form — so the
+  // click landed on an empty page (#2232, P-457).
   const locked = lockedWindow(roster)
   const refused = schedulesReadFailure(view?.readFailure)
   if (refused !== null) {
@@ -457,7 +458,7 @@ export function BotSchedules({ bot, roster, actions }) {
           tasks, editing, roster, actions, locked, onEdit: locked ? undefined : setEditing,
           onDone: (next) => { publish(next); setEditing(null) },
           onCancel: () => setEditing(null),
-          extra: [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
+          extra: locked ? [] : [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
         }))
 }
 
@@ -478,8 +479,10 @@ function SummaryLines({ tasks, actions }) {
 // The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 // tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
 // The rows open the settings list, where a bot id would open the new-task form instead — the
-// form is what the empty state's button means (#2030).
-export function ScheduleSummary({ bot, actions }) {
+// form is what the empty state's button means (#2030). A locked window draws neither the empty
+// state nor its button, because that button asks for the form this window cannot draw (#2232,
+// P-457); with tasks the rows still open the plain settings list, so the read half stays.
+export function ScheduleSummary({ bot, roster, actions }) {
   const view = useSchedules(actions)
   // #2035: the shared view starts null and the first read lands a frame later, so "no view yet" is
   // not "no tasks". The settings card above draws nothing for it; this line did the opposite and
@@ -487,6 +490,7 @@ export function ScheduleSummary({ bot, actions }) {
   // keeps its own line below.
   if (view === null || view.readFailure !== undefined) return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
+  if (lockedWindow(roster) && tasks.length === 0) return null
   return h('div', null,
     tasks.length === 0
       ? h('div', { className: 'bt-section-title' }, t('Scheduled tasks'))

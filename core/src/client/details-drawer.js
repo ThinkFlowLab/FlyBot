@@ -347,7 +347,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         roster.memory === false ? null : h(MemoryRow, { key: 'memory', bot, actions }),
         usage ? h('div', { key: 'usage' }, h('div', { className: 'bt-section-title' }, t('Usage')),
           h('div', { className: 'bt-kv' }, h('span', null, bot.name), h('span', null, usage))) : null,
-        h(ScheduleSummary, { key: 'routines', bot, actions }),
+        h(ScheduleSummary, { key: 'routines', bot, roster, actions }),
       ] : null,
       bot && !bot.remote && tab === 'browser' ? h(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null)]
 }
