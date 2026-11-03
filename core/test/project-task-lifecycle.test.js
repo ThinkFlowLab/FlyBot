@@ -202,3 +202,15 @@ test('dependency adjudication commits one resume intent and a failed commit leav
   assert.equal(f.parent.status, 'open')
   await f.rt.projectEffects.close()
 })
+
+
+test('Chief admission persists the selected initial role in the automatic start effect', async () => {
+  const f = await serviceFixture()
+  f.rt.projectAgents = { deliveryDefinitions: () => ({ revision: 11, roles: [{ id: 'p:builder', role: 'builder', policyRole: 'developer' }] }) }
+  await f.rt.projectTaskLifecycle.adjudicate(f.parent, { targetRole: 'builder' }, { ...proof('admit'), id: 'route-builder', action: 'admit' }, f.actor)
+  const effect = Object.values(f.rt.state.projectEffects).find(row => row.kind === 'task.start')
+  assert.equal(effect.payload.initialTarget.role, 'builder')
+  assert.equal(effect.payload.initialTarget.definitionRevision, 11)
+  assert.equal(effect.payload.initialTarget.requirementsRevision, 1)
+  await f.rt.projectEffects.close()
+})

@@ -1,6 +1,7 @@
 // Per-logical-Bot routing on existing Task records. Execution remains a host adapter.
 import { randomUUID, createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
+import { initialRoleTarget } from './project-role-admission.js'
 import { taskSessionId } from './project-task-sessions.js'
 import { stageRoleSummary, rollbackRoleSummary, stageExecutionMemory, rollbackExecutionMemory, roleMemoryView } from './project-context-memory.js'
 import { EffectDeferred, EffectCancelled } from './project-effects.js'
@@ -117,7 +118,7 @@ export function createProjectPools(rt) {
     if (!checked.ok) throw refuse(`Handoff refused (${checked.code}): ${checked.reason}`)
     return { fromRole, trustedEvidence }
   }
-  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration, summary, experience }) {
+  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration, summary, experience, initialTarget }) {
     if (!adapter) throw refuse('Handoff execution adapter is unavailable')
     reason = reasonOf(reason)
     const c = task.collaboration, target = targetOf(task.projectId, to)
@@ -129,6 +130,7 @@ export function createProjectPools(rt) {
     }
     await authority(task)
     const { fromRole, trustedEvidence } = await checkAdmission(task, { from, to, attemptId, requestId, purpose })
+    if (initialTarget) initialRoleTarget(rt, task, { initialTarget })
     if (expectedGeneration !== undefined && c.generation !== expectedGeneration) throw refuse('Claim generation changed before handoff admission')
     const row = { id: `handoff-${randomUUID()}`, version: POOL_PROTOCOL, policyVersion: 'project-role-policy/v1', definitionRevision: definitions(task.projectId).revision, projectId: task.projectId, taskId: task.id, attemptId, initiatedBy: c.initiatedBy, from, to, reason, requestId, purpose, evidence: clone(trustedEvidence), claims: clone(evidence), requirements: { title: task.title, criteria: task.criteria ?? '' }, status: 'pending', generation: c.generation + 1, createdAt: Date.now() }
     const sourceClaim = c.claim?.botId === from ? c.claim : null
@@ -183,12 +185,14 @@ export function createProjectPools(rt) {
     rt.projectScheduler?.wake()
     return clone(row)
   }
-  async function admit(attempt, actor, { targetRole = 'developer', kind } = {}) {
+  async function admit(attempt, actor, { targetRole, initialTarget, kind } = {}) {
     const task = taskOf(attempt.taskId)
     rt.projectTaskLifecycle?.requireExecutable(task)
     if (kind && task.projectTaskKind && kind !== task.projectTaskKind) throw refuse('Task kind cannot change at execution admission')
     kind ??= task.projectTaskKind ?? 'code'
     rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
+    const selected = initialRoleTarget(rt, task, { targetRole, initialTarget: initialTarget ?? attempt.initialTarget })
+    targetRole = selected?.role ?? targetRole ?? 'developer'
     const target = definitions(task.projectId).roles.find(row => row.role === targetRole)
     if (!target || !['code', 'decision', 'release'].includes(kind)) throw refuse('Unsupported Task target or kind')
     task.collaboration ??= { version: POOL_PROTOCOL, initiatedBy: actor.memberId, generation: 0, history: [] }
@@ -197,7 +201,7 @@ export function createProjectPools(rt) {
     c.sourceSessionId = actor.sessionId ?? null
     c.initiatedBy = actor.memberId
     c.attemptId = attempt.id; c.kind = kind
-    return offer(task, { from: null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id })
+    return offer(task, { from: null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id, initialTarget: selected })
   }
   async function claim(taskId, botId, handoffId, requestId) {
     const task = taskOf(taskId), c = task.collaboration

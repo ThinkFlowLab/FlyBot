@@ -481,3 +481,5 @@ The legacy Workflow gateway now also excludes Chief control jobs from execution 
 ## Persistent service composition (#2189)
 
 The source backend launcher reuses this original gateway/UI and account/resource endpoints. auth-mode now waits for Store load and exposes only a writable boolean in addition to existing metadata; it reveals no private file paths. Startup refuses read-only/unsupported state rather than opening an apparently fresh writable service. No frontend assets/control-plane implementation changes. See [backend entry](backend-service.md).
+
+#2292 initial dispatch: `task.run` accepts optional `targetRole`. Waiting queue rows persist `initialTarget`, forward it after restart, and plan resources for that exact role. Changed catalog/requirements block instead of silently rerouting. `queue.retry` explicitly revalidates the selected role against current versions; optional targetRole selects another active role under existing manager authority and preserves the original requester. Legacy queue entries resolve and persist one initial choice before dispatch.

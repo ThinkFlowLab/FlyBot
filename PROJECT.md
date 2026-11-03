@@ -126,14 +126,7 @@ Earlier M7.2/M7.3 implementation-status checkpoints are retained verbatim in
 [the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
 resource/Harness contracts and authorized acceptance boundaries remain below.
 
-### M7.4 — 2026-10-31
-
-M7.4 adds Owner role/persona/Skills/memory/Harness/model/multiple-resource configuration, bounded connection checks and explicitly granted private target-resource PTYs. Credentials stay in private profiles; generated profiles separate Project/principal/Harness. Actual local and new Docker PTYs, hidden setup, current-session revocation and background cleanup are tested. Real authenticated three-Harness acceptance remains pending dedicated credential/profile selection.
-
-
-### M7.5 — 2026-10-31
-
-M7.5 implements local/Docker Git workspace handoffs, SHA256 manifests, one final sealed candidate without intermediate worker history, independent host-verifier tests, same-SHA review and sealed SDK event evidence. Browser integration fixes runtime/terminal/input channel routing; callback-aware stop acknowledgement prevents release deadlock. See docs/m7-acceptance.md: positive authenticated three-Harness/two-resource PR acceptance still needs dedicated profiles, so M7 is not declared fully accepted.
+M7.4/M7.5 implementation checkpoints are [archived verbatim](docs/history/2026-11-03-completed-m7-checkpoints.md). Private credentials, revocation, exit proof, same-SHA verification and outstanding mixed-Harness/resource acceptance remain required.
 
 ### M7 Codex-only acceptance authorization — 2026-11-01
 
@@ -292,3 +285,7 @@ Keep personal Chief/Bots, groups, private memories and original Task/Workflow ID
 ### 2026-11-03 — Persistent deployment and final API docs (#2189)
 
 Use scripts/backend.mjs to initialize/start the original DSH/FlyBot host plus existing restricted HTTP/SSE gateway in a private persistent home. Login and CLI calls reuse native/platform identity; no mock model, sample repository, parallel executor or frontend replacement is packaged. Original guides move to README.native variants. Auth-mode confirms Store writability before readiness. External safe proposal impact/scope must survive publication into canonical requirements (actual production-entry regression). Deployment/restart, deterministic HTTP/DSH tests and real-provider acceptance remain separate evidence.
+
+### Initial role routing — #2292
+
+Initial execution pins an approved active logical role/capability, catalog revision and Task requirements revision. Default developer remains compatible; a unique custom developer can replace it, while ambiguity needs an explicit target. Chief start Effects, capacity queues and Attempts retain the choice. Catalog/requirements changes block pending work for explicit recovery; active Session conventions remain frozen.

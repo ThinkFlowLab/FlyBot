@@ -1,5 +1,6 @@
 // Project semantics on the original Task records. No separate queue or store.
 import { ownEntry } from './store.js'
+import { initialRoleTarget } from './project-role-admission.js'
 import { createHash } from 'node:crypto'
 import { stageRoleSummary, rollbackRoleSummary } from './project-context-memory.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
@@ -219,9 +220,10 @@ export function createProjectTaskLifecycle(rt) {
     return rt.projectEffects.stage({ kind: 'task.intake', key: `${task.id}:${task.projectTask.requirements.revision}`, projectId: task.projectId, taskId: task.id,
       payload: { requirementsRevision: task.projectTask.requirements.revision } })
   }
-  function stageStart(task, decision) {
+  function stageStart(task, decision, changes = {}) {
+    const initialTarget = initialRoleTarget(rt, task, { targetRole: changes.targetRole })
     return rt.projectEffects.stage({ kind: 'task.start', key: decision.id, projectId: task.projectId, taskId: task.id,
-      payload: { decisionId: decision.id, requirementsRevision: task.projectTask.requirements.revision, memberId: task.requesterId, sessionId: task.projectTask.executionRequester?.memberId === task.requesterId ? task.projectTask.executionRequester.sessionId : null } })
+      payload: { decisionId: decision.id, ...(initialTarget ? { initialTarget } : {}), requirementsRevision: task.projectTask.requirements.revision, memberId: task.requesterId, sessionId: task.projectTask.executionRequester?.memberId === task.requesterId ? task.projectTask.executionRequester.sessionId : null } })
   }
   async function adjudicate(task, changes, audit, actor) {
     await rt.projectChiefControl.validateActor(actor)
@@ -238,7 +240,7 @@ export function createProjectTaskLifecycle(rt) {
         }
         if (changes.requirements) reviseTask(task, changes.requirements, { ...audit, id: `${audit.id}-requirements` })
         admitTask(task, audit)
-        token = stageStart(task, audit)
+        token = stageStart(task, audit, changes)
       } else if (audit.action === 'revise') {
         reviseTask(task, changes.requirements ?? {}, audit)
         const input = rt.projectInputs.stageRequirements(task, audit)
@@ -248,7 +250,7 @@ export function createProjectTaskLifecycle(rt) {
         if (task.collaboration?.claim?.status === 'active') throw fail('Active execution must stop before reopening')
         reopenTask(task, audit)
         dependencyResult(rt.state, task)
-        token = stageStart(task, audit)
+        token = stageStart(task, audit, changes)
       } else if (audit.action === 'resolve-dependency') {
         resolveDependency(rt.state, task, changes.dependency, audit)
         token = stageOwnResume(task) ?? rt.projectEffects.stage({ kind: 'task.transition', key: audit.id, projectId: task.projectId, taskId: task.id, payload: { decisionId: audit.id, action: audit.action } })
@@ -364,10 +366,11 @@ export function install(rt) {
     const task = rt.projectTaskLifecycle.taskOf(effect.taskId)
     if (['accepted', 'cancelled'].includes(task.status)) throw new EffectCancelled('Task ended before execution')
     rt.projectTaskLifecycle.requireExecutable(task)
+    if (effect.payload.requirementsRevision !== task.projectTask.requirements.revision) throw new EffectCancelled('Task requirements changed before initial execution')
     const actor = { memberId: effect.payload.memberId, ...(effect.payload.sessionId ? { sessionId: effect.payload.sessionId } : {}) }
     await rt.projectDelegations.background(actor.memberId, actor.sessionId)
     rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
-    return rt.projectScheduler.request({ taskId: task.id, requestId: `chief-${effect.payload.decisionId}` }, actor)
+    return rt.projectScheduler.request({ taskId: task.id, requestId: `chief-${effect.payload.decisionId}`, initialTarget: effect.payload.initialTarget }, actor)
   } })
   rt.projectEffects.register('task.dependency-review', { async run(effect) {
     const task = rt.projectTaskLifecycle.taskOf(effect.taskId), wait = task.projectTask?.wait

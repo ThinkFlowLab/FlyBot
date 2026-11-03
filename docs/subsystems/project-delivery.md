@@ -546,3 +546,5 @@ Composed #2179 execution checks include the canonical Task requirement revision.
 ## Original Workflow compatibility (#2186)
 
 Explicit canonical Workflow delivery assigns only through the private exact-current-Attempt access port, preserving the original graph, quota and Run evidence. Public assign cannot create a parallel canonical execution. Pre-cutover Task IDs, parents, artifacts and active recovery remain authoritative. See [compatibility](project-compatibility.md).
+
+#2292: initial Attempts retain the approved initialTarget (logical role, Bot, capability, catalog and requirement revisions); preflight and pool admission revalidate it. Runtime code and frozen active role Sessions are unchanged by queue recovery.
