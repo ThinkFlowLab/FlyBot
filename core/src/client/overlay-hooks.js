@@ -22,11 +22,19 @@ export function useEscape(onClose) {
 
 // A dialog takes focus when it opens, so Tab starts inside it and Escape reaches it,
 // and gives that focus back to the still-connected opener when it closes (#2251, #274).
+// It lingers for DIALOG_EXIT_MS (160 ms) with `pointer-events: none` on the leaving layer,
+// so a click there lands on the page behind it: restore only while the dialog still holds
+// focus (or nothing does), never over a place the user picked during the exit (#2270).
 export function useDialogFocus(ref) {
   useEffect(() => {
     const before = document.activeElement
     ref.current?.focus?.({ preventScroll: true })
-    return () => { if (before && typeof before.focus === 'function' && before.isConnected) before.focus({ preventScroll: true }) }
+    return () => {
+      const active = document.activeElement
+      const stillInDialog = active === ref.current || ref.current?.contains?.(active) === true
+      const noFocusHeld = !active || active === document.body || active.isConnected === false
+      if (before && typeof before.focus === 'function' && before.isConnected && (stillInDialog || noFocusHeld || active === before)) before.focus({ preventScroll: true })
+    }
   }, [])
 }
 

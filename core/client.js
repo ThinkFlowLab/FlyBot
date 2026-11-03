@@ -8261,7 +8261,10 @@ function useDialogFocus(ref) {
     const before = document.activeElement;
     ref.current?.focus?.({ preventScroll: true });
     return () => {
-      if (before && typeof before.focus === "function" && before.isConnected) before.focus({ preventScroll: true });
+      const active = document.activeElement;
+      const stillInDialog = active === ref.current || ref.current?.contains?.(active) === true;
+      const noFocusHeld = !active || active === document.body || active.isConnected === false;
+      if (before && typeof before.focus === "function" && before.isConnected && (stillInDialog || noFocusHeld || active === before)) before.focus({ preventScroll: true });
     };
   }, []);
 }
