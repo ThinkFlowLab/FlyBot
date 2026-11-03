@@ -5,6 +5,7 @@ import { mkdir, readFile, realpath, rm, writeFile, lstat } from 'node:fs/promise
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { ownEntry, setEntry } from './store.js'
+import { sealedLogPage } from './project-history-pages.js'
 import { taskRepository, attemptProject } from './project-task-repository.js'
 import { initialRoleTarget } from './project-role-admission.js'
 import { DELIVERY_ROLES, DELIVERY_VERSION, deliveryGraph } from './project-delivery-template.js'
@@ -755,9 +756,10 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       rt.requireProjectAccess(actor, attempt.projectId)
       const evidence = body.role ? attempt.evidence.execution?.[body.role] : attempt.evidence.tests
       if (!evidence?.log) return { text: null, reason: 'No test log is available' }
-      const text = await readFile(evidence.log, 'utf8')
-      if (hash(text) !== evidence.sha256) throw reject('Test log changed; evidence is stale')
-      return { text, sha: evidence.sha, sha256: evidence.sha256 }
+      const page = await sealedLogPage(evidence, body)
+      rt.requireProjectAccess(actor, attempt.projectId)
+      if (ownEntry(attempts(), body.attemptId) !== attempt || (body.role ? attempt.evidence.execution?.[body.role] : attempt.evidence.tests) !== evidence) throw reject('Log source changed during query')
+      return page
     }
     if (endpoint === 'project-attempt-integration-state') {
       const { attempt, task } = integrationAttempt(body, actor)

@@ -1,3 +1,4 @@
+import { agentHistoryPage } from './project-history-pages.js'
 // Project-scoped agents. Public facts and per-human memory never share a storage table.
 import { createHash, randomUUID } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
@@ -544,7 +545,11 @@ export function createProjectAgents(rt) {
     }
     if (endpoint === 'project-agent-history') {
       const agent = await serial(() => ensure(projectId, actor, body.visibility === 'public' ? 'public' : 'private'))
-      return { agent: structuredClone(agent), live: liveFor(agent), messages: structuredClone(logOf(agent.id)), busy: delegations.has(agent.id) || Boolean(rt.activityView?.()[agent.botId]) }
+      const page = agentHistoryPage(logOf(agent.id), body, `${projectId}:${agent.id}:${agent.visibility}:${agent.ownerId ?? actor.memberId}`)
+      for (const message of page.messages ?? []) if (message.sourceRef) message.sourceRef = { endpoint: 'project-agent-history', projectId, visibility: agent.visibility, ...message.sourceRef }
+      const record = Object.fromEntries(['id', 'projectId', 'botId', 'sessionId', 'visibility', 'ownerId', 'status', 'definitionVersion'].filter(key => agent[key] !== undefined).map(key => [key, agent[key]]))
+      const live = liveFor(agent)
+      return { agent: record, live: live ? { text: live.text.slice(-2000), tool: typeof live.tool === 'string' ? live.tool.slice(0, 200) : null, truncated: live.text.length > 2000 } : null, ...page, busy: delegations.has(agent.id) || Boolean(rt.activityView?.()[agent.botId]) }
     }
     if (body.roleMemoryId !== undefined) {
       const row = ownEntry(roleMemory(), body.roleMemoryId)
