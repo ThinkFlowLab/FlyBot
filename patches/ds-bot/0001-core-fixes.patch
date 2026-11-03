@@ -2271,7 +2271,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +
 +// The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
 +// the sentence, and this page draws no write the host would refuse.
-+const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
++export const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
 +
 +function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
    const [confirming, setConfirming] = useState(false)
@@ -2434,7 +2434,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -163,75 +163,242 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -163,75 +163,246 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
            h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
            h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
              UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
@@ -2605,8 +2605,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
 +  const [editing, setEditing] = useState(null)
-+  // A locked window keeps the list and its New task row: that row only opens the settings list,
-+  // which draws no create control once this page respects the lock (#2232).
++  // A locked window keeps the list but draws no New task row: the row opened the settings list
++  // with this Bot's id, which asks for the create form, and a locked page draws no form — so the
++  // click landed on an empty page (#2232, P-457).
 +  const locked = lockedWindow(roster)
 +  const refused = schedulesReadFailure(view?.readFailure)
 +  if (refused !== null) {
@@ -2637,11 +2638,12 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +          tasks, editing, roster, actions, locked, onEdit: locked ? undefined : setEditing,
 +          onDone: (next) => { publish(next); setEditing(null) },
 +          onCancel: () => setEditing(null),
-+          extra: [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
++          extra: locked ? [] : [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
 +        }))
  }
  
 -// The details panel's line: the Bot's next tasks, or how to add one.
+-export function ScheduleSummary({ bot, actions }) {
 +// The panel's rows: three of them, a title carrying the real count above three, and one row
 +// saying what the cap hid (#2030). A Bot's details line and a group chat's section share it, so
 +// the two surfaces cannot describe the same list differently.
@@ -2659,8 +2661,10 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 +// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
 +// The rows open the settings list, where a bot id would open the new-task form instead — the
-+// form is what the empty state's button means (#2030).
- export function ScheduleSummary({ bot, actions }) {
++// form is what the empty state's button means (#2030). A locked window draws neither the empty
++// state nor its button, because that button asks for the form this window cannot draw (#2232,
++// P-457); with tasks the rows still open the plain settings list, so the read half stays.
++export function ScheduleSummary({ bot, roster, actions }) {
    const view = useSchedules(actions)
 -  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
 +  // #2035: the shared view starts null and the first read lands a frame later, so "no view yet" is
@@ -2669,6 +2673,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  // keeps its own line below.
 +  if (view === null || view.readFailure !== undefined) return null
 +  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
++  if (lockedWindow(roster) && tasks.length === 0) return null
    return h('div', null,
 -    h('div', { className: 'bt-section-title' }, t('Scheduled tasks')),
      tasks.length === 0

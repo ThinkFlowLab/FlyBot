@@ -11970,19 +11970,643 @@ function installHeaderEffects({ sessions, roster, actions, doc = globalThis.docu
   };
 }
 
-// src/client/composer.js
+// src/client/schedules.js
 var import_react21 = require("react");
+var POLL_MS4 = 3e4;
+var shared = null;
+var listeners = /* @__PURE__ */ new Set();
+function publish(view) {
+  shared = view;
+  for (const listener of listeners) listener(view);
+}
+function publishFailure(error) {
+  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) });
+}
+function useSchedules(actions) {
+  const [view, setView] = (0, import_react21.useState)(shared);
+  (0, import_react21.useEffect)(() => {
+    listeners.add(setView);
+    let stopped = false;
+    let timer;
+    const load = () => actions.schedules?.().then((next) => {
+      if (!stopped) publish(next);
+    }).catch((error) => {
+      if (!stopped) publishFailure(error);
+    }).finally(() => {
+      if (!stopped) timer = setTimeout(load, POLL_MS4);
+    });
+    load();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      listeners.delete(setView);
+    };
+  }, []);
+  return view;
+}
+var schedulesReadFailure = (failure) => typeof failure === "string" && failure !== "" ? t("The scheduled tasks could not be read: {reason}", { reason: failure }) : null;
+var localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+var clock2 = (time) => String(time ?? "").slice(0, 5);
+var when2 = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms);
+function dayAndTime(ms) {
+  const sameYear = new Date(ms).getFullYear() === (/* @__PURE__ */ new Date()).getFullYear();
+  return when2(ms, { ...sameYear ? {} : { year: "numeric" }, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function instant(value) {
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? dayAndTime(at) : "";
+}
+function weekdayNames(days) {
+  const names = days.map((day) => when2(Date.UTC(2024, 0, day), { weekday: "short", timeZone: "UTC" }));
+  return names.join(dateLocale().startsWith("zh") ? "、" : ", ");
+}
+function everyText(seconds) {
+  if (seconds % 86400 === 0) return seconds === 86400 ? t("Every day") : t("Every {count} days", { count: seconds / 86400 });
+  if (seconds % 3600 === 0) return seconds === 3600 ? t("Every hour") : t("Every {count} hours", { count: seconds / 3600 });
+  if (seconds % 60 === 0) return t("Every {count} minutes", { count: seconds / 60 });
+  return t("Every {count} seconds", { count: seconds });
+}
+function timingText(task) {
+  const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : "";
+  switch (task.kind) {
+    case "after":
+    case "at": {
+      const time = instant(task.scheduledAt);
+      return time === "" ? "" : t("Once, {time}", { time });
+    }
+    case "every":
+      return everyText(task.everySeconds);
+    case "daily":
+      return `${t("Every day at {time}", { time: clock2(task.time) })}${zone}`;
+    case "weekly": {
+      const days = (task.weekdays ?? []).join();
+      const text2 = days === "1,2,3,4,5" ? t("Every weekday at {time}", { time: clock2(task.time) }) : days === "6,7" ? t("Every weekend at {time}", { time: clock2(task.time) }) : days === "1,2,3,4,5,6,7" ? t("Every day at {time}", { time: clock2(task.time) }) : t("Every {days} at {time}", { days: weekdayNames(task.weekdays ?? []), time: clock2(task.time) });
+      return `${text2}${zone}`;
+    }
+    case "cron":
+      return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
+    default:
+      return "";
+  }
+}
+var nextText = (task) => {
+  if (task.status === "paused") return t("Paused");
+  if (task.status !== "active") return t("Finished");
+  const at = instant(task.scheduledAt);
+  return at === "" ? timingText(task) : t("Next: {time}", { time: at });
+};
+function lastRunText(run) {
+  if (run === void 0 || !Number.isFinite(run.at)) return "";
+  const time = dayAndTime(run.at);
+  switch (run.result) {
+    case "running":
+      return t("Running since {time}", { time });
+    case "stopped":
+      return t("Last run {time} · Stopped", { time });
+    case "failed":
+      return t("Last run {time} · Failed: {reason}", { time, reason: hostText(run.reason || "Unknown error") });
+    default:
+      return t("Last run {time}", { time });
+  }
+}
+var lockedWindow = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
+  const [confirming, setConfirming] = (0, import_react21.useState)(false);
+  const [busy, setBusy] = (0, import_react21.useState)(false);
+  const [rowError, setRowError] = (0, import_react21.useState)("");
+  const refuse = (error) => setRowError(hostText(error?.message ?? String(error)));
+  (0, import_react21.useEffect)(() => {
+    if (!confirming) return void 0;
+    const timer = setTimeout(() => setConfirming(false), 3e3);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+  const remove = () => {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setBusy(true);
+    setRowError("");
+    void actions.scheduleDelete(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      setRowError("");
+      onView(next);
+    }, (error) => {
+      setBusy(false);
+      refuse(error);
+    });
+  };
+  const toggle = () => {
+    setBusy(true);
+    setRowError("");
+    const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
+    void step(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      setRowError("");
+      onView(next);
+    }, (error) => {
+      setBusy(false);
+      refuse(error);
+    });
+  };
+  const retry = () => {
+    setBusy(true);
+    setRowError("");
+    void actions.scheduleRetry(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      onView(next);
+    }, (error) => {
+      setBusy(false);
+      refuse(error);
+    });
+  };
+  const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
+  const stoppable = task.status === "active" || task.status === "paused";
+  const failed = task.lastRun?.result === "failed";
+  const last = lastRunText(task.lastRun);
+  return (0, import_react21.createElement)(
+    "div",
+    { className: "bt-set-row bt-task", "data-done": stoppable ? void 0 : "", "data-paused": task.status === "paused" || void 0, "data-busy": busy || void 0 },
+    showBot ? (0, import_react21.createElement)(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
+    (0, import_react21.createElement)(
+      "span",
+      { className: "bt-set-copy" },
+      (0, import_react21.createElement)("span", { className: "bt-task-title" }, task.title),
+      (0, import_react21.createElement)("span", { className: "bt-set-hint" }, [timingText(task), room2 ? t("in {name}", { name: room2.name }) : ""].filter(Boolean).join(" · ")),
+      task.prompt && task.prompt !== task.title ? (0, import_react21.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null,
+      last ? (0, import_react21.createElement)("span", { className: "bt-task-last", "data-failed": failed || void 0 }, last) : null,
+      rowError ? (0, import_react21.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, rowError) : null
+    ),
+    (0, import_react21.createElement)("span", { className: "bt-task-next" }, nextText(task)),
+    // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
+    // disabling: a disabled button still says this window can do it.
+    !locked && failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react21.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
+    !locked && onEdit ? (0, import_react21.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react21.createElement)(PencilIcon)) : null,
+    !locked && onCopy ? (0, import_react21.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react21.createElement)(DuplicateIcon)) : null,
+    !locked && stoppable ? (0, import_react21.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
+    locked ? null : (0, import_react21.createElement)("button", {
+      type: "button",
+      className: "bt-mini bt-task-remove",
+      "data-confirm": confirming || void 0,
+      disabled: busy,
+      "aria-label": confirming ? t("Click again to delete") : t("Delete task"),
+      title: confirming ? void 0 : t("Delete task"),
+      onClick: remove
+    }, confirming ? t("Delete") : (0, import_react21.createElement)(TrashIcon))
+  );
+}
+var pad = (number) => String(number).padStart(2, "0");
+function inAnHour() {
+  const date = new Date(Date.now() + 36e5);
+  date.setMinutes(0, 0, 0);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
+}
+var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
+var UNITS = [["seconds", 1, "seconds"], ["minutes", 60, "minutes"], ["hours", 3600, "hours"], ["days", 86400, "days"]];
+function localInput(ms) {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function formStart(task) {
+  const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
+  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : seconds % 60 === 0 ? ["minutes", 60] : ["seconds", 1];
+  const once = task?.kind === "at" || task?.kind === "after";
+  return {
+    title: task?.title ?? "",
+    prompt: task?.prompt ?? "",
+    kind: once ? "at" : task?.kind ?? "daily",
+    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
+    time: task?.time ? clock2(task.time) : "09:00",
+    weekdays: task?.kind === "weekly" && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
+    count: Math.max(1, Math.round(seconds / size)),
+    unit,
+    timeZone: task?.timeZone || localZone()
+  };
+}
+function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
+  const first = formStart(task);
+  const [target, setTarget] = (0, import_react21.useState)(task ? task.botId ?? task.roomId : start ?? "");
+  const [title, setTitle] = (0, import_react21.useState)(first.title);
+  const [prompt, setPrompt] = (0, import_react21.useState)(first.prompt);
+  const [kind, setKind] = (0, import_react21.useState)(first.kind);
+  const [at, setAt] = (0, import_react21.useState)(first.at);
+  const [time, setTime] = (0, import_react21.useState)(first.time);
+  const [weekdays, setWeekdays] = (0, import_react21.useState)(first.weekdays);
+  const [count, setCount] = (0, import_react21.useState)(first.count);
+  const [unit, setUnit] = (0, import_react21.useState)(first.unit);
+  const [busy, setBusy] = (0, import_react21.useState)(false);
+  const [error, setError] = (0, import_react21.useState)("");
+  const timing = () => {
+    if (kind === "cron") return { kind: "keep" };
+    if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
+    if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
+    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
+  };
+  const submit = (event) => {
+    event.preventDefault();
+    if (busy || target === "") return;
+    setBusy(true);
+    setError("");
+    let when3;
+    try {
+      when3 = timing();
+    } catch {
+      setError(t("Pick a date and time"));
+      setBusy(false);
+      return;
+    }
+    const saved = task ? actions.scheduleUpdate({ sessionId: task.sessionId, id: task.id, target, title, prompt, when: when3 }) : actions.scheduleCreate({ target, title, prompt, when: when3 });
+    void saved.then(onDone, (failure) => {
+      setError(hostText(failure?.message ?? String(failure)));
+      setBusy(false);
+    });
+  };
+  const toggleDay = (day) => setWeekdays((days) => days.includes(day) ? days.filter((item) => item !== day) : [...days, day].sort());
+  return (0, import_react21.createElement)(
+    "form",
+    { className: "bt-set-card bt-task-form", onSubmit: submit },
+    (0, import_react21.createElement)(
+      "label",
+      { className: "bt-set-row bt-bs-row" },
+      (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("Send to"))),
+      (0, import_react21.createElement)(
+        "select",
+        { className: "bt-select bt-task-bot", value: target, onChange: (event) => setTarget(event.target.value) },
+        (0, import_react21.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
+        (0, import_react21.createElement)("optgroup", { label: t("Bots") }, roster.bots.map((bot) => (0, import_react21.createElement)("option", { key: bot.id, value: bot.id }, bot.name))),
+        roster.rooms.length > 0 ? (0, import_react21.createElement)("optgroup", { label: t("Group chats") }, roster.rooms.map((room2) => (0, import_react21.createElement)("option", { key: room2.id, value: room2.id }, room2.name))) : null
+      )
+    ),
+    (0, import_react21.createElement)(
+      "label",
+      { className: "bt-set-row bt-bs-row" },
+      (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("Name"))),
+      (0, import_react21.createElement)("input", { className: "bt-bs-input", value: title, maxLength: 120, placeholder: t("Morning briefing"), autoFocus: true, onChange: (event) => setTitle(event.target.value) })
+    ),
+    (0, import_react21.createElement)(
+      "label",
+      { className: "bt-set-row bt-bs-row bt-bs-stack" },
+      (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("What to do"))),
+      (0, import_react21.createElement)("textarea", { className: "bt-bs-input bt-bs-area", value: prompt, rows: 3, placeholder: t("Sum up what changed since yesterday and what needs me today."), onChange: (event) => setPrompt(event.target.value) })
+    ),
+    (0, import_react21.createElement)(
+      "div",
+      { className: "bt-set-row bt-bs-row bt-bs-stack" },
+      (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("When"))),
+      (0, import_react21.createElement)(Segmented, { label: t("When"), value: kind }, KINDS.map(([id, label]) => (0, import_react21.createElement)("button", { key: id, type: "button", "aria-pressed": kind === id, onClick: () => setKind(id) }, t(label)))),
+      (0, import_react21.createElement)(
+        "div",
+        { key: kind, className: "bt-task-when bt-veil" },
+        kind === "cron" ? (0, import_react21.createElement)("span", { className: "bt-task-every" }, timingText(task)) : null,
+        kind === "at" ? (0, import_react21.createElement)("input", { className: "bt-input", type: "datetime-local", value: at, "aria-label": t("Date and time"), onChange: (event) => setAt(event.target.value) }) : null,
+        kind === "weekly" ? (0, import_react21.createElement)("div", { className: "bt-task-days", role: "group", "aria-label": t("Days") }, [1, 2, 3, 4, 5, 6, 7].map((day) => (0, import_react21.createElement)("button", {
+          key: day,
+          type: "button",
+          className: "bt-task-day",
+          "aria-pressed": weekdays.includes(day),
+          onClick: () => toggleDay(day)
+        }, when2(Date.UTC(2024, 0, day), { weekday: "narrow", timeZone: "UTC" })))) : null,
+        kind === "daily" || kind === "weekly" ? (0, import_react21.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: time, "aria-label": t("Time"), onChange: (event) => setTime(event.target.value) }) : null,
+        kind === "every" ? (0, import_react21.createElement)(
+          import_react21.Fragment,
+          null,
+          (0, import_react21.createElement)("span", { className: "bt-task-every" }, t("Every")),
+          (0, import_react21.createElement)("input", { className: "bt-input bt-task-count", type: "number", min: 1, value: count, "aria-label": t("How many"), onChange: (event) => setCount(event.target.value) }),
+          (0, import_react21.createElement)(
+            "select",
+            { className: "bt-select bt-task-unit", value: unit, "aria-label": t("Unit"), onChange: (event) => setUnit(event.target.value) },
+            UNITS.map(([id, , label]) => (0, import_react21.createElement)("option", { key: id, value: id }, t(label)))
+          )
+        ) : null
+      )
+    ),
+    error ? (0, import_react21.createElement)("div", { className: "bt-set-row" }, (0, import_react21.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
+    (0, import_react21.createElement)(
+      "div",
+      { className: "bt-set-row bt-task-foot" },
+      (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
+      (0, import_react21.createElement)(
+        "button",
+        { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" },
+        task ? busy ? t("Saving…") : t("Save changes") : busy ? t("Creating…") : t("Create task")
+      )
+    )
+  );
+}
+function openPlugins(actions) {
+  actions.closeSettings();
+  actions.selectPanel("plugins");
+}
+function AutomationOff({ actions }) {
+  return (0, import_react21.createElement)(
+    "div",
+    { className: "bt-set-card bt-task-off" },
+    (0, import_react21.createElement)("span", { className: "bt-task-off-mark" }, (0, import_react21.createElement)(ClockIcon)),
+    (0, import_react21.createElement)("span", { className: "bt-task-off-title" }, t("Turn on Automation tasks in DSH")),
+    (0, import_react21.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page.")),
+    (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
+  );
+}
+function QuietHoursCard({ view, actions, locked }) {
+  const quiet = view.quietHours ?? { on: false };
+  const [busy, setBusy] = (0, import_react21.useState)(false);
+  const [error, setError] = (0, import_react21.useState)("");
+  const [from, setFrom] = (0, import_react21.useState)(quiet.from ?? "22:00");
+  const [to, setTo] = (0, import_react21.useState)(quiet.to ?? "07:00");
+  const unchecked = view.quietUnchecked === true;
+  const refresh = () => {
+    void Promise.resolve(actions.schedules?.()).then((next) => {
+      if (next) publish(next);
+    }).catch(() => {
+    });
+  };
+  const save = (next) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false };
+    void Promise.resolve(actions.setPrefs({ quietHours: next })).then(() => {
+      publish({ ...view, quietHours: shown });
+      refresh();
+    }, (failure) => setError(hostText(failure?.message ?? String(failure)))).finally(() => setBusy(false));
+  };
+  return (0, import_react21.createElement)(
+    "section",
+    { className: "bt-set-section" },
+    (0, import_react21.createElement)("h3", null, t("Quiet hours")),
+    (0, import_react21.createElement)(
+      "div",
+      { className: "bt-set-card" },
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react21.createElement)(
+          "span",
+          { className: "bt-set-copy" },
+          (0, import_react21.createElement)("span", { className: "bt-bs-label" }, quiet.on ? t("On, {from}–{to}", { from: quiet.from, to: quiet.to }) : t("Off")),
+          (0, import_react21.createElement)("span", { className: "bt-set-hint" }, t("A new or edited task cannot be due inside the window. It never mutes a task that already exists."))
+        ),
+        locked ? null : (0, import_react21.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm",
+          disabled: busy,
+          "aria-pressed": quiet.on,
+          onClick: () => save(quiet.on ? { on: false } : { on: true, from, to })
+        }, quiet.on ? t("Turn off") : t("Turn on"))
+      ),
+      quiet.on && !locked ? (0, import_react21.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("Window"))),
+        (0, import_react21.createElement)(
+          "div",
+          { className: "bt-task-when" },
+          (0, import_react21.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: from, "aria-label": t("Quiet hours start"), disabled: busy, onChange: (event) => setFrom(event.target.value) }),
+          (0, import_react21.createElement)("span", { className: "bt-task-every" }, "–"),
+          (0, import_react21.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: to, "aria-label": t("Quiet hours end"), disabled: busy, onChange: (event) => setTo(event.target.value) }),
+          (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => save({ on: true, from, to }) }, t("Save window"))
+        )
+      ) : null,
+      error ? (0, import_react21.createElement)("div", { className: "bt-set-row" }, (0, import_react21.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
+      quiet.on && unchecked ? (0, import_react21.createElement)("div", { className: "bt-set-row" }, (0, import_react21.createElement)("span", { className: "bt-set-hint" }, t("A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep."))) : null
+    )
+  );
+}
+function SchedulesPage({ roster, actions, start }) {
+  const view = useSchedules(actions);
+  const [adding, setAdding] = (0, import_react21.useState)(Boolean(start));
+  const [editing, setEditing] = (0, import_react21.useState)(null);
+  const locked = lockedWindow(roster);
+  const refused = schedulesReadFailure(view?.readFailure);
+  if (refused !== null) return (0, import_react21.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
+  if (view === null) return (0, import_react21.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
+  if (!view.available) return (0, import_react21.createElement)(AutomationOff, { actions });
+  const shown = (next) => {
+    publish(next);
+    setAdding(false);
+    setEditing(null);
+  };
+  const edit = (task) => {
+    setAdding(false);
+    setEditing(task);
+  };
+  const byChat = [
+    ...roster.bots.map((bot) => [bot.id, (0, import_react21.createElement)(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter((task) => task.botId === bot.id)]),
+    ...roster.rooms.map((room2) => [room2.id, (0, import_react21.createElement)(RoomAvatar, { room: room2, roster, size: 18 }), room2.name, view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id)])
+  ].filter(([, , , tasks]) => tasks.length > 0);
+  return [
+    (0, import_react21.createElement)(QuietHoursCard, { key: "quiet", view, actions, locked }),
+    // A locked window draws no create control and opens no form (#2232): the header already says
+    // why, and a button the host refuses is the defect this page had.
+    locked ? null : adding ? (0, import_react21.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react21.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
+      setEditing(null);
+      setAdding(true);
+    } }, (0, import_react21.createElement)(PlusIcon), t("New task"))),
+    byChat.length === 0 && !adding ? (0, import_react21.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react21.createElement)("div", { className: "bt-set-row" }, (0, import_react21.createElement)("span", { className: "bt-set-hint" }, view.someHidden ? t("No scheduled tasks you can see. Another member's tasks stay hidden.") : t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react21.createElement)(
+      "section",
+      { key: id, className: "bt-set-section" },
+      (0, import_react21.createElement)("h3", { className: "bt-task-head" }, avatar, name),
+      (0, import_react21.createElement)(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
+    ))
+  ];
+}
+function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
+  const open = !locked && editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
+  const [copying, setCopying] = (0, import_react21.useState)(null);
+  const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
+  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react21.createElement)(TaskRow, { key: task.id, task, actions, roster, locked, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
+  return (0, import_react21.createElement)(
+    import_react21.Fragment,
+    null,
+    open ? (0, import_react21.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
+    source ? (0, import_react21.createElement)(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => {
+      setCopying(null);
+      onDone(next);
+    }, onCancel: () => setCopying(null) }) : null,
+    rows.length + extra.length > 0 ? (0, import_react21.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
+  );
+}
+function CopyRow({ task, roster, actions, onView, onCancel }) {
+  const others = [
+    ...roster.bots.filter((bot) => bot.id !== task.botId).map((bot) => [bot.id, bot.name]),
+    ...roster.rooms.filter((room2) => room2.id !== task.roomId).map((room2) => [room2.id, room2.name])
+  ];
+  const [target, setTarget] = (0, import_react21.useState)("");
+  const [busy, setBusy] = (0, import_react21.useState)(false);
+  const [error, setError] = (0, import_react21.useState)("");
+  const submit = (event) => {
+    event.preventDefault();
+    if (busy || target === "") return;
+    setBusy(true);
+    setError("");
+    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } }).then(onView, (failure) => {
+      setBusy(false);
+      setError(hostText(failure?.message ?? String(failure)));
+    });
+  };
+  return (0, import_react21.createElement)(
+    "form",
+    { className: "bt-set-row bt-task-copy", onSubmit: submit },
+    (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-bs-label" }, t("Copy “{name}” to", { name: task.title }))),
+    (0, import_react21.createElement)(
+      "select",
+      { className: "bt-select bt-task-bot", value: target, "aria-label": t("Copy to"), onChange: (event) => setTarget(event.target.value) },
+      (0, import_react21.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
+      others.map(([id, name]) => (0, import_react21.createElement)("option", { key: id, value: id }, name))
+    ),
+    (0, import_react21.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm", disabled: busy || target === "" }, busy ? t("Copying…") : t("Copy")),
+    (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
+    error ? (0, import_react21.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error) : null
+  );
+}
+function BotSchedules({ bot, roster, actions }) {
+  const view = useSchedules(actions);
+  const [editing, setEditing] = (0, import_react21.useState)(null);
+  const locked = lockedWindow(roster);
+  const refused = schedulesReadFailure(view?.readFailure);
+  if (refused !== null) {
+    return (0, import_react21.createElement)(
+      "section",
+      { className: "bt-set-section" },
+      (0, import_react21.createElement)("h3", null, t("Scheduled tasks")),
+      (0, import_react21.createElement)("div", { className: "bt-set-card" }, (0, import_react21.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-set-hint bt-danger", role: "status" }, refused))
+      ))
+    );
+  }
+  if (view === null) return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  return (0, import_react21.createElement)(
+    "section",
+    { className: "bt-set-section" },
+    (0, import_react21.createElement)("h3", null, t("Scheduled tasks")),
+    !view.available ? (0, import_react21.createElement)(
+      "div",
+      { className: "bt-set-card" },
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bt-set-row bt-bs-row" },
+        (0, import_react21.createElement)("span", { className: "bt-set-copy" }, (0, import_react21.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
+        (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
+      )
+    ) : (0, import_react21.createElement)(TaskList, {
+      tasks,
+      editing,
+      roster,
+      actions,
+      locked,
+      onEdit: locked ? void 0 : setEditing,
+      onDone: (next) => {
+        publish(next);
+        setEditing(null);
+      },
+      onCancel: () => setEditing(null),
+      extra: locked ? [] : [(0, import_react21.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react21.createElement)(PlusIcon), t("New task"))]
+    })
+  );
+}
+function SummaryLines({ tasks, actions }) {
+  const shown = tasks.slice(0, 3);
+  const hidden = tasks.length - shown.length;
+  return (0, import_react21.createElement)(
+    import_react21.Fragment,
+    null,
+    (0, import_react21.createElement)("div", { className: "bt-section-title" }, hidden > 0 ? t("Scheduled tasks · {count}", { count: tasks.length }) : t("Scheduled tasks")),
+    (0, import_react21.createElement)(
+      "div",
+      { className: "bt-task-list" },
+      shown.map((task) => (0, import_react21.createElement)(
+        "button",
+        { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
+        (0, import_react21.createElement)(ClockIcon),
+        (0, import_react21.createElement)("span", { className: "bt-task-line-title" }, task.title),
+        (0, import_react21.createElement)("span", { className: "bt-task-line-when" }, nextText(task))
+      )),
+      hidden > 0 ? (0, import_react21.createElement)("button", { key: "more", type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules") }, t("{count} more not shown", { count: hidden })) : null
+    )
+  );
+}
+function ScheduleSummary({ bot, roster, actions }) {
+  const view = useSchedules(actions);
+  if (view === null || view.readFailure !== void 0) return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  if (lockedWindow(roster) && tasks.length === 0) return null;
+  return (0, import_react21.createElement)(
+    "div",
+    null,
+    tasks.length === 0 ? (0, import_react21.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")) : (0, import_react21.createElement)(SummaryLines, { tasks, actions }),
+    tasks.length === 0 ? (0, import_react21.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view.available === false ? t("Switch on Automation tasks on the Plugins page.") : view.someHidden ? t("No scheduled tasks you can see. Add one") : t("No scheduled tasks yet. Add one")) : null
+  );
+}
+function RoomSchedules({ room: room2, actions }) {
+  const view = useSchedules(actions);
+  if (view === null || view.readFailure !== void 0 || room2.origin === "face-to-face") return null;
+  const tasks = view.available ? view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id) : [];
+  if (tasks.length === 0) return null;
+  return (0, import_react21.createElement)("div", null, (0, import_react21.createElement)(SummaryLines, { tasks, actions }));
+}
+var SCHEDULE_CSS = `
+.bt-task{gap:10px}
+.bt-task-copy{flex-wrap:wrap;gap:8px}
+.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
+.bt-task[data-done]{opacity:.6}
+.bt-task[data-busy]{opacity:.4}
+.bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
+.bt-task-prompt{font-size:12px;line-height:16px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+.bt-task-remove svg{width:14px;height:14px}
+.bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+.bt-task-tool svg{width:14px;height:14px}
+.bt-task-pause{height:26px;color:var(--bt-ink-2)}
+.bt-task-last{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-task-last[data-failed]{color:#c21d2e}
+.bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
+.bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
+.bt-task-head{display:flex;align-items:center;gap:6px}
+.bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
+.bt-task-bot{width:auto;min-width:160px;max-width:58%}
+.bt-task-when{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.bt-task-when .bt-input{width:auto;height:32px}
+.bt-task-time{min-width:110px}
+.bt-task-count{width:72px!important}
+.bt-task-unit{width:auto;height:32px}
+.bt-task-every{font-size:13px;color:var(--bt-ink-2)}
+.bt-task-days{display:flex;gap:4px}
+.bt-task-day{width:30px;height:30px;border-radius:50%;border:1px solid var(--bt-line);background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
+.bt-task-day[aria-pressed=true]{background:var(--bt-user);border-color:var(--bt-user);color:var(--bt-user-ink)}
+.bt-task-foot{justify-content:flex-end;gap:8px}
+.bt-task-foot .bt-send{height:28px;font-size:12px}
+.bt-task-off{align-items:center;gap:8px;padding:28px 20px;text-align:center}
+.bt-task-off>*+*{border-top:0}
+.bt-task-off-mark{width:44px;height:44px;border-radius:50%;background:var(--bt-hover);display:flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
+.bt-task-off-mark svg{width:20px;height:20px}
+.bt-task-off-title{font-size:14px;line-height:20px;font-weight:600}
+.bt-task-off .bt-set-hint{max-width:380px}
+.bt-task-list{display:flex;flex-direction:column;gap:2px}
+.bt-task-line{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;transition:background-color .12s ease}
+.bt-task-line:hover{background:var(--bt-hover)}
+.bt-task-line svg{flex:none;color:var(--bt-ink-3)}
+.bt-task-line-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-task-line-when{flex:none;font-size:12px;color:var(--bt-ink-3)}
+@media (prefers-reduced-motion:reduce){.bt-task-form{animation:none}}
+`;
+
+// src/client/composer.js
+var import_react22 = require("react");
 var import_react_dom7 = require("react-dom");
 var speechApi = () => window.SpeechRecognition ?? window.webkitSpeechRecognition;
 var keepComposerFocus = (event) => event.preventDefault();
 function useDictation(onText) {
-  const [listening, setListening] = (0, import_react21.useState)(false);
-  const [note, setNote] = (0, import_react21.useState)("");
-  const recognition = (0, import_react21.useRef)(null);
-  const latest = (0, import_react21.useRef)(onText);
+  const [listening, setListening] = (0, import_react22.useState)(false);
+  const [note, setNote] = (0, import_react22.useState)("");
+  const recognition = (0, import_react22.useRef)(null);
+  const latest = (0, import_react22.useRef)(onText);
   latest.current = onText;
-  (0, import_react21.useEffect)(() => () => recognition.current?.abort(), []);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => () => recognition.current?.abort(), []);
+  (0, import_react22.useEffect)(() => {
     if (!note) return void 0;
     const timer = setTimeout(() => setNote(""), 2600);
     return () => clearTimeout(timer);
@@ -12036,14 +12660,14 @@ function ComposerIdentity({ sessionId, useRoster }) {
   const self = roster.self;
   const humans = (room2?.participants ?? []).filter((p) => p.kind === "human" && p.leftSeq === void 0);
   if (room2?.viewerRole === "invited-owner") {
-    return (0, import_react21.createElement)(
+    return (0, import_react22.createElement)(
       "span",
       { className: "bt-composer-as", title: t("You can remove your Bot from this room") },
       t("Shared room from {name}", { name: room2.sharedFrom?.inviterName || t("a friend") })
     );
   }
   if (!self || !room2 || humans.length < 2) return null;
-  return (0, import_react21.createElement)(
+  return (0, import_react22.createElement)(
     "span",
     { className: "bt-composer-as", title: t("Messages in this room are attributed to you") },
     t("Sending as {name}", { name: self.displayName || self.memberId })
@@ -12054,7 +12678,7 @@ function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
     if (final && inputActions) inputActions.insertText(text2, inputActions.captureInsertion());
   });
   const quote = useUi((state) => state.quote?.sessionId === sessionId ? state.quote : null);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     if (!quote || !inputActions) return;
     actions.clearQuote(quote.token);
     const excerpt = quote.text.replace(/\s+/g, " ").trim();
@@ -12072,10 +12696,10 @@ function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
   }, [quote?.token]);
   if (sessionId === void 0) return null;
   const pluginMic = actions.speech() !== void 0;
-  return (0, import_react21.createElement)(
-    import_react21.Fragment,
+  return (0, import_react22.createElement)(
+    import_react22.Fragment,
     null,
-    pluginMic ? null : (0, import_react21.createElement)("button", {
+    pluginMic ? null : (0, import_react22.createElement)("button", {
       type: "button",
       className: "bt-mic",
       "aria-label": dictation.listening ? t("Stop dictation") : t("Dictate"),
@@ -12083,16 +12707,16 @@ function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
       title: dictation.listening ? t("Stop dictation") : t("Dictate"),
       onMouseDown: keepComposerFocus,
       onClick: () => dictation.listening ? dictation.stop() : dictation.start()
-    }, (0, import_react21.createElement)(MicIcon)),
-    (0, import_react21.createElement)("button", {
+    }, (0, import_react22.createElement)(MicIcon)),
+    (0, import_react22.createElement)("button", {
       type: "button",
       className: "bt-voice",
       "aria-label": t("Start voice chat"),
       title: t("Voice chat"),
       onMouseDown: keepComposerFocus,
       onClick: () => actions.openVoice(sessionId)
-    }, (0, import_react21.createElement)(WaveIcon, { size: 18 })),
-    dictation.note ? (0, import_react21.createElement)("span", { className: "bt-mic-note", role: "status" }, dictation.note) : null
+    }, (0, import_react22.createElement)(WaveIcon, { size: 18 })),
+    dictation.note ? (0, import_react22.createElement)("span", { className: "bt-mic-note", role: "status" }, dictation.note) : null
   );
 }
 function menuIcons(roster) {
@@ -12100,17 +12724,17 @@ function menuIcons(roster) {
   return (row) => {
     if (!row.bot) return PeopleIcon;
     const id = row.bot.id;
-    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => (0, import_react21.createElement)(BotMark, { bot: markBotForMention(row.bot, roster.getSnapshot()), size }));
+    if (!marks.has(id)) marks.set(id, ({ size = 14 }) => (0, import_react22.createElement)(BotMark, { bot: markBotForMention(row.bot, roster.getSnapshot()), size }));
     return marks.get(id);
   };
 }
 function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
   const roster = useRoster((value) => value);
-  const [open, setOpen] = (0, import_react21.useState)(null);
+  const [open, setOpen] = (0, import_react22.useState)(null);
   const [shown, leaving] = useLinger(open, 120);
-  const button = (0, import_react21.useRef)(null);
-  const menu = (0, import_react21.useRef)(null);
-  (0, import_react21.useEffect)(() => {
+  const button = (0, import_react22.useRef)(null);
+  const menu = (0, import_react22.useRef)(null);
+  (0, import_react22.useEffect)(() => {
     if (!open) return void 0;
     const onDown = (event) => {
       if (![button.current, menu.current].some((node) => node?.contains(event.target))) setOpen(null);
@@ -12130,6 +12754,7 @@ function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
   }, [open]);
   const target = roster.byId?.[sessionId]?.id ?? roster.roomsById?.[sessionId]?.id;
   if (sessionId === void 0 || target === void 0) return null;
+  const locked = lockedWindow(roster);
   const toggle = () => {
     if (open) {
       setOpen(null);
@@ -12142,19 +12767,15 @@ function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
     setOpen(null);
     button.current?.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click();
   };
-  const schedule = () => {
-    setOpen(null);
-    actions.openSettings("schedules", target);
-  };
   const reference = () => {
     setOpen(null);
     actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
   };
   const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
-  return (0, import_react21.createElement)(
-    import_react21.Fragment,
+  return (0, import_react22.createElement)(
+    import_react22.Fragment,
     null,
-    (0, import_react21.createElement)("button", {
+    (0, import_react22.createElement)("button", {
       ref: button,
       type: "button",
       className: "bt-plus",
@@ -12164,8 +12785,8 @@ function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
       "aria-expanded": Boolean(open),
       onMouseDown: keepComposerFocus,
       onClick: toggle
-    }, (0, import_react21.createElement)(PlusIcon)),
-    shown ? (0, import_react_dom7.createPortal)((0, import_react21.createElement)(
+    }, (0, import_react22.createElement)(PlusIcon)),
+    shown ? (0, import_react_dom7.createPortal)((0, import_react22.createElement)(
       "div",
       {
         ref: menu,
@@ -12175,9 +12796,12 @@ function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
         style: { left: shown.left, bottom: shown.bottom },
         "data-leaving": leaving || void 0
       },
-      (0, import_react21.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react21.createElement)(PaperclipIcon), (0, import_react21.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
-      canReference ? (0, import_react21.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react21.createElement)(ChatsIcon), (0, import_react21.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
-      (0, import_react21.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react21.createElement)(ClockIcon), (0, import_react21.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
+      (0, import_react22.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react22.createElement)(PaperclipIcon), (0, import_react22.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
+      canReference ? (0, import_react22.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react22.createElement)(ChatsIcon), (0, import_react22.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
+      locked ? null : (0, import_react22.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
+        setOpen(null);
+        actions.openSettings("schedules", target);
+      } }, (0, import_react22.createElement)(ClockIcon), (0, import_react22.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
     ), document.body) : null
   );
 }
@@ -12533,7 +13157,7 @@ function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
 }
 
 // src/client/model-menu.js
-var import_react22 = require("react");
+var import_react23 = require("react");
 var import_react_dom8 = require("react-dom");
 var MENU_EXIT_MS = 120;
 function groupModels(models) {
@@ -12556,8 +13180,8 @@ function groupModels(models) {
 var servedOf = (roster, ref) => (roster.models ?? []).find((model) => model.ref === ref);
 var effortCache = /* @__PURE__ */ new Map();
 function useEfforts(served, ref, actions) {
-  const [fetched, setFetched] = (0, import_react22.useState)(void 0);
-  (0, import_react22.useEffect)(() => {
+  const [fetched, setFetched] = (0, import_react23.useState)(void 0);
+  (0, import_react23.useEffect)(() => {
     setFetched(void 0);
     if (ref === void 0 || served?.reasoning !== void 0 || actions?.efforts === void 0) return void 0;
     let live = true;
@@ -12582,12 +13206,12 @@ function effortRows(reasoning) {
   ];
 }
 function EffortRows({ reasoning, current, onPick }) {
-  return (0, import_react22.createElement)(
-    import_react22.Fragment,
+  return (0, import_react23.createElement)(
+    import_react23.Fragment,
     null,
-    (0, import_react22.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
-    (0, import_react22.createElement)("div", { className: "bt-model-group", role: "presentation" }, t("Thinking level")),
-    effortRows(reasoning).map((row) => (0, import_react22.createElement)(
+    (0, import_react23.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
+    (0, import_react23.createElement)("div", { className: "bt-model-group", role: "presentation" }, t("Thinking level")),
+    effortRows(reasoning).map((row) => (0, import_react23.createElement)(
       "button",
       {
         key: row.effort ?? "default",
@@ -12596,17 +13220,17 @@ function EffortRows({ reasoning, current, onPick }) {
         "aria-checked": row.effort === current,
         onClick: () => onPick(row.effort)
       },
-      (0, import_react22.createElement)("span", { className: "bt-menu-label" }, row.label),
-      (0, import_react22.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, row.effort === current ? (0, import_react22.createElement)(CheckIcon) : null)
+      (0, import_react23.createElement)("span", { className: "bt-menu-label" }, row.label),
+      (0, import_react23.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, row.effort === current ? (0, import_react23.createElement)(CheckIcon) : null)
     ))
   );
 }
 function ModelRows({ roster, current, onPick }) {
-  return groupModels(roster.models).map(([provider, list]) => (0, import_react22.createElement)(
-    import_react22.Fragment,
+  return groupModels(roster.models).map(([provider, list]) => (0, import_react23.createElement)(
+    import_react23.Fragment,
     { key: list[0].provider ?? provider },
-    (0, import_react22.createElement)("div", { className: "bt-model-group", role: "presentation" }, provider),
-    list.map((model) => (0, import_react22.createElement)(
+    (0, import_react23.createElement)("div", { className: "bt-model-group", role: "presentation" }, provider),
+    list.map((model) => (0, import_react23.createElement)(
       "button",
       {
         key: model.ref,
@@ -12616,20 +13240,20 @@ function ModelRows({ roster, current, onPick }) {
         title: model.ref,
         onClick: () => onPick(model.ref)
       },
-      (0, import_react22.createElement)("span", { className: "bt-menu-label" }, model.name),
-      model.ref === roster.defaultModel ? (0, import_react22.createElement)("span", { className: "bt-menu-hint" }, t("Default")) : null,
-      (0, import_react22.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, model.ref === current ? (0, import_react22.createElement)(CheckIcon) : null)
+      (0, import_react23.createElement)("span", { className: "bt-menu-label" }, model.name),
+      model.ref === roster.defaultModel ? (0, import_react23.createElement)("span", { className: "bt-menu-hint" }, t("Default")) : null,
+      (0, import_react23.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, model.ref === current ? (0, import_react23.createElement)(CheckIcon) : null)
     ))
   ));
 }
-var Caret = () => (0, import_react22.createElement)("svg", { className: "bt-model-caret", width: 12, height: 12, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react22.createElement)("path", { d: "M5.5 8l4.5 4.5L14.5 8" }));
+var Caret = () => (0, import_react23.createElement)("svg", { className: "bt-model-caret", width: 12, height: 12, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (0, import_react23.createElement)("path", { d: "M5.5 8l4.5 4.5L14.5 8" }));
 function useAnchoredMenu() {
-  const [place, setPlace] = (0, import_react22.useState)(null);
+  const [place, setPlace] = (0, import_react23.useState)(null);
   const [shownPlace, leaving] = useLinger(place, MENU_EXIT_MS);
-  const button = (0, import_react22.useRef)(null);
-  const menu = (0, import_react22.useRef)(null);
+  const button = (0, import_react23.useRef)(null);
+  const menu = (0, import_react23.useRef)(null);
   const close = () => setPlace(null);
-  (0, import_react22.useEffect)(() => {
+  (0, import_react23.useEffect)(() => {
     if (place === null) return void 0;
     const onDown = (event) => {
       if (menu.current?.contains(event.target) || button.current?.contains(event.target)) return;
@@ -12692,10 +13316,10 @@ function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onPickEffo
     else if (effort !== bot.effort) void run(actions.updateBot(bot.id, { effort: effort ?? null }));
   };
   const models = roster.models ?? [];
-  return (0, import_react22.createElement)(
-    import_react22.Fragment,
+  return (0, import_react23.createElement)(
+    import_react23.Fragment,
     null,
-    (0, import_react22.createElement)(
+    (0, import_react23.createElement)(
       "button",
       {
         ref: button,
@@ -12708,38 +13332,38 @@ function ModelMenu({ bot, roster, actions, run, wide = false, onPick, onPickEffo
         "data-missing": shown !== void 0 && !shown.served && models.length > 0 ? "" : void 0,
         onClick: toggle
       },
-      (0, import_react22.createElement)(
+      (0, import_react23.createElement)(
         "span",
         { className: "bt-model-copy" },
-        (0, import_react22.createElement)("span", { className: "bt-model-name" }, shown?.name ?? t("Choose a model")),
-        shown ? (0, import_react22.createElement)("span", { className: "bt-model-provider" }, shown.served || models.length === 0 ? effortLabel === void 0 ? shown.provider : `${shown.provider} · ${effortLabel}` : t("{provider} · not available", { provider: shown.provider })) : null
+        (0, import_react23.createElement)("span", { className: "bt-model-name" }, shown?.name ?? t("Choose a model")),
+        shown ? (0, import_react23.createElement)("span", { className: "bt-model-provider" }, shown.served || models.length === 0 ? effortLabel === void 0 ? shown.provider : `${shown.provider} · ${effortLabel}` : t("{provider} · not available", { provider: shown.provider })) : null
       ),
-      (0, import_react22.createElement)(Caret)
+      (0, import_react23.createElement)(Caret)
     ),
-    shownPlace ? (0, import_react_dom8.createPortal)((0, import_react22.createElement)(
+    shownPlace ? (0, import_react_dom8.createPortal)((0, import_react23.createElement)(
       "div",
       { ref: menu, className: `bt-menu bt-model-menu${shownPlace.bottom !== void 0 ? " bt-menu-up" : ""}`, role: "menu", "aria-label": t("Model for {name}", { name: bot.name }), style: shownPlace, "data-leaving": leaving || void 0 },
-      models.length > 0 ? (0, import_react22.createElement)(ModelRows, { roster, current, onPick: pick2 }) : (0, import_react22.createElement)("div", { className: "bt-model-none" }, t("No models are set up in DeepSeek Harness yet.")),
-      effortRows(reasoning).length > 0 ? (0, import_react22.createElement)(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
-      (0, import_react22.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
-      (0, import_react22.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
+      models.length > 0 ? (0, import_react23.createElement)(ModelRows, { roster, current, onPick: pick2 }) : (0, import_react23.createElement)("div", { className: "bt-model-none" }, t("No models are set up in DeepSeek Harness yet.")),
+      effortRows(reasoning).length > 0 ? (0, import_react23.createElement)(EffortRows, { reasoning, current: picked, onPick: pickEffort }) : null,
+      (0, import_react23.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
+      (0, import_react23.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
         close();
         openHarnessModels();
-      } }, (0, import_react22.createElement)(SlidersIcon), (0, import_react22.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
+      } }, (0, import_react23.createElement)(SlidersIcon), (0, import_react23.createElement)("span", { className: "bt-menu-label" }, t("Models and providers…")))
     ), document.body) : null
   );
 }
 function ModelChoiceDock({ sessionId, useRoster, actions }) {
   const roster = useRoster((value) => value);
   const bot = roster.byId[sessionId];
-  const [busy, setBusy] = (0, import_react22.useState)("");
-  const [error, setError] = (0, import_react22.useState)("");
+  const [busy, setBusy] = (0, import_react23.useState)("");
+  const [error, setError] = (0, import_react23.useState)("");
   const shown = Boolean(bot) && currentPart(bot) === sessionId && roster.ready;
-  (0, import_react22.useEffect)(() => {
+  (0, import_react23.useEffect)(() => {
     if (shown) void actions.refreshModels?.();
   }, [shown, sessionId]);
   if (!bot || currentPart(bot) !== sessionId || !roster.ready) return null;
-  if (bot.remote) return bot.remote.gone ? (0, import_react22.createElement)(RemoteGoneDock, { bot }) : null;
+  if (bot.remote) return bot.remote.gone ? (0, import_react23.createElement)(RemoteGoneDock, { bot }) : null;
   const models = roster.models ?? [];
   const lost = bot.model ? !models.some((model) => model.ref === bot.model) : false;
   if (bot.model && (!lost || models.length === 0)) return null;
@@ -12752,12 +13376,12 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
     }).finally(() => setBusy(""));
   };
   const text2 = lost ? t("{model} is not available anymore. Pick another model for me.", { model: bot.model.split("/").slice(1).join("/") }) : models.length === 0 ? t("Hi, I'm {name}. I don't have a model yet. How do you want to set one up?", { name: bot.name }) : t("Hi, I'm {name}. Pick a model for me first. You can change it later in my details.", { name: bot.name });
-  const choices = models.length === 0 ? [...setupChoices(actions).map(([label, run]) => (0, import_react22.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)), (0, import_react22.createElement)(KeyHelpLink, { key: "key-help" })] : [
-    ...groupModels(models).map(([provider, list]) => (0, import_react22.createElement)(
+  const choices = models.length === 0 ? [...setupChoices(actions).map(([label, run]) => (0, import_react23.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)), (0, import_react23.createElement)(KeyHelpLink, { key: "key-help" })] : [
+    ...groupModels(models).map(([provider, list]) => (0, import_react23.createElement)(
       "div",
       { key: list[0].provider ?? provider, className: "bt-model-choice-group", role: "group", "aria-label": provider },
-      (0, import_react22.createElement)("div", { className: "bt-model-choice-provider", "aria-hidden": true }, provider),
-      (0, import_react22.createElement)("div", { className: "bt-model-choice-chips" }, list.map((model) => (0, import_react22.createElement)("button", {
+      (0, import_react23.createElement)("div", { className: "bt-model-choice-provider", "aria-hidden": true }, provider),
+      (0, import_react23.createElement)("div", { className: "bt-model-choice-chips" }, list.map((model) => (0, import_react23.createElement)("button", {
         key: model.ref,
         type: "button",
         className: "bt-model-chip",
@@ -12766,46 +13390,46 @@ function ModelChoiceDock({ sessionId, useRoster, actions }) {
         "aria-label": `${model.name} · ${provider}`,
         title: model.ref === roster.defaultModel ? `${model.ref} · ${t("Harness default")}` : model.ref,
         onClick: () => pick2(model.ref)
-      }, model.name, busy === model.ref ? (0, import_react22.createElement)("span", { className: "bt-model-spin", "aria-label": t("Saving…") }) : null)))
+      }, model.name, busy === model.ref ? (0, import_react23.createElement)("span", { className: "bt-model-spin", "aria-label": t("Saving…") }) : null)))
     )),
-    (0, import_react22.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessModels }, (0, import_react22.createElement)(SlidersIcon), t("Manage models"))
+    (0, import_react23.createElement)("button", { key: "manage", type: "button", className: "bt-model-chip bt-model-chip-quiet", onClick: openHarnessModels }, (0, import_react23.createElement)(SlidersIcon), t("Manage models"))
   ];
-  return (0, import_react22.createElement)(
+  return (0, import_react23.createElement)(
     "div",
     { className: "bt-model-dock" },
-    (0, import_react22.createElement)(
+    (0, import_react23.createElement)(
       "div",
       { className: "bt-astack", "data-lead": "" },
-      (0, import_react22.createElement)(
+      (0, import_react23.createElement)(
         "div",
         { className: "bt-msg" },
-        (0, import_react22.createElement)(
+        (0, import_react23.createElement)(
           "div",
           { className: "bt-msg-line" },
-          (0, import_react22.createElement)(BotMark, { bot, size: 22 }),
-          (0, import_react22.createElement)("div", { className: "bt-bubble" }, text2)
+          (0, import_react23.createElement)(BotMark, { bot, size: 22 }),
+          (0, import_react23.createElement)("div", { className: "bt-bubble" }, text2)
         )
       )
     ),
-    (0, import_react22.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
-    error ? (0, import_react22.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
+    (0, import_react23.createElement)("div", { className: "bt-model-chips", role: "group", "aria-label": t("Choose a model") }, choices),
+    error ? (0, import_react23.createElement)("div", { className: "bt-secret-error bt-model-error", role: "alert" }, error) : null
   );
 }
 function RemoteGoneDock({ bot }) {
-  return (0, import_react22.createElement)(
+  return (0, import_react23.createElement)(
     "div",
     { className: "bt-model-dock", "data-flybot": "remote-gone" },
-    (0, import_react22.createElement)(
+    (0, import_react23.createElement)(
       "div",
       { className: "bt-astack", "data-lead": "" },
-      (0, import_react22.createElement)(
+      (0, import_react23.createElement)(
         "div",
         { className: "bt-msg" },
-        (0, import_react22.createElement)(
+        (0, import_react23.createElement)(
           "div",
           { className: "bt-msg-line" },
-          (0, import_react22.createElement)(BotMark, { bot, size: 22 }),
-          (0, import_react22.createElement)("div", { className: "bt-bubble" }, t("{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.", { name: bot.name, handle: bot.remote.handle }))
+          (0, import_react23.createElement)(BotMark, { bot, size: 22 }),
+          (0, import_react23.createElement)("div", { className: "bt-bubble" }, t("{name} ({handle}) is no longer shared with you, so messages to it cannot be delivered. It runs on its owner's machine, so another model cannot stand in. Ask its owner for a new invite.", { name: bot.name, handle: bot.remote.handle }))
         )
       )
     )
@@ -12820,7 +13444,7 @@ function setupChoices(actions) {
 }
 var KEY_HELP_URL = "https://github.com/ThinkFlowLab/FlyBot/blob/main/docs/deepseek-api-key.md";
 function KeyHelpLink() {
-  return (0, import_react22.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
+  return (0, import_react23.createElement)("a", { className: "bt-model-help", href: KEY_HELP_URL, target: "_blank", rel: "noopener noreferrer" }, t("How to set a DeepSeek API key"));
 }
 function missingModelKey(message) {
   const text2 = String(message ?? "");
@@ -12844,22 +13468,22 @@ function TurnErrorCell({ node, t: chatT, actions }) {
   const message = missing ? t("This Bot's model has no API key yet. Set one up, then send your message again.") : code === "ACCOUNT_SIGNED_OUT" ? shell("message.failure.accountSignedOut", raw) : code === "ACCOUNT_SIGN_IN_REQUIRED" ? shell("message.failure.accountSignInRequired", raw) : code === "QUOTA" || code === "ACCOUNT_QUOTA" ? shell("message.failure.quota", raw) : code === "AUTH" ? shell("message.failure.auth", raw) : raw;
   const choices = missing ? modelKeyChoices(actions ?? {}, missing.route) : [];
   const deepseek = missing ? /^deepseek/i.test(missing.route) : false;
-  return (0, import_react22.createElement)(
+  return (0, import_react23.createElement)(
     "div",
     { className: "bt-turn-error", role: "status", "data-missing-key": missing ? "" : void 0 },
-    (0, import_react22.createElement)("span", { className: "bt-turn-error-dot", "aria-hidden": true }),
-    (0, import_react22.createElement)(
+    (0, import_react23.createElement)("span", { className: "bt-turn-error-dot", "aria-hidden": true }),
+    (0, import_react23.createElement)(
       "div",
       { className: "bt-turn-error-copy" },
-      (0, import_react22.createElement)("span", { className: "bt-turn-error-title" }, title),
-      (0, import_react22.createElement)("span", { className: "bt-turn-error-message" }, message),
-      code ? (0, import_react22.createElement)("code", { className: "bt-turn-error-code" }, code) : null
+      (0, import_react23.createElement)("span", { className: "bt-turn-error-title" }, title),
+      (0, import_react23.createElement)("span", { className: "bt-turn-error-message" }, message),
+      code ? (0, import_react23.createElement)("code", { className: "bt-turn-error-code" }, code) : null
     ),
-    choices.length > 0 ? (0, import_react22.createElement)(
+    choices.length > 0 ? (0, import_react23.createElement)(
       "div",
       { className: "bt-turn-error-actions" },
-      choices.map(([label, run]) => (0, import_react22.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)),
-      deepseek ? (0, import_react22.createElement)(KeyHelpLink, { key: "key-help" }) : null
+      choices.map(([label, run]) => (0, import_react23.createElement)("button", { key: label, type: "button", className: "bt-model-chip", onClick: run }, label)),
+      deepseek ? (0, import_react23.createElement)(KeyHelpLink, { key: "key-help" }) : null
     ) : null
   );
 }
@@ -12867,14 +13491,14 @@ function DeepSeekSignIn({ useUi, actions }) {
   const open = useUi((state) => state.signIn);
   const entry = open ? actions.signInEntry?.() : null;
   if (!entry) return null;
-  return (0, import_react22.createElement)(SignInHost, { key: open, entry, actions });
+  return (0, import_react23.createElement)(SignInHost, { key: open, entry, actions });
 }
 function SignInHost({ entry, actions }) {
-  const [ops] = (0, import_react22.useState)(() => entry.inject?.() ?? {});
+  const [ops] = (0, import_react23.useState)(() => entry.inject?.() ?? {});
   const close = () => actions.closeSignIn();
-  const useHook = (source) => (selector) => (0, import_react22.useSyncExternalStore)(source.subscribe, () => selector(source.getSnapshot()));
-  const [hooks] = (0, import_react22.useState)(() => ({ useAccount: useHook(ops.hooks.account), useTheme: useHook(ops.hooks.theme) }));
-  return (0, import_react22.createElement)(entry.component, {
+  const useHook = (source) => (selector) => (0, import_react23.useSyncExternalStore)(source.subscribe, () => selector(source.getSnapshot()));
+  const [hooks] = (0, import_react23.useState)(() => ({ useAccount: useHook(ops.hooks.account), useTheme: useHook(ops.hooks.theme) }));
+  return (0, import_react23.createElement)(entry.component, {
     ...ops,
     ...hooks,
     t: actions.accountT(),
@@ -12933,7 +13557,7 @@ var MODEL_CSS = `
 `;
 
 // src/client/model-test.js
-var import_react23 = require("react");
+var import_react24 = require("react");
 var FAILURE_COPY = {
   NO_MODEL: "Pick a model first.",
   NO_KEY: "This model has no API key yet. Set one up in the model settings.",
@@ -12958,12 +13582,12 @@ function testOutcome(result, modelName) {
 }
 var testModel = (id) => call("test-model", { id });
 function ModelTestRow({ bot, modelName, test = testModel }) {
-  const [state, setState] = (0, import_react23.useState)({ busy: false, outcome: void 0 });
-  const live = (0, import_react23.useRef)(true);
-  (0, import_react23.useEffect)(() => () => {
+  const [state, setState] = (0, import_react24.useState)({ busy: false, outcome: void 0 });
+  const live = (0, import_react24.useRef)(true);
+  (0, import_react24.useEffect)(() => () => {
     live.current = false;
   }, []);
-  (0, import_react23.useEffect)(() => {
+  (0, import_react24.useEffect)(() => {
     setState({ busy: false, outcome: void 0 });
   }, [bot.id, bot.model]);
   const start = () => {
@@ -12977,21 +13601,21 @@ function ModelTestRow({ bot, modelName, test = testModel }) {
     });
   };
   const { busy, outcome } = state;
-  return (0, import_react23.createElement)(
+  return (0, import_react24.createElement)(
     "div",
     { className: "bt-set-row bt-bs-row bt-model-test" },
-    (0, import_react23.createElement)(
+    (0, import_react24.createElement)(
       "span",
       { className: "bt-set-copy" },
-      (0, import_react23.createElement)("span", { className: "bt-set-hint" }, t("Sends one short request to this model. It may be billed.")),
-      (0, import_react23.createElement)(
+      (0, import_react24.createElement)("span", { className: "bt-set-hint" }, t("Sends one short request to this model. It may be billed.")),
+      (0, import_react24.createElement)(
         "span",
         { className: "bt-model-test-result", role: "status", "aria-live": "polite", "data-ok": outcome === void 0 ? void 0 : String(outcome.ok) },
         busy ? t("Testing…") : outcome === void 0 ? null : outcome.text,
-        outcome?.code ? (0, import_react23.createElement)("code", { className: "bt-model-test-code" }, outcome.code) : null
+        outcome?.code ? (0, import_react24.createElement)("code", { className: "bt-model-test-code" }, outcome.code) : null
       )
     ),
-    (0, import_react23.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, "aria-busy": busy || void 0, onClick: start }, t("Test connection"))
+    (0, import_react24.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, "aria-busy": busy || void 0, onClick: start }, t("Test connection"))
   );
 }
 var MODEL_TEST_CSS = `
@@ -13011,17 +13635,17 @@ var MODEL_TEST_CSS = `
 `;
 
 // src/client/folder-menu.js
-var import_react24 = require("react");
+var import_react25 = require("react");
 var import_react_dom9 = require("react-dom");
 var folderName = (path) => String(path).replace(/[\\/]+$/, "").split(/[\\/]/).pop() || String(path);
-var Tick = ({ on }) => (0, import_react24.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, on ? (0, import_react24.createElement)(CheckIcon) : null);
+var Tick = ({ on }) => (0, import_react25.createElement)("span", { className: "bt-model-tick", "aria-hidden": true }, on ? (0, import_react25.createElement)(CheckIcon) : null);
 function FolderMenu({ value, group = false, actions, run, onPick, wide = false }) {
   const { isOpen, shownPlace, leaving, button, menu, open, close } = useAnchoredMenu();
-  const [info, setInfo] = (0, import_react24.useState)(null);
-  const [view, setView] = (0, import_react24.useState)("list");
-  const [draft, setDraft] = (0, import_react24.useState)("");
-  const [listing, setListing] = (0, import_react24.useState)(null);
-  const [problem, setProblem] = (0, import_react24.useState)("");
+  const [info, setInfo] = (0, import_react25.useState)(null);
+  const [view, setView] = (0, import_react25.useState)("list");
+  const [draft, setDraft] = (0, import_react25.useState)("");
+  const [listing, setListing] = (0, import_react25.useState)(null);
+  const [problem, setProblem] = (0, import_react25.useState)("");
   const fallback = group ? t("Each Bot's own folder") : t("Team workspace");
   const toggle = () => {
     if (isOpen) {
@@ -13054,35 +13678,35 @@ function FolderMenu({ value, group = false, actions, run, onPick, wide = false }
   };
   const known = info?.folders ?? [];
   const folders = value && !known.some((folder) => folder.path === value) ? [{ path: value, title: folderName(value) }, ...known] : known;
-  const listView = (0, import_react24.createElement)(
+  const listView = (0, import_react25.createElement)(
     "div",
     { key: "list", className: "bt-folder-view" },
-    (0, import_react24.createElement)(
+    (0, import_react25.createElement)(
       "button",
       { type: "button", role: "menuitemradio", "aria-checked": !value, title: group ? void 0 : info?.team ?? void 0, onClick: () => choose("") },
-      (0, import_react24.createElement)("span", { className: "bt-menu-label" }, fallback),
-      (0, import_react24.createElement)(Tick, { on: !value })
+      (0, import_react25.createElement)("span", { className: "bt-menu-label" }, fallback),
+      (0, import_react25.createElement)(Tick, { on: !value })
     ),
-    folders.length > 0 ? (0, import_react24.createElement)("div", { className: "bt-model-group", role: "presentation" }, t("Folders")) : null,
-    folders.map((folder) => (0, import_react24.createElement)(
+    folders.length > 0 ? (0, import_react25.createElement)("div", { className: "bt-model-group", role: "presentation" }, t("Folders")) : null,
+    folders.map((folder) => (0, import_react25.createElement)(
       "button",
       { key: folder.path, type: "button", role: "menuitemradio", "aria-checked": folder.path === value, title: folder.path, onClick: () => choose(folder.path) },
-      (0, import_react24.createElement)("span", { className: "bt-folder-copy" }, (0, import_react24.createElement)("span", { className: "bt-menu-label" }, folder.title), (0, import_react24.createElement)("span", { className: "bt-folder-path" }, folder.path)),
-      (0, import_react24.createElement)(Tick, { on: folder.path === value })
+      (0, import_react25.createElement)("span", { className: "bt-folder-copy" }, (0, import_react25.createElement)("span", { className: "bt-menu-label" }, folder.title), (0, import_react25.createElement)("span", { className: "bt-folder-path" }, folder.path)),
+      (0, import_react25.createElement)(Tick, { on: folder.path === value })
     )),
-    (0, import_react24.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
-    info?.picker === "native" ? (0, import_react24.createElement)("button", { type: "button", role: "menuitem", onClick: pickNative }, (0, import_react24.createElement)(FolderIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Choose a folder…"))) : null,
-    info?.picker === "browse" ? (0, import_react24.createElement)("button", { type: "button", role: "menuitem", onClick: () => browse(value) }, (0, import_react24.createElement)(FolderIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Browse folders…"))) : null,
-    (0, import_react24.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
+    (0, import_react25.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
+    info?.picker === "native" ? (0, import_react25.createElement)("button", { type: "button", role: "menuitem", onClick: pickNative }, (0, import_react25.createElement)(FolderIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Choose a folder…"))) : null,
+    info?.picker === "browse" ? (0, import_react25.createElement)("button", { type: "button", role: "menuitem", onClick: () => browse(value) }, (0, import_react25.createElement)(FolderIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Browse folders…"))) : null,
+    (0, import_react25.createElement)("button", { type: "button", role: "menuitem", onClick: () => {
       setDraft(value ?? "");
       setView("type");
-    } }, (0, import_react24.createElement)(PencilIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Enter a path…")))
+    } }, (0, import_react25.createElement)(PencilIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Enter a path…")))
   );
-  const typeView = (0, import_react24.createElement)(
+  const typeView = (0, import_react25.createElement)(
     "div",
     { key: "type", className: "bt-folder-view" },
-    (0, import_react24.createElement)("button", { type: "button", className: "bt-folder-back", onClick: () => setView("list") }, (0, import_react24.createElement)(ChevronLeftIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Back"))),
-    (0, import_react24.createElement)("input", {
+    (0, import_react25.createElement)("button", { type: "button", className: "bt-folder-back", onClick: () => setView("list") }, (0, import_react25.createElement)(ChevronLeftIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Back"))),
+    (0, import_react25.createElement)("input", {
       className: "bt-folder-input",
       autoFocus: true,
       value: draft,
@@ -13094,33 +13718,33 @@ function FolderMenu({ value, group = false, actions, run, onPick, wide = false }
         if (event.key === "Enter" && !event.nativeEvent.isComposing) typed();
       }
     }),
-    (0, import_react24.createElement)("button", { type: "button", className: "bt-folder-use", disabled: draft.trim() === "", onClick: typed }, t("Use this folder"))
+    (0, import_react25.createElement)("button", { type: "button", className: "bt-folder-use", disabled: draft.trim() === "", onClick: typed }, t("Use this folder"))
   );
   const parent = listing?.crumbs?.length > 1 ? listing.crumbs.at(-2) : void 0;
   const inside = listing?.entries?.filter((entry) => !entry.hidden) ?? [];
-  const browseView = listing ? (0, import_react24.createElement)(
+  const browseView = listing ? (0, import_react25.createElement)(
     "div",
     { key: `browse:${listing.path}`, className: "bt-folder-view" },
-    (0, import_react24.createElement)("button", { type: "button", className: "bt-folder-back", onClick: () => setView("list") }, (0, import_react24.createElement)(ChevronLeftIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Back"))),
-    (0, import_react24.createElement)("div", { className: "bt-folder-path bt-folder-here" }, listing.path),
-    parent ? (0, import_react24.createElement)("button", { type: "button", role: "menuitem", title: parent.path, onClick: () => browse(parent.path) }, (0, import_react24.createElement)(FolderIcon), (0, import_react24.createElement)("span", { className: "bt-menu-label" }, t("Up one level"))) : null,
-    inside.map((entry) => (0, import_react24.createElement)(
+    (0, import_react25.createElement)("button", { type: "button", className: "bt-folder-back", onClick: () => setView("list") }, (0, import_react25.createElement)(ChevronLeftIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Back"))),
+    (0, import_react25.createElement)("div", { className: "bt-folder-path bt-folder-here" }, listing.path),
+    parent ? (0, import_react25.createElement)("button", { type: "button", role: "menuitem", title: parent.path, onClick: () => browse(parent.path) }, (0, import_react25.createElement)(FolderIcon), (0, import_react25.createElement)("span", { className: "bt-menu-label" }, t("Up one level"))) : null,
+    inside.map((entry) => (0, import_react25.createElement)(
       "button",
       { key: entry.path, type: "button", role: "menuitem", onClick: () => browse(entry.path) },
-      (0, import_react24.createElement)(FolderIcon),
-      (0, import_react24.createElement)("span", { className: "bt-menu-label" }, entry.name),
-      (0, import_react24.createElement)(ChevronRightIcon)
+      (0, import_react25.createElement)(FolderIcon),
+      (0, import_react25.createElement)("span", { className: "bt-menu-label" }, entry.name),
+      (0, import_react25.createElement)(ChevronRightIcon)
     )),
-    inside.length === 0 ? (0, import_react24.createElement)("div", { className: "bt-model-none" }, t("No folders inside.")) : null,
-    listing.truncated ? (0, import_react24.createElement)("div", { className: "bt-folder-path bt-folder-here" }, t("Some folders are not shown.")) : null,
-    (0, import_react24.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
-    (0, import_react24.createElement)("button", { type: "button", className: "bt-folder-use", onClick: () => choose(listing.path) }, t("Use this folder"))
+    inside.length === 0 ? (0, import_react25.createElement)("div", { className: "bt-model-none" }, t("No folders inside.")) : null,
+    listing.truncated ? (0, import_react25.createElement)("div", { className: "bt-folder-path bt-folder-here" }, t("Some folders are not shown.")) : null,
+    (0, import_react25.createElement)("div", { className: "bt-menu-sep", role: "separator" }),
+    (0, import_react25.createElement)("button", { type: "button", className: "bt-folder-use", onClick: () => choose(listing.path) }, t("Use this folder"))
   ) : null;
   const shownView = view === "type" ? typeView : view === "browse" && browseView ? browseView : listView;
-  return (0, import_react24.createElement)(
-    import_react24.Fragment,
+  return (0, import_react25.createElement)(
+    import_react25.Fragment,
     null,
-    (0, import_react24.createElement)(
+    (0, import_react25.createElement)(
       "button",
       {
         ref: button,
@@ -13133,19 +13757,19 @@ function FolderMenu({ value, group = false, actions, run, onPick, wide = false }
         title: value,
         onClick: toggle
       },
-      (0, import_react24.createElement)(
+      (0, import_react25.createElement)(
         "span",
         { className: "bt-model-copy" },
-        (0, import_react24.createElement)("span", { className: "bt-model-name" }, value ? folderName(value) : fallback),
-        value ? (0, import_react24.createElement)("span", { className: "bt-model-provider" }, value) : null
+        (0, import_react25.createElement)("span", { className: "bt-model-name" }, value ? folderName(value) : fallback),
+        value ? (0, import_react25.createElement)("span", { className: "bt-model-provider" }, value) : null
       ),
-      (0, import_react24.createElement)(Caret)
+      (0, import_react25.createElement)(Caret)
     ),
-    shownPlace ? (0, import_react_dom9.createPortal)((0, import_react24.createElement)(
+    shownPlace ? (0, import_react_dom9.createPortal)((0, import_react25.createElement)(
       "div",
       { ref: menu, className: `bt-menu bt-model-menu bt-folder-menu${shownPlace.bottom !== void 0 ? " bt-menu-up" : ""}`, role: "menu", "aria-label": t("Working folder"), style: shownPlace, "data-leaving": leaving || void 0 },
       shownView,
-      problem ? (0, import_react24.createElement)("div", { className: "bt-folder-error", role: "alert" }, problem) : null
+      problem ? (0, import_react25.createElement)("div", { className: "bt-folder-error", role: "alert" }, problem) : null
     ), document.body) : null
   );
 }
@@ -13162,629 +13786,6 @@ var FOLDER_CSS = `
 .bt-menu .bt-folder-use:disabled{color:var(--bt-ink-3);cursor:default;background:none}
 .bt-folder-error{padding:4px 8px;font-size:12px;line-height:16px;color:#c21d2e;overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){.bt-folder-view{animation:none}}
-`;
-
-// src/client/schedules.js
-var import_react25 = require("react");
-var POLL_MS4 = 3e4;
-var shared = null;
-var listeners = /* @__PURE__ */ new Set();
-function publish(view) {
-  shared = view;
-  for (const listener of listeners) listener(view);
-}
-function publishFailure(error) {
-  publish({ available: false, tasks: [], readFailure: hostText(error?.message ?? String(error)) });
-}
-function useSchedules(actions) {
-  const [view, setView] = (0, import_react25.useState)(shared);
-  (0, import_react25.useEffect)(() => {
-    listeners.add(setView);
-    let stopped = false;
-    let timer;
-    const load = () => actions.schedules?.().then((next) => {
-      if (!stopped) publish(next);
-    }).catch((error) => {
-      if (!stopped) publishFailure(error);
-    }).finally(() => {
-      if (!stopped) timer = setTimeout(load, POLL_MS4);
-    });
-    load();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-      listeners.delete(setView);
-    };
-  }, []);
-  return view;
-}
-var schedulesReadFailure = (failure) => typeof failure === "string" && failure !== "" ? t("The scheduled tasks could not be read: {reason}", { reason: failure }) : null;
-var localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-var clock2 = (time) => String(time ?? "").slice(0, 5);
-var when2 = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms);
-function dayAndTime(ms) {
-  const sameYear = new Date(ms).getFullYear() === (/* @__PURE__ */ new Date()).getFullYear();
-  return when2(ms, { ...sameYear ? {} : { year: "numeric" }, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-function instant(value) {
-  const at = Date.parse(value);
-  return Number.isFinite(at) ? dayAndTime(at) : "";
-}
-function weekdayNames(days) {
-  const names = days.map((day) => when2(Date.UTC(2024, 0, day), { weekday: "short", timeZone: "UTC" }));
-  return names.join(dateLocale().startsWith("zh") ? "、" : ", ");
-}
-function everyText(seconds) {
-  if (seconds % 86400 === 0) return seconds === 86400 ? t("Every day") : t("Every {count} days", { count: seconds / 86400 });
-  if (seconds % 3600 === 0) return seconds === 3600 ? t("Every hour") : t("Every {count} hours", { count: seconds / 3600 });
-  if (seconds % 60 === 0) return t("Every {count} minutes", { count: seconds / 60 });
-  return t("Every {count} seconds", { count: seconds });
-}
-function timingText(task) {
-  const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : "";
-  switch (task.kind) {
-    case "after":
-    case "at": {
-      const time = instant(task.scheduledAt);
-      return time === "" ? "" : t("Once, {time}", { time });
-    }
-    case "every":
-      return everyText(task.everySeconds);
-    case "daily":
-      return `${t("Every day at {time}", { time: clock2(task.time) })}${zone}`;
-    case "weekly": {
-      const days = (task.weekdays ?? []).join();
-      const text2 = days === "1,2,3,4,5" ? t("Every weekday at {time}", { time: clock2(task.time) }) : days === "6,7" ? t("Every weekend at {time}", { time: clock2(task.time) }) : days === "1,2,3,4,5,6,7" ? t("Every day at {time}", { time: clock2(task.time) }) : t("Every {days} at {time}", { days: weekdayNames(task.weekdays ?? []), time: clock2(task.time) });
-      return `${text2}${zone}`;
-    }
-    case "cron":
-      return `${t("On the schedule {expression}", { expression: task.expression })}${zone}`;
-    default:
-      return "";
-  }
-}
-var nextText = (task) => {
-  if (task.status === "paused") return t("Paused");
-  if (task.status !== "active") return t("Finished");
-  const at = instant(task.scheduledAt);
-  return at === "" ? timingText(task) : t("Next: {time}", { time: at });
-};
-function lastRunText(run) {
-  if (run === void 0 || !Number.isFinite(run.at)) return "";
-  const time = dayAndTime(run.at);
-  switch (run.result) {
-    case "running":
-      return t("Running since {time}", { time });
-    case "stopped":
-      return t("Last run {time} · Stopped", { time });
-    case "failed":
-      return t("Last run {time} · Failed: {reason}", { time, reason: hostText(run.reason || "Unknown error") });
-    default:
-      return t("Last run {time}", { time });
-  }
-}
-var lockedWindow = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
-function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
-  const [confirming, setConfirming] = (0, import_react25.useState)(false);
-  const [busy, setBusy] = (0, import_react25.useState)(false);
-  const [rowError, setRowError] = (0, import_react25.useState)("");
-  const refuse = (error) => setRowError(hostText(error?.message ?? String(error)));
-  (0, import_react25.useEffect)(() => {
-    if (!confirming) return void 0;
-    const timer = setTimeout(() => setConfirming(false), 3e3);
-    return () => clearTimeout(timer);
-  }, [confirming]);
-  const remove = () => {
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
-    setBusy(true);
-    setRowError("");
-    void actions.scheduleDelete(task.sessionId, task.id).then((next) => {
-      setBusy(false);
-      setRowError("");
-      onView(next);
-    }, (error) => {
-      setBusy(false);
-      refuse(error);
-    });
-  };
-  const toggle = () => {
-    setBusy(true);
-    setRowError("");
-    const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
-    void step(task.sessionId, task.id).then((next) => {
-      setBusy(false);
-      setRowError("");
-      onView(next);
-    }, (error) => {
-      setBusy(false);
-      refuse(error);
-    });
-  };
-  const retry = () => {
-    setBusy(true);
-    setRowError("");
-    void actions.scheduleRetry(task.sessionId, task.id).then((next) => {
-      setBusy(false);
-      onView(next);
-    }, (error) => {
-      setBusy(false);
-      refuse(error);
-    });
-  };
-  const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
-  const stoppable = task.status === "active" || task.status === "paused";
-  const failed = task.lastRun?.result === "failed";
-  const last = lastRunText(task.lastRun);
-  return (0, import_react25.createElement)(
-    "div",
-    { className: "bt-set-row bt-task", "data-done": stoppable ? void 0 : "", "data-paused": task.status === "paused" || void 0, "data-busy": busy || void 0 },
-    showBot ? (0, import_react25.createElement)(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
-    (0, import_react25.createElement)(
-      "span",
-      { className: "bt-set-copy" },
-      (0, import_react25.createElement)("span", { className: "bt-task-title" }, task.title),
-      (0, import_react25.createElement)("span", { className: "bt-set-hint" }, [timingText(task), room2 ? t("in {name}", { name: room2.name }) : ""].filter(Boolean).join(" · ")),
-      task.prompt && task.prompt !== task.title ? (0, import_react25.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null,
-      last ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": failed || void 0 }, last) : null,
-      rowError ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, rowError) : null
-    ),
-    (0, import_react25.createElement)("span", { className: "bt-task-next" }, nextText(task)),
-    // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
-    // disabling: a disabled button still says this window can do it.
-    !locked && failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
-    !locked && onEdit ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react25.createElement)(PencilIcon)) : null,
-    !locked && onCopy ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react25.createElement)(DuplicateIcon)) : null,
-    !locked && stoppable ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
-    locked ? null : (0, import_react25.createElement)("button", {
-      type: "button",
-      className: "bt-mini bt-task-remove",
-      "data-confirm": confirming || void 0,
-      disabled: busy,
-      "aria-label": confirming ? t("Click again to delete") : t("Delete task"),
-      title: confirming ? void 0 : t("Delete task"),
-      onClick: remove
-    }, confirming ? t("Delete") : (0, import_react25.createElement)(TrashIcon))
-  );
-}
-var pad = (number) => String(number).padStart(2, "0");
-function inAnHour() {
-  const date = new Date(Date.now() + 36e5);
-  date.setMinutes(0, 0, 0);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
-}
-var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
-var UNITS = [["seconds", 1, "seconds"], ["minutes", 60, "minutes"], ["hours", 3600, "hours"], ["days", 86400, "days"]];
-function localInput(ms) {
-  const date = new Date(ms);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-function formStart(task) {
-  const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
-  const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : seconds % 60 === 0 ? ["minutes", 60] : ["seconds", 1];
-  const once = task?.kind === "at" || task?.kind === "after";
-  return {
-    title: task?.title ?? "",
-    prompt: task?.prompt ?? "",
-    kind: once ? "at" : task?.kind ?? "daily",
-    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
-    time: task?.time ? clock2(task.time) : "09:00",
-    weekdays: task?.kind === "weekly" && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
-    count: Math.max(1, Math.round(seconds / size)),
-    unit,
-    timeZone: task?.timeZone || localZone()
-  };
-}
-function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
-  const first = formStart(task);
-  const [target, setTarget] = (0, import_react25.useState)(task ? task.botId ?? task.roomId : start ?? "");
-  const [title, setTitle] = (0, import_react25.useState)(first.title);
-  const [prompt, setPrompt] = (0, import_react25.useState)(first.prompt);
-  const [kind, setKind] = (0, import_react25.useState)(first.kind);
-  const [at, setAt] = (0, import_react25.useState)(first.at);
-  const [time, setTime] = (0, import_react25.useState)(first.time);
-  const [weekdays, setWeekdays] = (0, import_react25.useState)(first.weekdays);
-  const [count, setCount] = (0, import_react25.useState)(first.count);
-  const [unit, setUnit] = (0, import_react25.useState)(first.unit);
-  const [busy, setBusy] = (0, import_react25.useState)(false);
-  const [error, setError] = (0, import_react25.useState)("");
-  const timing = () => {
-    if (kind === "cron") return { kind: "keep" };
-    if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
-    if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
-    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
-  };
-  const submit = (event) => {
-    event.preventDefault();
-    if (busy || target === "") return;
-    setBusy(true);
-    setError("");
-    let when3;
-    try {
-      when3 = timing();
-    } catch {
-      setError(t("Pick a date and time"));
-      setBusy(false);
-      return;
-    }
-    const saved = task ? actions.scheduleUpdate({ sessionId: task.sessionId, id: task.id, target, title, prompt, when: when3 }) : actions.scheduleCreate({ target, title, prompt, when: when3 });
-    void saved.then(onDone, (failure) => {
-      setError(hostText(failure?.message ?? String(failure)));
-      setBusy(false);
-    });
-  };
-  const toggleDay = (day) => setWeekdays((days) => days.includes(day) ? days.filter((item) => item !== day) : [...days, day].sort());
-  return (0, import_react25.createElement)(
-    "form",
-    { className: "bt-set-card bt-task-form", onSubmit: submit },
-    (0, import_react25.createElement)(
-      "label",
-      { className: "bt-set-row bt-bs-row" },
-      (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Send to"))),
-      (0, import_react25.createElement)(
-        "select",
-        { className: "bt-select bt-task-bot", value: target, onChange: (event) => setTarget(event.target.value) },
-        (0, import_react25.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
-        (0, import_react25.createElement)("optgroup", { label: t("Bots") }, roster.bots.map((bot) => (0, import_react25.createElement)("option", { key: bot.id, value: bot.id }, bot.name))),
-        roster.rooms.length > 0 ? (0, import_react25.createElement)("optgroup", { label: t("Group chats") }, roster.rooms.map((room2) => (0, import_react25.createElement)("option", { key: room2.id, value: room2.id }, room2.name))) : null
-      )
-    ),
-    (0, import_react25.createElement)(
-      "label",
-      { className: "bt-set-row bt-bs-row" },
-      (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Name"))),
-      (0, import_react25.createElement)("input", { className: "bt-bs-input", value: title, maxLength: 120, placeholder: t("Morning briefing"), autoFocus: true, onChange: (event) => setTitle(event.target.value) })
-    ),
-    (0, import_react25.createElement)(
-      "label",
-      { className: "bt-set-row bt-bs-row bt-bs-stack" },
-      (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("What to do"))),
-      (0, import_react25.createElement)("textarea", { className: "bt-bs-input bt-bs-area", value: prompt, rows: 3, placeholder: t("Sum up what changed since yesterday and what needs me today."), onChange: (event) => setPrompt(event.target.value) })
-    ),
-    (0, import_react25.createElement)(
-      "div",
-      { className: "bt-set-row bt-bs-row bt-bs-stack" },
-      (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("When"))),
-      (0, import_react25.createElement)(Segmented, { label: t("When"), value: kind }, KINDS.map(([id, label]) => (0, import_react25.createElement)("button", { key: id, type: "button", "aria-pressed": kind === id, onClick: () => setKind(id) }, t(label)))),
-      (0, import_react25.createElement)(
-        "div",
-        { key: kind, className: "bt-task-when bt-veil" },
-        kind === "cron" ? (0, import_react25.createElement)("span", { className: "bt-task-every" }, timingText(task)) : null,
-        kind === "at" ? (0, import_react25.createElement)("input", { className: "bt-input", type: "datetime-local", value: at, "aria-label": t("Date and time"), onChange: (event) => setAt(event.target.value) }) : null,
-        kind === "weekly" ? (0, import_react25.createElement)("div", { className: "bt-task-days", role: "group", "aria-label": t("Days") }, [1, 2, 3, 4, 5, 6, 7].map((day) => (0, import_react25.createElement)("button", {
-          key: day,
-          type: "button",
-          className: "bt-task-day",
-          "aria-pressed": weekdays.includes(day),
-          onClick: () => toggleDay(day)
-        }, when2(Date.UTC(2024, 0, day), { weekday: "narrow", timeZone: "UTC" })))) : null,
-        kind === "daily" || kind === "weekly" ? (0, import_react25.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: time, "aria-label": t("Time"), onChange: (event) => setTime(event.target.value) }) : null,
-        kind === "every" ? (0, import_react25.createElement)(
-          import_react25.Fragment,
-          null,
-          (0, import_react25.createElement)("span", { className: "bt-task-every" }, t("Every")),
-          (0, import_react25.createElement)("input", { className: "bt-input bt-task-count", type: "number", min: 1, value: count, "aria-label": t("How many"), onChange: (event) => setCount(event.target.value) }),
-          (0, import_react25.createElement)(
-            "select",
-            { className: "bt-select bt-task-unit", value: unit, "aria-label": t("Unit"), onChange: (event) => setUnit(event.target.value) },
-            UNITS.map(([id, , label]) => (0, import_react25.createElement)("option", { key: id, value: id }, t(label)))
-          )
-        ) : null
-      )
-    ),
-    error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
-    (0, import_react25.createElement)(
-      "div",
-      { className: "bt-set-row bt-task-foot" },
-      (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
-      (0, import_react25.createElement)(
-        "button",
-        { type: "submit", className: "bt-send bt-soft-sm", disabled: busy || !target || title.trim() === "" || prompt.trim() === "" },
-        task ? busy ? t("Saving…") : t("Save changes") : busy ? t("Creating…") : t("Create task")
-      )
-    )
-  );
-}
-function openPlugins(actions) {
-  actions.closeSettings();
-  actions.selectPanel("plugins");
-}
-function AutomationOff({ actions }) {
-  return (0, import_react25.createElement)(
-    "div",
-    { className: "bt-set-card bt-task-off" },
-    (0, import_react25.createElement)("span", { className: "bt-task-off-mark" }, (0, import_react25.createElement)(ClockIcon)),
-    (0, import_react25.createElement)("span", { className: "bt-task-off-title" }, t("Turn on Automation tasks in DSH")),
-    (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page.")),
-    (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
-  );
-}
-function QuietHoursCard({ view, actions, locked }) {
-  const quiet = view.quietHours ?? { on: false };
-  const [busy, setBusy] = (0, import_react25.useState)(false);
-  const [error, setError] = (0, import_react25.useState)("");
-  const [from, setFrom] = (0, import_react25.useState)(quiet.from ?? "22:00");
-  const [to, setTo] = (0, import_react25.useState)(quiet.to ?? "07:00");
-  const unchecked = view.quietUnchecked === true;
-  const refresh = () => {
-    void Promise.resolve(actions.schedules?.()).then((next) => {
-      if (next) publish(next);
-    }).catch(() => {
-    });
-  };
-  const save = (next) => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    const shown = next.on ? { on: true, from: next.from ?? from, to: next.to ?? to } : { on: false };
-    void Promise.resolve(actions.setPrefs({ quietHours: next })).then(() => {
-      publish({ ...view, quietHours: shown });
-      refresh();
-    }, (failure) => setError(hostText(failure?.message ?? String(failure)))).finally(() => setBusy(false));
-  };
-  return (0, import_react25.createElement)(
-    "section",
-    { className: "bt-set-section" },
-    (0, import_react25.createElement)("h3", null, t("Quiet hours")),
-    (0, import_react25.createElement)(
-      "div",
-      { className: "bt-set-card" },
-      (0, import_react25.createElement)(
-        "div",
-        { className: "bt-set-row bt-bs-row" },
-        (0, import_react25.createElement)(
-          "span",
-          { className: "bt-set-copy" },
-          (0, import_react25.createElement)("span", { className: "bt-bs-label" }, quiet.on ? t("On, {from}–{to}", { from: quiet.from, to: quiet.to }) : t("Off")),
-          (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A new or edited task cannot be due inside the window. It never mutes a task that already exists."))
-        ),
-        locked ? null : (0, import_react25.createElement)("button", {
-          type: "button",
-          className: "bt-soft bt-soft-sm",
-          disabled: busy,
-          "aria-pressed": quiet.on,
-          onClick: () => save(quiet.on ? { on: false } : { on: true, from, to })
-        }, quiet.on ? t("Turn off") : t("Turn on"))
-      ),
-      quiet.on && !locked ? (0, import_react25.createElement)(
-        "div",
-        { className: "bt-set-row bt-bs-row" },
-        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Window"))),
-        (0, import_react25.createElement)(
-          "div",
-          { className: "bt-task-when" },
-          (0, import_react25.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: from, "aria-label": t("Quiet hours start"), disabled: busy, onChange: (event) => setFrom(event.target.value) }),
-          (0, import_react25.createElement)("span", { className: "bt-task-every" }, "–"),
-          (0, import_react25.createElement)("input", { className: "bt-input bt-task-time", type: "time", value: to, "aria-label": t("Quiet hours end"), disabled: busy, onChange: (event) => setTo(event.target.value) }),
-          (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => save({ on: true, from, to }) }, t("Save window"))
-        )
-      ) : null,
-      error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
-      quiet.on && unchecked ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep."))) : null
-    )
-  );
-}
-function SchedulesPage({ roster, actions, start }) {
-  const view = useSchedules(actions);
-  const [adding, setAdding] = (0, import_react25.useState)(Boolean(start));
-  const [editing, setEditing] = (0, import_react25.useState)(null);
-  const locked = lockedWindow(roster);
-  const refused = schedulesReadFailure(view?.readFailure);
-  if (refused !== null) return (0, import_react25.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
-  if (view === null) return (0, import_react25.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
-  if (!view.available) return (0, import_react25.createElement)(AutomationOff, { actions });
-  const shown = (next) => {
-    publish(next);
-    setAdding(false);
-    setEditing(null);
-  };
-  const edit = (task) => {
-    setAdding(false);
-    setEditing(task);
-  };
-  const byChat = [
-    ...roster.bots.map((bot) => [bot.id, (0, import_react25.createElement)(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter((task) => task.botId === bot.id)]),
-    ...roster.rooms.map((room2) => [room2.id, (0, import_react25.createElement)(RoomAvatar, { room: room2, roster, size: 18 }), room2.name, view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id)])
-  ].filter(([, , , tasks]) => tasks.length > 0);
-  return [
-    (0, import_react25.createElement)(QuietHoursCard, { key: "quiet", view, actions, locked }),
-    // A locked window draws no create control and opens no form (#2232): the header already says
-    // why, and a button the host refuses is the defect this page had.
-    locked ? null : adding ? (0, import_react25.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react25.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
-      setEditing(null);
-      setAdding(true);
-    } }, (0, import_react25.createElement)(PlusIcon), t("New task"))),
-    byChat.length === 0 && !adding ? (0, import_react25.createElement)("div", { key: "none", className: "bt-set-card" }, (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, view.someHidden ? t("No scheduled tasks you can see. Another member's tasks stay hidden.") : t("No scheduled tasks yet.")))) : byChat.map(([id, avatar, name, tasks]) => (0, import_react25.createElement)(
-      "section",
-      { key: id, className: "bt-set-section" },
-      (0, import_react25.createElement)("h3", { className: "bt-task-head" }, avatar, name),
-      (0, import_react25.createElement)(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
-    ))
-  ];
-}
-function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
-  const open = !locked && editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
-  const [copying, setCopying] = (0, import_react25.useState)(null);
-  const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
-  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react25.createElement)(TaskRow, { key: task.id, task, actions, roster, locked, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
-  return (0, import_react25.createElement)(
-    import_react25.Fragment,
-    null,
-    open ? (0, import_react25.createElement)(TaskForm, { key: `edit-${open.id}`, roster, actions, task: open, onDone, onCancel }) : null,
-    source ? (0, import_react25.createElement)(CopyRow, { key: `copy-${source.id}`, task: source, roster, actions, onView: (next) => {
-      setCopying(null);
-      onDone(next);
-    }, onCancel: () => setCopying(null) }) : null,
-    rows.length + extra.length > 0 ? (0, import_react25.createElement)("div", { className: "bt-set-card" }, ...rows, ...extra) : null
-  );
-}
-function CopyRow({ task, roster, actions, onView, onCancel }) {
-  const others = [
-    ...roster.bots.filter((bot) => bot.id !== task.botId).map((bot) => [bot.id, bot.name]),
-    ...roster.rooms.filter((room2) => room2.id !== task.roomId).map((room2) => [room2.id, room2.name])
-  ];
-  const [target, setTarget] = (0, import_react25.useState)("");
-  const [busy, setBusy] = (0, import_react25.useState)(false);
-  const [error, setError] = (0, import_react25.useState)("");
-  const submit = (event) => {
-    event.preventDefault();
-    if (busy || target === "") return;
-    setBusy(true);
-    setError("");
-    void actions.scheduleCreate({ target, copyFrom: { sessionId: task.sessionId, id: task.id } }).then(onView, (failure) => {
-      setBusy(false);
-      setError(hostText(failure?.message ?? String(failure)));
-    });
-  };
-  return (0, import_react25.createElement)(
-    "form",
-    { className: "bt-set-row bt-task-copy", onSubmit: submit },
-    (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Copy “{name}” to", { name: task.title }))),
-    (0, import_react25.createElement)(
-      "select",
-      { className: "bt-select bt-task-bot", value: target, "aria-label": t("Copy to"), onChange: (event) => setTarget(event.target.value) },
-      (0, import_react25.createElement)("option", { value: "" }, t("Pick a Bot or group chat")),
-      others.map(([id, name]) => (0, import_react25.createElement)("option", { key: id, value: id }, name))
-    ),
-    (0, import_react25.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm", disabled: busy || target === "" }, busy ? t("Copying…") : t("Copy")),
-    (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
-    error ? (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error) : null
-  );
-}
-function BotSchedules({ bot, roster, actions }) {
-  const view = useSchedules(actions);
-  const [editing, setEditing] = (0, import_react25.useState)(null);
-  const locked = lockedWindow(roster);
-  const refused = schedulesReadFailure(view?.readFailure);
-  if (refused !== null) {
-    return (0, import_react25.createElement)(
-      "section",
-      { className: "bt-set-section" },
-      (0, import_react25.createElement)("h3", null, t("Scheduled tasks")),
-      (0, import_react25.createElement)("div", { className: "bt-set-card" }, (0, import_react25.createElement)(
-        "div",
-        { className: "bt-set-row bt-bs-row" },
-        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-set-hint bt-danger", role: "status" }, refused))
-      ))
-    );
-  }
-  if (view === null) return null;
-  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
-  return (0, import_react25.createElement)(
-    "section",
-    { className: "bt-set-section" },
-    (0, import_react25.createElement)("h3", null, t("Scheduled tasks")),
-    !view.available ? (0, import_react25.createElement)(
-      "div",
-      { className: "bt-set-card" },
-      (0, import_react25.createElement)(
-        "div",
-        { className: "bt-set-row bt-bs-row" },
-        (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("Switch on Automation tasks on the Plugins page."))),
-        (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
-      )
-    ) : (0, import_react25.createElement)(TaskList, {
-      tasks,
-      editing,
-      roster,
-      actions,
-      locked,
-      onEdit: locked ? void 0 : setEditing,
-      onDone: (next) => {
-        publish(next);
-        setEditing(null);
-      },
-      onCancel: () => setEditing(null),
-      extra: [(0, import_react25.createElement)("button", { key: "new", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => actions.openSettings("schedules", bot.id) }, (0, import_react25.createElement)(PlusIcon), t("New task"))]
-    })
-  );
-}
-function SummaryLines({ tasks, actions }) {
-  const shown = tasks.slice(0, 3);
-  const hidden = tasks.length - shown.length;
-  return (0, import_react25.createElement)(
-    import_react25.Fragment,
-    null,
-    (0, import_react25.createElement)("div", { className: "bt-section-title" }, hidden > 0 ? t("Scheduled tasks · {count}", { count: tasks.length }) : t("Scheduled tasks")),
-    (0, import_react25.createElement)(
-      "div",
-      { className: "bt-task-list" },
-      shown.map((task) => (0, import_react25.createElement)(
-        "button",
-        { key: task.id, type: "button", className: "bt-task-line", onClick: () => actions.openSettings("schedules") },
-        (0, import_react25.createElement)(ClockIcon),
-        (0, import_react25.createElement)("span", { className: "bt-task-line-title" }, task.title),
-        (0, import_react25.createElement)("span", { className: "bt-task-line-when" }, nextText(task))
-      )),
-      hidden > 0 ? (0, import_react25.createElement)("button", { key: "more", type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules") }, t("{count} more not shown", { count: hidden })) : null
-    )
-  );
-}
-function ScheduleSummary({ bot, actions }) {
-  const view = useSchedules(actions);
-  if (view === null || view.readFailure !== void 0) return null;
-  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
-  return (0, import_react25.createElement)(
-    "div",
-    null,
-    tasks.length === 0 ? (0, import_react25.createElement)("div", { className: "bt-section-title" }, t("Scheduled tasks")) : (0, import_react25.createElement)(SummaryLines, { tasks, actions }),
-    tasks.length === 0 ? (0, import_react25.createElement)("button", { type: "button", className: "bt-more", onClick: () => actions.openSettings("schedules", bot.id) }, view.available === false ? t("Switch on Automation tasks on the Plugins page.") : view.someHidden ? t("No scheduled tasks you can see. Add one") : t("No scheduled tasks yet. Add one")) : null
-  );
-}
-function RoomSchedules({ room: room2, actions }) {
-  const view = useSchedules(actions);
-  if (view === null || view.readFailure !== void 0 || room2.origin === "face-to-face") return null;
-  const tasks = view.available ? view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id) : [];
-  if (tasks.length === 0) return null;
-  return (0, import_react25.createElement)("div", null, (0, import_react25.createElement)(SummaryLines, { tasks, actions }));
-}
-var SCHEDULE_CSS = `
-.bt-task{gap:10px}
-.bt-task-copy{flex-wrap:wrap;gap:8px}
-.bt-task-copy .bt-task-bot{flex:1;min-width:140px;max-width:100%}
-.bt-task[data-done]{opacity:.6}
-.bt-task[data-busy]{opacity:.4}
-.bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
-.bt-task-prompt{font-size:12px;line-height:16px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
-.bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
-.bt-task-remove svg{width:14px;height:14px}
-.bt-task-tool{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
-.bt-task-tool svg{width:14px;height:14px}
-.bt-task-pause{height:26px;color:var(--bt-ink-2)}
-.bt-task-last{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
-.bt-task-last[data-failed]{color:#c21d2e}
-.bt-task[data-paused] .bt-task-title,.bt-task[data-paused] .bt-task-prompt{color:var(--bt-ink-3)}
-.bt-task-remove[data-confirm]{background:rgba(224,33,53,.1);color:#e02135}
-.bt-task-head{display:flex;align-items:center;gap:6px}
-.bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
-.bt-task-bot{width:auto;min-width:160px;max-width:58%}
-.bt-task-when{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
-.bt-task-when .bt-input{width:auto;height:32px}
-.bt-task-time{min-width:110px}
-.bt-task-count{width:72px!important}
-.bt-task-unit{width:auto;height:32px}
-.bt-task-every{font-size:13px;color:var(--bt-ink-2)}
-.bt-task-days{display:flex;gap:4px}
-.bt-task-day{width:30px;height:30px;border-radius:50%;border:1px solid var(--bt-line);background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
-.bt-task-day[aria-pressed=true]{background:var(--bt-user);border-color:var(--bt-user);color:var(--bt-user-ink)}
-.bt-task-foot{justify-content:flex-end;gap:8px}
-.bt-task-foot .bt-send{height:28px;font-size:12px}
-.bt-task-off{align-items:center;gap:8px;padding:28px 20px;text-align:center}
-.bt-task-off>*+*{border-top:0}
-.bt-task-off-mark{width:44px;height:44px;border-radius:50%;background:var(--bt-hover);display:flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
-.bt-task-off-mark svg{width:20px;height:20px}
-.bt-task-off-title{font-size:14px;line-height:20px;font-weight:600}
-.bt-task-off .bt-set-hint{max-width:380px}
-.bt-task-list{display:flex;flex-direction:column;gap:2px}
-.bt-task-line{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;transition:background-color .12s ease}
-.bt-task-line:hover{background:var(--bt-hover)}
-.bt-task-line svg{flex:none;color:var(--bt-ink-3)}
-.bt-task-line-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bt-task-line-when{flex:none;font-size:12px;color:var(--bt-ink-3)}
-@media (prefers-reduced-motion:reduce){.bt-task-form{animation:none}}
 `;
 
 // src/client/capability-settings.js
@@ -20042,7 +20043,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
           (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Usage")),
           (0, import_react44.createElement)("div", { className: "bt-kv" }, (0, import_react44.createElement)("span", null, bot.name), (0, import_react44.createElement)("span", null, usage))
         ) : null,
-        (0, import_react44.createElement)(ScheduleSummary, { key: "routines", bot, actions })
+        (0, import_react44.createElement)(ScheduleSummary, { key: "routines", bot, roster, actions })
       ] : null,
       bot && !bot.remote && tab === "browser" ? (0, import_react44.createElement)(BrowserCards, { bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) : null
     )

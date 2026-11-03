@@ -781,3 +781,35 @@ test('#2232: Quiet hours and the form announce a refusal, not only print it', as
   assert.equal(formAlerts.length, 1, 'one alert on the form')
   assert.ok(text(formAlerts[0]).join(' ').includes(sentence))
 })
+
+// P-457: #2235 hid every scheduled-task write a read-only window draws, but two entry points to
+// the create form stayed: a Bot's card kept its New task row and the details line kept its empty
+// state's Add one, and both asked the settings list for that Bot's id — which opens the form, and
+// a locked page draws none (the page itself stays form-free, the third test here).
+test('P-457: a read-only Bot card draws no New task row', () => {
+  seeded.push({ available: true, tasks: [] })
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: LOCKED_ROSTER, actions: scheduleActions() }))
+  const labels = buttonsOf(card).map(labelOf)
+  assert.ok(!labels.includes('New task'), `a read-only Bot card still offers New task, saw ${labels.join('|')}`)
+  // The row is a create entry, not the lock: the same card in a writable window keeps it.
+  seeded.push({ available: true, tasks: [] })
+  const writable = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: scheduleActions() }))
+  assert.ok(buttonsOf(writable).map(labelOf).includes('New task'), 'a writable window keeps the New task row')
+})
+
+test('P-457: a locked page opened with a start id draws no create form', () => {
+  seeded.push({ available: true, tasks: [ACTIVE] })
+  const page = render(SchedulesPage({ roster: LOCKED_ROSTER, actions: scheduleActions(), start: 'b1' }))
+  assert.deepEqual(fieldControls(page).map(node => node.type), [], 'a read-only window draws no create form')
+  assert.ok(!buttonsOf(page).map(labelOf).includes('New task'), 'and no New task row')
+})
+
+test('P-457: a read-only details line offers no Add one, and a writable one does', () => {
+  const actions = opened()
+  seeded.push({ available: true, tasks: [] })
+  const locked = render(ScheduleSummary({ bot: { id: 'b1' }, roster: LOCKED_ROSTER, actions }))
+  assert.deepEqual(buttonsOf(locked).map(labelOf), [], 'the locked details line draws no button')
+  seeded.push({ available: true, tasks: [] })
+  const writable = render(ScheduleSummary({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  assert.deepEqual(buttonsOf(writable).map(labelOf), ['No scheduled tasks yet. Add one'], 'a writable details line keeps its Add one')
+})
