@@ -24,7 +24,10 @@ export function install(rt) {
   let cpu = process.cpuUsage()
   let measured = process.hrtime.bigint()
   rt.workbenchEndpoint = async (endpoint, body, actor) => {
-    if (endpoint === 'auth-mode') return { workbench: rt.sharedProjectMode(), mode: rt.platformIdentityEnabled ? 'platform' : 'local', panelUrl: rt.config.controlPlane?.origin ?? null }
+    if (endpoint === 'auth-mode') {
+      await rt.load?.()
+      return { workbench: rt.sharedProjectMode(), mode: rt.platformIdentityEnabled ? 'platform' : 'local', panelUrl: rt.config.controlPlane?.origin ?? null, writable: rt.readOnly?.() === undefined }
+    }
     if (!rt.sharedProjectMode() || !actor?.memberId) throw Object.assign(new Error('Sign in to the Project workbench'), { code: 'bot/unauthorized' })
     if (endpoint === 'workbench-state') {
       const projects = await rt.projectEndpoint('projects', {}, actor)

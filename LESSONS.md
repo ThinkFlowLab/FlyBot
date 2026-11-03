@@ -771,3 +771,7 @@ Seen 1× (actual SQLite API regression). A Task query requested full delivery de
 ### 2026-11-03 — Absence of a new contract is not legacy admission
 
 Seen 1× (group dispatch and Bot tracking reproduced the bypass). Capture existing Project identities once with committed evidence; later untyped rows must not inherit admission. Preserve original rework and explicit Workflow execution through trusted continuation/controller ports. Scope guards must run before mutating leases or claims, and physical storage rollback must retain the code-version fence.
+
+### 2026-11-03 — Validate the composed external proposal, not just its private receipt
+
+Seen 1× (production-entry FBA regression). Legacy external proposals preserved title/criteria but dropped canonical impact/scope, leaving the approved action unable to carry its original requirements to Chief. Preserve explicit fields in both the private intent hash and published original Task; test actual authenticated HTTP approval/watch/revoke. Successful startup also requires actual Store writability, not only a Harness login URL.

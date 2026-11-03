@@ -141,3 +141,7 @@ original own-Bot scope; model-supplied team/Bot names cannot retarget memory. Th
 Workflow type adds optional exact native-input preflight; source patches remain
 generated from core. See [Project context](project-context.md) for source/cursor,
 role-memory and model/Harness budgeting semantics.
+
+## Deployment documentation pin (#2189)
+
+The short backend README delegates installation to the persistent launcher. Original English/Chinese npx guides now live in README.native.md / README.native.zh.md with every original version assertion retained there; backend profile tests independently assert pinned production DSH dependencies. No DSH upstream files are edited.

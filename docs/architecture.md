@@ -203,3 +203,7 @@ The committed service read model now covers native execution and public role-gov
 ## Original capability compatibility (#2186)
 
 The [compatibility adapter](subsystems/project-compatibility.md) preserves original personal Chief/Bots/groups and Task/Workflow IDs. New Project work enters the existing Chief/Handoff controller; a committed one-time legacy baseline protects old work without treating arbitrary untyped rows as admitted. A physical JSON format fence survives SQLite storage rollback.
+
+## Persistent backend entry (#2189)
+
+The [backend launcher](subsystems/backend-service.md) composes the original DSH profile/host and restricted API/SSE gateway into one persistent deployment command. It preserves original Bots/UI/identity/execution; raw Harness credentials remain private. The CLI and current object/API documentation replace old snapshot-specific Bash helpers. No second scheduler or store.

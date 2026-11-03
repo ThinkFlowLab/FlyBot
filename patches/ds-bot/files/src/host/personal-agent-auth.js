@@ -111,7 +111,9 @@ export function install(rt) {
       const origin = source(actor, body.projectId, { proposal: true })
       if (rt.requireProjectAccess(actor, body.projectId).status !== 'active') throw refusal('Project is closed to new work')
       const requestId = bounded(body.requestId, 'proposal request ID', 100)
-      const fields = { title: bounded(body.title, 'task title', 300), criteria: bounded(body.criteria, 'acceptance criteria', 2000), projectTaskKind: body.projectTaskKind }
+      const fields = { title: bounded(body.title, 'task title', 300), criteria: bounded(body.criteria, 'acceptance criteria', 2000), projectTaskKind: body.projectTaskKind,
+        ...(body.impact !== undefined ? { impact: bounded(body.impact, 'Project impact', 2000) } : {}),
+        ...(body.scope !== undefined ? { scope: bounded(body.scope, 'Task scope', 2000) } : {}) }
       if (!['code', 'decision', 'release'].includes(fields.projectTaskKind)) throw refusal('An explicit impactful Task kind is required', 'bot/invalid')
       const requestKey = hash(`${origin.agentId}\n${body.projectId}\n${requestId}`)
       const existing = Object.values(state.projectAgentProposals ?? {}).find(row => row.requestKey === requestKey)
