@@ -1160,3 +1160,226 @@ test('P-479 (2026-11-03): a conclusion-shaped comment without a lift phrase does
   assert.match(r.reasons.join('; '), /asks not to merge/)
   assert.match(r.reasons.join('; '), /6596354014/, 'the refusal still names the stop that stands')
 })
+
+// #2287 (2026-11-03): the predicate that clears a stop was wrong in both directions on `19e206ecb`.
+// A. a lift that is negated — "not asking you to lift the hold — you may merge this tip only after the
+//    second reader re-runs" — carried a quotation of the PASS, a lift phrase and no stop phrase, so it
+//    cleared the hold it refuses to lift.
+// B. the same sentence under a condition — "You may merge this tip once the second reader re-runs" — did
+//    the same.
+// C1. the answer written on an opening line — "Hold cleared — you may merge this tip now" + its quotation —
+//    was read as a *hold*, because `HOLD_LINE` matched the word it begins with; the same sentence mid-line
+//    cleared.
+// F. that sentence without the quotation never became a conclusion, so it entered the stop scan as an
+//    ordinary comment and made itself the stop, naming its own id.
+// The three real holds at the end are the counterweight: `Hold.`, `Hold — …`, `Hold on` and `Hold off` are
+// still requests to stop.
+test('#2287 A: a negated lift that quotes the PASS does not clear the hold', () => {
+  const negated = note({
+    id: 6597499991,
+    body: [
+      'The PASS for this head has landed, but I am not asking you to lift the hold — you may merge this tip only after the second reader re-runs.',
+      '',
+      '`Verdict: PASS at ' + HEAD + '` names exactly this head.',
+    ].join('\n'),
+    at: '2026-11-03T07:20:00Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), negated] })
+  assert.equal(r.ok, false, 'a negated lift is not an answer: ' + r.reasons.join('; '))
+  assert.match(r.reasons.join('; '), /6596354014/)
+})
+
+test('#2287 B: a lift under a condition that quotes the PASS does not clear the hold', () => {
+  const conditional = note({
+    id: 6597499992,
+    body: [
+      'You may merge this tip once the second reader re-runs.',
+      '',
+      '`Verdict: PASS at ' + HEAD + '` names exactly this head.',
+    ].join('\n'),
+    at: '2026-11-03T07:25:00Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), conditional] })
+  assert.equal(r.ok, false, 'a conditional lift is not an answer: ' + r.reasons.join('; '))
+  assert.match(r.reasons.join('; '), /6596354014/)
+})
+
+test('#2287 C1: "Hold cleared" on an opening line clears the hold instead of being one', () => {
+  const cleared = note({
+    id: 6597499993,
+    body: [
+      'Hold cleared — you may merge this tip now.',
+      '',
+      '`Verdict: PASS at ' + HEAD + '` names exactly this head.',
+    ].join('\n'),
+    at: '2026-11-03T07:30:00Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), cleared] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'the opening-line answer is the answer, not a hold of its own')
+})
+
+test('#2287 C2: "Hold is lifted" on an opening line clears the hold instead of being one', () => {
+  const lifted = note({
+    id: 6597499996,
+    body: [
+      'Hold is lifted — you may merge this tip now.',
+      '',
+      '`Verdict: PASS at ' + HEAD + '` names exactly this head.',
+    ].join('\n'),
+    at: '2026-11-03T07:32:00Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), lifted] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'the opening-line answer is the answer, not a hold of its own')
+})
+
+test('#2287 F: the opening-line answer without the quotation still clears and is not its own stop', () => {
+  const cleared = note({ id: 6597499994, body: 'Hold cleared — you may merge this tip now.', at: '2026-11-03T07:35:00Z' })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), cleared] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'the lift must not be read as the stop it answers')
+})
+
+// The other direction of #2287: an ordinary yes must still clear a hold. Judging negation and condition
+// words across the whole body refused seven of these eight on `7bd71df5`, which is the #2246 wedge the other
+// way round — a person wrote yes and the guard kept saying the hold stands. The first three are their own
+// cases so the red can name each shape; the rest ride in one loop.
+const ordinaryYes = (body, at) => run({
+  comments: [
+    comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }),
+    note({ id: 6596354014, body: 'Hold — the second reader is still unguarded.', at: '2026-11-03T05:38:25Z' }),
+    note({ id: 6597499998, body, at }),
+  ],
+})
+
+test('#2287 c1: "No objections — you may merge this tip now" clears the hold', () => {
+  const r = ordinaryYes('No objections — you may merge this tip now.', '2026-11-03T06:15:01Z')
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null)
+})
+
+test('#2287 c2: a yes followed by "nothing else waits on it" clears the hold', () => {
+  const r = ordinaryYes('You may merge this tip now — nothing else waits on it.', '2026-11-03T06:15:02Z')
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null)
+})
+
+test('#2287 c3: a yes after a colon ("Just re-read the diff: …") clears the hold', () => {
+  const r = ordinaryYes('Just re-read the diff: you may merge this tip now.', '2026-11-03T06:15:03Z')
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null)
+})
+
+test('#2287 c4-c8: the other ordinary yeses clear the hold', () => {
+  for (const [i, body, at] of [
+    [4, 'No further concerns, you may merge this tip now.', '2026-11-03T06:15:04Z'],
+    [5, 'You may merge this tip now; I am back after lunch if anything breaks.', '2026-11-03T06:15:05Z'],
+    [6, 'This needs nothing more from me — go ahead.', '2026-11-03T06:15:06Z'],
+    [7, 'You may merge this tip now.', '2026-11-03T06:15:07Z'],
+    [8, 'Once more: you may merge this tip now.', '2026-11-03T06:15:08Z'],
+  ]) {
+    const r = ordinaryYes(body, at)
+    assert.equal(r.ok, true, `c${i} is an ordinary yes: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest, null, `c${i} clears the hold`)
+  }
+})
+
+// P-485 on #2288: the clause scan knew `only/after/once/…` but not the rest of the ways a yes is made
+// conditional — "You may merge this tip pending the second reader" cleared the hold with and without its
+// quotation. These are the same shape as the case above, one word each, so a hole in the vocabulary fails
+// by name.
+test('#2287 k1: a yes held pending the second reader keeps the hold (no quotation)', () => {
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body: 'You may merge this tip pending the second reader.', at: '2026-11-03T06:15:10Z' })] })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.equal(r.stopRequest?.id, 6596354014)
+})
+
+test('#2287 k9: a yes held pending the second reader keeps the hold (with its quotation)', () => {
+  const conditional = note({
+    id: 6597499990,
+    body: ['You may merge this tip pending the second reader.', '', '`Verdict: PASS at ' + HEAD + '` names exactly this head.'].join('\n'),
+    at: '2026-11-03T06:15:10Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), conditional] })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.equal(r.stopRequest?.id, 6596354014)
+})
+
+test('#2287 k2-k8: the other ways a yes is made conditional keep the hold', () => {
+  for (const [i, body, at] of [
+    [2, 'You may merge this tip provided the second reader lands.', '2026-11-03T06:15:11Z'],
+    [3, 'You may merge this tip as long as the second reader lands.', '2026-11-03T06:15:12Z'],
+    [4, 'You may merge this tip as soon as the second reader lands.', '2026-11-03T06:15:13Z'],
+    [5, 'You may merge this tip subject to the second reader.', '2026-11-03T06:15:14Z'],
+    [6, 'You may merge this tip assuming the second reader lands.', '2026-11-03T06:15:15Z'],
+    [7, 'You may merge this tip in case the second reader lands.', '2026-11-03T06:15:16Z'],
+    [8, 'You may merge this tip depending on the second reader.', '2026-11-03T06:15:17Z'],
+  ]) {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${i} is conditional: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${i} keeps the original hold`)
+  }
+})
+
+// #2288 review, 2026-11-03: a clause is judged on its own, so a condition one clause over — after a dash,
+// a colon, a semicolon, a full stop or a line break — was never read, and the yes cleared the hold it
+// withholds. Each body is a plain yes with the condition moved out of its clause.
+test('#2287 k10-k15: a condition in the clause after the lift keeps the hold', () => {
+  for (const [i, body, at] of [
+    [10, 'You may merge this tip — only after the second reader re-runs.', '2026-11-03T06:15:20Z'],
+    [11, 'You may merge this tip: pending the second reader.', '2026-11-03T06:15:21Z'],
+    [12, 'You may merge this tip; not until the second reader re-runs.', '2026-11-03T06:15:22Z'],
+    [13, 'You may merge this tip. Only after the second reader re-runs.', '2026-11-03T06:15:23Z'],
+    [14, 'You may merge — if the second reader agrees.', '2026-11-03T06:15:24Z'],
+    [15, 'You may merge this tip\nonly after the second reader re-runs.', '2026-11-03T06:15:26Z'],
+  ]) {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${i} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${i} keeps the original hold`)
+  }
+})
+
+test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
+  const conditional = note({
+    id: 6597499999,
+    body: ['You may merge this tip only after the second reader lands.', '', '`Verdict: PASS at ' + HEAD + '` names exactly this head.'].join('\n'),
+    at: '2026-11-03T07:31:00Z',
+  })
+  const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), conditional] })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.equal(r.stopRequest?.id, 6596354014)
+})
+
+// The two shapes that pull the two halves of the fix together: an opening-line answer that is *also*
+// conditional. Read as a hold it becomes its own stop, so the refusal would name the wrong id; cleared as an
+// unconditional lift it drops the hold it withholds. Only both halves together keep the original stop standing.
+test('#2287 C3: an opening-line "Hold cleared" under a condition keeps the hold it answers', () => {
+  for (const [body, at] of [
+    ['Hold cleared — you may merge this tip only after the second reader lands.', '2026-11-03T07:33:00Z'],
+    ['Hold cleared. You may merge this tip once the second reader lands.', '2026-11-03T07:34:00Z'],
+  ]) {
+    const conditional = note({
+      id: 6597499997,
+      body: [body, '', '`Verdict: PASS at ' + HEAD + '` names exactly this head.'].join('\n'),
+      at,
+    })
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), conditional] })
+    assert.equal(r.ok, false, body + ' withholds the answer: ' + r.reasons.join('; '))
+    assert.equal(r.stopRequest?.id, 6596354014, 'the stop that stands is the original hold, not this answer')
+  }
+})
+
+test('#2287: a real hold is still a stop, on an opening line and with the word it begins with', () => {
+  for (const [body, at] of [
+    ['Hold.', '2026-11-03T07:36:00Z'],
+    ['Hold — the second reader is still unguarded.', '2026-11-03T07:37:00Z'],
+    ['Hold on — the second reader is still unguarded.', '2026-11-03T07:38:00Z'],
+    ['Hold off — the second reader is still unguarded.', '2026-11-03T07:39:00Z'],
+  ]) {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6597499995, body, at })] })
+    assert.equal(r.ok, false, body + ' is still a request to stop: ' + r.reasons.join('; '))
+    assert.match(r.reasons.join('; '), /asks not to merge/)
+    assert.match(r.reasons.join('; '), /6597499995/)
+  }
+})
