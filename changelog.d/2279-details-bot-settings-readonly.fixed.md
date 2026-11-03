@@ -1,0 +1,1 @@
+In a read-only window a Bot's details drawer no longer draws the Settings form, which the host would refuse, and says why in the host's own sentence instead; a writable window keeps the form unchanged ([#2279](https://github.com/ThinkFlowLab/FlyBot/issues/2279)).

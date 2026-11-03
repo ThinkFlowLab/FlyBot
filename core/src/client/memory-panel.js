@@ -116,10 +116,10 @@ function EntryRow({ entry, remove }) {
     h('div', { className: 'bt-mem-entry-copy' },
       h('span', { className: 'bt-mem-entry-text' }, entry.text),
       meta ? h('span', { className: 'bt-mem-entry-meta' }, meta) : null),
-    h('button', {
+    remove ? h('button', {
       type: 'button', className: 'bt-mem-remove', 'data-confirm': confirming || undefined, disabled: busy,
       'aria-label': confirming ? t('Click again to remove') : t('Remove from memory'), title: confirming ? undefined : t('Remove from memory'), onClick: click,
-    }, confirming ? t('Remove') : h(TrashIcon)))
+    }, confirming ? t('Remove') : h(TrashIcon)) : null)
 }
 
 function Entries({ bot, view, remove }) {
@@ -208,8 +208,11 @@ function useNow(every) {
   return now
 }
 
-export function MemoryDialog({ bot, actions, leaving = false }) {
+export function MemoryDialog({ bot, actions, roster, leaving = false }) {
   const { view, error, load, show } = useMemoryView(bot.id, actions)
+  // A read-only window refuses both writes below at the host, so the panel draws neither and
+  // says why in the host's own sentence — the same one the sidebar and the Settings header carry.
+  const locked = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
   const [page, setPage] = useState('summary')
   const [menu, setMenu] = useState(false)
   const [menuShown, menuLeaving] = useLinger(menu, MENU_EXIT_MS)
@@ -288,13 +291,14 @@ export function MemoryDialog({ bot, actions, leaving = false }) {
           h('button', { type: 'button', role: 'menuitem', disabled: count === 0 || view?.summarizing, onClick: regenerate },
             h('span', { className: 'bt-menu-label' }, t('Regenerate summary')))) : null),
       h('div', { className: 'bt-mem-body' },
+        locked ? h('p', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
         error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, hostText(error)) : null,
         view === null ? (error ? null : h(Skeleton))
-          : page === 'entries' ? h(Entries, { bot, view, remove })
+          : page === 'entries' ? h(Entries, { bot, view, remove: locked ? null : remove })
             : h(Summary, { bot, view, regenerate })),
       h('div', { className: 'bt-mem-foot' },
         answer ? h(Reply, { answer, dismiss: () => setAnswer(null) }) : null,
-        h('form', { className: 'bt-mem-ask', onSubmit: ask },
+        locked ? null : h('form', { className: 'bt-mem-ask', onSubmit: ask },
           h('input', {
             ref: inputRef, className: 'bt-mem-input', value: text, maxLength: 2000, disabled: view === null,
             placeholder: t('Ask or update'), 'aria-label': t("Ask about or update {name}'s memory", { name: bot.name }),

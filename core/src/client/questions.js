@@ -1,6 +1,7 @@
 import { createElement as h, useEffect, useId, useRef, useState } from 'react'
 import { CloseIcon, CheckIcon } from './icons.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
+import { lockedWindow } from './schedules.js'
 import { historyLoading } from './text.js'
 
 // -------------------------------------------------------------------------
@@ -40,7 +41,7 @@ function useOptionKeys(count, onPick, ownRef) {
 
 // A question shows two ways: as a bubble in the transcript, and raised when it
 // sits in the dock above the composer.
-function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false }) {
+function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised = false, locked = false }) {
   const [own, setOwn] = useState('')
   const [picked, setPicked] = useState([])
   const ownRef = useRef(null)
@@ -60,9 +61,9 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
     if (!canSubmit) return
     onAnswer({ selected: multi ? picked : [], ...(custom ? { custom } : {}) })
   }
-  useOptionKeys(options.length, index => choose(options[index].label), ownRef)
+  useOptionKeys(locked ? 0 : options.length, index => choose(options[index].label), ownRef)
   const ownLetter = options.length > 0 ? keyLetter(options.length) : undefined
-  const field = ownAnswer ? h('textarea', {
+  const field = ownAnswer && !locked ? h('textarea', {
     ref: ownRef, rows: 1, value: own, autoComplete: 'off', spellCheck: false, className: 'bt-q-input',
     'aria-label': t('Your own answer'), placeholder: t('Type your own answer'),
     'aria-keyshortcuts': ownLetter?.toLowerCase(),
@@ -75,17 +76,23 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
   }) : null
   const rows = options.map((option, optionIndex) => {
     const selected = multi && picked.includes(option.label)
-    return h('button', {
-      key: option.label, type: 'button', className: 'bt-q-opt',
-      'aria-pressed': multi ? selected : undefined,
-      'aria-keyshortcuts': keyLetter(optionIndex).toLowerCase(),
-      onClick: () => choose(option.label),
-    },
-    h('span', { className: 'bt-key', 'aria-hidden': true }, keyLetter(optionIndex)),
-    h('span', { className: 'bt-q-body' },
-      h('span', { className: 'bt-q-label' }, option.label),
-      option.description ? h('span', { className: 'bt-q-desc' }, option.description) : null),
-    selected && !raised ? h('span', { className: 'bt-q-check', title: t('Selected') }, h(CheckIcon)) : null)
+    const body = [
+      h('span', { className: 'bt-key', 'aria-hidden': true }, keyLetter(optionIndex)),
+      h('span', { className: 'bt-q-body' },
+        h('span', { className: 'bt-q-label' }, option.label),
+        option.description ? h('span', { className: 'bt-q-desc' }, option.description) : null),
+      selected && !raised ? h('span', { className: 'bt-q-check', title: t('Selected') }, h(CheckIcon)) : null,
+    ]
+    // A read-only window keeps the question and its rows as text: an option answers at once on a
+    // single-select card, so a button there is a write the host refuses (#2277).
+    return locked
+      ? h('div', { key: option.label, className: 'bt-q-opt' }, ...body)
+      : h('button', {
+        key: option.label, type: 'button', className: 'bt-q-opt',
+        'aria-pressed': multi ? selected : undefined,
+        'aria-keyshortcuts': keyLetter(optionIndex).toLowerCase(),
+        onClick: () => choose(option.label),
+      }, ...body)
   })
   // Raised cards keep the custom answer as one more keyed row; bubbles put it below the list.
   if (raised && field) {
@@ -94,23 +101,24 @@ function QuestionView({ question, onAnswer, onDismiss, ownAnswer = false, raised
       h('span', { className: 'bt-q-body' }, field)))
   }
   let foot = null
-  if (raised && multi) {
+  if (!locked && raised && multi) {
     foot = h('div', { className: 'bt-q-foot' },
       h('button', { type: 'button', className: 'bt-q-btn', onClick: onDismiss }, t('Skip')),
       h('button', { type: 'submit', className: 'bt-q-submit', disabled: !canSubmit }, t('Submit')))
-  } else if ((raised || multi) && canSubmit) {
+  } else if (!locked && (raised || multi) && canSubmit) {
     foot = h('div', { className: 'bt-q-foot' }, h('button', { type: 'submit', className: 'bt-q-submit' }, t('Submit')))
   }
-  return h('form', {
+  // A read-only card is a plain box, not a form: it has nothing to submit, so it draws no handler.
+  return h(locked ? 'div' : 'form', {
     className: raised ? 'bt-q bt-q-raised' : 'bt-q', 'aria-labelledby': titleId,
-    onSubmit: (event) => { event.preventDefault(); submit() },
+    ...(locked ? {} : { onSubmit: (event) => { event.preventDefault(); submit() } }),
   },
     h('div', { className: 'bt-q-head' },
       h('div', { className: 'bt-q-text' },
         h('p', { className: 'bt-q-title', id: titleId }, question.header ? `${question.header} · ` : '', question.question),
         question.detail ? h('div', { className: 'bt-q-detail' }, question.detail) : null,
         raised && multi ? h('div', { className: 'bt-q-detail' }, t('Choose all that apply')) : null),
-      h('button', { type: 'button', className: 'bt-q-x', 'aria-label': t('Dismiss question'), title: t('Dismiss'), onClick: onDismiss }, h(CloseIcon))),
+      locked ? null : h('button', { type: 'button', className: 'bt-q-x', 'aria-label': t('Dismiss question'), title: t('Dismiss'), onClick: onDismiss }, h(CloseIcon))),
     rows.length > 0 ? h('div', { className: 'bt-q-list', role: 'group' }, rows) : null,
     field && !raised ? h('div', { className: 'bt-q-custom' },
       h('label', { className: 'bt-q-field' }, field),
@@ -159,9 +167,10 @@ export function QuestionCard({ matched }) {
   return h(QuestionView, { key: index, question, onAnswer, onDismiss: () => pending.dismiss(), ownAnswer: true, raised: true })
 }
 
-export function PendingQuestion({ sessionId, question, actions, inline }) {
+export function PendingQuestion({ sessionId, question, actions, roster, inline }) {
   const [answered, setAnswered] = useState(null)
   if (answered === question.id) return null
+  const locked = lockedWindow(roster)
   const onAnswer = (answer) => {
     setAnswered(question.id)
     void actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? '' }).catch(() => setAnswered(null))
@@ -171,17 +180,22 @@ export function PendingQuestion({ sessionId, question, actions, inline }) {
     void actions.dismissQuestion(sessionId)
   }
   return h('div', { className: inline ? 'bt-q-inline' : 'bt-q-dock' },
-    h(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline }))
+    // Both controls are writes the host refuses, and the refusal was invisible: the answer came
+    // back to a card that looked answered and the × hid the card until the next poll (#2277).
+    // A read-only window draws the question and the host's sentence, and no way to press either.
+    ...(locked ? [h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))] : []),
+    h(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline, locked }))
 }
 
 // Questions asked by a tool call render inline at that call (see ToolCell); the dock
 // carries the ones whose call the transcript does not draw.
 export function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
-  const question = useRoster(value => value.questions?.[sessionId])
+  const roster = useRoster(value => value)
+  const question = roster.questions?.[sessionId]
   const drawn = useCards?.(state => state[sessionId]?.[question?.callId] > 0) === true
   const loading = useSession?.(historyLoading) === true
   if (question === undefined || (question.callId && (drawn || loading))) return null
-  return h(PendingQuestion, { sessionId, question, actions, inline: false })
+  return h(PendingQuestion, { sessionId, question, actions, roster, inline: false })
 }
 
 // An answered card in the transcript: the question stays where it was asked, with the

@@ -10,10 +10,10 @@ import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roo
 import { ModelMenu, modelOf } from './model-menu.js'
 import { FolderMenu } from './folder-menu.js'
 import { MemoryRow } from './memory-panel.js'
-import { RoomSchedules, ScheduleSummary } from './schedules.js'
+import { RoomSchedules, ScheduleSummary, lockedWindow } from './schedules.js'
 import { Segmented, useGlide, useMorph } from './motion.js'
 import { MemberWork, useMemberWork } from './member-status.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { remoteBotTitle, roomTitle, copiedToClipboard } from '../shared/remote-label.js'
 import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
@@ -267,7 +267,9 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         h('span', { className: 'bt-subhead-title' }, bot ? t('Settings') : t('Group settings')),
         hasStrip ? null : h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon))),
       h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move }, errorLine,
-        bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
+        bot && lockedWindow(roster)
+          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+          : bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
     ]
   }
   const top = h('div', { className: 'bt-drawer-top', 'data-move': side },

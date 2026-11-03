@@ -1109,7 +1109,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, findBot }) {
       const question = roster.questions?.[sessionId]
       // Answered or closed: the card leaves no gap where it was.
       if (!question || question.callId !== call.callId) return h('span', { className: 'bt-q-gone', hidden: true })
-      return h(PendingQuestion, { sessionId, question, actions, inline: true })
+      return h(PendingQuestion, { sessionId, question, actions, roster, inline: true })
     }
     case 'request_secret':
       return h(SecretToolCell, { sessionId, callId: call.callId, name: arg('name'), done, content: call.content, roster, actions })
