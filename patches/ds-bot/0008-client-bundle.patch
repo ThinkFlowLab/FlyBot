@@ -5029,7 +5029,7 @@ diff --git a/client.js b/client.js
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
  .bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
-@@ -2574,4596 +2574,9011 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,4596 +2574,9012 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -6360,6 +6360,7 @@ diff --git a/client.js b/client.js
 +  }
 +  if (view === null) return null;
 +  const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
++  if (locked && view.available && tasks.length === 0) return null;
 +  return (0, import_react6.createElement)(
 +    "section",
 +    { className: "bt-set-section" },

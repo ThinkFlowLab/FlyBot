@@ -5924,6 +5924,7 @@ function BotSchedules({ bot, roster, actions }) {
   }
   if (view === null) return null;
   const tasks = view.available ? view.tasks.filter((task) => task.botId === bot.id) : [];
+  if (locked && view.available && tasks.length === 0) return null;
   return (0, import_react6.createElement)(
     "section",
     { className: "bt-set-section" },

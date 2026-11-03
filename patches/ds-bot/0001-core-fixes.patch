@@ -2474,7 +2474,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -163,75 +163,246 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -163,75 +163,251 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
            h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
            h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
              UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
@@ -2658,6 +2658,11 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  }
    if (view === null) return null
    const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
++  // A locked card with no tasks drew the heading over an empty body: it adds no row, and
++  // TaskList draws nothing without one. The details line hides this whole block in that state
++  // (#2232, P-457), so the settings card says nothing either. The Automation-tasks-off branch
++  // below is a different state and keeps its hint and button.
++  if (locked && view.available && tasks.length === 0) return null
    return h('section', { className: 'bt-set-section' },
      h('h3', null, t('Scheduled tasks')),
 -    h('div', { className: 'bt-set-card' },
