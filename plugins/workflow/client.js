@@ -1414,7 +1414,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
     }
 
-    function AssignModal({ workflows, tasks, tasksStatus, tasksError, roster, workflowId, onClose, onConfirm, onRetry }) {
+    function AssignModal({ workflows, tasks, tasksStatus, tasksError, error, roster, workflowId, onClose, onConfirm, onRetry }) {
       const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
       // #1457: the dialog opens before loadTasks() answers, so the first client render can have no
@@ -1454,6 +1454,9 @@ window.__ModuleLoader__.load({
                     h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
                     h('div', { className: 'wf-tt' }, task.title),
                     h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
+            // #2237: a refused assign stays in this dialog, so the sentence the host sent is
+            // drawn here; the page-level copy is suppressed while this dialog is open.
+            error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
             h('div', { className: 'wf-step-h' }, h('b', null, '2'), tr('Pick who runs it')),
             h('div', { className: 'wf-targets' },
               workflows.map(item => h('button', {
@@ -2020,7 +2023,7 @@ window.__ModuleLoader__.load({
         // door must not open the dialog it no longer offers.
         root.openWorkflowAssign = () => {
           if (locked) return
-          setAssignOpen(true); setOpenId(id => id); void loadTasks()
+          setAssignOpen(true); setOpenId(id => id); setError(''); void loadTasks()
         }
         return () => { root.openWorkflowAssign = prev }
       }, [locked])
@@ -2140,6 +2143,9 @@ window.__ModuleLoader__.load({
       const confirmAssign = async ({ taskId, target }) => {
         const task = tasks.find(item => item.id === taskId)
         if (!task) return
+        // #2237: a retry starts clean, so a refusal from the previous attempt does not sit
+        // beside the answer to this one.
+        setError('')
         if (String(target).startsWith('bot:')) {
           const botId = String(target).slice(4)
           const value = await call('workflow/assign', { botId, taskId: task.id, title: task.title })
@@ -2229,14 +2235,14 @@ window.__ModuleLoader__.load({
           // lanes may carry the same name. Hidden text keeps the count without taking those
           // away — sighted readers still get the dot and the digit alone.
           (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-sr' }, tr('{count} running', { count: item.activeCount })) : null)),
-        locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
+        locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); setError(''); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
         // #2202: `role="alert"` is a live region, so a copy behind the mask is still read out.
-        // While Rename, Delete or Create holds this same refusal in its own dialog, that dialog
-        // carries the only announcement; the section draws no second copy of the same sentence.
-        // A refusal with no dialog open is reported here as before.
-        error && !renaming && !deleting && !creating ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
+        // While Rename, Delete, Create or Hand a task to a Workflow holds this same refusal in
+        // its own dialog, that dialog carries the only announcement; the section draws no second
+        // copy of the same sentence. A refusal with no dialog open is reported here as before.
+        error && !renaming && !deleting && !creating && !assignOpen ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
         readError ? h('div', { className: 'wf-err', role: 'alert' }, readError) : null,
         open ? portal(h(Stage, {
           workflow: open, roster, locked, readOnlyReason, stageLeft, drawer, tab, focusedRunId,
@@ -2261,7 +2267,7 @@ window.__ModuleLoader__.load({
               if (value?.workflows) setPack(value)
             })
           },
-          onAssign: () => { setAssignOpen(true); void loadTasks() },
+          onAssign: () => { setAssignOpen(true); setError(''); void loadTasks() },
           onTip: setTip,
           onPause: (runId) => {
             void stageCall('workflow/pause', { workflowId: open.id, runId }, 'Could not pause this run').then(value => {
@@ -2287,8 +2293,10 @@ window.__ModuleLoader__.load({
           onRematch: rematchTask,
         })) : null,
         assignOpen ? portal(h(AssignModal, {
-          workflows, tasks, tasksStatus, tasksError, roster, workflowId: openId || workflows[0]?.id,
-          onClose: () => setAssignOpen(false), onConfirm: confirmAssign, onRetry: loadTasks,
+          workflows, tasks, tasksStatus, tasksError, error, roster, workflowId: openId || workflows[0]?.id,
+          // #2237: this dialog owns its refusal, so closing it drops the sentence rather than
+          // leaving it on the page for the next open to inherit.
+          onClose: () => { setAssignOpen(false); setError('') }, onConfirm: confirmAssign, onRetry: loadTasks,
         })) : null,
         creating ? portal(h(CreateModal, {
           roster, templates: pack?.templates, error, onClose: () => setCreating(false), onCreate: create,

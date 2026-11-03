@@ -1,0 +1,1 @@
+A refused Hand a task to a Workflow now says so inside the dialog that stays open: the host's sentence is the only `role="alert"` for that refusal, the page draws no second copy behind the mask, and re-opening the dialog starts clean instead of inheriting the previous attempt's sentence (#2237).
