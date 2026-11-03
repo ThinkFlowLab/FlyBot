@@ -50,8 +50,14 @@ export async function checkNativePools({ api, saved, waitFor, repository, model,
   assert.equal(requested.waitingFor, 'chief')
   assert.equal(Object.values(saved().projectAttempts).filter(row => row.taskId === task.id).length, 0)
   await call('project-chief-configure', { projectId: project.id, enabled: true, inspection: { enabled: false } })
-  const started = await waitFor(() => Object.values(saved().projectAttempts).find(row => row.taskId === task.id), 'actual Chief admission before native pool allocation')
+  const started = await waitFor(() => {
+    const attempt = Object.values(saved().projectAttempts).find(row => row.taskId === task.id)
+    if (!attempt || attempt.status === 'preparing') return null
+    if (attempt.status === 'failed') throw new Error('Native pool Attempt failed before initialization; inspect scoped execution evidence')
+    return attempt
+  }, 'actual Chief admission before native pool allocation')
   assert.equal(started.protocol, 'project-handoff/v1')
+  assert.equal(started.status, 'running')
   await waitFor(() => {
     const current = saved().tasks[task.id]?.collaboration
     if (current?.status === 'blocked') throw new Error('Native pool blocked: ' + current.block?.reason)

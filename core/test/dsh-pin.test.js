@@ -45,7 +45,7 @@ test('the install help and the local CI install the pinned DSH', () => {
 })
 
 test('every npx command in the READMEs runs the pinned DSH', () => {
-  for (const file of ['README.md', 'README.zh.md']) {
+  for (const file of ['README.native.md', 'README.native.zh.md']) {
     const text = read(file)
     const pins = [...text.matchAll(/@deepseek-ai\/dsh@([0-9][^\s"]*)/g)].map(match => match[1])
     assert.ok(pins.length >= 4, `${file}: expected the four npx commands`)

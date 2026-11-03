@@ -72,7 +72,7 @@ All use the existing authenticated endpoint/payload transport.
 | personal-agent-token-list | Human owner: agentId, optional limit/after | public credential page and next cursor |
 | personal-agent-token-revoke | Human owner: credentialId | revoked metadata |
 | personal-agent-delegation-set | Human owner: agentId, projectId, mode safe/watch | existing delegation view |
-| personal-agent-propose-task | Agent connection: projectId, title, criteria, projectTaskKind, requestId | private proposal, publishRequired |
+| personal-agent-propose-task | Agent connection: projectId, title, criteria, projectTaskKind, requestId; optional impact/scope | private proposal, publishRequired |
 
 Writes refuse read-only hosts. Validation or failed issuance cannot return an
 active uncommitted connection. Hash comparison rejects malformed stored hashes.
@@ -85,3 +85,7 @@ expiry/account changes, spoofing, malformed credentials and reload. This is not
 an official grok-bot/dots adapter or provider login verification. External endpoint
 descriptors remain unverified; no outbound provider network request is introduced.
 README/API publication stays deferred to #2189 after backend convergence.
+
+## Canonical proposal requirements (#2189 integration)
+
+External safe proposals now preserve explicitly supplied impact and scope as bounded fields in the same private proposal and intent hash. The original publication path transfers them into canonical Task requirements; it cannot silently lose the human-approved Project impact before Chief admission. Missing optional legacy fields are not invented. The production-entry HTTP regression reproduced the loss before this adapter fix and separately verifies safe approval, watch publication and credential revoke using an actual FBA caller. This is a protocol fixture, not a vendor product adapter.

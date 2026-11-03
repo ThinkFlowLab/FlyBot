@@ -7,11 +7,12 @@ owned_paths:
 
 # Automatic development application service
 
-The `delivery/ai-centric-development-service` branch is a consolidated source handoff from
-1811e3b8f. Its [root README](../../README.md) provides the operator-facing current
-service and isolated-source quickstart, authenticated API examples and command
-index. It preserves this existing in-process facade; no HTTP contract or runtime
-behavior changes accompany the documentation branch.
+The current source delivery composes this in-process application facade with the
+original DSH host and restricted gateway. Its [root README](../../README.md) uses
+the persistent backend launcher; [API reference](../development-service-api.md)
+covers actual commands/queries/events and [operations](../backend-operations.md)
+covers storage/auth/execution setup. Historical S1–S6 sections below describe the
+incremental implementation; old1811 snapshot instructions are superseded.
 
 S1 (#50, parent #49) introduces one application facade in the existing FlyBot
 process. It owns routing and the derived TaskView, not another Task store,
@@ -216,3 +217,7 @@ Legacy Projects with an implicit built-in catalog report its effective revision1
 ## Compatibility diagnostic (#2186)
 
 Query compatibility returns the same Project's committed original-work baseline, current contract/legacy/held/active counts and bounded ID/reference rows; payload offset defaults0 and limit defaults50 (maximum100). It reads existing Task/Effects facts without migration or content disclosure. See [compatibility](project-compatibility.md).
+
+## Current operator interface (#2189)
+
+The [root README](../../README.md), [API reference](../development-service-api.md) and [operations guide](../backend-operations.md) replace old1811 snapshot instructions with the real persistent source launcher and actual24queries/26commands. The reference distinguishes canonical Chief completion from legacy acceptance, current vs frozen execution and private consultation from initiative transfer. Native log reads remain explicitly described as full sealed logs, not fictitious paging. CLI/HTTP reuse the existing facade.

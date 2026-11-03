@@ -28,10 +28,10 @@ execution ancestor through collaboration/context/Task/state/API branches.
 
 ## Active fork roadmap — 2026-10-31
 
-Backend delivery branch `delivery/ai-centric-development-service` consolidates S1–S6 at1811e3b8f.
-Use the root README for login, direct API operations and isolated setup. This
-documentation handoff does not complete original frontend #41 acceptance or merge
-any staged PR; standalone process packaging/OpenAPI remain outside this branch.
+The earlier delivery snapshot at1811e3b8f consolidated S1–S6. Current persistent
+source deployment and API use follow the root README and #2189; OpenAPI remains
+unprovided. Backend delivery does not complete original frontend #41 acceptance
+or merge staged PRs.
 
 S6/#55 integrates current service stages with original native frontend work and
 adds repeatable isolated fault/replay acceptance. Actual PR feedback→original Task→
@@ -457,3 +457,5 @@ Native prior-host reconciliation now reuses verified supervisor process-group fa
 Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.
 
 #2186 adds the original-capability inventory and committed legacy cutover on the existing Store, group/Chief channels and Workflow controller. Validate same-version JSON/SQLite rollback separately from real-provider and UI acceptance; final real backend packaging/README #2189 follows.
+
+#2189 supplies the persistent source init/start/login/API client and final object/API/operations documentation. Verify isolated fresh installation, retained auth/Task receipt across restart, consultation privacy, external safe/watch and SSE revoke; keep real-provider/remote/browser/production rollout evidence separate. Existing service/frontend flows are untouched.

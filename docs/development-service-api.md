@@ -1,623 +1,218 @@
-# 自动开发服务 API 参考
+# 后端 API 参考
 
-适用：`delivery/ai-centric-development-service` 分支，业务源码基线 `1811e3b8f`。
-覆盖本版本全部 **12 个 v1 查询、21 个 v1 命令**，以及完成登录、项目选择、
-任务创建和个人代理交互所需的原生接口。不是全部 FlyBot/DSH 管理接口的目录。
+[快速开始](../README.md) · [协作语义](development-service-guide.md) · [部署](backend-operations.md)
 
-[快速启动与登录](../README.md) · [操作流程与状态模型](development-service-guide.md) ·
-[内部服务契约](subsystems/project-development-service.md)
+本页对应当前分支实际路由：**24个v1查询、26个v1命令**，以及对象管理使用的原生接口。
+咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
-## 1. 传输、登录和请求信封
+## 传输、身份与统一返回
 
-当前共享入口：`POST http://127.0.0.1:18080/api/bot`。
-其他部署使用自己的网关地址。所有请求使用 `Content-Type: application/json`。
-登录后的请求携带 `X-Flybot-Member-Session: <sessionToken>`；调用不依赖浏览器。
-README 中的 `fb_api`、`fb_dev` 是 Bash 调用函数，不是另行安装的 CLI。
+共享服务：`POST /api/bot`，`Content-Type: application/json`。
+登录后携带 `X-Flybot-Member-Session: <member-session-or-FBA-token>`。
+请求不能提供可信memberId、Chief身份、claim、权限或进程退出证明。
+共享网关保留DSH Owner凭据在服务内部；不向调用方开放原始Harness API。
 
-### 登录与注销
-
-原生请求（不包装为 v1）：
+原生请求用于登录、Project/PersonalAgent等对象管理：
 
 ```json
-{
-  "endpoint": "platform-login",
-  "payload": {"email": "YOUR_EMAIL", "password": "YOUR_PASSWORD"}
-}
+{"endpoint":"project-read","payload":{"id":"PROJECT_ID"}}
 ```
 
-成功时从 `value.sessionToken` 取得会话；密码和 Token 不应写入仓库。
-注销请求是 `{"endpoint":"auth-revoke","payload":{}}`，带本次会话的请求头。
-它撤销本次 Session，不是停止整个后端，也不等于撤销独立的个人代理值守授权。
-
-### v1 查询示例
-
-以下 ID 均为占位符，应替换为服务实际返回的值。
+v1请求用于项目协作命令、查询和恢复：
 
 ```json
-{
-  "endpoint": "project-development",
-  "payload": {
-    "version": "project-development/v1",
-    "kind": "query",
-    "name": "tasks",
-    "projectId": "PROJECT_ID",
-    "payload": {"limit": 20}
-  }
-}
+{"endpoint":"project-development","payload":{"version":"project-development/v1","kind":"command","name":"task.propose","projectId":"PROJECT_ID","requestId":"change-1","payload":{"title":"修复计算错误","criteria":"复现用例与回归通过","impact":"恢复项目计算功能"}}}
 ```
 
-### v1 命令示例
+所有命令需要信封层稳定 `requestId`，匹配 `[A-Za-z0-9_-]{1,100}`。
+query不需要requestId。projectId必填，payload必须是对象且不能指向另一个Project。
+可选 `expectedGeneration` / `expectedCandidateSha` 放在v1信封层，校验当前Task代次/候选；不是绕过下游权限的凭据。
+具体对象ID应使用上次响应值，不使用示例常量作为真实ID。
+
+HTTP成功响应为 `{ok:true,value:...}`；v1 value为 `{version,requestId,result,receipt?,replayed?}`。
+CLI只输出value，所以下列查询的业务结果位于 `result`。
 
 ```json
-{
-  "endpoint": "project-development",
-  "payload": {
-    "version": "project-development/v1",
-    "kind": "command",
-    "name": "task.run",
-    "projectId": "PROJECT_ID",
-    "requestId": "run-example-001",
-    "payload": {"taskId": "TASK_ID"}
-  }
-}
+{"ok":true,"value":{"version":"project-development/v1","result":{"task":{"taskId":"TASK_ID","projectId":"PROJECT_ID","phase":"awaiting-chief","waitingFor":"admission"}}}}
 ```
 
-| 信封字段 | 类型与要求 |
-| --- | --- |
-| `version` | 必填字符串，固定为 `project-development/v1` |
-| `kind` | 必填，`query` 或 `command`，必须与操作对应 |
-| `name` | 必填，见后续完整索引 |
-| `projectId` | 必填，当前用户必须有该 Project 权限 |
-| `payload` | 对象，缺省为 `{}`；下文的接口参数均指这一层 |
-| `requestId` | 命令必填；1–100 字符，只允许字母、数字、`_`、`-` |
-| `expectedGeneration` | 可选非负整数；校验目标 Task 当前协作代次 |
-| `expectedCandidateSha` | 可选，完整 40 位小写 SHA 或 `null`；校验当前候选 |
+这是响应结构示意，不是任务已真实执行的证据。错误为 `{ok:false,error:{code,message,...}}`；
+HTTP200也可能是领域拒绝，必须检查ok。网关/事件还会使用HTTP400/401/403/409/429/503。
 
-两个 `expected*` 字段位于信封层。使用它们时需要能通过 taskId/attemptId 等解析到 Task。
-内部 payload 的 projectId 若存在，必须与信封一致。任务、Attempt、队列、proposal、worker、
-Effect 等引用不能借助一个信封跨 Project 或指向互不相关的 Task。
-调用者身份只从认证得到，body 中填写 memberId、Owner 或 Bot 名称不会获得权限。
+## 权限与重试
 
-### 响应与异步操作
+表中：`读`=当前项目成员（含已授权且scope匹配的个人代理）；`写`=Owner/Maintainer或有权操作本人Task的成员；
+`管`=Owner/Maintainer；`本人`=认证用户或其明确允许的个人代理。私有咨询/命令回执还检查独立代理/当前用户身份，不因同属项目而共享。
+安全模式的个人代理不能直接发布共享Task；值守模式与当前用户权限、参与状态和token scopes取交集。
+角色名、公开Bot、网页按钮都不是权限。关闭Project后保留授权读取，拒绝新工作/配置修改。
 
-```json
-{
-  "ok": true,
-  "value": {
-    "version": "project-development/v1",
-    "result": {"tasks": [], "next": null}
-  }
-}
-```
+同一主体、Project、命令名和requestId标识同一意图，payload必须一致。
+响应丢失时重试原请求；内容变化用新意图ID。不能通过换ID绕过未知外部结果。
+receipt区分completed、running、unknown、completion-pending-commit；unknown先查command.receipt/实际Task/Chief，绝不盲目重发外部动作。
+持久Effects的提交、入池、接手、执行和Chief关闭是不同事实；receiving SSE不会获得执行权限。
 
-命令的 v1 `value` 还会返回外层 `requestId`。原生接口的 `value` 直接是业务结果，
-没有自动添加 v1 包装。业务失败可能仍使用 HTTP 200：
+## User / PersonalAgent（原生对象接口）
 
-```json
-{
-  "ok": false,
-  "error": {"code": "bot/forbidden", "message": "Project access denied: configure"}
-}
-```
+这些请求不包v1信封，CLI使用 `request ENDPOINT --json JSON`。
+所有“本人”由认证派生，不接受body指定另一个Owner。
 
-先检查 HTTP 传输，再检查 `ok`。`already:true` 是该操作的重复处理结果，不是任务已完成。
-启动、巡检、输入提交、Effect 重试的成功响应只是接受/安排处理；通过查询继续跟踪。
-`requestId` 不会让所有命令自动具备相同的幂等语义，具体见各操作说明。
-
-## 2. 权限约定
-
-| 下文权限名 | 当前共享 Project 策略 |
-| --- | --- |
-| `read` | 当前 Project 的 Owner、Maintainer、Member |
-| `create` | 活跃 Project 的成员；归档后不能创建新工作 |
-| `task-write` | Owner、Maintainer，或该 Task 的原发起人 |
-| `configure` | Owner、Maintainer |
-| `run-control` | Owner、Maintainer |
-| `accept` | Owner、Maintainer；仍须通过全部候选证据门禁 |
-| manager | Owner 或 Maintainer；清理等操作还有资源释放检查 |
-| own | 当前用户自己的代理、会话、提案、凭据 |
-
-表中是基础权限；还会检查活跃项目、实时账号状态、授权代次、具体任务与资源。
-可调用 `execution.boundary` 并携带 taskId 查看当前身份下的权限元数据。
-AI 角色名不赋予人类权限。值守代理也不能超越其授权用户或跨出该 Project。
-
-## 3. 全部查询（12 个）
-
-本节均使用 `kind:query`，无需 requestId。`*` 表示必填；参数均为 payload 字段。
-
-| 操作 | 参数 | `result` 主要字段 | 权限及备注 |
-| --- | --- | --- | --- |
-| `tasks` | `limit?:integer=50`，1–200；`after?:taskId` | `tasks:TaskView[]`, `next` | read；按创建时间、ID 升序；游标必须属于本项目 |
-| `task` | `taskId*:string` | `task:TaskView` | read；用于轻量轮询 |
-| `task.detail` | `taskId*`；`attemptLimit?:integer=20`，1–50；`beforeAttemptId?` | 原始 `task`、`attempts` 摘要、派生 `view`、`attemptsPage` | read；默认最新一页，before 游标向历史翻页 |
-| `pools` | 无 | `pools:[{botId,role,tasks}]` | read；显示可领取的 queued/arbitration 任务，不是全部执行进程列表 |
-| `chief.state` | 无 | `policy`, `template`, `schedule`, `runs` | read；返回最近 Chief 协调 Run 与巡检配置，不会自行启动巡检 |
-| `inputs` | `taskId*`；`limit?:integer=50`，1–200；`after?:inputId` | `inputs`, `next` | read；包含输入文本、来源与传递/读取/处理回执 |
-| `sources` | `limit?:integer=50`，1–100；`threadId?`；`after?:eventId`；或 `eventId?`,`offset?:integer=0` | 列表形态：`sources`,`threads`,`subscriptions`,`events`,`next`；详情形态见下文 | read；项目必须有合法登记仓库 |
-| `effects` | `taskId?`；`limit?:integer=50`，1–200 | `effects` | read；按更新时间倒序；不返回内部 payload/history/key，没有分页游标 |
-| `execution.boundary` | `taskId?` | 见下文边界元数据 | read；重新校验身份，不启动 SDK 或测试 |
-| `attempt.context` | `attemptId*`,`section*`；`offset?:integer=0`；`limit?:integer=8000`，1–16000；`expectedSha256?` | `attemptId`,`section`,`sha256`,`offset`,`text`,`totalChars`,`nextOffset` | read；section 仅 roleSessions / roleSessionHistory / rolePolicies |
-| `attempt.log` | `attemptId*`；`role?:string` | `text`,`sha`,`sha256`；无日志时 `text:null,reason` | read；缺省读宿主测试日志，role 指定已有角色执行日志；会核对哈希，不分页 |
-| `attempt.integration-state` | `attemptId*` | `attemptId`,`generation`,`inputs`,`snapshot` | configure；仅当前池协议 Attempt，须确认执行退出；不是忙碌时可随意读取的普通监控接口 |
-
-### 查询结果细节
-
-`task.detail.attemptsPage` 包含 `total`、`limit`、`before`；下一次请求将 before 放入
-`beforeAttemptId`。摘要不重复发送完整角色上下文，使用 `contextRef` 指定的分页查询。
-`attempt.context` 应按 `nextOffset` 继续，后续页带首次的 `expectedSha256`；变化则重读。
-其 `text` 是原始记录 JSON 文本的片段，不一定单页就能解析成完整 JSON。
-
-`sources` 的 `eventId` 详情模式返回 `event` 元数据、`text`、`offset`、`nextOffset`、`sha256`；
-每页最多 16000 字符。列表模式的 limit 约束事件页，不限制所有 threads/subscriptions 数量。
-
-`execution.boundary` 返回 `version,projectId,memberId,profile,host,permissions,taskScope,delegation,resources,credentials,preflight,memory,invariants,evidence`。
-凭据仅为配置状态/选定身份等元数据；测试、SDK 运行状态在此处标注为未执行，不得据此认定环境已跑通。
-
-`attempt.integration-state.snapshot` 若已有工作区，包含 `workspaceId,head,mergeHead,indexSha256,statusSha256`；
-尚未分配时可以为 null。不要绕过“等待退出”错误去直接修改 Git index 或 state.json。
-
-### TaskView 字段
-
-v1响应中的 `value.result.tasks[]` 和 `value.result.task` 使用同一种 TaskView。
-字段从当前持久记录及实际活动派生；不要把原Task的status字段直接当成这里的phase。
-
-| 字段 | 类型/含义 |
-| --- | --- |
-| `version` | 固定 project-development/v1 |
-| `projectId`, `taskId` | 字符串，稳定归属与身份；ID按不透明标识处理 |
-| `publication` | 当前已发布任务视图为 published；未发布私人提案不在这里 |
-| `phase` | 派生阶段；完整枚举与解释见操作指南 |
-| `waitingFor`, `reason` | 字符串或null，当前等待对象与原因；reason不是可执行指令 |
-| `botId`, `currentRole` | 当前逻辑Bot及chief/developer/tester/reviewer角色，未知时null |
-| `generation` | 当前协作代次或null；乐观并发控制用此值，不是worker代次 |
-| `attemptId` | 当前开发尝试ID或null；返工可变化，Task身份不变 |
-| `executionId` | 当前claim或Run ID，可能null；不是SDK thread ID |
-| `workerId` | 当前claim绑定的worker，可能null；有ID不等于仍在运行 |
-| `queueId` | 当前关联准入队列或null |
-| `candidateSha` | 完整40位候选Git SHA或null；不是main当前HEAD |
-| `executionGeneration` | 关联SDK worker代次或null，用于execution.input |
-| `inputRequestId` | 当前SDK待回答问题ID或null，不是普通Task补充输入ID |
-| `lastMeaningfulProgress` | null或 `{at,evidence}`；依据可验证候选/宿主测试，不以消息数量当进展 |
-| `evidence.tests` | null或 `{sha,sha256,passed,current}`；current指是否匹配本候选 |
-| `evidence.review` | null或 `{sha,verdict,current}`；不是仓库合并授权 |
-| `inputs` | 最多20条accepted非handoff输入摘要，含id/sha256/createdAt/deliveries/readConfirmed；完整状态查inputs分页 |
-| `effects` | 当前pending/running/failed副作用摘要，含id/kind/status/failures/dueAt/error/waitingFor；完整可见记录查effects |
-| `nextActions` | 当前用户可尝试的操作名数组；之后仍需实时重新校验 |
-
-时间戳如createdAt/at/dueAt通常为Unix毫秒；业务SHA与日志/正文SHA256用途不同，不能互换。
-`readConfirmed`是当前角色的已读声明，不是独立的理解正确性证明。单个查询是快照，下一次操作前状态可能变化。
-
-## 4. 全部命令（21 个）
-
-每项均另需第 1 节的外层 requestId。下列 JSON 是内部 payload 示例，不是完整 HTTP 请求。
-写操作示例不要整段盲跑到正在开发的 Task 上。这里没有“修改 phase”的接口。
-
-### C01 `task.run`
-
-```json
-{"taskId":"TASK_ID"}
-```
-
-权限：create + 该 Task 的 task-write。结果为 `{attempt,already?}` 或 `{queue,already?}`。
-资源/配额不足时排队，排队不会预先分配新工作区。相同 Task/requestId 复用已有 Attempt/队列；
-已有活跃 Attempt 时不能靠换 requestId 并行重跑。Task 发布本身不等于启动。
-
-### C02 `task.accept`
-
-```json
-{"attemptId":"ATTEMPT_ID"}
-```
-
-权限：accept。结果 `{attempt,already?}`。需要 waiting-acceptance、当前且完整的候选证据、
-已处理的输入、同 SHA 宿主测试/Review、仍匹配的开放 PR 等；池协议还需要 Chief 批准。
-成功推进 Task/Attempt 验收状态，不合并 PR、不部署代码。已 accepted 可返回 already。
-
-### C03 `task.reject`
-
-```json
-{"attemptId":"ATTEMPT_ID","reason":"验收中发现具体问题"}
-```
-
-权限：accept。`reason?:string`，缺省为 Human requested changes，保存最多1000字符。
-仅 waiting-acceptance；结果 `{attempt}`，记录返回人并置为失败/待后续处理。
-该接口本身不等于已经启动下一轮；通过后续合法调度/Chief 决定恢复。
-
-### C04 `attempt.stop`
-
-```json
-{"attemptId":"ATTEMPT_ID"}
-```
-
-权限：run-control。结果 `{attempt,already?}` 或 `{attempt,stopping:true,remainingWorkers}`。
-先保存停止意图，再停止实际执行；仍有未确认退出的 worker/租约时不会假装容量已释放。
-终态重复停止可 already。查询 TaskView 的 stopping 与工作区释放情况，不靠 HTTP 成功判断停止完毕。
-
-### C05 `attempt.cleanup`
-
-```json
-{"attemptId":"ATTEMPT_ID"}
-```
-
-权限：manager。结果 `{attempt}`。清理服务所拥有的终止工作区；活跃 Attempt、等待验收、
-残留 worker/租约会拒绝。其他 Attempt 仍复用的目录不会被误删。它不是取消任务，也不是清除审计历史。
-
-### C06 `attempt.publication-retry`
-
-```json
-{"attemptId":"ATTEMPT_ID"}
-```
-
-权限：configure。结果 `{attempt,already}`。只恢复当前活跃 Attempt 的既有 PR 发布绑定，
-要求已确认角色退出、同候选测试/Review/执行日志完整，需求未变化。
-不能给任意 SHA“补一个成功发布”，也不能用它绕过 PR HEAD 不一致；远端事实仍须重新核对。
-requestId 不代表强制重复外部发布；底层 outbox 和原 PR 绑定负责协调。
-
-### C07 `attempt.integration-bind`
-
-```json
-{
-  "attemptId":"ATTEMPT_ID",
-  "generation":7,
-  "inputs":[{"ref":"refs/remotes/operator/backend","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
-  "expectedWorkspace":null
-}
-```
-
-权限：configure。必填 generation、1–4 个唯一 ref/SHA、expectedWorkspace。
-ref 只允许 `refs/remotes/operator/...` 下经操作者提供的来源，SHA 必须是完整小写40位且引用仍匹配。
-已有工作区时必须原样传入刚查询到的 snapshot，不能用 null；该示例仅适用于尚无工作区的情况。
-
-仅当前未封存、未取消的 running/interrupted 池协议 Attempt；执行、Chief、租约必须已确认释放。
-已有准入不可静默替换或移除。结果 `{admission,already}`，admission 包含输入、快照、操作者、
-持久化 Effect 和前后 generation。相同 requestId 内容必须完全一致。
-这个操作只登记可信输入，不修改工作区、不执行 merge、不启动 worker。
-
-### C08 `queue.cancel`
-
-```json
-{"queueId":"QUEUE_ID"}
-```
-
-权限：task-write。仅 waiting/blocked 队列；结果 `{queue}`，变为 cancelled，不撤销已启动的 Attempt。
-重复取消终止队列会拒绝，不是通用幂等命令。
-
-### C09 `queue.retry`
-
-```json
-{"queueId":"QUEUE_ID"}
-```
-
-权限：run-control。仅 blocked 队列，结果 `{queue}`，重新变为 waiting。
-同时重新检查原发起人的权限/账号及仓库；不会把执行身份偷换为重试操作的管理员。
-已有活跃 Attempt 或原任务结束则拒绝。
-
-### C10 `chief.inspect`
-
-```json
-{"taskId":"TASK_ID"}
-```
-
-权限：configure。taskId 可省略，以检查项目范围；结果 `{run}`。
-外层 requestId 用于该巡检请求的复用。它请求一个 Chief Run，不等于同步完成裁定。
-查询 chief.state、TaskView 及对应 Run 追踪结果。只有后端专用协议能提交 Chief 的裁定。
-
-### C11 `chief.configure`
-
-```json
-{
-  "enabled":true,
-  "inspection":{
-    "enabled":true,
-    "when":{"kind":"every","seconds":1800},
-    "thresholds":{"maxHandoffsWithoutProgress":4,"longExecutionMs":2700000,"missingHeartbeatMs":1200000,"longWaitMs":3600000}
-  }
-}
-```
-
-权限：configure；启用前校验可持续使用的当前人类身份。可选 inspection 与现有配置/模板合并，
-支持 title、prompt、when、enabled、thresholds；阈值需正整数。
-enabled:false 关闭项目仲裁授权；inspection.enabled:false 可单独关闭巡检。
-结果同 chief.state。更改会提升 policy revision，并可能重新绑定授权人和原生定时任务；
-不能当作无副作用轮询，也不是按 requestId 去重的统一配置事务。
-
-### C12 `schedule.configure`
-
-保存示例：
-
-```json
-{
-  "operation":"save",
-  "target":{"kind":"project-source","threadId":"THREAD_ID"},
-  "title":"PR feedback polling",
-  "prompt":"Poll the configured PR thread",
-  "when":{"kind":"every","seconds":120},
-  "enabled":true
-}
-```
-
-权限：configure。save 支持可选 `id` 更新原逻辑定时任务；新建需要 target、title、prompt、when。
-当前注册 target.kind 为 project-chief / project-source；项目从信封绑定，更新不能换目标。
-title 非空最多120码点，prompt 非空最多16000长度，enabled 为布尔，when 由原生调度器校验。
-保存返回逻辑定时任务记录（id、revision、status、config、原生调度映射等）。
-
-`{"operation":"delete","id":"LOGICAL_SCHEDULE_ID"}` 删除映射并返回 `{tasks}`；
-`{"operation":"list"}` 返回 `{tasks}`。这两个也使用 command 信封并要求 requestId。
-重复 save 无 id 会创建新逻辑定时任务；编辑要保留已有 id。正常 Chief 巡检优先通过 chief.configure 管理。
-
-### C13 `agent.mode`
-
-```json
-{"mode":"safe"}
-```
-
-权限：当前已登录的人类，Project read；mode 必填 `safe` 或 `watch`。
-返回 `{mode,grant,already?}`。safe 默认要求发布提案前人工确认；watch 创建可撤销的当前用户/Project 持续授权。
-watch 在退出浏览器后可继续，但必须配置并通过实时账号校验，且不能超出用户的当前 Project 权限。
-同一 active grant 重复启用可 already；safe 撤销授权，不抹去已经发布任务的历史。
-
-### C14 `proposal.publish`
-
-```json
-{"proposalId":"PROPOSAL_ID"}
-```
-
-权限：own + create。只发布自己的已展示私人提案；返回 `{task,already?}`。
-同一 proposalId 重复发布返回原 task；不自动启动执行，也不会公开整个私人对话。
-
-### C15 `execution.input`
-
-普通回答：
-
-```json
-{"workerId":"WORKER_ID","generation":1,"text":"对当前问题的回答"}
-```
-
-权限：task-write；仅当前真实 waiting-input worker。generation 是 **worker 的代次**，
-不是 Task 协作代次；返回 `{sent:true}`，恢复该 worker 的输入处理。
-text 非空且不超过8000长度。若 pending.kind 是 permission，还需要 configure，使用
-`{"workerId":"WORKER_ID","generation":1,"requestId":"PENDING_QUESTION_ID","allow":true}`。
-内部 requestId 必须匹配待回答权限问题；外层另提供传输 command 的稳定 requestId。
-这不是给任意繁忙 worker 直接注入文本的接口；一般追加需求使用 input.publish。
-
-### C16 `input.publish`
-
-```json
-{"taskId":"TASK_ID","text":"具体的补充反馈"}
-```
-
-权限：task-write + active Project。text 必填，去空白后非空且原长度不超过4000；
-终止/关闭/正在停止的任务拒绝。不能提交伪造的 source、recipient、claim。
-返回 `{input,already}`。同一发起人/requestId/Task 的输入内容不可变，内容变化必须使用新 ID。
-接收后持久化 input.notify；正在忙碌的 Bot 在安全的后续轮次取得输入，不另开并行 writer。
-
-### C17 `source.subscribe`
-
-```json
-{"taskId":"TASK_ID","threadKind":"pull","number":48,"mode":"active","includeHistory":false}
-```
-
-权限：configure + task-write。threadKind 为 issue/pull，number 为正整数；
-mode 可选 active/context（默认 active），includeHistory 可选布尔（默认 false）。
-repository 若填写必须等于当前 Project 仓库。
-结果 `{subscription,already}`；重复由 Thread+Task 等业务身份决定，已有配置变化需要显式协调。
-同一 Thread 最多一个 actionable active Task，其他任务可 context 跟踪。
-默认旧讨论只作上下文；订阅不等于已配置轮询，另使用原生 schedule.configure。
-
-### C18 `source.disable`
-
-```json
-{"subscriptionId":"SUBSCRIPTION_ID"}
-```
-
-权限：configure。结果 `{subscription,already}`，重复关闭可 already。
-关闭的是该订阅，不是删除整个 Thread、Task 或历史输入；不会撤销其他订阅。
-
-### C19 `source.poll`
-
-```json
-{"threadId":"THREAD_ID"}
-```
-
-权限：configure + 当前后台身份验证。结果 `{threadId,acceptedEvents,inputs,cursor}`。
-读取已登记 Thread，持久化新观察和原任务输入；返回数量不代表模型读过或处理完成。
-通过游标/事件版本去重，requestId 不会强制重放所有历史。接口不是 webhook，也不接收外部伪造的 GitHub 事件。
-
-### C20 `effect.retry`
-
-```json
-{"effectId":"EFFECT_ID"}
-```
-
-权限：configure。仅重试本项目已耗尽自动重试的 failed Effect，返回 `{effectId,status,already?}`。
-相同 requestId 的重试记录复用；其他状态会拒绝。它重置失败计数并排入 pending，
-不立即声明远端成功，也不能把旧代次回调变成当前证据。
-
-### C21 `comment.publish`
-
-```json
-{"issueNumber":48,"text":"以本人身份发布的具体评论","scope":"personal"}
-```
-
-权限：create + own personal GitHub 身份。issueNumber 必填正整数，text 非空最多10000长度；
-scope 若填写只能 personal。操作者必须为当前人类/Project 配置并验证其个人凭据，不能借项目自动化账号兜底。
-结果是已核对发布身份的 `{audit}`；包含发起人、选定 GitHub 身份、URL、正文哈希、Effect 归属等。
-同一请求内容通过持久化 outbox 协调，回执不明确时先核对原评论和 Effect，不重复制造外部写入。
-
-## 5. 非 v1 的必要接口
-
-这些通过 `fb_api ENDPOINT JSON` 调用，不应编造为 fb_dev 的操作名。
-表中 result 指外层成功响应的 `value`。
-
-| endpoint | payload 参数 | 返回/权限 |
+| 原生endpoint | payload主要字段 / 返回 | 主体与边界 |
 | --- | --- | --- |
-| `projects` | `{}` | `{projects}`；仅当前用户有权访问的项目 |
-| `project-create` | `name`，可选已授权 `repository`,`defaultBranch` | `{project}`；人类身份成为 Owner；不自动配置真实 SDK/仓库权限 |
-| `project-detail` | `id`（或共享入口中的 projectId），可选 `view:"summary"` | 项目、权限及关联工作记录；read |
-| `project-agents` | `projectId`，可选 `view:"summary"` | shared definitions/public Chief 及自己的 mine/privateMemory/proposals/delegation；summary 只返回公共摘要；完整读取可能确保当前代理存在 |
-| `task-create` | `projectId`,`botId`,`title`，可选 `criteria`,`projectTaskKind` | 返回 Task 本身；create；botId 应为当前项目公共 Chief，kind 为 code/decision/release，默认 code |
-| `project-agent-message` | `projectId`,`text`，可选 visibility:private/public，默认 private；公共直接发布意图另用 publicationApproved | `{agent,queued:true}`；当前人类发起对话，busy 会拒绝；不把普通消息响应当最终模型回答 |
-| `project-agent-history` | `projectId`，可选 visibility:private/public | `{agent,live,messages,busy}`；派生当前人类私有身份，不能选别人的私聊；可能确保代理存在 |
-| `project-chief-question` | `projectId`,`text`,`requestId` | `{handoff,already?}`；只读对话 handoff 给 Chief 并回原私聊，不创建/启动 Task；相同 requestId 文本必须一致 |
-| `project-agent-memory-write` | `projectId`,`text` | `{saved:true,id}`；写自己的私有笔记，最多2000长度，保留最近100条；不写共享知识 |
-| `project-credential-status` | `projectId` | 个人/自动化 GitHub 配置元数据；read；不是凭据内容 |
+| platform-login | email:string、password:string → sessionToken/memberId | 已配置账号平台；CLI login --email隐藏输入和返回Token |
+| auth-whoami / auth-revoke | {} → 当前身份 / 撤销结果 | 本次会话；注销不等于停止Task |
+| auth-invite / auth-redeem | 邀请{} / 兑换{token,displayName?} → 邀请/成员会话 | 原生认证；首次邀请仅私有操作者入口，后续需已登录邀请人 |
+| personal-agent-create | name、kind:internal或external；外部另需provider、HTTPS endpoint → agent | 本人；外部descriptor初始未验证，不声称已接入特定产品 |
+| personal-agent-list / personal-agent-read | limit?:1..200、after? / agentId → 本人身份列表/身份 | 本人；不公开私有carrier历史 |
+| personal-agent-join / personal-agent-default | agentId、projectId → participation | 本人且当前项目成员；默认路由不授予权限 |
+| personal-agent-participations | limit?:1..200、after? → 本人的参与列表 | 本人；独立参与ID |
+| personal-agent-history | agentId、projectId、offset?、limit?:1..100 → 私有历史页和nextOffset | 本人；历史保留原ID |
+| personal-agent-propose-task | projectId、title、criteria、projectTaskKind、requestId；impact?/scope? → 私有proposal | FBA连接；等待人类授权，显式影响/范围保留到原Task |
+| personal-agent-leave / personal-agent-retire | agentId，leave另需projectId → 状态 | 撤销对应连接/委托能力，保留历史 |
+| personal-agent-token-create | agentId、projectIds:string[]、ttlSeconds?:60..2592000 → 一次性原始token及metadata | 本人；存储只留hash，token限当前活跃参与Project |
+| personal-agent-token-list / personal-agent-token-revoke | agentId / credentialId → metadata/撤销 | 本人；不重新返回原始token |
+| personal-agent-delegation-set | agentId、projectId、mode:safe/watch | 本人；见[身份契约](subsystems/personal-agent-auth.md) |
+| personal-space | operation:list/read/send/memory等、id及对应参数 | 原个人Chief/Bot/群聊入口；原ACL和私有记忆隔离 |
 
-`task-create` 没有 v1 的统一创建幂等合同；网络响应不明确时先查询列表，避免重复发布。
-私人对话、自己的记忆不能自动塞进公共 Chief 上下文；只有明确提问/发布的内容才能流转。
-个人代理安全/值守的真实验收边界见[操作指南](development-service-guide.md)。
+外部调用方持FBA token调用同一HTTP协议，不能把外部URL当作已验证身份或新的Task执行器。
+SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角色私有写接口。
+详细原生字段/期限/撤销规则见[独立代理](subsystems/personal-agents.md)、[代理授权](subsystems/personal-agent-auth.md)、[安全与值守](subsystems/project-delegations.md)。
 
-## 6. 状态、幂等与错误码
+## Project / Role（原生管理 + v1治理）
 
-TaskView 是派生状态。原始 Task 业务状态、collaboration、Attempt、worker、Effect 可能不同，
-例如 result-ready + blocked 表示已有结果，但协作受阻。完整含义见[状态模型](development-service-guide.md#状态由谁承载和更新)。
-不要在客户端根据“Bot 存在”“API 返回200”“有 PR”推断已执行或完成。
+| 原生endpoint | payload与返回概要 | 权限/前置 |
+| --- | --- | --- |
+| projects / project-read / project-detail | {} / id / id、view:summary? → 当前成员可见项目/详情 | 读；summary不复制完整Task历史 |
+| project-create | name必填；goal/scope/repository/repositories/defaultBranch等可选 → project | 当前用户；仓库关联0..N，仓库也可被多项目关联 |
+| project-repositories | projectId → repositories | 读 |
+| project-repository-link / project-repository-unlink | projectId、repository，link可含defaultBranch → 关联结果 | 管；不悄悄改动已有Task执行仓库 |
+| project-members / project-invite / project-join | id / id / token → 成员/邀请/加入 | 读 / 邀请权限 / 当前认证受邀人 |
+| project-role / project-member-remove / project-leave | id及memberId/role等 → 成员状态 | 原角色策略；Owner不可把自己移走留下无主项目 |
+| project-close-request | projectId、reason等 → 建议记录 | Maintainer/个人代理建议；不关闭项目 |
+| project-close-prepare / project-close-confirm | projectId、prepare另需finalRecord；confirm带prepare返回的confirmationToken | Owner本人二次确认，限时挑战和当前状态重验；保留未完Task及最终记录 |
+| project-agents / project-agent-history | projectId、对应agent/分页 → 公开Chief及本人私有代理/历史 | 读；私有信息仅本人 |
+| project-agent-definition / project-role-memory-write | projectId、定义/记忆字段 → 版本化目录/记忆 | 管理及原治理校验；不得覆盖历史执行快照 |
+| project-room-create/read/message等 | projectId、roomId、text/文档等 → 原Project群聊 | 项目成员且符合房间参与权限；普通消息不自动发布Task |
 
-幂等强度按操作分别规定：run 的 requestKey、proposalId、input 来源、Thread 订阅身份、
-Effect/PR outbox 和配置保存并不是同一种机制。同 requestId 的恢复也不承诺可任意改变 payload。
+角色治理、上下文及public Bot人设/记忆仍走原服务；完整字段和治理提案源见[角色/代理](subsystems/project-agents.md)、[Project](subsystems/project-domain.md)及[房间](subsystems/project-collaboration.md)。
 
-auth-revoke 只注销本次 Session；切回 safe 撤销 watch grant；停止 Attempt、清理工作区又是不同操作。
-重启后保留 Task/Attempt 历史，只有经过已退出证明及恢复校验才重新派活，不凭缺失 PID 释放资源。
+## v1查询（kind=query）
 
-| 错误码族/情况 | 解释与处理 |
+下表payload之外统一需要projectId。`?`表示可选。字段均为JSON；ID/游标是响应返回的string。
+所有查询确定性读取现有事实，不调用模型更新项目定位。大内容通过限定源分页，不塞进列表。
+
+| 查询名 | payload | result / 权限与分页 |
+| --- | --- | --- |
+| tasks | limit?:1..200、after?:TaskID | TaskView列表及游标；读 |
+| task | taskId | 单个TaskView；读 |
+| task.detail | taskId、attemptLimit?:1..50、beforeAttemptId? | 有界Task详情、Attempt摘要与历史来源引用；读 |
+| task.history | taskId、section、offset?、limit?、expectedSha256? | 精确源字符串页、SHA256和nextOffset；section为requirements/requirementsHistory/waitHistory/results/dependencies/admissionDecisions/note/result/actors/handoffs |
+| roles | role?、offset?、limit?:1..16000、expectedSha256? | 当前已批准角色目录及revision；读，不初始化目录 |
+| role.proposals | proposalId?、limit?:1..50、after? | 公共角色变更提案及有界来源；不返回个人代理私有提案 |
+| consultation.list | agentId?、limit?:1..100、after? | 本人当前参与的私有咨询页 |
+| consultation.get | consultationId、agentId? | 私有咨询/答案/状态；从不转移Task主动权 |
+| handoff.list | taskId、limit?:1..100、after? | 同Task的持久交接记录页；读 |
+| handoff.get | taskId、handoffId | 原交接契约与receipt：来源/目标/上下文版本/确认等；读 |
+| pools | {} | 每个逻辑Bot的任务池和现有claim/阻塞状态；读 |
+| inputs | taskId、limit?:1..200、after? | Task持久输入/投递和确认状态；读 |
+| sources | 原source查询过滤/分页 | 当前项目绑定的Issue/PR来源订阅与游标；读 |
+| execution.boundary | taskId? | 当前权限/仓库/资源/Harness边界及readiness；不运行测试/不授予权限 |
+| attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
+| attempt.integration-state | attemptId | 当前候选/受信集成绑定和证据；读 |
+| attempt.log | attemptId、role? | 限定Attempt的原封存日志完整文本（当前未分页）；读，不给原始宿主文件读取权限 |
+| chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
+| effects | taskId?、limit?:1..200 | 已提交意图/执行/等待/失败摘要；私有command结果限当前主体 |
+| command.receipt | commandRequestId、commandName? | 当前独立主体的幂等回执/commit状态/结果引用 |
+| command.result | commandRequestId、commandName?、offset?、limit?:1..16000、expectedSha256? | 精确原JSON结果页；同主体、hash保护 |
+| project.snapshot | entityType?:task/attempt/execution/resource/input/role-proposal、after?、limit?:1..100、expectedRevision? | 已提交Project版本、cursor及实体页；默认Task50项 |
+| events | after?、limit?:1..100 | 当前Project已提交变更页、next cursor；默认100项 |
+| compatibility | offset?、limit?:1..100 | 旧工作baseline计数/hash/提交状态，当前contract/legacy/held/active计数和引用页；默认50项 |
+
+字符串源页offset按字符而非UTF-8字节；把返回SHA256带入下一页，变更则重新读源。Task/Attempt列表是摘要，不能用preview代替验收证据。attempt.log目前返回原封存完整文本，受网关响应上限约束；不要把它当成已实现分页的通用上下文读取。
+TaskView.phase包括published/awaiting-chief/queued/starting/running/awaiting-input/blocked/stopping/accepted/cancelled等；waitingFor/reason解释等待对象。
+Worker已登记不等于已运行；进程或Bot消失不等于退出；角色目录当前revision与执行固定revision分别展示。
+
+## v1命令（kind=command）
+
+每个命令统一带requestId，返回result和命令receipt。作用域、前置版本、角色代次及实时权限由各领域服务继续校验。
+
+| 命令名 | payload主要必填字段（其余可选字段见对应子系统） | 结果与权限 |
+| --- | --- | --- |
+| consultation.ask | text；agentId? | 私有咨询receipt，异步答案；本人，不创建Task |
+| consultation.reply | consultationId、text；publish?、agentId? | 私有回答；显式publish且有权才进入原Task输入，安全代理仍需授权 |
+| role.decide | proposalId、expectedSha256、decision:approve/reject | 管；精确批准Chief提案，不能由提案Chief借Owner身份自批 |
+| task.propose | title；criteria/impact接纳前必需；scope/projectTaskKind/botId? | 创建唯一Task并提交Chief intake；当前成员发布权限；kind仅code/decision/release |
+| task.change.request | taskId、action:revise/cancel/reopen、reason；revise可带requirements | 写；仅请求Chief判断，不立即改承诺/关闭Task |
+| task.run | taskId | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
+| task.accept | attemptId | 旧兼容交付的人工验收；管；新Task最终关闭仍由Chief |
+| task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
+| attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
+| attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
+| attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
+| attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
+| queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
+| queue.retry | queueId | 管；重验原始发起人、要求和资源；不是换请求人借权 |
+| chief.inspect | taskId? | 管；一次原Chief巡检/裁定工作，不增框架轮询器 |
+| chief.configure | enabled；inspection? | 管；配置原Chief授权和原生定时任务，默认巡检30分钟是配置值 |
+| schedule.configure | operation:save/delete等、id?及原schedule定义 | 管；复用Project定时任务，不创建另一调度器 |
+| agent.mode | mode:safe/watch；personalAgentId? | 当前人类本人；值守全权仍受实时人类权限及显式scope约束 |
+| proposal.publish | proposalId | 当前人类授权发布私人提案；原Task/回执幂等，不公开私有草稿历史 |
+| execution.input | workerId、generation；text或requestId/allow | 当前Task写权限；permission还需管；payload.requestId是原permission请求ID，不是信封幂等键 |
+| input.publish | taskId、text:1..4000字符 | 写；宿主选择当前收件角色/代次，用户不能自造source/recipient/claim |
+| source.subscribe | taskId、threadKind:issue/pull、number；mode/includeHistory? | 管；原准确仓库/凭据/订阅域；见来源契约 |
+| source.disable | subscriptionId | 管；保留已提交输入/游标，停止后续拉取 |
+| source.poll | threadId | 管；复用原来源拉取，重复事件按版本去重 |
+| effect.retry | effectId | 管；只恢复耗尽失败的原Effect，不重置已完成动作 |
+| comment.publish | issueNumber:正整数、text:1..10000字符；scope仅personal | 当前项目与个人GitHub授权；不借Owner或环境凭据 |
+
+复杂原生字段/证据前置的完整规范：[Task](subsystems/project-task-lifecycle.md)、[Handoff/任务池](subsystems/project-pools.md)、[输入](subsystems/project-inputs.md)、[来源](subsystems/project-sources.md)、[Chief/定时任务](subsystems/project-chief-control.md)、[交付](subsystems/project-delivery.md)、[GitHub](subsystems/project-github-read.md)。
+Role的get-context、accept/return/transfer/complete/split/Chief裁定走已绑定Task-role执行通道，宿主校验完整claim/代次/退出与证据。
+公开v1没有通用handoff/accept-claim接口供人冒充角色；handoff.get/list是查询，不等于接手。
+
+## Execution / Resource / Session（原生配置接口）
+
+| 原生endpoint | payload概要 | 权限 / 返回 |
+| --- | --- | --- |
+| project-resources | projectId | 读；授权资源/健康/Harness元数据，不暴露profile或进程秘密 |
+| project-resource-environment-check | projectId、resourceId及对应Harness | 管理及资源grant；固定探测，非任意shell |
+| project-runtime-check | projectId、resourceId、harness | 管理/资源admin；实际登录与环境结果，配置存在不等于成功 |
+| project-terminal-open/poll/input/resize/close | projectId、资源/Harness/terminalId及操作参数 | 当前管理/资源admin；原PTY用于SDK登录，不进入公共Project上下文 |
+| project-execution-input | workerId、generation、text或原permission字段 | 与v1 execution.input相同实时权限 |
+| project-agent-memory-write / project-role-memory-write | projectId、文本/来源及角色字段 | 私人记忆与公开角色记忆独立授权；保留revision/来源，按需召回 |
+
+Harness实际ID：flybot、codex、claude-agent。Task-role Session固定Task/角色身份，打回resume同一上下文；不能恢复时明确阻塞，不偷偷另起空白会话。
+执行仅在claim、资源绑定和持久激活都确认后启动。身份/要求/资源撤销使原执行合作停止，必须确认退出才能把主动权交给下一角色。
+SDK负责其自身compaction，FlyBot负责输入/工具输出/记忆预算和来源分页；不把累计usage当当前上下文占用。
+详细配置/端点字段见[执行环境](subsystems/project-runtime-setup.md)、[资源](subsystems/project-resources.md)、[Harness](subsystems/project-harness.md)。
+
+## SSE与断线恢复
+
+```text
+GET /api/project-events?projectId=PROJECT_ID
+X-Flybot-Member-Session: MEMBER_SESSION_OR_FBA_TOKEN
+Accept: text/event-stream
+```
+
+也可使用 `node scripts/backend.mjs events --project PROJECT_ID [--after CURSOR]`。
+首次发送event:snapshot并带id；后续event:fact的id为该项目的opaque cursor。
+重连带 `Last-Event-ID` 或同值after参数，二者冲突拒绝。以cursor/实体revision去重，不解码或合成cursor。
+按project.snapshot.next补完当前实体页，可用expectedRevision防并发跨页混合；事件不是永久审计历史。
+当前有界保留每Project1024项/24小时，读取每页最多100项。过期/不同epoch返回bot/cursor-expired或bot/conflict，重取snapshot后续传。
+权限每次拉取重验，撤权发access-revoked并关闭；其他恢复条件发reset-required。未提交save、失败事务和私人聊天/凭据/私有提案不产生公共项目事件。
+宿主背压有界，慢客户端需断线续传；代理禁用SSE缓冲，服务退出关闭stream。
+
+## 错误与旧入口兼容
+
+| code/状态 | 处理 |
 | --- | --- |
-| `bot/unauthorized` 或认证失败 | 登录失效/身份未提供；重新登录，不提交 DSH owner cookie |
-| `bot/forbidden` | Project、Task 或对象范围/操作权限不符；不能靠 body 提升角色 |
-| `bot/invalid` | version/kind/name/形状/必填参数不合法；部分底层校验也使用该码 |
-| `bot/conflict` | expectedGeneration、expectedCandidateSha、分页快照等已变化；重读后重新判断 |
-| `bot/read-only` | 该宿主不能写状态；先解决锁/存储归属，不重复外部副作用 |
-| `bot/delivery` | Attempt 生命周期、候选、证据、PR、已退出证明或集成源不满足；读 message 和当前详情 |
-| `bot/effect` | 持久意图、Effect协议、回执或重试条件不满足；查effects及原远端对象，不能直接改成done |
-| `bot/task-input` | 输入大小、身份、来源、当前 Task/claim 不满足 |
-| `bot/project-source` | Thread/订阅/仓库、游标或 Source 合同不满足 |
-| `bot/delegation` | watch/principal/grant 失效或缺少后台校验；不能借浏览器或别人的身份兜底 |
-| `bot/chief`、`bot/harness`、`bot/busy` | Chief 配置/执行合同、SDK/worker 合同或当前对话忙；查相应状态 |
-| 其他底层错误 | 本表不是穷举 HTTP 错误；保留原 code/message，不把它们统一当成可自动重试的网络错误 |
+| bot/invalid | 校正版本、kind、必填字段、分页或原生操作参数 |
+| bot/unauthorized / bot/forbidden | 重新认证/核对当前成员、参与、scopes和委托；不换身份借权 |
+| bot/conflict | 重读代次/候选/hash/版本，再判断；相同意图的内容不能改后重试 |
+| bot/cursor-expired | 重取project.snapshot，继续新的cursor |
+| bot/read-only / bot/state-storage | 修复锁/格式/存储迁移；不删除守卫强行写入 |
+| bot/compatibility | 未登记的旧Project Task不能执行；让Chief明确处理原Task，活动执行先到安全点 |
+| blocked/unknown/stopping | 查询Task、Effect、边界及实际worker退出证明；不是PASS或资源空闲 |
+| HTTP429/503 | 有界退避、重读当前状态，保留原requestId |
 
-## 7. 使用示例与证据边界
-
-先按 README 登录、定义函数、设置 FLYBOT_PROJECT_ID。以下只读：
-
-```bash
-fb_dev query tasks '{"limit":10}'
-fb_dev query pools '{}'
-fb_dev query task.detail '{"taskId":"TASK_ID","attemptLimit":5}'
-fb_dev query inputs '{"taskId":"TASK_ID"}'
-fb_dev query effects '{"taskId":"TASK_ID","limit":10}'
-fb_dev query execution.boundary '{"taskId":"TASK_ID"}'
-```
-
-以下会写入、启动模型或产生外部操作，按需选择，不能当作连通性测试自动执行：
-
-```bash
-fb_dev command task.run '{"taskId":"TASK_ID"}' 'start-001'
-fb_dev command input.publish '{"taskId":"TASK_ID","text":"请补充边界测试"}' 'feedback-001'
-fb_dev command chief.inspect '{"taskId":"TASK_ID"}' 'inspect-001'
-```
-
-接口存在、契约测试通过、真实 SDK 专项通过、实际任务闭环、UI/部署验收是不同证据。
-尤其 comment.publish 需要个人身份，示例中的假 ID 不可直接调用；本次文档补充不会为实服开启值守、
-发布任务、改变巡检、重试 PR 或停止正在运行的工作。代码基线的完整/专项结果记录在 README，
-不能当作后续文档提交的全量业务测试结果。
-
-## Project Task convergence (#2179)
-
-New shared Task creation accepts `impact` and `scope` in addition to title/criteria.
-Its Project contract starts proposed; `task.run` returns `waitingFor: "chief"`
-until Chief admission. No Attempt is allocated by that pending request.
-
-`project-development` command `task.change.request` takes
-`payload:{taskId,action:"revise|cancel|reopen",reason,requirements?}` and the usual
-stable envelope requestId. It returns a Chief run reference and `applied:false`;
-it grants no direct revision, cancellation or reopening. `requirements` accepts
-only title, criteria, impact and scope on a revision suggestion. Only a validated
-Chief callback applies it. Reusing a requestId with a changed intent is refused.
-
-Trusted role commands may return `split` with independent children, a reason and
-resumePoint. Public HTTP cannot supply a role claim. Parent Task views report
-`waitingFor:"children"`; child results remain explicitly unintegrated until the
-parent performs its own integration and final verification. For lifecycle fields,
-current limitations and compatibility, see
-[Project Task lifecycle](subsystems/project-task-lifecycle.md).
-
-## Persistence configuration (#2182)
-
-Plugin configuration `stateStorage: sqlite` selects the original Store's SQL backend
-(Node.js22.18+, tested22.22.3). Project commands, authorization and query envelopes
-remain unchanged; state and Effects share one commit. Existing JSON remains default
-until migrated. Runtime storage diagnostics/change IDs are internal ports, not a
-public raw-database API or authenticated event feed. See the [migration/rollback
-contract](subsystems/project-state-storage.md). Public bounded receipts/events are
-completed separately in #2185; simplified full deployment instructions remain #2189.
-
-## Service contract convergence (#2185)
-
-The envelope remains project-development/v1. Read projection versions are separate:
-project-task-detail/v1, project-task-contract-summary/v1 and
-project-attempt-summary/v1. Current constraints/evidence remain inline; raw lifecycle,
-persona, context and Session history move behind explicit bounded source refs.
-This intentionally changes unbounded raw-record assumptions. Existing UI-used fields
-remain; original stored history is retained.
-
-| Kind/name | Payload | Result and boundary |
-| --- | --- | --- |
-| command task.propose | title, criteria, impact, scope?, projectTaskKind?, botId? | Proposes original Task; Chief admission remains required. Missing carrier uses existing Project Chief. Server stamps origin; no body actor/session authority. |
-| query command.receipt | commandRequestId, commandName? | Calling principal's status, commit proof, origin and result ref. |
-| query command.result | commandRequestId, commandName?, offset?, limit?, expectedSha256? | Exact JSON result page, max16000 chars, hash/version guarded. |
-| query task.history | taskId, section, offset?, limit?, expectedSha256? | requirements, requirementsHistory, admissionDecisions, dependencies, waitHistory, results, handoffs, note, result or actors. |
-| query attempt.context | attemptId, section, offset?, limit?, expectedSha256? | Prior role sections plus evidence, feedback, requirement, failure, agentDefinitions, integrationAdmissions. |
-| query project.snapshot | limit?, after?, expectedRevision? | Committed bounded Project/Task snapshot and event cursor; later pages require the same revision. |
-| query events | after?, limit? | Committed Project-scoped facts, max100, next/head/oldest cursors. |
-
-All v1 mutating envelopes have private durable receipts when the standard Effects
-service is installed. Existing alias endpoints still use original domain handlers
-and their own idempotency; they do not create another writable state source. Their
-remaining migration/cutover is #2186. Public role acceptance/Handoff/arbitration
-cannot be forged by supplying a claim or Chief role in an HTTP body.
-
-Receipt scope is operation + Project + authenticated user/independent agent. Reusing a key with
-changed intent/preconditions is bot/idempotency-conflict. A confirmed response can
-replay after its generation advances, after current permission checks. Concurrent
-calls share one invocation. completion-pending-commit requires retrying the same
-command, not a second execution. running/unknown does not automatically redispatch;
-bot/outcome-unknown points to the receipt/target/Chief. Automatic reconciliation is
-limited to existing idempotent task.run and original Task/intake proof for
- task.propose/proposal.publish. Reconstructed responses say reconstructed:true.
-
-| Code/fact | Meaning | Client action |
-| --- | --- | --- |
-| bot/unauthorized, bot/forbidden | Session/principal/Project rights unavailable | Authenticate/check current rights; never borrow owner credentials. |
-| bot/idempotency-conflict | Same key, changed intent | Recover the original response or submit a deliberate new command key. |
-| bot/conflict | Version/source/snapshot changed | Fetch current referenced state and choose new preconditions. |
-| bot/outcome-unknown | No confirmed final command outcome | Read command.receipt and target state; use existing reconciliation/Chief, not blind generic rerun. |
-| bot/cursor-expired | Event epoch/retention no longer covers cursor | Fetch project.snapshot, resume after its cursor. |
-| bot/busy | SSE transport capacity | Retry later or use bounded HTTP queries. |
-| waitingFor:resource/worker-exit | Existing execution admission/exit boundary | Inspect queue/execution.boundary; unknown exit never authorizes another writer. |
-| completion-pending-commit | Result observed, final receipt not committed | Retry the same command to finish commit without invoking again. |
-
-HTTP /api/bot retains {ok,value}/{ok:false,error:{code,message,details}}. Successful
-v1 commands additionally return receipt, replayed and optionally reconstructed.
-Normal queries and committed event generation call no model and do not change
-Project positioning. Consultation remains consultation.ask/reply; do not publish a
-Task for an ordinary question.
-
-SSE uses the existing restricted gateway:
-
-```sh
-curl -N -H "x-flybot-member-session: $FB_SESSION" \
-  "$FB_URL/api/project-events?projectId=$FB_PROJECT"
-# Resume using the last accepted id from a snapshot/fact frame:
-curl -N -H "x-flybot-member-session: $FB_SESSION" \
-  -H "Last-Event-ID: $FB_EVENT_CURSOR" \
-  "$FB_URL/api/project-events?projectId=$FB_PROJECT"
-```
-
-No token goes in a URL. The existing member header also accepts authenticated
-personal-agent credentials. Initial frames are snapshot, then fact with id cursors;
-deduplicate by cursor. access-revoked closes the stream; reset-required requires a
-fresh snapshot. Initial expired cursors receive HTTP409 with nextAction. No upstream
-owner cookie is forwarded. Current read rights are rechecked on each batch, including
-backpressure recovery. Project sequences exclude private conversations/auth/receipt
-writes. Default retention1024 facts/24h is configurable via projectEventRetention;
-it is not permanent audit history. Follow Task/Handoff/Attempt source queries for
-older records. See [full contract](subsystems/project-service-contracts.md).
-
-Operation names scope requestId, so different operations may reuse a key. When a key matches multiple operations, command.receipt/result require commandName (also supplied in resultRef); otherwise return bot/ambiguous-command. Retrying one invocation preserves its key; a deliberate new source.poll uses a fresh key. Confirmed replay preserves the original result and marks replayed:true, rather than rewriting its domain already flag.
+保留task-create、project-task-run、project-task-pools、project-chief-question等原接口，映射同一领域服务。
+新调用方优先v1命令以获得主体范围的持久回执。旧Group/track_tasks仅保留已提交旧任务及其返工，不得为新Project工作建立旁路；个人任务不受该Project切换限制。
+原public Bot人设/长期记忆可授权查看，个人代理/Chief私有记忆不会因此公开。具体保留对象和回退限制见[兼容盘点](subsystems/project-compatibility.md)。

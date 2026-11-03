@@ -477,3 +477,7 @@ The legacy Workflow gateway now also excludes Chief control jobs from execution 
 
 
 #2171 adds role catalog/proposal/decision endpoints to the existing restricted gateway allowlist. Reads preserve Project scope; decisions keep configure authorization in the domain service. No control-plane or frontend replacement is introduced.
+
+## Persistent service composition (#2189)
+
+The source backend launcher reuses this original gateway/UI and account/resource endpoints. auth-mode now waits for Store load and exposes only a writable boolean in addition to existing metadata; it reveals no private file paths. Startup refuses read-only/unsupported state rather than opening an apparently fresh writable service. No frontend assets/control-plane implementation changes. See [backend entry](backend-service.md).
