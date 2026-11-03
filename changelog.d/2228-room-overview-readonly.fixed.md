@@ -1,0 +1,1 @@
+A read-only FlyBot window no longer draws the Bot Social room overview's Leave, Auto-send switch or invite: the room view keeps its status chip (and a waiting room keeps its wait code and roster) and offers no write control, while a writable window keeps the same controls and the two-tap Leave ([#2228](https://github.com/ThinkFlowLab/FlyBot/issues/2228)).
