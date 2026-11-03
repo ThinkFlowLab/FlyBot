@@ -109,6 +109,20 @@ const findAll = (node, pred, out = []) => {
   return out
 }
 const textOf = node => (typeof node === 'string' ? node : node ? (node.children ?? []).map(textOf).join('') : '')
+// #2230: the name a reader gets. An `aria-label` replaces the name computed from the
+// content; otherwise the content names the element, with every `aria-hidden` subtree
+// skipped — the rule a browser applies, so a test can read the same name a reader hears.
+const accessibleName = (node) => {
+  const label = node?.props?.['aria-label']
+  if (typeof label === 'string' && label !== '') return label
+  const walk = (child) => {
+    if (typeof child === 'string') return child
+    if (!child || typeof child !== 'object') return ''
+    if (child.props?.['aria-hidden'] === true) return ''
+    return (child.children ?? []).map(walk).join('')
+  }
+  return (node?.children ?? []).map(walk).join('')
+}
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const htmlOf = (node) => {
   if (Array.isArray(node)) return node.map(htmlOf).join('')
@@ -652,7 +666,7 @@ test('#2222: a live workflow row says how many runs are live', async () => {
     const count = findAll(view.tree, node => node.props?.className === 'wf-live-n')
     assert.equal(count.length, 1, 'one count stands beside the live dot')
     assert.equal(textOf(count[0]), '3', 'the count is the number of live runs')
-    assert.ok(String(row.props['aria-label'] ?? '').includes('3'), 'the accessible name says how many runs are live')
+    assert.ok(accessibleName(row).includes('3 running'), 'the accessible name says how many runs are live')
 
     row.props.onClick()
     await settle()
@@ -678,7 +692,7 @@ test('#2222: a read-only window still reads how many runs are live', async () =>
     await settle()
     const row = findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0]
     assert.ok(row, 'the read-only sidebar still lists the workflow')
-    assert.ok(String(row.props['aria-label'] ?? '').includes('2'), 'the read-only row still names the live count')
+    assert.ok(accessibleName(row).includes('2 running'), 'the read-only row still names the live count')
     assert.equal(textOf(findAll(view.tree, node => node.props?.className === 'wf-live-n')[0]), '2')
     assert.equal(findAll(view.tree, node => node.type === 'button' && textOf(node) === 'New').length, 0, 'the window is locked')
   } finally {
@@ -705,6 +719,82 @@ test('#2222: a workflow row with nothing live draws no count and no live name', 
     assert.equal(/\d/.test(textOf(row)), false, 'an idle row carries no digit')
   } finally {
     view.unmount()
+  }
+})
+
+// #2230 (P-445, regression of #2224): two lanes may legally share a name — `service.js`
+// only appends a copy suffix once — so a row-level `aria-label` that replaces the name
+// computed from the content made two different lanes read the same words, with neither
+// Project nor preview. A live row must keep everything an idle row names, plus the count.
+test('#2230: two lanes with one name are told apart by their own Project, and a live row keeps the badge and the preview', async () => {
+  const alpha = { ...delivery(), id: 'delivery-a', name: 'Delivery', projectId: 'p1', preview: 'Alpha #2214 · step 2/31', activeCount: 1 }
+  const beta = { ...delivery(), id: 'delivery-b', name: 'Delivery', projectId: 'p2', preview: 'Beta #2219 · step 1/31', activeCount: 1 }
+  const idle = { ...delivery(), id: 'delivery-c', name: 'Gamma', activeCount: 0, run: null }
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [alpha, beta, idle], templates: [] }
+    return { ok: true, workflows: [alpha, beta, idle] }
+  }
+  const host = async (channel) => {
+    if (channel === 'projects') return { projects: [{ id: 'p1', name: 'Alpha' }, { id: 'p2', name: 'Beta' }] }
+    return []
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { host }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    const rows = findAll(view.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes('Delivery'))
+    assert.equal(rows.length, 2, 'both lanes with one name are listed')
+    const [first, second] = rows.map(accessibleName)
+    assert.notEqual(first, second, 'two lanes a reader must tell apart do not share one name')
+    assert.ok(first.includes('Alpha'), 'the first row names its own Project')
+    assert.ok(second.includes('Beta'), 'the second row names its own Project')
+
+    const idleRow = findAll(view.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes('Gamma'))[0]
+    const idleName = accessibleName(idleRow)
+    assert.ok(idleName.includes('Workflow') && idleName.includes('Waiting for a task'), 'an idle row is named by its badge and its preview')
+    for (const [i, name] of rows.map(accessibleName).entries()) {
+      assert.ok(name.includes('Workflow'), `live row ${i} keeps the Workflow badge an idle row names`)
+      assert.ok(name.includes('step'), `live row ${i} keeps the preview an idle row names`)
+      assert.ok(name.includes('1 running'), `live row ${i} still says how many runs are live`)
+    }
+  } finally {
+    view.unmount()
+    globalThis.__flybot__ = prev
+  }
+})
+
+// #2230: the two reverse proofs. The counter is still reachable — one live row still names
+// its count — and a quiet row still carries no `aria-label`, no digit and no hidden text,
+// which is the #2224 contract this change must not reopen.
+test('#2230: one live row still names its count, and an idle row carries no aria-label and no hidden text', async () => {
+  const live = async (count) => {
+    const graph = { ...delivery(), activeCount: count }
+    const call = async (name) => {
+      if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+      return { ok: true, workflows: [graph] }
+    }
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    return view
+  }
+  const busy = await live(3)
+  try {
+    const row = findAll(busy.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes('发布交付流水线'))[0]
+    assert.equal(row.props['aria-label'], undefined, 'the row no longer overrides the name computed from its content')
+    assert.ok(accessibleName(row).includes('3 running'), 'the count is still part of the name')
+    assert.equal(findAll(busy.tree, node => node.props?.className === 'wf-sr').length, 1, 'one hidden span carries the count')
+  } finally {
+    busy.unmount()
+  }
+  const quiet = await live(0)
+  try {
+    const row = findAll(quiet.tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('wf-row') && textOf(node).includes('发布交付流水线'))[0]
+    assert.equal(row.props['aria-label'], undefined, 'an idle row keeps its own text as the name')
+    assert.equal(/\d/.test(accessibleName(row)), false, 'an idle name carries no digit')
+    assert.equal(findAll(quiet.tree, node => node.props?.className === 'wf-sr').length, 0, 'an idle row draws no hidden text either')
+  } finally {
+    quiet.unmount()
   }
 })
 
