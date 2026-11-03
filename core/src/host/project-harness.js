@@ -96,7 +96,7 @@ export function createProjectHarness(rt) {
       Object.assign(selected.env, { TMPDIR: scratchDirectory, npm_config_cache: join(scratchDirectory, 'npm-cache'), npm_config_update_notifier: 'false', npm_config_offline: 'true' })
     }
     const conversation = chief ? ownEntry(rt.state.projectAgents ?? {}, chief.agentId) : null
-    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, sessionKey: session.id,
+    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
       cwd: workspace.path, scratchDirectory, status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
@@ -293,7 +293,7 @@ export function createProjectHarness(rt) {
     control.inputBatch = step.inputs?.taskInbox
     const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
     const workspace = rt.state.projectAttempts?.[row.attemptId]?.workspaces?.[row.role]
-    const writableRoots = row.role === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
+    const writableRoots = (row.policyRole ?? row.role) === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
     row.status = 'running'; row.executionStartedAt = Date.now()
     try {
       const before = rt.savesQueued?.()
@@ -309,7 +309,7 @@ export function createProjectHarness(rt) {
       throw error
     }
     control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
-      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || row.role !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1 }, prompt }) + '\n')
+      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || (row.policyRole ?? row.role) !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1 }, prompt }) + '\n')
     if (control.inputBatch?.inputs.length && control.session.poolClaimId) {
       const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim
       if (claim?.id === control.session.poolClaimId) await rt.projectInputs?.transport(task.id, claim, control.inputBatch.batchId, { kind: 'adapter-written', sha256: sha(JSON.stringify(control.inputBatch)) })

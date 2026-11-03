@@ -294,3 +294,6 @@ and unknown exit. They do not establish a real-provider canonical pool return lo
 Custom-role artifact verification, native crash reconciliation, in-flight capability
 revocation and the final composed service acceptance remain tracked under #2184.
 The public native-resume capability remains conservative until the whole loop is tested.
+
+
+Approved custom roles now pin `policyRole` on their Session and SDK worker record. Native/SDK Workspace ownership accepts an approved capability while preserving logical role identity. Codex writable roots and SDK readOnly derive from the pinned capability, not a literal Bot name. Repository source overrides prefer the logical role and otherwise inherit its capability's complete rules; the custom policy hash records both, while default policy bytes remain compatible. SDK subprocess contract tests inspect actual transmitted readOnly settings for a custom Developer and Reviewer; they are deterministic workers, not provider execution.

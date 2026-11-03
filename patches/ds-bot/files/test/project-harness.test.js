@@ -398,3 +398,27 @@ test('Harness capability inspection distinguishes SDK support, native limitation
   assert.equal(harnessCapabilities('flybot').sdkVersion, null)
   assert.throws(() => harnessCapabilities('unknown'), /Unknown/)
 })
+
+test('SDK sandbox policy follows pinned capability while custom logical role identity remains distinct', async t => {
+  for (const [role, policyRole, readOnly] of [['implementer', 'developer', false], ['auditor', 'reviewer', true]]) {
+    await t.test(role, async t => {
+      const f = await fixture(t), session = f.rt.projectDelivery.sessionFor()
+      session.role = role; session.policyRole = policyRole
+      session.definition = { ...session.definition, role, policyRole }
+      f.rt.state.projectAgentDefinitions = { p: { revision: 1, roles: [session.definition] } }
+      f.rt.state.projectResourceLeases.l.role = role
+      f.rt.projectDelivery.ownsWorkspace('p', f.cwd).role = role
+      let resolve; const result = new Promise(done => { resolve = done })
+      f.harness.onResult(resolve)
+      const id = await f.harness.spawn({ executionProjectId: 'p', executionWorkDir: f.cwd, prompt: 'Execute the pinned capability contract' })
+      await f.harness.dispatch({ botId: id, brief: 'Inspect assigned work', inputs: {} })
+      await result; await f.harness.release(id)
+      const row = f.rt.state.projectHarnessWorkers[id]
+      const events = (await readFile(row.sealedLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line))
+      const debug = events.find(item => item.event?.type === 'debug')
+      assert.equal(debug.event.readOnly, readOnly)
+      assert.equal(row.role, role); assert.equal(row.policyRole, policyRole)
+      assert.equal(f.rt.state.projectTaskSessions[row.logicalSessionId].role, role)
+    })
+  }
+})

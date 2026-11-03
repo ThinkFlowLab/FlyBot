@@ -664,3 +664,13 @@ native binding/generation and actual Agent cancellation plus whenIdle before fre
 resources. Reuse SessionController rather than reading an uninjected agents service;
 real DSH caught that integration error while factory tests passed. Keep unknown old
 host execution held and retain the failed probe as evidence.
+
+
+### 2026-11-03 — Artifact responsibilities are not logical Bot names
+
+Seen 1× (approved custom-role regression). A new developer-capability role passed
+catalog governance but fixed-name policy/Workspace lookup prevented execution. Keep
+logical identity for Session, Workspace, lease and provenance; use the pinned capability
+for conventions, verification and SDK readOnly. Resolve artifact responsibilities
+explicitly on the Attempt instead of aliasing or duplicating Workspaces. Retired sources
+may finish retained claims, while new targets require the active catalog.

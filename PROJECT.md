@@ -32,8 +32,7 @@ Project convergence #2171 now adds explicit repository associations and non-dest
 Native execution convergence #2184 now adds matching physical Session bindings and observed
 Agent quiescence before Bot removal/resource release. Role retirement/capability changes
 cannot restart pinned execution under stale authority. Deterministic runtime acceptance
-and real-provider Task loops remain separate; this work is not deployed. Custom-role
-artifact verification and unknown native crash recovery remain active acceptance.
+and real-provider Task loops remain separate; this work is not deployed. Custom-role artifact verification and SDK capability policy now have actual Git/host-test and subprocess contract coverage. Unknown native crash recovery, in-flight revocation and the complete native return loop remain active acceptance.
 
 ## Fork Project State — 2026-10-31
 
