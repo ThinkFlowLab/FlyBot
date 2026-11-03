@@ -16,6 +16,8 @@ A host call on that page that throws, rejects, or never answers ends on the page
 
 A confirmation dialog the host refuses — Rename, Delete, Create, or Hand a task to a Workflow — keeps the dialog open and prints the host's own sentence inside the dialog as the **only** `role="alert"` for that refusal: while one of those four dialogs holds the sentence the section draws no `.wf-err` copy of it, because a live region behind the mask is still read out and one refusal would be announced twice (#2193, #2202, #2237). Opening any of the four clears the previous refusal; closing the assign dialog drops its refusal rather than leaving it on the page. A refusal with no dialog open still reports once on the page, and the success path is unchanged.
 
+With no Workflow defined, step 2 of **Hand a task to a Workflow** has no Workflow to default to and **Assign** stays disabled until a target is picked (the Bots in the same list are still offered), so a click can no longer post an empty `workflowId` the host answers with "No such workflow" (#2245).
+
 The **Add link** row applies the drawer's pair rule before it saves (#2173): a pair the graph already lists is a no-op, another kind over that same pair names the kind already there instead of submitting, and the **To** list marks the targets the chosen node already reaches. The host still refuses a duplicated pair — the form is what stops producing one.
 
 A Condition (`when`) or Loop (`until`) link takes its output name from the **From** node's declared `outputs` (#2178): the field is a select over exactly those names, **Add link** waits for one, and a node that declares none keeps the text box for an older graph. The host still refuses a name it cannot honour — `cleanWhen` and `PORT_RE` are unchanged.

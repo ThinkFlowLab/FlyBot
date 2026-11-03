@@ -1433,7 +1433,10 @@ window.__ModuleLoader__.load({
         if (taskId && tasks.some(task => task.id === taskId)) return
         setTaskId(tasks[0].id)
       }, [tasks, taskId])
-      const canAssign = tasksStatus === 'ready' && tasks.some(task => task.id === taskId)
+      // #2245: with no Workflow defined `target` stays '', and the dialog used to light Assign
+      // anyway — the click then posted `workflowId: ''`, which the host answers with "No such
+      // workflow". A target has to exist before the button can be pressed.
+      const canAssign = tasksStatus === 'ready' && target !== '' && tasks.some(task => task.id === taskId)
       const seen = new Set()
       const bots = (roster?.bots ?? []).filter(bot => {
         if (!bot || bot.remote === true || !bot.id || !bot.name) return false
