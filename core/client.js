@@ -7624,6 +7624,15 @@ function useEscape(onClose) {
     };
   }, []);
 }
+function useDialogFocus(ref) {
+  (0, import_react11.useEffect)(() => {
+    const before = document.activeElement;
+    ref.current?.focus?.({ preventScroll: true });
+    return () => {
+      if (before && typeof before.focus === "function" && before.isConnected) before.focus({ preventScroll: true });
+    };
+  }, []);
+}
 function usePaneLeft() {
   const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
   (0, import_react11.useLayoutEffect)(() => {
@@ -19141,6 +19150,8 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
   const [error, setError] = (0, import_react42.useState)("");
   const close = (0, import_react42.useCallback)(() => actions.closeSettings(), []);
   useEscape(close);
+  const dialog = (0, import_react42.useRef)(null);
+  useDialogFocus(dialog);
   const run = (promise) => Promise.resolve(promise).then(() => {
     setError("");
     return true;
@@ -19173,7 +19184,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
     (0, import_react42.createElement)("div", { className: "bt-scrim", onMouseDown: close }),
     (0, import_react42.createElement)(
       "div",
-      { className: "bt-settings", role: "dialog", "aria-modal": true, "aria-label": t("FlyBot settings"), "data-wide": shown === "usage" ? "" : void 0 },
+      { className: "bt-settings", role: "dialog", "aria-modal": true, "aria-label": t("FlyBot settings"), "data-wide": shown === "usage" ? "" : void 0, tabIndex: -1, ref: dialog },
       (0, import_react42.createElement)(
         "nav",
         { ref: nav.box, className: "bt-settings-nav", "aria-label": t("Settings pages") },

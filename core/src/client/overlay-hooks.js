@@ -20,6 +20,16 @@ export function useEscape(onClose) {
   }, [])
 }
 
+// A dialog takes focus when it opens, so Tab starts inside it and Escape reaches it,
+// and gives that focus back to the still-connected opener when it closes (#2251, #274).
+export function useDialogFocus(ref) {
+  useEffect(() => {
+    const before = document.activeElement
+    ref.current?.focus?.({ preventScroll: true })
+    return () => { if (before && typeof before.focus === 'function' && before.isConnected) before.focus({ preventScroll: true }) }
+  }, [])
+}
+
 // New chat and Bot exchanges show in place of the conversation, right of the sidebar.
 export function usePaneLeft() {
   const [paneLeft, setPaneLeft] = useState(280)
