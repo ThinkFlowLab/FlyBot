@@ -218,12 +218,32 @@ const CLAUSE = /[.;:!?—–\n]/
 // answer when it carries a phrase that never sits in a plain yes, or when it opens with a condition word.
 // Ordinary trailing talk still clears: "you may merge this tip now; I am back after lunch if anything
 // breaks" opens with "I", which is why the broad vocabulary above is not used here.
-const WITHHELD = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on)\b/i
+// FlyBot Test on #2288 (2026-11-03) found seven more of those phrases clearing the hold — "upon the second
+// reader's approval", "whenever …", "should …", "contingent on …", "following …", "on condition that …" —
+// plus a bare negation anywhere in the clause ("the second reader has not re-run it"), which the
+// opening-word rule read only at its start. `no objections` and `nothing else waits on it` stay clear: a
+// word boundary keeps `not` inside them from matching.
+const WITHHELD = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on|upon|whenever|should|contingent (?:on|upon)|dependent (?:on|upon)|prior to|following|in the event|on condition that|not|never)\b|n['’]t\b/i
 const WITHHELD_LEADING = /^[\s>*+\-–—(\[]*(?:only|after|once|until|unless|if|when|before|pending|not|never|cannot|n['’]t|provided|providing|assuming)\b/i
+// P-489 (Product, 2026-11-03): the clause *before* the lift is read too. A condition split off with `—`, `:`,
+// `.` or a line break sat one clause away from the yes, and the answer cleared a hold it withholds: "If the
+// second reader signs off — you may merge this tip now". This opening set is narrower than `WITHHELD` because
+// `not` and `only` open ordinary prose here ("Not sure — you may merge"), while a negation anywhere else in
+// that clause still withholds it — the reading `WITHHELD` gives a clause after the lift. `once more` and
+// `once again` are timing, not a condition, so the lookahead keeps them out.
+const WITHHELD_OPENING = /^[\s>*+\-–—(\[]*(?:if|unless|provided|providing|assuming|pending|when|after|before|until|once(?!\s+(?:more|again)\b))\b/i
+// A leading negation there is the answer's own voice ("Not sure", "Never mind"), not a condition on it; the
+// same word anywhere else in the clause is one. So a negation first in the clause falls through to the
+// opening-word test with it removed, which still catches `not until` / `not unless` there.
+const LEADING_NEGATION = /^[\s>*+\-–—(\[]*(?:not|never|cannot|n['’]t)\b/i
+const withholdsBefore = (clause) => (WITHHELD.test(clause) && !LEADING_NEGATION.test(clause))
+  || WITHHELD_OPENING.test(clause.replace(LEADING_NEGATION, ''))
 const unconditionalLift = (text) => {
   if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
   const clauses = text.split(CLAUSE)
   if (clauses.some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))) return false
+  const liftAt = clauses.findIndex((clause) => LIFT_REQUEST.test(clause))
+  if (liftAt > 0 && withholdsBefore(clauses[liftAt - 1])) return false
   let afterLift = false
   for (const clause of clauses) {
     if (afterLift && (WITHHELD.test(clause) || WITHHELD_LEADING.test(clause))) return false

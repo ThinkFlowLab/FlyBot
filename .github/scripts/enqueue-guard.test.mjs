@@ -1340,6 +1340,62 @@ test('#2287 k10-k15: a condition in the clause after the lift keeps the hold', (
   }
 })
 
+// FlyBot Test on #2288, 2026-11-03: the clause-after vocabulary still missed seven ways a yes is made
+// conditional, and a bare negation inside that clause ("has not re-run it") was read only at its start.
+// Each is its own test so a hole in the vocabulary fails by name.
+for (const [id, body, at] of [
+  [16, "You may merge this tip — upon the second reader's approval.", '2026-11-03T08:20:00Z'],
+  [17, 'You may merge this tip — whenever the second reader agrees.', '2026-11-03T08:20:01Z'],
+  [18, 'You may merge this tip — should the second reader agree.', '2026-11-03T08:20:02Z'],
+  [19, 'You may merge this tip — contingent on the second reader.', '2026-11-03T08:20:03Z'],
+  [20, "You may merge this tip — following the second reader's re-run.", '2026-11-03T08:20:04Z'],
+  [21, 'You may merge this tip — on condition that the second reader agrees.', '2026-11-03T08:20:05Z'],
+  [22, 'You may merge this tip — the second reader has not re-run it.', '2026-11-03T08:20:06Z'],
+]) {
+  test(`#2287 k${id}: a yes conditional in the clause after the lift keeps the hold`, () => {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${id} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${id} keeps the original hold`)
+  })
+}
+
+// P-489 (Product, 2026-11-03): the clause BEFORE the lift was read only when it carried a lift phrase of
+// its own, so a condition split off with `—`, `:`, `.` or a line break sat one clause away and the yes
+// cleared the hold it withholds — the mirror of k10-k15. Each case is its own test so a hole in the opening
+// set fails by name.
+for (const [id, body, at] of [
+  [23, 'If the second reader signs off — you may merge this tip now.', '2026-11-03T09:10:00Z'],
+  [24, 'Only after the second reader re-runs. You may merge this tip.', '2026-11-03T09:10:01Z'],
+  [25, 'Once the second reader re-runs: you may merge this tip.', '2026-11-03T09:10:02Z'],
+  [26, 'Pending the second reader — you may merge this tip now.', '2026-11-03T09:10:03Z'],
+  [27, 'Provided the second reader lands. You may merge this tip.', '2026-11-03T09:10:04Z'],
+  [28, 'Unless the second reader objects — you may merge this tip now.', '2026-11-03T09:10:05Z'],
+  [29, 'Not until the second reader re-runs — you may merge this tip now.', '2026-11-03T09:10:06Z'],
+  [30, 'Only after the second reader re-runs\nyou may merge this tip.', '2026-11-03T09:10:07Z'],
+]) {
+  test(`#2287 k${id}: a condition in the clause before the lift keeps the hold`, () => {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${id} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${id} keeps the original hold`)
+  })
+}
+
+// The other direction, so the new read cannot swallow an ordinary yes: a clause before the lift that opens
+// with an ordinary word, or with a negation that is the answer's own voice ("Not sure"), is not a condition
+// on it. `once more` / `once again` are timing, not a clause of their own.
+test('#2287 c9-c12: a preceding clause that is not a condition still clears the hold', () => {
+  for (const [i, body, at] of [
+    [9, 'Not sure — you may merge this tip now.', '2026-11-03T09:10:10Z'],
+    [10, 'Once more: you may merge this tip.', '2026-11-03T09:10:11Z'],
+    [11, 'Re-read once more — you may merge this tip.', '2026-11-03T09:10:12Z'],
+    [12, 'All green after the fix — you may merge this tip.', '2026-11-03T09:10:13Z'],
+  ]) {
+    const r = ordinaryYes(body, at)
+    assert.equal(r.ok, true, `c${i} is an ordinary yes: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest, null, `c${i} clears the hold`)
+  }
+})
+
 test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
   const conditional = note({
     id: 6597499999,
