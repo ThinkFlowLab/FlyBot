@@ -17,10 +17,13 @@
 // A `pull_request`-time result is never reused: on #610 the tip report ran at 10:31:08Z and the INC
 // landed at 11:24:37Z, 54 minutes later, so the verdict is re-read here, live, for this head.
 //
-// A review's `state` is deliberately not read. The account cannot approve its own pull requests, so
-// its reviews stay `COMMENTED` even when it says INC, and the INC on #610 was a comment, not a review.
-// A body that carries only a `## Review —` heading and no `Verdict:` line is "no conclusion", which
-// refuses: the refusal direction never depends on reading more of the text than `decide` does.
+// A review's `state` is read, but only as a stop request (#2119): "Request changes" with no body is the
+// one refusal a person writes without typing, and it is a stop whichever box it was typed in. The state
+// is still not a conclusion. The account cannot approve its own pull requests, so its reviews stay
+// `COMMENTED` even when it says INC, and the INC on #610 was a comment, not a review — a `COMMENTED`
+// review with no body is not a stop either. A body that carries only a `## Review —` heading and no
+// `Verdict:` line is "no conclusion", which refuses: the refusal direction never depends on reading
+// more of the text than `decide` does.
 import { appendFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -221,8 +224,10 @@ export function main({ gh = realGh, env = process.env, repo: repoOption, pr: prO
   const reports = [
     ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ id: c.id, kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association })),
     ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
-      .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ id: v.id, kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
+      // #2119: a review's state is part of the record, and an empty body must not drop the row — "Request
+      // changes" is the one refusal a person writes without typing. The text readers see `''` and find no
+      // sentence, so the row adds a request and never a conclusion.
+      .map((v) => ({ id: v.id, kind: 'review', state: v.state, login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association })),
     // #2091: a comment written on one line of the diff is a third place a person can write, and the stop
     // request is read from all three. `kind: 'review-comment'` keeps it out of the conclusion readers
     // (`isConclusionSource`), which is the half that does not change: it is a request, never a verdict.

@@ -287,17 +287,51 @@ export function stopRequestAt(reports, { author, since } = {}) {
     .filter(({ r }) => !parseReport(r?.body).verdict || responseOnly(r?.body))
     .filter(({ t }) => after == null || t > after)
     .sort((a, b) => a.t - b.t || a.i - b.i)
-  let stop = null
-  for (const { r } of rows) {
+  // Two kinds of request, kept apart because they are answered by different things: a body that asks not
+  // to merge (`written`) is answered in writing, while a review that asked for changes (`stateStop`) is
+  // answered by a review. The review UI does not answer a comment, so one may not erase the other.
+  let written = null
+  let stateStop = null
+  for (const { r, i, t } of rows) {
     const text = withoutQuotes(r.body)
-    const phrase = STOP_REQUEST.exec(text)?.[0] ?? HOLD_LINE.exec(text)?.[0]
-    if (phrase) {
-      stop = { id: r.id, login: r.login, at: r.at ?? null, phrase: phrase.trim() }
+    const state = String(r?.state ?? '').toUpperCase()
+    // #2119: "Request changes" is a request with no sentence in it, so the review's own state is read
+    // before its text — with a body or without one, the review's id is the handle and its state is what
+    // it asked for. It is read only here: a review body is still a conclusion when it carries a
+    // `Verdict:` (the filter above), and the state never makes one. It replaces only an earlier state
+    // request: a request written as a comment is still standing (#2119, review 2026-11-02).
+    if (state === 'CHANGES_REQUESTED') {
+      stateStop = { id: r.id, login: r.login, at: r.at ?? null, phrase: 'asked for changes', kind: 'review', because: 'state', t, i }
       continue
     }
-    if (stop && unconditionalLift(text)) stop = null
+    // The answers a state request takes: the same login's later approval, or the dismissal of the
+    // review. Only a state request is cleared this way — a written request is still answered in
+    // writing or by a corrected tip (#602, 2026-11-01) — and only a later row, because `rows` is
+    // sorted by the time GitHub recorded.
+    if (stateStop && (state === 'APPROVED' || state === 'DISMISSED')
+      && String(r?.login ?? '').toLowerCase() === String(stateStop.login ?? '').toLowerCase()) {
+      stateStop = null
+      continue
+    }
+    const phrase = STOP_REQUEST.exec(text)?.[0] ?? HOLD_LINE.exec(text)?.[0]
+    if (phrase) {
+      written = { id: r.id, login: r.login, at: r.at ?? null, phrase: phrase.trim(), t, i }
+      continue
+    }
+    // The lift is a person saying this tip may merge, without saying which kind of request they wrote
+    // before: it answers both. `unconditionalLift` is main's reading of that sentence (#2246): a lift
+    // that names a condition, or that a preceding clause withholds, answers nothing.
+    if ((written || stateStop) && unconditionalLift(text)) {
+      written = null
+      stateStop = null
+    }
   }
-  return stop
+  // Both may stand at once, and the later one is the request a reader has to answer next. `rows` is
+  // sorted, so `t` (then the source index, for two rows in the same second) says which is later.
+  if (!written) return stateStop
+  if (!stateStop) return written
+  const later = stateStop.t > written.t || (stateStop.t === written.t && stateStop.i > written.i)
+  return later ? stateStop : written
 }
 
 // Where the window opens: the timestamp of the conclusion this decision used (#1112 gives it an id, the
@@ -462,7 +496,10 @@ export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, 
   // #602 (2026-11-01): the stop request in the comments, read after the conclusion this decision used. A
   // merged pull request is history, not a request — this check runs again on every comment (#926, #943).
   const stop = merged ? null : stopRequestAt(reports, { author, since: conclusionAt(reports, result.verdict) })
-  if (stop) reasons.push(`a comment asks not to merge this pull request: comment ${stop.id ?? 'without an id'} by ${stop.login} at ${stop.at ?? 'no time'} says "${stop.phrase}" — clear it on the record with a newer comment that lets this tip merge, or push a corrected tip that earns its own PASS`)
+  // #2119: a review that asked for changes carries no sentence to quote, so the refusal names the
+  // review and what it asked for, and says how to answer a state rather than a text.
+  if (stop?.because === 'state') reasons.push(`review ${stop.id ?? 'without an id'} by ${stop.login} asked for changes${stop.at ? ` at ${stop.at}` : ''} — answer it with a later approving review or a dismissal, or push a corrected tip that earns its own PASS`)
+  else if (stop) reasons.push(`a comment asks not to merge this pull request: comment ${stop.id ?? 'without an id'} by ${stop.login} at ${stop.at ?? 'no time'} says "${stop.phrase}" — clear it on the record with a newer comment that lets this tip merge, or push a corrected tip that earns its own PASS`)
   // Two exemptions, both about what the pull request is rather than how risky it is. A mechanical release
   // PR carries neither an issue nor the label by design — it is the routine's own daily output under the
   // standing approval (AGENTS.md 6). A fork is not ours: its head cannot be pushed by us, and the owner runs
