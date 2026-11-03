@@ -42,6 +42,7 @@ const SOURCES = { turn: 'Model call', host: 'FlyBot', api: 'FlyBot', browser: 'T
 export function FeedbackPage({ actions, run, Section, Row }) {
   const [what, setWhat] = useState('')
   const [report, setReport] = useState(null)
+  const [allErrors, setAllErrors] = useState(false)
   const [preview, setPreview] = useState(false)
   const [note, setNote] = useState('')
   // Each action reads the report again, so it holds errors from the last few seconds.
@@ -87,7 +88,9 @@ export function FeedbackPage({ actions, run, Section, Row }) {
   const browserErrors = report ? clientErrors().map(entry => ({ ...entry, source: 'browser' })) : []
   const entries = [...(report?.entries ?? []), ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time))
   const total = (report?.total ?? 0) + browserErrors.length
-  const shown = entries.slice(0, 8)
+  // The list opens with eight errors; anything past them waits behind one control, so a
+  // burst of failures does not push the download and clear buttons off the page.
+  const shown = allErrors ? entries : entries.slice(0, 8)
   return [
     h(Section, { key: 'report', title: t('Report a problem') },
       h('div', { className: 'bt-set-row bt-set-paste bt-fb-what' },
@@ -113,6 +116,13 @@ export function FeedbackPage({ actions, run, Section, Row }) {
               h('span', { className: 'bt-fb-text' }, entrySummary(entry)),
               h('span', { className: 'bt-set-hint' }, [whenText(entry.time), entry.bot, entry.where, t(SOURCES[entry.source] ?? 'FlyBot')].filter(Boolean).join(' · '))),
             entry.code ? h('span', { className: 'bt-tag bt-fb-code' }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null)),
+      entries.length > 8
+        ? h('div', { key: 'more', className: 'bt-set-row bt-fb-more-row' },
+            h('button', {
+              type: 'button', className: 'bt-soft bt-soft-sm bt-fb-more', 'aria-expanded': allErrors,
+              onClick: () => setAllErrors(!allErrors),
+            }, t(allErrors ? 'Show less' : 'Show more')))
+        : null,
       h(Row, { label: t('Error log'), hint: t('Kept on this computer across restarts, up to about 1 MB.') },
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: downloadLog }, t('Download')),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: clearLog, disabled: !report || total === 0 }, t('Clear')))),
