@@ -1468,7 +1468,13 @@ window.__ModuleLoader__.load({
       const targetLane = targetBot ? null : workflows.find(item => item.id === target)
       const laneProject = targetLane ? projectName(targetLane.projectId) : ''
       const targetName = targetBot ? targetBot.name : targetLane ? (laneProject ? `${targetLane.name} · ${laneProject}` : targetLane.name) : ''
-      const shownTasks = tasksExpanded ? tasks : tasks.slice(0, ASSIGN_VISIBLE)
+      // P-465: expanding the list, picking a card past the twelfth and collapsing again used to
+      // drop the picked card out of the drawn rows — no row carried `sel` while Assign still sent
+      // it. The collapsed slice keeps the picked card in it, first, and the count row is unchanged.
+      const pickedIndex = tasks.findIndex(task => task.id === taskId)
+      const shownTasks = tasksExpanded ? tasks : pickedIndex >= ASSIGN_VISIBLE
+        ? [tasks[pickedIndex], ...tasks.slice(0, ASSIGN_VISIBLE - 1)]
+        : tasks.slice(0, ASSIGN_VISIBLE)
       const shownBots = botsExpanded ? bots : bots.slice(0, ASSIGN_VISIBLE)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Hand a task to a Workflow') },

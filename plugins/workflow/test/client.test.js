@@ -4574,3 +4574,54 @@ test('#2256: a lane within one page draws no more-row and keeps its held block a
     document.body = prevBody
   }
 })
+// #2257: twenty cards open as twelve with a "Show 8 more cards" row. Expanding, picking the
+// twentieth and collapsing again dropped the picked card out of the twelve drawn rows: no row
+// carried `sel`, and Assign still submitted that invisible card. The collapsed slice now keeps
+// the picked card in it, first, so the list always shows what the button is about to send.
+const selCards = cards => cards.filter(card => String(card.props?.className ?? '').split(' ').includes('sel'))
+const cardTitle = card => textOf(findAll(card, node => String(node.props?.className ?? '') === 'wf-tt')[0])
+
+test('#2257: collapsing the card list keeps the picked card in view', async () => {
+  await withBoardHost(assignBoard(20), async () => {
+    const ui = await openAssignWith({ roster: { bots: [] } })
+    try {
+      ui.moreRow('tasks').props.onClick()
+      await settle()
+      const twentieth = ui.cards().find(card => textOf(card).includes('Board card 20'))
+      assert.ok(twentieth, 'precondition: the twentieth card is reachable when expanded')
+      twentieth.props.onClick()
+      await settle()
+      assert.equal(selCards(ui.cards()).length, 1, 'precondition: the twentieth card is the picked one')
+      ui.moreRow('tasks').props.onClick()
+      await settle()
+      const cards = ui.cards()
+      assert.equal(cards.length, 12, 'the collapsed list still draws twelve cards')
+      const picked = selCards(cards)
+      assert.equal(picked.length, 1, 'exactly one drawn card is marked as picked')
+      assert.ok(textOf(picked[0]).includes('Board card 20'), `the marked card is the picked one, saw ${textOf(picked[0])}`)
+      assert.equal(cards.indexOf(picked[0]), 0, 'the picked card is drawn first')
+      assert.equal(textOf(ui.moreRow('tasks')), 'Show 8 more cards', 'the count of cards not shown is unchanged')
+      assignOf(dialogOf(ui.view)).props.onClick()
+      await settle()
+      assert.equal(ui.posted().length, 1, 'one assign is posted')
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20' }, 'the submit body is unchanged')
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2257: a pick inside the twelve rows leaves the list exactly as today', async () => {
+  await withBoardHost(assignBoard(20), async () => {
+    const ui = await openAssignWith({ roster: { bots: [] } })
+    try {
+      const open = ui.cards()
+      assert.deepEqual(open.map(cardTitle), assignBoard(12).map(card => card.title), 'the default view is the first twelve cards in board order')
+      assert.deepEqual(selCards(open).map(cardTitle), ['Board card 1'], 'the first card is picked by default')
+      ui.cards().find(card => textOf(card).includes('Board card 5')).props.onClick()
+      await settle()
+      const cards = ui.cards()
+      assert.deepEqual(cards.map(cardTitle), assignBoard(12).map(card => card.title), 'picking inside the twelve leaves the same twelve cards in the same order')
+      assert.deepEqual(selCards(cards).map(cardTitle), ['Board card 5'], 'only the picked fifth card is marked')
+      assert.equal(textOf(ui.moreRow('tasks')), 'Show 8 more cards', 'the count of cards not shown is unchanged')
+    } finally { ui.view.unmount() }
+  })
+})
