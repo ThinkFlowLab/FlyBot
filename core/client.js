@@ -19450,6 +19450,7 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
   const isMainBot = isMainOf(roster, menu.id);
   const isTile = roster.mainBotId === menu.id;
   const mainCount = (roster.mainBotIds ?? []).length;
+  const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   const groups = bot?.remote ? [
     [
       [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
@@ -19461,26 +19462,26 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
     [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]]
   ] : [
     [
-      isTile ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
+      isTile || locked ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
       [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
     ],
     [
       // One way to edit a Bot (#385): its name is edited in Edit Bot too.
       bot ? [t("Edit Bot"), GearIcon, () => actions.openSettings("bots", bot.id)] : null,
       room2 ? [t("Group settings"), GearIcon, () => actions.openSettings("groups", room2.id)] : null,
-      room2 ? [t("Rename group"), PencilIcon, () => actions.renameBot(room2.id)] : null,
-      bot ? [t("Duplicate"), DuplicateIcon, async () => {
+      room2 && !locked ? [t("Rename group"), PencilIcon, () => actions.renameBot(room2.id)] : null,
+      bot && !locked ? [t("Duplicate"), DuplicateIcon, async () => {
         const copy2 = await actions.duplicateBot(bot.id);
         actions.openSession(copy2.id);
       }] : null,
-      bot && !isMainBot ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
-      bot && isMainBot && mainCount > 1 ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
+      bot && !isMainBot && !locked ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
+      bot && isMainBot && mainCount > 1 && !locked ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
     ],
     bot ? pluginItems(structure, bot, actions, roster).map(([label, run]) => [label, LinkIcon, run]) : [],
     [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
     [
-      isMainBot ? null : [t("Hide from sidebar"), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
-      isMainBot ? null : [room2 ? t("Delete group") : t("Delete"), TrashIcon, () => bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id), true]
+      isMainBot || locked ? null : [t("Hide from sidebar"), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],
+      isMainBot || locked ? null : [room2 ? t("Delete group") : t("Delete"), TrashIcon, () => bot ? actions.deleteBot(bot.id) : actions.deleteRoom(menu.id), true]
     ]
   ];
   const shown = groups.map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
