@@ -17,7 +17,7 @@ The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/cl
 - Read-only banner: when another dsh holds the team (`roster.readOnly` a non-empty string), the sidebar draws the host's own sentence and, beside it, one **Reload** control in both shapes (wide and rail; the control stays outside the `role="status"` line so a live region remains text). It calls `actions.reloadTeam`, which re-reads the whole team (`state` without `since`, see `stateRequest` / `stateAnswerIsStale` in `sources.js`) so the banner and every refused control clear once the other holder let go, without a page reload that would drop what is in the composer. Tests: `core/test/sidebar-readonly-reload.test.js`, `core/test/client-reload-state.test.js`.
 - Chat context rows: a tool the plugin registers at install draws one `tool-addition` row, and `cells.js` keeps every name in `TEAM_TOOLS` out of the chat (`SILENT_REGISTRATION_TOOLS`, #1101) — the Project Assistant's `project_digest` joins them (#1712), so its 09:00 Session shows the digest, not its registration.
 - A Settings dialog takes focus when it opens (`useDialogFocus` in `core/src/client/overlay-hooks.js`; the `.bt-settings` dialog carries `tabIndex -1` and a ref) and gives it back to the still-connected opener when it closes; it is not a focus trap, so Tab can still leave the dialog for the page behind the scrim (#2251).
-
+- Settings → Feedback's error list (`feedback.js`) still titles the block with the whole log (`Recent errors · 60`) but lists only the newest eight, so when the report holds more rows one `Show more` control (`aria-expanded`) sits under them and draws every loaded error, folding back to `Show less`; a report of eight or fewer draws no control (#2266).
 
 ## Does not own
 

@@ -18677,6 +18677,7 @@ var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "Thi
 function FeedbackPage({ actions, run, Section, Row: Row4 }) {
   const [what, setWhat] = (0, import_react40.useState)("");
   const [report, setReport] = (0, import_react40.useState)(null);
+  const [allErrors, setAllErrors] = (0, import_react40.useState)(false);
   const [preview, setPreview] = (0, import_react40.useState)(false);
   const [note, setNote] = (0, import_react40.useState)("");
   const fetchReport = () => actions.diagnostics({ client: clientFacts(), clientErrors: clientErrors() }).then((next) => {
@@ -18718,7 +18719,7 @@ function FeedbackPage({ actions, run, Section, Row: Row4 }) {
   const browserErrors = report ? clientErrors().map((entry) => ({ ...entry, source: "browser" })) : [];
   const entries2 = [...report?.entries ?? [], ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time));
   const total = (report?.total ?? 0) + browserErrors.length;
-  const shown = entries2.slice(0, 8);
+  const shown = allErrors ? entries2 : entries2.slice(0, 8);
   return [
     (0, import_react40.createElement)(
       Section,
@@ -18768,6 +18769,16 @@ function FeedbackPage({ actions, run, Section, Row: Row4 }) {
         ),
         entry.code ? (0, import_react40.createElement)("span", { className: "bt-tag bt-fb-code" }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null
       )),
+      entries2.length > 8 ? (0, import_react40.createElement)(
+        "div",
+        { key: "more", className: "bt-set-row bt-fb-more-row" },
+        (0, import_react40.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm bt-fb-more",
+          "aria-expanded": allErrors,
+          onClick: () => setAllErrors(!allErrors)
+        }, t(allErrors ? "Show less" : "Show more"))
+      ) : null,
       (0, import_react40.createElement)(
         Row4,
         { label: t("Error log"), hint: t("Kept on this computer across restarts, up to about 1 MB.") },
