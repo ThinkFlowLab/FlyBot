@@ -9733,6 +9733,9 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
         (0, import_react16.createElement)("input", { "aria-label": t("Task title"), placeholder: t("New task"), value: draft ?? "", onChange: (event) => onDraft?.(event.target.value) }),
         (0, import_react16.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm" }, t("Add task"))
       ) : null,
+      // #2273: the board is a 1080px overlay and covers the sidebar banner and the Settings hint,
+      // so the lock's own sentence is drawn here too, from the host, not in a second wording.
+      locked ? (0, import_react16.createElement)("p", { className: "bt-board-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
       (0, import_react16.createElement)(
         "div",
         { className: "bt-board-columns" },

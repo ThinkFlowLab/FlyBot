@@ -7,7 +7,7 @@ import { taskCard } from '../shared/board-card.js'
 import { BoardCard as BoardCardFrame, TASK_SKIN } from './board-card.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { relativeShort } from './text.js'
 
 const POLL_MS = 15_000
@@ -366,6 +366,9 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
       scope?.kind === 'bot' && onCreate && !locked ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
         h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
+      // #2273: the board is a 1080px overlay and covers the sidebar banner and the Settings hint,
+      // so the lock's own sentence is drawn here too, from the host, not in a second wording.
+      locked ? h('p', { className: 'bt-board-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
       h('div', { className: 'bt-board-columns' },
         ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
           key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag, archiveFull, locked,
