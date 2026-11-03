@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createProjectEffects } from '../src/host/project-effects.js'
 import { pinTaskRoleDefinition } from '../src/host/project-task-sessions.js'
 import { createProjectNativeSessions, nativeExitConfirmed } from '../src/host/project-native-sessions.js'
 function fixture() {
-  let cancelled = 0, archived = [], hold, failure = false
+  let cancelled = 0, archived = [], unarchived = [], hold, failure = false
   const session = { id: 'role-1', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', generation: 1, definition: { role: 'developer', instructions: 'Original convention' }, status: 'prepared' }
   const workspace = { id: 'workspace-1', path: '/registered/task', attemptId: 'a' }
   const agent = { session: { id: 'physical-1' }, status: 'idle', cancel() { cancelled++ }, async whenIdle() { if (hold) await hold; if (failure) throw Error('native drain failed') } }
   const rt = { state: { tasks: { t: { projectId: 'p' } }, bots: { bot1: { id: 'bot1', sessionId: 'physical-1', workspaceId: workspace.id, attemptId: 'a' } } },
-    ctx: { agents: { get: id => id === 'physical-1' ? agent : undefined }, workspaceRegistry: { async archiveSession(id) { archived.push(id) } } },
-    botOf(id) { return rt.state.bots[id] }, chatOf(id) { return rt.state.bots[id]?.sessionId ?? id }, indexSessions() {}, resolveAgent: async () => agent, save: async () => {} }
-  return { rt, session, workspace, agent, service: createProjectNativeSessions(rt), cancelled: () => cancelled, archived: () => archived, hold(value) { hold = value }, fail(value) { failure = value } }
+    ctx: { agents: { get: id => id === 'physical-1' ? agent : undefined }, workspaceRegistry: { async archiveSession(id) { archived.push(id) }, async unarchiveSession(id) { unarchived.push(id) } } },
+    botOf(id) { return rt.state.bots[id] }, chatOf(id) { return rt.state.bots[id]?.sessionId ?? id }, indexSessions() {}, resolveAgent: async () => agent, async save() { const captured = rt.projectEffects.capture(); rt.projectEffects.saved(captured) } }
+  rt.projectEffects = createProjectEffects(rt)
+  return { rt, session, workspace, agent, service: createProjectNativeSessions(rt), cancelled: () => cancelled, archived: () => archived, unarchived: () => unarchived, hold(value) { hold = value }, fail(value) { failure = value } }
 }
 test('native deletion or cancellation acknowledgement alone does not prove quiescence', async () => {
   const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1')
@@ -29,7 +31,10 @@ test('a fresh native carrier resumes only the exact latest released Task-role ph
   f.rt.state.bots.bot2 = { id: 'bot2', workspaceId: 'workspace-2', attemptId: 'a2' }
   const session = { ...f.session, id: 'role-2', attemptId: 'a2', status: 'prepared' }, workspace = { ...f.workspace, id: 'workspace-2', attemptId: 'a2' }
   const result = await f.service.bind(session, workspace, 'bot2')
+  await f.service.activate(session, 'bot2')
   assert.equal(result.sessionId, 'physical-1'); assert.deepEqual(f.archived(), ['bot2'])
+  assert.deepEqual(f.unarchived(), ['physical-1'], 'The original archived Session must be admitted by DSH only after exact binding')
+  assert.equal(f.rt.state.retiredSessions.bot2, 'bot2', 'Unused carrier Session stays managed and cannot become an unowned plain Session')
   assert.equal(f.rt.state.bots.bot1, undefined)
   assert.equal(f.rt.state.projectTaskSessions[Object.keys(f.rt.state.projectTaskSessions)[0]].bindings.length, 2)
 })
@@ -64,6 +69,7 @@ test('native restoration preserves current context parts and refuses a changed e
   await assert.rejects(f.service.bind(session, workspace, 'bot2'), /model changed/)
   delete f.rt.state.bots.bot2.model
   const result = await f.service.bind(session, workspace, 'bot2')
+  await f.service.activate(session, 'bot2')
   assert.equal(result.sessionId, 'physical-part-2')
   assert.deepEqual(f.rt.state.bots.bot2.segments, [{ sessionId: 'physical-1', endedAt: 1 }])
 })
@@ -120,4 +126,31 @@ test('native bind rechecks pinned current permissions and rejects a claim revoke
   assert.equal(g.rt.state.projectNativeWorkers, undefined)
   const h = fixture(); h.session.definitionRef = 'missing-definition'
   await assert.rejects(h.service.bind(h.session, h.workspace, 'bot1'), /definition is unavailable/)
+})
+
+
+test('a noncommitting native binding cannot lift archive admission or authorize new model input', async () => {
+  const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.stop('bot1'); delete f.rt.state.bots.bot1
+  f.rt.state.bots.bot2 = { id: 'bot2', workspaceId: 'workspace-2', attemptId: 'a2' }
+  const session = { ...f.session, id: 'role-2', attemptId: 'a2', status: 'prepared' }, workspace = { ...f.workspace, id: 'workspace-2', attemptId: 'a2' }
+  f.rt.save = async () => {} // Resolving is not evidence that the binding reached disk.
+  await f.service.bind(session, workspace, 'bot2')
+  assert.deepEqual(f.unarchived(), [], 'Uncommitted restoration must leave the original DSH archive gate intact')
+  assert.equal(f.service.admits('bot2'), false)
+  await assert.rejects(f.service.activate(session, 'bot2'), /commit/)
+  assert.deepEqual(f.unarchived(), [])
+})
+
+
+test('native activation needs committed binding and current writable epoch before input admission', async () => {
+  const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1')
+  assert.equal(f.service.admits('bot1'), false)
+  await f.service.activate(f.session, 'bot1')
+  assert.equal(f.service.admits('bot1'), true)
+  const restarted = createProjectNativeSessions(f.rt)
+  assert.equal(restarted.admits('bot1'), false, 'A previous host epoch cannot silently restart native input')
+  f.rt.readOnly = () => 'Another writer holds the home'
+  assert.equal(f.service.admits('bot1'), false)
+  await assert.rejects(f.service.activate(f.session, 'bot1'), /writable host/)
+  assert.equal(f.service.admits('unrelated-personal-chief'), true)
 })

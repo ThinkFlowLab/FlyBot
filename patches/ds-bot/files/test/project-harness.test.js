@@ -394,7 +394,8 @@ test('Harness capability inspection distinguishes SDK support, native limitation
     capabilities.taskRoleResume = false
     assert.equal(harnessCapabilities(harness).taskRoleResume, true)
   }
-  assert.equal(harnessCapabilities('flybot').taskRoleResume, false)
+  assert.equal(harnessCapabilities('flybot').taskRoleResume, true)
+  assert.equal(harnessCapabilities('flybot').exitConfirmation, 'native-agent-quiescence')
   assert.equal(harnessCapabilities('flybot').sdkVersion, null)
   assert.throws(() => harnessCapabilities('unknown'), /Unknown/)
 })

@@ -7,6 +7,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { mockModel } from './mock.mjs'
+import { nativePoolModel, checkNativePools } from './native-pools.mjs'
 import { checkLiveWorkbench } from './live-workbench.mjs'
 import { serveWorkbench } from './serve.mjs'
 import { checkWorkbench } from './workbench.mjs'
@@ -43,6 +44,8 @@ async function waitFor(read, label, milliseconds = 90_000) {
 }
 
 async function main() {
+  const nativePools = process.argv.includes('--native-pools')
+  const nativeModel = nativePools ? nativePoolModel() : null
   const agents = process.argv.includes('--agents')
   const serve = process.argv.includes('--workbench-serve')
   const live = process.argv.includes('--live-check')
@@ -53,7 +56,7 @@ async function main() {
   const requestStop = () => shutdown.abort()
   if (serve) { process.on('SIGINT', requestStop); process.on('SIGTERM', requestStop) }
   const queue = process.argv.includes('--queue')
-  const delivery = process.argv.includes('--delivery') || queue || workbench || Boolean(codex)
+  const delivery = nativePools || process.argv.includes('--delivery') || queue || workbench || Boolean(codex)
   const githubRepository = process.argv.includes('--github-repo') ? process.argv[process.argv.indexOf('--github-repo') + 1] : undefined
   const githubConfigDir = process.argv.includes('--github-config-dir') ? process.argv[process.argv.indexOf('--github-config-dir') + 1] : undefined
   if (githubRepository && (!delivery || !githubConfigDir)) throw new Error('GitHub demo requires --delivery and explicit --github-config-dir')
@@ -85,7 +88,7 @@ async function main() {
       '@deepseek-ai/dsh-base': '0.2.1-rc.2', '@deepseek-ai/dsh-web-app': '0.2.1-rc.2' },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'ds-bot', '@flybot/workflow'] } } }))
   const observations = []
-  const model = mockModel(observations, { reply: workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined })
+  const model = mockModel(observations, { reply: nativeModel?.reply ?? (workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined) })
   model.listen(0, '127.0.0.1')
   await once(model, 'listening')
   const port = await freePort()
@@ -101,11 +104,12 @@ async function main() {
   if (shared || delivery || agents) {
     patch = join(directory, 'shared.patch.yml')
     const botConfig = { projectWorkbench: true,
+      ...(nativePools ? { projectResources: { 'native-local': { type: 'local', root: directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['flybot'] } } } : {}),
       ...(codex ? { projectResources: { 'codex-local': { type: 'local', root: directory, capacity: 3, nodePath: process.execPath, allowedProjectOwnerIds: ['owner-1'], adminMemberIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: codex.home, configDir: codex.configDir, model: codex.model } } } } } } : {}),
       ...(workbench && !live ? { projectResources: { 'demo-local': { type: 'local', root: directory, profileRoot: join(directory, 'private-sdk-profiles'), capacity: 2,
         allowedProjectOwnerIds: ['owner-1'], adminMemberIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'fixture-sdk-probe', baseUrl: 'http://127.0.0.1:1' } } } } } } : {}), ...(workbench ? { projectDemoMode: realModel ? 'real-provider' : 'deterministic-fixture' } : {}),
       ...(shared ? { controlPlane: { origin: shared.origin, ownerSubject: shared.ownerSubject } } : {}),
-      ...(delivery ? { projectDispatch: 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs'], allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
+      ...(delivery ? { projectDispatch: nativePools ? 'pools' : 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs'], allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
     writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 })
   }
   const child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
@@ -171,6 +175,10 @@ async function main() {
     }
     if (queue) {
       console.log(JSON.stringify(await checkQueue({ api, call, saved, waitFor })))
+      return
+    }
+    if (nativePools) {
+      console.log(JSON.stringify(await checkNativePools({ api, saved, waitFor, repository: workspace, model: nativeModel })))
       return
     }
     if (delivery) {

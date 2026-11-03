@@ -478,3 +478,6 @@ Native Sessions now use the existing Task-role binding service through projectDe
 
 
 New v7/pools-v4 Attempts distinguish logical role keys from developer/tester/reviewer capability classes. `roleAssignments` maps each artifact responsibility to the actual logical producer; Workspaces, Sessions, leases and execution evidence remain keyed by that logical role. Implementation/test/review evidence records its producer and role Session. Artifact sealing, host tests, Review, publication/retry and SDK proof validation resolve those assignments; no duplicate Workspace aliases or rewritten historical records are introduced. Historical Attempts without assignments retain default-role behavior. A custom Developer gets its own local branch while the canonical publication branch remains stable. The artifact-controller regression uses actual Git edits, configured host tests and a labelled fixture publisher; it does not claim signed Review or a whole bot loop.
+
+
+Native host creation now prepares the exact context binding, invokes the existing Session/resource bind, then activates through a committed native.activate Effects marker. This orders all lease/carrier/Session metadata before archive admission or model input. The existing pre-step middleware closes startup/inbox bypasses for uncommitted or obsolete native bindings; ordinary Bots are unaffected.

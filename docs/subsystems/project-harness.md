@@ -293,7 +293,22 @@ Factory tests cover exact restoration/parts, concurrency, stale claims, model/cw
 and unknown exit. They do not establish a real-provider canonical pool return loop.
 Custom-role artifact verification, native crash reconciliation, in-flight capability
 revocation and the final composed service acceptance remain tracked under #2184.
-The public native-resume capability remains conservative until the whole loop is tested.
+The capability query now advertises native Task-role resume and native-agent-quiescence exit confirmation for exact supported bindings; unknown exit still refuses continuation.
 
 
 Approved custom roles now pin `policyRole` on their Session and SDK worker record. Native/SDK Workspace ownership accepts an approved capability while preserving logical role identity. Codex writable roots and SDK readOnly derive from the pinned capability, not a literal Bot name. Repository source overrides prefer the logical role and otherwise inherit its capability's complete rules; the custom policy hash records both, while default policy bytes remain compatible. SDK subprocess contract tests inspect actual transmitted readOnly settings for a custom Developer and Reviewer; they are deterministic workers, not provider execution.
+
+
+The actual DSH `--native-pools` probe now executes Developer → Tester return → original Developer → Tester → Chief inbox with one native resource. It verifies a fresh carrier restores the same physical Session/cwd and a marker present only in the prior conversation, two real code revisions, configured host tests and nonoverlapping released leases. Exact restoration explicitly unarchives the prior Session through the existing Workspace registry after the new binding is saved; DSH otherwise rejects archived Sessions before their first model step. The unused fresh carrier Session remains managed/tombstoned. Inference is deterministic; Chief closure/provider/forge completion are not claimed.
+
+
+Native activation is separate from provisional binding. After the original Session bind
+records the native resource worker, `native.activate` stages and persists an Effects
+marker with the exact Task/Attempt/Session/binding/generation. Only confirmed commit
+allows input or lifts archive admission. A resolving noncommitting save is not evidence;
+its regression leaves the old Session archived and native input fenced. The existing
+DSH pre-step hook also rejects unactivated, previous-host-epoch, stopping/released or
+read-only native work, including startup/inbox paths that bypass ordinary delivery.
+Unrelated personal Chief/group Bots retain their original admission behavior. No new
+executor or polling timer is involved. Current-role in-flight abort/reconciliation and
+unknown old-host exit remain separate tracked acceptance.

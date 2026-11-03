@@ -23,7 +23,7 @@ Implement the 2026-11-02 convergence issues sequentially: Project boundaries, in
 
 Original #2184 follow-up adds native Task-role restoration metadata, cancellation/quiescence
 proofs and canonical-pool cwd retention. Custom-role verification now has direct artifact/SDK contract regressions; finish current-rights
-in-flight stop/reconcile and the composed native return loop before propagating the
+in-flight stop/reconcile and real-provider native acceptance before propagating the
 execution ancestor through collaboration/context/Task/state/API branches.
 
 ## Active fork roadmap — 2026-10-31

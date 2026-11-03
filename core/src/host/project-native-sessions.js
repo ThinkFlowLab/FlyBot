@@ -17,6 +17,7 @@ export function createProjectNativeSessions(rt) {
   const rows = () => (rt.state.projectNativeWorkers ??= {})
   const stopping = new Map()
   const binding = new Set()
+  rt.projectEffects?.register('native.activate', { run: effect => ({ workerId: effect.payload.workerId, status: 'durable-native-binding' }) }, { replace: true })
   const bindingKey = (session, workspace) => digest({ projectId: session.projectId, taskId: session.taskId, role: session.role,
     harness: 'flybot', resourceId: session.resourceLease?.resourceId ?? null, cwd: workspace.path, definitionKey: roleDefinitionKey(session) })
   function previous(session, workspace) {
@@ -32,6 +33,7 @@ export function createProjectNativeSessions(rt) {
     return { logical, key, row }
   }
   async function authority(session) {
+    if (rt.readOnly?.() !== undefined) throw refuse('Native execution lost its writable host authority')
     const task = ownEntry(rt.state.tasks ?? {}, session.taskId)
     if (!task || task.projectId !== session.projectId) throw refuse('Native Task scope changed')
     if (session.poolClaimId) {
@@ -65,13 +67,15 @@ export function createProjectNativeSessions(rt) {
       const current = previous(session, workspace)
       if (current.row !== original || rt.botOf(botId) !== bot || session.status === 'released') throw refuse('Native resume binding changed while loading context')
       await rt.ctx.workspaceRegistry.archiveSession(sessionId, { stopActivity: true })
+      rt.state.retiredSessions ??= {}
+      setEntry(rt.state.retiredSessions, sessionId, botId)
       sessionId = original.sessionId
       bot.sessionId = sessionId
       bot.segments = clone(original.segments ?? [])
       rt.indexSessions?.()
     }
     const row = { id: botId, hostEpoch, version: 'project-native-worker/v1', projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId,
-      role: session.role, model: bot.model ?? null, logicalSessionId: selected.logical.id, sessionKey: session.id, sessionId, cwd: workspace.path, bindingKey: selected.key,
+      role: session.role, model: bot.model ?? null, ...(original ? { continuedFrom: original.id } : {}), logicalSessionId: selected.logical.id, sessionKey: session.id, sessionId, cwd: workspace.path, bindingKey: selected.key,
       definitionKey: roleDefinitionKey(session), generation: session.resourceLease?.generation ?? session.generation ?? 0,
       ...(session.resourceLease ? { leaseId: session.resourceLease.id, resourceId: session.resourceLease.resourceId } : {}), status: 'bound', createdAt: Date.now() }
     setEntry(rows(), botId, row)
@@ -79,6 +83,24 @@ export function createProjectNativeSessions(rt) {
     session.botId = botId; session.sessionId = sessionId
     await rt.save()
     return { id: botId, sessionId }
+  }
+  async function activate(session, botId) {
+    await authority(session)
+    const row = ownEntry(rows(), botId)
+    if (!row || row.hostEpoch !== hostEpoch || row.sessionKey !== session.id || row.attemptId !== session.attemptId || row.sessionId !== rt.chatOf(botId) || row.status !== 'bound') throw refuse('Native activation no longer matches its registered execution Session')
+    if (!rt.projectEffects) throw refuse('Native activation requires durable Effects proof')
+    const token = rt.projectEffects.stage({ kind: 'native.activate', key: botId, projectId: row.projectId, taskId: row.taskId,
+      payload: { workerId: botId, sessionId: row.sessionId, sessionKey: row.sessionKey, bindingKey: row.bindingKey, attemptId: row.attemptId, generation: row.generation } })
+    row.activationEffect = token
+    await rt.projectEffects.persist(token)
+    if (!rt.projectEffects.intentCommitted(token)) throw refuse('Native activation binding is not committed')
+    await authority(session)
+    if (row.continuedFrom) {
+      if (typeof rt.ctx.workspaceRegistry.unarchiveSession !== 'function') throw refuse('Native Session unarchive is unavailable; explicit recovery is required')
+      await rt.ctx.workspaceRegistry.unarchiveSession(row.sessionId)
+      await authority(session)
+    }
+    return { workerId: row.id, sessionId: row.sessionId }
   }
   async function stop(botId) {
     const row = ownEntry(rows(), botId)
@@ -103,12 +125,15 @@ export function createProjectNativeSessions(rt) {
       return clone(row.releaseProof)
     } catch (error) { row.status = 'stop-unconfirmed'; delete row.releaseProof; row.failure = String(error.message).slice(0, 1000); await rt.save(); throw error }
   }
-  return { previous, async bind(session, workspace, botId) {
+  return { previous, activate, async bind(session, workspace, botId) {
       const key = taskSessionId(session.projectId, session.taskId, session.role)
       if (binding.has(key)) throw refuse('Native Task-role binding is already in progress')
       binding.add(key)
       try { return await bind(session, workspace, botId) } finally { binding.delete(key) }
-    }, admits: botId => !['stopping', 'quiescent', 'stop-unconfirmed'].includes(ownEntry(rows(), botId)?.status),
+    }, admits(botId) {
+      const row = ownEntry(rt.state.projectNativeWorkers ?? {}, botId)
+      return !row || row.hostEpoch === hostEpoch && row.status === 'bound' && rt.readOnly?.() === undefined && Boolean(row.activationEffect && rt.projectEffects?.intentCommitted(row.activationEffect))
+    },
     stop(botId) {
       if (stopping.has(botId)) return stopping.get(botId)
       const operation = stop(botId).finally(() => stopping.delete(botId)); stopping.set(botId, operation); return operation

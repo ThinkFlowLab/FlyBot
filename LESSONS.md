@@ -674,3 +674,30 @@ logical identity for Session, Workspace, lease and provenance; use the pinned ca
 for conventions, verification and SDK readOnly. Resolve artifact responsibilities
 explicitly on the Attempt instead of aliasing or duplicating Workspaces. Retired sources
 may finish retained claims, while new targets require the active catalog.
+
+
+### 2026-11-03 — Restoring a Session needs both input identity and archive admission
+
+Seen 1× (actual DSH native pool). Object coercion made different handoffs identical
+[object Object] strings, so old delivery dedupe swallowed a legitimate return. Serialize
+structured inputs with their durable IDs, retaining stable exact replay content. A
+restored archived Session also needs explicit unarchive after trusted binding: DSH
+correctly blocks its first step otherwise. Neither issue appeared in factory-only
+context tests; retain an actual model-request/history continuation regression.
+
+
+### 2026-11-03 — Native archive admission is an external action
+
+Seen 1× (NoOp-save regression). Bind/cancel callbacks resolving does not prove their
+metadata committed. Keep provisional native binding separate from activation, commit
+its Effects marker with the Session/lease worker first, then allow input/unarchive.
+The pre-step gate must cover startup inbox work as well as the ordinary delivery API.
+
+
+### 2026-11-03 — Preserve history without loading all of it into every role
+
+Seen 1× (full role-policy budget regression). New native/context contracts pushed the
+complete mandatory policy past its existing cap. Keep current owner rules and concise
+state in PROJECT.md; archive completed implementation/probe detail verbatim behind
+links. The mandatory source list and byte cap remain unchanged, and the existing
+all-role budget regression must pass without silently truncating instructions.

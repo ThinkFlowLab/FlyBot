@@ -980,5 +980,6 @@ export function createProjectDelivery(rt, { publisher } = {}) {
 
 export function install(rt) {
   rt.projectDelivery = createProjectDelivery(rt)
+  rt.ctx.on('agent/pre-step', (payload, next) => rt.projectDelivery.nativeSessions.admits(rt.selfOf(payload.agent.session.id)) ? next() : Promise.resolve({ kind: 'reject' }))
   rt.taskNeedsDelivery = task => Boolean(task?.projectId && ownEntry(rt.config.projectRepositories ?? {}, rt.readProject(task.projectId)?.repository))
 }

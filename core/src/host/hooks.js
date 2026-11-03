@@ -225,6 +225,7 @@ export function install(rt) {
       try {
         if (roleSession) await rt.projectDelivery?.nativeSessions?.bind(roleSession, executionWorkspace, bot.id)
         await rt.projectDelivery?.bindSession(executionWorkspace, { id: bot.id, sessionId: rt.chatOf(bot.id) })
+        if (roleSession) await rt.projectDelivery?.nativeSessions?.activate(roleSession, bot.id)
       }
       catch (error) { await rt.deleteBot(bot.id); throw error }
     }
@@ -791,7 +792,7 @@ export function install(rt) {
   }
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
-    if (rt.projectDelivery?.nativeSessions?.admits(args.toId) === false) throw Object.assign(new Error('Native execution is stopping or released; new input is refused'), { code: 'bot/worker-stopping' })
+    if (rt.projectDelivery?.nativeSessions?.admits(args.toId) === false) throw Object.assign(new Error('Native execution is not admitted; confirm its durable activation or stop/recovery state before new input'), { code: 'bot/worker-stopping' })
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
     // deferred and re-sent deliveries (and notices) are judged by the owner policy
     // now, since the Bot they name may have had its grant revoked, replaced or removed since.

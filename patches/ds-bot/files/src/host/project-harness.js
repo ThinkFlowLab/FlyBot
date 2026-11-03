@@ -13,14 +13,14 @@ const refuse = message => Object.assign(new Error(message), { code: 'bot/harness
 const sha = text => createHash('sha256').update(text).digest('hex')
 const VERSIONS = { codex: '0.166.0', 'claude-agent': '0.3.316' }
 // Actual adapter support, independent of resource installation/authentication.
-// Native task-role continuation is deliberately not advertised until wired to
-// the existing Bot/parts lifecycle. Cross-Harness restoration is never inferred.
+// Native continuation uses exact committed Task-role bindings and the existing
+// Bot/parts lifecycle. Cross-Harness restoration is never inferred.
 export function harnessCapabilities(harness) {
   if (!['flybot', ...Object.keys(VERSIONS)].includes(harness)) throw refuse('Unknown execution Harness')
   return { version: 'project-harness-capabilities/v1', harness, sdkVersion: VERSIONS[harness] ?? null,
-    taskRoleResume: harness !== 'flybot', input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
+    taskRoleResume: true, input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
     cancellation: harness === 'flybot' ? 'native-bot-stop' : 'abort-and-worker-stop',
-    exitConfirmation: harness === 'flybot' ? 'native-bot-removal' : 'stop-ack-and-process-exit', crossHarnessResume: false }
+    exitConfirmation: harness === 'flybot' ? 'native-agent-quiescence' : 'stop-ack-and-process-exit', crossHarnessResume: false }
 }
 
 export function handoffFrame(text, outputs) {

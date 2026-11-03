@@ -91,7 +91,7 @@ export function apply(ctx, config = {}) {
       if (!from || typeof fb.bot.send !== 'function') return { ok: false, code: 'no-sender' }
       const lines = [`Task ${step.taskId}: ${step.brief}`]
       for (const [name, value] of Object.entries(step.inputs ?? {})) {
-        if (value) lines.push(`Input ${name}: ${value}`)
+        if (value !== undefined && value !== null) lines.push(`Input ${name}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
       }
       const outputs = (step.outputs ?? []).map(port => port.name).filter(Boolean)
       if (outputs.length > 0) lines.push(`When you finish, add one line per output: OUTPUT <name>: <value> (${outputs.join(', ')}).`)
