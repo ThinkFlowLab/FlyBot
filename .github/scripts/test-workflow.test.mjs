@@ -1,10 +1,20 @@
 // test.yml: the shape that a merge queue and the required `tests-ok` check rely on (text checks; no YAML parser needed).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const text = readFileSync(new URL('../workflows/test.yml', import.meta.url), 'utf8')
 const triggers = text.slice(text.indexOf('\non:\n'), text.indexOf('\nconcurrency:'))
+// One step of the `test` job, by the name it reports (#2054, #2099).
+const step = name => {
+  const at = text.indexOf(`      - name: ${name}\n`)
+  assert.ok(at >= 0, `no step ${name}`)
+  const next = text.slice(at + 1).search(/\n      - /)
+  return text.slice(at, next < 0 ? undefined : at + 1 + next)
+}
 const job = name => {
   const start = text.indexOf(`\n  ${name}:\n`)
   assert.ok(start >= 0, `no job ${name}`)
@@ -24,9 +34,47 @@ test('triggers: pull_request, merge_group (no filters), push only on main, dispa
 })
 
 test('no job is skipped on merge_group: nothing keys on the pull_request event', () => {
-  assert.doesNotMatch(text, /github\.event\.pull_request/)
+  // #2099 narrowed this: the base checkout reads `github.event.pull_request.base.sha` as a `with:`
+  // input, which skips nothing. What the rule forbids is a position that can skip a job — a
+  // job-level `if:`, or any condition keyed on the event — so the reverse assertion below pins the
+  // event to the one line it may be read on: the `ref:` of the base checkout.
   assert.doesNotMatch(text, /event_name\s*[!=]=\s*'pull_request'/)
+  assert.doesNotMatch(text, /^\s+if:.*github\.event\.pull_request/m, 'a condition on the pull_request event would skip a queue entry')
   for (const name of ['test', 'plugins', 'package']) assert.doesNotMatch(job(name), /^\s+if:/m, `${name} must run for every event`)
+  const reads = text.split('\n').filter(line => line.includes('github.event.pull_request'))
+  assert.equal(reads.length, 1, 'only the base checkout reads the pull_request event')
+  assert.match(reads[0], /^\s+ref: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.event\.pull_request\.base\.sha \}\}$/)
+})
+
+// #2099: `test.yml` ran the copy of the checker that the pull request itself carries, so a pull
+// request could weaken `judge()` — or delete the step — and pass the check it had just edited. The
+// signature is now judged by the copy in the base commit, the shape `merge-gate.yml` already uses.
+test('#2099: the gate signature runs the checker from the base commit', () => {
+  const signature = step('Gate change signature')
+  assert.match(signature, /^\s+run: node base\/\.github\/scripts\/policy-sign\.mjs$/m, "the step runs the base copy, not the pull request's own")
+
+  const at = text.indexOf('          path: base\n')
+  assert.ok(at >= 0, 'test.yml checks the base commit out into `base/`')
+  const start = text.lastIndexOf('\n      - ', at) + 1
+  const base = text.slice(start, text.indexOf('\n      - ', at))
+  assert.match(base, /uses: actions\/checkout@3d3c42e5/, 'the same pinned checkout the rest of the file uses')
+  assert.match(base, /^ {8}with:\n {10}ref: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.event\.pull_request\.base\.sha \}\}$/m, 'the read is a `with:` input — an input cannot skip a job — and a queue run carries no pull_request, so merge_group.base_sha is required')
+  assert.match(base, /persist-credentials: false/)
+})
+
+test('#2099: a pull request that weakens its own copy of the checker is still refused', () => {
+  const command = /^\s+run: (.+)$/m.exec(step('Gate change signature'))?.[1] ?? ''
+  const [program, script] = command.split(/\s+/)
+  assert.equal(program, 'node', 'the signature step runs node')
+  const dir = mkdtempSync(join(tmpdir(), 'policy-sign-'))
+  // The pull request's own copy says "ok, carry on"; the base copy refuses. Which copy the step
+  // runs is the whole difference, so the fixture makes the two answer differently.
+  for (const [path, body] of [['.github/scripts/policy-sign.mjs', 'process.exit(0)\n'], ['base/.github/scripts/policy-sign.mjs', 'process.exit(1)\n']]) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true })
+    writeFileSync(join(dir, path), body)
+  }
+  const run = spawnSync(program, [script], { cwd: dir, encoding: 'utf8' })
+  assert.notEqual(run.status, 0, `the step ran \`${script}\`: a pull request that weakened its own copy must still be refused`)
 })
 
 test('tests-ok: always runs and is green only when test, plugins and package are', () => {
