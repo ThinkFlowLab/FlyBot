@@ -7,12 +7,16 @@ Project 管理项目、成员、角色与仓库；Chief 常驻协调，Dev/Revie
 本交付分支包含后端收敛工作，尚未合入主仓 main 或部署到现有实例。
 它复用 FlyBot/DSH、原账号服务、任务池和执行器；没有另建一套调度系统。
 
+第三方 Bot 接入：[OpenAPI 3.1 JSON](docs/openapi/flybot.openapi.json) ·
+[登录、授权与自主协作指南](docs/third-party-bot-integration.md)。规范按实际公开入口描述请求/响应、
+权限、前置条件、状态变化和重试规则；外部代理使用人类签发的项目范围 Token。
+
 ## 启动持久服务
 
 需要 **Node.js22.22+、npm、Git**，首次安装需要访问 npm。Linux 是当前验证环境。
 
 ```bash
-git clone --branch feat/2189-backend-quickstart https://github.com/ThinkFlowLab/FlyBot.git
+git clone --branch delivery/ai-centric-development-service https://github.com/ThinkFlowLab/FlyBot.git
 cd FlyBot
 node scripts/backend.mjs init
 node scripts/backend.mjs start

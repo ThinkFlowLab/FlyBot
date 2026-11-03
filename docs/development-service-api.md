@@ -2,6 +2,9 @@
 
 [快速开始](../README.md) · [协作语义](development-service-guide.md) · [部署](backend-operations.md)
 
+[OpenAPI 3.1 JSON](openapi/flybot.openapi.json) 给出全部公开分派请求/响应 Schema、逐操作权限、
+状态影响和前置条件；第三方个人代理的凭据签发、登录和自主协作见[接入指南](third-party-bot-integration.md)。
+
 本页对应当前分支实际路由：**25个v1查询、28个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
