@@ -3,6 +3,8 @@ subsystem: project-domain
 owned_paths:
   - core/src/host/project-domain.js
   - core/src/host/project-service.js
+  - core/src/host/project-lifecycle.js
+  - core/test/project-lifecycle.test.js
   - core/src/shared/project-policy.js
   - core/test/project-domain.test.js
 ---
@@ -138,3 +140,32 @@ Queue admission rechecks current membership, preserves immutable Task/Run owners
 allocates worktrees only when quota permits. Explicit stop releases the existing single
 Run; orphan Workers retain capacity. Shared Project creation cannot supply filesystem cwd,
 and scoped agent/Worker identities cannot move to a different Project.
+
+## Project convergence — issue #2171
+
+Project records now retain description, goal and scope. ProjectRepository association
+records are keyed by a stable Project/repository digest; zero or many associations
+per Project and the same repository across Projects are supported. Loading migrates
+the legacy repository/defaultBranch once, preserving Task/Run ownership and the
+legacy execution target. Reads do not create associations. Linking another repository
+does not silently switch execution. Unlinking the selected legacy target is refused
+while unfinished work depends on it; explicit Task repository selection is a later
+Task-contract concern. With no unfinished work it can be removed, including the
+last association, without deleting a repository or rewriting existing history.
+
+Authenticated native endpoints: project-repositories (read), project-repository-link
+and project-repository-unlink (Owner/Maintainer configure), project-close-request
+(Owner/Maintainer suggestion), project-close-prepare and project-close-confirm
+(Owner personally). Preparation persists a hashed, owner-bound, expiring challenge
+and final record without closing. Confirmation rechecks current membership, principal,
+Project basis and challenge, then persists closed status and final record with current
+unfinished Task references. A matching owner retry returns the original closure.
+Delegated identities cannot confirm. A failed save restores the previous state.
+
+Closure is distinct from legacy archive/delete: it retains the Project, bindings,
+private/shared histories and memory, permits authorized reads and refuses further
+Project mutations/new work. It does not claim active external workers have exited;
+confirmed stop/reconciliation stays in the execution service. It adds no requirement
+to finish Tasks before closing. Legacy delete/archive cannot erase or relabel a closed
+Project. This stage preserves legacy interfaces; full role-change proposals/approval
+and dynamic execution compatibility remain tracked with role/execution convergence.

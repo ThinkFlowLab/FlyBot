@@ -1,0 +1,1 @@
+Add explicit Project repository associations, Owner double-confirmed closure with retained final records and unfinished tasks, and durable Chief role-change proposals requiring separate Maintainer/Owner approval, with bounded catalog queries and preserved retired-role history.

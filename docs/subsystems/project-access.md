@@ -239,3 +239,10 @@ S1 facade has selected its owned operations. Shared-mode admission recognizes bo
 vocabularies, without opening either in legacy mode or bypassing downstream member/
 action checks. The public development facade retains legacy Chief/schedule/delegation
 handlers; integration does not reinstall earlier direct handlers ahead of it.
+
+## Project convergence integration
+
+Project convergence #2171 adds closed as a read-only lifecycle: authorized members retain history/final-record reads; create, configure, run and acceptance permissions are refused. Scoped Project reads include goal/scope, repository associations and the public closure record, excluding confirmation secrets.
+
+
+#2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.

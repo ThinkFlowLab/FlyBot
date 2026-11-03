@@ -8,6 +8,10 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
+## Backend convergence — 2026-11-02
+
+Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Chief role proposals now require separate Maintainer/Owner approval with exact-hash/revision fencing and durable Effects proof; retirement preserves Task/Session and room history. Custom-role physical execution remains #2184 acceptance, and later convergence issues remain active.
+
 ## Fork Project State — 2026-10-31
 
 ### Backend delivery branch — 2026-11-02

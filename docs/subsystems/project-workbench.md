@@ -454,3 +454,10 @@ views both pass current native activity to the S1-derived status mapper. Stored 
 existence remains insufficient evidence of running work. Frontend retained-root,
 attachment, history and authorization contracts continue unchanged; S1's additive
 TaskView does not expose private conversation state through the compact board.
+
+## Project convergence integration
+
+Project convergence #2171 admits the six repository/closure endpoints through the restricted gateway. Each reaches the same domain service with authenticated membership and operation-specific authority; exposing a route does not grant configure or Owner confirmation rights.
+
+
+#2171 adds role catalog/proposal/decision endpoints to the existing restricted gateway allowlist. Reads preserve Project scope; decisions keep configure authorization in the domain service. No control-plane or frontend replacement is introduced.

@@ -4,6 +4,7 @@ import { MAX_ENTRY } from './constants.js'
 import { codePoints } from './text.js'
 import { ownEntry, setEntry } from './store.js'
 import { createProjectDomain } from './project-domain.js'
+import { install as installProjectLifecycle, repositorySpec } from './project-lifecycle.js'
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -64,10 +65,17 @@ export function install(rt) {
     return member === null ? null : projectOfId(member.projectId)
   }
   const createProject = (body = {}) => {
+    if (body.repositories !== undefined && !Array.isArray(body.repositories)) throw projectRefusal('Project repositories must be an array')
+    const repositories = body.repositories?.map(repositorySpec)
+    if (repositories && new Set(repositories.map(row => row.repository)).size !== repositories.length) throw projectRefusal('Duplicate Project repository association')
+    if (repositories && body.repository && !repositories.some(row => row.repository === body.repository)) throw projectRefusal('Default repository must be associated with the Project')
     const name = projectText(body.name, 120)
     if (name === '') throw projectRefusal('A Project needs a name')
-    const repository = projectText(body.repository, 200)
+    const repository = projectText(body.repository ?? repositories?.[0]?.repository, 200)
     if (repository !== '' && !PROJECT_REPOSITORY.test(repository)) throw projectRefusal('A Project repository is owner/name')
+    const defaultBranch = body.defaultBranch ?? repositories?.find(row => row.repository === repository)?.defaultBranch ?? 'main'
+    if (repository) repositorySpec({ repository, defaultBranch })
+    if (repositories?.some(row => row.repository === repository && row.defaultBranch !== defaultBranch)) throw projectRefusal('Default repository branch conflicts with its association')
     const workDir = projectText(body.workDir, 400)
     if (workDir !== '' && !PROJECT_WORKDIR.test(workDir)) throw projectRefusal('A Project working folder is an absolute path')
     const status = projectText(body.status, 40) || 'active'
@@ -77,8 +85,11 @@ export function install(rt) {
     const record = {
       id,
       name,
+      description: projectText(body.description, 2000),
+      goal: projectText(body.goal, 4000),
+      scope: projectText(body.scope, 4000),
       repository: repository === '' ? null : repository,
-      defaultBranch: projectText(body.defaultBranch, 120) || 'main',
+      defaultBranch,
       workDir: workDir === '' ? null : workDir,
       ownerUserId: projectText(body.ownerUserId, 120) || null,
       // Further owners of the same Project (#1733): each has their own memory and their own digest,
@@ -89,6 +100,7 @@ export function install(rt) {
       status,
     }
     state.projects[id] = record
+    rt.projectLifecycle.register(record, repositories)
     return record
   }
   const readProject = id => projectOfId(id)
@@ -194,6 +206,7 @@ export function install(rt) {
   // resolves `null` again, and no orphan memory keyed by a dead id can be read.
   const deleteProject = async (id) => {
     const project = requireProject(id)
+    if (project.status === 'closed') throw projectRefusal('Closed Project history must be retained', 'bot/conflict')
     rt.projects.assertDeletable(id)
     if (rt.sharedProjectMode?.()) {
       project.status = 'archived'
@@ -262,6 +275,8 @@ export function install(rt) {
     return project.roles
   }
   const projectEndpoint = async (endpoint, body = {}, actor = null) => {
+    const lifecycle = await rt.projectLifecycle.endpoint(endpoint, body, actor)
+    if (lifecycle !== undefined) return lifecycle
     const scoped = await rt.projectAccessEndpoint?.(endpoint, body, actor)
     if (scoped !== undefined) return scoped
 
@@ -277,6 +292,7 @@ export function install(rt) {
       case 'project-archive': {
         const project = requireProject(body.id)
         requireProjectOwner(project, actor)
+        if (project.status === 'closed') throw projectRefusal('Closed Project lifecycle and history must be retained', 'bot/conflict')
         project.status = 'archived'
         project.updatedAt = Date.now()
         await save()
@@ -447,4 +463,5 @@ export function install(rt) {
     projectMemory, projectMemoryOf, projectMemoryFor, appendProjectMemory, setProjectDigest, deleteProject,
   })
   rt.projects = createProjectDomain(rt)
+  installProjectLifecycle(rt)
 }
