@@ -131,3 +131,6 @@ released lease. Current owned controllers avoid unnecessary supervisor I/O.
 Confirmed releases record their evidence kind. SDK releases carry bound worker
 and generation proof from stop acknowledgement plus process exit; unknown releases
 still retain capacity. Historical matching SDK released records remain host facts.
+
+
+Native resource release now requires a matching projectNativeWorkers native-agent-quiescent record, generation/Session/lease scope and absent old Bot. Missing Bot records or undefined handles with exited=true cannot free capacity. The existing native-turn delegation path still requires its actual nonempty matching handle. Actual stopping uses the original SessionController-resolved Agent and awaits whenIdle; unknown prior-host execution remains held for explicit reconciliation.

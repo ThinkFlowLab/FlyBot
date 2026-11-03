@@ -20,7 +20,7 @@ export function roleDefinitionKey(session) {
     return session.definitionKey
   }
   const definition = session.definition ?? contextDefinition(session)
-  return digest({ role: session.role, persona: definition.instructions ?? '', skills: (definition.resolvedSkills ?? definition.skills ?? []).map(skill => typeof skill === 'string' ? skill : { name: skill.name, sha256: skill.sha256 }) })
+  return digest({ role: session.role, ...(definition.policyRole && definition.policyRole !== session.role ? { policyRole: definition.policyRole } : {}), persona: definition.instructions ?? '', skills: (definition.resolvedSkills ?? definition.skills ?? []).map(skill => typeof skill === 'string' ? skill : { name: skill.name, sha256: skill.sha256 }) })
 }
 function workerSession(state, worker) {
   const attempt = ownEntry(state.projectAttempts ?? {}, worker.attemptId)
@@ -31,10 +31,11 @@ function latestRoleWorker(state, record) {
   return Object.entries(state.projectHarnessWorkers ?? {}).filter(([, worker]) => worker.logicalSessionId === record.id && worker.projectId === record.projectId && worker.taskId === record.taskId && worker.role === record.role)
     .sort((a, b) => (a[1].createdAt ?? 0) - (b[1].createdAt ?? 0)).at(-1)
 }
-export function pinTaskRoleDefinition(state, scope, definition, revision = 0) {
-  const currentRevision = state.projectAgentDefinitions?.[scope.projectId]?.revision ?? revision
+export function pinTaskRoleDefinition(state, scope, definition, revision = 0, catalog) {
+  catalog ??= ownEntry(state.projectAgentDefinitions ?? {}, scope.projectId)
+  const currentRevision = catalog?.revision ?? revision
   revision = currentRevision
-  const logical = taskSession(state, scope)
+  const logical = taskSession(state, scope, catalog)
   state.projectRoleDefinitionSnapshots ??= {}
   const snapshots = state.projectRoleDefinitionSnapshots
   let frozen = logical.definitionRef && ownEntry(snapshots, logical.definitionRef)
@@ -58,12 +59,12 @@ export function pinTaskRoleDefinition(state, scope, definition, revision = 0) {
     if (!frozen) { frozen = { version: 'project-role-definition/v1', id, projectId: scope.projectId, role: scope.role, revision, sha256, definition: structuredClone(selected), origin, createdAt: Date.now() }; setEntry(snapshots, id, frozen) }
     logical.definitionRef = id
   }
-  const registered = state.projectAgentDefinitions?.[scope.projectId]?.roles.find(row => row.role === scope.role)
-  if (registered?.status === 'retired') throw resumeError('Task role was retired; explicit reassignment is required')
+  const registered = catalog?.roles.find(row => row.role === scope.role)
+  if (catalog && !registered || registered?.status === 'retired') throw resumeError('Task role was retired; explicit reassignment is required')
   const live = registered ?? definition
   const current = live.execution ?? {}, pinned = frozen.definition.execution ?? {}
   const available = (pinned.resourceIds ?? []).filter(id => (current.resourceIds ?? []).includes(id))
-  if ((current.harness ?? 'flybot') !== (pinned.harness ?? 'flybot') || pinned.resourceIds?.length && !available.length || frozen.definition.toolPolicy?.shell === true && live.toolPolicy?.shell === false) throw resumeError('Task-role execution permission or resource binding was revoked; explicit recovery is required')
+  if ((live.policyRole ?? live.role) !== (frozen.definition.policyRole ?? frozen.definition.role) || (current.harness ?? 'flybot') !== (pinned.harness ?? 'flybot') || pinned.resourceIds?.length && !available.length || frozen.definition.toolPolicy?.shell === true && live.toolPolicy?.shell === false) throw resumeError('Task-role execution permission or resource binding was revoked; explicit recovery is required')
   const retained = structuredClone(frozen.definition)
   if (retained.execution) retained.execution.resourceIds = available
   const observed = latestRoleWorker(state, logical)
@@ -88,12 +89,14 @@ export function discardUnpreparedTaskDefinitions(state, taskId) {
 }
 
 // Logical Sessions outlive processes and Attempts. Backend bindings never cross cwd/profile.
-export function taskSession(state, session) {
+export function taskSession(state, session, currentCatalog) {
   const task = ownEntry(state.tasks ?? {}, session.taskId)
-  if (!task || task.projectId !== session.projectId || !['developer', 'tester', 'reviewer'].includes(session.role)) throw new Error('Task Session scope changed')
-  state.projectTaskSessions ??= {}
   const id = taskSessionId(session.projectId, session.taskId, session.role)
-  let record = ownEntry(state.projectTaskSessions, id)
+  let record = ownEntry(state.projectTaskSessions ?? {}, id)
+  const catalog = currentCatalog ?? ownEntry(state.projectAgentDefinitions ?? {}, session.projectId)
+  const registered = catalog?.roles.find(row => row.role === session.role && row.status !== 'retired')
+  if (!task || task.projectId !== session.projectId || typeof session.role !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(session.role) || session.role === 'chief' || !record && (catalog ? !registered : !['developer', 'tester', 'reviewer'].includes(session.role))) throw new Error('Task Session scope changed')
+  state.projectTaskSessions ??= {}
   if (!record) { record = { id, projectId: session.projectId, taskId: session.taskId, role: session.role, bindings: [], createdAt: Date.now() }; setEntry(state.projectTaskSessions, id, record) }
   if (record.projectId !== session.projectId || record.taskId !== session.taskId || record.role !== session.role) throw new Error('Task Session identity changed')
   return record

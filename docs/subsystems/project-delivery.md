@@ -472,3 +472,6 @@ they still enforce current execution permission/resource availability. Preparati
 failure clears an unused definition pin only if no Session/worker exists. Workspace
 drafts, original prepared contexts and Attempt evidence remain untouched. SDK resume
 and unknown-exit recovery follow [the Harness contract](project-harness.md).
+
+
+Native Sessions now use the existing Task-role binding service through projectDelivery.nativeSessions. Canonical pool worktrees can be retained across Attempts only after exact native quiescence and released leases; original DAG workspace behavior remains compatible. Definition capability changes and removed roles block stale restart instead of inheriting authority.

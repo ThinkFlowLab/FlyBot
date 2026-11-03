@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { test } from 'node:test'
+import { createProjectNativeSessions } from '../src/host/project-native-sessions.js'
 import { createProjectResources } from '../src/host/project-resources.js'
 
 function fixture() {
@@ -27,6 +28,18 @@ test('resource leases reserve real capacity once and never release an unconfirme
   rt.state.bots.worker = { id: 'worker' }
   await resources.release(first.id, first.generation)
   assert.equal(resources.occupied('local'), 1)
+  delete rt.state.bots.worker
+  await resources.release(first.id, first.generation)
+  assert.equal(resources.occupied('local'), 1, 'Bot absence alone is not exit proof')
+  await resources.release(first.id, first.generation, { exited: true })
+  assert.equal(resources.occupied('local'), 1, 'Missing handles cannot manufacture native exit')
+  rt.state.bots.worker = { id: 'worker', workspaceId: 'workspace', attemptId: 'a1' }
+  rt.state.tasks = { task: { projectId: 'p1' } }
+  rt.botOf = id => rt.state.bots[id]; rt.chatOf = id => id
+  rt.resolveAgent = async () => ({ session: { id: 'worker' }, status: 'idle', cancel() {}, async whenIdle() {} })
+  const native = createProjectNativeSessions(rt)
+  await native.bind({ id: 's1', projectId: 'p1', taskId: 'task', attemptId: 'a1', role: 'developer', status: 'prepared', definition: { role: 'developer' }, resourceLease: first }, { id: 'workspace', path: '/registered' }, 'worker')
+  await native.stop('worker')
   delete rt.state.bots.worker
   await resources.release(first.id, first.generation)
   await resources.release(first.id, first.generation)

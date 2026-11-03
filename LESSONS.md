@@ -654,3 +654,13 @@ its own role changes. Check the logical carrier as well as current human rights;
 keep separate private full-watch approval and Chief proposal authority. Changes
 stay invisible until the exact Effects intent is committed. A retired role keeps
 its history and does not silently move Tasks or invent worker exit evidence.
+
+
+### 2026-11-03 — A deleted Bot is not proof its native work stopped
+
+Seen 1× (native exit regression). A deletion may leave a failed archive or outstanding
+activity, and a missing worker handle can accidentally match undefined. Require exact
+native binding/generation and actual Agent cancellation plus whenIdle before freeing
+resources. Reuse SessionController rather than reading an uninjected agents service;
+real DSH caught that integration error while factory tests passed. Keep unknown old
+host execution held and retain the failed probe as evidence.

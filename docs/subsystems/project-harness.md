@@ -1,6 +1,9 @@
 ---
 subsystem: project-harness
 owned_paths:
+  - core/src/host/project-native-sessions.js
+  - core/test/project-native-sessions.test.js
+  - core/test/project-native-exit.test.js
   - core/src/host/project-task-sessions.js
   - core/test/project-task-sessions.test.js
   - core/src/host/project-git-sandbox.js
@@ -252,3 +255,42 @@ This stage has subprocess/SDK-adapter regression coverage, not a new real-model 
 Native Task-role continuation, unified public receipts/events (#2185), transactionally
 committed Effects (#2182), parent resumption (#2179), and final real-task validation
 remain explicit acceptance work. No second executor or scheduler is introduced.
+
+
+## Native physical Session binding and quiescence (#2184)
+
+The original Workflow lifecycle still owns native Bot creation, dispatch and removal.
+Its registered-Workspace host adapter now records `projectNativeWorkers` and a
+`native-session/v1` binding on the existing Task-role logical Session. This is adapter
+metadata, not a second executor. A fresh ephemeral Bot may bind only the latest exact
+native physical Session after prior execution is quiescent, the old Bot is gone and
+its resource lease is released. Project/Task/role, cwd, model, definition fingerprint
+and resource must match. New native parts retain previous segments; tombstoned Bot
+IDs are never resurrected. A saved legacy native Session without a trusted binding
+fails with explicit recovery instead of silently starting over.
+
+Removal first fences new input, requests cancellation through the existing resolved
+DSH Agent, and awaits `whenIdle()` before recording `native-agent-quiescent` with
+worker, latest physical Session, binding key and generation. Bot absence and a bare
+`exited` flag are not proof. A stop failure keeps visible `stop-unconfirmed` state and
+capacity held. A process-local host epoch prevents accidentally resuming an unknown
+old-host worker merely to cancel it. Quiescence survives restart as a recorded fact;
+unknown old-host executions still require actual prior-exit reconciliation. No timeout
+fabricates exit. Stop acknowledgement alone cannot release a native lease.
+
+Native continuation rechecks the live pool claim, initiating human/delegation, role
+permissions and resource before and after asynchronous Session loading. Overlapping
+binds for one Task-role cannot attach two carriers. Canonical pool rework may retain
+the same physical worktree only after matching native quiescence and released leases;
+legacy DAG workspace rules remain separate. Existing Task definitions remain pinned,
+but a removed role or changed execution capability cannot restart under stale rights.
+Approved custom role keys have distinct logical Session IDs; default-role fingerprints
+remain compatible while a nondefault capability class participates in the fingerprint.
+
+Actual DSH delivery acceptance checks all three native roles' quiescence proofs before
+removal, actual code edits/host tests, and credential refusal; inference is deterministic.
+Factory tests cover exact restoration/parts, concurrency, stale claims, model/cwd changes
+and unknown exit. They do not establish a real-provider canonical pool return loop.
+Custom-role artifact verification, native crash reconciliation, in-flight capability
+revocation and the final composed service acceptance remain tracked under #2184.
+The public native-resume capability remains conservative until the whole loop is tested.

@@ -1,4 +1,5 @@
 // Operator-provisioned execution capabilities; Project configuration only references IDs.
+import { nativeExitConfirmed } from './project-native-sessions.js'
 import { captureProcessScope, priorScopeExited } from './project-process-proof.js'
 import { execFile, spawn } from 'node:child_process'
 import { realpath, copyFile, stat } from 'node:fs/promises'
@@ -120,9 +121,10 @@ export function createProjectResources(rt) {
     const lease = requireLease(id, generation)
     if (lease.status === 'released') return
     const worker = lease.worker
-    const confirmed = !worker || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) || confirmation?.handle === worker.handle && confirmation?.exited === true
+    const native = worker?.kind === 'native' && ownEntry(state.projectNativeWorkers ?? {}, worker.botId)
+    const confirmed = !worker || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) && native?.leaseId === lease.id && nativeExitConfirmed(state, native) || worker.kind !== 'native' && typeof worker.handle === 'string' && worker.handle.length > 0 && confirmation?.handle === worker.handle && confirmation?.exited === true
     lease.status = confirmed ? 'released' : 'stopping'
-    if (confirmed) { lease.releasedAt = Date.now(); lease.releaseProof ??= confirmation?.proof ?? { kind: worker ? 'host-confirmed-worker-exit' : 'unbound-reservation-release', at: lease.releasedAt } }
+    if (confirmed) { lease.releasedAt = Date.now(); lease.releaseProof ??= confirmation?.proof ?? native?.releaseProof ?? { kind: worker ? 'host-confirmed-worker-exit' : 'unbound-reservation-release', at: lease.releasedAt } }
     await rt.save()
     if (confirmed) rt.projectScheduler?.wake()
   }

@@ -29,6 +29,12 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Chief role proposals now require separate Maintainer/Owner approval with exact-hash/revision fencing and durable Effects proof; retirement preserves Task/Session and room history. Custom-role physical execution remains #2184 acceptance, and later convergence issues remain active.
 
+Native execution convergence #2184 now adds matching physical Session bindings and observed
+Agent quiescence before Bot removal/resource release. Role retirement/capability changes
+cannot restart pinned execution under stale authority. Deterministic runtime acceptance
+and real-provider Task loops remain separate; this work is not deployed. Custom-role
+artifact verification and unknown native crash recovery remain active acceptance.
+
 ## Fork Project State — 2026-10-31
 
 ### Backend delivery branch — 2026-11-02

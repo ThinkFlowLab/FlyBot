@@ -164,3 +164,6 @@ and the legacy per-Project persona. It still exercises scoped context, private T
 proposal, explicit publication and revoked Session refusal through actual DSH. A
 fixture regression pins both personas; this is model-transport compatibility, not
 real external-provider or paid model acceptance.
+
+
+#2184 extends the original actual-DSH delivery probe to inspect persisted native-agent-quiescent proofs for Developer, Tester and Reviewer before removal. It keeps deterministic inference and the existing real code edit, configured host tests, missing-credential refusal and disposable cleanup assertions; this is not a real-provider or canonical return-loop acceptance.

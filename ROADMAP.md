@@ -21,6 +21,11 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 includes repository relations, Owner closure and Chief-proposed/Owner-or-Maintainer-approved role governance. Execution integration for custom/retired roles remains in #2184; ancestor changes must propagate through the PR stack before final compatibility acceptance.
 
+Original #2184 follow-up adds native Task-role restoration metadata, cancellation/quiescence
+proofs and canonical-pool cwd retention. Finish custom-role verification, current-rights
+in-flight stop/reconcile and the composed native return loop before propagating the
+execution ancestor through collaboration/context/Task/state/API branches.
+
 ## Active fork roadmap — 2026-10-31
 
 Backend delivery branch `delivery/ai-centric-development-service` consolidates S1–S6 at1811e3b8f.

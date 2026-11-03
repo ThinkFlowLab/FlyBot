@@ -12,6 +12,7 @@ import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReview
 import { roleContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
 import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
+import { createProjectNativeSessions, nativeExitConfirmed } from './project-native-sessions.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 
@@ -34,6 +35,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   const { state, config } = rt
   const root = resolve(config.projectWorkspaceRoot ?? join(dirname(rt.dshHome), 'flybot-workspaces'))
   const artifacts = resolve(rt.home, 'project-artifacts')
+  const nativeSessions = createProjectNativeSessions(rt)
   const resourceWorkspaces = createResourceWorkspaces(rt, { hostGit: git, artifacts })
   const workspaceGit = (workspace, args) => {
     if (workspace.resourceLease) rt.projectResources.requireBinding(workspace.projectId, workspace.resourceLease)
@@ -175,11 +177,14 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       const resource = lease ? rt.projectResources.requireBinding(project.id, lease) : null
       const workspaceRoot = resource?.root ?? root
       const logicalSessionId = taskSessionId(project.id, attempt.taskId, role)
-      const reusable = lease && lease.harness !== 'flybot' ? Object.values(state.projectWorkspaces ?? {}).findLast(row => row.taskSessionId === logicalSessionId && row.resourceId === lease.resourceId && row.repository === repository && row.resourceRoot === workspaceRoot && row.status === 'allocated' && row.attemptId !== attempt.id) : null
+      const reusable = (lease && lease.harness !== 'flybot' || attempt.protocol === 'project-handoff/v1') ? Object.values(state.projectWorkspaces ?? {}).findLast(row => row.taskSessionId === logicalSessionId && (row.resourceId ?? null) === (lease?.resourceId ?? null) && row.repository === repository && row.resourceRoot === workspaceRoot && row.status === 'allocated' && row.attemptId !== attempt.id) : null
       if (reusable) {
         const previous = ownEntry(attempts(), reusable.attemptId)
         const workers = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
         const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
+        const native = Object.values(state.projectNativeWorkers ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
+        const liveNative = Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === reusable.attemptId && row.workspaceId === reusable.id)
+        if (liveNative || native.some(row => !nativeExitConfirmed(state, row))) throw reject('Native Task workspace is still held by previous execution')
         if (!previous || previous.projectId !== project.id || previous.taskId !== attempt.taskId || ongoing.has(previous.status) || previous.status === 'waiting-acceptance' || workers.some(row => !confirmedWorkerExit(state, row)) || leases.some(row => row.status !== 'released')) throw reject('Task workspace is still held by previous execution')
         const dirty = await workspaceGit(reusable, ['status', '--porcelain'])
         const head = await workspaceGit(reusable, ['rev-parse', 'HEAD'])
@@ -249,7 +254,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
         await rt.save()
         return { attempt: view(attempt) }
       }
-      const reservedDefinitions = definitions ? { ...definitions, roles: definitions.roles.map(definition => definition.role === 'chief' ? definition : pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: definition.role }, definition, definitions.revision).definition) } : definitions
+      const reservedDefinitions = definitions ? { ...definitions, roles: definitions.roles.map(definition => definition.role === 'chief' ? definition : pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: definition.role }, definition, definitions.revision, rt.projectAgents.deliveryDefinitions(project.id)).definition) } : definitions
       attempt.resourceLeases = await rt.projectResources?.reserveRoles(project.id, attempt.id, reservedDefinitions) ?? {}
       for (const lease of Object.values(attempt.resourceLeases)) {
         const resource = rt.projectResources.setting(project.id, lease.resourceId)
@@ -267,7 +272,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       for (const node of graph.nodes) {
         const role = definitions?.roles.find(role => role.role === node.id)
         let definition = role ?? { instructions: node.prompt, resolvedSkills: [], memory: [], execution: { harness: 'flybot', resourceIds: [] } }
-        const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: node.id }, definition, definitions?.revision ?? 0)
+        const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: node.id }, definition, definitions?.revision ?? 0, rt.projectAgents.deliveryDefinitions(project.id))
         definition = { ...pinned.definition, memory: definition.memory }
         node.model = definition.model || model
         const policy = await repositoryRolePolicy(project.id, attempt.baseSha, node.id)
@@ -764,7 +769,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const attempt = ownEntry(attempts(), claim.attemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.protocol !== 'project-handoff/v1' || attempt.status !== 'running') throw reject('Pool Attempt is unavailable')
     const role = definition.role, project = projectOf(task.projectId)
-    const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision)
+    const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision, rt.projectAgents.deliveryDefinitions(project.id))
     try {
       definition = { ...pinned.definition, memory: definition.memory }
       const settings = await preflightRepository(rt, project)
@@ -958,7 +963,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.role) && ['worktree', 'resource-clone'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { nativeSessions, endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {
