@@ -1396,6 +1396,42 @@ test('#2287 c9-c12: a preceding clause that is not a condition still clears the 
   }
 })
 
+// P-491 (FlyBot Lead, 2026-11-03): the clause before the lift is read at exactly one position, so a
+// condition two clauses back is dropped — "If the second reader signs off. CI is green. You may merge this
+// tip now." cleared the hold. Each case is its own test so the position fails by name.
+for (const [id, body, at] of [
+  [1, 'If the second reader signs off. CI is green. You may merge this tip now.', '2026-11-03T09:20:00Z'],
+  [2, 'Only after the second reader re-runs — looks good. You may merge this tip.', '2026-11-03T09:20:01Z'],
+  [3, 'Once the second reader re-runs. Thanks. You may merge this tip.', '2026-11-03T09:20:02Z'],
+  [4, 'Pending the second reader. Nothing else is open. You may merge this tip now.', '2026-11-03T09:20:03Z'],
+  [5, 'Unless the second reader objects we wait. Looks fine. You may merge this tip now.', '2026-11-03T09:20:04Z'],
+  [6, 'Provided the second reader lands — I am around. You may merge this tip now.', '2026-11-03T09:20:05Z'],
+  [7, 'Not until the second reader re-runs. We wait. You may merge this tip now.', '2026-11-03T09:20:06Z'],
+  [8, 'If the second reader signs off.\nCI is green.\nyou may merge this tip.', '2026-11-03T09:20:07Z'],
+]) {
+  test(`#2291 g${id}: a condition two clauses before the lift keeps the hold`, () => {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `g${id} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `g${id} keeps the original hold`)
+  })
+}
+
+// The other direction: a negation further back than the lift is the answer's own voice, not a condition on
+// it. Reading `WITHHELD`, bare negation included, over every earlier clause refused all four — the #2287
+// shape, seven of eight ordinary answers refused on `7bd71df5`.
+test('#2291 n1-n4: a negation further back than the lift still clears the hold', () => {
+  for (const [i, body, at] of [
+    [1, "I don't see any objections. Tests are green. You may merge this tip now.", '2026-11-03T09:20:10Z'],
+    [2, 'I was not able to break it. All green. You may merge this tip now.', '2026-11-03T09:20:11Z'],
+    [3, 'I could not find a hole in it. Ship it. You may merge this tip now.', '2026-11-03T09:20:12Z'],
+    [4, 'Nothing blocking from me. CI is green. You may merge this tip now.', '2026-11-03T09:20:13Z'],
+  ]) {
+    const r = ordinaryYes(body, at)
+    assert.equal(r.ok, true, `n${i} is an ordinary yes: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest, null, `n${i} clears the hold`)
+  }
+})
+
 test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
   const conditional = note({
     id: 6597499999,

@@ -238,12 +238,23 @@ const WITHHELD_OPENING = /^[\s>*+\-–—(\[]*(?:if|unless|provided|providing|as
 const LEADING_NEGATION = /^[\s>*+\-–—(\[]*(?:not|never|cannot|n['’]t)\b/i
 const withholdsBefore = (clause) => (WITHHELD.test(clause) && !LEADING_NEGATION.test(clause))
   || WITHHELD_OPENING.test(clause.replace(LEADING_NEGATION, ''))
+// P-491 (FlyBot Lead, 2026-11-03): `liftAt - 1` was the only clause before the lift that was read, so a
+// condition separated from the yes by one neutral clause was dropped — "If the second reader signs off. CI
+// is green. You may merge this tip now." cleared the hold. Every clause further back is read with the same
+// opening set, but the bare negation `WITHHELD` carries is left out here: further back it is ordinary voice
+// ("I don't see any objections. Tests are green. You may merge this tip now."), and refusing those is the
+// #2287 shape the one-clause read was already narrowed against. `not until` / `not unless` stay words of
+// their own, and a leading "Not" still falls through to the opening test, so they keep withholding.
+const WITHHELD_FAR = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on|upon|whenever|should|contingent (?:on|upon)|dependent (?:on|upon)|prior to|following|in the event|on condition that)\b/i
+const withholdsFurtherBack = (clause) => (WITHHELD_FAR.test(clause) && !LEADING_NEGATION.test(clause))
+  || WITHHELD_OPENING.test(clause.replace(LEADING_NEGATION, ''))
 const unconditionalLift = (text) => {
   if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
   const clauses = text.split(CLAUSE)
   if (clauses.some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))) return false
   const liftAt = clauses.findIndex((clause) => LIFT_REQUEST.test(clause))
   if (liftAt > 0 && withholdsBefore(clauses[liftAt - 1])) return false
+  if (liftAt > 1 && clauses.slice(0, liftAt - 1).some(withholdsFurtherBack)) return false
   let afterLift = false
   for (const clause of clauses) {
     if (afterLift && (WITHHELD.test(clause) || WITHHELD_LEADING.test(clause))) return false
