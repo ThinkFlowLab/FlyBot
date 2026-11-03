@@ -170,3 +170,6 @@ integration inputs. Current manager authority, released execution proof, exact
 workspace/generation snapshot and Effect-backed admission fence which parents the
 host may retain. Sealing preserves the resolved staged tree and trusted ancestry;
 it does not grant SDK shared-ref access, replace a PR or substitute for verification.
+
+
+Project role governance (#2171) separates resident Chief proposals, Maintainer/Owner decisions, the current revisioned role catalog, and archived definitions/audit. Durable Effects proof gates visible changes; logical role keys and execution capability classes remain distinct. See [role governance](subsystems/project-agents.md#project-role-governance-2171).
