@@ -260,3 +260,5 @@ grant Task publication: replies remain private unless a human approves or existi
 watch delegation and current permissions authorize explicit publishing. Agent id in a
 request cannot override the authenticated connection identity. A Task-role token is
 never a public HTTP actor. Legacy Chief question/consultation records remain private.
+
+#2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.

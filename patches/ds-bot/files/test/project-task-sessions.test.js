@@ -203,3 +203,46 @@ test('legacy definition migration verifies original typed context and preserves 
   assert.throws(() => roleDefinitionKey(session), /hash/)
   assert.throws(() => resumableBinding(state, logical, 'v2-key', { legacyKey: 'legacy-key', definitionKey: pinned.definitionKey }), /hash/)
 })
+
+test('approved removal or capability reclassification cannot restart a pinned role with its old authority', () => {
+  const f = pinnedFixture()
+  pinTaskRoleDefinition(f.state, f.scope, f.definition)
+  const removed = structuredClone(f.state)
+  removed.projectAgentDefinitions.p.roles = []
+  removed.projectRetiredRoles = { 'p:developer': { ...f.definition, retiredAt: 1 } }
+  assert.throws(() => pinTaskRoleDefinition(removed, f.scope, f.definition), { code: 'bot/context-resume' })
+  const changed = structuredClone(f.state)
+  changed.projectAgentDefinitions.p.roles[0].policyRole = 'reviewer'
+  assert.throws(() => pinTaskRoleDefinition(changed, f.scope, f.definition), { code: 'bot/context-resume' })
+  assert.equal(f.state.projectRoleDefinitionSnapshots[Object.keys(f.state.projectRoleDefinitionSnapshots)[0]].definition.instructions, 'Original persona')
+})
+
+test('custom logical roles fingerprint their capability class without invalidating original default-role keys', () => {
+  const base = { role: 'developer', instructions: 'Convention', resolvedSkills: [] }
+  const original = roleDefinitionKey({ role: 'developer', definition: base })
+  assert.equal(roleDefinitionKey({ role: 'developer', definition: { ...base, policyRole: 'developer' } }), original)
+  const reviewer = roleDefinitionKey({ role: 'analyst', definition: { ...base, role: 'analyst', policyRole: 'reviewer' } })
+  const developer = roleDefinitionKey({ role: 'analyst', definition: { ...base, role: 'analyst', policyRole: 'developer' } })
+  assert.notEqual(reviewer, developer)
+})
+
+
+test('approved custom roles have distinct Task-role Sessions while retired Sessions remain stoppable', () => {
+  const f = pinnedFixture(), analyst = { ...f.definition, role: 'analyst', policyRole: 'reviewer' }
+  f.state.projectAgentDefinitions.p.roles.push(analyst)
+  const logical = taskSession(f.state, { ...f.scope, role: 'analyst' })
+  assert.notEqual(logical.id, taskSession(f.state, f.scope).id)
+  f.state.projectAgentDefinitions.p.roles = []
+  assert.equal(taskSession(f.state, { ...f.scope, role: 'analyst' }), logical)
+  assert.throws(() => taskSession(f.state, { ...f.scope, role: 'unapproved' }), /scope changed/)
+})
+
+
+test('staged governance mutations cannot replace the execution-visible committed catalog', () => {
+  const f = pinnedFixture(), committed = structuredClone(f.state.projectAgentDefinitions.p)
+  f.state.projectAgentDefinitions.p = { revision: 2, roles: [] }
+  const pinned = pinTaskRoleDefinition(f.state, f.scope, f.definition, 1, committed)
+  assert.equal(pinned.revision, 1)
+  assert.equal(pinned.definition.instructions, 'Original persona')
+  assert.throws(() => pinTaskRoleDefinition(f.state, f.scope, f.definition, 2, f.state.projectAgentDefinitions.p), /retired/)
+})

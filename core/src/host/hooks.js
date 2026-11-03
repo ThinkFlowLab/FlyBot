@@ -222,7 +222,11 @@ export function install(rt) {
     }
     if (record && (stepTools.length > 0 || caps.length > 0 || preset || executionProject)) await rt.save()
     if (executionWorkspace) {
-      try { await rt.projectDelivery?.bindSession(executionWorkspace, { id: bot.id, sessionId: rt.chatOf(bot.id) }) }
+      try {
+        if (roleSession) await rt.projectDelivery?.nativeSessions?.bind(roleSession, executionWorkspace, bot.id)
+        await rt.projectDelivery?.bindSession(executionWorkspace, { id: bot.id, sessionId: rt.chatOf(bot.id) })
+        if (roleSession) await rt.projectDelivery?.nativeSessions?.activate(roleSession, bot.id)
+      }
       catch (error) { await rt.deleteBot(bot.id); throw error }
     }
     for (const [key, value] of Object.entries(fields ?? {})) fire('change', { botId: bot.id, plugin, key, value: clone(value), prev: undefined })
@@ -255,6 +259,7 @@ export function install(rt) {
       const last = view(rt.botOf(id))
       const remote = rt.botOf(id)?.remote
       const remoteChat = remote !== undefined
+      await rt.projectDelivery?.nativeSessions?.stop(id)
       const result = await deleteBot(id, ...rest)
       await rt.projectDelivery?.releaseSession(id)
       if (!remoteChat) {
@@ -787,6 +792,7 @@ export function install(rt) {
   }
   innerDeliver = rt.deliver
   rt.deliver = async (args) => {
+    if (rt.projectDelivery?.nativeSessions?.admits(args.toId) === false) throw Object.assign(new Error('Native execution is not admitted; confirm its durable activation or stop/recovery state before new input'), { code: 'bot/worker-stopping' })
     // Everything that is not a first, checked send still carries its sender: resumed, retried,
     // deferred and re-sent deliveries (and notices) are judged by the owner policy
     // now, since the Bot they name may have had its grant revoked, replaced or removed since.
@@ -1396,7 +1402,7 @@ export function install(rt) {
             },
             async release(id) {
               await lifecycle.release(id)
-              return !rt.botOf(id) && (!rt.state.projectHarnessWorkers?.[id] || rt.state.projectHarnessWorkers[id].status === 'released')
+              return rt.projectDelivery.exitConfirmed(id)
             },
             evidence({ attemptId }) {
               const attempt = rt.state.projectAttempts?.[attemptId]

@@ -163,3 +163,7 @@ experience notes remain inference/unresolved/conflict and cannot overwrite human
 facts; bad optional notes record memoryIssue rather than cancelling valid work.
 Trusted role.memory.record uses the active claim and original Effects durability;
 it neither transfers initiative nor creates a Task. See [context](project-context.md).
+
+#2184 records logical role and pinned capability class on a claim. Active targets alone can receive new offers/claims; a removed queued target becomes blocked with a Chief-routing reason while its Task/initiative/history remain intact. An already acquired source may finish its retained frozen claim after retirement, then explicitly hand off to an active target. Developer-capability destinations use existing rework semantics even when named differently. Artifact responsibilities stay in the existing Attempt's roleAssignments; no new queue or scheduler is added.
+
+Composition with #2184 rechecks the committed target role after asynchronous source-exit confirmation, before claiming. Retirement during inspection leaves the original Task blocked for Chief routing; it cannot acquire a new execution claim from the earlier catalog snapshot.

@@ -67,6 +67,13 @@ export async function checkDelivery({ api, call, saved, waitFor, repository, git
   await waitFor(() => Object.values(saved().projectAttempts[id].roleSessions).every(row => row.status === 'released'), 'temporary role Session release')
   const sessions = Object.values(saved().projectAttempts[id].roleSessions)
   assert.equal(new Set(sessions.map(row => row.sessionId)).size, 3)
+  for (const session of sessions) {
+    const native = saved().projectNativeWorkers?.[session.botId]
+    assert.equal(native?.status, 'quiescent', 'Actual DSH must settle before native worker deletion')
+    assert.equal(native.releaseProof.kind, 'native-agent-quiescent')
+    assert.equal(native.releaseProof.sessionId, session.sessionId)
+    assert.equal(saved().bots[session.botId], undefined)
+  }
   assert.ok(sessions.every(row => row.context.text.includes('Published role memory marker')))
   assert.equal(attempt.evidence.review.verdict, 'approve')
   assert.equal(attempt.evidence.tests.sha, attempt.evidence.review.sha)
@@ -93,7 +100,7 @@ export async function checkDelivery({ api, call, saved, waitFor, repository, git
   const remaining = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: repository, encoding: 'utf8' })
   assert.equal((remaining.match(/^worktree /gm) ?? []).length, 1)
   return { milestone: 'M3', runtime: 'actual DSH', model: 'deterministic mock',
-    checks: ['model-visible role memory and repository context', 'temporary role Sessions released', 'isolated role worktrees', 'actual code edit', 'independent configured tests', 'commit-specific reviewer output',
+    checks: ['actual native quiescence proof before removal', 'model-visible role memory and repository context', 'temporary role Sessions released', 'isolated role worktrees', 'actual code edit', 'independent configured tests', 'commit-specific reviewer output',
       ...(githubRepository ? ['real GitHub PR head verified', 'authorized human acceptance'] : ['missing GitHub credential blocks publication/acceptance', 'duplicate start idempotent']), 'registered worktrees cleaned'],
     ...(githubRepository ? { pr: attempt.pr } : {}),
     notRun: ['real model', ...(!githubRepository ? ['real GitHub publication'] : []), 'browser acceptance'] }

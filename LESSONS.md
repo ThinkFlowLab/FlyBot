@@ -654,3 +654,82 @@ retain actual exit/lease checks and every other claim. A regression reproduces t
 old active label and verifies Task/Attempt/generation and blocked state survive.
 
 2026-11-03 Seen 1×: a resident native Session may retain its system definition after bot metadata changes. Put each current job protocol/facts in the actual turn input; keep prior context historical and preserve the Session. The explicit Task scope fence caught stale-job output during #2179 admission verification.
+
+
+### 2026-11-03 — Public Chief cannot borrow its approver's identity
+
+Seen 1× (role governance regression). A public Chief turn can carry an Owner's
+watch delegation for existing task operations. That is not permission to approve
+its own role changes. Check the logical carrier as well as current human rights;
+keep separate private full-watch approval and Chief proposal authority. Changes
+stay invisible until the exact Effects intent is committed. A retired role keeps
+its history and does not silently move Tasks or invent worker exit evidence.
+
+
+### 2026-11-03 — A deleted Bot is not proof its native work stopped
+
+Seen 1× (native exit regression). A deletion may leave a failed archive or outstanding
+activity, and a missing worker handle can accidentally match undefined. Require exact
+native binding/generation and actual Agent cancellation plus whenIdle before freeing
+resources. Reuse SessionController rather than reading an uninjected agents service;
+real DSH caught that integration error while factory tests passed. Keep unknown old
+host execution held and retain the failed probe as evidence.
+
+
+### 2026-11-03 — Artifact responsibilities are not logical Bot names
+
+Seen 1× (approved custom-role regression). A new developer-capability role passed
+catalog governance but fixed-name policy/Workspace lookup prevented execution. Keep
+logical identity for Session, Workspace, lease and provenance; use the pinned capability
+for conventions, verification and SDK readOnly. Resolve artifact responsibilities
+explicitly on the Attempt instead of aliasing or duplicating Workspaces. Retired sources
+may finish retained claims, while new targets require the active catalog.
+
+
+### 2026-11-03 — Restoring a Session needs both input identity and archive admission
+
+Seen 1× (actual DSH native pool). Object coercion made different handoffs identical
+[object Object] strings, so old delivery dedupe swallowed a legitimate return. Serialize
+structured inputs with their durable IDs, retaining stable exact replay content. A
+restored archived Session also needs explicit unarchive after trusted binding: DSH
+correctly blocks its first step otherwise. Neither issue appeared in factory-only
+context tests; retain an actual model-request/history continuation regression.
+
+
+### 2026-11-03 — Native archive admission is an external action
+
+Seen 1× (NoOp-save regression). Bind/cancel callbacks resolving does not prove their
+metadata committed. Keep provisional native binding separate from activation, commit
+its Effects marker with the Session/lease worker first, then allow input/unarchive.
+The pre-step gate must cover startup inbox work as well as the ordinary delivery API.
+
+
+### 2026-11-03 — Preserve history without loading all of it into every role
+
+Seen 1× (full role-policy budget regression). New native/context contracts pushed the
+complete mandatory policy past its existing cap. Keep current owner rules and concise
+state in PROJECT.md; archive completed implementation/probe detail verbatim behind
+links. The mandatory source list and byte cap remain unchanged, and the existing
+all-role budget regression must pass without silently truncating instructions.
+
+
+### 2026-11-03 — Every exit consumer must use the same proof
+
+Seen 1× (actual pool adapter regression). Resource release had stopped trusting Bot
+absence, but its caller still returned exitConfirmed=true for an unknown missing Bot.
+Use one proof query at the initiative boundary too. Native Agent idle also excludes
+background jobs: stop/query registered work across earlier parts and child lineage,
+and preserve unknown occupancy until it settles. After restart reuse exact supervisor
+facts without auto-resuming an old worker or confusing a reused PID with ownership.
+
+### 2026-11-03 — Preserve context and recheck current authority separately
+
+Seen 1× (native pre-step and existing scheduler regressions). Admission-time rights do not cover role/resource revocation during a long execution. Reuse one live authority check and the existing pool stop/acknowledgement contract. Keep frozen persona/model for continuation, permit only the retained active retired-role claim, and do not await an Agent's idle inside its own pre-step hook. A resumed physical Session also exists in history: select its current live carrier for authorization. Recheck the actual human sender after awaiting the initiating authority.
+
+### 2026-11-03 — Revalidate handoff targets after exit inspection
+
+Seen 1× (composed role governance/contract regression). Confirming an old source exit yields to concurrent governance. Re-read the committed destination before acquiring a new claim; retirement keeps the Task blocked instead of authorizing a stale role.
+
+### 2026-11-03 — Logical role IDs are not execution carrier IDs
+
+Seen 1× (composed actual DSH native input failure). A canonical claim keeps the logical Bot in botId and the temporary executor in workerId. Context input fences must compare the carrier with workerId; conflating them sends healthy work to Chief admission failure before any execution.

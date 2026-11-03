@@ -65,6 +65,14 @@ export function createProjectPools(rt) {
     if (!target) throw refuse('Target logical Bot is not in this Project')
     return target
   }
+  const sourceOf = (task, botId) => {
+    const active = definitions(task.projectId).roles.find(row => row.id === botId)
+    if (active) return active
+    const claim = task.collaboration?.claim
+    const retired = Object.values(rt.state.projectRetiredRoles ?? {}).find(row => row.projectId === task.projectId && row.id === botId)
+    if (!retired || claim?.botId !== botId || !['active', 'completed', 'intervened'].includes(claim.status)) throw refuse('Source logical Bot has no retained execution claim')
+    return { ...retired, role: claim.role ?? retired.role, policyRole: claim.policyRole ?? retired.policyRole ?? retired.role }
+  }
   const dispatchIntent = (task, row) => rt.projectEffects?.stage({ kind: 'pool.dispatch', key: row.id, projectId: task.projectId, taskId: task.id,
     payload: { handoffId: row.id, botId: row.to, initiatedBy: row.initiatedBy } })
   async function authority(task) {
@@ -85,7 +93,7 @@ export function createProjectPools(rt) {
   async function checkAdmission(task, { from, to, attemptId, requestId, purpose }) {
     if (!adapter) throw refuse('Handoff execution adapter is unavailable')
     const c = task.collaboration, target = targetOf(task.projectId, to)
-    const fromRole = from ? targetOf(task.projectId, from).role : ''
+    const fromRole = from ? sourceOf(task, from).role : ''
     // A privileged, audited Chief decision resolves a routing loop. Keep global
     // usage/history, but bound autonomous repetitions after that intervention.
     const epoch = c.history.findLastIndex(row => row.purpose === 'chief-intervention')
@@ -192,7 +200,9 @@ export function createProjectPools(rt) {
     }
     if (!c || c.botId !== botId || c.status !== 'queued' || handoffId && c.currentHandoffId !== handoffId) return null
     await authority(task)
-    const target = targetOf(task.projectId, botId), expectedGeneration = c.generation
+    let definition = definitions(task.projectId).roles.find(row => row.id === botId)
+    if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
+    const target = definition, expectedGeneration = c.generation
     if (target.role !== 'chief') {
       // Arbitration may observe a failed writer, but a downstream execution must
       // not bypass an unresolved old exit by selecting another resource.
@@ -206,13 +216,15 @@ export function createProjectPools(rt) {
       await authority(task)
       if (c.generation !== expectedGeneration || c.status !== 'queued' || c.botId !== botId) throw refuse('Handoff changed during source-exit confirmation')
     }
+    definition = definitions(task.projectId).roles.find(row => row.id === botId)
+    if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
     if (Object.values(rt.state.tasks).some(row => row.collaboration?.claim?.botId === botId && row.collaboration.claim.status === 'active')) return null
-    if (adapter.ready && !adapter.ready({ task, definition: targetOf(task.projectId, botId) })) return null
+    if (adapter.ready && !adapter.ready({ task, definition })) return null
     const receipt = c.history.find(row => row.id === c.currentHandoffId)
     if (!receipt || receipt.status !== 'pending') throw refuse('Task has no pending handoff receipt')
     const limit = rt.config.projectHandoff?.quota?.steps
     if (Number.isFinite(limit) && (c.usage?.steps ?? 0) >= limit) { c.status = 'blocked'; c.block = { reason: 'Handoff refused (quota): execution step quota is exhausted', at: Date.now() }; await rt.save(); throw refuse(c.block.reason) }
-    const claim = { id: `claim-${randomUUID()}`, botId, generation: ++c.generation, taskId: task.id, projectId: task.projectId, attemptId: c.attemptId, status: 'active', createdAt: Date.now() }
+    const claim = { id: `claim-${randomUUID()}`, botId, role: definition.role, policyRole: definition.policyRole ?? definition.role, generation: ++c.generation, taskId: task.id, projectId: task.projectId, attemptId: c.attemptId, status: 'active', createdAt: Date.now() }
     c.usage ??= {}; c.usage.steps = (c.usage.steps ?? 0) + 1
     c.claim = claim; c.status = 'claimed'; receipt.status = 'accepted'; receipt.acceptedAt = Date.now(); receipt.claimId = claim.id
     receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(requestId ? { requestId } : {}), ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
@@ -232,7 +244,7 @@ export function createProjectPools(rt) {
     const action = decision?.action, reason = reasonOf(decision?.reason)
     if (!['handoff', 'return', 'transfer', 'complete', 'arbitrate'].includes(action)) throw refuse('Bot must hand off, return, transfer or request Chief judgement')
     const summary = { completed: decision.completed === undefined ? '' : reasonOf(decision.completed), next: decision.next === undefined ? reason : reasonOf(decision.next) }
-    const role = targetOf(task.projectId, claim.botId).role
+    const role = sourceOf(task, claim.botId).role
     const next = ['complete', 'arbitrate'].includes(action) ? definitions(task.projectId).roles.find(row => row.role === 'chief') : targetOf(task.projectId, decision.to)
     if (!next) throw refuse('Chief is not configured')
     // Stop confirmation precedes relinquishing the claim and capacity.
@@ -252,7 +264,7 @@ export function createProjectPools(rt) {
     c.usage ??= {}; c.usage.ms = (c.usage.ms ?? 0) + Date.now() - claim.createdAt
     const usage = rt.state.projectHarnessWorkers?.[claim.workerId]?.usage
     c.usage.tokens = (c.usage.tokens ?? 0) + (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
-    if (next.role === 'developer' && c.kind === 'code') c.attemptId = await adapter.rework?.({ task, claim, reason }) ?? c.attemptId
+    if ((next.policyRole ?? next.role) === 'developer' && c.kind === 'code') c.attemptId = await adapter.rework?.({ task, claim, reason }) ?? c.attemptId
     try {
       return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation, summary, experience: decision.memory })
     } catch (error) {
@@ -367,15 +379,23 @@ export function createProjectPools(rt) {
       }
     }
   }
+  async function revokeExecution(taskId, claimId, reason) {
+    const task = taskOf(taskId), c = task.collaboration
+    if (!c || c.claim?.id !== claimId || c.claim.status !== 'active') return false
+    const claim = c.claim
+    c.status = 'blocked'; ++c.generation; c.block = { reason, at: Date.now() }
+    claim.status = 'revoked'
+    await rt.save()
+    if (claim.workerId) { try { claim.exitConfirmed = await adapter.release(claim.workerId) } catch { claim.exitConfirmed = false } }
+    await rt.save()
+    return true
+  }
   async function revokePrincipal(projectId, memberId) {
     for (const task of Object.values(rt.state.tasks)) {
       const c = task.collaboration
       if (task.projectId !== projectId || c?.initiatedBy !== memberId || !['queued', 'claimed'].includes(c.status)) continue
-      c.status = 'blocked'; ++c.generation; c.block = { reason: 'Initiating human authority was revoked', at: Date.now() }
-      if (c.claim) c.claim.status = 'revoked'
-      await rt.save()
-      if (c.claim?.workerId) { try { c.claim.exitConfirmed = await adapter.release(c.claim.workerId) } catch { c.claim.exitConfirmed = false } }
-      await rt.save()
+      if (c.claim?.status === 'active') await revokeExecution(task.id, c.claim.id, 'Initiating human authority was revoked')
+      else { c.status = 'blocked'; ++c.generation; c.block = { reason: 'Initiating human authority was revoked', at: Date.now() }; await rt.save() }
     }
   }
   async function validateClosure(taskId, actor, evidence) {
@@ -423,7 +443,7 @@ export function createProjectPools(rt) {
     ++c.generation
     if (oldClaim) oldClaim.status = 'intervened'
     c.status = 'stopping'; await rt.save()
-    if (oldClaim?.workerId && targetOf(task.projectId, oldClaim.botId).role !== 'chief') {
+    if (oldClaim?.workerId && sourceOf(task, oldClaim.botId).role !== 'chief') {
       let stopped = false
       try { stopped = await adapter.release(oldClaim.workerId) } catch { /* retain unknown worker capacity */ }
       oldClaim.exitConfirmed = stopped
@@ -435,7 +455,7 @@ export function createProjectPools(rt) {
       if (currentReceipt) { currentReceipt.status = 'intervened'; currentReceipt.finishedAt = Date.now(); if (oldClaim) currentReceipt.execution = clone(oldClaim); currentReceipt.chiefDecisionId = body.decisionId }
       c.initiatedBy = actor.memberId; c.sourceSessionId = null
       const previous = rt.state.projectAttempts?.[c.attemptId]
-      if (target.role === 'developer') c.attemptId = await adapter.rework({ task, claim: oldClaim ?? { attemptId: c.attemptId, id: body.decisionId, botId: `${task.projectId}:chief` }, reason: body.reason, force: body.rework !== false, decisionId: body.decisionId })
+      if ((target.policyRole ?? target.role) === 'developer') c.attemptId = await adapter.rework({ task, claim: oldClaim ?? { attemptId: c.attemptId, id: body.decisionId, botId: `${task.projectId}:chief` }, reason: body.reason, force: body.rework !== false, decisionId: body.decisionId })
       else if (previous && previous.status !== 'running') throw refuse('Interrupted delivery must return to Developer in a new Attempt')
       return await offer(task, { from: `${task.projectId}:chief`, to: target.id, reason: body.reason, requestId: body.decisionId, attemptId: c.attemptId, purpose: 'chief-intervention' })
     } catch (error) {
@@ -467,7 +487,7 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
-    claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal, validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
+    claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
   rt.projectPools = createProjectPools(rt)

@@ -12,10 +12,15 @@ import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReview
 import { buildProjectContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
 import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
+import { reconcileExecutionAuthority } from './project-execution-authority.js'
+import { executionExitConfirmed } from './project-execution-exit.js'
+import { createProjectNativeSessions, nativeExitConfirmed } from './project-native-sessions.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 
 const exec = promisify(execFile)
+const deliveryRole = (attempt, capability) => attempt.roleAssignments?.[capability] ?? capability
+const workspaceFor = (attempt, capability) => attempt.workspaces[deliveryRole(attempt, capability)]
 const hash = value => createHash('sha256').update(value).digest('hex')
 const ongoing = new Set(['preparing', 'running'])
 const reject = message => Object.assign(new Error(message), { code: 'bot/delivery' })
@@ -34,6 +39,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   const { state, config } = rt
   const root = resolve(config.projectWorkspaceRoot ?? join(dirname(rt.dshHome), 'flybot-workspaces'))
   const artifacts = resolve(rt.home, 'project-artifacts')
+  const nativeSessions = createProjectNativeSessions(rt)
   const resourceWorkspaces = createResourceWorkspaces(rt, { hostGit: git, artifacts })
   const workspaceGit = (workspace, args) => {
     if (workspace.resourceLease) rt.projectResources.requireBinding(workspace.projectId, workspace.resourceLease)
@@ -71,7 +77,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       await verifyCandidate(attempt)
       const tests = attempt.evidence.tests, review = attempt.evidence.review
       if (!tests?.passed || tests.sha !== attempt.candidateSha || review?.sha !== attempt.candidateSha || review.verdict !== 'approve' || await fileDigest(tests.log) !== tests.sha256) throw new EffectCancelled('Publication evidence is missing or stale')
-      for (const role of DELIVERY_ROLES) await verifyExecution(attempt, role)
+      for (const role of DELIVERY_ROLES) await verifyExecution(attempt, deliveryRole(attempt, role))
       context.assertCurrent()
       if (task.deliveryAttemptId !== attempt.id || attempt.cancelRequested || attempt.candidateSha !== effect.payload.candidateSha) throw new EffectCancelled('Publication changed during validation')
   }
@@ -162,7 +168,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     for (const lease of Object.values(attempt.resourceLeases ?? {})) await rt.projectResources?.release(lease.id, lease.generation)
     await rt.save()
   }
-  async function allocate(attempt, project, settings, roles = DELIVERY_ROLES) {
+  async function allocate(attempt, project, settings, roles = DELIVERY_ROLES, capabilities = {}) {
     const repository = await realpath(settings.path)
     attempt.baseSha ??= await git(repository, ['rev-parse', 'HEAD'])
     attempt.branch = `flybot/delivery-${attempt.id.slice(-12)}`
@@ -171,32 +177,37 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     for (const role of roles) {
       if (attempt.workspaces[role]) { if (attempt.workspaces[role].status !== 'allocated') throw reject('Workspace allocation is incomplete; reconcile before retry'); continue }
       if (attempt.cancelRequested) throw reject('Delivery was stopped')
+      const policyRole = capabilities[role] ?? attempt.roleSessions?.[role]?.policyRole ?? Object.keys(attempt.roleAssignments ?? {}).find(capability => attempt.roleAssignments[capability] === role) ?? role
       const lease = attempt.resourceLeases?.[role]
       const resource = lease ? rt.projectResources.requireBinding(project.id, lease) : null
       const workspaceRoot = resource?.root ?? root
       const logicalSessionId = taskSessionId(project.id, attempt.taskId, role)
-      const reusable = lease && lease.harness !== 'flybot' ? Object.values(state.projectWorkspaces ?? {}).findLast(row => row.taskSessionId === logicalSessionId && row.resourceId === lease.resourceId && row.repository === repository && row.resourceRoot === workspaceRoot && row.status === 'allocated' && row.attemptId !== attempt.id) : null
+      const reusable = (lease && lease.harness !== 'flybot' || attempt.protocol === 'project-handoff/v1') ? Object.values(state.projectWorkspaces ?? {}).findLast(row => row.taskSessionId === logicalSessionId && (row.resourceId ?? null) === (lease?.resourceId ?? null) && row.repository === repository && row.resourceRoot === workspaceRoot && row.status === 'allocated' && row.attemptId !== attempt.id) : null
       if (reusable) {
         const previous = ownEntry(attempts(), reusable.attemptId)
         const workers = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
         const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
+        const native = Object.values(state.projectNativeWorkers ?? {}).filter(row => row.attemptId === reusable.attemptId && row.role === role)
+        const liveNative = Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === reusable.attemptId && row.workspaceId === reusable.id)
+        if (liveNative || native.some(row => !nativeExitConfirmed(state, row))) throw reject('Native Task workspace is still held by previous execution')
         if (!previous || previous.projectId !== project.id || previous.taskId !== attempt.taskId || ongoing.has(previous.status) || previous.status === 'waiting-acceptance' || workers.some(row => !confirmedWorkerExit(state, row)) || leases.some(row => row.status !== 'released')) throw reject('Task workspace is still held by previous execution')
         const dirty = await workspaceGit(reusable, ['status', '--porcelain'])
         const head = await workspaceGit(reusable, ['rev-parse', 'HEAD'])
-        if (head !== (previous.candidateSha ?? previous.seedSha ?? previous.baseSha) || dirty && (role !== 'developer' || previous.candidateSha)) throw reject('Task workspace changed after its checkpoint; preserve it before reuse')
+        if (head !== (previous.candidateSha ?? previous.seedSha ?? previous.baseSha) || dirty && (policyRole !== 'developer' || previous.candidateSha)) throw reject('Task workspace changed after its checkpoint; preserve it before reuse')
         reusable.retainedDraft = Boolean(dirty)
       }
       const path = reusable?.path ?? (resource ? join(workspaceRoot, 'delivery', attempt.id, role) : join(root, attempt.id, role))
       if (!resource || resource.type === 'local') await mkdir(resource ? join(workspaceRoot, 'delivery', attempt.id) : join(root, attempt.id), { recursive: true, mode: 0o700 })
-      const workspace = { id: `workspace-${randomUUID()}`, projectId: project.id, attemptId: attempt.id, role, path, repository, taskSessionId: logicalSessionId, ...(reusable ? { reusesWorkspaceId: reusable.id, storageAttemptId: reusable.storageAttemptId ?? reusable.attemptId, retainedDraft: reusable.retainedDraft } : {}),
+      const workspace = { id: `workspace-${randomUUID()}`, projectId: project.id, attemptId: attempt.id, role, policyRole, path, repository, taskSessionId: logicalSessionId, ...(reusable ? { reusesWorkspaceId: reusable.id, storageAttemptId: reusable.storageAttemptId ?? reusable.attemptId, retainedDraft: reusable.retainedDraft } : {}),
         kind: resource?.type === 'docker' ? 'resource-clone' : 'worktree', resourceId: lease?.resourceId ?? null, resourceRoot: workspaceRoot, ...(lease ? { resourceLease: lease } : {}), status: 'allocating', createdAt: Date.now() }
       setEntry(state.projectWorkspaces, workspace.id, workspace)
       attempt.workspaces[role] = workspace
       await rt.save() // Persist cleanup intent before git creates the worktree.
-      const args = role === 'developer' ? ['worktree', 'add', '-b', attempt.branch, path, attempt.baseSha] : ['worktree', 'add', '--detach', path, attempt.baseSha]
+      const branch = role === 'developer' ? attempt.branch : `${attempt.branch}-${role}`
+      const args = policyRole === 'developer' ? ['worktree', 'add', '-b', branch, path, attempt.baseSha] : ['worktree', 'add', '--detach', path, attempt.baseSha]
       if (reusable) {
         if (workspace.kind === 'worktree' && await realpath(path) !== path) throw reject('Task workspace resolves through a symlink')
-        if (role === 'developer' && workspace.kind === 'worktree') await workspaceGit(workspace, ['switch', '-c', attempt.branch])
+        if (policyRole === 'developer' && workspace.kind === 'worktree') await workspaceGit(workspace, ['switch', '-c', branch])
         reusable.status = 'retained'
       } else if (workspace.kind === 'resource-clone') await resourceWorkspaces.allocate(workspace, attempt)
       else await git(repository, args)
@@ -239,7 +250,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       attempt.agentDefinitions = definitions
       if (config.projectDispatch !== 'workflow') {
         attempt.protocol = 'project-handoff/v1'
-        attempt.workflowVersion = 'project-delivery/pools-v3'
+        attempt.workflowVersion = 'project-delivery/pools-v4'
         attempt.baseSha ??= await git(settings.path, ['rev-parse', 'HEAD'])
         attempt.roleSessions = {}; attempt.rolePolicies = {}; attempt.resourceLeases = {}
         attempt.runId = `pool-run-${randomUUID()}`
@@ -249,14 +260,14 @@ export function createProjectDelivery(rt, { publisher } = {}) {
         await rt.save()
         return { attempt: view(attempt) }
       }
-      const reservedDefinitions = definitions ? { ...definitions, roles: definitions.roles.map(definition => definition.role === 'chief' ? definition : pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: definition.role }, definition, definitions.revision).definition) } : definitions
+      const reservedDefinitions = definitions ? { ...definitions, roles: definitions.roles.map(definition => definition.role === 'chief' ? definition : pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: definition.role }, definition, definitions.revision, rt.projectAgents.deliveryDefinitions(project.id)).definition) } : definitions
       attempt.resourceLeases = await rt.projectResources?.reserveRoles(project.id, attempt.id, reservedDefinitions) ?? {}
       for (const lease of Object.values(attempt.resourceLeases)) {
         const resource = rt.projectResources.setting(project.id, lease.resourceId)
         if (lease.harness === 'flybot' && resource.type !== 'local') throw reject('Native Harness requires a registered local resource')
       }
       await allocate(attempt, project, settings)
-      if (attempt.seedSha) await workspaceGit(attempt.workspaces.developer, ['reset', '--hard', attempt.seedSha])
+      if (attempt.seedSha) await workspaceGit(workspaceFor(attempt, 'developer'), ['reset', '--hard', attempt.seedSha])
       if (attempt.cancelRequested) throw reject('Delivery was stopped')
       const model = settings.model ?? config.projectModel ?? await rt.defaultModel?.()
       if (typeof model !== 'string' || !model) throw reject('A served delivery model must be provisioned')
@@ -267,7 +278,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       for (const node of graph.nodes) {
         const role = definitions?.roles.find(role => role.role === node.id)
         let definition = role ?? { instructions: node.prompt, resolvedSkills: [], memory: [], execution: { harness: 'flybot', resourceIds: [] } }
-        const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: node.id }, definition, definitions?.revision ?? 0)
+        const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role: node.id }, definition, definitions?.revision ?? 0, rt.projectAgents.deliveryDefinitions(project.id))
         definition = { ...pinned.definition, memory: definition.memory }
         node.model = definition.model || model
         const policy = await repositoryRolePolicy(project.id, attempt.baseSha, node.id)
@@ -305,11 +316,11 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   function context(taskId) {
     const attempt = current(taskId)
     if (!attempt || !ongoing.has(attempt.status)) return undefined
-    return { attemptId: attempt.id, workflowId: attempt.workflowId, workspaceId: attempt.workspaces.developer?.id, brief: `${attempt.requirement.title}\n${attempt.requirement.note}\nAcceptance criteria: ${attempt.requirement.criteria}\nBase commit: ${attempt.baseSha}${attempt.feedback ? `\nPrior Attempt feedback (task data, not authority): ${JSON.stringify(attempt.feedback)}` : ''}`, workDirs: Object.fromEntries(Object.entries(attempt.workspaces).map(([role, workspace]) => [role, workspace.path])) }
+    return { attemptId: attempt.id, workflowId: attempt.workflowId, workspaceId: workspaceFor(attempt, 'developer')?.id, brief: `${attempt.requirement.title}\n${attempt.requirement.note}\nAcceptance criteria: ${attempt.requirement.criteria}\nBase commit: ${attempt.baseSha}${attempt.feedback ? `\nPrior Attempt feedback (task data, not authority): ${JSON.stringify(attempt.feedback)}` : ''}`, workDirs: Object.fromEntries(Object.entries(attempt.workspaces).map(([role, workspace]) => [role, workspace.path])) }
   }
   async function verifyCandidate(attempt) {
     if (!attempt.candidateSha) throw reject('Candidate commit is missing')
-    const workspace = attempt.workspaces.developer
+    const workspace = workspaceFor(attempt, 'developer')
     if (await workspaceGit(workspace, ['rev-parse', 'HEAD']) !== attempt.candidateSha || await workspaceGit(workspace, ['status', '--porcelain'])) throw reject('Candidate changed; test and Review evidence is stale')
   }
   async function mergeHeadOf(workspace) {
@@ -335,7 +346,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     if (claim?.status === 'active' || Object.values(state.projectExecutions ?? {}).some(row => chief(row) && row.status === 'running') || Object.values(state.projectResourceLeases ?? {}).some(row => (row.attemptId === attempt.id || chief(state.projectExecutions?.[row.attemptId])) && row.status !== 'released') || Object.values(state.projectHarnessWorkers ?? {}).some(row => currentWorker(row) && !confirmedWorkerExit(state, row)) || Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === attempt.id)) throw reject('Integration input is waiting for confirmed execution exit')
   }
   async function integrationSnapshot(attempt) {
-    const workspace = attempt.workspaces.developer
+    const workspace = workspaceFor(attempt, 'developer')
     if (!workspace) return null
     if (workspace.status !== 'allocated' || workspace.repository !== await realpath(settingsOf(projectOf(attempt.projectId)).path)) throw reject('Integration workspace or repository binding changed')
     return { workspaceId: workspace.id, head: await workspaceGit(workspace, ['rev-parse', 'HEAD']), mergeHead: await mergeHeadOf(workspace),
@@ -376,7 +387,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const snapshot = await integrationSnapshot(attempt)
     const keys = ['workspaceId', 'head', 'mergeHead', 'indexSha256', 'statusSha256']
     if (snapshot ? !body.expectedWorkspace || keys.some(key => snapshot[key] !== body.expectedWorkspace[key]) : body.expectedWorkspace !== null) throw reject('Integration workspace changed after the operator snapshot')
-    if (snapshot && await workspaceGit(attempt.workspaces.developer, ['ls-files', '--unmerged'])) throw reject('Integration has unresolved paths; preserve the index for the Developer')
+    if (snapshot && await workspaceGit(workspaceFor(attempt, 'developer'), ['ls-files', '--unmerged'])) throw reject('Integration has unresolved paths; preserve the index for the Developer')
     await verifyIntegrationInputs({ ...attempt, integrationInputs: desired }, { admissionRequired: false })
     integrationReleased(attempt); rt.requireProjectAccess(actor, task.projectId, 'configure'); rt.projects.requireActive(task.projectId)
     if ((task.collaboration?.generation ?? 0) !== body.generation || task.deliveryAttemptId !== attempt.id || attempt.candidateSha || attempt.cancelRequested) throw reject('Integration admission changed during validation')
@@ -412,7 +423,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   }
   async function seal(attempt) {
     const settings = settingsOf(projectOf(attempt.projectId))
-    const workspace = attempt.workspaces.developer
+    const workspace = workspaceFor(attempt, 'developer')
     const parent = attempt.seedSha ?? attempt.baseSha, upstream = attempt.publicationBinding?.upstreamSha
     const approved = await verifyIntegrationInputs(attempt), mergeHead = await mergeHeadOf(workspace)
     const trusted = [...new Set([upstream, ...approved.map(row => row.sha)].filter(Boolean))]
@@ -425,7 +436,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       const info = await lstat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error })
       if (info?.isSymbolicLink() && !inside(workspace.path, await realpath(path))) throw reject('Code changes contain a symbolic link outside the allocated workspace')
     }
-    checkDevelopmentEvidence(attempt.rolePolicies?.developer, names)
+    checkDevelopmentEvidence(attempt.rolePolicies?.[deliveryRole(attempt, 'developer')], names)
     const roots = settings.allowedPaths
     if (!Array.isArray(roots) || !roots.length || roots.some(value => typeof value !== 'string' || value.startsWith('/') || value.includes('..')) || names.some(name => !roots.some(prefix => name === prefix || name.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`)))) throw reject('Code changes exceed the provisioned repository paths')
     const ancestor = async (a, b) => { try { await workspaceGit(workspace, ['merge-base', '--is-ancestor', a, b]); return true } catch (error) { if (error.code === 1) return false; throw error } }
@@ -453,9 +464,9 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     attempt.candidateSha = await workspaceGit(workspace, ['rev-parse', 'HEAD'])
     if (attempt.candidateSha === attempt.baseSha) throw reject('Developer produced no code change')
     if (workspace.kind === 'resource-clone') await resourceWorkspaces.importCandidate(workspace, attempt)
-    attempt.evidence.implementation = { sha: attempt.candidateSha, paths: names, diffStat: await workspaceGit(workspace, ['diff', '--stat', attempt.baseSha, attempt.candidateSha]), at: Date.now() }
+    attempt.evidence.implementation = { logicalRole: workspace.role, roleSessionId: attempt.roleSessions?.[workspace.role]?.id ?? null, sha: attempt.candidateSha, paths: names, diffStat: await workspaceGit(workspace, ['diff', '--stat', attempt.baseSha, attempt.candidateSha]), at: Date.now() }
     for (const role of ['tester', 'reviewer', ...(attempt.workspaces['host-verifier'] ? ['host-verifier'] : [])]) {
-      const target = attempt.workspaces[role]
+      const target = attempt.workspaces[deliveryRole(attempt, role)]
       if (!target) continue
       if (target.kind === 'resource-clone') await resourceWorkspaces.checkout(target, attempt)
       else { await workspaceGit(target, ['reset', '--hard', attempt.candidateSha]); await workspaceGit(target, ['clean', '-ffdx']) }
@@ -464,7 +475,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   async function testCandidate(attempt) {
     await verifyCandidate(attempt)
     const settings = settingsOf(projectOf(attempt.projectId))
-    const workspace = attempt.workspaces['host-verifier'] ?? attempt.workspaces.tester
+    const workspace = attempt.workspaces['host-verifier'] ?? workspaceFor(attempt, 'tester')
     const path = workspace.path
     await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
     await workspaceGit(workspace, ['clean', '-ffdx'])
@@ -480,24 +491,24 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     await mkdir(join(artifacts, attempt.id), { recursive: true, mode: 0o700 })
     const log = join(artifacts, attempt.id, 'tests.log')
     await writeFile(log, output, { mode: 0o600 })
-    attempt.evidence.tests = { executor: 'independent-host-controller', workspaceId: workspace.id, resourceId: workspace.resourceId, sha: attempt.candidateSha, passed, command: settings.testCommand, log, sha256: hash(output), at: Date.now() }
+    attempt.evidence.tests = { logicalRole: deliveryRole(attempt, 'tester'), roleSessionId: attempt.roleSessions?.[deliveryRole(attempt, 'tester')]?.id ?? null, executor: 'independent-host-controller', workspaceId: workspace.id, resourceId: workspace.resourceId, sha: attempt.candidateSha, passed, command: settings.testCommand, log, sha256: hash(output), at: Date.now() }
     if (!passed) throw reject('Configured tests failed; see Attempt evidence')
   }
   async function review(attempt, outputs) {
     await verifyCandidate(attempt)
-    const workspace = attempt.workspaces.reviewer
+    const workspace = workspaceFor(attempt, 'reviewer')
     if (await workspaceGit(workspace, ['rev-parse', 'HEAD']) !== attempt.candidateSha || await workspaceGit(workspace, ['status', '--porcelain'])) throw reject('Reviewer did not inspect the clean candidate commit')
     let result
     try { result = typeof outputs?.review === 'string' ? JSON.parse(outputs.review) : outputs?.review } catch { throw reject('Review output must be commit-specific JSON') }
     if (!result || result.commit !== attempt.candidateSha || !['approve', 'request-changes'].includes(result.verdict) || typeof result.summary !== 'string' || !result.summary.trim()) throw reject('Review verdict is missing or names a different commit')
-    const policy = attempt.rolePolicies?.reviewer
-    const execution = attempt.evidence.execution?.reviewer
+    const policy = attempt.rolePolicies?.[deliveryRole(attempt, 'reviewer')]
+    const execution = attempt.evidence.execution?.[deliveryRole(attempt, 'reviewer')]
     const commands = []
     if (execution?.log) for (const line of (await readFile(execution.log, 'utf8')).split('\n').filter(Boolean)) {
       const item = JSON.parse(line).event?.item
       if (item?.type === 'command_execution' && typeof item.exit_code === 'number') commands.push({ command: item.command, exitCode: item.exit_code, executor: 'reviewer-sdk' })
     }
-    attempt.evidence.review = { ...(policy ? { policySha256: policy.sha256, report: deliveryReviewReport({ verdict: result.verdict, sha: result.commit, commands }) } : {}), sha: result.commit, verdict: result.verdict, summary: result.summary.slice(0, 8000), at: Date.now() }
+    attempt.evidence.review = { logicalRole: workspace.role, roleSessionId: attempt.roleSessions?.[workspace.role]?.id ?? null, ...(policy ? { policySha256: policy.sha256, report: deliveryReviewReport({ verdict: result.verdict, sha: result.commit, commands }) } : {}), sha: result.commit, verdict: result.verdict, summary: result.summary.slice(0, 8000), at: Date.now() }
     if (result.verdict !== 'approve') throw reject('Reviewer requested changes')
     if (attempt.evidence.tests?.sha !== attempt.candidateSha || !attempt.evidence.tests.passed) throw reject('Matching passing tests are missing')
     if (attempt.cancelRequested) throw reject('Delivery was stopped')
@@ -534,8 +545,8 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     await verifyCandidate(attempt)
     for (const [role, policy] of Object.entries(attempt.rolePolicies ?? {})) verifyRolePolicy(policy, attempt.roleSessions[role]?.context.sources.policy?.sha256)
     for (const role of DELIVERY_ROLES) {
-      if (!attempt.roleSessions?.[role]) throw reject('Publication retry is missing the original role Session')
-      await verifyExecution(attempt, role)
+      if (!attempt.roleSessions?.[deliveryRole(attempt, role)]) throw reject('Publication retry is missing the original role Session')
+      await verifyExecution(attempt, deliveryRole(attempt, role))
     }
     const tests = attempt.evidence.tests, review = attempt.evidence.review
     if (!tests?.passed || tests.sha !== attempt.candidateSha || review?.sha !== attempt.candidateSha || review.verdict !== 'approve') throw reject('Matching passing tests and independent Review are required')
@@ -605,7 +616,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; delivery evidence is stale')
     if (!attempt.runId || ownEntry(state.projectExecutions, attempt.runId)?.status !== 'done') throw reject('Delivery Run has not finished successfully')
     if (!attempt.pr || !attempt.evidence.tests?.passed || attempt.evidence.tests.sha !== attempt.candidateSha || attempt.evidence.review?.sha !== attempt.candidateSha || attempt.evidence.review.verdict !== 'approve') throw reject('Delivery evidence is missing or stale')
-    for (const role of DELIVERY_ROLES) await verifyExecution(attempt, role)
+    for (const role of DELIVERY_ROLES) await verifyExecution(attempt, deliveryRole(attempt, role))
     const testLog = await readFile(attempt.evidence.tests.log, 'utf8')
     if (hash(testLog) !== attempt.evidence.tests.sha256) throw reject('Test log changed; evidence is stale')
     const pr = await publisherOf(projectOf(attempt.projectId)).read(attempt.pr)
@@ -764,12 +775,14 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const attempt = ownEntry(attempts(), claim.attemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.protocol !== 'project-handoff/v1' || attempt.status !== 'running') throw reject('Pool Attempt is unavailable')
     const role = definition.role, project = projectOf(task.projectId)
-    const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision)
+    const pinned = pinTaskRoleDefinition(state, { projectId: project.id, taskId: task.id, role }, definition, attempt.agentDefinitions.revision, rt.projectAgents.deliveryDefinitions(project.id))
     try {
       definition = { ...pinned.definition, memory: definition.memory }
+      const policyRole = definition.policyRole ?? role
+      if (!DELIVERY_ROLES.includes(policyRole)) throw reject('Task worker requires an approved execution capability')
       const settings = await preflightRepository(rt, project)
-      if (role === 'developer') await refreshUnstartedPublication(attempt, project, claim)
-      const policy = await repositoryRolePolicy(project.id, attempt.baseSha, role)
+      if (policyRole === 'developer') await refreshUnstartedPublication(attempt, project, claim)
+      const policy = await repositoryRolePolicy(project.id, attempt.baseSha, role, policyRole)
       const sessionId = `role-session-${randomUUID()}`
       const execution = definition.execution
       const lease = execution.resourceIds?.length ? await rt.projectResources.reserve({ projectId: project.id, attemptId: attempt.id, role, sessionKey: sessionId, ...execution }) : null
@@ -777,17 +790,17 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       let context, workspace
       try {
         const freshWorkspace = !attempt.workspaces[role]
-        await allocate(attempt, project, settings, [role])
+        await allocate(attempt, project, settings, [role], { [role]: policyRole })
         workspace = attempt.workspaces[role]
         if (lease) workspace.resourceLease = lease
-        if (attempt.seedSha && role === 'developer' && !attempt.candidateSha && freshWorkspace && !workspace.retainedDraft) await workspaceGit(workspace, ['reset', '--hard', attempt.seedSha])
+        if (attempt.seedSha && policyRole === 'developer' && !attempt.candidateSha && freshWorkspace && !workspace.retainedDraft) await workspaceGit(workspace, ['reset', '--hard', attempt.seedSha])
         if (attempt.candidateSha) {
           if (workspace.kind === 'resource-clone') await resourceWorkspaces.checkout(workspace, attempt)
           else await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
         }
         await prepareWorkspace(attempt, workspace, settings)
         await prepareIntegrations(attempt, workspace)
-        context = await buildProjectContext(rt, { retrieval: true, policy, projectId: project.id, taskId: task.id, role, revision: pinned.revision, resourceId: lease?.resourceId, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && attempt.workspaces.developer ? { kind: 'unverified-workspace-reference', resourceId: attempt.workspaces.developer.resourceId, path: attempt.workspaces.developer.resourceId === workspace.resourceId ? attempt.workspaces.developer.path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha) })
+        context = await buildProjectContext(rt, { retrieval: true, policy, projectId: project.id, taskId: task.id, role, revision: pinned.revision, resourceId: lease?.resourceId, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && workspaceFor(attempt, 'developer') ? { kind: 'unverified-workspace-reference', resourceId: workspaceFor(attempt, 'developer').resourceId, path: workspaceFor(attempt, 'developer').resourceId === workspace.resourceId ? workspaceFor(attempt, 'developer').path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha) })
       } catch (error) {
         const registered = lease && ownEntry(state.projectResourceLeases ?? {}, lease.id)
         const unbound = registered && registered.generation === lease.generation && !registered.worker && !registered.processScope && !Object.values(state.projectHarnessWorkers ?? {}).some(row => row.leaseId === lease.id) && !Object.values(attempt.roleSessions ?? {}).some(row => row.id === sessionId)
@@ -798,12 +811,13 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       }
       attempt.rolePolicies[role] = policy
       if ((execution.harness ?? 'flybot') === 'flybot') await archiveForNative(context, attempt, role, sessionId)
-      const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: cloneExecution(execution), policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
+      const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, policyRole, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: cloneExecution(execution), policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
       if (attempt.roleSessions[role]) {
         (attempt.roleSessionHistory ??= []).push(structuredClone({ ...attempt.roleSessions[role], executionEvidence: attempt.evidence.execution?.[role] ?? null }))
         if (attempt.evidence.execution) delete attempt.evidence.execution[role]
       }
       attempt.roleSessions[role] = session
+      ;(attempt.roleAssignments ??= {})[policyRole] = role
       rt.taskDeliveryState?.(task.id, attempt.id, 'working', `${definition.name} claimed the Task`)
       rt.bindProject({ kind: 'run', id: attempt.runId, projectId: project.id, taskId: task.id, attemptId: attempt.id, status: 'running' })
       await rt.save()
@@ -821,9 +835,14 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     await verifyExecution(attempt, role)
     if (task.collaboration.kind !== 'code') {
       attempt.evidence[role] = { outputs: structuredClone(outputs), sha256: hash(JSON.stringify(outputs)), at: Date.now(), policySha256: attempt.rolePolicies[role].sha256 }
-    } else if (role === 'developer') await seal(attempt)
-    else if (role === 'tester') await testCandidate(attempt)
-    else if (role === 'reviewer') await review(attempt, outputs)
+    } else {
+      const policyRole = attempt.roleSessions[role]?.policyRole ?? role
+      if (deliveryRole(attempt, policyRole) !== role) throw reject('Role artifact assignment changed before completion')
+      if (policyRole === 'developer') await seal(attempt)
+      else if (policyRole === 'tester') await testCandidate(attempt)
+      else if (policyRole === 'reviewer') await review(attempt, outputs)
+      else throw reject('Unknown worker artifact capability')
+    }
     await rt.save()
   }
   async function chiefAccept({ taskId, expectedSha, decision }, actor) {
@@ -887,7 +906,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const id = `attempt-${randomUUID()}`
     if (['running', 'waiting-acceptance'].includes(previous.status)) previous.status = 'returned'
     previous.returned = { at: Date.now(), by: claim.botId, reason }
-    const next = { id, protocol: previous.protocol, projectId: previous.projectId, taskId: task.id, requestKey: hash(`${task.projectId}\n${task.id}\n${claim.id}`), workflowVersion: previous.protocol === 'project-handoff/v1' ? 'project-delivery/pools-v3' : previous.workflowVersion, status: 'running', initiatedBy: previous.initiatedBy, executionOwnerId: previous.executionOwnerId, baseSha: !previous.candidateSha && (force || previous.status === 'interrupted') ? await git(settingsOf(projectOf(task.projectId)).path, ['rev-parse', 'HEAD']) : previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha, ...(publicationBinding ? { publicationBinding } : {}), requirement: structuredClone(previous.requirement), feedback: { previousAttemptId: previous.id, kind: 'bot-return', reason, candidateSha: previous.candidateSha }, agentDefinitions: rt.projectAgents.deliveryDefinitions(task.projectId), roleSessions: {}, rolePolicies: {}, resourceLeases: {}, workspaces: {}, evidence: {}, createdAt: Date.now(), updatedAt: Date.now(), runId: `pool-run-${randomUUID()}` }
+    const next = { id, protocol: previous.protocol, projectId: previous.projectId, taskId: task.id, requestKey: hash(`${task.projectId}\n${task.id}\n${claim.id}`), workflowVersion: previous.protocol === 'project-handoff/v1' ? 'project-delivery/pools-v4' : previous.workflowVersion, status: 'running', initiatedBy: previous.initiatedBy, executionOwnerId: previous.executionOwnerId, baseSha: !previous.candidateSha && (force || previous.status === 'interrupted') ? await git(settingsOf(projectOf(task.projectId)).path, ['rev-parse', 'HEAD']) : previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha, ...(publicationBinding ? { publicationBinding } : {}), requirement: structuredClone(previous.requirement), feedback: { previousAttemptId: previous.id, kind: 'bot-return', reason, candidateSha: previous.candidateSha }, agentDefinitions: rt.projectAgents.deliveryDefinitions(task.projectId), roleSessions: {}, rolePolicies: {}, resourceLeases: {}, workspaces: {}, evidence: {}, createdAt: Date.now(), updatedAt: Date.now(), runId: `pool-run-${randomUUID()}` }
     previous.supersededBy = id
     setEntry(attempts(), id, next); task.deliveryAttemptId = id
     rt.bindProject({ kind: 'run', id: previous.runId, projectId: task.projectId, taskId: task.id, attemptId: previous.id, status: 'failed' })
@@ -896,12 +915,12 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     return id
   }
   const cloneExecution = execution => structuredClone(execution)
-  async function repositoryRolePolicy(projectId, commit, role) {
+  async function repositoryRolePolicy(projectId, commit, role, policyRole = role) {
     const project = projectOf(projectId)
     const settings = settingsOf(project)
     commit ??= await git(settings.path, ['rev-parse', 'HEAD'])
-    const configured = settings.rolePolicySources?.[role]
-    const names = configured ?? [...ROLE_POLICY_FILES.common, ...ROLE_POLICY_FILES[role]]
+    const configured = settings.rolePolicySources?.[role] ?? settings.rolePolicySources?.[policyRole]
+    const names = configured ?? [...ROLE_POLICY_FILES.common, ...ROLE_POLICY_FILES[policyRole]]
     if (!Array.isArray(names) || names.length > 40 || names.some(name => typeof name !== 'string' || name.startsWith('/') || name.includes('..') || /[\\\r\n\0]/.test(name))) throw reject('Role policy source list is invalid')
     const sources = []
     for (const name of [...new Set(names)]) {
@@ -915,8 +934,8 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       const entry = JSON.parse(await git(settings.path, ['show', `${commit}:package.json`]))
       if (entry.name === 'flybot' && await git(settings.path, ['ls-tree', '--name-only', commit, '--', 'core/cordis.patch.yml'])) profile = 'flybot-development'
     }
-    const requiredFiles = settings.requiredRolePolicySources?.[role] ?? (profile === 'flybot-development' ? [...ROLE_POLICY_FILES.common.filter(name => !name.startsWith('decisions/')), ...ROLE_POLICY_FILES[role]] : configured ?? [])
-    return assembleRolePolicy({ role, commit, sources, requiredFiles, profile })
+    const requiredFiles = settings.requiredRolePolicySources?.[role] ?? settings.requiredRolePolicySources?.[policyRole] ?? (profile === 'flybot-development' ? [...ROLE_POLICY_FILES.common.filter(name => !name.startsWith('decisions/')), ...ROLE_POLICY_FILES[policyRole]] : configured ?? [])
+    return assembleRolePolicy({ role, policyRole, commit, sources, requiredFiles, profile })
   }
   async function repositoryContext(projectId, commit) {
     const project = projectOf(projectId)
@@ -957,11 +976,12 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       await rt.save()
     }
   }
-  const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.role) && ['worktree', 'resource-clone'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
+  return { reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {
   rt.projectDelivery = createProjectDelivery(rt)
+  rt.ctx.on('agent/pre-step', async (payload, next) => await rt.projectDelivery.nativeSessions.validateStep(payload.agent) ? next() : { kind: 'reject' })
   rt.taskNeedsDelivery = task => Boolean(task?.projectId && ownEntry(rt.config.projectRepositories ?? {}, rt.readProject(task.projectId)?.repository))
 }

@@ -9,20 +9,21 @@ import { fileDigest } from './project-resource-workspaces.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
 import { ownEntry, setEntry } from './store.js'
 import { checkContextPrompt, resolveContextBudget } from './project-context-budget.js'
+import { requireExecutionAuthority } from './project-execution-authority.js'
 import { taskSession, backendBindingKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/harness' })
 const sha = text => createHash('sha256').update(text).digest('hex')
 const VERSIONS = { codex: '0.166.0', 'claude-agent': '0.3.316' }
 // Actual adapter support, independent of resource installation/authentication.
-// Native task-role continuation is deliberately not advertised until wired to
-// the existing Bot/parts lifecycle. Cross-Harness restoration is never inferred.
+// Native continuation uses exact committed Task-role bindings and the existing
+// Bot/parts lifecycle. Cross-Harness restoration is never inferred.
 export function harnessCapabilities(harness) {
   if (!['flybot', ...Object.keys(VERSIONS)].includes(harness)) throw refuse('Unknown execution Harness')
   return { version: 'project-harness-capabilities/v1', harness, sdkVersion: VERSIONS[harness] ?? null,
-    taskRoleResume: harness !== 'flybot', input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
+    taskRoleResume: true, input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
     cancellation: harness === 'flybot' ? 'native-bot-stop' : 'abort-and-worker-stop',
     toolOutputBudget: harness === 'codex' ? 'configured-cli-history-limit' : harness === 'flybot' ? 'scoped-context-tools' : 'sdk-runtime-managed',
-    exitConfirmation: harness === 'flybot' ? 'native-bot-removal' : 'stop-ack-and-process-exit', crossHarnessResume: false }
+    exitConfirmation: harness === 'flybot' ? 'native-agent-quiescence' : 'stop-ack-and-process-exit', crossHarnessResume: false }
 }
 
 export function handoffFrame(text, outputs) {
@@ -99,7 +100,7 @@ export function createProjectHarness(rt) {
       Object.assign(selected.env, { TMPDIR: scratchDirectory, npm_config_cache: join(scratchDirectory, 'npm-cache'), npm_config_update_notifier: 'false', npm_config_offline: 'true' })
     }
     const conversation = chief ? ownEntry(rt.state.projectAgents ?? {}, chief.agentId) : null
-    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, sessionKey: session.id,
+    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
       cwd: workspace.path, scratchDirectory, status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
@@ -181,6 +182,7 @@ export function createProjectHarness(rt) {
             if (claim?.id === session.poolClaimId && claim.status === 'active' && task.collaboration.generation === claim.generation) {
               const next = await rt.projectInputs?.prepare(task.id, claim, { next: true })
               if (next?.inputs.length) {
+                await requireExecutionAuthority(rt, session)
                 row.backendSessionId = event.sessionId; session.backendSessionId = event.sessionId
                 control.inputBatch = next; control.safeInputTurns = (control.safeInputTurns ?? 0) + 1
                 row.safeInputTurns = control.safeInputTurns
@@ -274,6 +276,7 @@ export function createProjectHarness(rt) {
       const next = await rt.projectInputs?.prepare(task.id, claim, { next: true })
       if (!next?.inputs.length) return { woken: false }
       if (active.get(row.id) !== control || task.collaboration.claim !== claim || task.collaboration.generation !== claim.generation || claim.status !== 'active' || row.status !== 'waiting-input' || row.pending?.kind !== 'message' || lease.status === 'released') return { woken: false }
+      await requireExecutionAuthority(rt, control.session)
       rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
       control.inputBatch = next; control.safeInputTurns = (control.safeInputTurns ?? 0) + 1
       row.safeInputTurns = control.safeInputTurns; row.status = 'running'; delete row.pending
@@ -295,7 +298,7 @@ export function createProjectHarness(rt) {
     const task = ownEntry(rt.state.tasks, taskId), claim = task?.collaboration?.claim
     if (!task || task.projectId !== attempt.projectId) throw refuse('Native Task scope changed')
     const current = () => rt.botOf(botId) === bot && attempt.status === 'running' && attempt.roleSessions[session.role] === session && session.status === 'bound' &&
-      (!session.poolClaimId || task.collaboration.claim === claim && claim?.id === session.poolClaimId && claim.botId === botId && claim.status === 'active' && claim.generation === session.generation && task.collaboration.generation === claim.generation)
+      (!session.poolClaimId || task.collaboration.claim === claim && claim?.id === session.poolClaimId && claim.workerId === botId && claim.status === 'active' && claim.generation === session.generation && task.collaboration.generation === claim.generation)
     if (!current()) throw refuse('Native input was superseded')
     const actor = { memberId: task.collaboration?.initiatedBy ?? task.requesterId ?? rt.readProject(attempt.projectId).ownerUserId }
     await rt.projectDelegations?.background(actor.memberId, task.collaboration?.sourceSessionId)
@@ -321,11 +324,12 @@ export function createProjectHarness(rt) {
     if (!control || control.closed || !['prepared', 'idle'].includes(row.status)) throw refuse('SDK worker is unavailable or already dispatched')
     const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
     if (!lease || lease.generation !== row.generation || lease.status === 'released') throw refuse('SDK callback lease is stale')
+    if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
     control.outputs = (step.outputs ?? []).map(port => port.name)
     control.inputBatch = step.inputs?.taskInbox
     const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
     const workspace = rt.state.projectAttempts?.[row.attemptId]?.workspaces?.[row.role]
-    const writableRoots = row.role === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
+    const writableRoots = (row.policyRole ?? row.role) === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
     row.inputUsage = checkContextPrompt(prompt, control.contextBudget)
     row.status = 'running'; row.executionStartedAt = Date.now()
     try {
@@ -335,6 +339,7 @@ export function createProjectHarness(rt) {
       await saved
       if (typeof before === 'number' && queued <= before) throw refuse('SDK dispatch did not commit a state snapshot')
       const currentLease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+      if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
       if (active.get(row.id) !== control || control.closed || row.status !== 'running' || currentLease?.generation !== row.generation || currentLease.status === 'released') throw refuse('SDK dispatch was superseded before input delivery')
     } catch (error) {
       if (row.status === 'running') row.status = 'idle'
@@ -342,7 +347,7 @@ export function createProjectHarness(rt) {
       throw error
     }
     control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
-      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || row.role !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1, toolOutputTokens: control.contextBudget.limits.toolOutputTokens }, prompt }) + '\n')
+      ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || (row.policyRole ?? row.role) !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1, toolOutputTokens: control.contextBudget.limits.toolOutputTokens }, prompt }) + '\n')
     if (control.inputBatch?.inputs.length && control.session.poolClaimId) {
       const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim
       if (claim?.id === control.session.poolClaimId) await rt.projectInputs?.transport(task.id, claim, control.inputBatch.batchId, { kind: 'adapter-written', sha256: sha(JSON.stringify(control.inputBatch)) })
@@ -417,7 +422,9 @@ export function createProjectHarness(rt) {
     if (!row || !control) throw refuse('Execution Session is unavailable')
     const task = ownEntry(rt.state.tasks, row.taskId)
     rt.requireProjectAccess(actor, row.projectId, 'task-write', task)
-    if (row.status !== 'waiting-input' || body.generation !== row.generation) throw refuse('Execution input is stale')
+    if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
+    rt.requireProjectAccess(actor, row.projectId, 'task-write', task)
+    if (row.status !== 'waiting-input' || control.closed || body.generation !== row.generation) throw refuse('Execution input is stale')
     if (row.pending.kind === 'permission') {
       rt.requireProjectAccess(actor, row.projectId, 'configure')
       if (body.requestId !== row.pending.id) throw refuse('Permission request is stale')
