@@ -175,15 +175,9 @@ decisions, concluded as [docs/governance.md](docs/governance.md) requires and re
   contains the integration fixes and regressions; review/CI/merge remain separate.
 
 
-### M7.2 — 2026-10-31
-
-M7.2 adds operator-granted local/Docker execution resources, safe environment observations, candidate pools, sticky resource leases and shared queue capacity accounting. The actual two-runtime probe passed with distinct hostnames/filesystems and confirmed cleanup. SDK authentication and mixed-resource Task delivery remain M7.3–M7.5. See docs/subsystems/project-resources.md.
-
-
-### M7.3 checkpoint — 2026-10-31
-
-M7.3 work in progress adds pinned official Codex/Claude Agent SDK temporary worker adapters through the existing Workflow seam, explicit per-resource/principal profiles, streamed evidence and exit-confirmed resource release. Chief SDK actions now use a host-validated scoped JSON bridge; cross-resource dispatch remains pending; no full real-SDK acceptance is claimed.
-
+Earlier M7.2/M7.3 implementation-status checkpoints are retained verbatim in
+[the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
+resource/Harness contracts and authorized acceptance boundaries remain below.
 
 ### M7.4 — 2026-10-31
 
