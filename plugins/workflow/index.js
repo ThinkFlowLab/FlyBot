@@ -104,7 +104,7 @@ export function apply(ctx, config = {}) {
   })
   void service.reap?.().catch(error => fb.warn?.('flybot-workflow: reap failed: %s', error))
   const offs = [
-    fb.api.handle('workflow/state', () => service.state(), { read: true }),
+    fb.api.handle('workflow/state', body => service.state(body), { read: true }),
     fb.api.handle('workflow/create', body => service.create(body)),
     fb.api.handle('workflow/rename', body => service.rename(body)),
     fb.api.handle('workflow/delete', body => service.delete(body)),
