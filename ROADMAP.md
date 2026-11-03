@@ -450,6 +450,8 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 
 #2182 implements opt-in transactional SQLite through the existing Store, exact-identity migration, process-death commit tests and recoverable offline rollback. Retain configured Chief semantic decisions while routine facts/queries remain deterministic. Public scoped event/receipt service #2185, legacy entrypoint cutover #2186 and final real deployment/README #2189 remain subsequent stages; current production state is unchanged.
 
+#2185 unifies command recovery, bounded history/source queries and committed Project event/SSE transport over existing services. Verify persistence failure/restart, current permissions and source hashes separately from model development. Complete legacy interface/cutover compatibility #2186 and original role/native-session dependencies before the final #2189 deployment/README rewrite.
+
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
 
 Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.

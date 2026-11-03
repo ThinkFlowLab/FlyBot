@@ -37,9 +37,28 @@ test('original Project APIs persist Task/intake intent in SQL without model call
   assert.equal(disk.projects.p.goal, 'Retain the agreed product goal')
   assert.equal(disk.projects.p.scope, 'Original Project scope')
   assert.equal(modelCalls, 0)
+  const snapshotBody = { version: 'project-development/v1', kind: 'query', name: 'project.snapshot', projectId: 'p', payload: {} }
+  const baseline = (await first.rt.projectEndpoint('project-development', snapshotBody, actor)).result
+  const proposalBody = { version: 'project-development/v1', kind: 'command', name: 'task.propose', projectId: 'p', requestId: 'propose-through-service',
+    payload: { botId: 'chief', title: 'A second explicit Project change', criteria: 'Independent regression passes', impact: 'Improve the Project service' } }
+  const proposal = await first.rt.projectEndpoint('project-development', proposalBody, actor)
+  assert.equal(proposal.receipt.status, 'completed'); assert.equal(proposal.receipt.committed, true)
+  const proposedId = proposal.result.id
+  assert.equal(first.rt.state.tasks[proposedId].commandSource.commandReceiptId, proposal.receipt.id)
+  assert.equal((await first.rt.projectEndpoint('project-development', proposalBody, actor)).result.id, proposedId)
+  assert.equal(Object.keys(first.rt.state.tasks).length, 2)
+  const eventBody = { version: 'project-development/v1', kind: 'query', name: 'events', projectId: 'p', payload: { after: baseline.cursor } }
+  const facts = (await first.rt.projectEndpoint('project-development', eventBody, actor)).result
+  assert.deepEqual(facts.events.map(row => row.entityId), [proposedId])
+  const receiptBody = { version: 'project-development/v1', kind: 'query', name: 'command.receipt', projectId: 'p', payload: { commandRequestId: proposalBody.requestId } }
+  assert.equal((await first.rt.projectEndpoint('project-development', receiptBody, actor)).result.id, proposal.receipt.id)
   await first.ctx.dispose()
   const second = await start()
   assert.equal(second.rt.stateStorage.status().backend, 'sqlite')
+  assert.equal((await second.rt.projectEndpoint('project-development', proposalBody, actor)).result.id, proposedId)
+  assert.equal(Object.keys(second.rt.state.tasks).length, 2)
+  assert.deepEqual((await second.rt.projectEndpoint('project-development', eventBody, actor)).result.events.map(row => row.entityId), [proposedId])
+
   assert.equal((await second.rt.projectEndpoint('project-development', body, actor)).result.tasks[0].taskId, task.id)
   assert.equal(second.rt.state.tasks[task.id].projectTask.admission.status, 'proposed')
   assert.equal(modelCalls, 0)

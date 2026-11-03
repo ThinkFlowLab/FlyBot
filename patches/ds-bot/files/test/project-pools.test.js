@@ -520,6 +520,28 @@ test('a sealed parent resumes through one successor Attempt while retaining its 
   await f.rt.projectEffects.close()
 })
 
+test('failed durable acceptance cannot be replayed as a claim; retries commit one active owner', async () => {
+  const f = await projectTaskFixture()
+  await f.admit()
+  const handoffId = f.task.collaboration.currentHandoffId, save = f.rt.save
+  f.rt.save = async () => { throw new Error('fixture acceptance commit failed') }
+  await assert.rejects(f.pool.accept('task', 'p:developer', handoffId, 'accept-once'), /commit failed/)
+  assert.equal(f.task.collaboration.status, 'queued')
+  assert.equal(f.task.collaboration.claim, undefined)
+  assert.equal(f.task.collaboration.history.at(-1).acceptance, undefined)
+  f.rt.save = save
+  const [first, duplicate] = await Promise.all([
+    f.pool.accept('task', 'p:developer', handoffId, 'accept-once'),
+    f.pool.accept('task', 'p:developer', handoffId, 'accept-once'),
+  ])
+  assert.equal(first.id, duplicate.id)
+  assert.ok(first.acceptanceEffect)
+  assert.equal(f.rt.projectEffects.intentCommitted(first.acceptanceEffect), true)
+  assert.equal(f.task.collaboration.history.at(-1).acceptance.effect.id, first.acceptanceEffect.id)
+  assert.equal(f.task.collaboration.claim.id, first.id)
+  await f.rt.projectEffects.close()
+})
+
 
 test('a retired source can finish its frozen active claim but cannot receive new offers', async () => {
   const f = setup(); await f.admit(); const claim = await f.claim()

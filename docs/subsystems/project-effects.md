@@ -143,3 +143,5 @@ generation, independently of a newer unsaved receipt revision. It cannot authori
 an uncommitted replacement, unknown protocol or absent token. Delivery requires
 this proof before using pins; a successful/no-op save alone is not enough. This
 metadata-only adapter does not launch code or imply a merge/verification result.
+
+#2185 adds pure pool.accept and service.command commit markers. They acknowledge ownership/command phases without invoking another executor. service.command results bind their exact SHA256; marker list/retry visibility follows the receipt's original independent principal, including native/external personal-agent identity across carrier rotation. Other Project members do not gain access to private command receipts or their markers.

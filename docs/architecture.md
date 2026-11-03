@@ -184,7 +184,18 @@ until explicitly migrated; a versioned guard prevents two writable authorities.
 History rows and immutable payload files separate storage growth from bounded model
 context. See [transactional storage and offline migration](subsystems/project-state-storage.md).
 
+## Application contracts (#2185)
+
+The existing development service owns HTTP command/query dispatch, private durable
+receipts and bounded source projections. Store commits safe event deltas alongside
+business facts; the existing gateway exposes authenticated resumable SSE. Role
+Handoff acceptance retains a separate durable authority proof. See
+[contracts and recovery](subsystems/project-service-contracts.md). Event transport
+and read projections introduce no execution workflow or extra model calls.
+
 Project role governance (#2171) separates resident Chief proposals, Maintainer/Owner decisions, the current revisioned role catalog, and archived definitions/audit. Durable Effects proof gates visible changes; logical role keys and execution capability classes remain distinct. See [role governance](subsystems/project-agents.md#project-role-governance-2171).
 
 
 Native execution (#2184) uses the original Workflow lifecycle and SessionController, with exact Task-role physical bindings and durable quiescence facts. A new ephemeral carrier can restore prior context without reviving a deleted Bot identity; new input is fenced during stopping and resources are never released from Bot absence alone. See [native adapter](subsystems/project-harness.md#native-physical-session-binding-and-quiescence-2184).
+
+The committed service read model now covers native execution and public role-governance facts alongside SDK/Task records. Bounded entity-specific snapshot pages share a Project revision/cursor; live Task queries use committed role catalogs and existing activation/exit proofs. Exact frozen definitions remain referenced sources.

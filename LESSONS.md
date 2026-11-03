@@ -669,6 +669,10 @@ Seen 1× while implementing #2179. Reusing old group aggregation would accept ca
 
 An interrupted prepared SQL migration may recover its verified import; an active database that disappears must fail closed, not silently revive the old import. Publish a newer-version JSON guard before initialization, validate one authority, and retain a fenced resumable rollback marker across partial moves. A transaction commit must precede Effects acknowledgement without a fallible post-commit read masking that proof.
 
+### 2026-11-03 — A failed acceptance save is not a valid retry result
+
+Pool acceptance previously left an active claim in memory when saving failed; repeating its idempotency key could return that uncommitted claim. Persist an acceptance marker, roll back failed ownership and require commit proof on replay. Public command replay must similarly bind exact intent/result and current principal while allowing the original successful generation to advance. Keep unknown outcomes explicit; receiving a fact does not grant initiative.
+
 
 ### 2026-11-03 — Public Chief cannot borrow its approver's identity
 
@@ -755,3 +759,11 @@ Seen 1× (late Task requirement response regression). Stopping on the next sched
 ### 2026-11-03 — State maps do not encode chronology
 
 Seen 1× (actual SQLite native return probe). Two valid Attempts survived, but UUID-key SQL iteration put the successor first and an insertion-order assertion compared it to itself. Use persisted predecessor references for chronology; preserve explicit history positions. Storage order must not decide current execution or evidence.
+
+### 2026-11-03 — New execution adapters need committed read-model coverage
+
+Seen 1× (native projection regressions). A correct native stop/binding is insufficient if queries/events still report only SDK workers. Reuse actual activation/exit proofs, distinguish current catalog from frozen definition, hide host details and reference large definitions instead of repeating them. Keep private personal proposals separate from public governance proposals.
+
+### 2026-11-03 — Read-model lookups must not materialize domain facts
+
+Seen 1× (actual SQLite API regression). A Task query requested full delivery definitions, creating an unsaved default role catalog. A later Task command persisted it and emitted an unrelated Project change. Return deterministic legacy defaults without mutation and use committed raw catalogs for metadata; keep materialization in explicit writes.

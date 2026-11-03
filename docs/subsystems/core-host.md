@@ -972,3 +972,7 @@ A failed Attempt leaves a new Project Task blocked with its source Attempt/reaso
 ## Transactional persistence (#2182)
 
 The original Store supports opt-in `stateStorage: sqlite` through the [storage bridge](project-state-storage.md). It retains the same runtime objects, save chain, Project services and home lock, and acknowledges Effects after actual SQL COMMIT. Locked JSON remains the default until selected; after migration the newer-version JSON guard fences old writers and SQL remains authoritative across configuration omission. Invalid migration never creates a fresh empty team. No extra model call or periodic task is introduced.
+
+## Committed interfaces (#2185)
+
+Store builds safe per-Project event projections from each queued immutable snapshot, persists their cursor state with business records/Effects, and publishes the committed cache after rename/COMMIT. Failed saves publish nothing. Public snapshots/events omit private agent/auth/receipt data. Task construction stamps trusted command provenance once through the application context; body actor fields cannot forge it. The [contract](project-service-contracts.md) separates public requests, private receipts, host-only role authority and exact bounded history.

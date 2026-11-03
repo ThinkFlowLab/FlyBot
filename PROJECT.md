@@ -150,57 +150,9 @@ return/retry/re-review and scripted owner acceptance. Workers/workspaces were re
 [Evidence](dev/demo/evidence/codex-2026-11-01.json) distinguishes this from the outstanding
 Claude/mixed-resource/browser/restart criteria and independent repository review.
 
-### Collaboration repairs — 2026-11-01
+### Collaboration contract and earlier validation
 
-The owner authorized sequential issues [#34–#41](https://github.com/zy95-12/FlyBot/issues/33), one PR each; see [decision](decisions/2026-11-01-collaboration-repair.md). The target is native multi-Bot reuse, per-Bot pools and enforced handoff, restored role contracts, ordinary Chief conversations, safe/watch delegation and configurable Chief inspection schedules. Public hosting is deferred; control-plane stays unchanged.
-
-R1 (#34) rejects incomplete repository capabilities before workers/workspaces/leases are allocated. Workbench readiness checks Git/runtime/dependency metadata and reports the precise block; this does not claim tests or SDK task delivery have run. Old failed Attempts remain readable. R1 full local verification passed in PR #42; actual shared-service integration remains pending.
-
-R2 (#35) restores complete Dev/Tester/Reviewer conventions, pinned policy-source hashes and final-execution prompt assembly for native and SDK roles. FlyBot code sealing requires memory/tests/architecture evidence; candidate approval explicitly cannot mint a signed forge PASS. Focused tests cover full rules reaching SDK input, required-source failures and tampering. R2 full verification and later backend/dogfood acceptance are tracked separately.
-
-
-R3 (#36) implements per-logical-Bot pools on existing Task records, atomic claims,
-versioned receipts and enforced handoff admission. New shared deliveries default
-to dynamic pool dispatch; the legacy DAG is explicit opt-in. Only the receiving
-role allocates an execution Session/resource. Candidate returns retain the Task
-and create a new Attempt; overall completion waits for Chief judgement. Unit and
-SDK contract-process tests cover non-DAG return/rework with one resource. Full
-verification, conversation bridging, Chief arbitration/schedules and real shared
-service dogfood remain separately tracked acceptance, not implied by these tests.
-
-
-R4 (#37) adds conversation-only private → Chief → original-chat handoff, isolated
-from private memory and other members. Query turns cannot publish or execute a
-Task; scoped GitHub reads provide actual repository facts. Impactful Task kinds
-persist across proposal publication; workbench status separates publication from
-queue/start/execution and Chief wait. Targeted privacy, native/SDK-query, no-Task
-and credential/revocation tests pass. Full verification and real shared-service
-acceptance remain separate; control-plane and public hosting are unchanged.
-
-
-R5 (#38) implements safe/private publication proposals and persistent, revocable
-watch grants bound to the current human and Project. Browser logout does not
-revoke watch authority; account/membership/grant changes do. Scoped actions use
-current human rights and retain provenance. The unchanged SQLite platform can
-supply fresh account status through a FlyBot-owned read-only operator helper,
-without storing browser cookies or admin credentials. Regression tests cover
-logout, restart, current rights, revocation, forged status evidence and fresh WAL
-reads. Shared-service provisioning and real-model acceptance are still pending.
-
-R6 (#39) adds evidence-gated Chief arbitration, audited intervention and configurable
-inspection on original DSH scheduled tasks. The JSON template defaults to 30 minutes;
-content, cadence, thresholds and pause/enable are editable. Current configured human
-authority and generation fences apply to each effect. Unknown process exits retain
-capacity; a verified systemd invocation boundary permits local restart recovery.
-Deterministic protocol tests return incomplete coverage to Dev then close the same
-Task after a fresh Attempt. Real shared-service Codex/timer acceptance remains #41.
-
-Real shared-service R6 probes passed an actual Codex Chief ordinary inquiry with
-zero Tasks and an original DSH 60-second wake after browser logout, then pause/
-resume and restoration to 30 minutes. R7 actual Dev requested Chief arbitration;
-Chief returned the same Task to Dev with a fresh Attempt. This exposed a concurrent
-resource-release reconciliation race, fixed with a red/green regression. Actual
-full R7 delivery and persistent 30-minute/restart acceptance remain in progress.
+Native multi-Bot UI, per-Bot handoff pools and complete pinned role conventions remain required. Ordinary Chief questions are conversations; safe/watch delegation uses current human permissions. Chief inspection uses the original DSH scheduled-task service with editable cadence/content/thresholds (the current template defaults to30 minutes), never a hardcoded framework workflow. Code changes retain required memory/tests/architecture evidence. Earlier R1–R7 implementation and runtime validation are [preserved verbatim](docs/history/2026-11-03-collaboration-repair-evidence.md). Current acceptance follows the convergence records above; no new deployment, Control Plane change or interruption of healthy frontend work is authorized.
 
 ### Collaboration execution invariants and historical evidence
 
@@ -323,6 +275,12 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 
 Opt-in SQL retains the original Store/services and saves domain facts plus Effects atomically. JSON becomes a newer-version migration guard, with verified import/recovery and offline export/rollback; no dual writable snapshots. Histories are normalized and large immutable payloads hash-referenced. Routine state updates/views make no additional model calls or Project-position changes. Full-state hydration/scanning remains; storage growth is distinct from #2177 context budgets. No live migration or provider-loop claim.
 
+### 2026-11-03 — Service contracts (#2185)
+
+The original application service adds private principal-scoped command receipts, bounded Task/Attempt sources, committed snapshots/events and authenticated resumable SSE. Unknown command outcomes are reconciled explicitly, never blindly rerun. Independent personal-agent identity survives carrier/transport rotation. Role acceptance commits before ownership can be replayed. Event receipt grants no role authority; private chat/auth/receipt writes do not affect public Project streams. Existing UI remains; #2186 compatibility and #2189 real deployment/README follow.
+
 Composition checkpoint: current role governance/native exit, bounded context and canonical Task waits now share one execution chain. Native input fences logical role/physical worker separately; Task requirement revision changes stop the old Attempt through existing pool release. Actual composed/native acceptance and remaining API/storage compatibility are still under verification, not deployment.
 
 SQLite composition now has an actual DSH native return probe: canonical Chief intake, persisted activation/exit, original role context and single-resource handoff are read from committed SQL snapshots. Inference remains deterministic; no production migration or full-provider workflow acceptance is claimed.
+
+Service composition adds scoped native execution/exit and current-vs-pinned role metadata, role governance aliases, and bounded per-entity committed snapshots. New projections and final six-case DSH/SQLite validation are under current review; none of this branch is deployed.

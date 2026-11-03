@@ -3,6 +3,7 @@
 // or group chat it belongs to.
 import { install as installProjects } from './project-service.js'
 import { createProjectStateStorage } from './project-state-storage.js'
+import { createProjectServiceEvents } from './project-service-events.js'
 import { constants, mkdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -38,6 +39,7 @@ export function install(rt) {
   // Project services own domain records; store owns their durable snapshot.
   // projectRuns is a legacy projection; projectExecutions holds direct Run ownership.
   const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, revision: 0 }
+  const committedEvents = createProjectServiceEvents(config.projectEventRetention)
   let loaded = null
   let writing = Promise.resolve()
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -397,6 +399,7 @@ export function install(rt) {
     if (rt.projectEffects?.recover()) migrated = true
     if (syncDesignatedChief()) migrated = true
     indexSessions()
+    committedEvents.load(state)
     return { migrated: migrated || stale.length > 0, stale }
   }
 
@@ -558,15 +561,20 @@ export function install(rt) {
           }
         }
         ensureLock()
-        if (storage.sqlite) storage.write(snapshot)
+        const prepared = committedEvents.prepare(JSON.parse(snapshot))
+        const persistedSnapshot = JSON.stringify(prepared.snapshot, null, 2)
+        if (storage.sqlite) storage.write(persistedSnapshot)
         else {
-          await writeFile(temp, snapshot, 'utf8')
+          await writeFile(temp, persistedSnapshot, 'utf8')
           ensureLock()
           await rename(temp, statePath)
         }
         rt.projectEffects?.saved(effectSnapshot)
+        committedEvents.saved(prepared)
+        state.projectServiceEventStreams = structuredClone(prepared.snapshot.projectServiceEventStreams)
+        state.projectServiceEvents = structuredClone(prepared.snapshot.projectServiceEvents)
         seen = stamp()
-        await journal?.record(snapshot)
+        await journal?.record(persistedSnapshot)
         rt.capabilitiesStateSaved?.()
       } catch (error) {
         await unlink(temp).catch(() => { /* the temp file may already be gone */ })
@@ -693,6 +701,7 @@ export function install(rt) {
 
   Object.assign(rt, {
     state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
+    committedProjectEvents: { query: (id, options) => committedEvents.query(id, options), snapshot: (id, options) => committedEvents.snapshot(id, options) },
     stateStorage: { status: () => storage.status(), changes: options => storage.changes(options) },
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,

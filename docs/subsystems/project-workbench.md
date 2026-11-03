@@ -473,5 +473,7 @@ Project execution quota excludes a parent waiting for independently admitted chi
 
 The legacy Workflow gateway now also excludes Chief control jobs from execution quota. A real DSH admission probe reproduced a first delivery failing while its Chief intake was still finishing; the shared quota regression protects both the gateway and scheduler.
 
+#2185 exposes request-scoped GET /api/project-events on the existing gateway. It forwards only authenticated Project service queries, requires credentials in headers, supports Last-Event-ID, bounds connections/backpressure and closes on revoke/shutdown. It does not alter workbench UI components, forward the private owner cookie, or create a parallel state store. Default1000ms transport polling is configurable and unrelated to Chief inspection cadence.
+
 
 #2171 adds role catalog/proposal/decision endpoints to the existing restricted gateway allowlist. Reads preserve Project scope; decisions keep configure authorization in the domain service. No control-plane or frontend replacement is introduced.

@@ -879,3 +879,33 @@ test('role definitions keep exact instruction limits and reject capability/forei
   await assert.rejects(rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'chief', policyRole: 'developer' }, alice), /capability class/)
   assert.equal(rt.projectAgents.deliveryDefinitions('p1').revision, revision)
 })
+
+test('versioned role queries and Owner approval reuse original governance and receipt replay', async t => {
+  const { rt } = await setup(t), initial = await get(rt, alice)
+  await message(rt, bob, 'public', 'Suggest an analysis role through the service')
+  const chief = rt.botOf(initial.public.botId)
+  const proposed = await rt.projectAgents.proposeRole(chief, { requestId: 'v1-analysis-role', action: 'add', role: 'analyst', reason: 'Independent technical analysis supports Project decisions', fields: { name: 'Analyst', policyRole: 'reviewer', instructions: 'Follow the repository Review conventions', skills: ['commit-review'] } })
+  const query = { version: 'project-development/v1', kind: 'query', name: 'role.proposals', projectId: 'p1', payload: {} }
+  const list = await rt.projectEndpoint('project-development', query, bob)
+  assert.ok(list.result.proposals.some(row => row.id === proposed.proposal.id))
+  const approval = { version: 'project-development/v1', kind: 'command', name: 'role.decide', projectId: 'p1', requestId: 'v1-approve-analysis', payload: { proposalId: proposed.proposal.id, expectedSha256: proposed.proposal.sha256, decision: 'approve' } }
+  await assert.rejects(rt.projectEndpoint('project-development', approval, bob), /access denied|denied/i)
+  const first = await rt.projectEndpoint('project-development', approval, alice)
+  assert.equal(first.result.proposal.status, 'approved')
+  const revision = rt.projectAgents.deliveryDefinitions('p1').revision
+  const replay = await rt.projectEndpoint('project-development', approval, alice)
+  assert.equal(replay.replayed, true)
+  assert.equal(rt.projectAgents.deliveryDefinitions('p1').revision, revision)
+  const roles = await rt.projectEndpoint('project-development', { ...query, name: 'roles' }, bob)
+  assert.ok(roles.result.roles.some(row => row.role === 'analyst' && row.policyRole === 'reviewer'))
+})
+
+test('reading an implicit legacy role catalog does not materialize or mutate Project facts', async t => {
+  const { rt } = await setup(t)
+  if (rt.state.projectAgentDefinitions) delete rt.state.projectAgentDefinitions.p1
+  const before = JSON.stringify(rt.state.projectAgentDefinitions ?? {})
+  const response = await rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'query', name: 'roles', projectId: 'p1', payload: {} }, bob)
+  assert.equal(response.result.revision, 1)
+  assert.equal(response.result.roles.length, 4)
+  assert.equal(JSON.stringify(rt.state.projectAgentDefinitions ?? {}), before)
+})

@@ -525,6 +525,8 @@ resource binding. Git regression tests exercise actual multi-parent merges and
 exact tree/parent sealing; their child acceptance records and publisher are explicit
 deterministic fixtures, not a real-provider full collaboration claim.
 
+#2185 integration admission commands now have operation-scoped application receipts. Retries preserve the exact original admission/result with replayed:true; distinct validation probes use distinct keys and still exercise current generation, source, workspace and exit fences. The original domain admission idempotency and exact staged-tree tests remain in place.
+
 Native Sessions now use the existing Task-role binding service through projectDelivery.nativeSessions. Canonical pool worktrees can be retained across Attempts only after exact native quiescence and released leases; original DAG workspace behavior remains compatible. Definition capability changes and removed roles block stale restart instead of inheriting authority.
 
 

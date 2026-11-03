@@ -1,5 +1,6 @@
 // Persist intent with Project state, then execute through registered host adapters.
 import { createHash } from 'node:crypto'
+import { commandEffectVisible } from './project-command-receipts.js'
 import { ownEntry, setEntry } from './store.js'
 
 export const EFFECT_PROTOCOL = 'project-effect/v1'
@@ -177,13 +178,14 @@ export function createProjectEffects(rt, { now = Date.now } = {}) {
   function list(projectId, actor, { taskId, limit = 50 } = {}) {
     rt.requireProjectAccess(actor, projectId)
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw fail('Effect page limit must be between 1 and 200')
-    return Object.values(rt.state.projectEffects ?? {}).filter(row => row.projectId === projectId && (!taskId || row.taskId === taskId)).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).slice(0, limit)
+    return Object.values(rt.state.projectEffects ?? {}).filter(row => row.projectId === projectId && commandEffectVisible(rt.state, row, actor) && (!taskId || row.taskId === taskId)).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).slice(0, limit)
       .map(({ payload: _payload, history: _history, key: _key, ...row }) => ({ ...copy(row), committed: durable.get(row.id) === stamp(row) }))
   }
   async function retry(body, actor) {
     const row = ownEntry(rt.state.projectEffects ?? {}, body.effectId)
     if (!row || row.projectId !== body.projectId) throw fail('Effect is unavailable in this Project')
     rt.requireProjectAccess(actor, row.projectId, 'configure')
+    if (!commandEffectVisible(rt.state, row, actor)) throw fail('Effect is private to another command principal')
     if (rt.readOnly?.() !== undefined || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId ?? '')) throw fail('Effect retry needs a writable host and stable requestId')
     if (row.version !== EFFECT_PROTOCOL) throw fail('Effect protocol upgrade is required')
     const prior = row.retries?.find(item => item.requestId === body.requestId)

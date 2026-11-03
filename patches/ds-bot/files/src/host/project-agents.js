@@ -109,8 +109,8 @@ export function createProjectAgents(rt) {
     rt.requireProjectAccess(authority.actor, authority.agent.projectId)
     return authority
   }
-  function storedDefinitionSet(projectId) {
-    const existing = ownEntry(definitions(), projectId)
+  function storedDefinitionSet(projectId, materialize = true) {
+    const existing = ownEntry(state.projectAgentDefinitions ?? {}, projectId)
     if (existing) return existing
     const model = rt.config.projectModel ?? rt.cachedDefault?.() ?? ''
     const workerNodes = deliveryGraph(model).nodes
@@ -118,10 +118,10 @@ export function createProjectAgents(rt) {
       ...workerNodes.map(node => ({ role: node.id, name: node.name, instructions: node.prompt, model: node.model,
         skills: node.id === 'developer' ? ['code-change'] : node.id === 'tester' ? ['test-evidence'] : ['commit-review'], tools: [] }))]
     const record = { projectId, revision: 1, roles: rows.map(row => ({ ...row, id: `${projectId}:${row.role}`, memoryRefs: [], execution: { harness: 'flybot', resourceIds: [] }, toolPolicy: row.role === 'chief' ? { kind: 'scoped-project', filesystem: false, connectors: [] } : { kind: 'registered-worktree', shell: true, connectors: [], isolation: 'cwd-only' } })) }
-    setEntry(definitions(), projectId, record)
+    if (materialize) setEntry(definitions(), projectId, record)
     return record
   }
-  function definitionSet(projectId) { return roleGovernance ? roleGovernance.visibleSet(projectId, storedDefinitionSet(projectId)) : storedDefinitionSet(projectId) }
+  function definitionSet(projectId) { return roleGovernance ? roleGovernance.visibleSet(projectId, storedDefinitionSet(projectId, false)) : storedDefinitionSet(projectId, false) }
   async function prepareDefinition(role, body, projectId) {
     if (body.tools !== undefined && !Array.isArray(body.tools)) throw refuse('Invalid role tools')
     if (Array.isArray(body.tools) && body.tools.length) throw refuse('Agent connector tools need explicitly delegated credentials')
@@ -150,7 +150,7 @@ export function createProjectAgents(rt) {
     rt.projectResources?.checkPool(projectId, next.execution)
     return next
   }
-  roleGovernance = createProjectRoleGovernance(rt, { definitionSet: storedDefinitionSet, prepareDefinition,
+  roleGovernance = createProjectRoleGovernance(rt, { definitionSet: storedDefinitionSet, readDefinitionSet: projectId => storedDefinitionSet(projectId, false), prepareDefinition,
     baseDefinition(projectId, role) {
       const active = definitionSet(projectId).roles.find(row => row.role === role)
       if (active) return structuredClone(active)
@@ -196,6 +196,8 @@ export function createProjectAgents(rt) {
       return known
     }
     if (project.status !== 'active') throw refuse('Project is archived; a new agent cannot be created')
+    // Creating an actual carrier is a write; metadata reads only peek defaults.
+    storedDefinitionSet(projectId)
     let bot
     if (visibility === 'public' && !room) {
       const previous = project.chief
