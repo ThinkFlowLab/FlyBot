@@ -9,6 +9,8 @@
     ".github/scripts/risk-gate.mjs",
     "scripts/self-test-catalog.mjs",
     ".github/scripts/policy-sign.mjs",
+    ".github/scripts/enqueue-guard.mjs",
+    ".github/scripts/enqueue-rules.mjs",
     ".github/workflows/test.yml",
     "policy/"
   ]

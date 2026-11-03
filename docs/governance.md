@@ -142,10 +142,11 @@ store, and the file it archives is the durable part.
 
 ## 9. Changing a gate needs a second person
 
-The acceptance gates — `merge-gate`, `review-gate`, `pass-label`, `risk-gate`,
-`scripts/self-test-catalog.mjs`, and the checker and workflow step that enforce this rule — are
-listed in [`policy/gates.json`](../policy/gates.json). A pull request that edits one of them, or
-anything under `policy/`, must carry one line in its body:
+The acceptance gates — `merge-gate`, `review-gate`, `pass-label`, `risk-gate`, the
+`enqueue-guard` and `enqueue-rules` that decide the merge queue, `scripts/self-test-catalog.mjs`,
+and the checker and workflow step that enforce this rule — are listed in
+[`policy/gates.json`](../policy/gates.json). A pull request that edits one of them, or anything
+under `policy/`, must carry one line in its body:
 
 ```
 Policy-sign: <comment id or url>

@@ -1,8 +1,9 @@
 // A pull request that edits an acceptance gate needs another person's signature (#2054).
 //
 // The gates that judge this repository — `merge-gate.mjs`, `review-gate.mjs`, `pass-label.mjs`,
-// `risk-gate.mjs` and `scripts/self-test-catalog.mjs` — live in the same repository they judge, so a
-// pull request can change what "pass" means and every gate downstream will read the new rule. This
+// `risk-gate.mjs`, `enqueue-guard.mjs`, `enqueue-rules.mjs` and `scripts/self-test-catalog.mjs` — live
+// in the same repository they judge, so a pull request can change what "pass" means and every gate
+// downstream will read the new rule. This
 // is the smallest structural step against that: `policy/gates.json` names the files, and a pull
 // request touching one of them must carry `Policy-sign: <comment id or url>` in its body, naming a
 // comment written by someone other than the pull request's author. A person cannot sign their own
