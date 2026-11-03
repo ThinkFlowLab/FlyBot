@@ -226,3 +226,57 @@ test('#2219: a writable window keeps the decision buttons', async () => {
     assert.equal(byTag(tree, 'hold-always').length, 1, 'Auto-send from now on stays')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #2228: the room view's own head row. A live room's overview drew Leave, the Auto-send switch and
+// the invite in a read-only window, and the three host endpoints behind them can only be refused.
+const overviewRoom = () => ({
+  id: 'r1',
+  origin: 'face-to-face',
+  face: { roomId: 'frm1', status: 'open', joinCode: '482913' },
+  participants: [{ id: 'bot_a', name: 'Alice', remote: false, handle: '@alice.home' }],
+})
+const WRITE_TAGS = ['face-leave', 'face-auto-send', 'face-auto-bot', 'face-invite', 'face-invite-mint']
+const overview = (roster, room = overviewRoom()) => {
+  const inst = { hooks: {}, effects: [], props: { room, roster, actions: {} } }
+  return render(loadApp().FaceRoomOverview, inst)
+}
+
+test('#2228: a read-only window draws no room-overview write control', async () => {
+  fixtures()
+  try {
+    const tree = overview(readOnlyRoster())
+    const tags = flybotTags(tree)
+    // Not hidden: not drawn at all. Red first on 986399246f: 5 tags and Leave / Create link.
+    const writes = tags.filter(tag => WRITE_TAGS.includes(tag))
+    assert.deepEqual(writes, [], `no write control in a read-only room view, saw ${writes.join(',')}`)
+    const writeButtons = buttonLabels(tree).filter(label => label === 'Leave' || label === 'Create link')
+    assert.deepEqual(writeButtons, [], `no write button in a read-only room view, saw ${writeButtons.join(',')}`)
+    // The read half stays: the head is the status chip, not an empty row.
+    assert.ok(tags.includes('face-status'), 'the status chip is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2228: a writable window keeps the three room-overview controls', async () => {
+  fixtures()
+  try {
+    const tree = overview(writableRoster())
+    const tags = flybotTags(tree)
+    for (const tag of WRITE_TAGS) assert.ok(tags.includes(tag), `a writable window keeps ${tag}`)
+    const labels = buttonLabels(tree)
+    assert.ok(labels.includes('Leave'), 'a writable window keeps Leave')
+    assert.ok(labels.includes('Create link'), 'a writable window keeps Create link')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2228: a read-only waiting room keeps its code, drops Leave and Enter chat', async () => {
+  fixtures()
+  try {
+    const room = { ...overviewRoom(), face: { roomId: 'frm1', status: 'candidate', joinCode: '482913' } }
+    const tree = overview(readOnlyRoster(), room)
+    const tags = flybotTags(tree)
+    assert.deepEqual(byTag(tree, 'face-wait-foot'), [], 'no Leave / Enter chat foot in a read-only window')
+    assert.deepEqual(buttonLabels(tree).filter(label => label === 'Leave' || label === 'Enter chat'), [])
+    assert.ok(tags.includes('face-wait-code'), 'the room number is still drawn')
+    assert.ok(tags.includes('face-wait-roster'), 'who has joined is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
