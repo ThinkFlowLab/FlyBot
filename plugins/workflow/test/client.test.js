@@ -4625,3 +4625,62 @@ test('#2257: a pick inside the twelve rows leaves the list exactly as today', as
     } finally { ui.view.unmount() }
   })
 })
+
+// #2260: a lane can hold more ids than one host read serves — `heldLimit` tops out at 200
+// (`MAX_HELD_LIMIT`). With 250 held, the folded control promised `230 more held tasks` while
+// pressing it reached 200, so ids 201-250 were named and then dropped: the dead promise #2256
+// removed, back as a button that cannot deliver it. The folded count is now what pressing the
+// button actually reaches, and the unfolded view names the cap instead of hiding it.
+test('#2260: the held more-count promises only what the wider page reaches, and the cap is named', async () => {
+  const portals = []
+  const reactDom = {
+    createPortal(node, container) {
+      if (!container || container.nodeType !== 1) throw new Error('Target container is not a DOM element.')
+      portals.push(container)
+      return { type: 'portal', props: { container }, children: [node] }
+    },
+  }
+  const opened = loadClient(reactDom)
+  const body = { nodeType: 1 }
+  const prevBody = document.body
+  document.body = body
+  const ids = Array.from({ length: 250 }, (_, index) => `task-held-${String(index + 1).padStart(3, '0')}`)
+  const asked = []
+  const call = async (name, payload) => {
+    if (name !== 'workflow/state') return { ok: true }
+    asked.push(payload)
+    const limit = Number(payload?.heldLimit)
+    const shown = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 20
+    return { workflows: [{ ...delivery(), heldTasks: ids.slice(0, shown), heldTaskCount: ids.length }], templates: [] }
+  }
+  const view = mount(opened.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    await settle()
+
+    const rows = () => findAll(view.tree, node => node.props?.className === 'wf-held-row')
+    const more = () => findAll(view.tree, node => node.type === 'button' && node.props?.['data-more'] === 'held')
+    const note = () => findAll(view.tree, node => node.props?.className === 'wf-held-note')
+    assert.equal(rows().length, 20, 'the folded page is the 20 ids the state carries')
+    assert.equal(note().length, 0, 'a folded list states no cap')
+    assert.equal(textOf(more()[0]), 'Show 180 more held tasks', 'the folded count is what the wider page reaches past these 20 rows, not the 230 the lane holds')
+
+    more()[0].props.onClick()
+    await settle()
+    assert.deepEqual(asked.at(-1), { heldLimit: 200 }, 'unfolding asks the host for the wider page')
+    assert.equal(rows().length, 200, 'the wider page is the host cap')
+    assert.equal(textOf(more()[0]), 'Show less')
+    assert.equal(note().length, 1, 'the unfolded list says what it is showing instead of hiding the cap')
+    assert.equal(textOf(note()[0]), 'Showing 200 of 250 held tasks')
+
+    more()[0].props.onClick()
+    await settle()
+    assert.deepEqual(asked.at(-1), undefined, 'folding asks for the default page again')
+    assert.equal(rows().length, 20)
+    assert.equal(note().length, 0, 'and the note folds away with the rows it describes')
+  } finally {
+    view.unmount()
+    document.body = prevBody
+  }
+})

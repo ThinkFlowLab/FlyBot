@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
       'Show {count} more cards': '展开另外 {count} 张卡片',
       'Show {count} more Bots': '展开另外 {count} 个 Bot',
       'Show {count} more held tasks': '展开另外持有中的 {count} 个任务',
+      'Showing {shown} of {count} held tasks': '共有 {count} 个持有中的任务，当前显示 {shown} 个',
       // Stage timeline (#1489). The key is the English line; service.js and
       // narrate.js keep the Chinese text only as the fallback for rows written
       // before the key existed.
@@ -565,6 +566,10 @@ window.__ModuleLoader__.load({
       // Another lane is another page: switching folds whatever the last one had unfolded.
       useEffect(() => { setHeldWide(false) }, [workflow.id])
       const heldShown = heldWide ? held : held.slice(0, HELD_PAGE)
+      // #2260: the wider read stops at HELD_LIMIT, so a count taken from heldTaskCount alone
+      // promised ids the next click could not reach. The folded control counts what it reaches.
+      const heldTotal = workflow.heldTaskCount ?? held.length
+      const heldRest = Math.min(heldTotal - heldShown.length, HELD_LIMIT - heldShown.length)
       const viewRun = resolveFocusedRun(workflow, focusedRunId)
       const showSummary = (workflow.queueDepth ?? 0) > 0 || liveRuns.length > 1
       const visible = stageMessages(workflow, workflow.messages, roster)
@@ -598,11 +603,15 @@ window.__ModuleLoader__.load({
               locked ? null : h('button', { type: 'button', className: 'wf-btn wf-sm', onClick: () => onRematch?.(taskId) }, tr('Re-match')))),
             // #2249 gave this page the one unfold control; #2256 puts the held ids behind
             // it, so the rest of the list is reachable instead of being named and dropped.
-            heldWide || (workflow.heldTaskCount ?? held.length) > heldShown.length
+            // #2260: past the 200-id page cap the unfolded list states the cap it cannot pass.
+            heldWide && heldTotal > held.length
+              ? h('div', { className: 'wf-held-note' }, tr('Showing {shown} of {count} held tasks', { shown: held.length, count: heldTotal }))
+              : null,
+            heldWide || heldTotal > heldShown.length
               ? h('button', {
                 type: 'button', className: 'wf-more wf-held-more', 'data-more': 'held', 'aria-expanded': heldWide,
                 onClick: () => { const next = !heldWide; setHeldWide(next); onHeldMore?.(next) },
-              }, heldWide ? tr('Show less') : tr('Show {count} more held tasks', { count: (workflow.heldTaskCount ?? held.length) - heldShown.length }))
+              }, heldWide ? tr('Show less') : tr('Show {count} more held tasks', { count: heldRest }))
               : null) : null,
           liveRuns.length > 0 ? h('div', { className: 'wf-strips' },
             liveRuns.map(run => h(RunStrip, {
@@ -2448,6 +2457,7 @@ window.__ModuleLoader__.load({
 .wf-held-row{display:flex;align-items:center;gap:8px;min-width:0}
 .wf-held-id{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .wf-held-more{font-size:12px;margin-top:2px}
+.wf-held-note{font-size:12px;color:var(--bt-ink-2,#666)}
 .wf-tk{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(360px,42vw)}.wf-meta{font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap}
 .wf-segs{display:flex;gap:3px;flex:1;min-width:80px}
 .wf-seg{height:5px;border-radius:3px;background:var(--bt-active,rgba(119,119,119,.17));flex:1}

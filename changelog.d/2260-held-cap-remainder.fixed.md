@@ -1,0 +1,1 @@
+A workflow lane whose held list runs past the host's 200-id page cap no longer promises ids a click cannot reach: the folded **Show N more held tasks** count is what pressing it actually reaches, and the unfolded list draws **Showing 200 of 250 held tasks** instead of hiding the remainder behind **Show less**. ([#2260](https://github.com/ThinkFlowLab/FlyBot/issues/2260))
