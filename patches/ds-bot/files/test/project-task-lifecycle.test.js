@@ -207,7 +207,15 @@ test('dependency adjudication commits one resume intent and a failed commit leav
 test('Chief admission persists the selected initial role in the automatic start effect', async () => {
   const f = await serviceFixture()
   f.rt.projectAgents = { deliveryDefinitions: () => ({ revision: 11, roles: [{ id: 'p:builder', role: 'builder', policyRole: 'developer' }] }) }
-  await f.rt.projectTaskLifecycle.adjudicate(f.parent, { targetRole: 'builder' }, { ...proof('admit'), id: 'route-builder', action: 'admit' }, f.actor)
+  f.parent.chiefQuestion = { decisionId: 'question', recipient: { consultationId: 'consultation' } }
+  const audit = { ...proof('admit'), id: 'route-builder', action: 'admit' }
+  f.failSave(true)
+  await assert.rejects(f.rt.projectTaskLifecycle.adjudicate(f.parent, { targetRole: 'builder' }, audit, f.actor), /Disk unavailable/)
+  assert.equal(f.parent.chiefQuestion.decisionId, 'question')
+  f.failSave(false)
+  await f.rt.projectTaskLifecycle.adjudicate(f.parent, { targetRole: 'builder' }, audit, f.actor)
+  assert.equal(f.parent.chiefQuestion, undefined, 'Actual Chief admission resolves the owner wait before resource queueing')
+  assert.equal(audit.resolvedChiefQuestion.decisionId, 'question')
   const effect = Object.values(f.rt.state.projectEffects).find(row => row.kind === 'task.start')
   assert.equal(effect.payload.initialTarget.role, 'builder')
   assert.equal(effect.payload.initialTarget.definitionRevision, 11)

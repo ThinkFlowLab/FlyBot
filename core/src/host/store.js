@@ -403,6 +403,7 @@ export function install(rt) {
     if (rt.projectScheduledTasks?.recover()) migrated = true
     if (rt.projectChiefControl?.recover()) migrated = true
     if (rt.projectEffects?.recover()) migrated = true
+    if (rt.projectAgentInbox?.recover()) migrated = true
     if (rt.projectCompatibility?.recover()) migrated = true
     if (syncDesignatedChief()) migrated = true
     indexSessions()

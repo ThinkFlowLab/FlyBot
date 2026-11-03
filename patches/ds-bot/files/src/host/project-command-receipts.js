@@ -15,6 +15,11 @@ export function commandPrincipal(actor, state) {
   return hash([actor.memberId, agentId, actor.watchGrantId && !carrier?.personalAgentId ? actor.watchGrantId : null])
 }
 export function commandEffectVisible(state, effect, actor) {
+  if (['consultation.notify', 'agent.inbox.state'].includes(effect.kind)) {
+    if (effect.payload.memberId !== actor?.memberId) return false
+    const agentId = actor.personalAgentCredentialId ? actor.agentId : actor.consultationProxyAgentId ?? state.projectAgents?.[actor.agentId]?.personalAgentId
+    if (agentId && agentId !== effect.payload.agentId) return false
+  }
   const id = effect.payload?.commandReceiptId
   if (!id) return true
   const receipt = Object.hasOwn(state.projectCommandReceipts ?? {}, id) ? state.projectCommandReceipts[id] : null

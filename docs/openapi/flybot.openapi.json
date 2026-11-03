@@ -17,6 +17,104 @@
       }
     }
   ],
+  "webhooks": {
+    "agentNotification": {
+      "post": {
+        "operationId": "receiveAgentInboxNotification",
+        "description": "Callback on the explicitly verified receiver endpoint, not a new FlyBot inbound route. Verify HMAC-SHA256(key, timestamp + \".\" + exactRawBody), timestamp tolerance and persistent eventId deduplication. Then authenticate to FlyBot and claim the message; notification grants no permission.",
+        "security": [
+          {
+            "agentWebhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Flybot-Event-ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Flybot-Timestamp",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Flybot-Signature",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^sha256=[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentNotification"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata accepted only; connection.verify must echo the exact challenge and prove HMAC-SHA256(key, \"challenge.\" + challenge). Not a processing/business acknowledgement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    },
+                    "challenge": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    "signature": {
+                      "type": "string",
+                      "pattern": "^sha256=[a-f0-9]{64}$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "anyOf": [
+                    {
+                      "required": [
+                        "received"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "challenge",
+                        "signature"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-signed": true,
+        "x-defaultSignatureToleranceMs": 300000,
+        "x-delivery": "at-least-once; use authenticated inbox as authority"
+      }
+    }
+  },
   "paths": {
     "/health": {
       "get": {
@@ -341,6 +439,12 @@
   },
   "components": {
     "securitySchemes": {
+      "agentWebhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Flybot-Signature",
+        "description": "Computed HMAC-SHA256 over timestamp + dot + exact raw body using the explicitly provisioned private notification key; verify timestamp and eventId replay protection. Never an FBA credential."
+      },
       "memberSession": {
         "type": "apiKey",
         "in": "header",
@@ -3120,6 +3224,384 @@
           "taskId"
         ]
       },
+      "InboxClaim": {
+        "type": "object",
+        "properties": {
+          "claimId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "claimId",
+          "generation",
+          "expiresAt"
+        ]
+      },
+      "InboxMessage": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "agent-inbox/v1",
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "participationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "consultation.question",
+              "consultation.answer"
+            ]
+          },
+          "consultationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "initiativeTransferred": {
+            "const": false,
+            "type": "boolean"
+          },
+          "requiresHuman": {
+            "type": "boolean"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "handled",
+              "awaiting-approval",
+              "failed",
+              "blocked",
+              "superseded"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updatedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notification": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "delivery": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transport": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "native",
+                      "webhook"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attempts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "nextAt": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "status",
+              "delivery",
+              "transport",
+              "attempts",
+              "nextAt"
+            ]
+          },
+          "attentionRequired": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "const": "inbox.get",
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "query",
+              "messageId"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "version",
+          "id",
+          "projectId",
+          "agentId",
+          "participationId",
+          "kind",
+          "consultationId",
+          "taskId",
+          "initiativeTransferred",
+          "requiresHuman",
+          "phase",
+          "generation",
+          "messageVersion",
+          "createdAt",
+          "updatedAt",
+          "claim",
+          "notification",
+          "attentionRequired",
+          "source"
+        ]
+      },
+      "InboxConnection": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "verifiedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "enabled",
+          "connectionId",
+          "revision",
+          "verifiedAt"
+        ]
+      },
+      "AgentNotification": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "flybot-agent-notification/v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "inbox.available",
+                "type": "string"
+              },
+              "eventId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "messageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "messageVersion": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "connectionRevision": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "type",
+              "eventId",
+              "messageId",
+              "projectId",
+              "agentId",
+              "messageVersion",
+              "connectionRevision"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "flybot-agent-notification/v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "connection.verify",
+                "type": "string"
+              },
+              "eventId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "challenge": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "type",
+              "eventId",
+              "projectId",
+              "agentId",
+              "challenge"
+            ]
+          }
+        ]
+      },
       "Delegation": {
         "type": "object",
         "properties": {
@@ -3186,6 +3668,509 @@
         "required": [
           "mode",
           "grant"
+        ]
+      },
+      "DevelopmentQueryInboxListPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "after": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "DevelopmentQueryInboxListRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.list",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxListPayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryInboxListResult": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InboxMessage"
+            }
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "items",
+          "next"
+        ]
+      },
+      "DevelopmentQueryInboxListSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxListResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentQueryInboxGetPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4000
+          },
+          "expectedSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "messageId"
+        ]
+      },
+      "DevelopmentQueryInboxGetRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.get",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxGetPayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryInboxGetResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/InboxMessage"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalChars": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "message",
+          "text",
+          "sha256",
+          "offset",
+          "totalChars",
+          "nextOffset"
+        ]
+      },
+      "DevelopmentQueryInboxGetSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxGetResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentQueryInboxConnectionPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DevelopmentQueryInboxConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.connection",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionPayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryInboxConnectionResult": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxConnection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "connection"
+        ]
+      },
+      "DevelopmentQueryInboxConnectionSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
         ]
       },
       "DevelopmentQueryTasksPayload": {
@@ -7841,6 +8826,922 @@
             "required": [
               "version",
               "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandInboxClaimPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "expectedVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "messageId"
+        ]
+      },
+      "DevelopmentCommandInboxClaimRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.claim",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxClaimPayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandInboxClaimResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/InboxMessage"
+          },
+          "claim": {
+            "$ref": "#/components/schemas/InboxClaim"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "message",
+          "claim"
+        ]
+      },
+      "DevelopmentCommandInboxClaimSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxClaimResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandInboxRenewPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "expectedVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "claimId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "claimId",
+          "generation"
+        ]
+      },
+      "DevelopmentCommandInboxRenewRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.renew",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxRenewPayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandInboxRenewResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/InboxMessage"
+          },
+          "claim": {
+            "$ref": "#/components/schemas/InboxClaim"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "message",
+          "claim"
+        ]
+      },
+      "DevelopmentCommandInboxRenewSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxRenewResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandInboxCompletePayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "expectedVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "claimId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "publish": {
+            "type": "boolean"
+          },
+          "acknowledge": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "claimId",
+          "generation"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "required": [
+              "acknowledge"
+            ]
+          }
+        ]
+      },
+      "DevelopmentCommandInboxCompleteRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.complete",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxCompletePayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandInboxCompleteResult": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "consultation": {
+                "$ref": "#/components/schemas/Consultation"
+              },
+              "replyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "published": {
+                "type": "boolean"
+              },
+              "requiresUserApproval": {
+                "type": "boolean"
+              },
+              "input": {
+                "$ref": "#/components/schemas/Input"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "consultation",
+              "replyId",
+              "published"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "acknowledged": {
+                "const": true,
+                "type": "boolean"
+              },
+              "messageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "acknowledged",
+              "messageId"
+            ]
+          }
+        ]
+      },
+      "DevelopmentCommandInboxCompleteSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxCompleteResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandInboxFailPayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "expectedVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "claimId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "claimId",
+          "generation",
+          "retryable"
+        ]
+      },
+      "DevelopmentCommandInboxFailRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.fail",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxFailPayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandInboxFailResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/InboxMessage"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "message"
+        ]
+      },
+      "DevelopmentCommandInboxFailSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxFailResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandInboxConnectionConfigurePayload": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "enabled": {
+                  "const": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "enabled"
+              ]
+            },
+            "then": {
+              "required": [
+                "connectionId"
+              ]
+            }
+          }
+        ]
+      },
+      "DevelopmentCommandInboxConnectionConfigureRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "inbox.connection.configure",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigurePayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandInboxConnectionConfigureResult": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/InboxConnection"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "connection"
+        ]
+      },
+      "DevelopmentCommandInboxConnectionConfigureSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
             ]
           }
         },
@@ -24754,6 +26655,15 @@
             "$ref": "#/components/schemas/ProjectGithubCommentRequest"
           },
           {
+            "$ref": "#/components/schemas/DevelopmentQueryInboxListRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentQueryInboxGetRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionRequest"
+          },
+          {
             "$ref": "#/components/schemas/DevelopmentQueryTasksRequest"
           },
           {
@@ -24827,6 +26737,21 @@
           },
           {
             "$ref": "#/components/schemas/DevelopmentQueryCompatibilityRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandInboxClaimRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandInboxRenewRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandInboxCompleteRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandInboxFailRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureRequest"
           },
           {
             "$ref": "#/components/schemas/DevelopmentCommandConsultationAskRequest"
@@ -24984,6 +26909,270 @@
   },
   "x-flybot-operations": [
     {
+      "operationId": "development.query.inbox.list",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "inbox.list",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxListRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxListResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxListSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.query.inbox.get",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "inbox.get",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxGetRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxGetResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxGetSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "UTF-16 source page of own consultation; no public SSE entry and no Task initiative. Use returned source hash on continuation.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.query.inbox.connection",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "inbox.connection",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
       "operationId": "development.query.tasks",
       "transport": {
         "method": "POST",
@@ -25058,7 +27247,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -25136,7 +27325,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -25214,7 +27403,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -25292,7 +27481,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -25531,7 +27720,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       }
     },
     {
@@ -25614,7 +27803,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       }
     },
     {
@@ -25848,7 +28037,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -25926,7 +28115,7 @@
       "notes": "Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d6286e982ccccafe22db409e41a449f215363cd48672ff7b441930cdd6246e02"
+        "sha256": "dd52c6ddc7b0f2614ecaa3c3cccbea7a39ea914f24e1602946b93a290eff622e"
       }
     },
     {
@@ -26170,7 +28359,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       }
     },
     {
@@ -26491,7 +28680,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       }
     },
     {
@@ -26569,7 +28758,7 @@
       "notes": "Private command effects/results remain visible only to the matching independent principal.",
       "implementation": {
         "path": "core/src/host/project-effects.js",
-        "sha256": "aa4b8f653a2dc72d5d80752857c49993d69295003ec132ccbae2ab2d1b0b42b1"
+        "sha256": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549"
       }
     },
     {
@@ -26652,7 +28841,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-command-receipts.js",
-        "sha256": "e434e109dfb867cb3dd131f7ccfe045b5ce3a462ea1fdd68d431617c47fd63e2"
+        "sha256": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52"
       }
     },
     {
@@ -26740,7 +28929,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-command-receipts.js",
-        "sha256": "e434e109dfb867cb3dd131f7ccfe045b5ce3a462ea1fdd68d431617c47fd63e2"
+        "sha256": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52"
       }
     },
     {
@@ -26978,6 +29167,501 @@
       }
     },
     {
+      "operationId": "development.command.inbox.claim",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "inbox.claim",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxClaimRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxClaimResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxClaimSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "no-other-live-message-claim",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "expired-native-claim-requires-confirmed-quiescence",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "durable-private-message-processing-lease-updated-no-task-initiative"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Same application service for native and external personal agents. Lease duration is configured; message ownership is not a Task executor identity.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.command.inbox.renew",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "inbox.renew",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxRenewRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxRenewResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxRenewSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "exact-live-claim-principal-generation-and-expiry",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "durable-private-message-processing-lease-updated-no-task-initiative"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Same application service for native and external personal agents. Lease duration is configured; message ownership is not a Task executor identity.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.command.inbox.complete",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "inbox.complete",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxCompleteRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxCompleteResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxCompleteSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "exact-live-claim-principal-generation-and-source-version",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "incoming-reply-needs-current-chief-question",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "publication-requires-human-or-current-watch-and-task-write",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "requiresHuman-never-delegated",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "private-processing-result-recorded",
+          "authorized-explicit-publication-enters-original-task-input",
+          "outgoing-chief-answer-can-be-acknowledged"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Safe replies await human approval. Completed/acknowledged message never closes a Task or accepts a Handoff. Exact result requestId/content replays idempotently.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.command.inbox.fail",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "inbox.fail",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxFailRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxFailResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxFailSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "own-consultation",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "own-agent-mailbox; never-other-agent-even-same-human",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-principal-and-credential-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "exact-live-claim-principal-generation-and-expiry",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "message-returns-to-pending-or-records-failure",
+          "chief-can-observe-stalled-business-request"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "No worker exit or resource release is inferred from failure/expiry.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
+      "operationId": "development.command.inbox.connection.configure",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "inbox.connection.configure",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        }
+      ],
+      "permission": "human-self",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "human-only-and-own-personal-agent-or-session",
+      "personalAgent": {
+        "safe": false,
+        "watch": false,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "human-session",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "own-active-agent-participation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "explicit-operator-provisioned-owner-agent-project-webhook-binding",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "signed-connection-challenge-verified-before-enable",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "private-notification-connection-enabled-or-disabled",
+          "pending-messages-restaged-for-original-effects-delivery"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Only selects an operator-provisioned connection ID, never accepts URL/key/token. Existing unverified external descriptors are not auto-enabled. Can send one metadata-only verification request.",
+      "implementation": {
+        "path": "core/src/host/project-agent-inbox.js",
+        "sha256": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9"
+      }
+    },
+    {
       "operationId": "development.command.consultation.ask",
       "transport": {
         "method": "POST",
@@ -27080,7 +29764,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       }
     },
     {
@@ -27193,7 +29877,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       }
     },
     {
@@ -27523,7 +30207,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-task-lifecycle.js",
-        "sha256": "d5d93bf7b841dd1685b3889dca11c8303071764f856d0e10e82dd96adafd5f57"
+        "sha256": "20940d6eeae321fcb064995990085af1f0e94d0a41fde50dc29a35e1af1a58a3"
       }
     },
     {
@@ -28860,7 +31544,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       }
     },
     {
@@ -28960,7 +31644,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       }
     },
     {
@@ -29232,7 +31916,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -29432,7 +32116,7 @@
       "notes": "Host derives source, recipient and claim. Persisted/delivered does not mean read or handled.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d6286e982ccccafe22db409e41a449f215363cd48672ff7b441930cdd6246e02"
+        "sha256": "dd52c6ddc7b0f2614ecaa3c3cccbea7a39ea914f24e1602946b93a290eff622e"
       }
     },
     {
@@ -29830,7 +32514,7 @@
       "notes": "Does not authorize blind replay of an unknown release/PR outcome. Use its domain reconciliation first.",
       "implementation": {
         "path": "core/src/host/project-effects.js",
-        "sha256": "aa4b8f653a2dc72d5d80752857c49993d69295003ec132ccbae2ab2d1b0b42b1"
+        "sha256": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549"
       }
     },
     {
@@ -31209,7 +33893,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e"
+        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
       }
     },
     {
@@ -31280,7 +33964,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e"
+        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
       }
     },
     {
@@ -31364,7 +34048,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e"
+        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
       }
     },
     {
@@ -31452,7 +34136,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e"
+        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
       }
     },
     {
@@ -31532,7 +34216,7 @@
       "notes": "Safe and watch modes may propose. A human approves with project-agent-proposal-apply; the Bot cannot approve its own proposal.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e"
+        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
       }
     },
     {
@@ -33385,7 +36069,7 @@
       "notes": "FBA may only use view=summary, which never borrows native private history. Use v1 roles and consultations for external agents.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33478,7 +36162,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33549,7 +36233,7 @@
       "notes": "Default latest50; byte-budgeted messages, oversized records use messageIndex source pages. Snapshot prefix survives append, edits invalidate cursor. Private defaults to the current human.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33622,7 +36306,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33698,7 +36382,7 @@
       "notes": "Human facts and role-authored inference have distinct authority. Updates retain history; memory is not permission.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33867,7 +36551,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -33959,7 +36643,7 @@
       "notes": "External agents should prefer v1 consultation.ask. A consultation is not a Task handoff.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -34032,7 +36716,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -34566,7 +37250,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       }
     },
     {
@@ -37663,7 +40347,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       },
       "aliasOf": "development.command.consultation.reply"
     },
@@ -37756,7 +40440,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       },
       "aliasOf": "development.command.consultation.ask"
     },
@@ -37837,7 +40521,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       },
       "aliasOf": "development.query.consultation.get"
     },
@@ -37918,7 +40602,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-consultations.js",
-        "sha256": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade"
+        "sha256": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0"
       },
       "aliasOf": "development.query.consultation.list"
     },
@@ -38605,7 +41289,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -39742,7 +42426,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -39840,7 +42524,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -39916,7 +42600,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758"
+        "sha256": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -40182,7 +42866,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936"
+        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
       },
       "aliasOf": "development.command.proposal.publish"
     },
@@ -40361,7 +43045,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934"
+        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
       },
       "aliasOf": "development.query.pools"
     },
@@ -40577,6 +43261,9 @@
       "project-github-comment"
     ],
     "queries": [
+      "inbox.list",
+      "inbox.get",
+      "inbox.connection",
       "release.status",
       "compatibility",
       "roles",
@@ -40604,6 +43291,11 @@
       "pools"
     ],
     "commands": [
+      "inbox.claim",
+      "inbox.renew",
+      "inbox.complete",
+      "inbox.fail",
+      "inbox.connection.configure",
       "consultation.reply",
       "consultation.ask",
       "role.decide",
@@ -40634,6 +43326,14 @@
       "comment.publish"
     ],
     "aliases": {
+      "inbox.list": "project-agent-inbox-list",
+      "inbox.get": "project-agent-inbox-get",
+      "inbox.connection": "project-agent-inbox-connection",
+      "inbox.claim": "project-agent-inbox-claim",
+      "inbox.renew": "project-agent-inbox-renew",
+      "inbox.complete": "project-agent-inbox-complete",
+      "inbox.fail": "project-agent-inbox-fail",
+      "inbox.connection.configure": "project-agent-inbox-connection-configure",
       "consultation.reply": "project-consultation-reply",
       "consultation.ask": "project-consultation-ask",
       "consultation.get": "project-consultation-get",
@@ -40707,9 +43407,9 @@
       "project-close-confirm"
     ],
     "nativeEndpointCount": 104,
-    "versionedQueryCount": 25,
-    "versionedCommandCount": 28,
-    "dispatchVariantCount": 176,
+    "versionedQueryCount": 28,
+    "versionedCommandCount": 33,
+    "dispatchVariantCount": 184,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
       "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
@@ -40748,31 +43448,33 @@
       "core/src/host/notify.js": "38d5a7d56fdc4f4d777211dda8bbd08685b8e97cfb210c77544a8d1c8e0903d9",
       "core/src/host/parts.js": "5966cf7601c75a13ec25a83f093eabb82734208fce13e778b7182635fc5b650a",
       "core/src/host/permissions.js": "829f2d2d639ec8652759824cf7a05f70ed62453009a86be9f31ecd1075f0ce8e",
-      "core/src/host/personal-agent-auth.js": "49de30b43c412e82fec792d75e98cad09d1c301bb1b78add34bfd68c10e6054e",
+      "core/src/host/personal-agent-auth.js": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb",
       "core/src/host/personal-agents.js": "065e9a8bb9b686db1908c8ada67cd899709b28e574fdc74b5a361cad44c69651",
       "core/src/host/platform-identity.js": "551795f4251cc705582560274eccf68a8955a26f51c807a74b8948261508a29e",
       "core/src/host/plugin-model.js": "64477d6900bb6abea40c7ffe0e55d51e61e54bcfbe03e5d5a5e9647b40b69fc8",
       "core/src/host/project-access.js": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9",
       "core/src/host/project-agent-context.js": "fea96ce858086e24bf9974099780c1494606289fbca9dab5becde302b86b0b0b",
+      "core/src/host/project-agent-inbox.js": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
-      "core/src/host/project-agents.js": "3dd4b6bdda93a8077aac62fcf414aa35c126c751c4ed73178ab44135343e9936",
+      "core/src/host/project-agent-webhook.js": "129d8ea133a5d85f3b3cb2627dee45fe8617552b422213b93539436dd7a1e5ce",
+      "core/src/host/project-agents.js": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
-      "core/src/host/project-chief-control.js": "548f4c906763f261bcaec96098e54bd5ea0d3945f315cdf461f90aa4da3aa758",
+      "core/src/host/project-chief-control.js": "e5f0dbbc4e49256d567ec8ca39e785046f8ef87ba673badf1a40ac6bd5ec1473",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
-      "core/src/host/project-command-receipts.js": "e434e109dfb867cb3dd131f7ccfe045b5ce3a462ea1fdd68d431617c47fd63e2",
+      "core/src/host/project-command-receipts.js": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52",
       "core/src/host/project-compatibility.js": "4ab65df4a237fb55ea2c68396bd180bb0a9ed4c42dc63444ce4ef0869c8988bc",
-      "core/src/host/project-consultations.js": "3d4e42ecd18916054dafbc8741d1e14e9e8adee346ed90c1194d714b7bbb2ade",
+      "core/src/host/project-consultations.js": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0",
       "core/src/host/project-context-budget.js": "58f990182ec5efb2701603f024eec38749cbbfabd050e478e6def58312f460e1",
       "core/src/host/project-context-memory.js": "933893b3d6b7b2c7a79365991c1303fb03a665d9529f16ccf57429a753ad4cd0",
       "core/src/host/project-credentials.js": "17ba1d326787c47d8669d0d3ef269e50a97a67eb8413183ff940a3993daab5ff",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
       "core/src/host/project-delivery.js": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565",
-      "core/src/host/project-development-service.js": "47a401da9df1cc1388f3e34b228305e9ea22e7f998df6f88bbbc5dab40aa0934",
+      "core/src/host/project-development-service.js": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
-      "core/src/host/project-effects.js": "aa4b8f653a2dc72d5d80752857c49993d69295003ec132ccbae2ab2d1b0b42b1",
+      "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
       "core/src/host/project-execution-boundary.js": "20fd2d7398c0e95f983da8b54635366864f233bf738add89122d7246473b3a65",
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
@@ -40783,12 +43485,13 @@
       "core/src/host/project-harness-turn.js": "a8ab111b8d5473a27413968e4ea5c2631ea472c992414e9387da245463f7b21a",
       "core/src/host/project-harness.js": "8ee1d4040cff7ede7b4c540bb0b020061406bea718d649a7a7b1792c63cc1553",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
-      "core/src/host/project-inputs.js": "d6286e982ccccafe22db409e41a449f215363cd48672ff7b441930cdd6246e02",
+      "core/src/host/project-inputs.js": "dd52c6ddc7b0f2614ecaa3c3cccbea7a39ea914f24e1602946b93a290eff622e",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "d8b796fce7a03252f7e6f10c2725ff97501ab4ba81492d8bdb8da1807a2db581",
       "core/src/host/project-pools.js": "afab16b3df4d18a5bfab69c975e8d61346a7838438a634668f2b06425545f237",
+      "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "85f4ed03f5191b842ca899b712c99177c059658d43a66e8ddeedc1c06eafcdea",
       "core/src/host/project-release-github.js": "05c4d93482d0600178951300b8e568a34687b552362d3278f57453c4d30a9ce3",
       "core/src/host/project-releases.js": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4",
@@ -40813,7 +43516,7 @@
       "core/src/host/project-state-sqlite.js": "64320c122c28577c03ce13962be629ede9dd938d4805f5f0b6f352806d559c91",
       "core/src/host/project-state-storage.js": "94a9932c22f3f8e18f6952acb97b4323612294c6a10b493e1007de7f1b30b53d",
       "core/src/host/project-state.js": "5d6736eeedcfc09a3949a33457a4d4daf3b3745bebe2823d7852fd5c48f1b825",
-      "core/src/host/project-task-lifecycle.js": "d5d93bf7b841dd1685b3889dca11c8303071764f856d0e10e82dd96adafd5f57",
+      "core/src/host/project-task-lifecycle.js": "20940d6eeae321fcb064995990085af1f0e94d0a41fde50dc29a35e1af1a58a3",
       "core/src/host/project-task-repository.js": "6dcba5646b406acae23d269276d58bc7b2591ca7d5589ed88ad556a0d5b65980",
       "core/src/host/project-task-sessions.js": "fa33428ce5d4446d230e28569b8a8b0484810e0ddc0129cbb17c7de20e0b43bf",
       "core/src/host/project-team.js": "72c3975a4fed654f3750e82a9388320934be7cf322b05cd59bbac26d6e4ede77",
@@ -40831,7 +43534,7 @@
       "core/src/host/secrets.js": "4cfa86b96a720395680680b3cce2aa63c6c6133ae2faffddc65cc56041f0371d",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
-      "core/src/host/store.js": "c37d7e93ad182d32f1d316efdf4ad9e8097c23c43e83a56184ce2e44a4e726e4",
+      "core/src/host/store.js": "421d7a745fedff00c9cef2ce1083366bc3169602d24d34583982ee8d0b46cf3b",
       "core/src/host/task-drive.js": "c6e31e5c6277e7088e7ffabf6c0b8accefddf87ae4580e3550b5845efcc97aa3",
       "core/src/host/tasks.js": "c4d1e376b3de2c023d2c3debaa328d56cd2f245fcd2bcb5695f73360b608f130",
       "core/src/host/text.js": "709b3882356fc10d367533634e021b979a18db0e8127ac6cac59efe8e7e06c18",
@@ -40906,6 +43609,20 @@
         "development.query.task.detail"
       ],
       "completion": "observe actual Chief adjudication and current evidence; enqueue/receipt/SDK completion never equals Task closure"
+    },
+    {
+      "id": "chief-notifies-native-or-external-agent",
+      "actor": "personal-agent",
+      "steps": [
+        "receiveAgentInboxNotification OR existing-native-wake OR periodic-inbox-pull",
+        "development.query.inbox.list",
+        "development.command.inbox.claim",
+        "development.query.inbox.get",
+        "optional:development.command.inbox.renew",
+        "development.command.inbox.complete OR development.command.inbox.fail"
+      ],
+      "authority": "notification-and-message-lease-grant-no-Task-initiative; safe-publication-awaits-human-approval",
+      "compensation": "poll-same-private-mailbox; original-effects-retry-and-configured-Chief-inspection"
     },
     {
       "id": "recover-lost-command-response",

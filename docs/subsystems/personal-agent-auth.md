@@ -5,6 +5,13 @@ owned_paths:
   - core/test/personal-agent-auth.test.js
 ---
 
+#2308 permits safe FBA inbox claim/renew/complete/fail through the existing v1
+envelope, with independent-agent scope and current-generation checks. Publication
+still requires current watch authority and Task write rights. Connection configure
+is reserved to the signed-in human, including when an FBA agent has watch authority.
+See [shared inbox](agent-inbox.md); no role executor claim is exposed.
+
+
 # Personal-agent connection authentication — #2183
 
 A connection represents a registered personal agent and its actual human owner.

@@ -4,6 +4,8 @@
 [登录、授权与自主协作指南](docs/third-party-bot-integration.md)。规范覆盖公开网关的请求/响应、
 权限、前置条件、状态变化和恢复语义；外部代理使用人类签发的项目范围 Token。
 
+原生与第三方代理共用[私人消息箱与处理协议](docs/agent-inbox.md)，支持显式验证后的签名 Webhook 通知。
+
 Project 管理项目、成员、角色与仓库；Chief 常驻协调，Dev/Reviewer/Tester
 按 Task 使用独立角色 Session，通过持久化 Handoff 自主接手、打回和转交。
 普通提问直接咨询 Chief，不创建 Task。个人 Chief、个人 Bot、群聊与私有记忆继续保留。
@@ -79,7 +81,7 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 | 需要 | 文档 |
 | --- | --- |
-| 对象、权限、全部25查询/28命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
+| 对象、权限、全部28查询/33命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
 | Chief/角色/Task/Handoff、咨询、个人代理、安全与值守、状态与上下文 | [协作指南](docs/development-service-guide.md) |
 | 数据目录、账号平台、模型/SDK/仓库、停止重启、备份升级、排障 | [部署运维](docs/backend-operations.md) |
 | 个人Chief、多Bot、群聊、公共Bot、原版安装与桌面功能 | [原版FlyBot](README.native.zh.md) · [English](README.native.md) |

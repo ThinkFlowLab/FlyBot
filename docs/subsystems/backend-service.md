@@ -79,6 +79,13 @@ production rollout, remote HTTPS deployment or browser/desktop acceptance.
 
 ## Public machine contract (#2300)
 
+#2308 extends that contract to28queries/33commands and184dispatch variants, with
+signed receiver-side Webhook schemas. The production-entry test now drives real
+native DSH Sessions and a separate authenticated external receiver from Chief
+question through common claim/result, original Task input and actual Chief
+read/handled admission after restart. The inference driver remains deterministic.
+See [inbox usage](../agent-inbox.md) and [architecture](agent-inbox.md).
+
 The OpenAPI3.1 JSON describes the actual health, multiplexed POST and scoped SSE
 paths, not invented REST resources. Its discriminated request schemas cover all104
 gateway endpoints, all25queries/28commands and native personal/workflow variants

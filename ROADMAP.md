@@ -2,6 +2,11 @@
 
 ## Agent connection authorization — 2026-11-03
 
+#2308 adds one native/external inbox protocol, verified Webhook hints, durable
+processing and Chief continuation. Preserve existing personal Chief/group contracts;
+do not turn consultations into Tasks or inbox claims into executor identity.
+Follow with #2311 GitHub App installation credentials alongside gh-cli; no live rollout.
+
 #2183 adds scoped agent credentials over the existing member-session HTTP channel,
 reuses per-participation safe/watch grants, and persists Task-origin provenance.
 Owner's closure confirmation remains personal; native/external personal agents may

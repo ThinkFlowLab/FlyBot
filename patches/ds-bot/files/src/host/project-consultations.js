@@ -40,7 +40,7 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
   async function endpoint(endpoint, body, actor) {
     if (!['project-consultation-ask', 'project-consultation-get', 'project-consultation-list', 'project-consultation-reply'].includes(endpoint)) throw refuse('Unknown consultation operation')
     if (endpoint === 'project-consultation-ask') return chiefQuestion(body, actor)
-    if (endpoint === 'project-consultation-reply') return serial(() => reply(body, actor))
+    if (endpoint === 'project-consultation-reply') return rt.projectAgentInbox ? rt.projectAgentInbox.legacyReply(body, actor) : serial(() => reply(body, actor))
     return serial(async () => {
       const carrier = await parent(body, actor)
       const rows = carrier ? (ownEntry(transcripts(), carrier.id) ?? []).filter(row => row.version === 'conversation-handoff/v1' && row.returnTo === carrier.id && row.initiatedBy === actor.memberId) : []
@@ -64,7 +64,8 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
     setEntry(agents(), carrier.id, carrier)
     const id = `consultation-${hash([task.projectId, task.id, question.id, identity.id])}`
     if (!messages(carrier.id).some(row => row.id === id)) messages(carrier.id).push({ id, kind: 'consultation', version: 'conversation-handoff/v1', direction: 'incoming', projectId: task.projectId, linkedTaskId: task.id, chiefDecisionId: question.id, requestedBy: { role: 'chief', runId: actor.chiefJobId }, initiatedBy: memberId, from: `${task.projectId}:chief`, to: carrier.id, returnTo: carrier.id, text: question.reason, requestId: question.id, status: 'accepted', requiresHuman: Boolean(question.requiresHuman), at: Date.now() })
-    const token = rt.projectEffects?.stage({ kind: 'consultation.notify', key: id, projectId: task.projectId, taskId: task.id, payload: { consultationId: id, agentId: identity.id, carrierId: carrier.id, memberId } })
+    const receipt = messages(carrier.id).find(row => row.id === id)
+    const token = rt.projectAgentInbox?.stage(carrier, receipt) ?? rt.projectEffects?.stage({ kind: 'consultation.notify', key: id, projectId: task.projectId, taskId: task.id, payload: { consultationId: id, agentId: identity.id, carrierId: carrier.id, memberId } })
     return { kind: 'personal-agent', memberId, agentId: identity.id, participationId: participation.id, consultationId: id, ...(token ? { effectId: token.id } : {}) }
   }
   async function reply(body, actor) {
@@ -94,5 +95,5 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
     await rt.save()
     return { consultation: view(carrier, receipt), replyId: answer.id, published: true, input: result.input }
   }
-  return { parent, view, endpoint, contactUser }
+  return { parent, view, endpoint, contactUser, replyDirect: (body, actor) => serial(() => reply(body, actor)) }
 }

@@ -5,6 +5,12 @@ owned_paths:
   - core/test/project-inputs.test.js
 ---
 
+#2308 ensures a published reply to a current Chief question wakes the existing
+Chief controller even before the Task has collaboration/role execution metadata.
+The input remains pending until actual read/handled receipts; a persisted reply
+alone is not Chief processing, Task acceptance or a new Task. [Inbox](agent-inbox.md).
+
+
 # Durable Task inputs (S3)
 
 `project-task-input/v1` extends the existing Task and per-Bot handoff pools. It is

@@ -286,3 +286,45 @@ test('Chief contacts a selected personal agent first; safe suggestions require h
   assert.equal(task.status, 'open')
   assert.equal(Object.keys(rt.state.tasks).length, 1)
 })
+
+test('HTTP v1 inbox unifies independent agent claims, private replies, approval and restart recovery', async t => {
+  const { rt, http, home } = await setup(t)
+  const connection = await external(rt), other = await external(rt)
+  await api(rt, 'personal-agent-default', { projectId: 'p1', agentId: connection.agent.id })
+  rt.projectChiefControl.requireJobActor = () => {}
+  const task = { id: 'inbox-task', projectId: 'p1', requesterId: 'alice', title: 'Choose a solution', status: 'open', collaboration: { status: 'blocked', initiatedBy: 'alice', history: [], generation: 1 } }
+  rt.state.tasks[task.id] = task
+  const ask = async decisionId => {
+    const recipient = rt.projectAgents.contactUser(task, { id: decisionId, reason: 'Private question', requiresHuman: false }, { memberId: 'alice', chiefJobId: 'fixture-chief' })
+    task.chiefQuestion = { decisionId, recipient }; await rt.save(); return recipient.consultationId
+  }
+  const dev = (token, kind, name, payload, requestId, transport = http) => transport(token, 'project-development', { version: 'project-development/v1', projectId: 'p1', kind, name, payload, ...(requestId ? { requestId } : {}) })
+  const messageId = await ask('one')
+  const list = await dev(connection.token, 'query', 'inbox.list', {})
+  assert.equal(list.ok, true, JSON.stringify(list.error)); assert.equal(list.value.result.items[0].id, messageId)
+  assert.equal((await dev(other.token, 'query', 'inbox.get', { messageId })).ok, false)
+  const claimed = await dev(connection.token, 'command', 'inbox.claim', { messageId }, 'claim-one')
+  assert.equal(claimed.ok, true, JSON.stringify(claimed.error))
+  const { claim } = claimed.value.result
+  const secondToken = await api(rt, 'personal-agent-token-create', { agentId: connection.agent.id, projectIds: ['p1'] })
+  assert.equal((await dev(secondToken.token, 'command', 'inbox.claim', { messageId }, 'compete')).ok, false)
+  const answer = { messageId, ...claim, text: 'A checked private suggestion', publish: true }; delete answer.expiresAt
+  const completed = await dev(connection.token, 'command', 'inbox.complete', answer, 'answer-one')
+  assert.equal(completed.ok, true, JSON.stringify(completed.error)); assert.equal(completed.value.result.requiresUserApproval, true)
+  assert.equal(Object.keys(rt.state.projectTaskInputs ?? {}).length, 0)
+  assert.equal((await dev(connection.token, 'command', 'inbox.complete', answer, 'answer-one')).value.replayed, true)
+  await api(rt, 'project-consultation-reply', { projectId: 'p1', agentId: connection.agent.id, consultationId: messageId, requestId: 'answer-one', text: answer.text, publish: true })
+  assert.equal(Object.keys(rt.state.projectTaskInputs).length, 1)
+  const effects = await dev(other.token, 'query', 'effects', {})
+  assert.ok(!effects.value.result.effects.some(row => row.kind === 'consultation.notify' || row.kind === 'agent.inbox.state'))
+  const nextMessage = await ask('two')
+  const taken = await dev(connection.token, 'command', 'inbox.claim', { messageId: nextMessage }, 'claim-two')
+  assert.equal(taken.ok, true)
+  const restored = await setup(t, JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')))
+  const read = await dev(connection.token, 'query', 'inbox.get', { messageId: nextMessage, limit: 100 }, undefined, restored.http)
+  assert.equal(read.ok, true, JSON.stringify(read.error)); assert.equal(read.value.result.message.phase, 'processing')
+  const replay = await dev(connection.token, 'command', 'inbox.claim', { messageId: nextMessage }, 'claim-two', restored.http)
+  assert.equal(replay.value.replayed, true)
+  await api(restored.rt, 'personal-agent-token-revoke', { credentialId: connection.credential.id })
+  assert.equal((await dev(connection.token, 'command', 'inbox.renew', { messageId: nextMessage, claimId: taken.value.result.claim.claimId, generation: taken.value.result.claim.generation }, 'revoked', restored.http)).ok, false)
+})

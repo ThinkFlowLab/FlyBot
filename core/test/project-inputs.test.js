@@ -173,6 +173,17 @@ test('tampered payloads and future input protocols cannot acquire receipts or si
   await assert.rejects(f.rt.projectInputs.publish(input(),actor),/protocol upgrade/)
 })
 
+test('reply to a Chief question wakes Chief even before the Task has a role collaboration record', async () => {
+  const f = fixture(); delete f.rt.state.tasks.t.collaboration
+  f.rt.state.tasks.t.chiefQuestion = { decisionId: 'decision', recipient: { consultationId: 'consultation' } }
+  f.rt.state.projectChiefPolicies = { p: { enabled: true } }
+  let requested = 0
+  f.rt.projectChiefControl = { request: async () => { requested++; return { id: 'resumed-chief' } } }
+  await f.rt.projectInputs.publish(input(), actor)
+  await f.rt.projectEffects.drain()
+  assert.equal(requested, 1)
+})
+
 test('notify waits for configured Chief recovery and never interrupts a healthy worker', async () => {
   const f=fixture();f.rt.state.tasks.t.collaboration.status='blocked'
   await f.rt.projectInputs.publish(input(),actor)

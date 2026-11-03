@@ -35,6 +35,13 @@ export function inspectionFacts(state, task, thresholds, now = Date.now()) {
   const handoffs = (c?.history.length ?? 0) - checkpoint
   const worker = c?.claim?.workerId ? state.projectHarnessWorkers?.[c.claim.workerId] : null
   const reasons = []
+  const recipient = task.chiefQuestion?.recipient
+  const participation = recipient?.participationId && ownEntry(state.personalAgentParticipations ?? {}, recipient.participationId)
+  const question = participation && ownEntry(state.projectAgentTranscripts ?? {}, participation.carrierId)?.find(row => row.id === recipient.consultationId)
+  const notification = question?.notificationEffect && ownEntry(state.projectEffects ?? {}, question.notificationEffect.id)
+  if (notification?.status === 'failed') reasons.push('Personal-agent notification exhausted its configured delivery budget')
+  if (question?.inbox?.phase === 'processing' && question.inbox.claim?.expiresAt <= now) reasons.push('Personal-agent processing lease expired; reconcile its execution before reassignment')
+  if (question && (question.inbox?.phase === 'failed' || now - (question.inbox?.updatedAt ?? question.at) > thresholds.longWaitMs)) reasons.push('Personal-agent inbox needs attention; inspect the original request or escalate to its human')
   if (handoffs >= thresholds.maxHandoffsWithoutProgress) reasons.push('Repeated handoffs without verified artifact/test/review progress')
   if (c?.claim?.status === 'active' && now - c.claim.createdAt > thresholds.longExecutionMs) reasons.push('Execution exceeds the configured duration threshold')
   if (worker?.status === 'running' && now - (worker.lastEventAt ?? worker.createdAt) > thresholds.missingHeartbeatMs) reasons.push('Execution heartbeat is missing')

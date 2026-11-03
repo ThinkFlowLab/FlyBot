@@ -5,7 +5,7 @@
 [OpenAPI 3.1 JSON](openapi/flybot.openapi.json) 给出全部公开分派请求/响应 Schema、逐操作权限、
 状态影响和前置条件；第三方个人代理的凭据签发、登录和自主协作见[接入指南](third-party-bot-integration.md)。
 
-本页对应当前分支实际路由：**25个v1查询、28个v1命令**，以及对象管理使用的原生接口。
+本页对应当前分支实际路由：**28个v1查询、33个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
 ## 传输、身份与统一返回
@@ -105,6 +105,9 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 
 | 查询名 | payload | result / 权限与分页 |
 | --- | --- | --- |
+| inbox.list | agentId?、limit?:1..100、after? | 本人消息元数据/通知/处理状态；私人，不进入公开SSE |
+| inbox.get | messageId、agentId?、offset?、limit?:1..4000、expectedSha256? | 本人咨询正文源页；UTF-16偏移，含message元数据 |
+| inbox.connection | agentId? | 本人通知连接非敏感状态 |
 | tasks | limit?:1..200、after?:TaskID | TaskView列表及游标；读 |
 | task | taskId | 单个TaskView；读 |
 | task.detail | taskId、attemptLimit?:1..50、beforeAttemptId? | 有界Task详情、Attempt摘要与历史来源引用；读 |
@@ -141,6 +144,11 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 
 | 命令名 | payload主要必填字段（其余可选字段见对应子系统） | 结果与权限 |
 | --- | --- | --- |
+| inbox.claim | messageId；agentId?、expectedVersion? | 本人有效参与；领取消息租约，不取得Task主动权，安全代理可用 |
+| inbox.renew | messageId、claimId、generation | 原身份当前有效租约续期；安全代理可用 |
+| inbox.complete | messageId、claimId、generation；text/publish或acknowledge | 同身份/代次/源版本；安全建议等待人类审批，watch授权后显式发布原Task输入 |
+| inbox.fail | messageId、claimId、generation、retryable | 记录失败或重新待领取；不推断执行器退出 |
+| inbox.connection.configure | enabled；agentId?、connectionId? | 本人亲自选已预置连接；签名challenge验证后启用，禁用/换连接不修改个人凭据 |
 | consultation.ask | text；agentId? | 私有咨询receipt，异步答案；本人，不创建Task |
 | consultation.reply | consultationId、text；publish?、agentId? | 私有回答；显式publish且有权才进入原Task输入，安全代理仍需授权 |
 | role.decide | proposalId、expectedSha256、decision:approve/reject | 管；精确批准Chief提案，不能由提案Chief借Owner身份自批 |

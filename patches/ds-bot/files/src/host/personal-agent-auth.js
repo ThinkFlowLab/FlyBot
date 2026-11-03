@@ -71,12 +71,12 @@ export function install(rt) {
           const projectId = body.projectId ?? body.id ?? ownEntry(state.tasks, body.taskId)?.projectId ?? ownEntry(state.projectAttempts ?? {}, body.attemptId)?.projectId
           scope(actor, projectId)
         } else if (endpoint === 'project-agents' && body.view === 'summary') scope(actor, body.projectId)
-        else if (endpoint === 'project-development' && (rt.projectDevelopment.isQuery(body) || body.kind === 'command' && ['consultation.ask', 'consultation.reply'].includes(body.name))) scope(actor, body.projectId)
+        else if (endpoint === 'project-development' && (rt.projectDevelopment.isQuery(body) || body.kind === 'command' && ['consultation.ask', 'consultation.reply', 'inbox.claim', 'inbox.renew', 'inbox.complete', 'inbox.fail'].includes(body.name))) scope(actor, body.projectId)
         else {
           const projectId = body.projectId ?? ownEntry(state.tasks, body.id ?? body.taskId)?.projectId ?? ownEntry(state.projectAttempts ?? {}, body.attemptId)?.projectId ?? ownEntry(state.projectQueue ?? {}, body.queueId)?.projectId ?? body.id
           const { grant } = scope(actor, projectId)
           const nativeWrite = ['task-create', 'task-update', 'task-cancel', 'task-answer-input'].includes(endpoint) || endpoint.startsWith('project-') && WORKBENCH_ENDPOINTS.has(endpoint) && !reserved.has(endpoint) && endpoint !== 'project-development' && endpoint !== 'project-agents'
-          const developmentWrite = endpoint === 'project-development' && body.kind === 'command' && !['agent.mode', 'proposal.publish'].includes(body.name)
+          const developmentWrite = endpoint === 'project-development' && body.kind === 'command' && !['agent.mode', 'proposal.publish', 'inbox.connection.configure'].includes(body.name)
           if (!grant || !nativeWrite && !developmentWrite) throw refusal('This agent operation requires authorized watch mode')
         }
       } catch (error) { return { ok: false, code: error.code ?? 'bot/forbidden', message: error.message } }

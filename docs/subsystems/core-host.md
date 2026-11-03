@@ -22,6 +22,11 @@ See [boundary contract](project-execution-boundary.md).
 
 # core-host
 
+#2308 initializes the shared private agent inbox inside the existing Project-agent
+service. Store recovery restores legacy pending notification references after
+Effects proof recovery and commits them with original state. Native Sessions,
+original scheduler and private credential boundaries remain; [inbox](agent-inbox.md).
+
 The server side of the patched `ds-bot` core (`core/`): the part of [ds-bot-core](ds-bot-core.md) that runs in DSH. Split out of that page so a change to the browser client or to the pin and patch tooling does not have to edit this one. Pin, patch format, `core/dev/` and the invariants about `ds-bot/` and `client.js` stay on [ds-bot-core](ds-bot-core.md).
 
 ## Owns

@@ -11,6 +11,8 @@ Project 管理项目、成员、角色与仓库；Chief 常驻协调，Dev/Revie
 [登录、授权与自主协作指南](docs/third-party-bot-integration.md)。规范按实际公开入口描述请求/响应、
 权限、前置条件、状态变化和重试规则；外部代理使用人类签发的项目范围 Token。
 
+原生与第三方代理共用[私人消息箱与处理协议](docs/agent-inbox.md)，支持显式验证后的签名 Webhook 通知。
+
 ## 启动持久服务
 
 需要 **Node.js22.22+、npm、Git**，首次安装需要访问 npm。Linux 是当前验证环境。
@@ -79,7 +81,7 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 | 需要 | 文档 |
 | --- | --- |
-| 对象、权限、全部25查询/28命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
+| 对象、权限、全部28查询/33命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
 | Chief/角色/Task/Handoff、咨询、个人代理、安全与值守、状态与上下文 | [协作指南](docs/development-service-guide.md) |
 | 数据目录、账号平台、模型/SDK/仓库、停止重启、备份升级、排障 | [部署运维](docs/backend-operations.md) |
 | 个人Chief、多Bot、群聊、公共Bot、原版安装与桌面功能 | [原版FlyBot](README.native.zh.md) · [English](README.native.md) |

@@ -7,6 +7,11 @@ owned_paths:
 
 # Automatic development application service
 
+#2308 adds inbox.list/get/connection queries and claim/renew/complete/fail plus
+human-only connection.configure commands (28queries/33commands total). All use
+the existing v1 facade and receipts; safe processing does not grant publication
+or Task initiative. Native tools call the same [inbox service](agent-inbox.md).
+
 The current source delivery composes this in-process application facade with the
 original DSH host and restricted gateway. Its [root README](../../README.md) uses
 the persistent backend launcher; [API reference](../development-service-api.md)
