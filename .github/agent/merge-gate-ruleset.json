@@ -18,7 +18,8 @@
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "tests-ok" },
-          { "context": "enqueue-guard" }
+          { "context": "enqueue-guard" },
+          { "context": "policy-sign" }
         ]
       }
     },
