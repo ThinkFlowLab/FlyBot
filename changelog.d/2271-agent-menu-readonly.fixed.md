@@ -1,0 +1,1 @@
+A read-only FlyBot window no longer offers the DSH Agent menu's Pin/Unpin and Remove DSH Agent, or a Session menu's Rename and Archive: the host refuses every one of those writes, so the row only produced a failure toast (#2271).
