@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createProjectEffects } from '../src/host/project-effects.js'
 import { install as installProjectInputs } from '../src/host/project-inputs.js'
 import { createProjectResources } from '../src/host/project-resources.js'
-import { createProjectHarness, handoffFrame } from '../src/host/project-harness.js'
+import { createProjectHarness, handoffFrame, harnessCapabilities } from '../src/host/project-harness.js'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'flybot-harness-contract-'))
@@ -21,17 +21,17 @@ lines.on('line',line=>{const m=JSON.parse(line);
  if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);}
  if(m.type==='start') {
   write({type:'sdk-event',event:{type:'thread.started',thread_id:'bound-thread'}});
-  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
+  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
   write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});
  }
 });`)
-  const session = { id: 's', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', execution: { harness: 'codex' }, context: { text: 'Frozen criteria and role memory' }, resourceLease: { id: 'l', resourceId: 'r', generation: 1 } }
+  const session = { id: 's', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', definition: { role: 'developer', instructions: 'Stable developer convention', skills: [] }, execution: { harness: 'codex' }, context: { text: 'Frozen criteria and role memory' }, resourceLease: { id: 'l', resourceId: 'r', generation: 1 } }
   const workspace = { id: 'w', projectId: 'p', attemptId: 'a', role: 'developer', path: cwd }
   const rt = { home: root, state: { tasks: { t: { id: 't', projectId: 'p' } }, projectResourceLeases: { l: { id: 'l', resourceId: 'r', projectId: 'p', attemptId: 'a', generation: 1, status: 'reserved' } } },
-    config: { projectResources: { r: { type: 'local', root, capacity: 1, runtimeDir, allowedProjectOwnerIds: ['owner'], profiles: { owner: { codex: { home: join(root, 'profile'), configDir: join(root, 'profile/codex'), model: 'test-model', envRefs: { OPENAI_API_KEY: 'FLYBOT_TEST_HARNESS_SECRET' } } } } } } },
+    config: { projectResources: { r: { type: 'local', root, capacity: 1, runtimeDir, harnesses: ['codex'], allowedProjectOwnerIds: ['owner'], profiles: { owner: { codex: { home: join(root, 'profile'), configDir: join(root, 'profile/codex'), model: 'test-model', envRefs: { OPENAI_API_KEY: 'FLYBOT_TEST_HARNESS_SECRET' } } } } } } },
     save: async () => {}, warn() {}, readProject: () => ({ id: 'p', ownerUserId: 'owner' }), requireProjectAccess(actor) { if (actor.memberId !== 'owner') throw new Error('Access denied') },
     projectDelivery: { ownsWorkspace: (projectId, path) => projectId === 'p' && path === cwd ? workspace : null, sessionFor: () => session,
-      bindSession: async (_workspace, bot) => rt.projectResources.markStarted('l', 1, { kind: 'sdk', handle: bot.id }), releaseSession: async () => {} } }
+      bindSession: async (_workspace, bot) => rt.projectResources.markStarted(session.resourceLease.id, session.resourceLease.generation, { kind: 'sdk', handle: bot.id }), releaseSession: async () => {} } }
   process.env.FLYBOT_TEST_HARNESS_SECRET = 'unit-credential-opaque-value'
   rt.projectResources = createProjectResources(rt)
   const harness = createProjectHarness(rt)
@@ -178,7 +178,7 @@ test('busy SDK queues feedback until a safe next turn in the same worker, thread
   const session = rt.projectDelivery.sessionFor()
   session.poolClaimId = 'claim'
   const task = rt.state.tasks.t
-  task.status = 'working'
+  task.status = 'working'; task.deliveryAttemptId = session.attemptId; session.generation = 2
   task.collaboration = { status: 'claimed', generation: 2, botId: 'p:developer', currentHandoffId: 'h', initiatedBy: 'owner', claim: { id: 'claim', generation: 2, botId: 'p:developer', status: 'active' } }
   rt.projects = { requireActive() {} }
   rt.projectEffects = createProjectEffects(rt); installProjectInputs(rt)
@@ -234,7 +234,7 @@ createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line)
 
 test('safe SDK input turns are bounded and excess feedback remains for the next responsible Bot', async t => {
   const {rt,harness,cwd}=await fixture(t),session=rt.projectDelivery.sessionFor(),task=rt.state.tasks.t
-  session.poolClaimId='bounded-claim';task.status='working'
+  session.poolClaimId='bounded-claim';task.status='working';task.deliveryAttemptId=session.attemptId;session.generation=2
   task.collaboration={status:'claimed',generation:2,botId:'p:developer',initiatedBy:'owner',claim:{id:session.poolClaimId,generation:2,botId:'p:developer',status:'active'}}
   rt.projects={requireActive(){}};rt.projectEffects=createProjectEffects(rt);installProjectInputs(rt)
   rt.save=async()=>{rt.projectEffects.saved(rt.projectEffects.capture())}
@@ -278,7 +278,7 @@ write({type:'completed',sessionId:'bounded-thread',text:'OUTPUT handoff: '+JSON.
 
 async function taskInputFixture(t, workerSource) {
   const f=await fixture(t),{rt,harness}=f,session=rt.projectDelivery.sessionFor(),task=rt.state.tasks.t
-  session.poolClaimId='idle-claim';task.status='working'
+  session.poolClaimId='idle-claim';task.status='working';task.deliveryAttemptId=session.attemptId;session.generation=2
   task.collaboration={status:'claimed',generation:2,botId:'p:developer',initiatedBy:'owner',claim:{id:session.poolClaimId,generation:2,botId:'p:developer',status:'active'}}
   rt.projects={requireActive(){}};rt.projectEffects=createProjectEffects(rt);installProjectInputs(rt);rt.projectHarness=harness
   rt.save=async()=>{const proof=rt.projectEffects.capture();await writeFile(join(rt.home,'inbox.json'),JSON.stringify(rt.state));rt.projectEffects.saved(proof)}
@@ -348,4 +348,148 @@ test('a result callback failing after confirmed release cannot poison the worker
   assert.equal(row.releaseProof.kind,'sdk-stop-ack-and-process-exit')
   assert.equal(rt.projectResources.occupied('r'),0)
   assert.equal(row.failure,undefined)
+})
+
+
+test('changed caller prompt resumes the Task-role SDK thread when its role definition is unchanged', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const first = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Initial Task requirement' })
+  const completed = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: first, taskId: 't', brief: 'Initial work', outputs: [{ name: 'implementation' }] })
+  await completed
+  await harness.release(first)
+  const session = rt.projectDelivery.sessionFor()
+  session.id = 'returned-role-session'
+  session.attemptId = 'second-attempt'
+  rt.state.projectResourceHealth = { r: { status: 'ready' } }
+  rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready' } }
+  session.resourceLease = await rt.projectResources.reserve({ projectId: 'p', attemptId: session.attemptId, role: 'developer', sessionKey: session.id, harness: 'codex', resourceIds: ['r'] })
+  const next = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Tester returned the Task with new feedback and changed candidate facts' })
+  assert.equal(rt.state.projectHarnessWorkers[next].continuedFrom, first)
+  assert.equal(rt.state.projectHarnessWorkers[next].backendSessionId, 'bound-thread')
+  const returned = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: next, taskId: 't', brief: 'Continue previous work', outputs: [{ name: 'implementation' }] })
+  await returned
+  assert.match(await readFile(rt.state.projectHarnessWorkers[next].eventLog, 'utf8'), /"resumeSessionId":"bound-thread"/)
+})
+
+test('a no-op state save cannot authorize SDK input, and the unstarted process remains releasable', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'No uncommitted input' })
+  rt.savesQueued = () => 0
+  await assert.rejects(harness.dispatch({ botId: id, taskId: 't', brief: 'Must not be sent', outputs: [{ name: 'implementation' }] }), /commit a state snapshot/)
+  assert.equal(rt.state.projectHarnessWorkers[id].backendSessionId, undefined)
+  assert.equal(rt.state.projectHarnessWorkers[id].executionStartedAt, null)
+  await harness.release(id)
+  assert.equal(rt.projectResources.occupied('r'), 0)
+})
+
+
+test('Harness capability inspection distinguishes SDK support, native limitations and unknown adapters', () => {
+  for (const harness of ['codex', 'claude-agent']) {
+    const capabilities = harnessCapabilities(harness)
+    assert.equal(capabilities.taskRoleResume, true)
+    assert.equal(capabilities.crossHarnessResume, false)
+    assert.equal(capabilities.input, 'between-sdk-turns')
+    capabilities.taskRoleResume = false
+    assert.equal(harnessCapabilities(harness).taskRoleResume, true)
+  }
+  assert.equal(harnessCapabilities('flybot').taskRoleResume, true)
+  assert.equal(harnessCapabilities('flybot').exitConfirmation, 'native-agent-quiescence')
+  assert.equal(harnessCapabilities('flybot').sdkVersion, null)
+  assert.throws(() => harnessCapabilities('unknown'), /Unknown/)
+})
+
+test('SDK sandbox policy follows pinned capability while custom logical role identity remains distinct', async t => {
+  for (const [role, policyRole, readOnly] of [['implementer', 'developer', false], ['auditor', 'reviewer', true]]) {
+    await t.test(role, async t => {
+      const f = await fixture(t), session = f.rt.projectDelivery.sessionFor()
+      session.role = role; session.policyRole = policyRole
+      session.definition = { ...session.definition, role, policyRole }
+      f.rt.state.projectAgentDefinitions = { p: { revision: 1, roles: [session.definition] } }
+      f.rt.state.projectResourceLeases.l.role = role
+      f.rt.projectDelivery.ownsWorkspace('p', f.cwd).role = role
+      let resolve; const result = new Promise(done => { resolve = done })
+      f.harness.onResult(resolve)
+      const id = await f.harness.spawn({ executionProjectId: 'p', executionWorkDir: f.cwd, prompt: 'Execute the pinned capability contract' })
+      await f.harness.dispatch({ botId: id, brief: 'Inspect assigned work', inputs: {} })
+      await result; await f.harness.release(id)
+      const row = f.rt.state.projectHarnessWorkers[id]
+      const events = (await readFile(row.sealedLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line))
+      const debug = events.find(item => item.event?.type === 'debug')
+      assert.equal(debug.event.readOnly, readOnly)
+      assert.equal(row.role, role); assert.equal(row.policyRole, policyRole)
+      assert.equal(f.rt.state.projectTaskSessions[row.logicalSessionId].role, role)
+    })
+  }
+})
+
+test('an actual prepared SDK subprocess receives no start after its role resource is revoked', async t => {
+  const { pinTaskRoleDefinition } = await import('../src/host/project-task-sessions.js')
+  const { rt, harness, cwd } = await fixture(t), session = rt.projectDelivery.sessionFor()
+  const task = rt.state.tasks.t
+  session.poolClaimId = 'revoked-start'; session.generation = 2; task.deliveryAttemptId = session.attemptId
+  task.collaboration = { initiatedBy: 'owner', generation: 2, claim: { id: session.poolClaimId, generation: 2, status: 'active', botId: 'p:developer', role: 'developer' } }
+  const role = { id: 'p:developer', ...session.definition, execution: { harness: 'codex', resourceIds: ['r'] } }
+  const catalog = { revision: 1, roles: [role] }
+  rt.projectAgents = { deliveryDefinitions: () => catalog }
+  Object.assign(session, pinTaskRoleDefinition(rt.state, session, role, 1, catalog))
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Do not execute after revocation' })
+  task.collaboration.claim.workerId = id
+  role.execution.resourceIds = []
+  await assert.rejects(harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] }), /revoked/)
+  const row = rt.state.projectHarnessWorkers[id]
+  assert.equal(row.executionStartedAt, null)
+  assert.equal(row.status, 'prepared')
+  await harness.release(id)
+  assert.equal(row.releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+})
+
+test('existing pool revocation stops an actual live SDK worker before resource release after role rights change', async t => {
+  for (const revocation of ['role-resource', 'operator-disable']) await t.test(revocation, async t => {
+  const { pinTaskRoleDefinition } = await import('../src/host/project-task-sessions.js')
+  const { reconcileExecutionAuthority } = await import('../src/host/project-execution-authority.js')
+  const { createProjectPools } = await import('../src/host/project-pools.js')
+  const { rt, harness, cwd } = await fixture(t), session = rt.projectDelivery.sessionFor(), task = rt.state.tasks.t
+  session.poolClaimId = 'live-revoke'; session.generation = 2; task.deliveryAttemptId = session.attemptId
+  task.collaboration = { status: 'claimed', initiatedBy: 'owner', generation: 2, claim: { id: session.poolClaimId, generation: 2, status: 'active', botId: 'p:developer', role: 'developer' } }
+  const role = { id: 'p:developer', ...session.definition, execution: { harness: 'codex', resourceIds: ['r'] } }
+  const catalog = { revision: 1, roles: [role] }
+  rt.projectAgents = { deliveryDefinitions: () => catalog }
+  rt.state.projectAttempts = { [session.attemptId]: { roleSessions: { developer: session } } }
+  Object.assign(session, pinTaskRoleDefinition(rt.state, session, role, 1, catalog))
+  rt.projectPools = createProjectPools(rt)
+  rt.projectPools.connect({ release: id => harness.release(id) })
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Current Task' })
+  session.botId = id; task.collaboration.claim.workerId = id
+  await harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] })
+  for (let n = 0; n < 200 && rt.state.projectHarnessWorkers[id].status !== 'waiting-input'; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
+  if (revocation === 'role-resource') role.execution.resourceIds = []
+  else rt.config.projectResources.r.disabled = true
+  await reconcileExecutionAuthority(rt)
+  assert.equal(task.collaboration.status, 'blocked')
+  assert.equal(task.collaboration.claim.status, 'revoked')
+  assert.equal(task.collaboration.claim.exitConfirmed, true)
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+  assert.equal(harness.hasController(id), false)
+  })
+})
+
+test('SDK human input rechecks the sending actor after awaited initiator authorization', async t => {
+  const { rt, harness, task, id } = await taskInputFixture(t, `
+import {createInterface} from 'node:readline';const write=v=>process.stdout.write(JSON.stringify(v)+'\\n');write({type:'ready',sdk:{codex:'0.166.0'}});
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);return;}
+if(m.type==='start')write({type:'completed',sessionId:'input-actor-thread',text:'Need clarification'});
+});`)
+  await harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] })
+  for (let n = 0; n < 200 && rt.state.projectHarnessWorkers[id].status !== 'waiting-input'; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
+  let senderAllowed = true
+  rt.requireProjectAccess = actor => { if (actor.memberId !== 'owner' && !senderAllowed) throw Error('Sending member was removed') }
+  rt.projectDelegations = { async background() { senderAllowed = false } }
+  await assert.rejects(harness.input({ workerId: id, generation: rt.state.projectHarnessWorkers[id].generation, text: 'Late unauthorized input' }, { memberId: 'sender' }), /Sending member was removed/)
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
 })

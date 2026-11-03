@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { test } from 'node:test'
+import { createProjectNativeSessions } from '../src/host/project-native-sessions.js'
 import { createProjectResources } from '../src/host/project-resources.js'
 
 function fixture() {
@@ -27,6 +28,19 @@ test('resource leases reserve real capacity once and never release an unconfirme
   rt.state.bots.worker = { id: 'worker' }
   await resources.release(first.id, first.generation)
   assert.equal(resources.occupied('local'), 1)
+  delete rt.state.bots.worker
+  await resources.release(first.id, first.generation)
+  assert.equal(resources.occupied('local'), 1, 'Bot absence alone is not exit proof')
+  await resources.release(first.id, first.generation, { exited: true })
+  assert.equal(resources.occupied('local'), 1, 'Missing handles cannot manufacture native exit')
+  rt.state.bots.worker = { id: 'worker', workspaceId: 'workspace', attemptId: 'a1' }
+  rt.state.tasks = { task: { projectId: 'p1' } }
+  rt.botOf = id => rt.state.bots[id]; rt.chatOf = id => id
+  rt.resolveAgent = async () => ({ session: { id: 'worker' }, status: 'idle', cancel() {}, async whenIdle() {} })
+  rt.ctx = { async parallel() {}, async waterfall(_event, _payload, next) { return next() } }
+  const native = createProjectNativeSessions(rt)
+  await native.bind({ id: 's1', projectId: 'p1', taskId: 'task', attemptId: 'a1', role: 'developer', status: 'prepared', definition: { role: 'developer' }, resourceLease: first }, { id: 'workspace', path: '/registered' }, 'worker')
+  await native.stop('worker')
   delete rt.state.bots.worker
   await resources.release(first.id, first.generation)
   await resources.release(first.id, first.generation)
@@ -117,4 +131,33 @@ test('reconciliation cannot resurrect a concurrently confirmed released SDK leas
   await Promise.all([resources.release(lease.id, lease.generation, { handle: 'confirmed-worker', exited: true }), resources.reconcile()])
   assert.equal(rt.state.projectResourceLeases[lease.id].status, 'released')
   assert.equal(resources.occupied('local'), 0)
+})
+
+test('verified supervisor exit can free a legacy native resource without claiming its context is recoverable', async () => {
+  const f = fixture(), resources = createProjectResources(f.rt, { priorExit: async () => true })
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 's', harness: 'flybot', resourceIds: ['local'] })
+  await resources.markStarted(lease.id, lease.generation, { kind: 'native', botId: 'missing-legacy-bot' })
+  const stored = f.rt.state.projectResourceLeases[lease.id]
+  stored.processScope = { kind: 'systemd-control-group', killMode: 'control-group', invocationId: 'a'.repeat(32), hostPid: 12345 }
+  await resources.reconcile()
+  assert.equal(stored.status, 'released')
+  assert.equal(stored.releaseProof.kind, 'systemd-prior-invocation-exited')
+  assert.equal(f.rt.state.projectNativeWorkers, undefined, 'Capacity release does not manufacture a Session binding')
+})
+
+test('supervisor inspection cannot release a binding changed while the manager yields', async () => {
+  const f = fixture()
+  let inspect, inspected
+  const started = new Promise(resolve => { inspected = resolve })
+  const resources = createProjectResources(f.rt, { priorExit: () => { inspected(); return new Promise(resolve => { inspect = resolve }) } })
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 's', harness: 'flybot', resourceIds: ['local'] })
+  await resources.markStarted(lease.id, lease.generation, { kind: 'native', botId: 'old-worker' })
+  const stored = f.rt.state.projectResourceLeases[lease.id]
+  stored.processScope = { kind: 'systemd-control-group', killMode: 'control-group', invocationId: 'a'.repeat(32) }
+  const releasing = resources.release(lease.id, lease.generation, { proof: { kind: 'systemd-prior-invocation-exited', previousInvocationId: stored.processScope.invocationId } })
+  await started
+  stored.worker = { kind: 'native', botId: 'replacement' }
+  inspect(true)
+  await assert.rejects(releasing, /binding changed/)
+  assert.equal(stored.status, 'running')
 })

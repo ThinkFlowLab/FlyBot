@@ -414,3 +414,6 @@ messages to a retired role fail visibly; historical rooms remain readable.
 These governance tests use real host APIs/Store plus deterministic Bot carriers and
 Effects fault fixtures, not a real model. Custom-role physical execution and in-flight
 revocation acceptance remain in #2184; this catalog alone does not prove that loop.
+
+
+Execution integration now preserves approved custom role keys through actual Workspaces, role-policy sources and artifact verification. Capability classes choose inherited conventions and SDK readOnly behavior; they do not grant human authority. A retired role can finish its already acquired frozen claim and explicitly hand off to an active target. Queued retired-role work becomes blocked with a Chief-routing reason; retirement never silently selects a replacement. New claims/offers to retired roles remain refused.

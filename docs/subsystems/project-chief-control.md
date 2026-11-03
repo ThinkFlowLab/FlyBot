@@ -149,3 +149,9 @@ audit and workspace remain intact; no ownership is granted by the status change.
 
 
 Validated Chief completion accepts up to four role proposals alongside Task decisions. The host supplies stable run-scoped proposal keys and current Chief-job authority; proposals cannot apply role changes. A malformed proposal list fails the job rather than granting configuration rights.
+
+
+Custom-role targets use their approved capability class for Developer rework semantics. The active catalog still controls new targets; an existing claim's frozen source identity may be retained after retirement for completion/Chief intervention. Chief must explicitly choose an active destination for blocked retired-role work.
+
+
+Native prior-host recovery reuses the existing supervisor proof helper and exact lease/generation data. A matching known exit permits safe cleanup/resumption; unresolved platform jobs, old unmanaged scopes or lost context remain explicit held conditions for Chief/operator reconciliation. No new inspection timer or parallel execution coordinator is introduced.

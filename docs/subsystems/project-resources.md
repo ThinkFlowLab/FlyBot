@@ -131,3 +131,12 @@ released lease. Current owned controllers avoid unnecessary supervisor I/O.
 Confirmed releases record their evidence kind. SDK releases carry bound worker
 and generation proof from stop acknowledgement plus process exit; unknown releases
 still retain capacity. Historical matching SDK released records remain host facts.
+
+
+Native resource release now requires a matching projectNativeWorkers native-agent-quiescent record, generation/Session/lease scope and absent old Bot. Missing Bot records or undefined handles with exited=true cannot free capacity. The existing native-turn delegation path still requires its actual nonempty matching handle. Actual stopping uses the original SessionController-resolved Agent and awaits whenIdle; unknown prior-host execution remains held for explicit reconciliation.
+
+
+#2184 separates physical release from context recovery. Native normal release needs v2 registered-work quiescence; supervisor release additionally verifies the exact process-group/invocation through the existing manager proof service. A legacy missing carrier can free capacity after actual manager verification without manufacturing native context. Reconciliation preserves a nested confirmed release and uses native host-epoch ownership rather than PID equality to recognize current controllers. No missing PID or timeout is a release proof.
+
+
+Removing a current role resource grant or changing its registered Resource binding revokes ongoing canonical execution at the existing scheduler check. The same SDK/native stop and physical-exit proof govern release; current permissions never justify a silent new Session or an assumed exit.

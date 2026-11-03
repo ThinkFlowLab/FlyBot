@@ -121,3 +121,6 @@ Each offered handoff saves its exact pool.dispatch intent in the same state snap
 ## Durable Task inbox integration (S3)
 
 S3 stores a handoff input with each pool.dispatch offer, rolls it back only with an uncommitted offer and migrates old pending offers without changing ids. Current-claim injected-batch acknowledgements follow successful completed-role gates. Routing receipts resolve handoff transport without manufacturing a model read; remaining feedback follows current responsibility. Closure checks unhandled inputs. See [inputs](project-inputs.md).
+
+
+#2184 records logical role and pinned capability class on a claim. Active targets alone can receive new offers/claims; a removed queued target becomes blocked with a Chief-routing reason while its Task/initiative/history remain intact. An already acquired source may finish its retained frozen claim after retirement, then explicitly hand off to an active target. Developer-capability destinations use existing rework semantics even when named differently. Artifact responsibilities stay in the existing Attempt's roleAssignments; no new queue or scheduler is added.

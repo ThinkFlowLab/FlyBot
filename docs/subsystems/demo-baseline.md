@@ -164,3 +164,9 @@ and the legacy per-Project persona. It still exercises scoped context, private T
 proposal, explicit publication and revoked Session refusal through actual DSH. A
 fixture regression pins both personas; this is model-transport compatibility, not
 real external-provider or paid model acceptance.
+
+
+#2184 extends the original actual-DSH delivery probe to inspect persisted native-agent-quiescent proofs for Developer, Tester and Reviewer before removal. It keeps deterministic inference and the existing real code edit, configured host tests, missing-credential refusal and disposable cleanup assertions; this is not a real-provider or canonical return-loop acceptance.
+
+
+`node dev/demo/run.mjs --native-pools` adds actual DSH single-resource Developer/Tester return/context restoration acceptance with a deterministic model. The marker is emitted only into the first Developer conversation outside the durable handoff JSON; the second request must find it in retained history, absent fresh system/input. It verifies fresh carriers, same physical Session/cwd, actual second code revision/host tests, lease intervals and Chief arbitration without fake closure; cleanup stops its disposable Attempt and removes worktrees. The required runtime suite now includes this fifth case. Initial failures exposed implicit [object Object] delivery deduplication and DSH archived-session admission; retained private evidence distinguishes both from the passing probe.

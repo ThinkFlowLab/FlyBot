@@ -21,6 +21,11 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 includes repository relations, Owner closure and Chief-proposed/Owner-or-Maintainer-approved role governance. Execution integration for custom/retired roles remains in #2184; ancestor changes must propagate through the PR stack before final compatibility acceptance.
 
+Original #2184 follow-up adds native Task-role restoration metadata, cancellation/quiescence
+proofs and canonical-pool cwd retention. Custom-role verification now has direct artifact/SDK contract regressions; finish current-rights
+in-flight stop/reconcile and real-provider native acceptance before propagating the
+execution ancestor through collaboration/context/Task/state/API branches.
+
 ## Active fork roadmap — 2026-10-31
 
 Backend delivery branch `delivery/ai-centric-development-service` consolidates S1–S6 at1811e3b8f.
@@ -405,3 +410,17 @@ Delivery documentation follow-up: root README links the operation guide and full
 v1 API reference (parameters/results/permissions/replay/errors). Current JSON CLI,
 in-process service and incomplete real watch/UI acceptance remain explicit; no
 standalone frontend, OpenAPI service or runtime migration is implied.
+
+
+### Backend convergence #2184 — 2026-11-03
+
+SDK Task-role binding hardening: pinned shared definition snapshots, latest observed
+partial-thread recovery, verified legacy-key adoption, durable dispatch intent,
+explicit incompatible recovery, current rights/resource checks and truthful adapter
+capabilities. Native Task-role context restoration, parent waits, transactional Effects
+and external command receipts remain dependent acceptance; no live-provider or deploy
+claim from controlled process tests. README/API rewrite remains last (#2189).
+
+Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
+
+Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.
