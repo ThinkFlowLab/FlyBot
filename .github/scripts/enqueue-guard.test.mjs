@@ -1340,6 +1340,25 @@ test('#2287 k10-k15: a condition in the clause after the lift keeps the hold', (
   }
 })
 
+// FlyBot Test on #2288, 2026-11-03: the clause-after vocabulary still missed seven ways a yes is made
+// conditional, and a bare negation inside that clause ("has not re-run it") was read only at its start.
+// Each is its own test so a hole in the vocabulary fails by name.
+for (const [id, body, at] of [
+  [16, "You may merge this tip — upon the second reader's approval.", '2026-11-03T08:20:00Z'],
+  [17, 'You may merge this tip — whenever the second reader agrees.', '2026-11-03T08:20:01Z'],
+  [18, 'You may merge this tip — should the second reader agree.', '2026-11-03T08:20:02Z'],
+  [19, 'You may merge this tip — contingent on the second reader.', '2026-11-03T08:20:03Z'],
+  [20, "You may merge this tip — following the second reader's re-run.", '2026-11-03T08:20:04Z'],
+  [21, 'You may merge this tip — on condition that the second reader agrees.', '2026-11-03T08:20:05Z'],
+  [22, 'You may merge this tip — the second reader has not re-run it.', '2026-11-03T08:20:06Z'],
+]) {
+  test(`#2287 k${id}: a yes conditional in the clause after the lift keeps the hold`, () => {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${id} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${id} keeps the original hold`)
+  })
+}
+
 test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
   const conditional = note({
     id: 6597499999,

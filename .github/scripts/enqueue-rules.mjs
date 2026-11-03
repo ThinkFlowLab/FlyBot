@@ -218,7 +218,12 @@ const CLAUSE = /[.;:!?—–\n]/
 // answer when it carries a phrase that never sits in a plain yes, or when it opens with a condition word.
 // Ordinary trailing talk still clears: "you may merge this tip now; I am back after lunch if anything
 // breaks" opens with "I", which is why the broad vocabulary above is not used here.
-const WITHHELD = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on)\b/i
+// FlyBot Test on #2288 (2026-11-03) found seven more of those phrases clearing the hold — "upon the second
+// reader's approval", "whenever …", "should …", "contingent on …", "following …", "on condition that …" —
+// plus a bare negation anywhere in the clause ("the second reader has not re-run it"), which the
+// opening-word rule read only at its start. `no objections` and `nothing else waits on it` stay clear: a
+// word boundary keeps `not` inside them from matching.
+const WITHHELD = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on|upon|whenever|should|contingent (?:on|upon)|dependent (?:on|upon)|prior to|following|in the event|on condition that|not|never)\b|n['’]t\b/i
 const WITHHELD_LEADING = /^[\s>*+\-–—(\[]*(?:only|after|once|until|unless|if|when|before|pending|not|never|cannot|n['’]t|provided|providing|assuming)\b/i
 const unconditionalLift = (text) => {
   if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
