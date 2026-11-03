@@ -3,7 +3,7 @@
 // The check run is only half of #812: `enqueue-guard.yml` writes it, and a ruleset on `main` has to
 // require it, or the refusal is a red badge a merge endpoint never reads. `.github/agent/
 // merge-gate-ruleset.json` is that ruleset verbatim — branch ruleset, `enforcement: active`,
-// `bypass_actors: []`, `refs/heads/main`, `tests-ok` and `enqueue-guard` required,
+// `bypass_actors: []`, `refs/heads/main`, `tests-ok`, `enqueue-guard` and `policy-sign` required,
 // `strict_required_status_checks_policy: false` (main moves on every merge, and a strict rule would make
 // every open pull request rebase before it could merge).
 //
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 export const BODY_PATH = fileURLToPath(new URL('../agent/merge-gate-ruleset.json', import.meta.url))
 export const RULESET_NAME = 'main merge gate'
 export const BASE_REF = 'refs/heads/main'
-export const REQUIRED_CONTEXTS = ['tests-ok', 'enqueue-guard']
+export const REQUIRED_CONTEXTS = ['tests-ok', 'enqueue-guard', 'policy-sign']
 
 function arg(name) {
   const i = process.argv.indexOf(name)

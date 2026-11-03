@@ -88,6 +88,15 @@ test('#812: a correctly built ruleset has no problems', () => {
   assert.deepEqual(s.bypass, [])
 })
 
+test('#2124: the gate requires the signature job as a context of its own', () => {
+  // The signature used to be a step inside `test`, and a required context is a job name: deleting
+  // the step left the suite green and nothing was missing. Here it is a job, so it enters the
+  // ruleset the way the other two contexts do — and `--check` reads the live ruleset against it.
+  const s = summarize(goodRow())
+  assert.ok(s.contexts.includes('policy-sign'), `the required checks are ${s.contexts.join(', ')}`)
+  assert.ok(REQUIRED_CONTEXTS.includes('policy-sign'), `gate-ruleset calls ${REQUIRED_CONTEXTS.join(', ')} required`)
+})
+
 test('#812: every way the gate could be bypassed is a separate problem', () => {
   const cases = [
     ['a bypass actor', (row) => { row.bypass_actors = [{ actor_id: 1, actor_type: 'RepositoryRole', bypass_mode: 'always' }] }, /bypass actors/],

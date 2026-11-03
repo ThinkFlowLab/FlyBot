@@ -25,39 +25,47 @@ permissions:
   contents: read
 
 jobs:
-  # The PR gate: one job (see #31). Its name is the required check on main: keep it exactly.
-  # Windows, Node 22 and the next DSH run in the Compatibility workflow (nightly.yml).
-  test:
-    name: ubuntu-latest · Node 24 · DSH 0.2.0-rc.2
+  # #2124: the gate-change signature is a job of its own. Required contexts in this repository are
+  # job names (.github/agent/merge-gate-ruleset.json), so while it lived as a step of `test` a pull
+  # request that deleted the step left `test` green and nothing was missing. Deleting this job
+  # instead removes a context the merge path needs, and `test` cannot start because it needs it.
+  policy-sign:
+    name: policy-sign
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # `pull-requests: read` is for the gate-signature step (#2054): it reads the pull request's
-    # changed files, body and comments. The workflow-level `contents: read` alone would make that
-    # call a 403.
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          path: base
           persist-credentials: false
       # policy/gates.json (#2054): a pull request that edits an acceptance gate carries
       # `Policy-sign: <comment id or url>` in its body, written by someone other than its author.
       # It runs before the suite: a gate change nobody else signed is not worth 20 minutes of tests.
       # #2099: the checker comes from the base commit, not from the pull request's own tree, so a
       # pull request that weakens or deletes `policy-sign.mjs` is still judged by the copy it started
-      # from. `merge-gate.yml` checks base out the same way. The `merge_group` half
-      # is required, not decoration: a queue run carries no `pull_request`, and an expression with
-      # only that half falls back to the sha that triggered the run, which is the pull request again.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          ref: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
-          path: base
-          persist-credentials: false
+      # from. The `merge_group` half of `ref` is required, not decoration: a queue run carries no
+      # `pull_request`, and an expression with only that half falls back to the sha that triggered
+      # the run, which is the pull request again. `merge-gate.yml` checks base out the same way.
       - name: Gate change signature
         env:
           GH_TOKEN: ${{ github.token }}
         run: node base/.github/scripts/policy-sign.mjs
+
+  # The PR gate: one job (see #31). Its name is the required check on main: keep it exactly.
+  # Windows, Node 22 and the next DSH run in the Compatibility workflow (nightly.yml).
+  test:
+    name: ubuntu-latest · Node 24 · DSH 0.2.0-rc.2
+    needs: policy-sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/flybot-tests
         with:
           node: '24'
@@ -153,15 +161,16 @@ jobs:
   tests-ok:
     name: tests-ok
     if: always()
-    needs: [test, plugins, package]
+    needs: [policy-sign, test, plugins, package]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every job passed
         env:
+          SIGN: ${{ needs.policy-sign.result }}
           TEST: ${{ needs.test.result }}
           PLUGINS: ${{ needs.plugins.result }}
           PACKAGE: ${{ needs.package.result }}
         run: |
-          echo "test: $TEST, plugins: $PLUGINS, package: $PACKAGE"
-          [ "$TEST" = success ] && [ "$PLUGINS" = success ] && [ "$PACKAGE" = success ]
+          echo "policy-sign: $SIGN, test: $TEST, plugins: $PLUGINS, package: $PACKAGE"
+          [ "$SIGN" = success ] && [ "$TEST" = success ] && [ "$PLUGINS" = success ] && [ "$PACKAGE" = success ]

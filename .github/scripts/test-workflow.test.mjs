@@ -22,6 +22,23 @@ const job = name => {
   return text.slice(start, next < 0 ? undefined : start + 1 + next)
 }
 
+// #2124: a required context is a job id or a job name, never a step, so the signature has to be a
+// job. These two read a workflow's job graph the way GitHub does: the ids at two-space indent, and
+// the `needs:` of one job from either the flow form or the block form.
+const jobIds = (source = text) => [...source.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((m) => m[1])
+const needsOf = (source, name) => {
+  const at = source.indexOf(`\n  ${name}:\n`)
+  assert.ok(at >= 0, `no job ${name}`)
+  const end = source.slice(at + 1).search(/\n {2}[a-z][\w-]*:\n/)
+  const block = source.slice(at, end < 0 ? undefined : at + 1 + end)
+  const flow = /^ {4}needs: \[([^\]]*)\]$/m.exec(block)
+  if (flow) return flow[1].split(',').map((value) => value.trim())
+  const one = /^ {4}needs: ([a-z][\w-]*)$/m.exec(block)
+  if (one) return [one[1]]
+  const list = /^ {4}needs:\n((?: {6}- \S+\n?)+)/m.exec(block)
+  return list ? [...list[1].matchAll(/- (\S+)/g)].map((m) => m[1]) : []
+}
+
 test('triggers: pull_request, merge_group (no filters), push only on main, dispatch', () => {
   assert.match(triggers, /^ {2}pull_request:\s*$/m)
   assert.match(triggers, /^ {2}merge_group:\s*$/m, 'a merge queue needs merge_group or required checks never report on queue entries')
@@ -77,12 +94,50 @@ test('#2099: a pull request that weakens its own copy of the checker is still re
   assert.notEqual(run.status, 0, `the step ran \`${script}\`: a pull request that weakened its own copy must still be refused`)
 })
 
-test('tests-ok: always runs and is green only when test, plugins and package are', () => {
+// #2124: the required contexts are job names, so a step that is deleted leaves its job green and
+// nothing notices. The signature is a job of its own, named `policy-sign`, and `test` needs it: a
+// pull request that deletes the job leaves a required context unreported instead of passing.
+test('#2124: the signature is its own job, named for the required context', () => {
+  const signature = job('policy-sign')
+  assert.match(signature, /^ {4}name: policy-sign$/m, 'the check name is the job name a required-context list can name')
+  assert.match(signature, /^\s+run: node base\/\.github\/scripts\/policy-sign\.mjs$/m, 'the job runs the base copy, not the pull request\'s own')
+  assert.match(signature, /^ {10}ref: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.event\.pull_request\.base\.sha \}\}$/m)
+  assert.match(signature, /^ {10}path: base$/m)
+  assert.match(signature, /^ {10}persist-credentials: false$/m)
+
+  const runner = job('test')
+  assert.deepEqual(needsOf(text, 'test'), ['policy-sign'], 'the suite waits for the signature, so an unsigned change spends no suite time')
+  assert.ok(!runner.includes('Gate change signature'), 'the signature is not a step of `test`: a step carries no context of its own')
+  assert.ok(!runner.includes('path: base'), 'the base checkout belongs to the signature job, not to the suite')
+  for (const name of ['test', 'plugins', 'package']) assert.ok(jobIds().includes(name), `${name} still exists`)
+
+  const ok = job('tests-ok')
+  assert.match(ok, /needs: \[policy-sign, test, plugins, package\]/, 'the required context also names the signature, so a failure is red there too')
+  assert.match(ok, /\[ "\$SIGN" = success \]/)
+})
+
+// The defect (#2124): delete the job and the context is missing, not green. The same edit that used
+// to leave `test` reporting success now leaves `test` unable to run at all.
+test('#2124: deleting the signature job leaves the required context unreported, not green', () => {
+  const ids = jobIds()
+  for (const id of ids) for (const need of needsOf(text, id)) assert.ok(ids.includes(need), `${id} needs ${need}, which exists`)
+  assert.ok(needsOf(text, 'tests-ok').includes('policy-sign'))
+  assert.ok(needsOf(text, 'test').includes('policy-sign'))
+
+  const block = job('policy-sign')
+  const without = text.replace(block, '').replace(/\njobs:\n/, '\njobs:\n')
+  const left = jobIds(without)
+  assert.ok(!left.includes('policy-sign'), 'the job is gone from the doctored workflow')
+  const dangling = [...needsOf(without, 'test'), ...needsOf(without, 'tests-ok')].filter((need) => !left.includes(need))
+  assert.deepEqual([...new Set(dangling)].sort(), ['policy-sign'], 'both the suite and the required context now name a job that no longer exists — the check cannot report success without it')
+})
+
+test('tests-ok: always runs and is green only when policy-sign, test, plugins and package are', () => {
   const ok = job('tests-ok')
   assert.match(ok, /^ {4}name: tests-ok$/m)
   assert.match(ok, /^ {4}if: always\(\)$/m)
-  assert.match(ok, /needs: \[test, plugins, package\]/)
-  assert.match(ok, /\[ "\$TEST" = success \] && \[ "\$PLUGINS" = success \] && \[ "\$PACKAGE" = success \]/)
+  assert.match(ok, /needs: \[policy-sign, test, plugins, package\]/)
+  assert.match(ok, /\[ "\$SIGN" = success \] && \[ "\$TEST" = success \] && \[ "\$PLUGINS" = success \] && \[ "\$PACKAGE" = success \]/)
 })
 
 test('main keeps its run (no cancel), every other ref, queue branches included, cancels', () => {

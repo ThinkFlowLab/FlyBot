@@ -390,9 +390,10 @@ the PR onto the current `main`, plus the entries ahead of it) and merges only wh
 commit. Required checks are matched by name on that commit, so `Test` must run on `merge_group`; otherwise `tests-ok`
 and the `test` job never report there and the entry waits until the queue's timeout. With the trigger:
 
-- `test`, `plugins (tree)`, `plugins (social)`, `package` and `tests-ok` run unchanged. Nothing in `test.yml` reads the
-  `pull_request` event, no job has an `if:` that would skip it, and `tests-ok` keeps `if: always()` and needs all three,
-  so a skipped or failed job still makes it red (`.github/scripts/test-workflow.test.mjs` checks all of this).
+- `policy-sign`, `test`, `plugins (tree)`, `plugins (social)`, `package` and `tests-ok` run unchanged. Nothing in
+  `test.yml` reads the `pull_request` event, no job has an `if:` that would skip it, and `tests-ok` keeps
+  `if: always()` and needs all of them, so a skipped or failed job still makes it red
+  (`.github/scripts/test-workflow.test.mjs` checks all of this).
 - `merge_group` takes no path filters, so a docs-only entry runs in full. That is also why `paths-ignore` stays on `push` only.
 - `push` stays limited to `main`, so a queue branch does not run twice. The concurrency group is per ref, so entries do
   not cancel each other, and every non-`main` ref (queue branches included) cancels its own earlier run.
