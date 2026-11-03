@@ -266,11 +266,27 @@ test('#2314: --apply updates the ruleset that governs main even under another na
 test('#2314: --apply refuses a body that would drop a live-required context or the merge queue', () => {
   // The repository's own body file: no `merge-gate`, no Node 24 context, and no `merge_queue` rule.
   const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
-  const r = main({ mode: 'apply', repo: REPO, gh, get })
+  let ghCalls = 0
+  const counting = (args, input) => { ghCalls += 1; return gh(args, input) }
+  const r = main({ mode: 'apply', repo: REPO, gh: counting, get })
   assert.equal(r.ok, false, 'a downgrade is not a convergence')
   const why = r.problems.join('\n')
   assert.match(why, /merge-gate/, 'the live verdict gate it would drop is named')
   assert.match(why, /Node 24|ubuntu-latest/, 'and the live Node 24 context')
   assert.match(why, /merge_queue/, 'and the merge-queue rule it would remove')
+  assert.equal(ghCalls, 0, 'the refusal is decided before the first write request, not after one')
   assert.equal(state.writes.length, 0, 'nothing is written when the body is a downgrade')
+})
+
+test('#2314: --rollback deletes the ruleset that governs main, whatever it is called', () => {
+  // Only the live `main merge queue` exists: a name-based lookup finds nothing, so the old code
+  // reported "nothing to roll back" and left the gate in place.
+  const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
+  const r = main({ mode: 'rollback', repo: REPO, gh, get })
+  assert.equal(r.action, 'delete', 'a differently named ruleset that governs main is the one to roll back')
+  assert.equal(r.id, LIVE_ID)
+  const deletes = state.writes.filter((w) => w.method === 'DELETE')
+  assert.equal(deletes.length, 1)
+  assert.match(deletes[0].path, new RegExp(`/rulesets/${LIVE_ID}$`))
+  assert.equal(r.ok, true, r.problems.join('; '))
 })
