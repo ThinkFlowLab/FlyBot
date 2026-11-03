@@ -42,9 +42,14 @@ const react = {
   useSyncExternalStore: (_subscribe, get) => get(),
 }
 
+// A browser moves `document.activeElement` when a node takes focus. A fake that only
+// records the call cannot tell "the dialog still has focus" from "the user moved it on".
+let activeDocument = null
+
 const fakeNode = (kind) => ({
   kind, focusCalls: [], style: {}, dataset: {}, isConnected: true,
-  focus(options) { this.focusCalls.push(options ?? {}) },
+  focus(options) { this.focusCalls.push(options ?? {}); if (activeDocument) activeDocument.activeElement = this },
+  contains: node => node === this,
   querySelector: () => null,
   querySelectorAll: () => [],
   addEventListener() {}, removeEventListener() {},
@@ -88,6 +93,7 @@ function mount(overrides = {}) {
     },
   }
   context.module.exports = context.exports
+  activeDocument = context.document
   runInNewContext(outputFiles[0].text, context)
   const { SettingsDialog } = context.module.exports
   const tree = SettingsDialog({ page: 'general', id: null, roster, actions, useUpdate: () => ({}), ...overrides })
@@ -99,7 +105,7 @@ function mount(overrides = {}) {
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
   return {
-    tree, dialogNode, opener,
+    tree, dialogNode, opener, document: context.document,
     unmount() { for (const cleanup of cleanups.reverse()) cleanup() },
   }
 }
@@ -121,6 +127,20 @@ test('opening moves focus into the dialog and closing gives it back to the still
   unmount()
   assert.equal(opener.focusCalls.length, 1, 'the opener gets focus back when the dialog unmounts')
   assert.equal(opener.focusCalls[0]?.preventScroll, true)
+})
+
+// #2270: the Settings dialog is drawn for DIALOG_EXIT_MS (160 ms) after it closes, with
+// `pointer-events: none` on that leaving layer, so a click there lands on the page behind
+// it. The unmount must not drag focus back to the opener once the user has moved it.
+test('a click that moves focus during the exit animation is not pulled back to the opener', () => {
+  const { document, opener, unmount } = mount()
+  const composer = fakeNode('composer')
+  composer.focus({ preventScroll: true })
+  assert.equal(document.activeElement, composer, 'the user\'s click took focus')
+  unmount()
+  assert.equal(document.activeElement, composer, 'focus stays where the user put it')
+  assert.equal(composer.focusCalls.length, 1, 'the late cleanup does not refocus the page')
+  assert.equal(opener.focusCalls.length, 0, 'the opener is not focused after the user moved on')
 })
 
 test('the dialog keeps its role, aria-modal, aria-label and data-wide contract', () => {

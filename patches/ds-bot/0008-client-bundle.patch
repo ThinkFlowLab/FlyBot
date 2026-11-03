@@ -5029,7 +5029,7 @@ diff --git a/client.js b/client.js
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
  .bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
-@@ -2574,2935 +2574,7487 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,2935 +2574,7490 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -9203,7 +9203,10 @@ diff --git a/client.js b/client.js
 +    const before = document.activeElement;
 +    ref.current?.focus?.({ preventScroll: true });
 +    return () => {
-+      if (before && typeof before.focus === "function" && before.isConnected) before.focus({ preventScroll: true });
++      const active = document.activeElement;
++      const stillInDialog = active === ref.current || ref.current?.contains?.(active) === true;
++      const noFocusHeld = !active || active === document.body || active.isConnected === false;
++      if (before && typeof before.focus === "function" && before.isConnected && (stillInDialog || noFocusHeld || active === before)) before.focus({ preventScroll: true });
 +    };
 +  }, []);
  }
