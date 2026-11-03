@@ -4049,3 +4049,91 @@ test('#2202: the plugin Settings page draws no read-only sentence of its own', a
   assert.deepEqual(calls.filter(item => item.name !== 'workflow/state'), [], 'and still writes nothing')
   settings.unmount()
 })
+
+// #2237: Hand a task to a Workflow is the fourth dialog on this surface. A refused assign put the
+// host's sentence in the page-level `error`, whose only copy was drawn behind the mask; the dialog
+// itself painted nothing, so it stayed open saying nothing. These count over the whole tree first
+// (`alertsOf`) and only then look inside the open dialog — the #2202 shape, for the reason its
+// comment gives: counting inside the dialog is exactly what let the duplicate through.
+const ASSIGN_TASK = { id: 'task-live-1', title: 'Real board card one', status: 'open', priority: 'P1' }
+
+async function withTaskHost(fn) {
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { host: async (channel) => (channel === 'tasks' ? [ASSIGN_TASK] : []) }
+  try { return await fn() } finally { globalThis.__flybot__ = prev }
+}
+
+function assignCall(graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }, outcome = () => ({ ok: false, error: refusal })) {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    if (name === 'workflow/assign') return outcome()
+    return { ok: true, workflows: [graph] }
+  }
+  return { call, calls }
+}
+
+const dialogOf = view => findAll(view.tree, node => node.props?.role === 'dialog')[0]
+const assignOf = tree => findAll(tree, node => node.type === 'button' && textOf(node) === 'Assign')[0]
+
+async function openAssign(view) {
+  findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+  await settle()
+  return dialogOf(view)
+}
+
+test('#2237: a refused assign is announced once, inside the open dialog', async () => {
+  const { call } = assignCall()
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    let dialog = await openAssign(view)
+    assert.ok(dialog, 'the assign dialog opens')
+    assignOf(dialog).props.onClick()
+    await settle()
+    dialog = dialogOf(view)
+    assert.ok(dialog, 'a refused assign leaves the dialog open so the user can retry or cancel')
+    assert.deepEqual(alertsOf(view), [refusal], 'the whole tree carries the refusal exactly once')
+    assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal], 'and that one announcement is inside the open dialog, not only behind the mask')
+    assert.equal(findAll(dialog, node => String(node.props?.className ?? '').includes('wf-assign-fail')).length, 0, 'the read-failure slot is not lit for a refused assign')
+    view.unmount()
+  })
+})
+
+test('#2237: a successful assign closes the dialog and leaves no alert', async () => {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const { call, calls } = assignCall(graph, () => ({ ok: true, workflows: [graph] }))
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    assert.ok(dialog, 'the assign dialog opens')
+    assignOf(dialog).props.onClick()
+    await settle()
+    assert.equal(calls.filter(item => item.name === 'workflow/assign').length, 1, 'the click posts one assign')
+    assert.equal(dialogOf(view), undefined, 'a successful assign closes the dialog')
+    assert.deepEqual(alertsOf(view), [], 'and the tree carries no alert')
+    view.unmount()
+  })
+})
+
+test('#2237: re-opening the assign dialog after a refusal starts clean', async () => {
+  const { call } = assignCall()
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    let dialog = await openAssign(view)
+    assignOf(dialog).props.onClick()
+    await settle()
+    assert.deepEqual(alertsOf(view), [refusal], 'precondition: the refusal reached the screen')
+    dialog = dialogOf(view)
+    findAll(dialog, node => node.type === 'button' && textOf(node) === 'Cancel')[0].props.onClick()
+    await settle()
+    assert.equal(dialogOf(view), undefined, 'Cancel closes the dialog')
+    dialog = await openAssign(view)
+    assert.ok(dialog, 'the dialog re-opens')
+    assert.deepEqual(alertsOf(view), [], 'no sentence is left over from the previous attempt')
+    view.unmount()
+  })
+})
