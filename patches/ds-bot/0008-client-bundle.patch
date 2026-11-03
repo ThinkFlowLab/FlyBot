@@ -5029,7 +5029,7 @@ diff --git a/client.js b/client.js
  .bt-mem-skel{display:flex;flex-direction:column;gap:24px}
  .bt-mem-skel-block{display:flex;flex-direction:column;gap:10px}
  .bt-mem-skel-block span{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bt-hover) 25%,var(--bt-active) 50%,var(--bt-hover) 75%);background-size:200% 100%;animation:bt-mem-skel 1.4s ease-in-out infinite}
-@@ -2574,4596 +2574,9012 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2574,4596 +2574,9014 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @media (max-width:640px){.bt-mem{width:100vw;height:100%;border-radius:0;border:0}.bt-mem-body{padding:18px 18px 20px}.bt-mem-foot{padding:8px 12px 12px}}
  @media (prefers-reduced-motion:reduce){.bt-mem,.bt-mem-scrim,.bt-mem-summary>*,.bt-mem-empty,.bt-mem-reply,.bt-mem-skel-block span,.bt-mem-entries,.bt-mem-send>*,.bt-mem-changes li svg{animation:none}}
  
@@ -11298,6 +11298,7 @@ diff --git a/client.js b/client.js
 +  const answerable = card.kind === "approval" && card.approval?.answerable === true;
 +  const evidence = card.kind === "task" && card.status === "result" ? card.task?.result?.links ?? [] : [];
 +  const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
++  const locked = lockedWindow(roster);
 +  const target = card.kind === "task" ? card.task?.target?.href : void 0;
 +  const writeBack = card.kind === "task" && card.task?.writeBack?.state === "failed" ? card.task.writeBack : void 0;
 +  const unconfirmed = card.kind === "task" && card.task?.writeBack?.state === "unconfirmed" ? card.task.writeBack : void 0;
@@ -11345,8 +11346,7 @@ diff --git a/client.js b/client.js
 +      }, t("Comment goes to {target}", { target: target.replace(/^https:\/\/github\.com\//, "") }))) : null,
 +      writeBack ? (0, import_react14.createElement)("span", { className: "bt-inbox-writeback", role: "alert", title: writeBack.error }, t("Could not comment on {target}: {error}", { target: writeBack.target, error: writeBack.error })) : null,
 +      unconfirmed ? (0, import_react14.createElement)("span", { className: "bt-inbox-writeback", title: unconfirmed.target }, t("Could not confirm the comment on {target} went out", { target: unconfirmed.target })) : null,
-+      (0, import_react14.createElement)(AnswerFields, { card, busy, onAnswer }),
-+      (0, import_react14.createElement)(ResultActions, { card, busy, onAnswer }),
++      ...locked ? [] : [(0, import_react14.createElement)(AnswerFields, { card, busy, onAnswer }), (0, import_react14.createElement)(ResultActions, { card, busy, onAnswer })],
 +      error ? (0, import_react14.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
 +    ),
 +    (0, import_react14.createElement)(
@@ -11393,6 +11393,7 @@ diff --git a/client.js b/client.js
 +    const timer = setTimeout(() => setFeedback(""), FEEDBACK_MS);
 +    return () => clearTimeout(timer);
 +  }, [feedback]);
++  const locked = lockedWindow(roster);
 +  const model = inboxModel({ roster, work, tasks, sessions, workflows, now });
 +  const groups = visibleNeeds(model, answered);
 +  const answer = (card, choice) => {
@@ -11428,6 +11429,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react14.createElement)(
 +        "div",
 +        { className: "bt-mem-body bt-inbox-body" },
++        ...locked ? [(0, import_react14.createElement)("p", { key: "readonly", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly))] : [],
 +        (0, import_react14.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
 +        GROUPS.map((group) => {
 +          const settled = group.id === "done" ? model.doneAll ?? groups.done : null;

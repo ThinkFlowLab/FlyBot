@@ -18,6 +18,7 @@ import { botNames, currentPart, previewOf, relativeShort } from './text.js'
 import { hostText, t } from './i18n.js'
 import { failureSentence } from '../shared/failure-copy.js'
 import { columnOf } from '../shared/task-board.js'
+import { lockedWindow } from './schedules.js'
 
 // Done (and a failed task) ages out after 7 days.
 export const KEEP_MS = 7 * 86_400_000
@@ -549,6 +550,10 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
   // Where a decision is written back (#1154): the issue or PR the task came from is on the card, and
   // a comment that could not be posted says so once, on the card, instead of staying in a log. A
   // comment nobody posted within a day is `unconfirmed` (#1172): its own quiet line, not an error.
+  // #2284: a read-only window keeps every row and its Open action and draws no write the host
+  // would refuse (answer a question, the task input, Accept, Send back). An approval keeps its
+  // Reject and Allow: `approval-answer` is one of the reads a read-only channel allows.
+  const locked = lockedWindow(roster)
   const target = card.kind === 'task' ? card.task?.target?.href : undefined
   const writeBack = card.kind === 'task' && card.task?.writeBack?.state === 'failed' ? card.task.writeBack : undefined
   const unconfirmed = card.kind === 'task' && card.task?.writeBack?.state === 'unconfirmed' ? card.task.writeBack : undefined
@@ -572,8 +577,7 @@ export function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) 
       }, t('Comment goes to {target}', { target: target.replace(/^https:\/\/github\.com\//, '') }))) : null,
       writeBack ? h('span', { className: 'bt-inbox-writeback', role: 'alert', title: writeBack.error }, t('Could not comment on {target}: {error}', { target: writeBack.target, error: writeBack.error })) : null,
       unconfirmed ? h('span', { className: 'bt-inbox-writeback', title: unconfirmed.target }, t('Could not confirm the comment on {target} went out', { target: unconfirmed.target })) : null,
-      h(AnswerFields, { card, busy, onAnswer }),
-      h(ResultActions, { card, busy, onAnswer }),
+      ...(locked ? [] : [h(AnswerFields, { card, busy, onAnswer }), h(ResultActions, { card, busy, onAnswer })]),
       error ? h('span', { className: 'bt-inbox-error', role: 'alert' }, error) : null),
     h('span', { className: 'bt-inbox-actions' },
       answerable ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => onAnswer(card, 'reject') }, t('Reject')) : null,
@@ -622,6 +626,7 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
     const timer = setTimeout(() => setFeedback(''), FEEDBACK_MS)
     return () => clearTimeout(timer)
   }, [feedback])
+  const locked = lockedWindow(roster)
   const model = inboxModel({ roster, work, tasks, sessions, workflows, now })
   const groups = visibleNeeds(model, answered)
   const answer = (card, choice) => {
@@ -654,6 +659,9 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close inbox'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h('div', { className: 'bt-mem-body bt-inbox-body' },
+        // #2284: one sentence at the top of the dialog, in the host's own words, so a window that
+        // draws no write says why instead of leaving the reads silent about it.
+        ...(locked ? [h('p', { key: 'readonly', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))] : []),
         h('div', { className: 'bt-inbox-feedback', role: 'status', 'aria-live': 'polite' }, feedback),
         GROUPS.map(group => {
           // #2050: the model keeps every finished row, so the group can draw the page's remainder

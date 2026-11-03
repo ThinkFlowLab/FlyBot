@@ -9091,6 +9091,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
   const answerable = card.kind === "approval" && card.approval?.answerable === true;
   const evidence = card.kind === "task" && card.status === "result" ? card.task?.result?.links ?? [] : [];
   const sentBack = card.kind === "task" && card.status === "task" ? card.task?.followUp?.note : void 0;
+  const locked = lockedWindow(roster);
   const target = card.kind === "task" ? card.task?.target?.href : void 0;
   const writeBack = card.kind === "task" && card.task?.writeBack?.state === "failed" ? card.task.writeBack : void 0;
   const unconfirmed = card.kind === "task" && card.task?.writeBack?.state === "unconfirmed" ? card.task.writeBack : void 0;
@@ -9130,8 +9131,7 @@ function InboxCard({ card, roster, now, busy, error, onAnswer, onOpen }) {
       }, t("Comment goes to {target}", { target: target.replace(/^https:\/\/github\.com\//, "") }))) : null,
       writeBack ? (0, import_react14.createElement)("span", { className: "bt-inbox-writeback", role: "alert", title: writeBack.error }, t("Could not comment on {target}: {error}", { target: writeBack.target, error: writeBack.error })) : null,
       unconfirmed ? (0, import_react14.createElement)("span", { className: "bt-inbox-writeback", title: unconfirmed.target }, t("Could not confirm the comment on {target} went out", { target: unconfirmed.target })) : null,
-      (0, import_react14.createElement)(AnswerFields, { card, busy, onAnswer }),
-      (0, import_react14.createElement)(ResultActions, { card, busy, onAnswer }),
+      ...locked ? [] : [(0, import_react14.createElement)(AnswerFields, { card, busy, onAnswer }), (0, import_react14.createElement)(ResultActions, { card, busy, onAnswer })],
       error ? (0, import_react14.createElement)("span", { className: "bt-inbox-error", role: "alert" }, error) : null
     ),
     (0, import_react14.createElement)(
@@ -9178,6 +9178,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
     const timer = setTimeout(() => setFeedback(""), FEEDBACK_MS);
     return () => clearTimeout(timer);
   }, [feedback]);
+  const locked = lockedWindow(roster);
   const model = inboxModel({ roster, work, tasks, sessions, workflows, now });
   const groups = visibleNeeds(model, answered);
   const answer = (card, choice) => {
@@ -9213,6 +9214,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
       (0, import_react14.createElement)(
         "div",
         { className: "bt-mem-body bt-inbox-body" },
+        ...locked ? [(0, import_react14.createElement)("p", { key: "readonly", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly))] : [],
         (0, import_react14.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
         GROUPS.map((group) => {
           const settled = group.id === "done" ? model.doneAll ?? groups.done : null;
