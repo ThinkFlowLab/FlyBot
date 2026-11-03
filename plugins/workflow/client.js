@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
       'One Bot (as before)': '单个 Bot（原有方式）',
       'Concurrent runs': '同时运行',
       '{count} running · queue {depth}': '{count} 个在运行 · 队列 {depth}',
+      '{count} running': '{count} 个在运行',
       '{name} · {count} running': '{name} · {count} 个在运行',
       Reset: '重置',
       Flow: '流程图',
@@ -2207,9 +2208,6 @@ window.__ModuleLoader__.load({
         workflows.length > 0 && shown.length === 0 ? h('div', { className: 'wf-muted' }, tr('No workflows in this Project')) : null,
         shown.map(item => h('button', {
           key: item.id, type: 'button', className: `wf-row ${openId === item.id ? 'on' : ''}`,
-          // A row with live runs says how many: the dot is colour only, and a
-          // reader who cannot see it still needs the number (P-433).
-          'aria-label': (item.activeCount ?? 0) > 0 ? tr('{name} · {count} running', { name: item.name, count: item.activeCount }) : undefined,
           onClick: () => { setOpenId(item.id) },
           onContextMenu: locked ? undefined : (event) => {
             event.preventDefault()
@@ -2224,7 +2222,13 @@ window.__ModuleLoader__.load({
             h('span', { className: 'wf-t2' }, sidebarPreview(item))),
           (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-live-wrap', 'aria-hidden': true },
             h('span', { className: 'wf-live' }),
-            h('span', { className: 'wf-live-n' }, String(item.activeCount))) : null)),
+            h('span', { className: 'wf-live-n' }, String(item.activeCount))) : null,
+          // #2230: the count is the only live text a reader gets, so it cannot ride inside
+          // the `aria-hidden` wrap: a row-level `aria-label` replaced the name the content
+          // gives (the lane's name, the Workflow badge, its Project, its preview), and two
+          // lanes may carry the same name. Hidden text keeps the count without taking those
+          // away — sighted readers still get the dot and the digit alone.
+          (item.activeCount ?? 0) > 0 ? h('span', { className: 'wf-sr' }, tr('{count} running', { count: item.activeCount })) : null)),
         locked ? null : h('button', { type: 'button', className: 'wf-row wf-assign-row', onClick: () => { setAssignOpen(true); void loadTasks() } },
           h('span', { className: 'wf-ico' }, glyph()),
           h('span', { className: 'wf-txt' }, h('span', { className: 'wf-t1' }, tr('Hand a task to a Workflow')))),
@@ -2339,6 +2343,7 @@ window.__ModuleLoader__.load({
 .wf-live{width:7px;height:7px;border-radius:50%;background:var(--bt-accent,#4d6bfe);flex:none}
 .wf-live-wrap{display:flex;align-items:center;gap:4px;flex:none}
 .wf-live-n{font-size:10px;font-weight:650;line-height:1;color:var(--bt-accent,#4d6bfe)}
+.wf-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .wf-ico{width:32px;height:32px;border-radius:9px;background:var(--bt-card,#fff);border:1px solid var(--bt-line,rgba(20,20,20,.08));display:grid;place-items:center;color:var(--bt-accent,#4d6bfe);flex:none;overflow:hidden;padding:2px;box-sizing:border-box}
 .wf-mini-flow{display:block;max-width:100%;max-height:100%}
 .wf-mini-flow-compact{width:100%;height:100%}
