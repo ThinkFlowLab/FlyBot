@@ -238,12 +238,23 @@ const WITHHELD_OPENING = /^[\s>*+\-–—(\[]*(?:if|unless|provided|providing|as
 const LEADING_NEGATION = /^[\s>*+\-–—(\[]*(?:not|never|cannot|n['’]t)\b/i
 const withholdsBefore = (clause) => (WITHHELD.test(clause) && !LEADING_NEGATION.test(clause))
   || WITHHELD_OPENING.test(clause.replace(LEADING_NEGATION, ''))
+// P-491 (FlyBot Lead, 2026-11-03): `liftAt - 1` was the only clause read, so a condition with one neutral
+// clause in between ("If the second reader signs off. CI is green. You may merge this tip now.") cleared the
+// hold. The clause at `liftAt - 1` keeps the reading above; the ones further back get a narrower one, because
+// there a bare negation is the answer's own voice ("I don't see any objections. Tests are green. You may merge
+// this tip now.") and a time or sequencing phrase is ordinary prose ("After the fix, all green.", "It should
+// be fine.") — refusing those is the #2287 shape. So these read the waiting and condition words only, with
+// `if`, `unless`, `until` and `once` as openings, and `only after` / `not until` still count as words.
+const WITHHELD_FURTHER = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|providing|as (?:long|soon) as|assuming|in case|depending on|contingent (?:on|upon)|dependent (?:on|upon)|in the event|on condition that)\b/i
+const FURTHER_OPENING = /^[\s>*+\-–—(\[]*(?:if|unless|until|once(?!\s+(?:more|again)\b))\b/i
+const withholdsFurtherBack = (clause) => WITHHELD_FURTHER.test(clause) || FURTHER_OPENING.test(clause)
 const unconditionalLift = (text) => {
   if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
   const clauses = text.split(CLAUSE)
   if (clauses.some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))) return false
   const liftAt = clauses.findIndex((clause) => LIFT_REQUEST.test(clause))
   if (liftAt > 0 && withholdsBefore(clauses[liftAt - 1])) return false
+  if (liftAt > 1 && clauses.slice(0, liftAt - 1).some(withholdsFurtherBack)) return false
   let afterLift = false
   for (const clause of clauses) {
     if (afterLift && (WITHHELD.test(clause) || WITHHELD_LEADING.test(clause))) return false
