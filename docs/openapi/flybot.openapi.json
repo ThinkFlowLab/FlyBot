@@ -1404,7 +1404,14 @@
             "$ref": "#/components/schemas/JsonValue"
           },
           "pr": {
-            "$ref": "#/components/schemas/JsonValue"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GithubPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "release": {
             "$ref": "#/components/schemas/JsonValue"
@@ -2475,6 +2482,9 @@
           "executorLogin": {
             "type": "string"
           },
+          "identity": {
+            "$ref": "#/components/schemas/GithubAutomationIdentity"
+          },
           "marker": {
             "type": "boolean"
           }
@@ -2534,6 +2544,45 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "authorizedAgentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "createdAt": {
             "type": "integer",
@@ -3602,6 +3651,153 @@
           }
         ]
       },
+      "GithubAutomationIdentity": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "gh-cli",
+              "github-app"
+            ]
+          },
+          "login": {
+            "type": "string"
+          },
+          "appId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "installationId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credentialIdentity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "provider",
+          "login",
+          "appId",
+          "installationId",
+          "credentialIdentity"
+        ]
+      },
+      "GithubPublication": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "url": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "maxLength": 200
+          },
+          "executorLogin": {
+            "type": "string"
+          },
+          "credentialScope": {
+            "const": "project-automation",
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/GithubAutomationIdentity"
+          },
+          "initiatedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "attemptId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidateSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "operation": {
+            "const": "pull-request-publish",
+            "type": "string"
+          },
+          "executionRole": {
+            "const": "project-delivery-host",
+            "type": "string"
+          },
+          "creatorLogin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "number",
+          "sha",
+          "repository"
+        ]
+      },
       "Delegation": {
         "type": "object",
         "properties": {
@@ -4004,6 +4200,314 @@
               },
               "result": {
                 "$ref": "#/components/schemas/DevelopmentQueryInboxGetResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentQueryGithubConnectionPayload": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      },
+      "DevelopmentQueryGithubConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "github.connection",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionPayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryGithubConnectionResult": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "type": "object",
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gh-cli",
+                      "github-app"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "login": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "appId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installationId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "type": "string"
+              },
+              "recovery": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                "maxLength": 200
+              },
+              "connectionId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "verifiedAt": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "identity": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GithubAutomationIdentity"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "gh-cli",
+                        "github-app"
+                      ]
+                    },
+                    "appId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "installationId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "login": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "id",
+                    "provider",
+                    "appId",
+                    "installationId",
+                    "login"
+                  ]
+                },
+                "maxItems": 100
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "repository",
+              "connectionId",
+              "revision",
+              "configured",
+              "provider",
+              "options"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "connection"
+        ]
+      },
+      "DevelopmentQueryGithubConnectionSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionResult"
               },
               "receipt": {
                 "$ref": "#/components/schemas/CommandReceipt"
@@ -8826,6 +9330,341 @@
             "required": [
               "version",
               "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandGithubConnectionConfigurePayload": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "maxLength": 200
+          },
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "connectionId",
+          "expectedRevision"
+        ]
+      },
+      "DevelopmentCommandGithubConnectionConfigureRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "github.connection.configure",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigurePayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandGithubConnectionConfigureResult": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "type": "object",
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gh-cli",
+                      "github-app"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "login": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "appId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installationId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "type": "string"
+              },
+              "recovery": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                "maxLength": 200
+              },
+              "connectionId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "verifiedAt": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "identity": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GithubAutomationIdentity"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "gh-cli",
+                        "github-app"
+                      ]
+                    },
+                    "appId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "installationId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "login": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "id",
+                    "provider",
+                    "appId",
+                    "installationId",
+                    "login"
+                  ]
+                },
+                "maxItems": 100
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "repository",
+              "connectionId",
+              "revision",
+              "configured",
+              "provider",
+              "options"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "connection"
+        ]
+      },
+      "DevelopmentCommandGithubConnectionConfigureSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigureResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
             ]
           }
         },
@@ -20414,12 +21253,61 @@
             "properties": {
               "configured": {
                 "type": "boolean"
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gh-cli",
+                      "github-app"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "login": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "appId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installationId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "verification": {
+                "type": "string"
+              },
+              "recovery": {
+                "type": "string"
               }
             },
-            "additionalProperties": true,
-            "required": [
-              "configured"
-            ]
+            "additionalProperties": true
           }
         },
         "additionalProperties": true,
@@ -20600,6 +21488,9 @@
           "executorLogin": {
             "type": "string"
           },
+          "identity": {
+            "$ref": "#/components/schemas/GithubAutomationIdentity"
+          },
           "at": {
             "type": "integer",
             "minimum": 0
@@ -20622,6 +21513,7 @@
           "operation",
           "scope",
           "executorLogin",
+          "identity",
           "at",
           "limit",
           "pagination",
@@ -26661,6 +27553,9 @@
             "$ref": "#/components/schemas/DevelopmentQueryInboxGetRequest"
           },
           {
+            "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionRequest"
+          },
+          {
             "$ref": "#/components/schemas/DevelopmentQueryInboxConnectionRequest"
           },
           {
@@ -26737,6 +27632,9 @@
           },
           {
             "$ref": "#/components/schemas/DevelopmentQueryCompatibilityRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigureRequest"
           },
           {
             "$ref": "#/components/schemas/DevelopmentCommandInboxClaimRequest"
@@ -27085,6 +27983,84 @@
       }
     },
     {
+      "operationId": "development.query.github.connection",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "github.connection",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryGithubConnectionSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "read",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "current-project-membership",
+      "personalAgent": {
+        "safe": true,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "Configuration metadata only; never returns private key path, JWT or installation token. No network probe.",
+      "implementation": {
+        "path": "core/src/host/project-github-connections.js",
+        "sha256": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d"
+      }
+    },
+    {
       "operationId": "development.query.inbox.connection",
       "transport": {
         "method": "POST",
@@ -27247,7 +28223,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -27325,7 +28301,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -27403,7 +28379,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -27481,7 +28457,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -28037,7 +29013,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -28281,7 +29257,7 @@
       "notes": "Reports effective current boundaries; it neither runs tests nor grants tools/credentials.",
       "implementation": {
         "path": "core/src/host/project-execution-boundary.js",
-        "sha256": "20fd2d7398c0e95f983da8b54635366864f233bf738add89122d7246473b3a65"
+        "sha256": "9e7afe568024e19517a3d5430a0483a6ea5e2c910a53de056d83db3896d3eb16"
       }
     },
     {
@@ -28359,7 +29335,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       }
     },
     {
@@ -28441,7 +29417,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -28519,7 +29495,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -28602,7 +29578,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       }
     },
     {
@@ -29164,6 +30140,117 @@
       "implementation": {
         "path": "core/src/host/project-compatibility.js",
         "sha256": "4ab65df4a237fb55ea2c68396bd180bb0a9ed4c42dc63444ce4ef0869c8988bc"
+      }
+    },
+    {
+      "operationId": "development.command.github.connection.configure",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "github.connection.configure",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigureRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigureResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandGithubConnectionConfigureSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        }
+      ],
+      "permission": "human-manager",
+      "humanRoles": [
+        "owner",
+        "maintainer"
+      ],
+      "condition": "current-signed-in-human-manager; no-agent-or-watch-credential",
+      "personalAgent": {
+        "safe": false,
+        "watch": false,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "active-project",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "writable-store",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "signed-in-human-owner-or-maintainer",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "associated-repository",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "operator-provisioned-project-repository-connection",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "matching-selection-revision",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-verified-installation-or-gh-login",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "project-repository-credential-selection-committed",
+          "null-explicitly-disables-without-fallback"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Selects an existing connection ID; never accepts keys, URLs or tokens. Bot/watch authority cannot select or replace credentials. May perform read-only authentication verification.",
+      "implementation": {
+        "path": "core/src/host/project-github-connections.js",
+        "sha256": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d"
       }
     },
     {
@@ -30457,7 +31544,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -30565,7 +31652,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -30672,7 +31759,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -30766,7 +31853,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -30860,7 +31947,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -30969,7 +32056,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       }
     },
     {
@@ -31091,7 +32178,7 @@
       "notes": "Can perform irreversible external publication only when mode=publish is explicitly sent. Does not merge, upload assets or deploy. Unknown results must reconcile.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       }
     },
     {
@@ -31207,7 +32294,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       }
     },
     {
@@ -32619,7 +33706,7 @@
       "notes": "No ambient/project-owner credential fallback. External write; use the same requestId when a response is lost.",
       "implementation": {
         "path": "core/src/host/project-credentials.js",
-        "sha256": "17ba1d326787c47d8669d0d3ef269e50a97a67eb8413183ff940a3993daab5ff"
+        "sha256": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea"
       }
     },
     {
@@ -33893,7 +34980,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
+        "sha256": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853"
       }
     },
     {
@@ -33964,7 +35051,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
+        "sha256": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853"
       }
     },
     {
@@ -34048,7 +35135,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
+        "sha256": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853"
       }
     },
     {
@@ -34136,7 +35223,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
+        "sha256": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853"
       }
     },
     {
@@ -34216,7 +35303,7 @@
       "notes": "Safe and watch modes may propose. A human approves with project-agent-proposal-apply; the Bot cannot approve its own proposal.",
       "implementation": {
         "path": "core/src/host/personal-agent-auth.js",
-        "sha256": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb"
+        "sha256": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853"
       }
     },
     {
@@ -38244,7 +39331,7 @@
       "notes": "No token/password/config path is returned. Native FBA gate requires watch even though domain action is read.",
       "implementation": {
         "path": "core/src/host/project-credentials.js",
-        "sha256": "17ba1d326787c47d8669d0d3ef269e50a97a67eb8413183ff940a3993daab5ff"
+        "sha256": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea"
       }
     },
     {
@@ -38329,7 +39416,7 @@
       "notes": "Only current default repository; bounded upstream GitHub projection. data varies by operation and is external untrusted JSON. Native FBA gate currently requires watch.",
       "implementation": {
         "path": "core/src/host/project-github-read.js",
-        "sha256": "9baf5fb71e80a55a9297592ba24327af7b48b373eddb7ee24a74b55075b66146"
+        "sha256": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943"
       }
     },
     {
@@ -41289,7 +42376,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -41386,7 +42473,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -41479,7 +42566,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -41571,7 +42658,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -41663,7 +42750,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -41772,7 +42859,7 @@
       "notes": "Can perform irreversible external publication only when mode=publish is explicitly sent. Does not merge, upload assets or deploy. Unknown results must reconcile.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       },
       "aliasOf": "development.command.release.request"
     },
@@ -41869,7 +42956,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       },
       "aliasOf": "development.command.release.reconcile"
     },
@@ -41950,7 +43037,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-releases.js",
-        "sha256": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4"
+        "sha256": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885"
       },
       "aliasOf": "development.query.release.status"
     },
@@ -42042,7 +43129,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -42118,7 +43205,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565"
+        "sha256": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -43045,7 +44132,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87"
+        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
       },
       "aliasOf": "development.query.pools"
     },
@@ -43148,7 +44235,7 @@
       "notes": "No ambient/project-owner credential fallback. External write; use the same requestId when a response is lost.",
       "implementation": {
         "path": "core/src/host/project-credentials.js",
-        "sha256": "17ba1d326787c47d8669d0d3ef269e50a97a67eb8413183ff940a3993daab5ff"
+        "sha256": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea"
       },
       "aliasOf": "development.command.comment.publish"
     }
@@ -43261,6 +44348,7 @@
       "project-github-comment"
     ],
     "queries": [
+      "github.connection",
       "inbox.list",
       "inbox.get",
       "inbox.connection",
@@ -43291,6 +44379,7 @@
       "pools"
     ],
     "commands": [
+      "github.connection.configure",
       "inbox.claim",
       "inbox.renew",
       "inbox.complete",
@@ -43326,6 +44415,8 @@
       "comment.publish"
     ],
     "aliases": {
+      "github.connection": "project-github-connection",
+      "github.connection.configure": "project-github-connection-configure",
       "inbox.list": "project-agent-inbox-list",
       "inbox.get": "project-agent-inbox-get",
       "inbox.connection": "project-agent-inbox-connection",
@@ -43407,9 +44498,9 @@
       "project-close-confirm"
     ],
     "nativeEndpointCount": 104,
-    "versionedQueryCount": 28,
-    "versionedCommandCount": 33,
-    "dispatchVariantCount": 184,
+    "versionedQueryCount": 29,
+    "versionedCommandCount": 34,
+    "dispatchVariantCount": 186,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
       "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
@@ -43448,7 +44539,7 @@
       "core/src/host/notify.js": "38d5a7d56fdc4f4d777211dda8bbd08685b8e97cfb210c77544a8d1c8e0903d9",
       "core/src/host/parts.js": "5966cf7601c75a13ec25a83f093eabb82734208fce13e778b7182635fc5b650a",
       "core/src/host/permissions.js": "829f2d2d639ec8652759824cf7a05f70ed62453009a86be9f31ecd1075f0ce8e",
-      "core/src/host/personal-agent-auth.js": "cf1af02c2bf6dcf731210f1c279c346dcf2e2c4aba3a0df12a425a7022773ebb",
+      "core/src/host/personal-agent-auth.js": "869802cc16eeab5af84b8fd281bc60ce8cf7677bd7cac17442057042dc333853",
       "core/src/host/personal-agents.js": "065e9a8bb9b686db1908c8ada67cd899709b28e574fdc74b5a361cad44c69651",
       "core/src/host/platform-identity.js": "551795f4251cc705582560274eccf68a8955a26f51c807a74b8948261508a29e",
       "core/src/host/plugin-model.js": "64477d6900bb6abea40c7ffe0e55d51e61e54bcfbe03e5d5a5e9647b40b69fc8",
@@ -43468,20 +44559,22 @@
       "core/src/host/project-consultations.js": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0",
       "core/src/host/project-context-budget.js": "58f990182ec5efb2701603f024eec38749cbbfabd050e478e6def58312f460e1",
       "core/src/host/project-context-memory.js": "933893b3d6b7b2c7a79365991c1303fb03a665d9529f16ccf57429a753ad4cd0",
-      "core/src/host/project-credentials.js": "17ba1d326787c47d8669d0d3ef269e50a97a67eb8413183ff940a3993daab5ff",
+      "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
-      "core/src/host/project-delivery.js": "088f77fb00768eeaa7adc4c629f6c850a2b24e0669eed46fd6fb32ed5682b565",
-      "core/src/host/project-development-service.js": "ee1d9ee3cd4c15735ef9a8dd73497f3521c7379bd23828319d8cdffb8d47be87",
+      "core/src/host/project-delivery.js": "aa2dfe94308f85cf61d1a059feeb23a7b38f7f9829fc215ddab62e426a865a40",
+      "core/src/host/project-development-service.js": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
-      "core/src/host/project-execution-boundary.js": "20fd2d7398c0e95f983da8b54635366864f233bf738add89122d7246473b3a65",
+      "core/src/host/project-execution-boundary.js": "9e7afe568024e19517a3d5430a0483a6ea5e2c910a53de056d83db3896d3eb16",
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
       "core/src/host/project-git-sandbox.js": "b579b01dcce0708275e9f735d08932481369803382b8f7d24af69639608d724f",
-      "core/src/host/project-github-read.js": "9baf5fb71e80a55a9297592ba24327af7b48b373eddb7ee24a74b55075b66146",
-      "core/src/host/project-github.js": "35edca6a669d9004f920de30625a731964b62bb3f92c0399fa988158ece0c010",
+      "core/src/host/project-github-app.js": "d2cf077873271125c0ad78acde8c1cb039261a4a9229964a4117d1a72081c3ca",
+      "core/src/host/project-github-connections.js": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d",
+      "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
+      "core/src/host/project-github.js": "bf6d3891a6fa9c0516cd330d3322a750fc6db8813752f7801d4d9760fca84061",
       "core/src/host/project-harness-turn.js": "a8ab111b8d5473a27413968e4ea5c2631ea472c992414e9387da245463f7b21a",
       "core/src/host/project-harness.js": "8ee1d4040cff7ede7b4c540bb0b020061406bea718d649a7a7b1792c63cc1553",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
@@ -43493,8 +44586,8 @@
       "core/src/host/project-pools.js": "afab16b3df4d18a5bfab69c975e8d61346a7838438a634668f2b06425545f237",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "85f4ed03f5191b842ca899b712c99177c059658d43a66e8ddeedc1c06eafcdea",
-      "core/src/host/project-release-github.js": "05c4d93482d0600178951300b8e568a34687b552362d3278f57453c4d30a9ce3",
-      "core/src/host/project-releases.js": "e16a79b23aeded23023762bcca1aba4595dd02da86475c545d270e340cc1d4d4",
+      "core/src/host/project-release-github.js": "47c52d0057dd39f1ee627c619970efad36e0134bc0c7bc218d43187230d51d64",
+      "core/src/host/project-releases.js": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885",
       "core/src/host/project-repository-policy.js": "6ccc5d682016335c4e780a420a48e3ecee02c17315a76f89bacc72d49dfc5040",
       "core/src/host/project-resource-workspaces.js": "4e505ca393f0741cdf781c63f14f0b064cef196553de3aa6caa07c1cba43ea5f",
       "core/src/host/project-resources.js": "64b2abadc7900ca005b1b90217e8f512e867932c92e4033904417878fa3112ce",

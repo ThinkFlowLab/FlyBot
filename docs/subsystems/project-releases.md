@@ -86,3 +86,7 @@ Provider HTTP is mocked; no real release is created by tests. Actual publication
 real-provider role execution, artifact uploads and deployment remain separate
 authorized operational acceptance. A unit fixture isolates Chief identity/input
 callbacks; the existing dedicated suites retain those authorization checks.
+
+## GitHub App credential adaptation — #2311
+
+Release adapters use the selected App or gh-cli provider and report typed external identity proofs. App logical identity, not short-lived Token or private key path, fences authorized requests; gh-cli policy hashes remain compatible. Authorization retains human/agent and Task/Attempt attribution. See [GitHub providers](project-github-automation.md).

@@ -96,3 +96,7 @@ README/API publication stays deferred to #2189 after backend convergence.
 ## Canonical proposal requirements (#2189 integration)
 
 External safe proposals now preserve explicitly supplied impact and scope as bounded fields in the same private proposal and intent hash. The original publication path transfers them into canonical Task requirements; it cannot silently lose the human-approved Project impact before Chief admission. Missing optional legacy fields are not invented. The production-entry HTTP regression reproduced the loss before this adapter fix and separately verifies safe approval, watch publication and credential revoke using an actual FBA caller. This is a protocol fixture, not a vendor product adapter.
+
+## GitHub App credential adaptation — #2311
+
+FBA safe/watch callers may read scoped connection metadata but cannot configure project GitHub credentials, including full-watch agents. Existing personal-user write authority stays separate. See [GitHub providers](project-github-automation.md).

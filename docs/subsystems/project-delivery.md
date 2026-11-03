@@ -558,3 +558,7 @@ Repository-free decision Tasks use registered local decision-directory Workspace
 #2292 log reads now use sealedLogPage: offset is a UTF-8 byte boundary, limit4–8192 bytes (default8192), expectedSha256 binds the immutable source. Streaming verification scans the source in64kB buffers without loading the whole log; only the requested page is retained. Hash/stat changes refuse, and current access is rechecked after I/O. Responses preserve text/sha/sha256 and add offset/nextOffset/totalBytes. Existing callers now receive a bounded first page; use nextOffset for complete logs. Arbitrary caller paths are ignored. This bounds memory/response, not total verification I/O.
 
 #2292 Release Tasks require the existing release service to verify a committed external result at Chief closure. Explicit human/watch authorization is separate from role outputs and Chief judgement; the non-code result transition additionally requires verified release proof. See [release contract](project-releases.md).
+
+## GitHub App credential adaptation — #2311
+
+Publication now selects either credential provider through the existing broker, pins its logical connection before Effects I/O, rechecks current authority before each external operation and preserves candidate evidence when an identity changes. Same-App key rotation does not alter idempotency; see [GitHub automation](project-github-automation.md).

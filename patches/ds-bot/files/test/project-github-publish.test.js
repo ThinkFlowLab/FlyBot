@@ -3,10 +3,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { generateKeyPairSync } from 'node:crypto'
 import { test } from 'node:test'
 import { githubPublisher } from '../src/host/project-github.js'
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-function fixture(t) {
+function fixture(t, provider = 'gh-cli') {
   const path = mkdtempSync(join(tmpdir(), 'flybot-publish-'))
   git(path, 'init', '-b', 'main'); git(path, 'config', 'user.name', 'Fixture'); git(path, 'config', 'user.email', 'fixture@localhost')
   writeFileSync(join(path, 'code.txt'), 'first'); git(path, 'add', '.'); git(path, 'commit', '-m', 'Published candidate')
@@ -19,24 +20,29 @@ function fixture(t) {
   let override = {}, postPushOverride = {}, beforePush = () => {}, upstream = previous, unbound = [], loseReply = false
   const request = async (url, options = {}) => {
     calls.push({ url, method: options.method ?? 'GET' })
+    if (url.endsWith('/installation')) return Response.json({ id: 12, app_id: 7, app_slug: 'automation', account: { login: 'example' }, suspended_at: null, permissions: { contents: 'write', pull_requests: 'write' } })
+    if (url.endsWith('/access_tokens')) return Response.json({ token: 'ghs_7_fixture.token', expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: JSON.parse(options.body).permissions, repositories: [{ full_name: 'example/demo' }] })
     if (url.endsWith('/user')) return Response.json({ login: 'automation' })
     if (options.method === 'POST') {
       creates++
-      const pr = { number: 99, state: 'open', head: { sha: candidate }, html_url: 'https://example.invalid/pr/99', body: JSON.parse(options.body).body }
+      const pr = { user: { login: 'automation[bot]' }, number: 99, state: 'open', head: { sha: candidate }, html_url: 'https://example.invalid/pr/99', body: JSON.parse(options.body).body }
       unbound = [pr]
       if (loseReply) { loseReply = false; throw Error('Lost response after PR creation') }
       return Response.json(pr)
     }
     if (url.includes('/git/ref/heads/')) return Response.json({ object: { type: 'commit', sha: upstream } })
     if (url.includes('/pulls?')) return Response.json(unbound)
-    return Response.json({ number: 48, state: 'open', draft: true, base: { ref: 'main', sha: 'f'.repeat(40), repo: { full_name: 'example/demo' } }, head: { ref: 'existing', repo: { full_name: 'example/demo' }, sha: git(path, '--git-dir', remote, 'rev-parse', 'existing') }, html_url: 'https://example.invalid/pr/48', ...(pushes ? postPushOverride : override) })
+    return Response.json({ user: { login: 'automation[bot]' }, number: 48, state: 'open', draft: true, base: { ref: 'main', sha: 'f'.repeat(40), repo: { full_name: 'example/demo' } }, head: { ref: 'existing', repo: { full_name: 'example/demo' }, sha: git(path, '--git-dir', remote, 'rev-parse', 'existing') }, html_url: 'https://example.invalid/pr/48', ...(pushes ? postPushOverride : override) })
   }
   const run = async (command, args, options) => {
     if (command === 'gh') return { stdout: 'fixture-token' }
     if (args.includes('push')) { beforePush(); pushes++; const rewritten = args.map(arg => arg.startsWith('https://github.com/') ? remote : arg); return { stdout: git(options.cwd, ...rewritten) } }
     return { stdout: git(options.cwd, ...args) }
   }
-  const publisher = githubPublisher({ credential: 'gh-cli', configDir: '/fixture/explicit-gh', login: 'automation' }, { request, run })
+  const keyFile = join(path, 'app.pem')
+  if (provider === 'github-app') writeFileSync(keyFile, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 })
+  const settings = provider === 'github-app' ? { credential: 'github-app', appId: 7, installationId: 12, privateKeyFile: keyFile } : { credential: 'gh-cli', configDir: '/fixture/explicit-gh', login: 'automation' }
+  const publisher = githubPublisher(settings, { request, run })
   t.after(() => rmSync(path, { recursive: true, force: true }))
   return { publisher, attempt, previous, candidate, remote, path, calls, counters: () => ({ pushes, creates }), override(value) { override = value }, postPushOverride(value) { postPushOverride = value }, beforePush(value) { beforePush = value }, upstream(value) { upstream = value }, loseReply() { loseReply = true }, unbound(value) { unbound = value } }
 }
@@ -92,7 +98,7 @@ test('first-PR response loss reuses its marker/branch receipt; closed or changed
   const f = fixture(t); delete f.attempt.publicationBinding
   f.attempt.publicationEffectId = 'effect-stable'
   f.loseReply()
-  await assert.rejects(f.publisher.publish(f.attempt, { repository: 'example/demo', defaultBranch: 'main' }), /Lost response/)
+  await assert.rejects(f.publisher.publish(f.attempt, { repository: 'example/demo', defaultBranch: 'main' }), /outcome is unavailable/)
   assert.equal(f.counters().creates, 1)
   const recovered = await f.publisher.publish(f.attempt, { repository: 'example/demo', defaultBranch: 'main' })
   assert.equal(recovered.number, 99)
@@ -150,4 +156,21 @@ test('same-PR continuation requires trusted upstream ancestry and rechecks targe
   f.beforePush(() => f.upstream(f.candidate))
   await assert.rejects(f.publisher.publish(f.attempt, { repository: 'example/demo' }), /upstream changed during publication/)
   assert.deepEqual(f.counters(), { pushes: 1, creates: 0 })
+})
+
+for (const provider of ['gh-cli', 'github-app']) test(provider + ' shares push, existing PR, read and lost-create-response reconciliation', async t => {
+  const f = fixture(t, provider)
+  const pr = await f.publisher.publish(f.attempt, { repository: 'example/demo' })
+  assert.equal(pr.identity.provider, provider); assert.equal(pr.sha, f.candidate)
+  assert.equal((await f.publisher.read(pr)).sha, f.candidate)
+  delete f.attempt.publicationBinding; f.loseReply()
+  await assert.rejects(f.publisher.publish(f.attempt, { repository: 'example/demo' }), /outcome is unavailable/)
+  assert.equal((await f.publisher.publish(f.attempt, { repository: 'example/demo' })).number, 99)
+  assert.equal(f.counters().creates, 1)
+})
+
+test('App publication rejects a different PR creator before any push', async t => {
+  const f = fixture(t, 'github-app'); f.override({ user: { login: 'another-app[bot]' } })
+  await assert.rejects(f.publisher.publish(f.attempt, { repository: 'example/demo' }), /creator does not match/)
+  assert.deepEqual(f.counters(), { pushes: 0, creates: 0 })
 })

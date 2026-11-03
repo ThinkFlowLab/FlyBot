@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { roleExecutionPrompt } from '../src/host/project-role-policy.js'
+import { githubCredentialBinding } from '../src/host/project-github-app.js'
 import { createProjectDelivery } from '../src/host/project-delivery.js'
 import { createTaskContract, admitTask, addTaskDependencies } from '../src/host/project-task-lifecycle.js'
 import { childResultSources } from '../src/host/project-child-inputs.js'
@@ -1675,4 +1676,15 @@ test('Release Task closes only after explicit durable authorization and current 
   assert.equal(task.status, 'accepted')
   assert.equal(a.acceptedViaChief, 'release-close')
   assert.equal(posts, 1)
+})
+
+test('publication recovery pins the original App identity and preserves evidence after connection changes', async t => {
+  const f = await setup(t); await f.start('app-fence'); await complete(f)
+  const attempt = f.attempt(), original = { credential: 'github-app', appId: 7, installationId: 12, privateKeyFile: '/never-read.pem' }
+  attempt.publicationCredential = githubCredentialBinding(original, 'example/demo')
+  f.rt.config.projectRepositories['example/demo'].github = { ...original, installationId: 99 }
+  f.rt.projectDelivery = createProjectDelivery(f.rt)
+  const count = f.published.length
+  await assert.rejects(f.rt.projectEffects.perform({ kind: 'github.publish', key: 'connection-change-probe', projectId: 'p1', taskId: f.task.id, payload: { attemptId: attempt.id, candidateSha: attempt.candidateSha, initiatedBy: 'owner-1' } }), /connection changed/)
+  assert.equal(f.published.length, count); assert.equal(attempt.evidence.tests.passed, true); assert.equal(attempt.pr.sha, attempt.candidateSha)
 })

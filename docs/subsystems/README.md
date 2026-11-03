@@ -75,3 +75,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 - [Persistent backend entry](backend-service.md) — source init/start/login/CLI, original HTTP/SSE composition and deployment/documentation verification.
 
 [Release Tasks](project-releases.md) bind explicit publication authorization and observed external proof to the existing Attempt/Effects and Chief closure.
+
+Project automation credential providers: [GitHub automation](project-github-automation.md).

@@ -52,3 +52,7 @@ so a mutable Project cannot retarget an in-flight read to another repository.
 ## Development service (S1)
 
 The compact task execution status projection now delegates to the shared development TaskView. Its regression fixture carries actual Project/Task/Attempt/active-claim bindings instead of an unscoped worker status stub. See [service contract](project-development-service.md).
+
+## GitHub App credential adaptation — #2311
+
+Project reads use the selected gh-cli/App connection and operation-specific installation permissions, verify current authorization before every request and withhold results after scope changes. Personal reads reject App credentials. Responses include sanitized actual provider identity; see [GitHub providers](project-github-automation.md).

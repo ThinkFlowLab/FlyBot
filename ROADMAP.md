@@ -5,7 +5,7 @@
 #2308 adds one native/external inbox protocol, verified Webhook hints, durable
 processing and Chief continuation. Preserve existing personal Chief/group contracts;
 do not turn consultations into Tasks or inbox claims into executor identity.
-Follow with #2311 GitHub App installation credentials alongside gh-cli; no live rollout.
+#2311 implements GitHub App credentials alongside gh-cli, scoped human selection and recovery fencing. Deterministic provider/runtime coverage is separate from real App acceptance; no live rollout.
 
 #2183 adds scoped agent credentials over the existing member-session HTTP channel,
 reuses per-participation safe/watch grants, and persists Task-origin provenance.

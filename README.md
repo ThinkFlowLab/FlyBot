@@ -81,7 +81,7 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 | 需要 | 文档 |
 | --- | --- |
-| 对象、权限、全部28查询/33命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
+| 对象、权限、全部29查询/34命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
 | Chief/角色/Task/Handoff、咨询、个人代理、安全与值守、状态与上下文 | [协作指南](docs/development-service-guide.md) |
 | 数据目录、账号平台、模型/SDK/仓库、停止重启、备份升级、排障 | [部署运维](docs/backend-operations.md) |
 | 个人Chief、多Bot、群聊、公共Bot、原版安装与桌面功能 | [原版FlyBot](README.native.zh.md) · [English](README.native.md) |
@@ -90,3 +90,5 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 真实部署入口是 `scripts/backend.mjs`。`dev/demo/` 是隔离开发验证工具，会使用测试模型或临时数据，不能作为生产启动方法。
 自动测试通过、真实 SDK 验证、浏览器验收、PR 合入与生产部署分别记录；本分支不承诺未验证的完整真实模型开发闭环。
+
+项目自动化支持显式 gh-cli 或 GitHub App installation；人类选择已预置连接，个人用户授权独立。见 [GitHub配置与身份](docs/github-automation.md)。
