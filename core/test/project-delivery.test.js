@@ -1533,6 +1533,8 @@ test('a parent cannot seal skipped or subsequently invalidated child integration
 test('approved custom role capabilities preserve logical identities while sealing testing and reviewing real code', async t => {
   const f = await setup(t, undefined, { pool: true })
   f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  // Explicit setup is a write; definition metadata reads do not materialize catalogs.
+  await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', name: 'Developer' }, alice)
   const original = f.rt.projectAgents.deliveryDefinitions('p1')
   const names = { developer: 'implementer', tester: 'validator', reviewer: 'auditor' }
   // Governance approval is tested through real host APIs separately. This fixture
