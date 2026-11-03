@@ -56,6 +56,7 @@ export function attemptMetadataView(attempt) {
   if (attempt.requirement) result.requirement = { ...pick(attempt.requirement, ['repository', 'projectTaskRevision']), ...Object.fromEntries(['title', 'criteria', 'impact', 'scope', 'note'].filter(key => attempt.requirement[key] !== undefined).map(key => [key, short(attempt.requirement[key])])) }
   if (attempt.failure) result.failure = { ...pick(attempt.failure, ['at']), message: short(attempt.failure.message) }
   if (attempt.feedback) result.feedback = { ...pick(attempt.feedback, ['previousAttemptId', 'kind', 'candidateSha']), reason: short(attempt.feedback.reason) }
+  if (attempt.release) result.release = { ...pick(attempt.release, ['id', 'status', 'observedAt']), ...pick(attempt.release.spec, ['repository', 'tag', 'sha', 'mode']), sourceRef: { query: 'release.status', attemptId: attempt.id } }
   if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository'])
   if (attempt.publicationBinding) result.publicationBinding = pick(attempt.publicationBinding, ['number', 'repository', 'branch', 'previousSha', 'upstreamSha', 'upstreamRef'])
   if (attempt.integrationInputs) result.integrationInputs = attempt.integrationInputs.slice(0, 20).map(row => pick(row, ['version', 'repository', 'ref', 'sha']))

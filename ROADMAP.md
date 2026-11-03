@@ -350,4 +350,4 @@ Canonical ongoing role/resource authority checks now reuse native step/SDK input
 
 #2189 supplies the persistent source init/start/login/API client and final object/API/operations documentation. Verify isolated fresh installation, retained auth/Task receipt across restart, consultation privacy, external safe/watch and SSE revoke; keep real-provider/remote/browser/production rollout evidence separate. Existing service/frontend flows are untouched.
 
-#2292 follow-up: initial-role admission now follows approved capabilities with durable queue/start bindings; Task repository/local repository-free decision execution is implemented; bounded legacy history is implemented; Release evidence and real-loop acceptance remain pending.
+#2292 follow-up: initial-role admission now follows approved capabilities with durable queue/start bindings; Task repository/local repository-free decision execution is implemented; bounded legacy history is implemented; Release evidence is implemented; actual real-model/parallel/restart/migration/UI and release operational acceptance remain pending under #2292.

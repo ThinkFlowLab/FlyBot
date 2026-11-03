@@ -1642,3 +1642,37 @@ test('sealed Attempt logs are bounded UTF-8 pages with exact hash and stale-curs
   writeFileSync(path, text + 'tampered')
   await assert.rejects(f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id }, alice), /changed|stale/)
 })
+
+
+test('Release Task closes only after explicit durable authorization and current provider evidence', async t => {
+  const f = await setup(t, undefined, { pool: true, modern: true })
+  const task = f.rt.state.tasks[f.task.id]
+  task.projectTaskKind = 'release'
+  const decision = { id: 'release-admit', taskId: f.task.id, projectId: 'p1', executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Release target and requirements checked' }
+  admitTask(task, decision)
+  f.rt.config.projectRepositories['example/demo'].release = { provider: 'github', enabled: true }
+  let proof, posts = 0
+  const provider = { inspect: async () => proof, publish: async spec => { posts++; proof = { provider: 'github', repository: spec.repository, tag: spec.tag, sha: spec.sha, releaseId: 7, publishedAt: '2026-11-03T00:00:00Z', marker: true } } }
+  f.rt.projectDelivery = createProjectDelivery(f.rt, { publisher: f.publisher, releaseProvider: provider })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  await f.start('release-task')
+  const a = f.attempt()
+  const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
+  await f.rt.projectDelivery.preparePoolRole(task, { id: 'release-dev', attemptId: a.id, generation: 1 }, dev)
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'developer', outputs: { releasePlan: 'Publish the explicitly authorized base commit' } })
+  const envelope = { version: 'project-development/v1', kind: 'command', projectId: 'p1', name: 'release.request', requestId: 'publish-release', payload: { attemptId: a.id, tag: 'v1.0.0', sha: a.baseSha, mode: 'publish' } }
+  await assert.rejects(f.rt.projectEndpoint('project-development', envelope, bob), /denied/i)
+  const requested = await f.rt.projectEndpoint('project-development', envelope, alice)
+  assert.ok(requested.result.release.id)
+  await f.rt.projectEffects.drain()
+  assert.equal(posts, 1)
+  const observed = await f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'query', projectId: 'p1', name: 'release.status', payload: { attemptId: a.id } }, bob)
+  assert.equal(observed.result.release.status, 'observed')
+  assert.notEqual(task.status, 'accepted')
+  f.rt.projectChiefControl.requireJobActor = () => {} // Isolate artifact closure from independently covered Chief identity callbacks.
+  f.rt.projectInputs.requireHandled = () => {}; f.rt.projectInputs.commitChief = () => {}
+  await f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: null, decision: { id: 'release-close', reason: 'Published tag resolves to the authorized commit' } }, { ...alice, chiefJobId: 'fixture-chief' })
+  assert.equal(task.status, 'accepted')
+  assert.equal(a.acceptedViaChief, 'release-close')
+  assert.equal(posts, 1)
+})

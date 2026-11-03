@@ -5,6 +5,7 @@ import { mkdir, readFile, realpath, rm, writeFile, lstat } from 'node:fs/promise
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { ownEntry, setEntry } from './store.js'
+import { createProjectReleases } from './project-releases.js'
 import { sealedLogPage } from './project-history-pages.js'
 import { taskRepository, attemptProject } from './project-task-repository.js'
 import { initialRoleTarget } from './project-role-admission.js'
@@ -42,7 +43,7 @@ async function git(path, args, preserveWhitespace = false) {
   return preserveWhitespace ? stdout : stdout.trim()
 }
 
-export function createProjectDelivery(rt, { publisher } = {}) {
+export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
   const { state, config } = rt
   const root = resolve(config.projectWorkspaceRoot ?? join(dirname(rt.dshHome), 'flybot-workspaces'))
   const artifacts = resolve(rt.home, 'project-artifacts')
@@ -68,6 +69,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
   const projectOf = (id, attempt) => { const project = rt.projects.repository.get(id, { includeDeleted: true }); return attempt ? attemptProject(rt, project, attempt) : project }
   const settingsOf = project => repositorySettings(rt, project)
   const publisherOf = project => publisher ?? githubPublisher(settingsOf(project).github)
+  const releases = createProjectReleases(rt, { projectOf, ...(releaseProvider ? { providerFactory: () => releaseProvider } : {}) })
   async function validatePublication(effect, context) {
       const attempt = ownEntry(attempts(), effect.payload.attemptId), task = taskOf(effect.taskId)
       if (!attempt || attempt.projectId !== effect.projectId || task?.deliveryAttemptId !== attempt.id || attempt.candidateSha !== effect.payload.candidateSha || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested) throw new EffectCancelled('Publication candidate was stopped, superseded or ended')
@@ -721,6 +723,8 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     return { attempt: view(attempt) }
   }
   async function endpoint(endpoint, body, actor) {
+    const release = releases.endpoint(endpoint, body, actor)
+    if (release !== undefined) return release
     if (endpoint === 'project-attempt-stop') {
       const attempt = ownEntry(attempts(), body.attemptId)
       if (!attempt) throw reject('Unknown Attempt')
@@ -912,7 +916,11 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     if ((attempt.candidateSha ?? null) !== expectedSha) throw reject('Chief candidate changed')
     if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
     if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; Chief evidence is stale')
-    if (task.projectTaskKind === 'release') throw reject('Release proof is not configured; Chief cannot claim a completed release')
+    if (task.projectTaskKind === 'release') {
+      await releases.verify(attempt)
+      rt.requireProjectAccess(actor, task.projectId, 'accept')
+      if (task.deliveryAttemptId !== attempt.id || attempt.requirement.projectTaskRevision !== task.projectTask?.requirements.revision && task.projectTask) throw reject('Release requirements changed during verification')
+    }
     const gateEvidence = []
     for (const requirement of task.acceptance?.requires ?? []) if (Number.isSafeInteger(requirement.pr)) {
       const details = await rt.projectGithubRead({ projectId: task.projectId, operation: requirement.checks === 'tests-ok' ? 'checks' : 'pull', number: requirement.pr }, actor)
@@ -922,9 +930,9 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     const prior = attempt.chiefDecision
     attempt.chiefDecision = { id: decision.id, verdict: 'approve', by: 'chief', authorizedBy: actor.memberId, runId: actor.chiefJobId, candidateSha: expectedSha, at: Date.now() }
     try {
-      if (task.projectTaskKind === 'decision') {
+      if (task.projectTaskKind === 'decision' || task.projectTaskKind === 'release') {
         const outputs = Object.values(attempt.evidence).filter(row => row?.outputs)
-        if (!outputs.length || outputs.some(row => row.sha256 !== hash(JSON.stringify(row.outputs)))) throw reject('Decision output evidence is missing or changed')
+        if (task.projectTaskKind === 'decision' && !outputs.length || outputs.some(row => row.sha256 !== hash(JSON.stringify(row.outputs)))) throw reject('Decision output evidence is missing or changed')
         for (const role of Object.keys(attempt.evidence.execution ?? {})) await verifyExecution(attempt, role)
         rt.projectInputs?.commitChief(actor)
         attempt.status = 'waiting-acceptance'
@@ -1037,7 +1045,7 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { releases, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

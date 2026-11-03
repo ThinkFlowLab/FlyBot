@@ -2,7 +2,7 @@
 
 [快速开始](../README.md) · [协作语义](development-service-guide.md) · [部署](backend-operations.md)
 
-本页对应当前分支实际路由：**24个v1查询、26个v1命令**，以及对象管理使用的原生接口。
+本页对应当前分支实际路由：**25个v1查询、28个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
 ## 传输、身份与统一返回
@@ -119,6 +119,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定和证据；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
+| release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
 | chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
 | effects | taskId?、limit?:1..200 | 已提交意图/执行/等待/失败摘要；私有command结果限当前主体 |
 | command.receipt | commandRequestId、commandName? | 当前独立主体的幂等回执/commit状态/结果引用 |
@@ -149,6 +150,8 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
 | attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
+| release.request | attemptId、tag、sha、mode?:observe/publish、name?、notes? | 管；默认只观察，publish是显式发布授权 |
+| release.reconcile | attemptId | 管；仅核对已有外部结果，不重复发布 |
 | queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
 | queue.retry | queueId, targetRole? | 管；重验原始发起人、要求和资源；不是换请求人借权 |
 | chief.inspect | taskId? | 管；一次原Chief巡检/裁定工作，不增框架轮询器 |
@@ -220,3 +223,13 @@ Accept: text/event-stream
 Task requirements accept optional repository (owner/name or null). An admitted explicit selection cannot be overridden by task.run. Cross-repository child outputs are references, not permission to merge into another repository. Repository-free decision Tasks currently execute on local resources.
 
 project-agent-history保留messages字段，默认最近50条，limit为1..100。cursor绑定用户/代理作用域与历史前缀快照；新消息追加不破坏旧游标，原消息变化则拒绝。超长记录仅返回预览及sourceRef，带messageIndex/cursor/expectedSha256与textOffset/textLimit（上限4000字符）可逐页取回原始JSON。nextCursor向后，previousCursor查询更早历史；完整记录不删除。
+
+## Release Task接口
+
+| 名称 | 类型及payload | 权限与行为 |
+| --- | --- | --- |
+| release.request | command；attemptId、tag、sha、mode?:observe/publish、name?、notes? | Owner/Maintainer或有效值守代理；默认只观察。publish是显式真实发布授权，sha须等于当前Release Attempt的baseSha |
+| release.reconcile | command；attemptId | 管理权限；仅核对已有请求，未知结果不重复发布 |
+| release.status | query；attemptId | 项目读；返回状态、目标、已观察证据，不调用模型或外部发布 |
+
+原生对应project-release-request / project-release-reconcile / project-release-status。需显式配置仓库release.provider=github、release.enabled=true及已有选定GitHub凭据；创建请求不等于发布成功，发布成功也不等于Task关闭。Chief仍需当前外部证明及原验收门禁。详见[契约、配置与例子](subsystems/project-releases.md)。测试不会创建真实Release。

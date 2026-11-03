@@ -73,3 +73,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 - [Original FlyBot compatibility](project-compatibility.md) — original capability inventory, one-time legacy Task cutover, private group ACL and same-version storage rollback.
 
 - [Persistent backend entry](backend-service.md) — source init/start/login/CLI, original HTTP/SSE composition and deployment/documentation verification.
+
+[Release Tasks](project-releases.md) bind explicit publication authorization and observed external proof to the existing Attempt/Effects and Chief closure.

@@ -16,7 +16,7 @@ export const WORKBENCH_ENDPOINTS = new Set([
   'project-quota', 'project-resources', 'project-resource-environment-check', 'project-execution-input', 'project-runtime-check', 'project-terminal-open', 'project-terminal-poll', 'project-terminal-input', 'project-terminal-resize', 'project-terminal-close', 'project-queue-cancel', 'project-queue-retry', 'project-workflow',
   'task-create', 'task-update', 'task-cancel', 'task-answer-input',
   'project-task-run', 'project-task-detail', 'project-task-accept', 'project-task-reject',
-  'project-attempt-stop', 'project-attempt-log', 'project-attempt-cleanup', 'project-attempt-publication-retry',
+  'project-attempt-stop', 'project-release-request', 'project-release-reconcile', 'project-release-status', 'project-attempt-log', 'project-attempt-cleanup', 'project-attempt-publication-retry',
   'project-rooms', 'project-room-create', 'project-room-read', 'project-room-message', 'project-room-attachment', 'project-room-stop', 'project-agent-stop',
   'project-agents', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-role-memory-write', 'project-agent-definition', 'project-roles', 'project-role-proposals', 'project-role-decision',
   'project-development', 'project-task-pools', 'project-consultation-reply', 'project-consultation-ask', 'project-consultation-get', 'project-consultation-list', 'project-handoff-get', 'project-handoff-list', 'project-chief-question', 'project-github-read', 'project-agent-mode',

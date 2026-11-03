@@ -21,6 +21,7 @@ const operations = Object.freeze({
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
   'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
   'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
+  'release.request': 'project-release-request', 'release.reconcile': 'project-release-reconcile', 'release.status': 'project-release-status',
   'attempt.publication-retry': 'project-attempt-publication-retry', 'attempt.log': 'project-attempt-log',
   'queue.cancel': 'project-queue-cancel', 'queue.retry': 'project-queue-retry',
   'chief.inspect': 'project-chief-inspect', 'chief.configure': 'project-chief-configure', 'chief.state': 'project-chief-state',
@@ -31,7 +32,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['release.status', 'compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -60,7 +61,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
   else if (nativeWorker?.status === 'stopping' || nativeWorker?.status === 'stop-unconfirmed') { phase = nativeWorker.status === 'stopping' ? 'stopping' : 'blocked'; waitingFor = 'worker-exit'; reason = c?.block?.reason ?? null }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
-  else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = 'awaiting-chief'; waitingFor = 'admission' }
+  else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = task.projectTask.admission.failure ? 'blocked' : 'awaiting-chief'; waitingFor = task.projectTask.admission.failure ? 'chief-recovery' : 'admission'; reason = task.projectTask.admission.failure?.reason ?? null }
   else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
@@ -99,7 +100,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
 
 export function createDevelopmentService(rt) {
   const receipts = rt.projectEffects ? createCommandReceipts(rt) : null
-  const management = new Set(['role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
+  const management = new Set(['release.request', 'release.reconcile', 'role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
   const readCommand = new Set(['agent.mode', 'consultation.ask', 'consultation.reply'])
   const actionFor = name => ['task.propose', 'proposal.publish', 'comment.publish'].includes(name) ? 'create' : management.has(name) ? 'configure' : readCommand.has(name) ? 'read' : name === 'task.accept' || name === 'task.reject' ? 'accept' : 'task-write'
 
@@ -279,7 +280,7 @@ export function createDevelopmentService(rt) {
     } else if (body.kind === 'command' && receipts) {
       const delivered = await receipts.run({ projectId, name, requestId: body.requestId, args, actor, action: actionFor(name), taskId: task?.id,
         expectedGeneration: body.expectedGeneration, expectedCandidateSha: body.expectedCandidateSha,
-        reconcile: name === 'task.run' ? async () => ({ result: await commandResult(name, args, actor) }) : ['task.propose', 'proposal.publish'].includes(name) ? async row => {
+        reconcile: ['task.run', 'release.request', 'release.reconcile'].includes(name) ? async () => ({ result: await commandResult(name, args, actor) }) : ['task.propose', 'proposal.publish'].includes(name) ? async row => {
           const existing = Object.values(rt.state.tasks).find(task => task.projectId === projectId && task.commandSource?.commandReceiptId === row.id)
           const proof = existing && Object.values(rt.state.projectEffects ?? {}).find(effect => effect.kind === 'task.intake' && effect.taskId === existing.id && rt.projectEffects.intentCommitted({ id: effect.id, generation: effect.generation }))
           return proof ? { result: taskDetailView(existing) } : null

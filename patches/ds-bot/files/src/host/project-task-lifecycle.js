@@ -39,6 +39,7 @@ export function admitTask(task, decision) {
   for (const field of ['title', 'criteria', 'impact']) bounded(requirements[field], field)
   if (['accepted', 'cancelled'].includes(task.status)) throw fail('Ended Task cannot be admitted')
   row.admission.status = 'accepted'
+  delete row.admission.failure
   row.admission.revision = requirements.revision
   row.admission.decisions.push({ ...copy(decision), at: Date.now() })
   return true
@@ -192,6 +193,7 @@ export function reopenTask(task, decision) {
   task.status = 'open'; task.progress = 0
   delete task.result; delete task.completedBy
   row.admission.status = 'accepted'
+  delete row.admission.failure
   return true
 }
 
