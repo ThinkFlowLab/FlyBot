@@ -603,3 +603,19 @@ test('a completed turn from the old requirement version cannot transfer or split
   assert.equal(stops, 0)
   assert.equal(f.task.collaboration.history.length, 1)
 })
+
+
+test('initial admission resolves a unique approved developer capability after the default role retires', async () => {
+  const f = setup(), roles = [{ id: 'p:chief', role: 'chief' }, { id: 'p:builder', role: 'builder', policyRole: 'developer' }]
+  f.rt.projectAgents.deliveryDefinitions = () => ({ revision: 8, roles })
+  await f.admit()
+  assert.equal(f.task.collaboration.botId, 'p:builder')
+  assert.equal((await f.pool.claim('task', 'p:builder')).policyRole, 'developer')
+})
+test('ambiguous developer capabilities require an explicit initial role rather than list order', async () => {
+  const f = setup(), roles = ['builder', 'implementer'].map(role => ({ id: `p:${role}`, role, policyRole: 'developer' }))
+  f.rt.projectAgents.deliveryDefinitions = () => ({ revision: 8, roles })
+  await assert.rejects(f.admit(), /explicit.*targetRole/)
+  await f.pool.admit({ id: 'attempt', taskId: 'task' }, { memberId: 'owner' }, { targetRole: 'builder' })
+  assert.equal(f.task.collaboration.botId, 'p:builder')
+})

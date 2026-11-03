@@ -459,3 +459,5 @@ Canonical ongoing role/resource authority checks now reuse native step/SDK input
 #2186 adds the original-capability inventory and committed legacy cutover on the existing Store, group/Chief channels and Workflow controller. Validate same-version JSON/SQLite rollback separately from real-provider and UI acceptance; final real backend packaging/README #2189 follows.
 
 #2189 supplies the persistent source init/start/login/API client and final object/API/operations documentation. Verify isolated fresh installation, retained auth/Task receipt across restart, consultation privacy, external safe/watch and SSE revoke; keep real-provider/remote/browser/production rollout evidence separate. Existing service/frontend flows are untouched.
+
+#2292 follow-up: initial-role admission now follows approved capabilities with durable queue/start bindings; repository selection, bounded legacy history, Release evidence and real-loop acceptance remain pending.

@@ -292,3 +292,7 @@ Keep personal Chief/Bots, groups, private memories and original Task/Workflow ID
 ### 2026-11-03 — Persistent deployment and final API docs (#2189)
 
 Use scripts/backend.mjs to initialize/start the original DSH/FlyBot host plus existing restricted HTTP/SSE gateway in a private persistent home. Login and CLI calls reuse native/platform identity; no mock model, sample repository, parallel executor or frontend replacement is packaged. Original guides move to README.native variants. Auth-mode confirms Store writability before readiness. External safe proposal impact/scope must survive publication into canonical requirements (actual production-entry regression). Deployment/restart, deterministic HTTP/DSH tests and real-provider acceptance remain separate evidence.
+
+### Initial role routing — #2292
+
+Initial execution pins an approved active logical role/capability, catalog revision and Task requirements revision. Default developer remains compatible; a unique custom developer can replace it, while ambiguity needs an explicit target. Chief start Effects, capacity queues and Attempts retain the choice. Catalog/requirements changes block pending work for explicit recovery; active Session conventions remain frozen.

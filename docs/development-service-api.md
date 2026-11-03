@@ -142,7 +142,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | role.decide | proposalId、expectedSha256、decision:approve/reject | 管；精确批准Chief提案，不能由提案Chief借Owner身份自批 |
 | task.propose | title；criteria/impact接纳前必需；scope/projectTaskKind/botId? | 创建唯一Task并提交Chief intake；当前成员发布权限；kind仅code/decision/release |
 | task.change.request | taskId、action:revise/cancel/reopen、reason；revise可带requirements | 写；仅请求Chief判断，不立即改承诺/关闭Task |
-| task.run | taskId | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
+| task.run | taskId, requestId, targetRole? | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
 | task.accept | attemptId | 旧兼容交付的人工验收；管；新Task最终关闭仍由Chief |
 | task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
 | attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
@@ -150,7 +150,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
 | queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
-| queue.retry | queueId | 管；重验原始发起人、要求和资源；不是换请求人借权 |
+| queue.retry | queueId, targetRole? | 管；重验原始发起人、要求和资源；不是换请求人借权 |
 | chief.inspect | taskId? | 管；一次原Chief巡检/裁定工作，不增框架轮询器 |
 | chief.configure | enabled；inspection? | 管；配置原Chief授权和原生定时任务，默认巡检30分钟是配置值 |
 | schedule.configure | operation:save/delete等、id?及原schedule定义 | 管；复用Project定时任务，不创建另一调度器 |

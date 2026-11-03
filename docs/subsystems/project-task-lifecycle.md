@@ -115,3 +115,5 @@ than pretending the changed wait has completed.
 ## Legacy admission boundary (#2186)
 
 requireExecutable accepts an untyped shared Project Task only when the compatibility service recognizes its committed original identity. Absence of projectTask is no longer implicit admission. Explicit Chief adoption of inactive legacy work remains the existing adjudication capability; active work cannot change its contract.
+
+#2292: Chief admit/reopen can choose targetRole. The task.start Effect persists the resolved initialTarget with its requirement version; replay cannot silently choose a new catalog target or execute a superseded requirement revision.

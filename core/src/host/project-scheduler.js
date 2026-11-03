@@ -1,6 +1,7 @@
 // Persisted Project admission queue. The existing Workflow service still dispatches Runs.
 import { createHash, randomUUID } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
+import { initialRoleTarget } from './project-role-admission.js'
 import { preflightRepository } from './project-repository-policy.js'
 const ACTIVE = new Set(['queued', 'running', 'working', 'paused', 'legacy'])
 const error = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -46,8 +47,8 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     }
     return changed
   }
-  function resourceBlock(projectId) {
-    try { const definitions = rt.projectAgents?.deliveryDefinitions(projectId); rt.projectResources?.plan(projectId, rt.config.projectDispatch === 'workflow' ? definitions : { ...definitions, roles: definitions?.roles.filter(row => row.role === 'developer') }); return null }
+  function resourceBlock(projectId, target) {
+    try { const definitions = rt.projectAgents?.deliveryDefinitions(projectId); rt.projectResources?.plan(projectId, rt.config.projectDispatch === 'workflow' ? definitions : { ...definitions, roles: definitions?.roles.filter(row => row.role === (target?.role ?? 'developer')) }); return null }
     catch (failure) { return String(failure.message).slice(0, 300) }
   }
   async function request(body, actor) {
@@ -67,13 +68,17 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     const prior = Object.values(state.projectAttempts ?? {}).find(attempt => attempt.requestKey === requestKey)
     if (prior) return { attempt: structuredClone(prior), already: true }
     const queued = Object.values(entries()).find(entry => entry.requestKey === requestKey || entry.taskId === task.id && entry.status === 'waiting')
-    if (queued) return { queue: structuredClone(queued), already: true }
+    if (queued) {
+      if (body.targetRole !== undefined && body.targetRole !== queued.initialTarget?.role) throw error('Queued request target cannot change on replay')
+      return { queue: structuredClone(queued), already: true }
+    }
     if (['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended')
     if (Object.values(state.projectAttempts ?? {}).some(attempt => attempt.taskId === task.id && ['preparing', 'running', 'waiting-acceptance'].includes(attempt.status))) throw error('Task already has an active Attempt')
-    const resourceReason = resourceBlock(project.id)
-    if (slots(project.id) < quota(project) && !resourceReason) return rt.projectDelivery.endpoint('project-task-run', body, actor)
+    const initialTarget = initialRoleTarget(rt, task, body)
+    const resourceReason = resourceBlock(project.id, initialTarget)
+    if (slots(project.id) < quota(project) && !resourceReason) return rt.projectDelivery.endpoint('project-task-run', { ...body, ...(initialTarget ? { initialTarget } : {}) }, actor)
     const entry = { id: `queue-${randomUUID()}`, projectId: project.id, taskId: task.id, requestId: body.requestId, requestKey,
-      memberId: actor.memberId, status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
+      memberId: actor.memberId, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
     setEntry(entries(), entry.id, entry)
     await rt.save()
     return { queue: structuredClone(entry) }
@@ -89,13 +94,17 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       if (slots(project.id) >= quota(project)) continue
       try { await preflight(rt, project) }
       catch (failure) { entry.status = 'blocked'; entry.reason = failure.message; entry.updatedAt = Date.now(); changed = true; continue }
-      const blocked = resourceBlock(project.id)
+      let initialTarget
+      try { initialTarget = initialRoleTarget(rt, state.tasks[entry.taskId], { initialTarget: entry.initialTarget }) }
+      catch (failure) { entry.status = 'blocked'; entry.reason = failure.message; entry.updatedAt = Date.now(); changed = true; continue }
+      if (initialTarget && !entry.initialTarget) { entry.initialTarget = initialTarget; await rt.save() }
+      const blocked = resourceBlock(project.id, initialTarget)
       if (blocked) { entry.reason = blocked; changed = true; continue }
       entry.status = 'starting'
       entry.updatedAt = Date.now()
       await rt.save()
       try {
-        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId }, { memberId: entry.memberId })
+        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId, initialTarget: entry.initialTarget }, { memberId: entry.memberId })
         entry.status = result.attempt?.status === 'failed' ? 'failed' : 'started'
         entry.attemptId = result.attempt?.id ?? null
         if (result.attempt?.failure) entry.reason = result.attempt.failure.message
@@ -132,7 +141,9 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     if (['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended')
     if (!rt.projectCan(requester, entry.projectId, 'task-write', task)) throw error('Original requester no longer has Project authority')
     if (Object.values(state.projectAttempts ?? {}).some(attempt => attempt.taskId === task.id && ['preparing', 'running', 'waiting-acceptance'].includes(attempt.status))) throw error('Task already has an active Attempt')
+    const initialTarget = initialRoleTarget(rt, task, { targetRole: body.targetRole ?? entry.initialTarget?.role })
     ;(entry.recoveries ??= []).push({ by: actor.memberId, previousReason: entry.reason ?? null, at: Date.now() })
+    if (initialTarget) entry.initialTarget = initialTarget
     entry.status = 'waiting'; delete entry.reason; entry.updatedAt = Date.now()
     await rt.save()
     return { queue: structuredClone(entry) }

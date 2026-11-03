@@ -1,6 +1,8 @@
 ---
 subsystem: project-pools
 owned_paths:
+  - core/src/host/project-role-admission.js
+  - core/test/project-role-admission.test.js
   - core/src/host/project-pools.js
   - core/test/project-pools.test.js
 ---
@@ -178,3 +180,7 @@ Project Tasks may split independent children after actual source exit, preservin
 Composition with #2184 rechecks the committed target role after asynchronous source-exit confirmation, before claiming. Retirement during inspection leaves the original Task blocked for Chief routing; it cannot acquire a new execution claim from the earlier catalog snapshot.
 
 Canonical claims retain the admitted requirement revision. Decision admission rechecks that revision before and after awaited authorization, including transfer/split decisions that do not seal an artifact. Older claims can use their actual Attempt snapshot revision. A late old-plan response cannot transfer initiative or create children for revised requirements.
+
+## Initial routing (#2292)
+
+`initialRoleTarget` pins role/id/capability, catalog revision and Task requirements revision before first dispatch. An explicit active non-Chief `targetRole` wins; otherwise prefer the active developer-capability role named developer, or the sole developer-capability role. Ambiguous/missing candidates refuse rather than choose by array order. Admission revalidates the binding after asynchronous authority/evidence checks. This selection is not a new Session or a DAG edge; subsequent handoffs retain existing Bot autonomy.

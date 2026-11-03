@@ -5,6 +5,7 @@ import { mkdir, readFile, realpath, rm, writeFile, lstat } from 'node:fs/promise
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { ownEntry, setEntry } from './store.js'
+import { initialRoleTarget } from './project-role-admission.js'
 import { DELIVERY_ROLES, DELIVERY_VERSION, deliveryGraph } from './project-delivery-template.js'
 import { repositorySettings, preflightRepository } from './project-repository-policy.js'
 import { createResourceWorkspaces, fileDigest } from './project-resource-workspaces.js'
@@ -239,14 +240,16 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     if (prior) return { attempt: view(prior), already: true }
     if (Object.values(attempts()).some(attempt => attempt.taskId === task.id && (ongoing.has(attempt.status) || attempt.status === 'waiting-acceptance'))) throw reject('Task already has an active Attempt')
     if (task.status === 'accepted' || task.status === 'cancelled') throw reject('Terminal Task cannot start a delivery')
+    const initialTarget = initialRoleTarget(rt, task, body)
     const settings = await preflightRepository(rt, project)
+    if (initialTarget) initialRoleTarget(rt, task, { initialTarget })
     const previous = current(task.id)
     const publicationBinding = await publicationOf(previous, project)
     const feedback = previous?.failure ? { previousAttemptId: previous.id, kind: previous.returned ? 'human-return' : 'execution-failure', reason: previous.failure.message, candidateSha: previous.candidateSha ?? null } : null
     const at = Date.now()
     const attempt = { id: `attempt-${randomUUID()}`, projectId: project.id, taskId: task.id, requestKey,
       workflowVersion: DELIVERY_VERSION, status: 'preparing', initiatedBy: actor.memberId, executionOwnerId: project.ownerUserId,
-      requirement: requirementsOf(task, project.repository),
+      requirement: requirementsOf(task, project.repository), ...(initialTarget ? { initialTarget } : {}),
       ...(feedback ? { feedback } : {}), ...(publicationBinding ? { publicationBinding, seedSha: previous.candidateSha ?? previous.seedSha ?? publicationBinding.previousSha, baseSha: previous.baseSha } : {}), workspaces: {}, evidence: {}, createdAt: at, updatedAt: at }
     setEntry(attempts(), attempt.id, attempt)
     task.deliveryAttemptId = attempt.id

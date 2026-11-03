@@ -195,3 +195,30 @@ test('the existing scheduler checks in-flight execution authority before resourc
   await scheduler.wake()
   assert.deepEqual(calls, ['authority', 'resources', 'dispatch'])
 })
+
+
+test('queue restart preserves the chosen custom role and fences catalog or requirements changes', async () => {
+  const f = fixture(), roles = [{ id: 'p1:builder', role: 'builder', policyRole: 'developer' }]
+  let revision = 9, dispatched
+  f.rt.projectAgents = { deliveryDefinitions: () => ({ revision, roles }) }
+  await f.scheduler.request({ taskId: 'one', requestId: 'one' }, { memberId: 'bob' })
+  const queued = await f.scheduler.request({ taskId: 'two', requestId: 'two', targetRole: 'builder' }, { memberId: 'bob' })
+  assert.equal(queued.queue.initialTarget.role, 'builder')
+  assert.equal(queued.queue.initialTarget.definitionRevision, 9)
+  f.state.projectAttempts = {}; f.state.projectExecutions = {}
+  const original = f.rt.projectDelivery.endpoint
+  f.rt.projectDelivery.endpoint = async (...args) => { dispatched = args[1]; return original(...args) }
+  const restarted = createProjectScheduler(f.rt, { preflight: async () => repositorySettings(f.rt, f.project) })
+  await restarted.wake()
+  assert.equal(dispatched.initialTarget.role, 'builder')
+  assert.equal(dispatched.initialTarget.definitionRevision, 9)
+  f.state.projectAttempts = {}; f.state.projectExecutions = {}
+  const again = await restarted.request({ taskId: 'one', requestId: 'again', targetRole: 'builder' }, { memberId: 'bob' })
+  const waiting = await restarted.request({ taskId: 'two', requestId: 'stale', targetRole: 'builder' }, { memberId: 'bob' })
+  assert.ok(again.attempt)
+  revision++
+  f.state.projectAttempts = {}; f.state.projectExecutions = {}
+  await restarted.wake()
+  assert.equal(f.state.projectQueue[waiting.queue.id].status, 'blocked')
+  assert.match(f.state.projectQueue[waiting.queue.id].reason, /catalog.*changed/)
+})
