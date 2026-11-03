@@ -75,6 +75,7 @@
     "src/client/index.js",
     "src/client/sidebar.js",
     "src/client/cells.js",
+    "src/client/questions.js",
     "src/client/exchange.js",
     "src/client/context-menu.js",
     "src/client/at-menu.js",
