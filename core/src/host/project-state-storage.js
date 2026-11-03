@@ -3,6 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { encodeProjectState, decodeProjectState } from './project-state-format.js'
 import { openSqliteState, requireSqliteRuntime } from './project-state-sqlite.js'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
@@ -54,7 +55,7 @@ export function createProjectStateStorage({ home, statePath = join(home, 'state.
     let text
     try { text = readFileSync(fd, 'utf8') } finally { closeSync(fd) }
     if (digest(text) !== proof.sha256) throw fail('SQLite import backup hash changed')
-    const state = JSON.parse(text)
+    const state = decodeProjectState(JSON.parse(text))
     validate(state)
     return state
   }
@@ -104,7 +105,7 @@ export function createProjectStateStorage({ home, statePath = join(home, 'state.
       ensureWriter(); validate(state); requireSqliteRuntime()
       guard = readGuard()
       if (!guard) {
-        const text = JSON.stringify(state), sha256 = digest(text), backup = `state.sqlite-import-${sha256}.json`
+        const text = JSON.stringify(encodeProjectState(state)), sha256 = digest(text), backup = `state.sqlite-import-${sha256}.json`
         writeDurableStateFile(join(home, backup), text, { exclusive: true })
         guard = { version: 3, storage: 'sqlite', phase: 'prepared', migration: { id: randomUUID(), backup, sha256, importedAt: Date.now() } }
         // Guard first: a crash before SQL initialization remains recoverable from

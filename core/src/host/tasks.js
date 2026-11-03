@@ -273,6 +273,7 @@ export function install(rt) {
   const projectTransitions = new WeakSet()
   function transition(task, to, actor, extra) {
     if (task.projectTask && !projectTransitions.has(task)) throw forbidden('Use the Project Task lifecycle; Chief owns admission and final judgement')
+    if (!task.projectTask && !projectTransitions.has(task)) rt.projectCompatibility?.requireLegacy(task)
     if (!TRANSITIONS[task.status]?.includes(to)) throw stale(`a task that is ${task.status} cannot become ${to}`)
     if (waitingForInput(task) && to !== 'blocked') {
       delete task.waitingFor
@@ -523,6 +524,7 @@ export function install(rt) {
   // endpoints all reach it, so a refusal is the same refusal wherever the value came from. The
   // reads happen before any assignment, so a refused write leaves the card exactly as it was.
   function writeContract(task, body = {}) {
+    if (task.projectTask && ['taskClass', 'reworkOf', 'handoff', 'lease', 'evidence'].some(key => body[key] !== undefined)) throw forbidden('Use the Project Task and Handoff contracts to change execution or evidence')
     const taskClass = readTaskClass(body.taskClass)
     const reworkOf = readReworkOf(body.reworkOf)
     const handoff = readHandoff(body.handoff)
@@ -673,6 +675,7 @@ export function install(rt) {
   function expireLeases(now = Date.now()) {
     let expired = 0
     for (const task of Object.values(store())) {
+      if (rt.projectCompatibility && !rt.projectCompatibility.legacyAllowed(task)) continue
       const lease = leaseOf(task)
       if (lease === undefined || !Number.isFinite(lease.expiresAt) || lease.expiresAt > now) continue
       // A card waiting for its rework is not abandoned work (#1804): the open child card is the
@@ -707,6 +710,7 @@ export function install(rt) {
   // means "part of an overall card" and must never make `settleOverall` fire. A replay of the
   // same rejection reuses the child that is still open instead of creating a second one.
   function openRework(original, note, by = 'requester') {
+    rt.projectCompatibility?.requireLegacy(original)
     if (original.projectId) rt.projects?.requireActive(original.projectId)
     const reason = boundedLine(note, HANDOFF_REASON_MAX, 'handoff.reason')
     // A worker-side return names the role that produced the card (#1775); the requester's own
@@ -743,6 +747,7 @@ export function install(rt) {
       actors: [{ status: 'open', at, by: 'rework opened' }],
     }
     rt.projects?.stampTask(child)
+    rt.projectCompatibility?.registerContinuation(original, child)
     store()[child.id] = child
     return child
   }
@@ -849,6 +854,7 @@ export function install(rt) {
   // blocked → open is the queue's own edge: a member that cannot finish returns the item, and
   // no other path sends a card back to the queue, so the edge is not on TRANSITIONS.
   function requeue(task, reason, retryInSec, by = 'returned to the queue') {
+    rt.projectCompatibility?.requireLegacy(task)
     dropWorker(task.worker)
     delete task.worker
     delete task.waitingFor
@@ -949,6 +955,7 @@ export function install(rt) {
       ? undefined
       : open.filter(task => cardNamesIssue(task, issue)).sort(newestFirst)[0]
     if (held) {
+      rt.projectCompatibility?.requireLegacy(held)
       held.note = text
       // Both paths below append to `actors`, and `record()` pushes without a guard, so a card
       // stored before the field existed would throw after the note moved and before the save
@@ -985,6 +992,7 @@ export function install(rt) {
     }
     defaultContract(task)
     rt.projects?.stampTask(task)
+    rt.projectCompatibility?.requireLegacy(task)
     store()[task.id] = task
     await save()
     return view(task)
@@ -1034,6 +1042,7 @@ export function install(rt) {
     await rt.load()
     const live = find(pick.id)
     if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    rt.projectCompatibility?.requireLegacy(live)
     live.claimedBy = botId
     live.ownerBotId = botId
     delete live.retryAt
@@ -1076,6 +1085,7 @@ export function install(rt) {
     await rt.load()
     const live = find(pick.id)
     if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    rt.projectCompatibility?.requireLegacy(live)
     live.claimedBy = botId
     live.ownerBotId = botId
     delete live.retryAt
@@ -1162,6 +1172,7 @@ export function install(rt) {
       }
       defaultContract(task)
       rt.projects?.stampTask(task)
+      rt.projectCompatibility?.requireLegacy(task)
       store()[task.id] = task
       return task
     }
@@ -1241,6 +1252,7 @@ export function install(rt) {
           task = makeTask(bot, title, roomId, parent)
         }
       }
+      rt.projectCompatibility?.requireLegacy(task)
       if (!frozen) {
         if (parent && task.kind !== 'group') {
           task.parentId = parent.id
@@ -1398,6 +1410,7 @@ export function install(rt) {
   // A plugin may claim an open card for a local Bot (#1318). The second save
   // does not ask again, so a listener cannot re-enter this write.
   async function routeOpenTask(task, kind) {
+    if (task.projectTask) return
     if (typeof rt.onTaskWrite !== 'function') return
     let route
     try {
@@ -1547,6 +1560,7 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         if (!mayUpdate(task, actor)) throw forbidden('Only the requester or the Bot\'s owner may update this task')
         rt.projects?.validateTask(task, body)
+        if (!task.projectTask) rt.projectCompatibility?.requireLegacy(task)
         if (task.projectTask && ['title', 'criteria', 'impact', 'scope'].some(key => body[key] !== undefined && body[key] !== (key === 'title' || key === 'criteria' ? task[key] : task.projectTask.requirements[key]))) throw forbidden('Project requirements changes need Chief confirmation')
         writeContract(task, body)
         const { progress } = applyFields(task, body)

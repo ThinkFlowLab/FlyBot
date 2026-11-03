@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
+import { encodeProjectState, decodeProjectState } from './project-state-format.js'
 import { homeLock } from './home-lock.js'
 import { openSqliteState } from './project-state-sqlite.js'
 import { writeDurableStateFile } from './project-state-storage.js'
@@ -29,7 +30,7 @@ function snapshot(home, expectedMigrationId) {
     const state = db.read()
     if (state.version !== 2) throw fail('Unsupported exported state version')
     guardOf(home, expectedMigrationId)
-    return { text: JSON.stringify(state, null, 2), revision: metadata.revision }
+    return { text: JSON.stringify(encodeProjectState(state), null, 2), revision: metadata.revision }
   } finally { db.close() }
 }
 export function exportSqliteState({ home, output, expectedMigrationId }) {
@@ -59,7 +60,7 @@ export function rollbackSqliteState({ home, expectedMigrationId, resume = false 
     }
     if (marker.version !== 'flybot-storage-rollback/v1' || !/^[a-f0-9-]{36}$/.test(marker.id) || marker.archiveFile !== `state.sqlite.rollback-${marker.id}` || marker.exportFile !== `state.rollback-${marker.id}.json` || !/^[a-f0-9]{64}$/.test(marker.sha256)) throw fail('Rollback recovery marker is malformed')
     const text = readFileSync(join(home, marker.exportFile), 'utf8')
-    if (digest(text) !== marker.sha256 || JSON.parse(text).version !== 2) throw fail('Rollback export hash changed')
+    if (digest(text) !== marker.sha256 || decodeProjectState(JSON.parse(text)).version !== 2) throw fail('Rollback export hash changed')
     const currentText = readFileSync(statePath, 'utf8')
     if (digest(currentText) !== marker.sha256) {
       guardOf(home, expectedMigrationId)

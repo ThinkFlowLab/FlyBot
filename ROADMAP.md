@@ -455,3 +455,5 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
 
 Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.
+
+#2186 adds the original-capability inventory and committed legacy cutover on the existing Store, group/Chief channels and Workflow controller. Validate same-version JSON/SQLite rollback separately from real-provider and UI acceptance; final real backend packaging/README #2189 follows.

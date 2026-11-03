@@ -141,3 +141,7 @@ history service boundaries remain #2185; legacy entrypoint cutover remains #2186
 The actual DSH native pool return probe also runs with `stateStorage: sqlite`. Its read side loads committed snapshots through a separate read-only SQLite connection, proving canonical Chief admission, native activation intent, retained Task-role context/parts, physical exit proofs and nonoverlapping resource release persist across role handoffs. It uses deterministic model transport and actual code/host tests, not provider inference or production migration. JSON remains the default. The dev probe's `--sqlite` flag is verification tooling; deployment documentation remains #2189.
 
 State maps have no semantic insertion order. The probe resolves the previous Attempt through the successor's `feedback.previousAttemptId`; SQLite map iteration exposed an invalid earlier assertion that assumed the first UUID record was oldest. Immutable history arrays preserve explicit positions. No domain fact or history was lost by that diagnostic failure.
+
+## Compatibility format fence (#2186)
+
+The original Store remains logical version2. Cutover/canonical JSON snapshots use known physical version4; SQLite import backup, export and storage rollback encode that fence and decode it before logical validation. Unknown frames remain read-only. Storage rollback does not authorize an older-code downgrade or receipt replay. See [compatibility](project-compatibility.md).

@@ -2,6 +2,7 @@
 // host on the same data from writing it, and the indexes that map a Session to the Bot
 // or group chat it belongs to.
 import { install as installProjects } from './project-service.js'
+import { encodeProjectState, decodeProjectState } from './project-state-format.js'
 import { createProjectStateStorage } from './project-state-storage.js'
 import { createProjectServiceEvents } from './project-service-events.js'
 import { constants, mkdirSync, statSync } from 'node:fs'
@@ -185,7 +186,7 @@ export function install(rt) {
     seen = stamp()
     let parsed
     try {
-      parsed = JSON.parse(contents)
+      parsed = decodeProjectState(JSON.parse(contents))
     } catch (error) {
       const backup = `${statePath}.broken-${Date.now()}`
       try {
@@ -215,6 +216,10 @@ export function install(rt) {
       return parsed
     }
     if (parsed?.version === STATE_VERSION) {
+      if (parsed.projectCompatibility && !rt.sharedProjectMode?.()) {
+        stuck = 'Project compatibility state requires projectWorkbench or controlPlane; preserve the shared access boundary'
+        return undefined
+      }
       const problem = ownershipProblem(parsed)
       if (problem !== undefined) {
         stuck = `malformed ownership: ${problem}`
@@ -230,6 +235,7 @@ export function install(rt) {
 
   const validateSqliteState = parsed => {
     if (parsed?.version !== STATE_VERSION) throw new Error('Unsupported SQLite state version')
+    if (parsed.projectCompatibility && !rt.sharedProjectMode?.()) throw new Error('Project compatibility state requires projectWorkbench or controlPlane')
     const problem = ownershipProblem(parsed)
     if (problem !== undefined) throw new Error(`Malformed SQLite ownership: ${problem}`)
   }
@@ -397,6 +403,7 @@ export function install(rt) {
     if (rt.projectScheduledTasks?.recover()) migrated = true
     if (rt.projectChiefControl?.recover()) migrated = true
     if (rt.projectEffects?.recover()) migrated = true
+    if (rt.projectCompatibility?.recover()) migrated = true
     if (syncDesignatedChief()) migrated = true
     indexSessions()
     committedEvents.load(state)
@@ -565,7 +572,7 @@ export function install(rt) {
         const persistedSnapshot = JSON.stringify(prepared.snapshot, null, 2)
         if (storage.sqlite) storage.write(persistedSnapshot)
         else {
-          await writeFile(temp, persistedSnapshot, 'utf8')
+          await writeFile(temp, JSON.stringify(encodeProjectState(prepared.snapshot), null, 2), 'utf8')
           ensureLock()
           await rename(temp, statePath)
         }
@@ -574,7 +581,7 @@ export function install(rt) {
         state.projectServiceEventStreams = structuredClone(prepared.snapshot.projectServiceEventStreams)
         state.projectServiceEvents = structuredClone(prepared.snapshot.projectServiceEvents)
         seen = stamp()
-        await journal?.record(persistedSnapshot)
+        await journal?.record(JSON.stringify(encodeProjectState(prepared.snapshot), null, 2))
         rt.capabilitiesStateSaved?.()
       } catch (error) {
         await unlink(temp).catch(() => { /* the temp file may already be gone */ })

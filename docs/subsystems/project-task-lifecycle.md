@@ -111,3 +111,7 @@ Task-role context remains stable. The accepted-child source admission protocol i
 specified in project-delivery.md. A plan changed after a parent has resumed requires
 execution stopping/reconciliation; current guards refuse stale integration rather
 than pretending the changed wait has completed.
+
+## Legacy admission boundary (#2186)
+
+requireExecutable accepts an untyped shared Project Task only when the compatibility service recognizes its committed original identity. Absence of projectTask is no longer implicit admission. Explicit Chief adoption of inactive legacy work remains the existing adjudication capability; active work cannot change its contract.

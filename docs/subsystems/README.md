@@ -69,3 +69,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 - [Project context](project-context.md) — scoped budgets, working summaries, memory versions and bounded exact-source reads.
 
 - [Project Task lifecycle](project-task-lifecycle.md) — Chief admission, requirement versions, child waits and original-role continuation.
+
+- [Original FlyBot compatibility](project-compatibility.md) — original capability inventory, one-time legacy Task cutover, private group ACL and same-version storage rollback.

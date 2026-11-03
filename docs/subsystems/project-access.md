@@ -264,3 +264,7 @@ never a public HTTP actor. Legacy Chief question/consultation records remain pri
 New-contract Tasks cannot bypass Chief admission through legacy Project Workflow assign. Project concurrency counts execution Runs, not resident Chief control jobs, and excludes a waiting parent only after its registered leases and ephemeral workers have released. Legacy Workflow quota checks and default pool scheduling share that distinction.
 
 #2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.
+
+## Compatibility assignment boundary (#2186)
+
+Public Workflow assign cannot take canonical Project Task initiative. An internal current-Attempt port preserves explicit Workflow execution through the same membership/quota service; old persisted Workflow Tasks retain their prior path. Scoped development query compatibility reports the committed legacy baseline and current diagnostic counts. See [compatibility](project-compatibility.md).

@@ -31,7 +31,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -219,7 +219,7 @@ export function createDevelopmentService(rt) {
     if (!record(body) || body.version !== DEVELOPMENT_PROTOCOL || !['command', 'query'].includes(body.kind) || !record(body.payload ?? {})) throw failure('Unsupported Project development request')
     const { name, projectId } = body
     rt.requireProjectAccess(actor, projectId)
-    if (!Object.hasOwn(operations, name) && !['tasks', 'task', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'attempt.context', 'effects'].includes(name)) throw failure('Unknown Project development operation')
+    if (!Object.hasOwn(operations, name) && !['compatibility', 'tasks', 'task', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'attempt.context', 'effects'].includes(name)) throw failure('Unknown Project development operation')
     if (queries.has(name) !== (body.kind === 'query')) throw failure('Operation kind does not match the contract')
     if (body.kind === 'command' && !stableId(body.requestId)) throw failure('A command needs a stable requestId')
     const args = { ...(body.payload ?? {}), projectId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}) }
@@ -255,6 +255,7 @@ export function createDevelopmentService(rt) {
     let result
     if (name === 'command.receipt') { if (!receipts) throw failure('Command receipts are unavailable'); result = receipts.get(projectId, args.commandRequestId, actor, args.commandName) }
     else if (name === 'command.result') { if (!receipts) throw failure('Command receipts are unavailable'); result = receipts.result(projectId, args, actor) }
+    else if (name === 'compatibility') result = rt.projectCompatibility.report(projectId, args, actor)
     else if (name === 'events') result = rt.committedProjectEvents.query(projectId, args)
     else if (name === 'project.snapshot') result = rt.committedProjectEvents.snapshot(projectId, args)
     else if (name === 'effects') result = { effects: rt.projectEffects.list(projectId, actor, args) }

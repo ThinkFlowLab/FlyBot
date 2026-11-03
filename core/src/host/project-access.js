@@ -59,7 +59,7 @@ export function install(rt) {
         queueDepth: queue.length, messages: [], preview: null }
     }) }
   }
-  async function workflow(body, actor) {
+  async function workflow(body, actor, controllerAttempt) {
     const id = String(body.projectId ?? '')
     const operation = body.operation ?? 'state'
     const actions = { state: 'read', templates: 'read', create: 'configure', graph: 'configure', concurrency: 'configure',
@@ -81,6 +81,9 @@ export function install(rt) {
       if (!task || task.projectId !== id) throw refusal('A Project Run needs a Task from this Project')
       rt.requireProjectAccess(actor, id, 'task-write', task)
       rt.projectTaskLifecycle?.requireExecutable(task)
+      if (task.projectTask && (!controllerAttempt || ownEntry(state.projectAttempts ?? {}, controllerAttempt.id) !== controllerAttempt
+        || controllerAttempt.taskId !== task.id || controllerAttempt.projectId !== id || controllerAttempt.workflowId !== item.id
+        || task.deliveryAttemptId !== controllerAttempt.id || controllerAttempt.status !== 'running')) throw refusal('Use task.run so the Project Task controller owns execution and Handoff')
       payload = { workflowId: item.id, taskId: task.id, title: task.title, brief: task.note ?? task.title, projectId: id, callerBotId: project.chief?.botId }
       const existing = activeRuns(id).find(run => run.taskId === task.id)
       if (existing) {
@@ -110,6 +113,8 @@ export function install(rt) {
     workflowTail = result.then(() => {}, () => {})
     return result
   }
+  rt.assignProjectDeliveryWorkflow = (attempt, actor) => workflow({ projectId: attempt.projectId, operation: 'assign', workflowId: attempt.workflowId, taskId: attempt.taskId }, actor, attempt)
+
   rt.projectAccessEndpoint = async (endpoint, body = {}, actor) => {
     if (!rt.sharedProjectMode()) return undefined
     if (!actor?.memberId || !ownEntry(state.members, actor.memberId)) throw refusal('Sign in first')

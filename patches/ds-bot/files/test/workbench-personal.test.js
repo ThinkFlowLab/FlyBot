@@ -193,3 +193,22 @@ test('native file registration prevalidates the complete batch and preserves nat
   assert.equal(content[1].attachment.name, 'spec.txt')
   assert.deepEqual(saved, [{ name: 'spec.txt', data: 'SGk=' }])
 })
+
+test('Project-associated original groups retain their history ACL and require current Project access', () => {
+  const actor = { memberId: 'alice' }, state = { mainBotIds: ['chief'], bots: { chief: { id: 'chief', ownerId: 'alice' } }, rooms: {
+    own: { id: 'own', members: ['chief'], projectId: 'p', participants: [{ id: 'alice', kind: 'human', displayName: 'Alice' }] },
+    other: { id: 'other', members: ['chief'], projectId: 'p' }, personal: { id: 'personal', members: ['chief'] } } }
+  let member = true
+  const rt = { state, botOwnedBy: (who, id) => state.bots[id]?.ownerId === who.memberId, roomMemberOf: (who, id) => who.memberId === 'alice' && id !== 'other', roomOwnedBy: () => false,
+    projectCan: () => member, botOf: id => state.bots[id], roomOf: id => state.rooms[id] }
+  assert.deepEqual(personalRoster(rt, actor).rooms.map(row => row.id), ['own', 'personal'])
+  assert.equal(requirePersonalSession(rt, actor, 'own'), 'own')
+  assert.equal(personalRoster(rt, actor).rooms[0].projectId, 'p')
+  assert.throws(() => requirePersonalSession(rt, { memberId: 'project-only' }, 'own'), /personal conversation/)
+  state.bots.chief.projectId = 'p'
+  assert.equal(requirePersonalSession(rt, actor, 'own'), 'own', 'original Project-bound group Bots retain the native group entry')
+  delete state.bots.chief.projectId
+  member = false
+  assert.throws(() => requirePersonalSession(rt, actor, 'own'), /personal conversation/)
+  assert.equal(requirePersonalSession(rt, actor, 'personal'), 'personal')
+})

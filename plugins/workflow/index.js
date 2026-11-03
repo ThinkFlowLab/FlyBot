@@ -198,7 +198,7 @@ export function apply(ctx, config = {}) {
       offs.push(fb.tasks.onProjectProvider(({ hasTask } = {}) => service.projectTasks({ hasTask })))
     }
     offs.push(fb.tasks.onWrite(task => {
-      if (fb.projects?.shared?.() && task?.projectId) return null
+      if (task?.projectTask || fb.projects?.shared?.() && task?.projectId) return null
       const result = service.ingest(task ?? {})
       if (result?.matched === true && result.already !== true && result.decision?.kind === 'bot') {
         return { ownerBotId: result.decision.id }

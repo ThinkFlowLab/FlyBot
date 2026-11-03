@@ -11,13 +11,13 @@ import { fakeContext } from './fake-ctx.js'
 const alice = { memberId: 'owner-1' }
 const bob = { memberId: 'bob' }
 const outsider = { memberId: 'outsider' }
-async function setup(t) {
+async function setup(t, tasks = {}) {
   const home = mkdtempSync(join(tmpdir(), 'flybot-access-'))
   const state = { version: 2, mainBotIds: ['a'], members: { 'owner-1': { id: 'owner-1' }, bob: { id: 'bob' }, outsider: { id: 'outsider' } },
     bots: { a: { id: 'a', name: 'Chief', ownerId: 'owner-1', role: 'Owner', sessionId: 'a', projectId: 'p1', createdAt: 1 } },
     projects: { p1: { id: 'p1', name: 'Shared', ownerUserId: 'owner-1', status: 'active', createdAt: 1, updatedAt: 1, roles: { maintainers: [], members: ['bob'] } },
       p2: { id: 'p2', name: 'Private', ownerUserId: 'outsider', status: 'active', createdAt: 1, updatedAt: 1 } },
-    rooms: {}, tasks: {}, projectRuns: {}, exchanges: [], exchangeTurns: {}, agents: {} }
+    rooms: {}, tasks, projectRuns: {}, exchanges: [], exchangeTurns: {}, agents: {} }
   writeFileSync(join(home, 'state.json'), JSON.stringify(state))
   const ctx = fakeContext()
   Object.assign(ctx, { llm: { listProviders: () => [], listModels: async () => [] },
@@ -96,7 +96,9 @@ test('explicit null cannot detach a new shared Task from membership revocation',
 })
 
 test('Workflow gateway isolates projects, serializes quota admission and makes duplicate starts harmless', async t => {
-  const rt = await setup(t)
+  // Compatibility graphs continue only pre-cutover work; new Tasks must use the controller.
+  const legacy = id => ({ id, projectId: 'p1', requesterId: 'bob', ownerBotId: 'a', title: id, criteria: 'Result verified', status: 'open', actors: [], createdAt: 1 })
+  const rt = await setup(t, { first: legacy('first'), second: legacy('second') })
   const service = createWorkflowService({ persist: false, readProject: id => rt.readProject(id),
     projectContext: (taskId, projectId) => rt.flybot.projects.context(taskId, projectId),
     bindRun: (id, projectId, details) => rt.flybot.projects.bindRun(id, projectId, details) })
@@ -114,13 +116,14 @@ test('Workflow gateway isolates projects, serializes quota admission and makes d
   const snapshot = await rt.projectEndpoint('project-workflow', { projectId: 'p1' }, bob)
   assert.deepEqual(snapshot.workflows.map(row => row.name), ['Shared graph'])
   await assert.rejects(create('p1', bob, 'Forbidden'), /access denied/)
-  const first = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'First', criteria: 'First result verified', impact: 'First Project change' }, bob)
-  const second = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Second', criteria: 'Second result verified', impact: 'Second Project change' }, bob)
+  const first = rt.state.tasks.first, second = rt.state.tasks.second
+  const canonical = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'New work', criteria: 'New result verified', impact: 'New Project change' }, bob)
   await rt.projectEndpoint('project-quota', { id: 'p1', maxConcurrent: 1 }, alice)
   const start = taskId => rt.projectEndpoint('project-workflow', { projectId: 'p1', operation: 'assign', workflowId: graph.id, taskId }, bob)
-  await assert.rejects(start(first.id), /Chief admission/)
+  await assert.rejects(start(canonical.id), /Chief admission/)
   const { admitTask } = await import('../src/host/project-task-lifecycle.js')
-  for (const task of [first, second]) admitTask(rt.state.tasks[task.id], { id: 'admit-' + task.id, taskId: task.id, projectId: 'p1', executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Scoped requirements fixture' })
+  admitTask(rt.state.tasks[canonical.id], { id: 'admit-' + canonical.id, taskId: canonical.id, projectId: 'p1', executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Scoped requirements fixture' })
+  await assert.rejects(start(canonical.id), /task.run|controller/)
   rt.state.projectExecutions['chief-job'] = { id: 'chief-job', projectId: 'p1', kind: 'chief-control', status: 'running' }
   const results = await Promise.allSettled([start(first.id), start(second.id)])
   assert.equal(results.filter(row => row.status === 'fulfilled').length, 1)

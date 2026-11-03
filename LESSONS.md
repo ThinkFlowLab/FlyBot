@@ -767,3 +767,7 @@ Seen 1× (native projection regressions). A correct native stop/binding is insuf
 ### 2026-11-03 — Read-model lookups must not materialize domain facts
 
 Seen 1× (actual SQLite API regression). A Task query requested full delivery definitions, creating an unsaved default role catalog. A later Task command persisted it and emitted an unrelated Project change. Return deterministic legacy defaults without mutation and use committed raw catalogs for metadata; keep materialization in explicit writes.
+
+### 2026-11-03 — Absence of a new contract is not legacy admission
+
+Seen 1× (group dispatch and Bot tracking reproduced the bypass). Capture existing Project identities once with committed evidence; later untyped rows must not inherit admission. Preserve original rework and explicit Workflow execution through trusted continuation/controller ports. Scope guards must run before mutating leases or claims, and physical storage rollback must retain the code-version fence.
