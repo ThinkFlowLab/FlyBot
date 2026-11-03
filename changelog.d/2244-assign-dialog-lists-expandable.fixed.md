@@ -1,0 +1,1 @@
+Hand a task to a Workflow no longer cuts its card and Bot lists at twelve without saying so: each list draws twelve and a row says how many are left, and expanding it offers every card and every local Bot ([#2244](https://github.com/ThinkFlowLab/FlyBot/issues/2244)).

@@ -4215,3 +4215,133 @@ test('#2241: picking a lane still posts the same assign body', async () => {
     view.unmount()
   })
 })
+// #2244: the assign dialog cut both choice lists to twelve with no "more" row, so the
+// thirteenth card and the thirteenth Bot could not be picked while the dialog looked
+// complete. The dialog keeps today's twelve-item view and says how many it is not showing;
+// the expander is the file's own `aria-expanded` row, marked by `data-more`.
+const assignBoard = (count) => Array.from({ length: count }, (_, i) => ({ id: `task-${i + 1}`, title: `Board card ${i + 1}`, status: 'open', priority: 'P1' }))
+const localBots = (count) => Array.from({ length: count }, (_, i) => ({ id: `bot-${i + 1}`, name: `Bot ${i + 1}` }))
+
+async function withBoardHost(rows, fn) {
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = { host: async (channel) => (channel === 'tasks' ? rows : []) }
+  try { return await fn() } finally { globalThis.__flybot__ = prev }
+}
+
+async function openAssignWith({ roster }) {
+  const graph = delivery()
+  const { call, calls } = assignCall(graph, () => ({ ok: true }))
+  const view = mount(client.Section, { roster, call, actions: {} })
+  await settle()
+  await openAssign(view)
+  const className = node => String(node.props?.className ?? '')
+  return {
+    view,
+    calls,
+    cards: () => findAll(view.tree, node => className(node).startsWith('wf-kcard')),
+    bots: () => findAll(view.tree, node => className(node).startsWith('wf-tgt') && textOf(node).includes('One Bot (as before)')),
+    moreRow: (which) => findAll(view.tree, node => node.type === 'button' && node.props?.['data-more'] === which)[0],
+    posted: () => calls.filter(item => item.name === 'workflow/assign'),
+  }
+}
+
+test('#2244: the card list says how many cards it is not showing', async () => {
+  await withBoardHost(assignBoard(20), async () => {
+    const ui = await openAssignWith({ roster: { bots: [] } })
+    try {
+      assert.equal(ui.cards().length, 12, 'the dialog still opens on today\'s twelve cards')
+      const row = ui.moreRow('tasks')
+      assert.ok(row, 'the card list says the list continues')
+      assert.equal(row.props['aria-expanded'], false)
+      assert.equal(textOf(row), 'Show 8 more cards')
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2244: expanding the card list offers the twentieth card', async () => {
+  await withBoardHost(assignBoard(20), async () => {
+    const ui = await openAssignWith({ roster: { bots: [] } })
+    try {
+      const row = ui.moreRow('tasks')
+      assert.ok(row, 'the card list can be expanded')
+      row.props.onClick()
+      await settle()
+      assert.equal(ui.cards().length, 20, 'every open card is offered once expanded')
+      const last = ui.cards().find(card => textOf(card).includes('Board card 20'))
+      assert.ok(last, 'the twentieth card is offered')
+      assert.equal(ui.moreRow('tasks').props['aria-expanded'], true)
+      assert.equal(textOf(ui.moreRow('tasks')), 'Show less')
+      last.props.onClick()
+      await settle()
+      assignOf(dialogOf(ui.view)).props.onClick()
+      await settle()
+      assert.equal(ui.posted().length, 1, 'the click posts one assign')
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20' })
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2244: twelve cards keep today\'s dialog and the assign body', async () => {
+  await withBoardHost(assignBoard(12), async () => {
+    const ui = await openAssignWith({ roster: { bots: [] } })
+    try {
+      assert.equal(ui.cards().length, 12)
+      assert.equal(ui.moreRow('tasks'), undefined, 'nothing is hidden, so no more row is drawn')
+      assignOf(dialogOf(ui.view)).props.onClick()
+      await settle()
+      assert.equal(ui.posted().length, 1)
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-1', title: 'Board card 1' })
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2244: the Bot list says how many Bots it is not showing', async () => {
+  await withBoardHost(assignBoard(2), async () => {
+    const ui = await openAssignWith({ roster: { bots: localBots(20) } })
+    try {
+      assert.equal(ui.bots().length, 12, 'the pick list still opens on today\'s twelve Bots')
+      const row = ui.moreRow('bots')
+      assert.ok(row, 'the Bot list says the list continues')
+      assert.equal(row.props['aria-expanded'], false)
+      assert.equal(textOf(row), 'Show 8 more Bots')
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2244: expanding the Bot list offers the twentieth Bot', async () => {
+  await withBoardHost(assignBoard(2), async () => {
+    const ui = await openAssignWith({ roster: { bots: localBots(20) } })
+    try {
+      const row = ui.moreRow('bots')
+      assert.ok(row, 'the Bot list can be expanded')
+      row.props.onClick()
+      await settle()
+      assert.equal(ui.bots().length, 20, 'every local Bot is offered once expanded')
+      const last = ui.bots().find(node => textOf(node).includes('Bot 20'))
+      assert.ok(last, 'the twentieth Bot is offered')
+      assert.equal(textOf(ui.moreRow('bots')), 'Show less')
+      last.props.onClick()
+      await settle()
+      assignOf(dialogOf(ui.view)).props.onClick()
+      await settle()
+      assert.equal(ui.posted().length, 1, 'the click posts one assign')
+      assert.deepEqual(ui.posted()[0].body, { botId: 'bot-20', taskId: 'task-1', title: 'Board card 1' })
+    } finally { ui.view.unmount() }
+  })
+})
+
+test('#2244: three Bots keep today\'s pick list and the bot:2 body', async () => {
+  await withBoardHost(assignBoard(2), async () => {
+    const ui = await openAssignWith({ roster: { bots: localBots(3) } })
+    try {
+      assert.equal(ui.bots().length, 3)
+      assert.equal(ui.moreRow('bots'), undefined, 'nothing is hidden, so no more row is drawn')
+      ui.bots().find(node => textOf(node).includes('Bot 2')).props.onClick()
+      await settle()
+      assignOf(dialogOf(ui.view)).props.onClick()
+      await settle()
+      assert.equal(ui.posted().length, 1)
+      assert.deepEqual(ui.posted()[0].body, { botId: 'bot-2', taskId: 'task-1', title: 'Board card 1' })
+    } finally { ui.view.unmount() }
+  })
+})
