@@ -1,0 +1,1 @@
+In a read-only window the panels that only read now draw instead of reporting `bot/read-only`: the Projects panel, a Bot's task list, the folder picker's list and the connector status line answer again, while every write keeps its refusal ([#2267](https://github.com/ThinkFlowLab/FlyBot/issues/2267)).
