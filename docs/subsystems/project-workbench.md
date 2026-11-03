@@ -472,3 +472,5 @@ The restricted gateway exposes scoped personal-agent credential/delegation/propo
 Project execution quota excludes a parent waiting for independently admitted children only when all parent leases and ephemeral workers have released. Any unknown occupancy continues to count. New Task run requests return waitingFor:chief before repository preflight or allocation if Chief has not admitted their requirements.
 
 The legacy Workflow gateway now also excludes Chief control jobs from execution quota. A real DSH admission probe reproduced a first delivery failing while its Chief intake was still finishing; the shared quota regression protects both the gateway and scheduler.
+
+#2185 exposes request-scoped GET /api/project-events on the existing gateway. It forwards only authenticated Project service queries, requires credentials in headers, supports Last-Event-ID, bounds connections/backpressure and closes on revoke/shutdown. It does not alter workbench UI components, forward the private owner cookie, or create a parallel state store. Default1000ms transport polling is configurable and unrelated to Chief inspection cadence.

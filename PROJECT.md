@@ -647,3 +647,7 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 ### 2026-11-03 — Transactional state (#2182)
 
 Opt-in SQL retains the original Store/services and saves domain facts plus Effects atomically. JSON becomes a newer-version migration guard, with verified import/recovery and offline export/rollback; no dual writable snapshots. Histories are normalized and large immutable payloads hash-referenced. Routine state updates/views make no additional model calls or Project-position changes. Full-state hydration/scanning remains; storage growth is distinct from #2177 context budgets. No live migration or provider-loop claim.
+
+### 2026-11-03 — Service contracts (#2185)
+
+The original application service adds private principal-scoped command receipts, bounded Task/Attempt sources, committed snapshots/events and authenticated resumable SSE. Unknown command outcomes are reconciled explicitly, never blindly rerun. Independent personal-agent identity survives carrier/transport rotation. Role acceptance commits before ownership can be replayed. Event receipt grants no role authority; private chat/auth/receipt writes do not affect public Project streams. Existing UI remains; #2186 compatibility and #2189 real deployment/README follow.

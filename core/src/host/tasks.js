@@ -1458,6 +1458,8 @@ export function install(rt) {
     rt.projects?.stampTask(task, body)
     if (actor?.personalAgentCredentialId) task.personalAgentSource = rt.personalAgentAuth.source(actor, task.projectId)
     rt.projects?.validateTask(task, body)
+    const commandSource = task.projectId && rt.projectDevelopment?.commandSource(task.projectId)
+    if (commandSource) task.commandSource = commandSource
     if (task.projectId) {
       const kind = body.projectTaskKind ?? 'code'
       if (!['code', 'decision', 'release'].includes(kind)) throw invalid('Unknown Project Task kind')

@@ -92,3 +92,5 @@ entry runs `node core/src/host/workbench-gateway.js --upstream http://127.0.0.1:
 --upstream-cookie-file /private/mode0600-file --port 3081`; only its URL is shared with
 members. The private upstream file must never be committed or placed in browser assets.
 See [Project workbench](project-workbench.md) for the security/deployment boundary.
+
+#2185 retains the same restricted gateway and private upstream-cookie deployment. Optional --event-poll-ms and --event-max-streams configure its authenticated SSE transport; no token appears in an event URL. Shutdown aborts open streams. This adds no autonomous task/Chief inspection registration. Simplified standalone backend packaging remains #2189.

@@ -1185,20 +1185,22 @@ test('an approved extra merge seals when the published upstream is already an an
   assert.equal(f.attempt.pr,undefined)
 })
 
-const integrationCall = (f, kind, name, payload, actor = alice, requestId = 'approve-backend') => f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind, name, projectId: 'p1', ...(kind === 'command' ? { requestId } : {}), payload: { attemptId: f.attempt.id, ...payload } }, actor)
+const integrationCall = (f, kind, name, payload, actor = alice, requestId = `integration-${f.integrationSequence = (f.integrationSequence ?? 0) + 1}`) => f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind, name, projectId: 'p1', ...(kind === 'command' ? { requestId } : {}), payload: { attemptId: f.attempt.id, ...payload } }, actor)
 const indexBytes = f => createHash('sha256').update(readFileSync(git(f.path,['rev-parse','--git-path','index']))).digest('hex')
 
 test('manager explicitly pins integration input through service snapshot without changing index or approving delivery', async t => {
   const f=await additionalIntegrationFixture(t),before=indexBytes(f)
   const snapshot=(await integrationCall(f,'query','attempt.integration-state',{})).result
   const payload={inputs:[{ref:f.ref,sha:f.source}],generation:snapshot.generation,expectedWorkspace:snapshot.snapshot}
-  const approved=await integrationCall(f,'command','attempt.integration-bind',payload)
+  const approved=await integrationCall(f,'command','attempt.integration-bind',payload,alice,'approve-backend')
   assert.equal(approved.result.already,false)
   assert.equal(approved.result.admission.generation,snapshot.generation+1)
   assert.equal(indexBytes(f),before)
   assert.equal(git(f.path,['rev-parse','MERGE_HEAD']),f.source)
   const reordered={...payload,expectedWorkspace:Object.fromEntries(Object.entries(payload.expectedWorkspace).reverse())}
-  assert.equal((await integrationCall(f,'command','attempt.integration-bind',reordered)).result.already,true)
+  const replay=await integrationCall(f,'command','attempt.integration-bind',reordered,alice,'approve-backend')
+  assert.equal(replay.replayed,true)
+  assert.equal(replay.result.admission.id,approved.result.admission.id)
   assert.equal(f.attempt.integrationAdmissions.length,1)
   assert.equal(f.attempt.candidateSha,undefined)
   const node=await f.rt.projectDelivery.preparePoolRole(f.task,{id:'resumed-integration',attemptId:f.attempt.id,generation:99},f.developer)
@@ -1335,9 +1337,9 @@ test('approved object availability alone cannot replace a real merge or reuse an
   const f=await additionalIntegrationFixture(t,{merge:false})
   const state=(await integrationCall(f,'query','attempt.integration-state',{})).result
   const payload={inputs:[{ref:f.ref,sha:f.source}],generation:state.generation,expectedWorkspace:state.snapshot}
-  await integrationCall(f,'command','attempt.integration-bind',payload)
+  await integrationCall(f,'command','attempt.integration-bind',payload,alice,'reuse-source')
   const before=indexBytes(f)
-  await assert.rejects(integrationCall(f,'command','attempt.integration-bind',{...payload,generation:state.generation+1}),/requestId was reused/)
+  await assert.rejects(integrationCall(f,'command','attempt.integration-bind',{...payload,generation:state.generation+1},alice,'reuse-source'),/requestId was reused/)
   await assert.rejects(f.rt.projectDelivery.completePoolRole({task:f.task,claim:{attemptId:f.attempt.id},role:'developer',outputs:{}}),/merge every pinned integration/)
   assert.equal(indexBytes(f),before)
   assert.equal(git(f.path,['rev-parse','HEAD']),f.seed)

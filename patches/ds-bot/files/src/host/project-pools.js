@@ -55,9 +55,16 @@ export function handoffContract(state, task, receipt) {
 }
 
 export function createProjectPools(rt) {
-  let adapter, tail = Promise.resolve()
+  let adapter, acceptanceEffects, tail = Promise.resolve()
   let recovered = false
   const serial = fn => { const result = tail.then(fn, fn); tail = result.catch(() => {}); return result }
+  function acceptanceAdapter() {
+    if (rt.projectEffects && acceptanceEffects !== rt.projectEffects) {
+      rt.projectEffects.register('pool.accept', { run: effect => ({ claimId: effect.payload.claimId, handoffId: effect.payload.handoffId, status: 'durable-acceptance' }) }, { replace: true })
+      acceptanceEffects = rt.projectEffects
+    }
+  }
+  acceptanceAdapter() // Register on restart even when no new claim has been made.
   const taskOf = id => { const task = ownEntry(rt.state.tasks, id); if (!task?.projectId) throw refuse('Unknown Project Task'); return task }
   const definitions = projectId => rt.projectAgents.deliveryDefinitions(projectId)
   const targetOf = (projectId, botId) => {
@@ -78,6 +85,7 @@ export function createProjectPools(rt) {
   async function current(task, token) {
     const claim = task.collaboration?.claim
     if (!claim || claim.id !== token?.id || claim.generation !== token?.generation || claim.botId !== token?.botId || claim.status !== 'active') throw refuse('Claim is stale or belongs to another Bot')
+    if (claim.acceptanceEffect && !rt.projectEffects?.intentCommitted(claim.acceptanceEffect)) throw refuse('Claim acceptance has no confirmed durable intent')
     await authority(task)
     if (task.collaboration.claim !== claim || claim.status !== 'active' || claim.generation !== token.generation) throw refuse('Claim was revoked during authority validation')
     return claim
@@ -186,6 +194,7 @@ export function createProjectPools(rt) {
       await authority(task)
       const prior = c?.history.find(row => row.acceptance?.requestId === requestId)
       if (prior) {
+        if (prior.acceptance.effect && !rt.projectEffects?.intentCommitted(prior.acceptance.effect)) throw refuse('Handoff acceptance is not durably committed')
         if (prior.id !== handoffId || prior.to !== botId) throw refuse('Accept idempotency key was reused for another handoff')
         const execution = prior.execution ?? (c.claim?.id === prior.claimId ? c.claim : null)
         return execution ? clone(execution) : { ...clone(prior.acceptance), id: prior.claimId, status: 'historical' }
@@ -215,11 +224,33 @@ export function createProjectPools(rt) {
     const limit = rt.config.projectHandoff?.quota?.steps
     if (Number.isFinite(limit) && (c.usage?.steps ?? 0) >= limit) { c.status = 'blocked'; c.block = { reason: 'Handoff refused (quota): execution step quota is exhausted', at: Date.now() }; await rt.save(); throw refuse(c.block.reason) }
     const claim = { id: `claim-${randomUUID()}`, botId, generation: ++c.generation, taskId: task.id, projectId: task.projectId, attemptId: c.attemptId, status: 'active', createdAt: Date.now() }
+    const before = { generation: expectedGeneration, status: c.status, claim: c.claim, usage: c.usage === undefined ? undefined : clone(c.usage), receipt: clone(receipt), wait: task.projectTask?.wait ? clone(task.projectTask.wait) : null }
     c.usage ??= {}; c.usage.steps = (c.usage.steps ?? 0) + 1
     if (receipt.purpose === 'children-completed' && task.projectTask?.wait?.status === 'queued') Object.assign(task.projectTask.wait, { status: 'resumed', resumedClaimId: claim.id, resumedAt: Date.now() })
     c.claim = claim; c.status = 'claimed'; receipt.status = 'accepted'; receipt.acceptedAt = Date.now(); receipt.claimId = claim.id
     receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(requestId ? { requestId } : {}), ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
-    await rt.save()
+    let intent
+    try {
+      if (rt.projectEffects) {
+        acceptanceAdapter()
+        intent = rt.projectEffects.stage({ kind: 'pool.accept', key: claim.id, projectId: task.projectId, taskId: task.id,
+          payload: { claimId: claim.id, handoffId: receipt.id, attemptId: claim.attemptId, botId: claim.botId, generation: claim.generation } })
+        claim.acceptanceEffect = intent
+        receipt.acceptance.effect = intent
+        await rt.projectEffects.persist(intent)
+      } else await rt.save() // In-memory/legacy hosts without the durable Effects service.
+    } catch (error) {
+      const uncommitted = !intent || rt.projectEffects.discardUncommitted(intent)
+      if (uncommitted && c.claim === claim && c.generation === claim.generation && c.currentHandoffId === receipt.id) {
+        c.generation = before.generation; c.status = before.status
+        if (before.claim === undefined) delete c.claim; else c.claim = before.claim
+        if (before.usage === undefined) delete c.usage; else c.usage = before.usage
+        for (const key of Object.keys(receipt)) delete receipt[key]
+        Object.assign(receipt, before.receipt)
+        if (before.wait) task.projectTask.wait = before.wait
+      }
+      throw error
+    }
     return clone(claim)
   }
   async function decide(taskId, token, decision) {

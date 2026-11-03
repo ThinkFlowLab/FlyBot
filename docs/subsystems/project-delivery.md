@@ -524,3 +524,5 @@ foreign worktree metadata are refused. Resource-clone inspection uses its live
 resource binding. Git regression tests exercise actual multi-parent merges and
 exact tree/parent sealing; their child acceptance records and publisher are explicit
 deterministic fixtures, not a real-provider full collaboration claim.
+
+#2185 integration admission commands now have operation-scoped application receipts. Retries preserve the exact original admission/result with replayed:true; distinct validation probes use distinct keys and still exercise current generation, source, workspace and exit fences. The original domain admission idempotency and exact staged-tree tests remain in place.

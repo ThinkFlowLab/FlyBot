@@ -1,5 +1,7 @@
 // One application boundary over existing Project services; no second executor/store.
 import { ownEntry } from './store.js'
+import { createCommandReceipts } from './project-command-receipts.js'
+import { taskContractView, taskProvenance, taskDetailView, attemptMetadataView, taskHistorySource, sourcePage } from './project-service-views.js'
 import { createHash } from 'node:crypto'
 import { taskOutcome } from './project-task-lifecycle.js'
 import { inspectionFacts } from './project-chief-control.js'
@@ -14,7 +16,7 @@ const roles = new Set(['chief', 'developer', 'tester', 'reviewer'])
 const operations = Object.freeze({
   'consultation.reply': 'project-consultation-reply', 'consultation.ask': 'project-consultation-ask', 'consultation.get': 'project-consultation-get', 'consultation.list': 'project-consultation-list',
   'handoff.get': 'project-handoff-get', 'handoff.list': 'project-handoff-list',
-  'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
+  'task.propose': 'task-create', 'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
   'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
   'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
@@ -28,7 +30,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -75,9 +77,9 @@ export function taskView(state, task, { activity = {} } = {}) {
   }
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
-  return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
+  return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
     botId: c?.botId ?? null, currentRole, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
-    contract: task.projectTask ? structuredClone(task.projectTask) : null,
+    contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
@@ -88,8 +90,13 @@ export function taskView(state, task, { activity = {} } = {}) {
 }
 
 export function createDevelopmentService(rt) {
+  const receipts = rt.projectEffects ? createCommandReceipts(rt) : null
+  const management = new Set(['attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
+  const readCommand = new Set(['agent.mode', 'consultation.ask', 'consultation.reply'])
+  const actionFor = name => ['task.propose', 'proposal.publish', 'comment.publish'].includes(name) ? 'create' : management.has(name) ? 'configure' : readCommand.has(name) ? 'read' : name === 'task.accept' || name === 'task.reject' ? 'accept' : 'task-write'
+
   function access(actor) {
-    if (!rt.sharedProjectMode?.() || !actor?.memberId || !ownEntry(rt.state.members ?? {}, actor.memberId)) throw failure('Sign in to the Project service', 'bot/unauthorized')
+    if (!rt.sharedProjectMode?.() || !actor?.memberId || !ownEntry(rt.state.members ?? {}, actor.memberId) || ownEntry(rt.state.members ?? {}, actor.memberId)?.status === 'disabled') throw failure('Sign in to the Project service', 'bot/unauthorized')
   }
   function checkedTask(id, projectId, actor) {
     const task = ownEntry(rt.state.tasks, String(id ?? ''))
@@ -118,10 +125,10 @@ export function createDevelopmentService(rt) {
       const { context, policy: rules, ...rest } = row
       return { ...rest, policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256, ...(context.budget ? { budget: context.budget, usage: context.usage } : {}) } : null }
     }
-    const { roleSessions, roleSessionHistory, rolePolicies, ...rest } = attempt
-    return structuredClone({ ...rest,
+    const { roleSessions, roleSessionHistory, rolePolicies } = attempt
+    return structuredClone({ ...attemptMetadataView(attempt),
       ...(roleSessions ? { roleSessions: Object.fromEntries(Object.entries(roleSessions).map(([key, row]) => [key, session(row)])) } : {}),
-      ...(roleSessionHistory ? { roleSessionHistory: roleSessionHistory.map(session) } : {}),
+      ...(roleSessionHistory ? { roleSessionHistory: roleSessionHistory.slice(-3).map(session), roleSessionHistoryPage: { total: roleSessionHistory.length, shown: Math.min(3, roleSessionHistory.length), source: { query: 'attempt.context', attemptId: attempt.id, section: 'roleSessionHistory' } } } : {}),
       ...(rolePolicies ? { rolePolicies: Object.fromEntries(Object.entries(rolePolicies).map(([key, row]) => [key, policy(row)])) } : {}),
       contextRef: { query: 'attempt.context', attemptId: attempt.id, sections: ['roleSessions', 'roleSessionHistory', 'rolePolicies'] } })
   }
@@ -132,11 +139,11 @@ export function createDevelopmentService(rt) {
     const end = body.beforeAttemptId === undefined ? rows.length : rows.findIndex(row => row.id === body.beforeAttemptId)
     if (end < 0) throw failure('Attempt cursor is unavailable')
     const page = rows.slice(Math.max(0, end - limit), end)
-    return { task: structuredClone(task), attempts: page.map(attemptView), view: view(task, actor),
+    return { task: taskDetailView(task), attempts: page.map(attemptView), view: view(task, actor),
       attemptsPage: { total: rows.length, limit, before: end > limit ? page[0].id : null } }
   }
   function context(body) {
-    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies'].includes(body.section)) throw failure('Unknown Attempt context section')
+    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions'].includes(body.section)) throw failure('Unknown Attempt context section')
     const attempt = ownEntry(rt.state.projectAttempts ?? {}, body.attemptId)
     const text = JSON.stringify(attempt[body.section] ?? null), offset = body.offset ?? 0, limit = body.limit ?? 8000
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 16000) throw failure('Invalid context page')
@@ -153,6 +160,11 @@ export function createDevelopmentService(rt) {
     return { run: await rt.projectChiefControl.request(body.projectId, 'inspection', { requestId: body.requestId, requestedBy: actor.memberId, ...(task ? { blockedTaskId: task.id } : {}) }) }
   }
   async function invoke(endpoint, body, actor) {
+    if (endpoint === 'task-create') {
+      let botId = body.botId
+      if (!botId) botId = (await rt.projectAgents.ensurePublic(body.projectId, actor)).botId
+      return rt.taskEndpoint(endpoint, { ...body, botId }, actor)
+    }
     if (endpoint === 'project-execution-boundary') return rt.projectExecutionBoundary(body, actor)
     if (endpoint === 'project-sources') return rt.projectSources.query(body, actor)
     if (endpoint === 'project-source-subscribe') return rt.projectSources.subscribe(body, actor)
@@ -183,11 +195,18 @@ export function createDevelopmentService(rt) {
     }
     return rt.projectDelivery.endpoint(endpoint, body, actor)
   }
+  async function commandResult(name, args, actor) {
+    const result = await invoke(operations[name], args, actor)
+    if (name === 'task.propose') return taskDetailView(result)
+    if (!record(result)) return result
+    return { ...result, ...(result.attempt ? { attempt: attemptView(result.attempt) } : {}), ...(result.task ? { task: taskDetailView(result.task) } : {}),
+      ...(result.run ? { run: Object.fromEntries(['id', 'projectId', 'taskId', 'kind', 'status', 'startedAt', 'completedAt', 'createdAt'].filter(key => result.run[key] !== undefined).map(key => [key, result.run[key]])), runRef: { query: 'chief.state', projectId: args.projectId } } : {}) }
+  }
   async function envelope(body, actor) {
     if (!record(body) || body.version !== DEVELOPMENT_PROTOCOL || !['command', 'query'].includes(body.kind) || !record(body.payload ?? {})) throw failure('Unsupported Project development request')
     const { name, projectId } = body
     rt.requireProjectAccess(actor, projectId)
-    if (!Object.hasOwn(operations, name) && !['tasks', 'task', 'attempt.context', 'effects'].includes(name)) throw failure('Unknown Project development operation')
+    if (!Object.hasOwn(operations, name) && !['tasks', 'task', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'attempt.context', 'effects'].includes(name)) throw failure('Unknown Project development operation')
     if (queries.has(name) !== (body.kind === 'query')) throw failure('Operation kind does not match the contract')
     if (body.kind === 'command' && !stableId(body.requestId)) throw failure('A command needs a stable requestId')
     const args = { ...(body.payload ?? {}), projectId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}) }
@@ -210,10 +229,26 @@ export function createDevelopmentService(rt) {
       if (task && selected.id !== task.id || args.taskId && selected.id !== args.taskId) throw failure('Targets belong to different Tasks', 'bot/forbidden')
       task = selected
     }
-    if (body.expectedGeneration !== undefined && (!Number.isSafeInteger(body.expectedGeneration) || body.expectedGeneration < 0 || !task || task.collaboration?.generation !== body.expectedGeneration)) throw failure('Task generation changed', 'bot/conflict')
-    if (body.expectedCandidateSha !== undefined && (body.expectedCandidateSha !== null && (typeof body.expectedCandidateSha !== 'string' || !/^[a-f0-9]{40}$/.test(body.expectedCandidateSha)) || !task || taskView(rt.state, task).candidateSha !== body.expectedCandidateSha)) throw failure('Task candidate changed', 'bot/conflict')
+    if (!task && name === 'execution.input') {
+      const worker = ownEntry(rt.state.projectHarnessWorkers ?? {}, args.workerId)
+      if (worker) task = checkedTask(worker.taskId ?? ownEntry(rt.state.projectAttempts ?? {}, worker.attemptId)?.taskId, projectId, actor)
+    }
+    const check = () => {
+      if (task) task = checkedTask(task.id, projectId, actor)
+      if (body.expectedGeneration !== undefined && (!Number.isSafeInteger(body.expectedGeneration) || body.expectedGeneration < 0 || !task || task.collaboration?.generation !== body.expectedGeneration)) throw failure('Task generation changed', 'bot/conflict')
+      if (body.expectedCandidateSha !== undefined && (body.expectedCandidateSha !== null && (typeof body.expectedCandidateSha !== 'string' || !/^[a-f0-9]{40}$/.test(body.expectedCandidateSha)) || !task || taskView(rt.state, task).candidateSha !== body.expectedCandidateSha)) throw failure('Task candidate changed', 'bot/conflict')
+    }
+    if (body.kind === 'query') check()
     let result
-    if (name === 'effects') result = { effects: rt.projectEffects.list(projectId, actor, args) }
+    if (name === 'command.receipt') { if (!receipts) throw failure('Command receipts are unavailable'); result = receipts.get(projectId, args.commandRequestId, actor, args.commandName) }
+    else if (name === 'command.result') { if (!receipts) throw failure('Command receipts are unavailable'); result = receipts.result(projectId, args, actor) }
+    else if (name === 'events') result = rt.committedProjectEvents.query(projectId, args)
+    else if (name === 'project.snapshot') result = rt.committedProjectEvents.snapshot(projectId, args)
+    else if (name === 'effects') result = { effects: rt.projectEffects.list(projectId, actor, args) }
+    else if (name === 'task.history') {
+      const source = checkedTask(args.taskId, projectId, actor)
+      result = { taskId: source.id, section: args.section, ...sourcePage(taskHistorySource(source, args.section), args, text => createHash('sha256').update(text).digest('hex')) }
+    }
     else if (name === 'task') result = { task: view(checkedTask(args.taskId, projectId, actor), actor) }
     else if (name === 'attempt.context') {
       if (!args.attemptId) throw failure('Attempt context needs an Attempt')
@@ -227,10 +262,20 @@ export function createDevelopmentService(rt) {
       if (args.after !== undefined && index < 0) throw failure('Task cursor is unavailable')
       const page = rows.slice(index + 1, index + 1 + limit)
       result = { tasks: page.map(row => view(row, actor)), next: index + 1 + page.length < rows.length ? page.at(-1).id : null }
-    } else result = await invoke(operations[name], args, actor)
+    } else if (body.kind === 'command' && receipts) {
+      const delivered = await receipts.run({ projectId, name, requestId: body.requestId, args, actor, action: actionFor(name), taskId: task?.id,
+        expectedGeneration: body.expectedGeneration, expectedCandidateSha: body.expectedCandidateSha,
+        reconcile: name === 'task.run' ? async () => ({ result: await commandResult(name, args, actor) }) : ['task.propose', 'proposal.publish'].includes(name) ? async row => {
+          const existing = Object.values(rt.state.tasks).find(task => task.projectId === projectId && task.commandSource?.commandReceiptId === row.id)
+          const proof = existing && Object.values(rt.state.projectEffects ?? {}).find(effect => effect.kind === 'task.intake' && effect.taskId === existing.id && rt.projectEffects.intentCommitted({ id: effect.id, generation: effect.generation }))
+          return proof ? { result: taskDetailView(existing) } : null
+        } : undefined,
+      }, () => commandResult(name, args, actor), check)
+      return { version: DEVELOPMENT_PROTOCOL, requestId: body.requestId, ...delivered }
+    } else { check(); result = await invoke(operations[name], args, actor) }
     return { version: DEVELOPMENT_PROTOCOL, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result }
   }
-  return { view: (task, actor) => { access(actor); return view(task, actor) },
+  return { commandSource: projectId => receipts?.source(projectId) ?? null, view: (task, actor) => { access(actor); return view(task, actor) },
     isQuery: developmentQuery,
     // Trusted host ports. Public HTTP never accepts role tokens or model results.
     roleResult: row => rt.projectPools.result(row),

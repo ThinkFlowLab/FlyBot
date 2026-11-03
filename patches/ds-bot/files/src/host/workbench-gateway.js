@@ -1,6 +1,7 @@
 // Restricted shared entry. The DSH owner credential stays server-side; members never
 // receive raw Harness APIs or its owner cookie. Project authorization remains in FlyBot.
 import { createServer } from 'node:http'
+import { createProjectSse } from './project-service-sse.js'
 import { gzipSync } from 'node:zlib'
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -25,13 +26,25 @@ export const WORKBENCH_ENDPOINTS = new Set([
 const LIMIT = 1024 * 1024
 const HTML = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlyBot · Project workbench</title><link rel="stylesheet" href="/workbench.css"></head><body><div id="workbench-root"></div><script defer src="/workbench.js"></script></body></html>'
 
-export function createWorkbenchGateway({ upstreamOrigin, upstreamCookie, publicOrigin, readAsset, request = fetch } = {}) {
+export function createWorkbenchGateway({ upstreamOrigin, upstreamCookie, publicOrigin, readAsset, request = fetch, eventPollMs = 1000, eventMaxStreams = 64 } = {}) {
   const upstream = new URL(upstreamOrigin)
   if (!['http:', 'https:'].includes(upstream.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(upstream.hostname) || upstream.pathname !== '/' || upstream.search || upstream.hash || upstream.username || upstream.password) throw new Error('Workbench upstream must be a fixed loopback origin')
   if (typeof upstreamCookie !== 'string' || !upstreamCookie || upstreamCookie.length > 8192 || /[\r\n\u0000]/.test(upstreamCookie)) throw new Error('A valid private upstream cookie is required')
   const published = publicOrigin ? new URL(publicOrigin) : null
   if (published && (published.origin !== publicOrigin || published.username || published.password || !['http:', 'https:'].includes(published.protocol))) throw new Error('Invalid fixed workbench public origin')
   const assets = readAsset ?? (name => readFile(resolve(import.meta.dirname, '../..', name)))
+  const events = createProjectSse({ pollMs: eventPollMs, maxStreams: eventMaxStreams,
+    async pull({ projectId, name, payload, token, signal }) {
+      const response = await request(`${upstream.origin}/api/bot`, { method: 'POST', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+        headers: { 'content-type': 'application/json', cookie: upstreamCookie, origin: upstream.origin, 'x-flybot-member-session': token },
+        body: JSON.stringify({ endpoint: 'project-development', payload: { version: 'project-development/v1', kind: 'query', name, projectId, payload } }) })
+      if (!response.ok) throw new Error('Project event runtime is unavailable')
+      const text = await response.text()
+      if (text.length > LIMIT) throw new Error('Project event page exceeded its limit')
+      const result = JSON.parse(text)
+      if (!result.ok) throw Object.assign(new Error('Project event access/query refused'), { code: result.error?.code })
+      return result.value.result
+    } })
   const server = createServer(async (req, res) => {
     res.setHeader('cache-control', 'no-store')
     res.setHeader('x-content-type-options', 'nosniff')
@@ -53,6 +66,7 @@ export function createWorkbenchGateway({ upstreamOrigin, upstreamCookie, publicO
     const origin = req.headers.origin
     if (origin && !allowed.includes(origin) || req.headers['sec-fetch-site'] === 'cross-site') return respond(403, { error: 'Cross-origin request refused' })
     const url = new URL(req.url ?? '/', allowed[0])
+    if (req.method === 'GET' && url.pathname === '/api/project-events') return events.handle(req, res, url, respond)
     if (url.search) return respond(404, { error: 'Not found' })
     if (req.method === 'GET') {
       if (url.pathname === '/') return respond(200, HTML, 'text/html; charset=utf-8')
@@ -91,6 +105,8 @@ export function createWorkbenchGateway({ upstreamOrigin, upstreamCookie, publicO
       return respond(200, result) // Never forward upstream Set-Cookie/Location/owner credentials.
     } catch { if (!res.headersSent) respond(502, { error: 'Workbench runtime request failed' }) }
   })
+  const close = server.close
+  server.close = function (...args) { events.close(); return close.apply(this, args) }
   server.on('upgrade', (_request, socket) => { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n') })
   return server
 }
@@ -99,7 +115,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const value = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
   const file = value('--upstream-cookie-file')
   if (!file || (await stat(file)).mode & 0o077) throw new Error('Use a private mode-0600 upstream cookie file')
-  const server = createWorkbenchGateway({ upstreamOrigin: value('--upstream'), upstreamCookie: (await readFile(file, 'utf8')).trim(), publicOrigin: value('--public-origin') })
+  const server = createWorkbenchGateway({ upstreamOrigin: value('--upstream'), upstreamCookie: (await readFile(file, 'utf8')).trim(), publicOrigin: value('--public-origin'), eventPollMs: Number(value('--event-poll-ms') ?? 1000), eventMaxStreams: Number(value('--event-max-streams') ?? 64) })
   const port = Number(value('--port') ?? 3081)
   server.listen(port, '127.0.0.1', () => process.stdout.write(`Project workbench: http://127.0.0.1:${server.address().port}/\n`))
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => server.close())

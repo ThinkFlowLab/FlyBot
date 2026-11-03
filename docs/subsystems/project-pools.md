@@ -170,3 +170,5 @@ Project Tasks may split independent children after actual source exit, preservin
 
 
 #2179 follow-up: After adjudicated child results, continuation reuses the original logical role. An unsealed Attempt remains; a sealed candidate requires one successor Attempt seeded from that candidate. Replay reuses the recorded successor and stable children-wait Handoff. Claiming records the wait as resumed, preserving its original released claim reference.
+
+#2185 acceptance: claim/accept persists a pool.accept marker alongside the claim and Handoff acceptance. Failed commits restore pending ownership; idempotent replay/current role operations require confirmed acceptance proof. The adapter is registered on startup for marker recovery, not only after a new claim. Legacy persisted claims without the additive proof retain their original recovery fence; the marker never dispatches an executor.

@@ -19,7 +19,11 @@ function fixture(state) {
   rt.projectEffects = createProjectEffects(rt); inputs(rt); sources(rt); rt.projectDevelopment = createDevelopmentService(rt)
   return { rt, project, schedules, disk: () => disk, reads: () => reads, fail(value) { failure = value }, revoke() { revoked = true }, feed(value) { feed = value } }
 }
-const command = (f, name, payload, actor = owner, requestId = 'request') => f.rt.projectDevelopment.endpoint('project-development', { version: 'project-development/v1', kind: 'command', name, projectId: 'p', requestId, payload }, actor)
+// Domain/fault tests use the original aliases on the same facade so receipt-intent
+// saves cannot consume the injected source-transaction failure. Real v1 source and
+// response-loss recovery are covered in project-effects-runtime.test.js.
+const sourceEndpoints = { 'source.subscribe': 'project-source-subscribe', 'source.poll': 'project-source-poll', 'source.disable': 'project-source-disable' }
+const command = async (f, name, payload, actor = owner, requestId = 'request') => ({ result: await f.rt.projectDevelopment.endpoint(sourceEndpoints[name], { ...payload, projectId: 'p', requestId }, actor) })
 const subscribe = async (f, payload = {}) => (await command(f, 'source.subscribe', { taskId: 't', threadKind: 'pull', number: 7, includeHistory: true, ...payload })).result.subscription
 const poll = (f, sub, actor = owner) => command(f, 'source.poll', { threadId: sub.threadId }, actor)
 

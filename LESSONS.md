@@ -668,3 +668,7 @@ Seen 1× while implementing #2179. Reusing old group aggregation would accept ca
 ### 2026-11-03 — Migration must distinguish unfinished import from missing current data
 
 An interrupted prepared SQL migration may recover its verified import; an active database that disappears must fail closed, not silently revive the old import. Publish a newer-version JSON guard before initialization, validate one authority, and retain a fenced resumable rollback marker across partial moves. A transaction commit must precede Effects acknowledgement without a fallible post-commit read masking that proof.
+
+### 2026-11-03 — A failed acceptance save is not a valid retry result
+
+Pool acceptance previously left an active claim in memory when saving failed; repeating its idempotency key could return that uncommitted claim. Persist an acceptance marker, roll back failed ownership and require commit proof on replay. Public command replay must similarly bind exact intent/result and current principal while allowing the original successful generation to advance. Keep unknown outcomes explicit; receiving a fact does not grant initiative.

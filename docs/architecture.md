@@ -183,3 +183,12 @@ SQLite transaction while retaining existing service objects. Legacy JSON is sele
 until explicitly migrated; a versioned guard prevents two writable authorities.
 History rows and immutable payload files separate storage growth from bounded model
 context. See [transactional storage and offline migration](subsystems/project-state-storage.md).
+
+## Application contracts (#2185)
+
+The existing development service owns HTTP command/query dispatch, private durable
+receipts and bounded source projections. Store commits safe event deltas alongside
+business facts; the existing gateway exposes authenticated resumable SSE. Role
+Handoff acceptance retains a separate durable authority proof. See
+[contracts and recovery](subsystems/project-service-contracts.md). Event transport
+and read projections introduce no execution workflow or extra model calls.

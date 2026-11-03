@@ -699,13 +699,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,51 @@
+@@ -1,21 +1,53 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
 -import { mkdirSync, statSync } from 'node:fs'
 +import { install as installProjects } from './project-service.js'
 +import { createProjectStateStorage } from './project-state-storage.js'
++import { createProjectServiceEvents } from './project-service-events.js'
 +import { constants, mkdirSync, statSync } from 'node:fs'
  import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
@@ -744,6 +745,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +  // Project services own domain records; store owns their durable snapshot.
 +  // projectRuns is a legacy projection; projectExecutions holds direct Run ownership.
 +  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, revision: 0 }
++  const committedEvents = createProjectServiceEvents(config.projectEventRetention)
    let loaded = null
    let writing = Promise.resolve()
 +  // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -966,7 +968,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,18 +161,101 @@ export function install(rt) {
+@@ -161,18 +161,102 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1027,6 +1029,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    if (rt.projectEffects?.recover()) migrated = true
 +    if (syncDesignatedChief()) migrated = true
      indexSessions()
++    committedEvents.load(state)
      return { migrated: migrated || stale.length > 0, stale }
    }
 
@@ -1154,22 +1157,27 @@ diff --git a/src/host/store.js b/src/host/store.js
      const snapshot = JSON.stringify(state, null, 2)
      const run = writing.then(async () => {
        const temp = `${statePath}.${process.pid}.tmp`
-@@ -256,13 +256,18 @@ export function install(rt) {
+@@ -256,13 +256,23 @@ export function install(rt) {
            }
          }
          ensureLock()
 -        await writeFile(temp, snapshot, 'utf8')
 -        ensureLock()
 -        await rename(temp, statePath)
-+        if (storage.sqlite) storage.write(snapshot)
++        const prepared = committedEvents.prepare(JSON.parse(snapshot))
++        const persistedSnapshot = JSON.stringify(prepared.snapshot, null, 2)
++        if (storage.sqlite) storage.write(persistedSnapshot)
 +        else {
-+          await writeFile(temp, snapshot, 'utf8')
++          await writeFile(temp, persistedSnapshot, 'utf8')
 +          ensureLock()
 +          await rename(temp, statePath)
 +        }
 +        rt.projectEffects?.saved(effectSnapshot)
++        committedEvents.saved(prepared)
++        state.projectServiceEventStreams = structuredClone(prepared.snapshot.projectServiceEventStreams)
++        state.projectServiceEvents = structuredClone(prepared.snapshot.projectServiceEvents)
          seen = stamp()
-+        await journal?.record(snapshot)
++        await journal?.record(persistedSnapshot)
          rt.capabilitiesStateSaved?.()
        } catch (error) {
 -        await unlink(temp).catch(() => {})
@@ -1241,7 +1249,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,29 @@ export function install(rt) {
+@@ -335,23 +335,30 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1267,6 +1275,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    Object.assign(rt, {
 -    state, load, save, refresh, readOnly,
 +    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
++    committedProjectEvents: { query: (id, options) => committedEvents.query(id, options), snapshot: (id, options) => committedEvents.snapshot(id, options) },
 +    stateStorage: { status: () => storage.status(), changes: options => storage.changes(options) },
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,

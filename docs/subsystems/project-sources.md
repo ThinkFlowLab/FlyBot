@@ -105,3 +105,5 @@ Tasks, exact-SHA history, lossless chunks and the native schedule adapter. Mock
 observations are separate from the actual UID998 scoped GitHub REST read. A real
 GitHub feedback→current frontend Bot→handoff acceptance must be recorded separately;
 a successful read or source test is not proof of that complete path.
+
+#2185 keeps domain rollback/revocation tests on the original facade aliases so an injected source-transaction failure is not consumed by an earlier generic command-intent save. Actual v1 subscription/polling with the real Store remains covered separately. A repeated HTTP command key replays its prior response; a new observation uses a fresh key, while the Source engine still deduplicates external revisions and input IDs.

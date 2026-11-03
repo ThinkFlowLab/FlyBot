@@ -196,3 +196,7 @@ A failed Attempt leaves a new Project Task blocked with its source Attempt/reaso
 
 
 #2179 follow-up: Task views include a derived outcome reference and version for exact Chief-approved dependency replacement. This scoped metadata does not confer merge, closure or authority. Durable public receipts and bounded event/history interfaces remain #2185.
+
+## Contract convergence (#2185)
+
+The same v1 facade now supports durable principal-scoped command receipts, task.propose, bounded exact history/source reads, committed Project snapshots/events and request-scoped SSE. Task/Attempt projections retain source refs instead of retransmitting whole histories or requester Sessions. Existing handlers still own business authority and external-action reconciliation. See [command/query/event contracts](project-service-contracts.md) for scope, errors, cursor recovery, private receipt visibility and legacy compatibility limits.

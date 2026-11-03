@@ -132,7 +132,7 @@ test('trusted role and schedule ports retain original claims, authority and even
 test('proposal/worker targets stay in envelope scope and permission request identity is preserved', async () => {
   const { service, state, rt, actor } = fixture()
   state.projectAgentProposals = { foreign: { projectId: 'other', memberId: 'alice' } }
-  state.projectHarnessWorkers = { foreign: { projectId: 'other' }, own: { projectId: 'p' } }
+  state.projectHarnessWorkers = { foreign: { projectId: 'other' }, own: { projectId: 'p', taskId: 't' } }
   let calls = 0
   rt.projectAgents.endpoint = async () => { calls++; return {} }
   rt.projectHarness = { input: async body => { calls++; assert.equal(body.requestId, 'permission-request'); return { sent: true } } }
@@ -212,4 +212,64 @@ test('publication recovery shows its actual wait and stale outbox candidates can
   state.projectEffects.e.payload.candidateSha = 'current'
   task.chiefQuestion = { reason: 'Human scope decision' }
   assert.equal(taskView(state, task).phase, 'awaiting-owner')
+})
+
+test('Task summaries bound historical context and never expose execution requester sessions', async () => {
+  const { service, state, actor } = fixture(), task = state.tasks.t
+  task.title = 'Current requirement'
+  task.projectTask = { version: 'project-task/v1', admission: { status: 'accepted' }, requirements: { revision: 7, title: task.title, criteria: 'Regression passes', impact: 'Improve the Project', scope: 'Current scope' }, dependencies: [],
+    requirementsHistory: Array.from({ length: 120 }, (_, n) => ({ revision: n, scope: 'historical scope '.repeat(2000) })), waitHistory: [], results: [], executionRequester: { memberId: 'alice', sessionId: 'private-requester-session' } }
+  const before = JSON.stringify(state)
+  const view = service.view(task, actor)
+  assert.ok(Buffer.byteLength(JSON.stringify(view)) < 16000)
+  assert.equal(JSON.stringify(view).includes('private-requester-session'), false)
+  assert.equal(view.contract.requirements.revision, 7)
+  assert.equal(view.contract.historyRefs.requirementsHistory.count, 120)
+  const query = { version: DEVELOPMENT_PROTOCOL, kind: 'query', name: 'task.history', projectId: 'p', payload: { taskId: 't', section: 'requirementsHistory', limit: 16000 } }
+  const first = (await service.endpoint('project-development', query, actor)).result
+  assert.equal(first.text.length, 16000)
+  assert.equal(first.text, JSON.stringify(task.projectTask.requirementsHistory).slice(0, 16000))
+  await assert.rejects(service.endpoint('project-development', { ...query, payload: { ...query.payload, expectedSha256: 'stale' } }, actor), /changed/)
+  await assert.rejects(service.endpoint('project-development', { ...query, payload: { ...query.payload, section: 'executionRequester' } }, actor))
+  await assert.rejects(service.endpoint('project-development', { ...query, projectId: 'other' }, actor))
+  assert.equal(JSON.stringify(state), before)
+})
+
+test('Attempt summaries bound repeated sessions, role definitions and evidence while exact scoped sources remain readable', async () => {
+  const { service, state, actor } = fixture(), huge = 'long role report '.repeat(10000)
+  state.projectAttempts.large = { id: 'large', projectId: 'p', taskId: 't', createdAt: 1, status: 'failed', failure: { message: huge }, feedback: { reason: huge }, requirement: { title: huge, criteria: huge },
+    roleSessionHistory: Array.from({ length: 200 }, (_, n) => ({ id: 'session-' + n, role: 'developer', context: { text: huge, sha256: 'hash' }, policy: { text: huge, sha256: 'policy' } })),
+    agentDefinitions: { roles: [{ id: 'p:developer', role: 'developer', persona: huge, memory: huge, execution: { harness: 'codex' } }] }, evidence: { review: { sha: 'commit', verdict: 'approve', summary: huge } } }
+  const before = JSON.stringify(state)
+  const detail = await service.endpoint('project-task-detail', { taskId: 't' }, actor)
+  assert.ok(Buffer.byteLength(JSON.stringify(detail)) < 50000)
+  const summary = detail.attempts[0]
+  assert.equal(summary.roleSessionHistory.length, 3)
+  assert.equal(summary.roleSessionHistoryPage.total, 200)
+  assert.equal(summary.agentDefinitions.roles[0].persona, undefined)
+  const query = { version: DEVELOPMENT_PROTOCOL, kind: 'query', name: 'attempt.context', projectId: 'p', payload: { attemptId: 'large', section: 'evidence', limit: 16000 } }
+  assert.equal((await service.endpoint('project-development', query, actor)).result.text, JSON.stringify(state.projectAttempts.large.evidence).slice(0, 16000))
+  assert.equal(JSON.stringify(state), before)
+})
+
+test('durable v1 command replays its confirmed response after generation advances and keeps source keys distinct', async () => {
+  const { createProjectEffects } = await import('../src/host/project-effects.js')
+  const { rt, state, actor } = fixture()
+  state.tasks.t.collaboration = { generation: 4, history: [] }
+  rt.projectEffects = createProjectEffects(rt)
+  rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture())
+  let starts = 0
+  rt.projectScheduler.request = async () => { ++starts; state.tasks.t.collaboration.generation = 5; return { queue: { id: 'one-queue', projectId: 'p' } } }
+  const service = createDevelopmentService(rt)
+  const request = { version: DEVELOPMENT_PROTOCOL, kind: 'command', name: 'task.run', projectId: 'p', requestId: 'stable-command', expectedGeneration: 4, payload: { taskId: 't' } }
+  const first = await service.endpoint('project-development', request, actor)
+  const repeated = await service.endpoint('project-development', request, actor)
+  assert.equal(starts, 1)
+  assert.equal(first.receipt.committed, true); assert.equal(repeated.replayed, true)
+  assert.deepEqual(first.result, repeated.result)
+  await assert.rejects(service.endpoint('project-development', { ...request, expectedGeneration: 5 }, actor), error => error.code === 'bot/idempotency-conflict')
+  const query = { version: DEVELOPMENT_PROTOCOL, kind: 'query', name: 'command.receipt', projectId: 'p', payload: { commandRequestId: 'stable-command' } }
+  assert.equal((await service.endpoint('project-development', query, actor)).result.id, first.receipt.id)
+  await assert.rejects(service.endpoint('project-development', query, { memberId: 'bob' }), /unavailable/)
+  await rt.projectEffects.close()
 })

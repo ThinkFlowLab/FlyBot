@@ -547,3 +547,77 @@ until migrated. Runtime storage diagnostics/change IDs are internal ports, not a
 public raw-database API or authenticated event feed. See the [migration/rollback
 contract](subsystems/project-state-storage.md). Public bounded receipts/events are
 completed separately in #2185; simplified full deployment instructions remain #2189.
+
+## Service contract convergence (#2185)
+
+The envelope remains project-development/v1. Read projection versions are separate:
+project-task-detail/v1, project-task-contract-summary/v1 and
+project-attempt-summary/v1. Current constraints/evidence remain inline; raw lifecycle,
+persona, context and Session history move behind explicit bounded source refs.
+This intentionally changes unbounded raw-record assumptions. Existing UI-used fields
+remain; original stored history is retained.
+
+| Kind/name | Payload | Result and boundary |
+| --- | --- | --- |
+| command task.propose | title, criteria, impact, scope?, projectTaskKind?, botId? | Proposes original Task; Chief admission remains required. Missing carrier uses existing Project Chief. Server stamps origin; no body actor/session authority. |
+| query command.receipt | commandRequestId, commandName? | Calling principal's status, commit proof, origin and result ref. |
+| query command.result | commandRequestId, commandName?, offset?, limit?, expectedSha256? | Exact JSON result page, max16000 chars, hash/version guarded. |
+| query task.history | taskId, section, offset?, limit?, expectedSha256? | requirements, requirementsHistory, admissionDecisions, dependencies, waitHistory, results, handoffs, note, result or actors. |
+| query attempt.context | attemptId, section, offset?, limit?, expectedSha256? | Prior role sections plus evidence, feedback, requirement, failure, agentDefinitions, integrationAdmissions. |
+| query project.snapshot | limit?, after?, expectedRevision? | Committed bounded Project/Task snapshot and event cursor; later pages require the same revision. |
+| query events | after?, limit? | Committed Project-scoped facts, max100, next/head/oldest cursors. |
+
+All v1 mutating envelopes have private durable receipts when the standard Effects
+service is installed. Existing alias endpoints still use original domain handlers
+and their own idempotency; they do not create another writable state source. Their
+remaining migration/cutover is #2186. Public role acceptance/Handoff/arbitration
+cannot be forged by supplying a claim or Chief role in an HTTP body.
+
+Receipt scope is operation + Project + authenticated user/independent agent. Reusing a key with
+changed intent/preconditions is bot/idempotency-conflict. A confirmed response can
+replay after its generation advances, after current permission checks. Concurrent
+calls share one invocation. completion-pending-commit requires retrying the same
+command, not a second execution. running/unknown does not automatically redispatch;
+bot/outcome-unknown points to the receipt/target/Chief. Automatic reconciliation is
+limited to existing idempotent task.run and original Task/intake proof for
+ task.propose/proposal.publish. Reconstructed responses say reconstructed:true.
+
+| Code/fact | Meaning | Client action |
+| --- | --- | --- |
+| bot/unauthorized, bot/forbidden | Session/principal/Project rights unavailable | Authenticate/check current rights; never borrow owner credentials. |
+| bot/idempotency-conflict | Same key, changed intent | Recover the original response or submit a deliberate new command key. |
+| bot/conflict | Version/source/snapshot changed | Fetch current referenced state and choose new preconditions. |
+| bot/outcome-unknown | No confirmed final command outcome | Read command.receipt and target state; use existing reconciliation/Chief, not blind generic rerun. |
+| bot/cursor-expired | Event epoch/retention no longer covers cursor | Fetch project.snapshot, resume after its cursor. |
+| bot/busy | SSE transport capacity | Retry later or use bounded HTTP queries. |
+| waitingFor:resource/worker-exit | Existing execution admission/exit boundary | Inspect queue/execution.boundary; unknown exit never authorizes another writer. |
+| completion-pending-commit | Result observed, final receipt not committed | Retry the same command to finish commit without invoking again. |
+
+HTTP /api/bot retains {ok,value}/{ok:false,error:{code,message,details}}. Successful
+v1 commands additionally return receipt, replayed and optionally reconstructed.
+Normal queries and committed event generation call no model and do not change
+Project positioning. Consultation remains consultation.ask/reply; do not publish a
+Task for an ordinary question.
+
+SSE uses the existing restricted gateway:
+
+```sh
+curl -N -H "x-flybot-member-session: $FB_SESSION" \
+  "$FB_URL/api/project-events?projectId=$FB_PROJECT"
+# Resume using the last accepted id from a snapshot/fact frame:
+curl -N -H "x-flybot-member-session: $FB_SESSION" \
+  -H "Last-Event-ID: $FB_EVENT_CURSOR" \
+  "$FB_URL/api/project-events?projectId=$FB_PROJECT"
+```
+
+No token goes in a URL. The existing member header also accepts authenticated
+personal-agent credentials. Initial frames are snapshot, then fact with id cursors;
+deduplicate by cursor. access-revoked closes the stream; reset-required requires a
+fresh snapshot. Initial expired cursors receive HTTP409 with nextAction. No upstream
+owner cookie is forwarded. Current read rights are rechecked on each batch, including
+backpressure recovery. Project sequences exclude private conversations/auth/receipt
+writes. Default retention1024 facts/24h is configurable via projectEventRetention;
+it is not permanent audit history. Follow Task/Handoff/Attempt source queries for
+older records. See [full contract](subsystems/project-service-contracts.md).
+
+Operation names scope requestId, so different operations may reuse a key. When a key matches multiple operations, command.receipt/result require commandName (also supplied in resultRef); otherwise return bot/ambiguous-command. Retrying one invocation preserves its key; a deliberate new source.poll uses a fresh key. Confirmed replay preserves the original result and marks replayed:true, rather than rewriting its domain already flag.
