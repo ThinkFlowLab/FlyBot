@@ -842,6 +842,9 @@ test('P-455: a read-only window draws no write on the task board', async () => {
   assert.match(textOf(tree), /Working card/)
   assert.match(textOf(tree), /Done card/)
   assert.equal(byClass(tree, 'bt-board-when').length, 1)
+  // P-474: the 1080px board overlay covers the sidebar banner and the Settings hint, so the lock's
+  // own sentence is drawn inside the board — one line, the host's text, and still no write beside it.
+  assert.deepEqual(byClass(tree, 'bt-read-only').map(node => [node.props.role, textOf(node)]), [['status', lockedRoster.readOnly]])
   // A drop on a column writes nothing either, even when a drag value is handed to the handler.
   board.column('in-progress').props.onDrop({ preventDefault() {}, dataTransfer: { getData: () => open.id } })
   assert.deepEqual(writes, [])
@@ -868,6 +871,8 @@ test('counter-proof: a writable board keeps all four writes', async () => {
   assert.equal(byClass(board.tree, 'bt-board-add').length, 1)
   const draggable = byClass(board.tree, 'bt-board-card').filter(node => node.props.draggable).map(node => node.props['data-task']).sort()
   assert.deepEqual(draggable, ['task-open123456', 'task-working456789'])
+  // P-474 counter-proof: a writable board draws no read-only line of any kind.
+  assert.deepEqual(byClass(board.tree, 'bt-read-only').map(textOf), [])
   const start = all(board.tree).find(node => node.type === 'button' && textOf(node) === 'Start')
   start.props.onClick()
   await board.settle()
