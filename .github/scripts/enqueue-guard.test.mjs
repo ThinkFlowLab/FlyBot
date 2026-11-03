@@ -1322,6 +1322,24 @@ test('#2287 k2-k8: the other ways a yes is made conditional keep the hold', () =
   }
 })
 
+// #2288 review, 2026-11-03: a clause is judged on its own, so a condition one clause over — after a dash,
+// a colon, a semicolon, a full stop or a line break — was never read, and the yes cleared the hold it
+// withholds. Each body is a plain yes with the condition moved out of its clause.
+test('#2287 k10-k15: a condition in the clause after the lift keeps the hold', () => {
+  for (const [i, body, at] of [
+    [10, 'You may merge this tip — only after the second reader re-runs.', '2026-11-03T06:15:20Z'],
+    [11, 'You may merge this tip: pending the second reader.', '2026-11-03T06:15:21Z'],
+    [12, 'You may merge this tip; not until the second reader re-runs.', '2026-11-03T06:15:22Z'],
+    [13, 'You may merge this tip. Only after the second reader re-runs.', '2026-11-03T06:15:23Z'],
+    [14, 'You may merge — if the second reader agrees.', '2026-11-03T06:15:24Z'],
+    [15, 'You may merge this tip\nonly after the second reader re-runs.', '2026-11-03T06:15:26Z'],
+  ]) {
+    const r = run({ comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), note({ id: 6597499990, body, at })] })
+    assert.equal(r.ok, false, `k${i} withholds the answer: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest?.id, 6596354014, `k${i} keeps the original hold`)
+  }
+})
+
 test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
   const conditional = note({
     id: 6597499999,

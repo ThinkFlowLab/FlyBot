@@ -212,9 +212,24 @@ const CONDITIONAL = new RegExp(
 // `.` `;` `:` `—` `!` `?` and a line break end a clause; the dash is one here so a sentence's two halves
 // are judged separately, which is what lets "No objections — you may merge" through.
 const CLAUSE = /[.;:!?—–\n]/
+// A condition can also sit in the clause *after* the lift: "You may merge this tip — only after the second
+// reader re-runs" cleared the hold that the same words inside the lift's own clause refused, and a dash
+// after the yes is ordinary prose (#2288 review, 2026-11-03). A clause that follows a lift withholds the
+// answer when it carries a phrase that never sits in a plain yes, or when it opens with a condition word.
+// Ordinary trailing talk still clears: "you may merge this tip now; I am back after lunch if anything
+// breaks" opens with "I", which is why the broad vocabulary above is not used here.
+const WITHHELD = /\b(?:only (?:after|once|when)|not until|not unless|pending|subject to|provided|as (?:long|soon) as|assuming|in case|depending on)\b/i
+const WITHHELD_LEADING = /^[\s>*+\-–—(\[]*(?:only|after|once|until|unless|if|when|before|pending|not|never|cannot|n['’]t|provided|providing|assuming)\b/i
 const unconditionalLift = (text) => {
   if (!LIFT_REQUEST.test(text) || STOP_REQUEST.test(text) || HOLD_LINE.test(text)) return false
-  return !text.split(CLAUSE).some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))
+  const clauses = text.split(CLAUSE)
+  if (clauses.some((clause) => LIFT_REQUEST.test(clause) && CONDITIONAL.test(clause))) return false
+  let afterLift = false
+  for (const clause of clauses) {
+    if (afterLift && (WITHHELD.test(clause) || WITHHELD_LEADING.test(clause))) return false
+    if (LIFT_REQUEST.test(clause)) afterLift = true
+  }
+  return true
 }
 
 // A body that parses as a conclusion but asks only to lift a stop — no ask to stop of its own. This is the
