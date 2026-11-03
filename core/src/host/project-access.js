@@ -120,7 +120,7 @@ export function install(rt) {
     if (endpoint === 'project-handoff-get') return { handoff: rt.projectPools.get(body.taskId, body.handoffId, actor) }
     if (endpoint === 'project-handoff-list') return rt.projectPools.list(body.taskId, actor, body)
     if (endpoint === 'project-credential-status') return rt.projectCredentials.endpoint(endpoint, body, actor)
-    if (['project-agents', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-role-memory-write', 'project-agent-definition', 'project-knowledge-write'].includes(endpoint)) return rt.projectAgents.endpoint(endpoint, body, actor)
+    if (['project-agents', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-role-memory-write', 'project-agent-definition', 'project-roles', 'project-role-proposals', 'project-role-decision', 'project-knowledge-write'].includes(endpoint)) return rt.projectAgents.endpoint(endpoint, body, actor)
     if (['project-runtime-check', 'project-terminal-open', 'project-terminal-poll', 'project-terminal-input', 'project-terminal-resize', 'project-terminal-close'].includes(endpoint)) return rt.projectRuntimeSetup.endpoint(endpoint, body, actor)
     if (endpoint === 'project-resource-environment-check') {
       rt.requireProjectAccess(actor, body.projectId, 'configure')

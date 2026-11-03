@@ -155,3 +155,7 @@ exits; selecting another resource cannot bypass them. Chief may still observe an
 arbitrate a blocked Task. Unknown occupancy remains visible and pending; a timeout
 is not release evidence. Native exit/restoration and transaction-wide recovery still
 follow the execution/storage acceptance work, not fabricated from these view states.
+
+#2184 records logical role and pinned capability class on a claim. Active targets alone can receive new offers/claims; a removed queued target becomes blocked with a Chief-routing reason while its Task/initiative/history remain intact. An already acquired source may finish its retained frozen claim after retirement, then explicitly hand off to an active target. Developer-capability destinations use existing rework semantics even when named differently. Artifact responsibilities stay in the existing Attempt's roleAssignments; no new queue or scheduler is added.
+
+Composition with #2184 rechecks the committed target role after asynchronous source-exit confirmation, before claiming. Retirement during inspection leaves the original Task blocked for Chief routing; it cannot acquire a new execution claim from the earlier catalog snapshot.
