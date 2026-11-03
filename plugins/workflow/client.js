@@ -145,6 +145,8 @@ window.__ModuleLoader__.load({
       'Parallel branches · Merge after all pass': '并行分支 · 全部通过后汇合',
       'Show more': '展开',
       'Show less': '收起',
+      'Show {count} more cards': '展开另外 {count} 张卡片',
+      'Show {count} more Bots': '展开另外 {count} 个 Bot',
       // Stage timeline (#1489). The key is the English line; service.js and
       // narrate.js keep the Chinese text only as the fallback for rows written
       // before the key existed.
@@ -1414,12 +1416,16 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
     }
 
+    const ASSIGN_VISIBLE = 12
+
     function AssignModal({ workflows, tasks, tasksStatus, tasksError, error, projects, roster, workflowId, onClose, onConfirm, onRetry }) {
       // #2241: two lanes drawn from different Projects read the same inside this dialog, so the
       // target row repeats the badge the list row already draws — the same `projects` listing.
       const projectName = (id) => (projects ?? []).find(project => project.id === id)?.name ?? ''
       const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
+      const [tasksExpanded, setTasksExpanded] = useState(false)
+      const [botsExpanded, setBotsExpanded] = useState(false)
       // #1457: the dialog opens before loadTasks() answers, so the first client render can have no
       // rows; select the first card once they arrive, or when the selected card is gone.
       useEffect(() => {
@@ -1434,7 +1440,9 @@ window.__ModuleLoader__.load({
         if (seen.has(bot.name)) return false
         seen.add(bot.name)
         return true
-      }).slice(0, 12)
+      })
+      const shownTasks = tasksExpanded ? tasks : tasks.slice(0, ASSIGN_VISIBLE)
+      const shownBots = botsExpanded ? bots : bots.slice(0, ASSIGN_VISIBLE)
       return h('div', { className: 'wf-mask', onClick: (event) => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'wf-modal', role: 'dialog', 'aria-modal': true, 'aria-label': tr('Hand a task to a Workflow') },
           h('div', { className: 'wf-modal-header' },
@@ -1451,12 +1459,16 @@ window.__ModuleLoader__.load({
                 ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('Loading the Tasks board…'))
                 : tasks.length === 0
                   ? h('div', { className: 'wf-muted wf-cards-empty' }, tr('No open tasks on the Tasks board.'))
-                  : h('div', { className: 'wf-cards' }, tasks.map(task => h('button', {
+                  : [h('div', { className: 'wf-cards' }, shownTasks.map(task => h('button', {
                     key: task.id, type: 'button', className: `wf-kcard ${taskId === task.id ? 'sel' : ''}`, onClick: () => setTaskId(task.id),
                   },
                     h('div', { className: 'wf-id' }, `${shortId(task.id)} · ${priorityOf(task)}`),
                     h('div', { className: 'wf-tt' }, task.title),
                     h('div', { className: 'wf-kcol' }, `● ${tr(COLUMN_KEY[columnOf(task)] ?? 'Not started')}`)))),
+                    tasks.length > ASSIGN_VISIBLE
+                      ? h('button', { type: 'button', className: 'wf-more', 'data-more': 'tasks', 'aria-expanded': tasksExpanded, onClick: () => setTasksExpanded(value => !value) },
+                        tasksExpanded ? tr('Show less') : tr('Show {count} more cards', { count: tasks.length - shownTasks.length }))
+                      : null],
             // #2237: a refused assign stays in this dialog, so the sentence the host sent is
             // drawn here; the page-level copy is suppressed while this dialog is open.
             error ? h('div', { className: 'wf-err', role: 'alert' }, error) : null,
@@ -1472,14 +1484,18 @@ window.__ModuleLoader__.load({
                     projectName(item.projectId) ? h('span', { className: 'wf-proj' }, projectName(item.projectId)) : null),
                   h('span', { className: 'wf-chain' }, item.chain)),
                 h('span', { className: 'wf-rad' }))),
-              bots.map(bot => h('button', {
+              shownBots.map(bot => h('button', {
                 key: bot.id, type: 'button', className: `wf-tgt ${target === `bot:${bot.id}` ? 'sel' : ''}`, onClick: () => setTarget(`bot:${bot.id}`),
               },
                 h(Mark, { node: { name: bot.name, botId: bot.id }, roster, size: 30 }),
                 h('span', null,
                   h('span', { className: 'wf-t1' }, bot.name),
                   h('span', { className: 'wf-chain' }, tr('One Bot (as before)'))),
-                h('span', { className: 'wf-rad' }))))),
+                h('span', { className: 'wf-rad' }))),
+              bots.length > ASSIGN_VISIBLE
+                ? h('button', { type: 'button', className: 'wf-more', 'data-more': 'bots', 'aria-expanded': botsExpanded, onClick: () => setBotsExpanded(value => !value) },
+                  botsExpanded ? tr('Show less') : tr('Show {count} more Bots', { count: bots.length - shownBots.length }))
+                : null)),
           h('div', { className: 'wf-modal-footer' },
             h('button', { type: 'button', className: 'wf-btn', onClick: onClose }, tr('Cancel')),
             h('button', { type: 'button', className: 'wf-btn wf-dark', disabled: !canAssign, onClick: () => { if (canAssign) onConfirm({ taskId, target }) } }, tr('Assign')))))
@@ -2089,8 +2105,10 @@ window.__ModuleLoader__.load({
         }
         try {
           const rows = await host('tasks', {})
+          // #2244: the dialog caps its own two lists and says how many it is not showing, so
+          // this read must not drop a card the owner can still pick.
           const real = Array.isArray(rows)
-            ? rows.filter(task => task && task.title && task.status !== 'cancelled').slice(0, 12).map(task => ({
+            ? rows.filter(task => task && task.title && task.status !== 'cancelled').map(task => ({
               id: task.id, title: task.title, status: task.status, priority: task.priority, column: columnOf(task),
             }))
             : []
@@ -2440,6 +2458,7 @@ window.__ModuleLoader__.load({
 .wf-canvas[data-fit="drawer"] .wf-term.wf-term-clamp .wf-term-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .wf-term-text{display:block}
 .wf-term-more{display:block;margin-top:2px;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:11.5px;cursor:pointer}
+.wf-more{display:block;margin-top:8px;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;cursor:pointer}
 .wf-flow-view .wf-node{box-sizing:border-box}
 .wf-flow-view .wf-plabel{width:max-content;box-sizing:border-box;white-space:normal}
 .wf-flow-view .wf-wires path{stroke-linejoin:round}
