@@ -481,3 +481,6 @@ New v7/pools-v4 Attempts distinguish logical role keys from developer/tester/rev
 
 
 Native host creation now prepares the exact context binding, invokes the existing Session/resource bind, then activates through a committed native.activate Effects marker. This orders all lease/carrier/Session metadata before archive admission or model input. The existing pre-step middleware closes startup/inbox bypasses for uncommitted or obsolete native bindings; ordinary Bots are unaffected.
+
+
+The pool host release adapter now delegates to one physical-exit query for SDK and native execution, requiring actual recorded proof and released leases before initiative can move. Native stop follows current parts and known subagent work, and supervisor recovery updates the exact historical/current role Session physical ID. Missing Bot records alone cannot advance a Task.

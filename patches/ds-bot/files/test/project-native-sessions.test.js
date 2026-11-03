@@ -9,7 +9,7 @@ function fixture() {
   const workspace = { id: 'workspace-1', path: '/registered/task', attemptId: 'a' }
   const agent = { session: { id: 'physical-1' }, status: 'idle', cancel() { cancelled++ }, async whenIdle() { if (hold) await hold; if (failure) throw Error('native drain failed') } }
   const rt = { state: { tasks: { t: { projectId: 'p' } }, bots: { bot1: { id: 'bot1', sessionId: 'physical-1', workspaceId: workspace.id, attemptId: 'a' } } },
-    ctx: { agents: { get: id => id === 'physical-1' ? agent : undefined }, workspaceRegistry: { async archiveSession(id) { archived.push(id) }, async unarchiveSession(id) { unarchived.push(id) } } },
+    ctx: { async parallel() {}, async waterfall(_event, _payload, next) { return next() }, sessions: { get: () => undefined }, agents: { get: id => id === 'physical-1' ? agent : undefined }, workspaceRegistry: { async archiveSession(id) { archived.push(id) }, async unarchiveSession(id) { unarchived.push(id) } } },
     botOf(id) { return rt.state.bots[id] }, chatOf(id) { return rt.state.bots[id]?.sessionId ?? id }, indexSessions() {}, resolveAgent: async () => agent, async save() { const captured = rt.projectEffects.capture(); rt.projectEffects.saved(captured) } }
   rt.projectEffects = createProjectEffects(rt)
   return { rt, session, workspace, agent, service: createProjectNativeSessions(rt), cancelled: () => cancelled, archived: () => archived, unarchived: () => unarchived, hold(value) { hold = value }, fail(value) { failure = value } }
@@ -153,4 +153,99 @@ test('native activation needs committed binding and current writable epoch befor
   assert.equal(f.service.admits('bot1'), false)
   await assert.rejects(f.service.activate(f.session, 'bot1'), /writable host/)
   assert.equal(f.service.admits('unrelated-personal-chief'), true)
+})
+
+function supervisedLease(f) {
+  const lease = { id: 'native-lease', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', sessionKey: f.session.id, resourceId: 'native-resource', generation: 7, status: 'running',
+    worker: { kind: 'native', botId: 'bot1' }, processScope: { kind: 'systemd-control-group', killMode: 'control-group', invocationId: 'a'.repeat(32), bootId: 'same-boot', unit: 'flybot.service', controlGroup: '/system.slice/flybot.service', hostPid: 12345 } }
+  f.session.resourceLease = { ...lease }
+  f.rt.state.projectResourceLeases = { [lease.id]: lease }
+  f.rt.state.projectAttempts = { a: { id: 'a', projectId: 'p', taskId: 't', roleSessions: { developer: f.session } } }
+  return lease
+}
+test('supervisor-confirmed old host exit preserves the latest native context without resuming a stale worker', async () => {
+  const f = fixture(), lease = supervisedLease(f)
+  await f.service.bind(f.session, f.workspace, 'bot1')
+  f.rt.state.bots.bot1.sessionId = 'latest-native-part'; f.rt.state.bots.bot1.segments = [{ sessionId: 'physical-1', endedAt: 1 }]
+  f.rt.resolveAgent = async () => { throw Error('Must not resume old activity to manufacture exit proof') }
+  let checks = 0
+  const restarted = createProjectNativeSessions(f.rt, { priorExit: async scope => { checks++; return scope.invocationId === 'a'.repeat(32) } })
+  const proof = await restarted.stop('bot1')
+  assert.equal(checks, 1); assert.equal(f.cancelled(), 0)
+  assert.equal(proof.kind, 'systemd-prior-invocation-exited'); assert.equal(proof.previousInvocationId, lease.processScope.invocationId)
+  assert.equal(proof.sessionId, 'latest-native-part'); assert.equal(f.session.sessionId, 'latest-native-part')
+  const row = f.rt.state.projectNativeWorkers.bot1
+  assert.equal(nativeExitConfirmed(f.rt.state, row), true)
+  lease.status = 'released'; lease.releaseProof = proof; delete f.rt.state.bots.bot1
+  assert.equal(restarted.previous({ ...f.session, id: 'next-role' }, f.workspace).row, row)
+})
+test('native old-host recovery rejects missing process-group proof and scope changes during inspection', async () => {
+  for (const variant of ['unconfirmed', 'unmanaged', 'changed']) {
+    const f = fixture(), lease = supervisedLease(f)
+    await f.service.bind(f.session, f.workspace, 'bot1')
+    if (variant === 'unmanaged') lease.processScope.kind = 'unmanaged-process'
+    const restarted = createProjectNativeSessions(f.rt, { priorExit: async () => {
+      if (variant === 'changed') lease.generation++
+      return variant !== 'unconfirmed'
+    } })
+    await assert.rejects(restarted.stop('bot1'), /host|scope|binding|generation/)
+    assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), false)
+    assert.equal(lease.status, 'running')
+  }
+})
+
+test('native exit remains unconfirmed while registered jobs or subagents are still stopping', async () => {
+  const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1')
+  let requested = 0
+  f.rt.ctx.parallel = async (event, body) => { assert.equal(event, 'workspace/session-stop'); assert.equal(body.sessionId, 'physical-1'); requested++ }
+  f.rt.ctx.waterfall = async () => [{ kind: 'job', items: [{ id: 'still-stopping-job' }] }, { kind: 'subagent', items: [{ id: 'child' }] }]
+  await assert.rejects(f.service.stop('bot1'), /registered session work/)
+  const row = f.rt.state.projectNativeWorkers.bot1
+  assert.equal(nativeExitConfirmed(f.rt.state, row), false)
+  assert.deepEqual(row.pendingWork, [{ kind: 'job', count: 1 }, { kind: 'subagent', count: 1 }])
+  f.rt.ctx.waterfall = async () => []
+  await f.service.stop('bot1')
+  assert.equal(requested, 2); assert.equal(nativeExitConfirmed(f.rt.state, row), true)
+  assert.equal(row.releaseProof.registeredWorkEmpty, true)
+})
+test('native admission fences subagent lineage and missing legacy execution bindings while preserving ordinary Bots', async () => {
+  const f = fixture()
+  f.rt.selfOf = id => id === 'physical-1' ? 'bot1' : id === 'legacy-session' ? 'legacy' : id === 'personal-session' ? 'personal' : undefined
+  f.rt.state.bots.legacy = { id: 'legacy', ephemeral: { plugin: 'flybot-workflow' }, workspaceId: 'w', attemptId: 'old' }
+  f.rt.state.bots.personal = { id: 'personal' }
+  await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.activate(f.session, 'bot1')
+  const child = { session: { id: 'child', header: { id: 'child', origin: 'subagent', parentSession: 'physical-1' } } }
+  assert.equal(f.service.admitsAgent(child), true)
+  await f.service.stop('bot1')
+  assert.equal(f.service.admitsAgent(child), false)
+  assert.equal(f.service.admitsAgent({ session: { id: 'legacy-session' } }), false)
+  assert.equal(f.service.admitsAgent({ session: { id: 'personal-session' } }), true)
+})
+test('native host scope is captured without a resource and supports only actual supervisor exit recovery', async () => {
+  const f = fixture()
+  const scope = { kind: 'systemd-control-group', killMode: 'control-group', invocationId: 'b'.repeat(32), unit: 'flybot.service', controlGroup: '/system.slice/flybot.service', bootId: 'same-boot' }
+  const original = createProjectNativeSessions(f.rt, { captureScope: async () => scope })
+  await original.bind(f.session, f.workspace, 'bot1')
+  const restarted = createProjectNativeSessions(f.rt, { priorExit: async value => value === scope })
+  const proof = await restarted.stop('bot1')
+  assert.equal(proof.previousInvocationId, scope.invocationId)
+  assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), true)
+})
+
+
+test('native drain includes idle subagent jobs and earlier context parts before proving exit', async () => {
+  const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.activate(f.session, 'bot1')
+  f.rt.selfOf = id => id === 'physical-1' ? 'bot1' : undefined
+  const child = { session: { id: 'child-session', header: { id: 'child-session', origin: 'subagent', parentSession: 'physical-1' } } }
+  assert.equal(f.service.admitStep(child), true)
+  f.rt.state.bots.bot1.segments = [{ sessionId: 'earlier-part' }]
+  const stopped = []
+  f.rt.ctx.parallel = async (_event, body) => { stopped.push(body.sessionId) }
+  f.rt.ctx.waterfall = async (_event, body) => body.sessionId === 'child-session' ? [{ kind: 'job', items: [{ id: 'idle-child-job' }] }] : []
+  await assert.rejects(f.service.stop('bot1'), /registered session work/)
+  assert.ok(stopped.includes('child-session')); assert.ok(stopped.includes('earlier-part'))
+  assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), false)
+  f.rt.ctx.waterfall = async () => []
+  await f.service.stop('bot1')
+  assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), true)
 })

@@ -1,5 +1,6 @@
 // Native execution keeps exact Task-role context; Bot deletion is not exit proof.
 import { createHash, randomUUID } from 'node:crypto'
+import { captureProcessScope, priorScopeExited, supervisorProofMatches } from './project-process-proof.js'
 import { ownEntry, setEntry } from './store.js'
 import { taskSession, taskSessionId, roleDefinitionKey, pinTaskRoleDefinition } from './project-task-sessions.js'
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -7,12 +8,13 @@ const refuse = message => Object.assign(new Error(message), { code: 'bot/context
 const clone = value => structuredClone(value)
 export function nativeExitConfirmed(state, row) {
   const proof = row?.releaseProof
-  if (!row || row.version !== 'project-native-worker/v1' || row.status !== 'quiescent' || proof?.kind !== 'native-agent-quiescent' || proof.workerId !== row.id || proof.sessionId !== row.sessionId || proof.generation !== row.generation || proof.bindingKey !== row.bindingKey) return false
-  if (!row.leaseId) return true
+  if (!row || row.version !== 'project-native-worker/v2' || row.status !== 'quiescent' || !['native-agent-quiescent', 'systemd-prior-invocation-exited'].includes(proof?.kind) || proof.workerId !== row.id || proof.sessionId !== row.sessionId || proof.generation !== row.generation || proof.bindingKey !== row.bindingKey) return false
+  if (proof.kind === 'native-agent-quiescent' && proof.registeredWorkEmpty !== true) return false
+  if (!row.leaseId) return proof.kind === 'native-agent-quiescent' || supervisorProofMatches(row.processScope, proof)
   const lease = ownEntry(state.projectResourceLeases ?? {}, row.leaseId)
-  return Boolean(lease && lease.projectId === row.projectId && lease.attemptId === row.attemptId && lease.role === row.role && lease.sessionKey === row.sessionKey && lease.resourceId === row.resourceId && lease.generation === row.generation && lease.worker?.kind === 'native' && lease.worker.botId === row.id)
+  return Boolean(lease && lease.projectId === row.projectId && lease.attemptId === row.attemptId && lease.role === row.role && lease.sessionKey === row.sessionKey && lease.resourceId === row.resourceId && lease.generation === row.generation && lease.worker?.kind === 'native' && lease.worker.botId === row.id && (proof.kind !== 'systemd-prior-invocation-exited' || supervisorProofMatches(lease.processScope, proof)))
 }
-export function createProjectNativeSessions(rt) {
+export function createProjectNativeSessions(rt, { priorExit = priorScopeExited, captureScope = captureProcessScope } = {}) {
   const hostEpoch = randomUUID()
   const rows = () => (rt.state.projectNativeWorkers ??= {})
   const stopping = new Map()
@@ -74,7 +76,7 @@ export function createProjectNativeSessions(rt) {
       bot.segments = clone(original.segments ?? [])
       rt.indexSessions?.()
     }
-    const row = { id: botId, hostEpoch, version: 'project-native-worker/v1', projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId,
+    const row = { id: botId, hostEpoch, version: 'project-native-worker/v2', processScope: await captureScope(), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId,
       role: session.role, model: bot.model ?? null, ...(original ? { continuedFrom: original.id } : {}), logicalSessionId: selected.logical.id, sessionKey: session.id, sessionId, cwd: workspace.path, bindingKey: selected.key,
       definitionKey: roleDefinitionKey(session), generation: session.resourceLease?.generation ?? session.generation ?? 0,
       ...(session.resourceLease ? { leaseId: session.resourceLease.id, resourceId: session.resourceLease.resourceId } : {}), status: 'bound', createdAt: Date.now() }
@@ -102,6 +104,29 @@ export function createProjectNativeSessions(rt) {
     }
     return { workerId: row.id, sessionId: row.sessionId }
   }
+  function ownedSessions(row, bot, sessionId) {
+    const ids = new Set([sessionId, row.sessionId, ...(bot.segments ?? []).map(value => value.sessionId), ...(row.knownSessionIds ?? [])].filter(Boolean))
+    const headers = (rt.ctx.sessions?.list?.() ?? []).map(value => value.header)
+    let changed
+    do {
+      changed = false
+      for (const header of headers) if (header.origin === 'subagent' && ids.has(header.parentSession) && !ids.has(header.id)) { ids.add(header.id); changed = true }
+    } while (changed)
+    row.knownSessionIds = [...ids]
+    return row.knownSessionIds
+  }
+  function recordExit(row, bot, details) {
+    const sessionId = rt.chatOf(row.id), logical = taskSession(rt.state, row), last = logical.bindings.at(-1)
+    if (last?.workerId !== row.id || last.key !== row.bindingKey) throw refuse('Native worker is not the latest Task-role binding')
+    row.version = 'project-native-worker/v2'
+    row.sessionId = sessionId; row.model = bot.model ?? null; row.segments = clone(bot.segments ?? [])
+    last.sessionId = sessionId
+    const attempt = ownEntry(rt.state.projectAttempts ?? {}, row.attemptId)
+    const session = [attempt?.roleSessions?.[row.role], ...(attempt?.roleSessionHistory ?? [])].find(value => value?.id === row.sessionKey && value.botId === row.id)
+    if (session) session.sessionId = sessionId
+    row.releaseProof = { ...details, workerId: row.id, sessionId, bindingKey: row.bindingKey, generation: row.generation, at: Date.now() }
+    row.status = 'quiescent'
+  }
   async function stop(botId) {
     const row = ownEntry(rows(), botId)
     if (!row) return false
@@ -109,23 +134,55 @@ export function createProjectNativeSessions(rt) {
     const bot = rt.botOf(botId), sessionId = bot && rt.chatOf(botId)
     row.status = 'stopping'; await rt.save()
     try {
-      if (row.hostEpoch !== hostEpoch) throw refuse('Native execution belongs to an earlier host; reconcile actual prior exit before resuming')
+      if (row.hostEpoch !== hostEpoch) {
+        const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId), scope = lease?.processScope ?? row.processScope
+        const proof = { kind: 'systemd-prior-invocation-exited', previousInvocationId: scope?.invocationId }
+        if (!bot || !supervisorProofMatches(scope, proof) || !await priorExit(scope)) throw refuse('Native execution belongs to an earlier host; actual prior process-group exit is unconfirmed')
+        if (ownEntry(rows(), botId) !== row || rt.botOf(botId) !== bot || rt.chatOf(botId) !== sessionId || row.leaseId && (!lease || lease.generation !== row.generation || lease.worker?.kind !== 'native' || lease.worker.botId !== botId || lease.projectId !== row.projectId || lease.attemptId !== row.attemptId || lease.role !== row.role || lease.sessionKey !== row.sessionKey || lease.resourceId !== row.resourceId || lease.processScope !== scope) || !row.leaseId && row.processScope !== scope) throw refuse('Native prior-host scope or binding changed during exit inspection')
+        recordExit(row, bot, proof)
+        await rt.save()
+        return clone(row.releaseProof)
+      }
       const agent = sessionId && await rt.resolveAgent(sessionId)
       if (!bot || !agent || agent.session?.id !== sessionId || typeof agent.cancel !== 'function' || typeof agent.whenIdle !== 'function') throw refuse('Native worker stop is unconfirmed; keep its execution/resource held')
       agent.cancel({ kind: 'hook', reason: 'Project native execution release' })
+      if (typeof rt.ctx.parallel !== 'function' || typeof rt.ctx.waterfall !== 'function') throw refuse('Native registered session work cannot be inspected; keep execution held')
+      const sessions = ownedSessions(row, bot, sessionId)
+      await Promise.all(sessions.map(sessionId => rt.ctx.parallel('workspace/session-stop', { sessionId })))
       await agent.whenIdle()
+      const reports = await Promise.all(sessions.map(sessionId => rt.ctx.waterfall('workspace/session-activity', { sessionId }, () => Promise.resolve([]))))
+      const activity = reports.flatMap(report => Array.isArray(report) ? report : [{ kind: 'unknown' }])
+      if (activity.length) {
+        row.pendingWork = activity.map(value => ({ kind: value.kind, count: value.items?.length ?? 1 }))
+        throw refuse('Native registered session work is still stopping; keep execution and resources held')
+      }
+      delete row.pendingWork
       if (ownEntry(rows(), botId) !== row || rt.botOf(botId) !== bot || rt.chatOf(botId) !== sessionId || agent.status !== 'idle') throw refuse('Native worker changed before quiescence confirmation')
-      row.sessionId = sessionId; row.segments = clone(bot.segments ?? [])
-      const logical = taskSession(rt.state, row), last = logical.bindings.at(-1)
-      if (last?.workerId !== botId || last.key !== row.bindingKey) throw refuse('Native worker is not the latest Task-role binding')
-      last.sessionId = sessionId
-      row.releaseProof = { kind: 'native-agent-quiescent', workerId: botId, sessionId, bindingKey: row.bindingKey, generation: row.generation, at: Date.now() }
-      row.status = 'quiescent'
+      recordExit(row, bot, { kind: 'native-agent-quiescent', registeredWorkEmpty: true })
       await rt.save()
       return clone(row.releaseProof)
     } catch (error) { row.status = 'stop-unconfirmed'; delete row.releaseProof; row.failure = String(error.message).slice(0, 1000); await rt.save(); throw error }
   }
-  return { previous, activate, async bind(session, workspace, botId) {
+  function admitsAgent(agent, track = false) {
+    let header = agent.session.header ?? { id: agent.session.id }
+    const visited = new Set()
+    while (!visited.has(header.id)) {
+      visited.add(header.id)
+      const botId = rt.selfOf(header.id), bot = botId && rt.botOf(botId)
+      const row = ownEntry(rt.state.projectNativeWorkers ?? {}, botId)
+      if (row) {
+        const admitted = api.admits(botId)
+        if (admitted && track) row.knownSessionIds = [...new Set([...(row.knownSessionIds ?? []), ...visited])]
+        return admitted
+      }
+      if (bot?.ephemeral && bot.workspaceId && bot.attemptId) return false
+      if (header.origin !== 'subagent' || !header.parentSession) return true
+      const parent = rt.ctx.sessions.get(header.parentSession)
+      header = parent?.header ?? { id: header.parentSession }
+    }
+    return false
+  }
+  const api = { previous, activate, admitsAgent, admitStep: agent => admitsAgent(agent, true), currentHost: botId => Boolean(rt.botOf(botId) && ownEntry(rt.state.projectNativeWorkers ?? {}, botId)?.hostEpoch === hostEpoch), async bind(session, workspace, botId) {
       const key = taskSessionId(session.projectId, session.taskId, session.role)
       if (binding.has(key)) throw refuse('Native Task-role binding is already in progress')
       binding.add(key)
@@ -138,4 +195,5 @@ export function createProjectNativeSessions(rt) {
       if (stopping.has(botId)) return stopping.get(botId)
       const operation = stop(botId).finally(() => stopping.delete(botId)); stopping.set(botId, operation); return operation
     } }
+  return api
 }

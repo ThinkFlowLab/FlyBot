@@ -1402,7 +1402,7 @@ export function install(rt) {
             },
             async release(id) {
               await lifecycle.release(id)
-              return !rt.botOf(id) && (!rt.state.projectHarnessWorkers?.[id] || rt.state.projectHarnessWorkers[id].status === 'released')
+              return rt.projectDelivery.exitConfirmed(id)
             },
             evidence({ attemptId }) {
               const attempt = rt.state.projectAttempts?.[attemptId]

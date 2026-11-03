@@ -420,3 +420,5 @@ explicit incompatible recovery, current rights/resource checks and truthful adap
 capabilities. Native Task-role context restoration, parent waits, transactional Effects
 and external command receipts remain dependent acceptance; no live-provider or deploy
 claim from controlled process tests. README/API rewrite remains last (#2189).
+
+Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.

@@ -701,3 +701,13 @@ complete mandatory policy past its existing cap. Keep current owner rules and co
 state in PROJECT.md; archive completed implementation/probe detail verbatim behind
 links. The mandatory source list and byte cap remain unchanged, and the existing
 all-role budget regression must pass without silently truncating instructions.
+
+
+### 2026-11-03 — Every exit consumer must use the same proof
+
+Seen 1× (actual pool adapter regression). Resource release had stopped trusting Bot
+absence, but its caller still returned exitConfirmed=true for an unknown missing Bot.
+Use one proof query at the initiative boundary too. Native Agent idle also excludes
+background jobs: stop/query registered work across earlier parts and child lineage,
+and preserve unknown occupancy until it settles. After restart reuse exact supervisor
+facts without auto-resuming an old worker or confusing a reused PID with ownership.

@@ -1,6 +1,8 @@
 ---
 subsystem: project-harness
 owned_paths:
+  - core/src/host/project-execution-exit.js
+  - core/test/project-execution-exit.test.js
   - core/src/host/project-native-sessions.js
   - core/test/project-native-sessions.test.js
   - core/test/project-native-exit.test.js
@@ -312,3 +314,34 @@ read-only native work, including startup/inbox paths that bypass ordinary delive
 Unrelated personal Chief/group Bots retain their original admission behavior. No new
 executor or polling timer is involved. Current-role in-flight abort/reconciliation and
 unknown old-host exit remain separate tracked acceptance.
+
+
+## Physical exit and host recovery (#2184)
+
+The actual pool host adapter now asks the shared execution-exit checker after release;
+a missing Bot/unknown worker alone cannot transfer execution authority. SDK facts use
+the existing confirmed-worker-exit contract plus a released lease. Native facts use the
+matching quiescence record and released lease, or a persisted verified supervisor
+process-group exit for a legacy lease. Physical exit does not invent recoverable context.
+
+New `project-native-worker/v2` records capture the existing host process scope even
+without an explicit resource. Normal exit requests all registered work to stop, waits
+for Agent idle, and checks Workspace activity for current/earlier context parts and
+known subagent Sessions. Idle-child background jobs still block release. Native pre-step
+admission follows durable subagent lineage and records its Session IDs; an obsolete or
+unactivated ancestor cannot resume through a child. Missing legacy execution bindings
+are fenced, while ordinary personal Chiefs/groups retain their original behavior.
+Registered work still stopping leaves bounded kind/count facts and held capacity;
+no timeout fabricates exit. The existing Task/Chief retry path can recheck after actual
+work has settled. This is registered-platform work proof in the trusted host profile,
+not a claim of adversarial OS isolation.
+
+For a previous host epoch, native stop never resumes an old Agent to infer safety.
+It reuses `priorScopeExited` with the exact recorded systemd control-group/invocation
+and validates lease/worker/generation before and after inspection. Matching proof
+preserves latest context parts and updates the exact Attempt role Session metadata.
+Unknown/unmanaged groups, missing/latest context or changed binding remain held.
+Capacity may be released from an actually verified legacy supervisor fact while
+context restoration still refuses an unknown binding. Reconciliation respects actual
+host epoch rather than PID equality and preserves an already confirmed nested release.
+Tests inject manager observations; they do not claim a real systemd restart acceptance.

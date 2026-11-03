@@ -24,3 +24,7 @@ export async function priorScopeExited(scope, options = {}) {
   // Different machines/boots, unmanaged launchers or changed kill policy remain unknown.
   return current.kind === 'systemd-control-group' && current.bootId === scope.bootId && current.unit === scope.unit && current.controlGroup === scope.controlGroup && current.invocationId !== scope.invocationId
 }
+export function supervisorProofMatches(scope, proof) {
+  return Boolean(scope?.kind === 'systemd-control-group' && scope.killMode === 'control-group' && /^[a-f0-9]{32}$/.test(scope.invocationId ?? '') &&
+    proof?.kind === 'systemd-prior-invocation-exited' && proof.previousInvocationId === scope.invocationId)
+}

@@ -1,6 +1,6 @@
 // Operator-provisioned execution capabilities; Project configuration only references IDs.
 import { nativeExitConfirmed } from './project-native-sessions.js'
-import { captureProcessScope, priorScopeExited } from './project-process-proof.js'
+import { captureProcessScope, priorScopeExited, supervisorProofMatches } from './project-process-proof.js'
 import { execFile, spawn } from 'node:child_process'
 import { realpath, copyFile, stat } from 'node:fs/promises'
 import { randomUUID, createHash } from 'node:crypto'
@@ -14,7 +14,7 @@ const active = lease => lease.status !== 'released'
 const contains = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith(`..${sep}`) && !isAbsolute(part) }
 const safeEnv = () => ({ PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8' })
 
-export function createProjectResources(rt) {
+export function createProjectResources(rt, { priorExit = priorScopeExited } = {}) {
   const { state, config } = rt
   const leases = () => (state.projectResourceLeases ??= {})
   const resources = () => config.projectResources ?? {}
@@ -122,7 +122,11 @@ export function createProjectResources(rt) {
     if (lease.status === 'released') return
     const worker = lease.worker
     const native = worker?.kind === 'native' && ownEntry(state.projectNativeWorkers ?? {}, worker.botId)
-    const confirmed = !worker || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) && native?.leaseId === lease.id && nativeExitConfirmed(state, native) || worker.kind !== 'native' && typeof worker.handle === 'string' && worker.handle.length > 0 && confirmation?.handle === worker.handle && confirmation?.exited === true
+    const scope = lease.processScope
+    const supervisor = worker?.kind === 'native' && supervisorProofMatches(scope, confirmation?.proof) && await priorExit(scope)
+    if (requireLease(id, generation) !== lease || lease.worker !== worker || lease.processScope !== scope) throw failure('Execution resource binding changed during exit inspection')
+    if (lease.status === 'released') return
+    const confirmed = supervisor || !worker || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) && native?.leaseId === lease.id && nativeExitConfirmed(state, native) || worker.kind !== 'native' && typeof worker.handle === 'string' && worker.handle.length > 0 && confirmation?.handle === worker.handle && confirmation?.exited === true
     lease.status = confirmed ? 'released' : 'stopping'
     if (confirmed) { lease.releasedAt = Date.now(); lease.releaseProof ??= confirmation?.proof ?? native?.releaseProof ?? { kind: worker ? 'host-confirmed-worker-exit' : 'unbound-reservation-release', at: lease.releasedAt } }
     await rt.save()
@@ -141,8 +145,8 @@ export function createProjectResources(rt) {
   async function reconcile() {
     let changed = false
     for (const lease of Object.values(leases()).filter(active)) {
-      if (lease.processScope?.hostPid === process.pid && (lease.worker?.kind === 'native' || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle))) continue
-      const priorExited = lease.processScope && await priorScopeExited(lease.processScope)
+      if (lease.processScope?.hostPid === process.pid && (lease.worker?.kind === 'native' && rt.projectDelivery?.nativeSessions?.currentHost(lease.worker.botId) || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle))) continue
+      const priorExited = lease.processScope && await priorExit(lease.processScope)
       // The supervisor read yields: a confirmed concurrent release is final.
       if (!active(lease)) continue
       if (priorExited) {
@@ -152,14 +156,15 @@ export function createProjectResources(rt) {
           if (!bot.ephemeral || !bot.attemptId) continue
           await rt.flybot.scope('flybot-workflow').bot.remove(bot.id)
         }
-        lease.releaseProof = { kind: 'systemd-prior-invocation-exited', previousInvocationId: lease.processScope.invocationId, at: Date.now() }
-        await release(lease.id, lease.generation, { handle: lease.worker?.handle, exited: true })
+        if (!active(lease)) { changed = true; continue }
+        const proof = { kind: 'systemd-prior-invocation-exited', previousInvocationId: lease.processScope.invocationId, at: Date.now() }
+        await release(lease.id, lease.generation, { handle: lease.worker?.handle, exited: true, proof })
         const row = rt.state.projectHarnessWorkers?.[lease.worker?.handle]
         if (row) { row.status = 'released'; row.releasedAt = Date.now(); row.releaseProof = lease.releaseProof; await rt.projectDelivery?.releaseSession(row.id); changed = true }
         continue
       }
       if (lease.processScope?.hostPid === process.pid) {
-        if (lease.worker?.kind === 'native' || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle)) continue
+        if (lease.worker?.kind === 'native' && rt.projectDelivery?.nativeSessions?.currentHost(lease.worker.botId) || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle)) continue
       }
       if (!lease.worker) { if (lease.status === 'unreachable') await release(lease.id, lease.generation); continue }
       if (lease.worker.kind === 'native' && !ownEntry(state.bots ?? {}, lease.worker.botId)) await release(lease.id, lease.generation)
