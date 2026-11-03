@@ -4345,3 +4345,61 @@ test('#2244: three Bots keep today\'s pick list and the bot:2 body', async () =>
     } finally { ui.view.unmount() }
   })
 })
+
+// #2245 / P-461: with no Workflow defined step 2 has nothing to pick, so `target` stays ''. The
+// dialog still lit **Assign** and posting it sent `workflowId: ''`, which the host answers with
+// "No such workflow": a button that looks ready and can only fail. It now stays disabled until a
+// target is picked — a Workflow, or a Bot through the same list.
+function noLaneCall() {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [], templates: [] }
+    return { ok: true, workflows: [] }
+  }
+  return { call, calls }
+}
+
+const targetCards = dialog => findAll(dialog, node => String(node.props?.className ?? '').split(' ').includes('wf-tgt'))
+const pickedTargets = dialog => targetCards(dialog).filter(node => String(node.props?.className ?? '').split(' ').includes('sel'))
+
+test('no Workflow yet: step 2 offers no target and Assign stays disabled', async () => {
+  const { call } = noLaneCall()
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Writer Bot' }] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    assert.ok(dialog, 'the dialog opens even though no Workflow exists')
+    assert.ok(targetCards(dialog).length > 0, 'step 2 still offers the Bots it can hand the task to')
+    assert.deepEqual(pickedTargets(dialog), [], 'nothing is selected: there is no Workflow to default to')
+    assert.equal(assignOf(dialog).props.disabled, true, 'so Assign must stay disabled')
+    view.unmount()
+  })
+})
+
+test('no Workflow yet: clicking Assign posts nothing', async () => {
+  const { call, calls } = noLaneCall()
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Writer Bot' }] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    assignOf(dialog).props.onClick()
+    await settle()
+    assert.deepEqual(calls.filter(item => item.name === 'workflow/assign').map(item => item.body), [], 'a click with no target must not reach the host')
+    assert.ok(dialogOf(view), 'and the dialog stays open')
+    view.unmount()
+  })
+})
+
+test('positive control: with a Workflow the first one is picked and Assign is live', async () => {
+  const graph = { ...delivery(), id: 'lane-a', name: 'Lane A' }
+  const { call } = assignCall(graph, () => ({ ok: true, workflows: [graph] }))
+  await withTaskHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [{ id: 'b1', name: 'Writer Bot' }] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    assert.equal(pickedTargets(dialog).length, 1, 'the first Workflow is picked by default')
+    assert.equal(assignOf(dialog).props.disabled, false, 'and Assign is live')
+    view.unmount()
+  })
+})
