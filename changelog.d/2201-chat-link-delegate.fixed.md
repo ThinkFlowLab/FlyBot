@@ -1,0 +1,1 @@
+A link picked in a chat message now opens in FlyBot's own browser panel: the host used to open it in its right sidebar, a tab this panel's fixed layer covers, so the content area looked blank with no error to explain it. The bubble's Markdown is delegated to FlyBot's panel now, and a window without the Desktop bridge opens the page itself.

@@ -6836,7 +6836,18 @@ var import_react10 = require("react");
 var import_react_dom = require("react-dom");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
-function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
+function bubbleMarkdown({ actions, subject, openFile, fileImages, ...markdown }) {
+  const openExternalLink = (href) => {
+    const tabId = typeof actions?.browserNewTab === "function" ? actions.browserNewTab(subject) : null;
+    if (tabId !== void 0 && tabId !== null && typeof actions.browserNavigate === "function") {
+      void actions.browserNavigate(tabId, href);
+      return;
+    }
+    if (typeof window !== "undefined" && typeof window.open === "function") window.open(href, "_blank", "noopener");
+  };
+  return (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownDelegateProvider, { openExternalLink, openFile, fileImages }, (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, markdown));
+}
+function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions, openFile, fileImages }) {
   const onClick = (event) => {
     const target = mentionTarget(event);
     if (target === null) return;
@@ -6867,7 +6878,7 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
           (0, import_react10.createElement)(
             "div",
             { className: "bt-bubble" },
-            (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(text2, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
+            bubbleMarkdown({ text: linkMentions(text2, roster.bots, selfId), actions, subject: selfId ?? sessionId, openFile, fileImages, streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
           ),
           live ? null : (0, import_react10.createElement)(MessageTools, { text: text2, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(key, reactIndex(index), emoji) : void 0, actions })
         ),
@@ -7030,7 +7041,7 @@ function friendLead(bot, texts2) {
   if (texts2.every((text2) => /^Not sent:/.test(text2.trim()))) return void 0;
   return (0, import_react10.createElement)("span", { className: "bt-lead", title: bot.name, "data-flybot": "friend-lead" }, (0, import_react10.createElement)(BotMark, { bot, size: 22 }));
 }
-function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
+function AssistantCell({ node, groupPart, sessionId, openFile, fileImages, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
   const roster = useRoster((value) => value);
   const data = node.data;
   const steps = useTurnSteps(String(data.turn));
@@ -7048,7 +7059,7 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
   const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : [];
   if (texts2.length === 0 && !reasoning && relays.length === 0) return null;
   const selfId = roster.byId[sessionId]?.id ?? sessionId;
-  const bubbles = texts2.length ? person ? (0, import_react10.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi }) : (0, import_react10.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts2) }) : null;
+  const bubbles = texts2.length ? person ? (0, import_react10.createElement)(PersonMessage, { name: person, texts: texts2, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, openFile, fileImages }) : (0, import_react10.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts2), openFile, fileImages }) : null;
   return (0, import_react10.createElement)(
     import_react10.Fragment,
     null,
@@ -7080,14 +7091,14 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
     closing ? (0, import_react10.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null
   );
 }
-function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
+function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi, openFile, fileImages }) {
   if (!(texts2 ?? []).some((text2) => String(text2 ?? "").trim() !== "")) return null;
   const lead = (0, import_react10.createElement)("span", { className: "bt-lead", title: name }, (0, import_react10.createElement)(PersonMark, { name }));
   return (0, import_react10.createElement)(
     "div",
     { className: "bt-group-msg bt-person-msg", "data-person": name },
     (0, import_react10.createElement)("span", { className: "bt-group-name" }, name),
-    (0, import_react10.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi, lead })
+    (0, import_react10.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi, lead, openFile, fileImages })
   );
 }
 function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
@@ -7141,7 +7152,7 @@ function heldLineState(room2, { seq, botId, text: text2 } = {}, now = Date.now()
   if (entry.status !== "pending" && entry.status !== "sending") return void 0;
   return room2.face?.status === "left" || room2.face?.status === "closed" ? "rejected" : "held";
 }
-function GroupMessage({ bot, text: text2, room: room2, roster, actions, msgKey, useUi, seq }) {
+function GroupMessage({ bot, text: text2, room: room2, roster, actions, msgKey, useUi, seq, openFile, fileImages }) {
   if (String(text2 ?? "").trim() === "") return null;
   const held = heldLineState(room2, { seq, botId: bot.id, text: text2 });
   if (held === "rejected") {
@@ -7168,7 +7179,7 @@ function GroupMessage({ bot, text: text2, room: room2, roster, actions, msgKey, 
     "div",
     { className: "bt-group-msg" },
     name,
-    (0, import_react10.createElement)(Bubbles, { texts: [text2], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
+    (0, import_react10.createElement)(Bubbles, { texts: [text2], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead, openFile, fileImages })
   );
 }
 function remoteSpeaker(source, roster, sessionId) {
@@ -7203,7 +7214,7 @@ function faceSeatLook(room2, handle) {
   return Object.keys(look).length ? look : void 0;
 }
 var cleanCarrier = (value) => typeof value === "string" && value.trim() && !/[@()]/.test(value) ? value.trim() : "";
-function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey, useUi }) {
+function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey, useUi, openFile, fileImages }) {
   const room2 = roster.roomsById?.[sessionId];
   const face = room2?.origin === "face-to-face";
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
@@ -7222,7 +7233,7 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
         person,
         carrier ? (0, import_react10.createElement)("span", { className: "bt-remote-handle" }, t("via {name}", { name: carrier })) : null
       ),
-      String(words ?? "").trim() === "" ? null : (0, import_react10.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react10.createElement)("span", { className: "bt-lead", title: person }, (0, import_react10.createElement)(PersonMark, { name: person })) }),
+      String(words ?? "").trim() === "" ? null : (0, import_react10.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: (0, import_react10.createElement)("span", { className: "bt-lead", title: person }, (0, import_react10.createElement)(PersonMark, { name: person })), openFile, fileImages }),
       files.length ? (0, import_react10.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
     );
   }
@@ -7238,7 +7249,7 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
       name,
       (0, import_react10.createElement)("span", { className: "bt-remote-handle", title: source.remote.home ?? handle, "aria-label": t("Friend's Bot") }, (0, import_react10.createElement)(GlobeMark), handle)
     ),
-    String(words ?? "").trim() === "" ? null : (0, import_react10.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
+    String(words ?? "").trim() === "" ? null : (0, import_react10.createElement)(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead, openFile, fileImages }),
     files.length ? (0, import_react10.createElement)(RemoteFiles, { files, plugin: member?.plugin ?? "social", botId: roster.byId[sessionId]?.id ?? sessionId }) : null
   );
 }
@@ -7318,7 +7329,7 @@ var scrollParent = (node) => {
   }
   return null;
 };
-function EarlierParts({ sessionId, roster, actions, useUi }) {
+function EarlierParts({ sessionId, roster, actions, useUi, openFile, fileImages }) {
   const [view, setView] = (0, import_react10.useState)({ items: [], cursor: void 0, loading: true, failed: false, startedAt: null });
   const top = (0, import_react10.useRef)(null);
   const busy = (0, import_react10.useRef)(false);
@@ -7392,13 +7403,13 @@ function EarlierParts({ sessionId, roster, actions, useUi }) {
           return (0, import_react10.createElement)("div", { key, className: "bt-urow" }, (0, import_react10.createElement)(
             "div",
             { className: "bt-ububble" },
-            row.text ? (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: row.text, labels: mdLabels(), variant: "compact" }) : null,
+            row.text ? bubbleMarkdown({ text: row.text, actions, subject: selfId ?? sessionId, openFile, fileImages, labels: mdLabels(), variant: "compact" }) : null,
             row.images ? (0, import_react10.createElement)("span", { className: "bt-uimages" }, row.images === 1 ? t("1 image") : t("{count} images", { count: row.images })) : null
           ));
         case "answer":
           return (0, import_react10.createElement)(AnsweredCell, { key, node: { data: row } });
         case "bot":
-          return (0, import_react10.createElement)(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi });
+          return (0, import_react10.createElement)(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi, openFile, fileImages });
         case "event": {
           if (row.role === "report") return (0, import_react10.createElement)(GroupEvent, { key, prefix: t("Replies from"), room: roster.roomsById[row.roomId], name: t("a group chat"), roster, actions });
           const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t("a Bot"), color: "gray" };
@@ -7414,7 +7425,7 @@ function EarlierParts({ sessionId, roster, actions, useUi }) {
     (0, import_react10.createElement)(PartLine, { time: view.startedAt })
   );
 }
-function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
+function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions, openFile, fileImages }) {
   const roster = useRoster((value) => value);
   const data = node.data;
   const source = data.source !== null && typeof data.source === "object" ? data.source : {};
@@ -7446,11 +7457,11 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
     if (source.form === "remote-chat") return null;
     if (source.shown === true) return null;
     if (source.remote?.handle) {
-      const message = (0, import_react10.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi });
+      const message = (0, import_react10.createElement)(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi, openFile, fileImages });
       return source.remote.firstContact === true ? (0, import_react10.createElement)(import_react10.Fragment, null, (0, import_react10.createElement)(FirstContact, { source, roster, sessionId }), message) : message;
     }
     if (source.kind === "bot") {
-      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react10.createElement)(EarlierParts, { sessionId, roster, actions, useUi });
+      if (source.handoff === true) return roster.roomsById[sessionId] ? null : (0, import_react10.createElement)(EarlierParts, { sessionId, roster, actions, useUi, openFile, fileImages });
       if (source.role === "room" || source.role === "kickoff") return null;
       if (source.role === "mention") return (0, import_react10.createElement)("div", { className: "bt-event" }, (0, import_react10.createElement)("span", null, contentText(data.content)));
       if (source.role === "secret" || deferred) return null;
@@ -7459,7 +7470,7 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
         if (source.notice === true || source.senderSessionId === "face-notice") return null;
         const room2 = roster.roomsById[sessionId];
         const poster = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t("a Bot"), color: "gray" };
-        return (0, import_react10.createElement)(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room: room2, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi });
+        return (0, import_react10.createElement)(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room: room2, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi, openFile, fileImages });
       }
       if (source.role === "report") {
         return (0, import_react10.createElement)(GroupEvent, { prefix: t("Replies from"), room: roster.roomsById[source.roomId], name: t("a group chat"), roster, actions });
@@ -7712,7 +7723,7 @@ function useLiveNote(actions, sessionId, id, entry) {
     return () => actions.noteLive(sessionId, id, null);
   }, [sessionId, id, key]);
 }
-function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
+function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, openFile, fileImages }) {
   const [live, setLive] = (0, import_react10.useState)({ replies: [] });
   (0, import_react10.useEffect)(() => {
     if (done) return void 0;
@@ -7756,7 +7767,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       if (reply.kind === "user") {
         const who = reply.name && reply.name !== "User" ? reply.name : reply.authorId;
         if (reply.other) {
-          return (0, import_react10.createElement)(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi });
+          return (0, import_react10.createElement)(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, openFile, fileImages });
         }
         return (0, import_react10.createElement)(
           "div",
@@ -7765,7 +7776,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           (0, import_react10.createElement)(
             "div",
             { className: "bt-ububble" },
-            (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: "compact" })
+            bubbleMarkdown({ text: remoteMessageText(reply.text), actions, subject: reply.botId ?? sessionId, openFile, fileImages, labels: mdLabels(), variant: "compact" })
           ),
           room2?.origin === "face-to-face" ? (0, import_react10.createElement)("span", { className: "bt-lead", title: who || void 0 }, (0, import_react10.createElement)(PersonMark, { name: who || void 0 })) : null
         );
@@ -7816,6 +7827,8 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
       const remote = reply.remote || reply.handle && !roster.byId[reply.botId];
       if (remote) {
         return (0, import_react10.createElement)(RemoteMessage, {
+          openFile,
+          fileImages,
           key: `${reply.botId || reply.handle}-${index}`,
           source: { remote: { handle: reply.handle || reply.botId }, senderName: reply.name || reply.who, senderSessionId: reply.botId },
           text: remoteMessageText(reply.text),
@@ -7826,7 +7839,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           useUi
         });
       }
-      return (0, import_react10.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
+      return (0, import_react10.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq, openFile, fileImages });
     })
   );
 }
@@ -7854,7 +7867,7 @@ function useShownCards(actions, sessionId, callIds) {
     return () => actions.noteCards(sessionId, ids, -1);
   }, [sessionId, key]);
 }
-function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
+function renderCall(call4, { sessionId, roster, actions, useUi, findBot, openFile, fileImages }) {
   const tool = toolName(call4);
   const done = call4.kind === "tool-result";
   const { text: arg, value: argValue } = toolArgs(call4);
@@ -7880,7 +7893,7 @@ function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
       return done && target ? (0, import_react10.createElement)(EventLine, { prefix: t("Updated"), bots: [target], onOpen: (bot) => actions.openSession(bot.id) }) : null;
     }
     case "group_relay":
-      return (0, import_react10.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi });
+      return (0, import_react10.createElement)(GroupReplies, { sessionId, callId: call4.callId, done, content: call4.content, roster, actions, useUi, openFile, fileImages });
     case "create_group":
     case "update_group":
     case "delete_group":
@@ -7931,7 +7944,7 @@ function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
       return null;
   }
 }
-function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
+function ToolCell({ node, sessionId, useRoster, useUi, actions, openFile, fileImages }) {
   const roster = useRoster((value) => value);
   const root = node.data.root;
   const turn = node.location?.turn?.turn ?? root.turn;
@@ -7944,7 +7957,7 @@ function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
   useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
   if (drawn.length === 0) return null;
-  const env = { sessionId, roster, actions, useUi, findBot };
+  const env = { sessionId, roster, actions, useUi, findBot, openFile, fileImages };
   return (0, import_react10.createElement)(import_react10.Fragment, null, drawn.map((call4, index) => (0, import_react10.createElement)(import_react10.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
 }
 
