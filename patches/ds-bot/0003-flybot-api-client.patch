@@ -1474,9 +1474,10 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { call } from './api.js'
 -import { isHex, inkText, paintCss } from './inks.js'
 -import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
+-import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
 +import { isHex } from './inks.js'
 +import { SHAPES, markupCache } from './characters.js'
- import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
++import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
 -import { MENTION_ORIGIN, currentPart } from './text.js'
 +import { currentPart, landingPart, setPluginTools } from './text.js'
@@ -1570,7 +1571,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
    const work = createSource({ bots: {}, approvals: [] })
    let workKey = ''
-@@ -125,6 +125,17 @@ export function apply(ctx) {
+@@ -125,18 +125,35 @@ export function apply(ctx) {
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
    })
@@ -1588,13 +1589,17 @@ diff --git a/src/client/index.js b/src/client/index.js
    const refreshed = new Set()
    // Pulls can overlap (the poll and a navigation); an older answer never wins.
    let pulls = 0
-@@ -132,11 +132,14 @@ export function apply(ctx) {
-   const pull = async () => {
+   let applied = 0
+-  const pull = async () => {
++  // A Reload in flight makes the poll stand back. Otherwise the loop's `unchanged` answer can take
++  // the applied slot first and the full answer the press asked for is dropped as the older one.
++  let reloading = 0
++  const pull = async ({ fresh = false } = {}) => {
      const order = ++pulls
      const known = roster.getSnapshot()
 -    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language() })
 +    // `watching`: this window is on screen, so the host reads friends' inboxes at the live cadence (#497).
-+    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language(), watching: !document.hidden })
++    const value = await call('state', { ...stateRequest(known, { fresh }), locale: language(), watching: !document.hidden })
      if (order < applied) return
      applied = order
      const nextActivity = JSON.stringify(value.activity ?? {})
@@ -1611,7 +1616,8 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    // Plugin tool names come with a plugin reload, not a revision; context rows re-read them (#419).
 +    if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
      if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
-     if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
+-    if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
++    if (stateAnswerIsStale(value, current, { fresh })) return
      // On a browser with no visit record yet, everything already there counts as seen.
      if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))
      roster.set(indexRoster(value))
@@ -1619,6 +1625,14 @@ diff --git a/src/client/index.js b/src/client/index.js
      try {
        const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
+@@ -174,6 +174,7 @@ export function apply(ctx) {
+     const loop = async () => {
+       clearTimeout(timer)
+       if (running || stopped) return
++      if (reloading > 0) { timer = setTimeout(loop, 200); return }
+       running = true
+       try { await pull() } catch (error) { if (!stopped) console.warn('[ds-bot] state', error) } finally { running = false }
+       if (!stopped) timer = setTimeout(loop, document.hidden ? 10000 : 1500)
 @@ -252,17 +252,7 @@ export function apply(ctx) {
      const style = installStyles('', 'mentions')
      let last = ''
@@ -1655,7 +1669,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,11 +409,14 @@ export function apply(ctx) {
+@@ -409,15 +409,24 @@ export function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1674,6 +1688,16 @@ diff --git a/src/client/index.js b/src/client/index.js
        expected = target
        ctx.uiWorkspace.openSession(target)
      },
+     selectPanel: (id) => { ctx.layout.selectPanel(id) },
++    // The read-only banner's Reload: read the whole team again, so a window whose other holder let
++    // go becomes writable without a page reload that would drop what is in the composer (#2247).
++    reloadTeam: () => {
++      reloading += 1
++      return pull({ fresh: true }).finally(() => { reloading -= 1 })
++    },
+     openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
+     openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
+     // The token keeps a late exit timer from closing a palette opened again since.
 @@ -444,10 +444,22 @@ export function apply(ctx) {
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
@@ -2714,7 +2738,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  export function TeamSidebar(props) {
    const { wide, useRoster, useUi, useSessions, actions } = props
    const listRef = useRef(null)
-@@ -249,14 +249,30 @@ export function TeamSidebar(props) {
+@@ -249,14 +249,38 @@ export function TeamSidebar(props) {
    const order = useMemo(() => {
      const stamps = JSON.parse(updated)
      const entries = [
@@ -2736,6 +2760,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  // Read the same way as the workflow page (#2176), so the two surfaces cannot disagree; the text
 +  // drawn is still the host's own sentence, not a trimmed copy.
 +  const readOnlySaid = typeof roster.readOnly === 'string' && roster.readOnly.trim() !== ''
++  // The host's sentence tells the person to close the other window and reload; this is that
++  // entry. It reads the team again instead of reloading the page, so the composer is kept, and
++  // it sits beside the status line rather than inside it so the live region stays text (#2247).
++  const readOnlyReload = h('button', {
++    type: 'button',
++    className: 'bt-read-only-reload',
++    onClick: () => { void Promise.resolve(actions.reloadTeam?.()).catch(error => actions.reportError(error, 'reload')) },
++  }, t('Reload'))
 +  // A plugin (the tree) may give the Bots a structure: the list then is one tree under the Main Bot.
 +  const structure = useSidebarStructure()
 +  const [collapsed, setCollapsed] = useState({})
@@ -2748,13 +2780,15 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
    useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
-@@ -276,14 +276,20 @@ export function TeamSidebar(props) {
+@@ -276,14 +276,22 @@ export function TeamSidebar(props) {
        : h(Fragment, null,
            h(UpdateButton, { useUpdate: props.useUpdate, actions }),
            h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
 -    wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
 +    wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
++    wide && readOnlySaid ? readOnlyReload : null,
 +    !wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status', title: hostText(roster.readOnly), 'aria-label': hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
++    !wide && readOnlySaid ? readOnlyReload : null,
 +    h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
 +    h(KanbanRow, { wide, useUi, actions }),
 +    h(ProjectsNav, { wide }),
@@ -2968,11 +3002,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // shell's footer classes are CSS-module names, so they match on their stems.
  export const SIDEBAR_CSS = `
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
-@@ -607,6 +607,7 @@ export const SIDEBAR_CSS = `
+@@ -607,6 +607,10 @@ export const SIDEBAR_CSS = `
  .bt-rail .bt-row{position:relative}
  .bt-rail .bt-pin{position:absolute;top:3px;left:calc(50% + 12px)}
  .bt-side .bt-read-only{margin:4px 8px 6px;padding:8px 10px;border-radius:10px;background:var(--bt-hover);font-size:12px;line-height:1.45;text-align:left}
 +.bt-rail .bt-read-only{width:100%;margin:4px 0 6px;padding:4px 2px;font-size:10px;line-height:1.3;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.bt-read-only-reload{margin:0 8px 8px;padding:3px 10px;border:1px solid var(--bt-line);border-radius:8px;background:none;color:inherit;font:inherit;font-size:12px;line-height:18px;cursor:pointer;transition:background-color .12s ease}
++.bt-read-only-reload:hover{background:var(--bt-hover)}
++.bt-rail .bt-read-only-reload{width:100%;margin:0 0 6px;padding:2px 0;font-size:10px;line-height:16px;text-align:center}
  [class*="_footArea"]:has(.bt-foot-account){display:flex!important;flex-direction:row!important;align-items:center;gap:6px}
  [class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"],[class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"]>div{display:contents!important}
  .bt-foot-account{order:-1;flex:none;display:inline-flex}
