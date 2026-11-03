@@ -23,6 +23,19 @@ export const EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bot
 // Any Main Bot holds the Main Bot powers; `mainBotId`, the first one, is the sidebar tile.
 export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?? []).includes(id)
 
+// The `state` request the poll sends. `since` asks for a revision delta; a person who pressed
+// Reload asks for the whole team, so the answer carries `readOnly` re-read by the host (#2247).
+export const stateRequest = (current, { fresh = false } = {}) => ({
+  since: fresh ? undefined : current?.revision,
+  models: current?.modelsKey ?? '',
+})
+
+// Whether a `state` answer may be skipped. An `unchanged` answer carries no team, so it is never
+// indexed; the poll also skips the same revision and models key. A reload draws that same revision:
+// that is how a stale read-only sentence clears without a page reload (#2247).
+export const stateAnswerIsStale = (value, current, { fresh = false } = {}) =>
+  value?.unchanged === true || (!fresh && value?.revision === current?.revision && value?.modelsKey === current?.modelsKey)
+
 // A Bot's chat is a chain of Sessions ("parts"): the Bot id is its first part's id
 // and `sessionId` its current one. Every part id finds the Bot; Session state
 // (running, unread, turns) is read from the current part, team state from the Bot id.

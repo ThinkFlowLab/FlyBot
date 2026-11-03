@@ -5,7 +5,7 @@ import { TURN_FAILURES_CSS, TurnFailures } from './turn-failures.js'
 import { call } from './api.js'
 import { isHex } from './inks.js'
 import { SHAPES, markupCache } from './characters.js'
-import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
+import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
 import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
 import { currentPart, landingPart, setPluginTools } from './text.js'
 import { mentionCss } from './mention-style.js'
@@ -172,11 +172,14 @@ export function apply(ctx) {
   // Pulls can overlap (the poll and a navigation); an older answer never wins.
   let pulls = 0
   let applied = 0
-  const pull = async () => {
+  // A Reload in flight makes the poll stand back. Otherwise the loop's `unchanged` answer can take
+  // the applied slot first and the full answer the press asked for is dropped as the older one.
+  let reloading = 0
+  const pull = async ({ fresh = false } = {}) => {
     const order = ++pulls
     const known = roster.getSnapshot()
     // `watching`: this window is on screen, so the host reads friends' inboxes at the live cadence (#497).
-    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', locale: language(), watching: !document.hidden })
+    const value = await call('state', { ...stateRequest(known, { fresh }), locale: language(), watching: !document.hidden })
     if (order < applied) return
     applied = order
     const nextActivity = JSON.stringify(value.activity ?? {})
@@ -194,7 +197,7 @@ export function apply(ctx) {
     // Plugin tool names come with a plugin reload, not a revision; context rows re-read them (#419).
     if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
     if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
-    if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
+    if (stateAnswerIsStale(value, current, { fresh })) return
     // On a browser with no visit record yet, everything already there counts as seen.
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))
     roster.set(indexRoster(value))
@@ -223,6 +226,7 @@ export function apply(ctx) {
     const loop = async () => {
       clearTimeout(timer)
       if (running || stopped) return
+      if (reloading > 0) { timer = setTimeout(loop, 200); return }
       running = true
       try { await pull() } catch (error) { if (!stopped) console.warn('[ds-bot] state', error) } finally { running = false }
       if (!stopped) timer = setTimeout(loop, document.hidden ? 10000 : 1500)
@@ -461,6 +465,12 @@ export function apply(ctx) {
       ctx.uiWorkspace.openSession(target)
     },
     selectPanel: (id) => { ctx.layout.selectPanel(id) },
+    // The read-only banner's Reload: read the whole team again, so a window whose other holder let
+    // go becomes writable without a page reload that would drop what is in the composer (#2247).
+    reloadTeam: () => {
+      reloading += 1
+      return pull({ fresh: true }).finally(() => { reloading -= 1 })
+    },
     openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
     openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
     // The token keeps a late exit timer from closing a palette opened again since.

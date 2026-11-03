@@ -2817,6 +2817,11 @@ function createSource(initial) {
 }
 var EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], humans: [], self: null, agents: [], exchangeTurns: {}, remoteTypedTurns: {}, remoteAwaiting: {}, questions: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false };
 var isMainOf = (roster, id) => id !== void 0 && (roster.mainBotIds ?? []).includes(id);
+var stateRequest = (current, { fresh = false } = {}) => ({
+  since: fresh ? void 0 : current?.revision,
+  models: current?.modelsKey ?? ""
+});
+var stateAnswerIsStale = (value, current, { fresh = false } = {}) => value?.unchanged === true || !fresh && value?.revision === current?.revision && value?.modelsKey === current?.modelsKey;
 function indexRoster(value) {
   setLocalBots(value.bots);
   setPluginTools(value.pluginTools);
@@ -10567,6 +10572,13 @@ function TeamSidebar(props) {
   }, [roster, updated]);
   const main = roster.byId[roster.mainBotId];
   const readOnlySaid = typeof roster.readOnly === "string" && roster.readOnly.trim() !== "";
+  const readOnlyReload = (0, import_react18.createElement)("button", {
+    type: "button",
+    className: "bt-read-only-reload",
+    onClick: () => {
+      void Promise.resolve(actions.reloadTeam?.()).catch((error) => actions.reportError(error, "reload"));
+    }
+  }, t("Reload"));
   const structure = useSidebarStructure();
   const [collapsed, setCollapsed] = (0, import_react18.useState)({});
   const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
@@ -10599,7 +10611,9 @@ function TeamSidebar(props) {
       (0, import_react18.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react18.createElement)(PlusIcon))
     ),
     wide && readOnlySaid ? (0, import_react18.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+    wide && readOnlySaid ? readOnlyReload : null,
     !wide && readOnlySaid ? (0, import_react18.createElement)("div", { className: "bt-hint bt-read-only", role: "status", title: hostText(roster.readOnly), "aria-label": hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
+    !wide && readOnlySaid ? readOnlyReload : null,
     (0, import_react18.createElement)(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     (0, import_react18.createElement)(KanbanRow, { wide, useUi, actions }),
     (0, import_react18.createElement)(ProjectsNav, { wide }),
@@ -10961,6 +10975,9 @@ var SIDEBAR_CSS = `
 .bt-rail .bt-pin{position:absolute;top:3px;left:calc(50% + 12px)}
 .bt-side .bt-read-only{margin:4px 8px 6px;padding:8px 10px;border-radius:10px;background:var(--bt-hover);font-size:12px;line-height:1.45;text-align:left}
 .bt-rail .bt-read-only{width:100%;margin:4px 0 6px;padding:4px 2px;font-size:10px;line-height:1.3;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-read-only-reload{margin:0 8px 8px;padding:3px 10px;border:1px solid var(--bt-line);border-radius:8px;background:none;color:inherit;font:inherit;font-size:12px;line-height:18px;cursor:pointer;transition:background-color .12s ease}
+.bt-read-only-reload:hover{background:var(--bt-hover)}
+.bt-rail .bt-read-only-reload{width:100%;margin:0 0 6px;padding:2px 0;font-size:10px;line-height:16px;text-align:center}
 [class*="_footArea"]:has(.bt-foot-account){display:flex!important;flex-direction:row!important;align-items:center;gap:6px}
 [class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"],[class*="_footArea"]:has(.bt-foot-account)>[class*="_footerActions"]>div{display:contents!important}
 .bt-foot-account{order:-1;flex:none;display:inline-flex}
@@ -22172,10 +22189,11 @@ function apply(ctx) {
   const refreshed = /* @__PURE__ */ new Set();
   let pulls = 0;
   let applied = 0;
-  const pull = async () => {
+  let reloading = 0;
+  const pull = async ({ fresh = false } = {}) => {
     const order = ++pulls;
     const known = roster.getSnapshot();
-    const value = await call("state", { since: known.revision, models: known.modelsKey ?? "", locale: language(), watching: !document.hidden });
+    const value = await call("state", { ...stateRequest(known, { fresh }), locale: language(), watching: !document.hidden });
     if (order < applied) return;
     applied = order;
     const nextActivity = JSON.stringify(value.activity ?? {});
@@ -22203,7 +22221,7 @@ function apply(ctx) {
       live2.pluginTools = value.pluginTools;
     }
     if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
-    if (value.unchanged || value.revision === current.revision && value.modelsKey === current.modelsKey) return;
+    if (stateAnswerIsStale(value, current, { fresh })) return;
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
     roster.set(indexRoster(value));
     noteFriendLines(value);
@@ -22230,6 +22248,10 @@ function apply(ctx) {
     const loop = async () => {
       clearTimeout(timer);
       if (running || stopped) return;
+      if (reloading > 0) {
+        timer = setTimeout(loop, 200);
+        return;
+      }
       running = true;
       try {
         await pull();
@@ -22493,6 +22515,14 @@ function apply(ctx) {
     },
     selectPanel: (id) => {
       ctx.layout.selectPanel(id);
+    },
+    // The read-only banner's Reload: read the whole team again, so a window whose other holder let
+    // go becomes writable without a page reload that would drop what is in the composer (#2247).
+    reloadTeam: () => {
+      reloading += 1;
+      return pull({ fresh: true }).finally(() => {
+        reloading -= 1;
+      });
     },
     openNewChat: (mode) => {
       ui2.set((state) => ({ ...state, newChat: mode, menu: null, palette: null }));
