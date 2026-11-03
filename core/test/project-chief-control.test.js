@@ -133,6 +133,21 @@ test('inspection compacts only proven released history and preserves current, un
   assert.equal(inspectionResources(state, task).releasedResourceHistory, undefined)
 })
 
+test('a needs-human decision records the personal-agent recipient without transferring Task initiative', async () => {
+  const f = await controlFixture()
+  f.rt.projectAgents.contactUser = (task, question, actor) => {
+    assert.equal(task.id, 't')
+    assert.equal(question.reason, 'Need the user preference')
+    assert.equal(actor.chiefJobId, f.request.runId)
+    return { kind: 'personal-agent', memberId: 'owner', agentId: 'personal', consultationId: 'consult' }
+  }
+  await f.request.onResult(f.result({ action: 'needs-human', reason: 'Need the user preference' }))
+  assert.equal(f.task.chiefQuestion.recipient.agentId, 'personal')
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.botId, 'p:chief')
+  assert.equal(f.accepted(), 0)
+})
+
 
 test('validated Chief completion can publish bounded role proposals but cannot apply role changes', async () => {
   const f = await controlFixture(), calls = []

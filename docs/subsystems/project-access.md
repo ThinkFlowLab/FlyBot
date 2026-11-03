@@ -253,4 +253,12 @@ Independent personal-agent endpoints enforce their own current-user ownership an
 Agent connection authority intersects current human Project role, explicit credential scopes, active participation and the existing safe/watch mandate. Scope filtering applies to Project listings and reads, not only commands; body identity and default routing do not grant rights.
 
 
+Consultation/handoff query endpoints use the shared channel/gateway allowlist and
+current Project checks. Scoped personal-agent tokens can read handoff contracts and
+their own participation's consultation mailbox. Safe consultation ask/reply does not
+grant Task publication: replies remain private unless a human approves or existing
+watch delegation and current permissions authorize explicit publishing. Agent id in a
+request cannot override the authenticated connection identity. A Task-role token is
+never a public HTTP actor. Legacy Chief question/consultation records remain private.
+
 #2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.

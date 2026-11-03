@@ -123,4 +123,39 @@ Each offered handoff saves its exact pool.dispatch intent in the same state snap
 S3 stores a handoff input with each pool.dispatch offer, rolls it back only with an uncommitted offer and migrates old pending offers without changing ids. Current-claim injected-batch acknowledgements follow successful completed-role gates. Routing receipts resolve handoff transport without manufacturing a model read; remaining feedback follows current responsibility. Closure checks unhandled inputs. See [inputs](project-inputs.md).
 
 
+## Durable handoff contract projection — #2175
+
+`project-handoff-contract/v1` is a scoped view over Task.collaboration.history,
+not another queue. `project-handoff-get {taskId,handoffId}` and
+`project-handoff-list {taskId,after?,limit?}` require current Project read access;
+list limits are1–100 with receipt-id cursors. Development v1 query names are
+`handoff.get` and `handoff.list`. Future durable event streaming remains #2185;
+the per-receipt events returned here describe existing persisted timestamps.
+
+States distinguish pending, accepted, processed, revoked and invalidated. Processing
+one handoff never means Task completion. Initiative is held by the target pool before
+acceptance, then by its active claim; interrupted acceptance is fenced for recovery.
+Failure phase/reason is separate from acceptance. Source/target role contexts are
+server-resolved references, with immutable original references and actual receiving
+context/worker recorded at binding. Private transcripts and caller-supplied Session
+references are not copied. Summaries hold bounded completed/next requirements;
+trusted evidence is separate from model claims. Predecessor/successor ids retain
+normal handoff, return, transfer and Chief intervention chains.
+
+Trusted `roleCommand` adds `handoff.accept` (taskId,botId,handoffId,requestId) and
+`handoff.offer` (taskId,claim,requestId,payload.action/reason/to/outputs). These map to
+the same original claim/decision services. They are host execution ports; public HTTP
+cannot submit role tokens or invent a receiving identity. Accept response replay
+returns its original claim or historical outcome and cannot revive completed work.
+Old `claim`/`handoff`/`return`/`transfer`/`complete`/`arbitrate` ports remain compatible.
+
+Confirmed source exit precedes relinquishing an execution claim. Even after Chief
+observes a failed writer, a downstream non-Chief claim rechecks unresolved historical
+exits; selecting another resource cannot bypass them. Chief may still observe and
+arbitrate a blocked Task. Unknown occupancy remains visible and pending; a timeout
+is not release evidence. Native exit/restoration and transaction-wide recovery still
+follow the execution/storage acceptance work, not fabricated from these view states.
+
 #2184 records logical role and pinned capability class on a claim. Active targets alone can receive new offers/claims; a removed queued target becomes blocked with a Chief-routing reason while its Task/initiative/history remain intact. An already acquired source may finish its retained frozen claim after retirement, then explicitly hand off to an active target. Developer-capability destinations use existing rework semantics even when named differently. Artifact responsibilities stay in the existing Attempt's roleAssignments; no new queue or scheduler is added.
+
+Composition with #2184 rechecks the committed target role after asynchronous source-exit confirmation, before claiming. Retirement during inspection leaves the original Task blocked for Chief routing; it cannot acquire a new execution claim from the earlier catalog snapshot.

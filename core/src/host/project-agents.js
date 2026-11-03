@@ -6,6 +6,8 @@ import { output } from './tools.js'
 import { textOf } from './text.js'
 import { resolveAgentSkills } from './project-agent-skills.js'
 import { roleContext, readContextArchive, contextHash, KNOWLEDGE_CHECKPOINT_VERSION } from './project-role-context.js'
+import { EffectCancelled, EffectDeferred } from './project-effects.js'
+import { createProjectConsultations } from './project-consultations.js'
 import { createProjectRooms } from './project-rooms.js'
 import { deliveryGraph } from './project-delivery-template.js'
 import { createProjectRoleGovernance } from './project-role-governance.js'
@@ -79,13 +81,14 @@ export function createProjectAgents(rt) {
   const rooms = createProjectRooms(rt, { roles: projectId => definitionSet(projectId).roles.map(row => row.role), send: (body, actor) => serial(() => send(body, actor)), stop: stopAgent })
   let tail = Promise.resolve()
   const serial = fn => { const result = tail.then(fn, fn); tail = result.then(() => {}, () => {}); return result }
+  const consultations = createProjectConsultations(rt, { ensure, chiefQuestion, serial })
   const keyOf = (projectId, memberId) => rt.personalAgents.carrierId(projectId, memberId)
   const logOf = id => {
     let rows = ownEntry(transcripts(), id)
     if (!rows) { rows = []; setEntry(transcripts(), id, rows) }
     return rows
   }
-  const recordForBot = id => Object.values(state.projectAgents ?? {}).find(agent => agent.botId === id)
+  const recordForBot = id => id ? Object.values(state.projectAgents ?? {}).find(agent => agent.botId === id) : undefined
   const actorOf = (bot, { admitting = false } = {}) => {
     const agent = recordForBot(bot?.id)
     if (!agent || agent.status === 'retired') throw refuse('This Session has no Project agent authority')
@@ -393,6 +396,7 @@ export function createProjectAgents(rt) {
     if (agent.returnAgentId) {
       const parent = ownEntry(agents(), agent.returnAgentId)
       if (parent?.memberId !== agent.memberId || parent.projectId !== agent.projectId) throw refuse('Conversation return scope changed')
+      rt.personalAgents.requireParticipation(parent)
       logOf(parent.id).push({ ...entry, kind: 'agent', speaker: 'Chief', conversationHandoffId: agent.conversationHandoffId })
     }
   }
@@ -404,11 +408,11 @@ export function createProjectAgents(rt) {
     if (rt.botOf(agent.botId)) await rt.deleteBot(agent.botId)
   }
   async function chiefQuestion(body, actor) { return serial(async () => {
-    const parent = await ensure(body.projectId, actor)
+    const parent = await consultations.parent(body, actor, true)
     const text = clean(body.text), requestId = clean(body.requestId, 100)
     if (!text || !/^[A-Za-z0-9_-]{1,100}$/.test(requestId)) throw refuse('A Chief question needs text and a stable requestId')
     const prior = logOf(parent.id).find(row => row.kind === 'handoff' && row.requestId === requestId)
-    if (prior) { if (prior.text !== text) throw refuse('Conversation requestId was reused with different text'); return { handoff: structuredClone(prior), already: true } }
+    if (prior) { if (prior.text !== text) throw refuse('Conversation requestId was reused with different text'); return { handoff: structuredClone(prior), consultation: consultations.view(parent, prior), already: true } }
     const definitions = definitionSet(parent.projectId), definition = structuredClone(definitions.roles.find(row => row.role === 'chief'))
     const detail = await rt.projectEndpoint('project-detail', { id: parent.projectId }, actor)
     const snapshot = roleContext({ retrieval: true, projectId: parent.projectId, role: 'chief', revision: definitions.revision, definition: { ...definition, resolvedSkills: resolveAgentSkills(rt, definition.skills) }, memory: memoryFor(parent.projectId, 'chief', definition.memoryRefs), knowledge: ownEntry(state.projectKnowledge ?? {}, parent.projectId) ?? [], projectFacts: { chiefMemory: chiefMemory(parent.projectId), tasks: detail.tasks.slice(-20).map(({ id, title, status, criteria }) => ({ id, title, status, criteria: clean(criteria, 1000) })), runs: detail.runs.slice(-10).map(({ id, taskId, status }) => ({ id, taskId, status })) }, repository: await rt.projectDelivery.repositoryContext(parent.projectId) })
@@ -438,12 +442,19 @@ export function createProjectAgents(rt) {
         await rt.deliver({ toId: bot.id, sessionId: agent.sessionId, role: 'request', audience: 'user', text, fromName: actor.displayName ?? actor.memberId, untrusted: true, exchangeId: delegation.exchangeId, projectDelegation: { agentId: id, delegationId: delegation.id } })
       }
     } catch (error) { delegations.delete(id); await finishConversation(agent, 'failed'); await rt.save(); throw error }
-    return { handoff: structuredClone(receipt), queued: true }
+    return { handoff: structuredClone(receipt), consultation: consultations.view(parent, receipt), queued: true }
   }) }
   async function suggestClosure(bot, body) {
     const { agent, actor, delegation } = await authorize(bot)
     if (agent.visibility !== 'private' || delegation.readOnly || delegation.chiefJob) throw refuse('Only an active personal agent may recommend closure')
     return rt.projectEndpoint('project-close-request', { projectId: agent.projectId, reason: body.reason }, { ...actor, personalAgentSuggestionId: agent.id })
+  }
+  async function agentConsultations(bot, body) {
+    const { agent, actor } = await authorize(bot)
+    if (agent.visibility !== 'private' || !agent.personalAgentId || agent.returnAgentId) throw refuse('Only a personal agent may use its consultation mailbox')
+    const operation = body.operation ?? 'list'
+    if (!['get', 'list', 'reply'].includes(operation)) throw refuse('Unsupported consultation operation')
+    return consultations.endpoint(`project-consultation-${operation}`, { ...body, projectId: agent.projectId, agentId: agent.personalAgentId }, { ...actor, consultationProxyAgentId: agent.personalAgentId })
   }
   async function askChief(bot, body) { const { agent, actor, delegation } = await authorize(bot); if (delegation.readOnly) throw refuse('Chief must answer this conversation instead of recursively forwarding it'); return chiefQuestion({ ...body, projectId: agent.projectId }, actor) }
   async function githubRead(bot, body) { const { agent, actor } = await authorize(bot); return rt.projectGithubRead({ ...body, projectId: agent.projectId }, actor) }
@@ -575,10 +586,10 @@ export function createProjectAgents(rt) {
       audit.status = 'completed'; audit.finishedAt = Date.now(); await rt.save(); return result
     } catch (error) { audit.status = 'failed'; audit.finishedAt = Date.now(); await rt.save(); throw error }
   }
-  async function wakeWatch(projectId, memberId, text) {
+  async function wakeWatch(projectId, memberId, text, expectedCarrierId) {
     const actor = await rt.projectDelegations.actorFor(keyOf(projectId, memberId))
     if (!actor) throw refuse('No persistent watch delegation is active')
-    return serial(() => send({ projectId, visibility: 'private', text }, actor))
+    return serial(() => { if (expectedCarrierId && keyOf(projectId, memberId) !== expectedCarrierId) throw refuse('Personal-agent default changed before notification'); return send({ projectId, visibility: 'private', text }, actor) })
   }
   async function stopAgent(body, actor) {
     const agent = body.roomId ? Object.values(agents()).find(row => row.roomId === body.roomId && row.role === body.role) : await ensure(body.projectId, actor, body.visibility === 'public' ? 'public' : 'private')
@@ -730,12 +741,32 @@ export function createProjectAgents(rt) {
   }
   const isDelegationActive = (id, delegationId) => { const entry = delegations.get(id); return entry?.id === delegationId && !entry.revoked }
   const ensureProject = (projectId, actor) => serial(async () => { await ensure(projectId, actor, 'public'); return ensure(projectId, actor) })
-  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, chiefBusy: projectId => delegations.has(`public-${projectId}`), startChiefJob, endpoint, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
+  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, chiefBusy: projectId => delegations.has(`public-${projectId}`), startChiefJob, endpoint, consultation: consultations.endpoint, contactUser: consultations.contactUser, agentConsultations, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
 }
 
 export function install(rt) {
   rt.projectAgents = createProjectAgents(rt)
   rt.projectRoleGovernance = rt.projectAgents.roles
+  rt.projectEffects?.register('consultation.notify', {
+    async run(effect) {
+      const carrier = ownEntry(rt.state.projectAgents ?? {}, effect.payload.carrierId)
+      const task = ownEntry(rt.state.tasks, effect.taskId)
+      try {
+        rt.personalAgents.requireParticipation(carrier)
+        rt.requireProjectAccess({ memberId: effect.payload.memberId }, effect.projectId)
+      } catch { throw new EffectCancelled('Personal-agent recipient is no longer authorized') }
+      if (!carrier || carrier.personalAgentId !== effect.payload.agentId || carrier.projectId !== effect.projectId || task?.chiefQuestion?.recipient?.consultationId !== effect.payload.consultationId) throw new EffectCancelled('Personal-agent question ended or changed')
+      const identity = rt.personalAgents.agentOf(effect.payload.agentId)
+      if (identity.kind === 'external' || !rt.projectDelegations.forAgent(carrier.id) || rt.personalAgents.carrierId(effect.projectId, carrier.memberId) !== carrier.id) return { consultationId: effect.payload.consultationId, status: 'private-mailbox' }
+      try {
+        const result = await rt.projectAgents.wakeWatch(effect.projectId, carrier.memberId, `Chief requests your advice. Read consultation ${effect.payload.consultationId} through project_agent_consultations. Reply only with explicit Task input in your current authority; Task closure remains Chief judgement.`, carrier.id)
+        return { consultationId: effect.payload.consultationId, status: 'watch-notified', agentId: result.agent?.id ?? carrier.id }
+      } catch (error) {
+        if (error.code === 'bot/busy') throw new EffectDeferred('Personal agent is busy', { waitingFor: 'agent' })
+        throw error
+      }
+    },
+  })
   rt.ctx.on('llm/stream', (options, next) => options.purpose === undefined ? rt.projectAgents.stream(options.sessionId, next) : next())
   rt.ctx.on('session/event', (session, event) => rt.projectAgents.onEvent(session, event))
   rt.ctx.on('agent/pre-step', async (payload, next) => {
@@ -758,6 +789,7 @@ export function install(rt) {
     ['project_agent_memory', { text: { type: 'string', required: true } }, 'Save a private user/project note; never publish it.', async (args, bot) => rt.projectAgents.memory(bot, args.text)],
     ['project_agent_task', { title: { type: 'string', required: true }, criteria: { type: 'string' }, note: { type: 'string' }, projectTaskKind: { type: 'string', description: 'code, decision or release; ordinary questions are conversation handoffs' } }, 'Propose a Task privately, or create from the current public request.', async (args, bot) => rt.projectAgents.task(bot, args)],
     ['project_agent_suggest_closure', { reason: { type: 'string', required: true } }, 'Recommend Project closure without creating a Task or granting closure rights. The Owner must personally double-confirm.', async (args, bot) => rt.projectAgents.suggestClosure(bot, args)],
+    ['project_agent_consultations', { operation: { type: 'string' }, consultationId: { type: 'string' }, requestId: { type: 'string' }, text: { type: 'string' }, publish: { type: 'boolean' } }, 'Read your own Chief questions or reply. Safe answers remain private until human approval; watch replies enter the existing Task inbox.', async (args, bot) => rt.projectAgents.agentConsultations(bot, args)],
     ['project_agent_chief', { text: { type: 'string', required: true }, requestId: { type: 'string', required: true } }, 'Ask Chief an ordinary question without creating a Task. The answer returns to this private conversation.', async (args, bot) => rt.projectAgents.askChief(bot, args)],
     ['project_agent_github', { operation: { type: 'string', required: true }, number: { type: 'number' } }, 'Read only the current Project repository issues, pulls, pull, reviews or checks through a scoped host credential.', async (args, bot) => rt.projectAgents.githubRead(bot, args)],
     ['project_agent_action', { endpoint: { type: 'string', required: true }, args: { type: 'object', properties: {}, additionalProperties: true, required: true } }, 'Use an existing scoped human operation with the current user permissions in watch mode. This grants no merge, release or extra repository authority.', async (args, bot) => rt.projectAgents.action(bot, args)],

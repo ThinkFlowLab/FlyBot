@@ -1,12 +1,57 @@
 // Per-logical-Bot routing on existing Task records. Execution remains a host adapter.
 import { randomUUID, createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
+import { taskSessionId } from './project-task-sessions.js'
 import { EffectDeferred, EffectCancelled } from './project-effects.js'
 export const POOL_PROTOCOL = 'project-handoff/v1'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/handoff' })
 const clone = value => structuredClone(value)
 const intentHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const reasonOf = value => { if (typeof value !== 'string' || !value.trim() || value.length > 4000) throw refuse('A bounded handoff reason is required'); return value.trim() }
+
+
+export const HANDOFF_CONTRACT = 'project-handoff-contract/v1'
+function contextReference(state, task, role) {
+  if (!role || role === 'chief') return null
+  const logicalSessionId = taskSessionId(task.projectId, task.id, role)
+  const logical = ownEntry(state.projectTaskSessions ?? {}, logicalSessionId)
+  const sessions = Object.values(state.projectAttempts ?? {}).filter(attempt => attempt.projectId === task.projectId && attempt.taskId === task.id)
+    .flatMap(attempt => [...(attempt.roleSessionHistory ?? []).filter(session => session.role === role), attempt.roleSessions?.[role]])
+    .filter(session => session?.projectId === task.projectId && session.taskId === task.id && session.role === role)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  const session = sessions.at(-1)
+  return { logicalSessionId: session?.logicalSessionId ?? logicalSessionId, sessionId: session?.id ?? null,
+    definitionRef: session?.definitionRef ?? logical?.definitionRef ?? null, definitionRevision: session?.definitionRevision ?? null }
+}
+// A projection over the original durable receipt, not another workflow/store.
+export function handoffContract(state, task, receipt) {
+  if (!receipt || receipt.projectId !== task.projectId || receipt.taskId !== task.id) throw refuse('Unknown Task handoff')
+  const roles = state.projectAgentDefinitions?.[task.projectId]?.roles ?? []
+  const roleOf = id => roles.find(role => role.id === id)?.role ?? (typeof id === 'string' && id.startsWith(task.projectId + ':') ? id.slice(task.projectId.length + 1) : null)
+  const sourceRole = roleOf(receipt.from), targetRole = roleOf(receipt.to)
+  const previous = task.collaboration.history.find(row => row.id === receipt.predecessorId)
+  const execution = receipt.sourceExecution ?? previous?.execution
+  const successor = task.collaboration.history.find(row => row.predecessorId === receipt.id || row.requestId === receipt.execution?.id)
+  const currentClaim = task.collaboration.currentHandoffId === receipt.id ? task.collaboration.claim : null
+  const accepted = receipt.acceptance ?? (receipt.claimId ? { claimId: receipt.claimId, acceptedAt: receipt.acceptedAt, botId: receipt.to } : null)
+  const status = receipt.status === 'completed' ? 'processed' : receipt.status === 'intervened' ? 'revoked' : receipt.status === 'rejected' ? 'invalidated' : receipt.finishedAt && receipt.decision ? 'processed' : receipt.status
+  const context = receipt.contextRefs ?? { source: contextReference(state, task, sourceRole), target: contextReference(state, task, targetRole) }
+  const events = [{ type: 'offered', at: receipt.createdAt }]
+  if (accepted) events.push({ type: 'accepted', at: accepted.acceptedAt })
+  if (receipt.finishedAt) events.push({ type: status, at: receipt.finishedAt })
+  const ownsInitiative = status === 'accepted' && currentClaim?.status === 'active'
+  const fenced = status === 'accepted' && currentClaim && !ownsInitiative && currentClaim.status !== 'completed'
+  return { version: HANDOFF_CONTRACT, transportVersion: receipt.version, id: receipt.id, projectId: task.projectId, taskId: task.id,
+    requestId: receipt.requestId, attemptId: receipt.attemptId, generation: receipt.generation, state: status, purpose: receipt.purpose,
+    source: { botId: receipt.from, role: sourceRole, context: clone(context.source), execution: execution ? { claimId: execution.id, workerId: execution.workerId ?? null, generation: execution.generation, exitConfirmed: execution.exitConfirmed ?? null } : null },
+    target: { botId: receipt.to, role: targetRole, context: clone(context.target) },
+    summary: clone(receipt.summary ?? { completed: '', next: receipt.reason }), reason: receipt.reason, requirements: clone(receipt.requirements),
+    evidence: clone(receipt.evidence ?? []), claims: clone(receipt.claims ?? []),
+    acceptance: accepted ? { ...clone(accepted), workerId: receipt.execution?.workerId ?? currentClaim?.workerId ?? null } : null,
+    initiative: { kind: status === 'pending' ? 'pool' : ownsInitiative ? 'execution' : fenced ? 'fenced' : 'relinquished', botId: status === 'pending' || ownsInitiative ? receipt.to : null },
+    predecessorId: receipt.predecessorId ?? null, successorId: successor?.id ?? null,
+    failure: !receipt.failure && currentClaim && task.collaboration.block ? { phase: 'recovery', reason: task.collaboration.block.reason } : receipt.failure ? { phase: receipt.execution?.failure ? 'execution-admission' : 'execution-or-evidence', reason: receipt.failure } : null, events }
+}
 
 export function createProjectPools(rt) {
   let adapter, tail = Promise.resolve()
@@ -59,20 +104,25 @@ export function createProjectPools(rt) {
     if (!checked.ok) throw refuse(`Handoff refused (${checked.code}): ${checked.reason}`)
     return { fromRole, trustedEvidence }
   }
-  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration }) {
+  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration, summary }) {
     if (!adapter) throw refuse('Handoff execution adapter is unavailable')
     reason = reasonOf(reason)
     const c = task.collaboration, target = targetOf(task.projectId, to)
     if (typeof requestId !== 'string' || !/^[\w-]{1,120}$/.test(requestId)) throw refuse('A stable handoff requestId is required')
     const duplicate = c.history.find(row => row.requestId === requestId)
     if (duplicate) {
-      if (duplicate.from !== from || duplicate.to !== to || duplicate.reason !== reason) throw refuse('Handoff idempotency key was reused with different content')
+      if (duplicate.from !== from || duplicate.to !== to || duplicate.reason !== reason || duplicate.attemptId !== attemptId || duplicate.purpose !== purpose || summary && intentHash(duplicate.summary) !== intentHash(summary)) throw refuse('Handoff idempotency key was reused with different content')
       return clone(duplicate)
     }
     await authority(task)
     const { fromRole, trustedEvidence } = await checkAdmission(task, { from, to, attemptId, requestId, purpose })
     if (expectedGeneration !== undefined && c.generation !== expectedGeneration) throw refuse('Claim generation changed before handoff admission')
     const row = { id: `handoff-${randomUUID()}`, version: POOL_PROTOCOL, policyVersion: 'project-role-policy/v1', definitionRevision: definitions(task.projectId).revision, projectId: task.projectId, taskId: task.id, attemptId, initiatedBy: c.initiatedBy, from, to, reason, requestId, purpose, evidence: clone(trustedEvidence), claims: clone(evidence), requirements: { title: task.title, criteria: task.criteria ?? '' }, status: 'pending', generation: c.generation + 1, createdAt: Date.now() }
+    const sourceClaim = c.claim?.botId === from ? c.claim : null
+    row.predecessorId = c.currentHandoffId ?? null
+    row.summary = summary ?? { completed: '', next: reason }
+    if (sourceClaim) row.sourceExecution = clone(sourceClaim)
+    row.contextRefs = { source: contextReference(rt.state, task, fromRole), target: contextReference(rt.state, task, target.role) }
     const before = rt.projectEffects ? { collaboration: clone(c), handoff: task.handoff, question: task.chiefQuestion } : null
     const input = rt.projectInputs?.stageHandoff(task, row)
     if (input) row.inputId = input.row.id
@@ -113,11 +163,37 @@ export function createProjectPools(rt) {
     c.attemptId = attempt.id; c.kind = kind
     return offer(task, { from: null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id })
   }
-  async function claim(taskId, botId, handoffId) {
+  async function claim(taskId, botId, handoffId, requestId) {
     const task = taskOf(taskId), c = task.collaboration
+    if (requestId !== undefined) {
+      if (!/^[A-Za-z0-9_-]{1,100}$/.test(requestId) || typeof requestId !== 'string' || !handoffId) throw refuse('Accept needs a stable requestId and handoffId')
+      await authority(task)
+      const prior = c?.history.find(row => row.acceptance?.requestId === requestId)
+      if (prior) {
+        if (prior.id !== handoffId || prior.to !== botId) throw refuse('Accept idempotency key was reused for another handoff')
+        const execution = prior.execution ?? (c.claim?.id === prior.claimId ? c.claim : null)
+        return execution ? clone(execution) : { ...clone(prior.acceptance), id: prior.claimId, status: 'historical' }
+      }
+    }
     if (!c || c.botId !== botId || c.status !== 'queued' || handoffId && c.currentHandoffId !== handoffId) return null
     await authority(task)
-    const definition = definitions(task.projectId).roles.find(row => row.id === botId)
+    let definition = definitions(task.projectId).roles.find(row => row.id === botId)
+    if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
+    const target = definition, expectedGeneration = c.generation
+    if (target.role !== 'chief') {
+      // Arbitration may observe a failed writer, but a downstream execution must
+      // not bypass an unresolved old exit by selecting another resource.
+      const unknown = c.history.flatMap(row => [row.execution, row.sourceExecution]).filter(row => row?.workerId && row.exitConfirmed === false)
+      for (const execution of unknown) {
+        let exited = false
+        try { exited = await adapter.release(execution.workerId) } catch { /* Preserve unknown occupancy. */ }
+        if (!exited) throw refuse('Source execution exit is unconfirmed; handoff remains pending')
+        execution.exitConfirmed = true
+      }
+      await authority(task)
+      if (c.generation !== expectedGeneration || c.status !== 'queued' || c.botId !== botId) throw refuse('Handoff changed during source-exit confirmation')
+    }
+    definition = definitions(task.projectId).roles.find(row => row.id === botId)
     if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
     if (Object.values(rt.state.tasks).some(row => row.collaboration?.claim?.botId === botId && row.collaboration.claim.status === 'active')) return null
     if (adapter.ready && !adapter.ready({ task, definition })) return null
@@ -128,6 +204,7 @@ export function createProjectPools(rt) {
     const claim = { id: `claim-${randomUUID()}`, botId, role: definition.role, policyRole: definition.policyRole ?? definition.role, generation: ++c.generation, taskId: task.id, projectId: task.projectId, attemptId: c.attemptId, status: 'active', createdAt: Date.now() }
     c.usage ??= {}; c.usage.steps = (c.usage.steps ?? 0) + 1
     c.claim = claim; c.status = 'claimed'; receipt.status = 'accepted'; receipt.acceptedAt = Date.now(); receipt.claimId = claim.id
+    receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(requestId ? { requestId } : {}), ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
     await rt.save()
     return clone(claim)
   }
@@ -143,11 +220,15 @@ export function createProjectPools(rt) {
     const claim = await current(task, token)
     const action = decision?.action, reason = reasonOf(decision?.reason)
     if (!['handoff', 'return', 'transfer', 'complete', 'arbitrate'].includes(action)) throw refuse('Bot must hand off, return, transfer or request Chief judgement')
+    const summary = { completed: decision.completed === undefined ? '' : reasonOf(decision.completed), next: decision.next === undefined ? reason : reasonOf(decision.next) }
     const role = sourceOf(task, claim.botId).role
     const next = ['complete', 'arbitrate'].includes(action) ? definitions(task.projectId).roles.find(row => row.role === 'chief') : targetOf(task.projectId, decision.to)
     if (!next) throw refuse('Chief is not configured')
     // Stop confirmation precedes relinquishing the claim and capacity.
-    if (claim.workerId && !await adapter.release(claim.workerId)) throw refuse('Worker exit is unconfirmed; claim and capacity remain held')
+    if (claim.workerId) {
+      if (!await adapter.release(claim.workerId)) throw refuse('Worker exit is unconfirmed; claim and capacity remain held')
+      claim.exitConfirmed = true
+    }
     await current(task, token)
     if (action === 'handoff' || action === 'complete') await adapter.complete({ task, claim, role, outputs: decision.outputs ?? {} })
     await current(task, token)
@@ -162,7 +243,7 @@ export function createProjectPools(rt) {
     c.usage.tokens = (c.usage.tokens ?? 0) + (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
     if ((next.policyRole ?? next.role) === 'developer' && c.kind === 'code') c.attemptId = await adapter.rework?.({ task, claim, reason }) ?? c.attemptId
     try {
-      return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation })
+      return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation, summary })
     } catch (error) {
       c.status = 'blocked'; c.block = { reason: error.message, at: Date.now() }; await rt.save(); throw error
     }
@@ -170,6 +251,21 @@ export function createProjectPools(rt) {
   function available(projectId, botId, actor) {
     rt.requireProjectAccess(actor, projectId); targetOf(projectId, botId)
     return Object.values(rt.state.tasks).filter(task => task.projectId === projectId && task.collaboration?.botId === botId && ['queued', 'arbitration'].includes(task.collaboration.status)).map(clone)
+  }
+  function get(taskId, handoffId, actor) {
+    const task = taskOf(taskId)
+    rt.requireProjectAccess(actor, task.projectId)
+    return handoffContract(rt.state, task, task.collaboration?.history.find(row => row.id === handoffId))
+  }
+  function list(taskId, actor, { after, limit = 50 } = {}) {
+    const task = taskOf(taskId)
+    rt.requireProjectAccess(actor, task.projectId)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw refuse('Invalid handoff page limit')
+    const rows = task.collaboration?.history ?? []
+    const index = after === undefined ? -1 : rows.findIndex(row => row.id === after)
+    if (after !== undefined && index < 0) throw refuse('Unknown handoff cursor')
+    const page = rows.slice(index + 1, index + 1 + limit)
+    return { items: page.map(row => handoffContract(rt.state, task, row)), next: index + 1 + page.length < rows.length ? page.at(-1).id : null }
   }
   const owns = botId => Object.values(rt.state.tasks).some(task => task.collaboration?.claim?.workerId === botId || task.collaboration?.history.some(row => row.execution?.workerId === botId))
   async function result({ botId, ok, text }) {
@@ -210,7 +306,12 @@ export function createProjectPools(rt) {
       if (!token) continue
       try {
         const workerId = await adapter.execute({ task, claim: token, definition: targetOf(task.projectId, token.botId) })
-        await serial(async () => { const claim = await current(task, token); claim.workerId = workerId; await rt.save() })
+        await serial(async () => {
+          const claim = await current(task, token); claim.workerId = workerId
+          const receipt = task.collaboration.history.find(row => row.id === task.collaboration.currentHandoffId)
+          if (receipt?.acceptance?.claimId === claim.id) Object.assign(receipt.acceptance, { workerId, boundAt: Date.now(), context: contextReference(rt.state, task, targetOf(task.projectId, claim.botId).role) })
+          await rt.save()
+        })
         await adapter.dispatch({ task, claim: token, workerId })
       } catch (error) {
         let failedClaim
@@ -282,6 +383,7 @@ export function createProjectPools(rt) {
     if (!receipt || receipt.status !== 'pending') throw refuse('Chief handoff receipt is stale')
     const claim = { id: `chief-claim-${randomUUID()}`, taskId, projectId: task.projectId, attemptId: c.attemptId, botId: c.botId, chiefRunId: actor.chiefJobId, generation: ++c.generation, status: 'active', createdAt: Date.now() }
     c.claim = claim; c.status = 'chief-working'; receipt.status = 'accepted'; receipt.acceptedAt = Date.now(); receipt.claimId = claim.id
+    receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
     await rt.save(); return clone(claim)
   }
   async function chiefRoute(body, actor) {
@@ -342,7 +444,7 @@ export function createProjectPools(rt) {
     }
     return changed
   }
-  return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
+  return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
     claim: (id, botId) => serial(() => claim(id, botId)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {

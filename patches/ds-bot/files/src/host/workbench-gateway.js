@@ -18,7 +18,7 @@ export const WORKBENCH_ENDPOINTS = new Set([
   'project-attempt-stop', 'project-attempt-log', 'project-attempt-cleanup', 'project-attempt-publication-retry',
   'project-rooms', 'project-room-create', 'project-room-read', 'project-room-message', 'project-room-attachment', 'project-room-stop', 'project-agent-stop',
   'project-agents', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-role-memory-write', 'project-agent-definition', 'project-roles', 'project-role-proposals', 'project-role-decision',
-  'project-development', 'project-task-pools', 'project-chief-question', 'project-github-read', 'project-agent-mode',
+  'project-development', 'project-task-pools', 'project-consultation-reply', 'project-consultation-ask', 'project-consultation-get', 'project-consultation-list', 'project-handoff-get', 'project-handoff-list', 'project-chief-question', 'project-github-read', 'project-agent-mode',
   'project-chief-state', 'project-chief-configure', 'project-chief-inspect', 'project-scheduled-task',
   'project-agent-proposal-apply', 'project-knowledge-write', 'project-credential-status', 'project-github-comment',
 ])

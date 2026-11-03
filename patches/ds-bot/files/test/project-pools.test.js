@@ -223,6 +223,108 @@ test('Chief intervention does not reset global usage or bypass quota', async () 
   assert.deepEqual(f.task, before)
 })
 
+test('handoff queries distinguish pending, accepted and processed initiative without closing the Task', async () => {
+  const f = setup(), actor = { memberId: 'owner' }
+  const offered = await f.admit()
+  const pending = f.pool.get('task', offered.id, actor)
+  assert.equal(pending.state, 'pending')
+  assert.equal(pending.initiative.kind, 'pool')
+  assert.equal(pending.target.role, 'developer')
+  assert.equal(pending.acceptance, null)
+  const claim = await f.claim()
+  const accepted = f.pool.get('task', offered.id, actor)
+  assert.equal(accepted.state, 'accepted')
+  assert.equal(accepted.acceptance.claimId, claim.id)
+  assert.equal(accepted.initiative.kind, 'execution')
+  const next = await f.pool.decide('task', claim, { action: 'transfer', to: 'p:tester', reason: 'Inspect the code before continuing', completed: 'Located the affected module', next: 'Check the regression strategy' })
+  const processed = f.pool.get('task', offered.id, actor)
+  assert.equal(processed.state, 'processed')
+  assert.equal(processed.successorId, next.id)
+  assert.equal(processed.initiative.kind, 'relinquished')
+  const target = f.pool.get('task', next.id, actor)
+  assert.equal(target.source.execution.claimId, claim.id)
+  assert.equal(target.summary.completed, 'Located the affected module')
+  assert.equal(target.summary.next, 'Check the regression strategy')
+  target.summary.next = 'Caller mutation'
+  assert.equal(f.pool.get('task', next.id, actor).summary.next, 'Check the regression strategy')
+  assert.deepEqual(target.events.map(row => row.type), ['offered'])
+  assert.notEqual(f.task.status, 'accepted')
+  assert.equal(f.pool.list('task', actor, { limit: 1 }).items.length, 1)
+  assert.equal(f.pool.list('task', actor, { after: offered.id }).items[0].id, next.id)
+  assert.equal(f.pool.list('task', actor, { after: next.id }).items.length, 0)
+  assert.throws(() => f.pool.get('task', offered.id, { memberId: 'stranger' }), /authority/)
+  assert.throws(() => f.pool.get('task', 'missing', actor), /Unknown/)
+  assert.throws(() => f.pool.list('task', actor, { after: 'foreign' }), /cursor/)
+  f.rt.revoked = true
+  assert.throws(() => f.pool.get('task', offered.id, actor), /authority/)
+})
+
+test('handoff contracts resolve scoped context references without copying private or other-role history', async () => {
+  const f = setup(), actor = { memberId: 'owner' }
+  await f.admit()
+  const claim = await f.claim()
+  const scope = { projectId: 'p', taskId: 'task', attemptId: 'attempt' }
+  f.rt.state.projectAttempts = { attempt: { ...scope, roleSessions: {
+    developer: { ...scope, id: 'dev-session', role: 'developer', logicalSessionId: 'dev-logical', definitionRevision: 7, context: { text: 'DO NOT COPY PRIVATE TRANSCRIPT' } },
+    tester: { ...scope, id: 'test-session', role: 'tester', logicalSessionId: 'test-logical', definitionRevision: 5 },
+  } } }
+  const receipt = await f.pool.decide('task', claim, { action: 'return', to: 'p:tester', reason: 'Return with a focused question', context: { sessionId: 'forged' } })
+  const view = f.pool.get('task', receipt.id, actor)
+  assert.equal(view.source.context.sessionId, 'dev-session')
+  assert.equal(view.target.context.sessionId, 'test-session')
+  assert.equal(JSON.stringify(view).includes('DO NOT COPY'), false)
+  assert.equal(JSON.stringify(view).includes('forged'), false)
+  f.rt.state.projectAttempts.attempt.roleSessions.tester.taskId = 'foreign'
+  assert.equal(f.pool.get('task', receipt.id, actor).target.context.sessionId, 'test-session', 'The original handoff reference remains immutable')
+  const tester = await f.pool.claim('task', 'p:tester')
+  const returned = await f.pool.decide('task', tester, { action: 'return', to: 'p:developer', reason: 'Need another code change' })
+  assert.equal(f.pool.get('task', returned.id, actor).source.context.sessionId, null, 'A new contract cannot resolve a foreign-scoped Session')
+})
+
+test('explicit handoff acceptance replays a lost response but never reactivates completed execution', async () => {
+  const f = setup(), offered = await f.admit()
+  const first = await f.pool.accept('task', 'p:developer', offered.id, 'accept-original')
+  assert.equal((await f.pool.accept('task', 'p:developer', offered.id, 'accept-original')).id, first.id)
+  const next = await f.pool.decide('task', first, { action: 'transfer', to: 'p:tester', reason: 'Check the code' })
+  const replay = await f.pool.accept('task', 'p:developer', offered.id, 'accept-original')
+  assert.equal(replay.status, 'completed')
+  assert.equal(f.task.collaboration.currentHandoffId, next.id)
+  assert.equal(f.task.collaboration.claim, undefined)
+  await assert.rejects(f.pool.accept('task', 'p:tester', next.id, 'accept-original'), /idempotency/)
+  await assert.rejects(f.pool.accept('task', 'p:tester', next.id, ''), /stable/)
+  const accepted = await f.pool.accept('task', 'p:tester', next.id, 'accept-next')
+  assert.equal(accepted.botId, 'p:tester')
+  assert.equal(f.pool.get('task', next.id, { memberId: 'owner' }).acceptance.requestId, 'accept-next')
+})
+
+test('Chief observation cannot let a later pool bypass an earlier writer with unknown exit', async () => {
+  const f = setup(); await f.admit()
+  f.adapter.execute = async () => 'unknown-writer'
+  f.adapter.dispatch = async () => { throw new Error('Lost response') }
+  f.adapter.release = async () => false
+  await f.pool.pump()
+  f.rt.projectChiefControl = { requireJobActor() {}, validateActor: async () => true }
+  f.rt.state.projectAttempts = { attempt: { status: 'running' } }
+  await f.pool.chiefRoute({ taskId: 'task', targetBotId: 'p:tester', expectedGeneration: f.task.collaboration.generation, reason: 'Inspect after a dispatch failure', decisionId: 'chief-reroute' }, { memberId: 'owner' })
+  await assert.rejects(f.pool.claim('task', 'p:tester'), /Source execution exit is unconfirmed/)
+  assert.equal(f.task.collaboration.status, 'queued')
+  assert.equal(f.task.collaboration.claim, undefined)
+  f.adapter.release = async () => true
+  assert.equal((await f.pool.claim('task', 'p:tester')).botId, 'p:tester')
+})
+
+test('an interrupted acceptance exposes a fenced initiative and recovery cause', async () => {
+  const f = setup(), offered = await f.admit()
+  await f.claim()
+  f.task.collaboration.claim.workerId = 'unknown-writer'
+  f.pool.recover()
+  const view = f.pool.get('task', offered.id, { memberId: 'owner' })
+  assert.equal(view.state, 'accepted')
+  assert.equal(view.initiative.kind, 'fenced')
+  assert.equal(view.failure.phase, 'recovery')
+  assert.match(view.failure.reason, /restarted/)
+})
+
 
 test('a retired source can finish its frozen active claim but cannot receive new offers', async () => {
   const f = setup(); await f.admit(); const claim = await f.claim()
@@ -259,4 +361,18 @@ test('host execution revocation fences the exact claim before stopping and never
   assert.equal(f.task.collaboration.history.length, 1)
   assert.equal(await f.pool.revokeExecution('task', token.id, 'Repeated observation'), false)
   await assert.rejects(f.pool.decide('task', token, { action: 'handoff', to: 'p:tester', reason: 'Stale callback' }), /stale/)
+})
+
+test('a role retired while source exit is inspected cannot acquire a new handoff claim', async () => {
+  const f = setup(); await f.admit()
+  f.task.collaboration.history[0].sourceExecution = { workerId: 'old-worker', exitConfirmed: false }
+  f.adapter.release = async () => {
+    const roles = f.rt.projectAgents.deliveryDefinitions().roles
+    roles.splice(roles.findIndex(role => role.role === 'developer'), 1)
+    return true
+  }
+  assert.equal(await f.claim(), null)
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.claim, undefined)
+  assert.match(f.task.collaboration.block.reason, /retired/)
 })

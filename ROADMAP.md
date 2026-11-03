@@ -199,24 +199,9 @@ outcome is recorded in [`decisions/`](decisions/README.md) with its evidence, pa
 dissent. A stage moving from "not started" to "active" is itself a decision, not an edit alone.
 
 
-### M7.2 — 2026-10-31
-
-M7.1 PR #26 passed full verify and actual DSH context/lifecycle checks. M7.2 implementation on feat/m7-resource-pools adds resource capabilities/leases and real local+Docker execution probes; integration acceptance with SDKs remains in M7.5.
-
-
-### M7.3 checkpoint — 2026-10-31
-
-M7.2 PR #27 passed full verify and the opt-in actual local/Docker resource probe. M7.3 adapters are in progress; the implementation PR remains draft until remaining integration and real authorized SDK acceptance are complete; Chief now uses a host-validated scoped action bridge.
-
-
-### M7.4 — 2026-10-31
-
-M7.3 PR #28 passed full verify at 034d86c, remains draft pending authenticated acceptance. M7.4 implementation supplies Owner runtime configuration/probes/private PTY and strengthens positive worker-stop confirmation; M7.5 cross-resource delivery and final acceptance remain next.
-
-
-### M7.5 — 2026-10-31
-
-M7 implementation PRs: #26 role Sessions, #27 resource pools, #28 official SDK Harnesses, #29 Owner setup, #30 handoff/integration. Full verify passed #26–#29 tips; final #30 validation/report is recorded in its PR. Real authenticated SDK/browser mixed-resource acceptance remains pending dedicated authorized profiles; M8 continuous CI/review and M9 persistent dogfood operations remain later work.
+Completed M7.2–M7.5 implementation checkpoints are retained verbatim in
+[the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
+role/resource/Session contracts and outstanding acceptance remain below and in the active roadmap.
 
 ### M7 validation update — 2026-11-01
 
@@ -420,6 +405,22 @@ explicit incompatible recovery, current rights/resource checks and truthful adap
 capabilities. Native Task-role context restoration, parent waits, transactional Effects
 and external command receipts remain dependent acceptance; no live-provider or deploy
 claim from controlled process tests. README/API rewrite remains last (#2189).
+
+
+### Collaboration contract convergence — 2026-11-03 (#2175)
+
+Expose durable Task handoffs through one scoped contract projection, with distinct
+pending/accepted/processed/revoked/invalidated states, source/target context references,
+actual claim/worker binding, initiative fences and predecessor/successor history.
+Idempotent trusted offer/accept ports reuse pools; unresolved old writers cannot be
+bypassed by Chief rerouting to another resource. Consultation is a separate private
+protocol over retained transcripts, without Task creation or initiative transfer.
+Chief prefers an active personal agent for user questions: safe answers require user
+publication, watch answers use existing inbox rights; only committed Effects may wake
+an authorized native watch. External clients have isolated mailboxes, not fabricated
+provider sessions. SDK process/HTTP tests and real-provider acceptance remain distinct.
+Native restoration/context bounds, transaction events and parent waits stay on their
+original dependent issues; no control-plane, deployment or frontend changes.
 
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
 
