@@ -35,3 +35,16 @@ M7.3 work in progress adds pinned official Codex/Claude Agent SDK temporary work
 
 
 End of verbatim checkpoint excerpts.
+
+## Additional original PROJECT.md checkpoints
+
+### M7.4 — 2026-10-31
+
+M7.4 adds Owner role/persona/Skills/memory/Harness/model/multiple-resource configuration, bounded connection checks and explicitly granted private target-resource PTYs. Credentials stay in private profiles; generated profiles separate Project/principal/Harness. Actual local and new Docker PTYs, hidden setup, current-session revocation and background cleanup are tested. Real authenticated three-Harness acceptance remains pending dedicated credential/profile selection.
+
+
+### M7.5 — 2026-10-31
+
+M7.5 implements local/Docker Git workspace handoffs, SHA256 manifests, one final sealed candidate without intermediate worker history, independent host-verifier tests, same-SHA review and sealed SDK event evidence. Browser integration fixes runtime/terminal/input channel routing; callback-aware stop acknowledgement prevents release deadlock. See docs/m7-acceptance.md: positive authenticated three-Harness/two-resource PR acceptance still needs dedicated profiles, so M7 is not declared fully accepted.
+
+End of additional verbatim excerpts.
