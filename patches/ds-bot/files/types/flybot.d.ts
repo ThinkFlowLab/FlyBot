@@ -596,8 +596,8 @@ export interface FlyBotSlots {
   /** The sidebar Bot list as one tree under the Main Bot; a missing/unknown parent means "under the Main Bot". First entry wins. */
   'flybot.sidebar.structure': {
     id: string; order?: number; parentOf(botId: string): string | null | undefined
-    /** Extra items in a Bot's right-click menu. visible false hides one; a string returned by run is shown as a toast, a throw as the error toast. */
-    menuItems?(props: { bot: { id: string; name: string } }): Array<{ id: string; label: string; visible?: boolean; run(props: { bot: { id: string; name: string } }): unknown }>
+    /** Extra items in a Bot's right-click menu. `readOnly` is true only in a window that holds the team read-only, so an item can be hidden there instead of failing against the host; visible false hides one; a string returned by run is shown as a toast, a throw as the error toast. */
+    menuItems?(props: { bot: { id: string; name: string }; readOnly?: boolean }): Array<{ id: string; label: string; visible?: boolean; run(props: { bot: { id: string; name: string } }): unknown }>
     nodeActions?: unknown
   }
   'flybot.composer.mention': { id: string; order?: number; candidates(query: string, context: { sessionId: string; roster: any; call: FlyBotCall }): MentionRow[] | Promise<MentionRow[]> }

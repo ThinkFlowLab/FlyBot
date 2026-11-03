@@ -855,6 +855,27 @@ test('menu item: structure entry carries one copy-invite menu item, visible only
   assert.deepEqual(writes, ['https://s/i/Y', 'full b1'])
 })
 
+test('#2238: a read-only window does not offer Copy invite link', async () => {
+  const mod = loadClient()
+  delete globalThis.__flybot__
+  const b = { id: 'b1', name: '研究员' }
+  const calls = []
+  const social = { canInvite: () => true, createInvite: async id => { calls.push(id); return { text: 'T', link: 'https://s/i/X' } } }
+  const items = readOnly => mod.makeMenuItems({ social })({ bot: b, readOnly })
+  // The window's own flag hides the item even when the Bot is invitable.
+  assert.equal(items(true)[0].visible, false)
+  assert.equal(items(undefined)[0].visible, true)
+  assert.equal(items(false)[0].visible, true)
+  // The menu drops a hidden item before its run, so a read-only window sends no invite.
+  for (const item of items(true).filter(i => i.visible !== false)) await item.run({ bot: b })
+  assert.deepEqual(calls, [])
+  // A writable window sends exactly one per activation.
+  await withNavigator({ clipboard: { writeText: async () => {} } }, async () => {
+    for (const item of items(undefined).filter(i => i.visible !== false)) await item.run({ bot: b })
+  })
+  assert.deepEqual(calls, ['b1'])
+})
+
 test('invite action (legacy hover component): hidden without social or when canInvite is false', () => {
   const mod = loadClient()
   const bot = { id: 'b1', name: '研究员' }

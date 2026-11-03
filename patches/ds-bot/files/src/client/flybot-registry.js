@@ -198,14 +198,18 @@ export function botTree(bots, mainId, parentOf) {
   return [walk(main, 0)]
 }
 
-// Items the sidebar structure entry adds to a Bot's menu: menuItems({ bot }) → [{ id, label, visible, run }].
+// Items the sidebar structure entry adds to a Bot's menu: menuItems({ bot, readOnly }) → [{ id, label, visible, run }].
+// `readOnly` is true only in a window that holds the team read-only — a `roster.readOnly` that is a string whose
+// trim() is non-empty, the rule the workflow list uses — so an entry can skip a write the host would refuse there.
+// An entry that ignores the flag keeps working, and the three-argument call stays valid.
 // Returns [label, run] pairs; the menu adds the icon.
 // visible === false hides an item; run({ bot }) may return a string, shown as a confirmation toast.
 // A failing menuItems or run never breaks the menu: errors go to the console or the error toast.
-export function pluginItems(structure, bot, actions) {
+export function pluginItems(structure, bot, actions, roster) {
   if (typeof structure?.menuItems !== 'function') return []
+  const readOnly = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
   let items
-  try { items = structure.menuItems({ bot }) } catch (error) { console.error('flybot: menuItems failed', error); return [] }
+  try { items = structure.menuItems({ bot, readOnly }) } catch (error) { console.error('flybot: menuItems failed', error); return [] }
   if (!Array.isArray(items)) return []
   return items
     .filter(item => item && item.visible !== false && typeof item.label === 'string' && typeof item.run === 'function')

@@ -111,7 +111,7 @@ The rules above place a Bot by the words in its name, role label and description
 ### Optional Tree section toggle
 
 - The Bot list itself uses the core `.bt-tree-toggle` (see [core-client](core-client.md)). When `sidebarSection: true` brings this plugin's separate Tree section back, `.flybot-tree-toggle` matches that control: 28×28 hit target, 16px inner `.flybot-tree-caret`, hover, focus ring, and rotation of the glyph only. Leaf spacers (`.flybot-tree-dot`) keep the same 28px width. `aria-expanded` and Expand/Collapse `{name}` labels stay on the button.
-- The right-click menu entry from `menuItems({ bot })` is a single **Copy invite link** (bare URL, shown when `social.canInvite(bot.id)`). The invite with instructions is offered only in the Bot's Sharing section, so the menu does not list the same invite twice (#173).
+- The right-click menu entry from `menuItems({ bot, readOnly })` is a single **Copy invite link** (bare URL, shown when `social.canInvite(bot.id)`). The invite with instructions is offered only in the Bot's Sharing section, so the menu does not list the same invite twice (#173). A window that holds the team read-only never draws the entry, because `social.createInvite` is a write the host refuses there with `bot/read-only`: the host passes `readOnly: true` to `menuItems`, and an entry that ignores it keeps working (#2238).
 
 ### One roster read for the sidebar (#816)
 
