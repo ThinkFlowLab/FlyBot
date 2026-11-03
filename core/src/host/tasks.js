@@ -308,7 +308,7 @@ export function install(rt) {
       if (task.status === 'result-ready') transition(task, 'working', actor, { attemptId })
       if (task.status !== 'failed') transition(task, 'failed', actor, { attemptId, why: reason })
     } else if (status === 'result-ready') {
-      if (attempt.status !== 'waiting-acceptance' || !attempt.pr && !(task.projectTaskKind === 'decision' && attempt.chiefDecision?.verdict === 'approve')) throw forbidden('Delivery evidence is not ready')
+      if (attempt.status !== 'waiting-acceptance' || !attempt.pr && !(['decision', 'release'].includes(task.projectTaskKind) && attempt.chiefDecision?.verdict === 'approve' && (task.projectTaskKind !== 'release' || rt.projectDelivery.releases.isVerified(attempt)))) throw forbidden('Delivery evidence is not ready')
       transition(task, status, actor, { attemptId })
       task.result = { kind: 'summary', summary: reason, links: attempt.pr ? [attempt.pr.url] : [] }
     } else if (status === 'accepted') {

@@ -221,3 +221,5 @@ Query compatibility returns the same Project's committed original-work baseline,
 ## Current operator interface (#2189)
 
 The [root README](../../README.md), [API reference](../development-service-api.md) and [operations guide](../backend-operations.md) replace old1811 snapshot instructions with the real persistent source launcher and actual24queries/26commands. The reference distinguishes canonical Chief completion from legacy acceptance, current vs frozen execution and private consultation from initiative transfer. Native log reads remain explicitly described as full sealed logs, not fictitious paging. CLI/HTTP reuse the existing facade.
+
+#2292 adds release.request and release.reconcile manager commands and the release.status query. Commands use existing receipts and idempotent reconciliation; status is a bounded projection. Publication authorization, external observation and Chief closure remain distinct. See [releases](project-releases.md).

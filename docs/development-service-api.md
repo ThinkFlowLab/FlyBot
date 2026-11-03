@@ -2,7 +2,7 @@
 
 [快速开始](../README.md) · [协作语义](development-service-guide.md) · [部署](backend-operations.md)
 
-本页对应当前分支实际路由：**24个v1查询、26个v1命令**，以及对象管理使用的原生接口。
+本页对应当前分支实际路由：**25个v1查询、28个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
 ## 传输、身份与统一返回
@@ -220,3 +220,13 @@ Accept: text/event-stream
 Task requirements accept optional repository (owner/name or null). An admitted explicit selection cannot be overridden by task.run. Cross-repository child outputs are references, not permission to merge into another repository. Repository-free decision Tasks currently execute on local resources.
 
 project-agent-history保留messages字段，默认最近50条，limit为1..100。cursor绑定用户/代理作用域与历史前缀快照；新消息追加不破坏旧游标，原消息变化则拒绝。超长记录仅返回预览及sourceRef，带messageIndex/cursor/expectedSha256与textOffset/textLimit（上限4000字符）可逐页取回原始JSON。nextCursor向后，previousCursor查询更早历史；完整记录不删除。
+
+## Release Task接口
+
+| 名称 | 类型及payload | 权限与行为 |
+| --- | --- | --- |
+| release.request | command；attemptId、tag、sha、mode?:observe/publish、name?、notes? | Owner/Maintainer或有效值守代理；默认只观察。publish是显式真实发布授权，sha须等于当前Release Attempt的baseSha |
+| release.reconcile | command；attemptId | 管理权限；仅核对已有请求，未知结果不重复发布 |
+| release.status | query；attemptId | 项目读；返回状态、目标、已观察证据，不调用模型或外部发布 |
+
+原生对应project-release-request / project-release-reconcile / project-release-status。需显式配置仓库release.provider=github、release.enabled=true及已有选定GitHub凭据；创建请求不等于发布成功，发布成功也不等于Task关闭。Chief仍需当前外部证明及原验收门禁。详见[契约、配置与例子](subsystems/project-releases.md)。测试不会创建真实Release。
