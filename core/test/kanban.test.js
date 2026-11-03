@@ -487,7 +487,7 @@ test('P-364: the rail counts the list the board draws, never the one the other s
 // effect back to the test and never re-runs one, so a switch case written against it passes whatever
 // the hook does (#1810). This is a second, stateful context: hook slots per component, an effect
 // re-run only when its deps change, a setter that re-renders, and the board's poll on a fake clock.
-function mountBoard(actions) {
+function mountBoard(actions, boardRoster = roster) {
   const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) })
   const runtime = { instances: new Map(), key: 'root', index: 0, dirty: false, timer: 0, timers: new Map() }
   const instance = (key) => {
@@ -577,7 +577,7 @@ function mountBoard(actions) {
   const draw = () => {
     runtime.dirty = false
     for (const slot of runtime.instances.values()) slot.pending = []
-    tree = expandLive(h(live.KanbanDialog, { roster, actions }))
+    tree = expandLive(h(live.KanbanDialog, { roster: boardRoster, actions }))
     commit()
     return tree
   }
@@ -808,4 +808,75 @@ test('a non-terminal actor entry does not end a Done card, even when it comes fi
     task('task-done999999', 'accepted', { title: 'Finished after a block', ownerBotId: 's', progress: 100, updatedAt: Date.now() - MINUTE, actors }),
   ])
   assert.equal(whenOf(board.column('done'), 'task-done999999'), '2 h')
+})
+
+// P-455: a read-only window's task board still drew every write control and accepted drags, and
+// the host refused each one (`bot/read-only`) with nothing on the board saying why. The board reads
+// the window lock once, the way the rest of the client reads `roster.readOnly` (sidebar.js:371),
+// and draws no write at all; everything readable — the rail, the three columns, the cards, the
+// archive and its Done stamp — stays.
+test('P-455: a read-only window draws no write on the task board', async () => {
+  const lockedRoster = { ...roster, readOnly: 'This window is read-only.' }
+  const open = task('task-open123456', 'open', { title: 'Open card', ownerBotId: 'a' })
+  const working = task('task-working456789', 'working', { title: 'Working card', ownerBotId: 'a', progress: 40 })
+  const finished = task('task-done789012', 'accepted', { title: 'Done card', ownerBotId: 'a', progress: 100, updatedAt: Date.now() - 2 * HOUR })
+  const writes = []
+  const actions = {
+    closeBoard: () => {}, boardClose: () => {},
+    tasks: query => Promise.resolve(query?.archive ? [finished] : [open, working]),
+    taskUpdate: async input => { writes.push(['update', input]); return open },
+    taskCreate: async input => { writes.push(['create', input]); return input },
+  }
+  const board = mountBoard(actions, lockedRoster)
+  board.draw()
+  await board.settle()
+  const tree = board.tree
+  const buttons = all(tree).filter(node => node.type === 'button' && ['Add task', 'Start', 'Complete'].includes(textOf(node))).map(textOf)
+  const newTaskForms = byClass(tree, 'bt-board-add').length
+  const draggable = byClass(tree, 'bt-board-card').filter(node => node.props.draggable).map(node => node.props['data-task'])
+  assert.deepEqual({ buttons, newTaskForms, draggable }, { buttons: [], newTaskForms: 0, draggable: [] })
+  // The readable board is untouched by the lock.
+  assert.equal(byClass(tree, 'bt-board-column').map(node => node.props['data-column']).join('|'), 'not-started|in-progress|done')
+  assert.equal(byClass(tree, 'bt-board-card').length, 3)
+  assert.match(textOf(tree), /Open card/)
+  assert.match(textOf(tree), /Working card/)
+  assert.match(textOf(tree), /Done card/)
+  assert.equal(byClass(tree, 'bt-board-when').length, 1)
+  // A drop on a column writes nothing either, even when a drag value is handed to the handler.
+  board.column('in-progress').props.onDrop({ preventDefault() {}, dataTransfer: { getData: () => open.id } })
+  assert.deepEqual(writes, [])
+})
+
+// The counter-proof: the same board in a writable window keeps all four writes and still sends
+// the two requests. A fix that only makes the read-only case pass by removing the controls for
+// every window fails here.
+test('counter-proof: a writable board keeps all four writes', async () => {
+  const open = task('task-open123456', 'open', { title: 'Open card', ownerBotId: 'a' })
+  const working = task('task-working456789', 'working', { title: 'Working card', ownerBotId: 'a', progress: 40 })
+  const calls = []
+  const actions = {
+    closeBoard: () => {}, boardClose: () => {},
+    tasks: query => Promise.resolve(query?.archive ? [] : [open, working]),
+    taskUpdate: async input => { calls.push(['update', input]); return { ...open, status: 'working' } },
+    taskCreate: async input => { calls.push(['create', input]); return { ...open, ...input } },
+  }
+  const board = mountBoard(actions)
+  board.draw()
+  await board.settle()
+  const buttons = all(board.tree).filter(node => node.type === 'button' && ['Add task', 'Start', 'Complete'].includes(textOf(node))).map(textOf)
+  assert.deepEqual(buttons, ['Add task', 'Start', 'Complete'])
+  assert.equal(byClass(board.tree, 'bt-board-add').length, 1)
+  const draggable = byClass(board.tree, 'bt-board-card').filter(node => node.props.draggable).map(node => node.props['data-task']).sort()
+  assert.deepEqual(draggable, ['task-open123456', 'task-working456789'])
+  const start = all(board.tree).find(node => node.type === 'button' && textOf(node) === 'Start')
+  start.props.onClick()
+  await board.settle()
+  assert.equal(calls.length, 1); assert.equal(calls[0][0], 'update'); assert.equal(calls[0][1].id, open.id); assert.equal(calls[0][1].column, 'in-progress')
+  // The form writes too: type a title, then submit it.
+  const input = all(byClass(board.tree, 'bt-board-add')[0]).find(node => node.type === 'input')
+  input.props.onChange({ target: { value: 'New card' } })
+  board.draw()
+  byClass(board.tree, 'bt-board-add')[0].props.onSubmit({ preventDefault() {} })
+  await board.settle()
+  assert.equal(calls.length, 2); assert.equal(calls[1][0], 'create'); assert.equal(calls[1][1].botId, 'a'); assert.equal(calls[1][1].title, 'New card'); assert.equal(calls[1][1].column, 'not-started')
 })

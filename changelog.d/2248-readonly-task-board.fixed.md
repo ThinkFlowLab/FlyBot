@@ -1,0 +1,1 @@
+A read-only FlyBot window no longer draws the task-board writes the host would refuse — the **Add task** form, **Start**, **Complete** and card dragging — and a drop on a column no longer sends a move; the rail, the three columns, the cards and the Done stamps stay readable ([#2248](https://github.com/ThinkFlowLab/FlyBot/issues/2248)).

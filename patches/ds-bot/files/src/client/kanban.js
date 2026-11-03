@@ -294,11 +294,11 @@ export function BoardCard({ task, roster, movable, onMove, onDrag, partOf }) {
   })
 }
 
-function cardProps(task, roster, onMove, onDrag, partOf) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf }
+function cardProps(task, roster, onMove, onDrag, partOf, locked) {
+  return { task, roster, movable: !locked && canMoveTask(roster, task), onMove, onDrag, partOf }
 }
 
-function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull }) {
+function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull, locked }) {
   const tree = lanes ? columnTree(tasks) : null
   const linked = tree ? tree.loose.filter(task => task.parentId || task.parentTitle) : []
   const plain = tree ? tree.loose.filter(task => !task.parentId && !task.parentTitle) : tasks
@@ -306,8 +306,9 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
     className: 'bt-board-column',
     'data-column': column,
     'aria-label': columnTitle(column),
-    onDragOver: (event) => { if (!dragging) return; event.preventDefault() },
+    onDragOver: (event) => { if (locked || !dragging) return; event.preventDefault() },
     onDrop: (event) => {
+      if (locked) return
       event.preventDefault()
       const id = event.dataTransfer?.getData('text/plain')
       if (id) onMove?.(id, column)
@@ -322,18 +323,18 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
   dragging ? h('div', { className: 'bt-board-drop' }, dropLabel(column)) : null,
   tasks.length === 0 && !dragging ? h('p', { className: 'bt-board-empty' }, t('Nothing in this column.')) : null,
   tree ? tree.nests.map(nest => h('div', { key: nest.task.id, className: 'bt-board-nest' },
-    h(BoardCard, cardProps(nest.task, roster, onMove, onDrag)),
+    h(BoardCard, cardProps(nest.task, roster, onMove, onDrag, undefined, locked)),
     nest.children.map(child => h('div', { key: child.id, className: 'bt-board-subtask', 'data-parent': nest.task.id },
-      h(BoardCard, cardProps(child, roster, onMove, onDrag)))))) : null,
-  linked.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || '') })),
+      h(BoardCard, cardProps(child, roster, onMove, onDrag, undefined, locked)))))) : null,
+  linked.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || '', locked) })),
   lanes
     ? lanesOf(plain, roster).map(lane => h('div', { key: lane.id, className: 'bt-board-lane' },
         h('span', { className: 'bt-board-lane-name' }, lane.name),
-        lane.tasks.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))))
-    : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag) })))
+        lane.tasks.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, undefined, locked) }))))
+    : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, undefined, locked) })))
 }
 
-export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull }) {
+export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
   const columns = boardColumns(tasks)
   const lanes = scope?.kind === 'group'
   const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
@@ -362,12 +363,12 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
     h('div', { className: 'bt-board-main' },
       error ? h('p', { className: 'bt-board-error', role: 'alert' }, error) : null,
       lanes ? h('p', { className: 'bt-board-hint' }, t('Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.')) : null,
-      scope?.kind === 'bot' && onCreate ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
+      scope?.kind === 'bot' && onCreate && !locked ? h('form', { className: 'bt-board-add', onSubmit: (event) => { event.preventDefault(); onCreate(draft) } },
         h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
       h('div', { className: 'bt-board-columns' },
         ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
-          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag, archiveFull,
+          key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag, archiveFull, locked,
         })))))
 }
 
@@ -389,6 +390,9 @@ function scopeName(roster, scope) {
 }
 
 export function KanbanDialog({ roster, actions, leaving = false }) {
+  // #2248: the window lock, read once the way the rest of the client reads it (sidebar.js:371). A
+  // read-only window draws no board write the host would refuse, and the write entries refuse too.
+  const locked = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
   // Per-Bot task board. The GitHub metrics panel is not part of this dialog (#1363).
   const rail = boardRail(roster)
   const [scope, setScope] = useState(() => (rail.bots[0] ? { kind: 'bot', botId: rail.bots[0].id } : rail.groups[0] ? { kind: 'group', roomId: rail.groups[0].id } : null))
@@ -427,6 +431,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     if (columnOf(task) === 'done') bucket.done += 1
   }
   const move = async (id, column) => {
+    if (locked) return
     const task = tasks.find(item => item.id === id) ?? own.find(item => item.id === id)
     if (!task || !canMoveTask(roster, task) || columnOf(task) === column) return
     setError('')
@@ -437,6 +442,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
     }
   }
   const create = async (title) => {
+    if (locked) return
     const text = String(title ?? '').trim()
     if (!text || scope?.kind !== 'bot') return
     setError('')
@@ -459,7 +465,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h(BoardView, {
-        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, archiveFull,
+        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, archiveFull, locked,
         onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
       })))
 }

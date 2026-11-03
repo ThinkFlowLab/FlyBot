@@ -9012,10 +9012,10 @@ function BoardCard2({ task, roster, movable, onMove, onDrag, partOf: partOf2 }) 
     onDragEnd: () => onDrag?.(null)
   });
 }
-function cardProps(task, roster, onMove, onDrag, partOf2) {
-  return { task, roster, movable: canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
+function cardProps(task, roster, onMove, onDrag, partOf2, locked) {
+  return { task, roster, movable: !locked && canMoveTask(roster, task), onMove, onDrag, partOf: partOf2 };
 }
-function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull }) {
+function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, archiveFull, locked }) {
   const tree = lanes ? columnTree(tasks) : null;
   const linked = tree ? tree.loose.filter((task) => task.parentId || task.parentTitle) : [];
   const plain = tree ? tree.loose.filter((task) => !task.parentId && !task.parentTitle) : tasks;
@@ -9026,10 +9026,11 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
       "data-column": column,
       "aria-label": columnTitle(column),
       onDragOver: (event) => {
-        if (!dragging) return;
+        if (locked || !dragging) return;
         event.preventDefault();
       },
       onDrop: (event) => {
+        if (locked) return;
         event.preventDefault();
         const id = event.dataTransfer?.getData("text/plain");
         if (id) onMove?.(id, column);
@@ -9049,23 +9050,23 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
     tree ? tree.nests.map((nest) => (0, import_react15.createElement)(
       "div",
       { key: nest.task.id, className: "bt-board-nest" },
-      (0, import_react15.createElement)(BoardCard2, cardProps(nest.task, roster, onMove, onDrag)),
+      (0, import_react15.createElement)(BoardCard2, cardProps(nest.task, roster, onMove, onDrag, void 0, locked)),
       nest.children.map((child) => (0, import_react15.createElement)(
         "div",
         { key: child.id, className: "bt-board-subtask", "data-parent": nest.task.id },
-        (0, import_react15.createElement)(BoardCard2, cardProps(child, roster, onMove, onDrag))
+        (0, import_react15.createElement)(BoardCard2, cardProps(child, roster, onMove, onDrag, void 0, locked))
       ))
     )) : null,
-    linked.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || "") })),
+    linked.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, task.parentTitle || "", locked) })),
     lanes ? lanesOf(plain, roster).map((lane) => (0, import_react15.createElement)(
       "div",
       { key: lane.id, className: "bt-board-lane" },
       (0, import_react15.createElement)("span", { className: "bt-board-lane-name" }, lane.name),
-      lane.tasks.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
-    )) : plain.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag) }))
+      lane.tasks.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, void 0, locked) }))
+    )) : plain.map((task) => (0, import_react15.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, void 0, locked) }))
   );
 }
-function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull }) {
+function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
   const columns = boardColumns(tasks);
   const lanes = scope?.kind === "group";
   const selectedBot = scope?.kind === "bot" ? scope.botId : "";
@@ -9097,7 +9098,7 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
       { className: "bt-board-main" },
       error ? (0, import_react15.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
       lanes ? (0, import_react15.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
-      scope?.kind === "bot" && onCreate ? (0, import_react15.createElement)(
+      scope?.kind === "bot" && onCreate && !locked ? (0, import_react15.createElement)(
         "form",
         { className: "bt-board-add", onSubmit: (event) => {
           event.preventDefault();
@@ -9118,7 +9119,8 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
           dragging,
           onMove,
           onDrag,
-          archiveFull
+          archiveFull,
+          locked
         }))
       )
     )
@@ -9148,6 +9150,7 @@ function scopeName(roster, scope) {
   return "";
 }
 function KanbanDialog({ roster, actions, leaving = false }) {
+  const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   const rail = boardRail(roster);
   const [scope, setScope] = (0, import_react15.useState)(() => rail.bots[0] ? { kind: "bot", botId: rail.bots[0].id } : rail.groups[0] ? { kind: "group", roomId: rail.groups[0].id } : null);
   const [dragging, setDragging] = (0, import_react15.useState)(null);
@@ -9176,6 +9179,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
     if (columnOf(task) === "done") bucket.done += 1;
   }
   const move = async (id, column) => {
+    if (locked) return;
     const task = tasks.find((item) => item.id === id) ?? own.find((item) => item.id === id);
     if (!task || !canMoveTask(roster, task) || columnOf(task) === column) return;
     setError("");
@@ -9186,6 +9190,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
     }
   };
   const create = async (title) => {
+    if (locked) return;
     const text2 = String(title ?? "").trim();
     if (!text2 || scope?.kind !== "bot") return;
     setError("");
@@ -9224,6 +9229,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
         error,
         draft,
         archiveFull,
+        locked,
         onDraft: setDraft,
         onSelect: setScope,
         onMove: move,
