@@ -27,7 +27,12 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 ## Backend convergence — 2026-11-02
 
-Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Role-governance and remaining convergence issues remain active.
+Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Chief role proposals now require separate Maintainer/Owner approval with exact-hash/revision fencing and durable Effects proof; retirement preserves Task/Session and room history. Real-provider custom-role execution remains #2184 acceptance, and later convergence issues remain active.
+
+Native execution convergence #2184 now adds matching physical Session bindings and observed
+Agent quiescence before Bot removal/resource release. Role retirement/capability changes
+cannot restart pinned execution under stale authority. Deterministic runtime acceptance
+and real-provider Task loops remain separate; this work is not deployed. Custom-role artifact verification and SDK capability policy now have actual Git/host-test and subprocess contract coverage. Verified supervisor exit now supports native prior-host recovery; unmanaged/unknown exit stays held. Canonical in-flight role/resource revocation now reuses current authority checks and the existing pool stop/scheduler; unknown exit retains capacity. Composed-stack acceptance and real-provider native continuation remain active acceptance. Native activation now requires committed Effects proof and pre-step admission. The actual DSH native return loop now passes with deterministic inference, retained prior conversation and one resource.
 
 ## Fork Project State — 2026-10-31
 
@@ -41,252 +46,13 @@ This is a documentation/branch handoff, not another service listener, schema cha
 main merge, runtime rollout or takeover of original frontend Task40/PR48.
 No deployment credentials or operator private files are included.
 
-### Service recovery acceptance — S6 / issue55, 2026-11-02
+### Earlier service implementation evidence
 
-The final stage composes the verified S5 service with the native frontend candidate
-from original Task40/PR48, preserving both source histories. An operator CLI repeats
-isolated real-store/Git/controlled-adapter recovery scenarios; it never injects
-production faults or represents mocks as vendor execution. Real GitHub feedback
-has automatically reached the original Task's actual Codex Developer, with explicit
-read/handled receipts and downstream Tester handoff, without manual relay/new Task.
-Matching candidate test/Review/PR and Chief decisions remain separately recorded.
-See [runbook](docs/service-recovery-demo.md). Integration/real UI screenshots and
-#41's remaining visual/dual-mode matrix are not established by this CLI.
-
-### Trusted execution boundary — S5 / issue54, 2026-11-02
-
-The compatible profile explicitly supports trusted private execution on one
-dedicated service account, without mandatory per-Bot users/containers. A new
-read-only execution.boundary query reports current human rights/delegation, exact
-credential selection, authorized resources and honest preflight/isolation limits.
-Unknown profiles refuse repository/resource admission; watch grants never elevate
-current Project rights. No live account, credential or sandbox change is made.
-See [decision](decisions/2026-11-02-trusted-execution-service.md) and
-[boundary architecture](docs/subsystems/project-execution-boundary.md).
-Private-memory APIs, resource/lease/generation/confirmed-exit/workspace coordination,
-same-candidate tests/Review and Chief adjudication remain mandatory.
-
-### GitHub feedback subscriptions — S4 / issue53, 2026-11-02
-
-Source/Thread/TaskSubscription now feeds the existing durable inbox through scoped
-GitHub reads and configurable native schedules. Stable revisions, cursor replay,
-atomic event/input/Effect persistence and current-Task routing preserve Bot handoff
-choice. Old-SHA checks/Review and remote closure never grant current evidence or
-local closure. Default activation keeps earlier discussion as context, explicit
-history backfill is available; stopped/context Tasks never wake. Long feedback is
-retained losslessly in bounded parts, and unsubmitted Review drafts are excluded.
-See [Source architecture](docs/subsystems/project-sources.md). Source tests and a
-real UID998 scoped GitHub read are recorded; complete live feedback/handoff
-acceptance remains separate until actually run.
-
-Browser-offline polling uses a host-only current-principal Project read port,
-not a browser-session bypass flag. Repository identity is captured before async
-credential lookup; in-flight changes refuse rather than borrowing another scope.
-
-S1/S2/S3 and the #60 host-seal compatibility repair are deployed together at
-e20262ed, with4384 full checks and actual three-account authorization probes.
-Original frontend Task40/PR48 resumed through Chief and sealed a new candidate;
-the native Tester handoff is active, not final UI acceptance. Current backend
-development remains in the foreground session, without frontend Task replacement.
-
-### Approved integration sealing — issue60, 2026-11-02
-
-S3/PR61 is verified (4374 tests and exact-source real Codex inbox→Chief-pool
-acceptance), pending compatible rollout with S2. The autonomous frontend exposed a
-separate host preparation gap: an approved operator merge remained staged while
-SDK shared-ref writes were correctly denied; host sealing only recognized the
-published upstream and attempted a soft reset during that extra merge.
-
-The foreground repair adds manager-only, durable source admission with exact
-operator ref/SHA, workspace snapshot and generation fences. Host sealing retains
-the staged tree and trusted parents without opening refs to SDKs or claiming test/
-Review evidence. Failed/no-op saves cannot authorize a parent. The original
-Task40/PR48/Attempt and merge draft stay intact; resume through Chief after verified
-service deployment. No backend Bot Task or control-plane/sandbox/credential change.
-
-The first compatible S2/S3/60 rollout passed three-account live reads, but source
-admission exposed over-broad historical Chief occupancy. Admission now requires
-exit proof for the current Chief claim, every unreleased Project Chief and this
-Attempt's workers, without treating unrelated released historical Chief turns as
-workspace owners. Their old records remain intact; unknown current exits still block.
-
-### Durable Task inputs — S3 / issue52, 2026-11-02
-
-The service now distinguishes persisted input, durable role inbox, adapter delivery,
-SDK output observation, declared reading and validated handling. Current-claim
-receipts and bounded same-thread safe turns preserve existing Bot handoff authority.
-Chief receipt plans cannot consume inputs on failed decisions; closure and input
-handling share the final state commit. New pending feedback, unknown protocols,
-revoked source and changed hashes keep their fences. See [input contract](docs/subsystems/project-inputs.md).
-
-S1/PR56 and #57/PR59 are deployed with original UI preserved; S2/PR58 passed4350
-checks and fork CI. S3 source/real Codex receipt validation is in progress, not
-live delivery or final UI acceptance. The original frontend Task40/PR48 continues
-through its own Chief/Dev/Reviewer/Tester flow. No backend development Task,
-control-plane edit, merge/queue/release or new per-Bot sandbox is authorized here.
-
-### Verified supervisor exit compatibility — 2026-11-02
-
-Foreground repair #57 unifies workspace and logical Task-role resumption for
-host-confirmed SDK exit and prior systemd invocation exit. The latter must match
-the exact released worker/lease, generation, role, resource and process scope.
-Unknown exits remain blocked; no state or lock deletion is a recovery mechanism.
-Task40/PR48 retains its current Attempt and all draft/history records. Verification
-and safe-checkpoint deployment precede Chief resumption; no frontend code is edited.
-
-### Direct backend recovery — 2026-11-01
-
-The owner requires backend repairs in the foreground Codex session; do not
-dispatch backend development through FlyBot. Existing frontend work is preserved and now continues autonomously while new
-backend service work is developed independently (owner update, 2026-11-01). See the
-[execution decision](decisions/2026-11-01-direct-backend-recovery.md).
-R6 adds coalesced event-driven dispatch, manager-controlled retry of blocked queue
-entries under the original requester, and operator-selected workspace preparation
-before each pool receiver and after independent test cleanup. Failed allocation,
-checkout or context preparation releases only proven unbound reservations and
-retains its failure audit. These changes do not imply live UI or R8 acceptance.
-
-
-This is `zy95-12/FlyBot`. Current scope is the [shared-project roadmap](https://github.com/zy95-12/FlyBot/issues/1)
-and [fork decision](decisions/2026-10-31-project-first-fork.md). The inherited mission,
-people and stage descriptions below are historical upstream context; upstream accounts
-are not this fork's decision-makers merely because inherited docs name them.
-
-- Project is the target stable boundary for Task/Run/Workspace ownership. Bots and
-  Sessions are replaceable execution/interaction carriers. M1 implements direct ownership and explicit legacy resolution; see [Project domain](docs/subsystems/project-domain.md).
-- Reuse control-plane identity, auth, invitation, instance and operations APIs unchanged
-  where possible. Put project business logic/adapters in FlyBot; justify a missing API
-  separately. The platform PR was withdrawn, not merged.
-- Rebuild task navigation and the Project board; current UI/components are not constraints.
-- M0 is implemented on [PR #9](https://github.com/zy95-12/FlyBot/pull/9), merged (2026-10-31):
-  real DSH/tool execution with a deterministic model, plus a FlyBot-owned HTTP adapter
-  exercising unchanged external platform source. This is not real-model PR delivery.
-- The baseline identity, scoped Workflow-write and per-run cwd seams are implemented
-  through M1–M3; later milestone integration and live acceptance are recorded below.
-- Durable repository memory is this page, ROADMAP, LESSONS and dated decisions. Update
-  them and matching architecture docs alongside code, with regression coverage in
-  verify/CI and tested-SHA evidence. Never edit live DSH/Bot memory for repository decisions.
-
-See [baseline ownership and tests](docs/subsystems/demo-baseline.md).
-
-- M1 implementation ([PR #10](https://github.com/zy95-12/FlyBot/pull/10), complete local verification, awaiting review) adds Project service/policy/repository boundaries, immutable work
-  ownership, explicit migration, archive/delete/member-removal rules and an owner-only
-  detail API. Workspace records are directory references; M3 supplies worktree isolation.
-- The owner authorized continuing M2–M6, one PR per milestone, with memory, architecture
-  and tests updated in each. [M1 decision](decisions/2026-10-31-m1-project-ownership.md).
-
-- M2 ([PR #11](https://github.com/zy95-12/FlyBot/pull/11), complete local verification, awaiting review) implements the [shared access contract](docs/subsystems/project-access.md): unchanged
-  platform auth API adapter, stable subject mapping, human membership policy/invites,
-  immediate revocation and scoped Workflow gateway. It is explicitly configured; worktrees,
-  agent delegation/credentials and browser delivery are supplied by M3–M6 below.
-
-- M3 ([PR #13](https://github.com/zy95-12/FlyBot/pull/13), full local verify) implements the [commit-specific delivery contract](docs/subsystems/project-delivery.md)
-  on the existing Workflow service: versioned Attempts, real role worktrees/cwd, host test
-  evidence, Review/SHA gates and human acceptance. Actual DSH and draft artifact PR #12
-  were first exercised with a deterministic model. Integrated real-model/GitHub/browser
-  acceptance subsequently passed in M6; [evidence](docs/live-acceptance.md).
-
-- M4 implements [scoped Project agents](docs/subsystems/project-agents.md): fresh public
-  Chief, private human/Project identities, separate memory/history/proposals, live delegated
-  tool checks, role/skill snapshots and exact GitHub credential scopes. Actual DSH fixture
-  validation covers creation/publication/revocation; real-model/browser acceptance
-  subsequently passed in M6. Runtime code-worker OS isolation is not claimed by this demo.
-
-- M7 is owner-authorized in [#20](https://github.com/zy95-12/FlyBot/issues/20),
-  implemented sequentially as #21–#25, one PR per issue. It explicitly authorizes native,
-  Codex SDK and Claude Agent SDK Harness choices; the inherited upstream removal of
-  Codex does not govern this fork. Control-plane remains unchanged. M7.1 introduces
-  explicit public role memory and bounded hashed execution contexts, durable Chief
-  identity/history and per-Attempt temporary Session bindings. M7.2–M7.5 code is on PRs #27–#30: resource leases, SDK Harnesses, Owner setup and
-  verified Git handoffs. Authenticated mixed-resource acceptance remains outstanding;
-  the later owner-authorized local Codex-only run passed, as recorded below.
-
-### Automatic development service — 2026-11-01
-
-Owner approved [#49–#55](https://github.com/zy95-12/FlyBot/issues/49), sequential
-backend issue/PR delivery alongside existing frontend Task40/PR48. S1 ([PR56](https://github.com/zy95-12/FlyBot/pull/56)) implements
-one versioned service facade, legacy adapters and a shared derived TaskView;
-[contract](docs/subsystems/project-development-service.md),
-[decision](decisions/2026-11-01-development-service.md). Durable Effects, input
-receipts, external subscriptions, trusted deployment boundaries and recovery
-acceptance remain S2–S6. Source checks and staged live rollout are separate;
-healthy frontend work and native schedules must not be interrupted for deployment.
-The initial673c741b service facade was deployed at a proven idle boundary, with
-51 mixed-source UID998 checks and unchanged native UI assets. Live verification
-found the old25-Attempt detail response exceeded8MiB. Follow-up b9cceb02 preserves
-full history with paged summaries/hash-bound context retrieval: full UID1000
-Node24 verify4333 passed,0fail/skip. It was deployed at a tested, released Chief-wait checkpoint. Owner/Maintainer/Member
-actual HTTP probes passed, including full-context paging and denied foreign/mutating
-requests; the original detail response is now about1.45MiB. Native UI bytes remain
-unchanged; frontend integration and final UI acceptance stay with Task40/PR48.
-
-### Durable service actions — S2/#51
-
-S2 stages handoff dispatch and GitHub PR/comment actions with existing state,
-requires an actual rename acknowledgement before I/O, and retains bounded retry/
-reconciliation receipts across restart. Current principals, claim generations,
-worker exit and candidate-specific tests/review remain authoritative. Private
-comment bodies are immutable artifact references, not public context or tokens.
-[Effect architecture](docs/subsystems/project-effects.md). Source implementation
-and fault-injection checks are in progress; no S2 live deployment, real GitHub
-outbox acceptance or independent repository review is claimed by those checks.
+Detailed S1–S6 implementation/recovery history is [archived verbatim](docs/history/2026-11-03-service-integration.md). Existing contracts remain in their subsystem docs. New convergence work is not deployed; preserve healthy frontend Task40/PR48 and native schedules. Backend work remains in this owner-authorized session.
 
 ## Historical upstream Project State
 
-## Mission
-
-FlyBot is a local team of long-lived AI Bots that runs on DeepSeek Harness (DSH), in your own
-browser, with your own model keys. One person talks to one Bot — the **Chief** — and the team takes
-the request apart and comes back with one answer. The Bots keep their own memory, working folder,
-model and schedules between turns, so work outlives a single chat.
-
-The project's mission is to keep that team reliable and inspectable: every Bot acts on evidence,
-stays inside its goal, and its result can be checked by a person afterwards. The product is the app
-in this repository plus the patches that pin it to upstream `ds-bot`; it is not a hosting service.
-
-`AGENTS.md` states the two halves the code is built from: pristine upstream `ds-bot/` (never edited),
-and `core/` — `ds-bot/` plus FlyBot's ordered patches — which is what ships and what the tests run.
-The shipped features are the DSH plugin in `core/` and the peer plugins `plugins/social`,
-`plugins/tree`, `plugins/timeline` and `plugins/workflow`.
-
-## Owner and maintainer roles
-
-Today the project has one owner and a small number of human maintainers; the Bots work under the
-owner's delegation. This is the state of the repository as of 2026-10-29, not the target model of
-[#1550](https://github.com/ThinkFlowLab/FlyBot/issues/1550).
-
-| Role | Who | Decides |
-| --- | --- | --- |
-| **Owner** | Danyang, GitHub [`Birfy`](https://github.com/Birfy) (repository admin) | Mission, governance policy, roles and membership, project Bots, compute and resources, budgets, autonomy boundaries, and every matter reserved to the owner in [docs/governance.md](docs/governance.md) |
-| **Maintainer** (human) | People with repository write access — today the owner and [`hsliuustc0106`](https://github.com/hsliuustc0106) | Major decisions under [docs/governance.md](docs/governance.md): roadmap and architecture changes, changes to the governing documents, multi-subsystem contracts. Records a verdict through the review policy, never through an admin merge |
-| **Chief** (AI) | The owner's Main Bot, writing as `Birfy` | Plans and routes work, splits a request into role tasks, **classifies** each decision as ordinary / major / severe with its rationale, convenes a discussion when one is needed, and escalates to the owner. Not the ultimate authority and not the owner |
-| **Routine Bots** (AI) | `Triage`, `Dev`, `Dev2`–`Dev4`, `Reviewer`, `Reviewer2`, `Release`, `SelfTest`, `Docs`, `Maintainer` — the names in [`writers`](.github/agent/review-policy.json) | Only their routine's job: see [Routines](AGENTS.md#routines). A Bot records a conclusion only where its routine owns that conclusion, and the implementer never writes the verdict on its own change |
-| **Contributors** (human) | Anyone who opens an issue or a pull request | Proposals, bug reports, code. No default approval right; a contribution merges only through the gates in [AGENTS.md](AGENTS.md) |
-
-Deliberately **not** claimed here, because it is not shipped: a Maintainer console, a Member role, a
-Project Assistant, per-person GitHub attribution for Bots, and the multi-human authority contract in
-[docs/subsystems/team.md](docs/subsystems/team.md) (planned; team mode stays disabled until its
-authorization gates pass). Every Bot still writes as the one shared `Birfy` identity, so a
-`Written-by:` line is a claim the gates can check for presence and name, not a signature.
-
-## Resources covered
-
-- **This repository** — `https://github.com/ThinkFlowLab/FlyBot`, the source of record. `main` is
-  the live branch; pull requests merge into it only through the merge queue.
-- **Code** — `core/` (shipped plugin, source of truth), `patches/ds-bot/` and `core/client.js`
-  (generated from `core/`), `plugins/*` (peer plugins), `scripts/` and `core/scripts/`.
-- **Rules and knowledge** — `AGENTS.md` (operating contract), `CONTRIBUTING.md`, `LESSONS.md`
-  (observed failures and promotion to standards), `docs/` (architecture, standards, runbooks),
-  `decisions/` (dated decisions), `PROJECT.md` and `ROADMAP.md` (this page and the plan).
-- **Automation** — `.github/workflows/` and `.github/scripts/` (CI, risk tier, review gate, merge
-  gate, enqueue guard), `.github/agent/` (risk rules and the review policy).
-- **Authoritative runtime state elsewhere** — GitHub issues, pull requests and CI runs are the
-  authority for work state; task boards, approvals and per-Bot memory live in FlyBot's own storage,
-  never in this repository. `docs/` pages are informative only where a source above decides
-  something.
-- **Not in this repository** — the upstream `ds-bot` project (pinned in `ds-bot.pin.json`, read-only
-  here) and the self-hosted Bot Social server used by the social plugin. The fork
-  `Birfy/FlyBot` is an archive: nothing merges into it.
+Historical upstream mission, named roles and resource inventory are [preserved verbatim](docs/history/2026-11-03-upstream-project-inventory.md). Current fork ownership and capabilities follow the active state and dated decisions above. The governing and automation boundaries below remain active.
 
 ## Governing boundaries
 
@@ -483,102 +249,17 @@ asset measurements and test reports remain in [the archive](docs/history/2026-11
 ### Task-scoped SDK context and resident Chief memory — 2026-11-01
 Owner requires a resident Chief with durable Project memory and one logical Session per Task/role. Codex/Claude own their supported conversation persistence and automatic compaction; FlyBot does not inject a second model-history compactor. SDK role rework reuses a confirmed released Task-role cwd/thread under the same principal/resource/profile/model/persona binding, while preserving separate immutable Attempt/claim/log/test/Review evidence. Changed or incompatible bindings expose an explicit context-resume problem and retain history; they cannot silently start a fresh conversation. Chief memory uses the original own-Bot MEMORY.md/topics/journal, never global team or private-user memory. Context admission keeps current bounded facts and hash-bound full source archives for scoped retrieval. Backend changes are foreground work; frontend Task40/PR48 resumes through FlyBot after validation.
 
-Task40 continuation integrates trusted backend `91792c1b` into preserved candidate
-`25607404` without committing or publishing. Room-scoped messages/streaming and role
-identity are retained alongside Chief retrieval/memory and binding-checked SDK resume.
-The inherited changelog failure reproduces (6/7) and the single-entry repair passes
-(7/7). Generated patches match canonical core. Direct integration testing requires
-DSH's registered loader: plain node cannot resolve `@deepseek-ai/dsh-llm` from the
-new scheduled-task module. This is not a passing integration result. Native composer,
-tool/approval/stop/stream, personal/group interactions, CSS-load synchronization and
-actual deployed three-account/weak-network acceptance remain open.
+Keep Chief durable memory and one logical Session per Task/role. SDKs retain their
+supported persistence/compaction; FlyBot keeps bounded facts and exact binding/exit
+proof, without a second model-history compactor. Rework resumes original context;
+incompatible binding requires explicit recovery. Native continuation now has actual
+DSH deterministic single-resource return/context coverage. Historical deployment and
+probe details, including their original limitations, remain in
+[execution history](docs/history/2026-11-03-execution-evidence.md#task-scoped-sdk-context-and-resident-chief-memory--2026-11-01).
 
-Follow-up local check used the required harness loader:
-`cd core && node --import ./test/harness-resolve.mjs --test test/project-agents.test.js test/project-harness.test.js`
-passed 40/40 on the staged merge draft. The earlier plain-node failure was a loader
-invocation error, not a missing prepared dependency. Full verify, smoke, independent
-Review and deployed acceptance are Not run for this draft.
+### Task40 service integration history
 
-Task40 adds a CSS/JS readiness barrier (defect tests 0/2 → 2/2) and mounts the scoped
-composer from original composer.js for Project agents and personal conversations.
-The original dictation hook is reused with disposal; captured chat handles retain
-scope revocation. A base-bundle composer test fails because the capability is absent;
-current native render/client/asset checks pass 27/27. These are local draft checks,
-not host full verification, independent Review or deployed three-account acceptance.
-
-The room composer now shares that native mount and existing registered-document
-IDs, while personal groups restrict mention choices to their visible members.
-Actual native workText labels render scoped live tool names. Final focused UI
-checks pass 33/33. Full verify was attempted during editing and is not valid final
-verification; a later process-control/result request was refused by sandbox
-loopback policy. Request actual configured host verification through Tester, then
-return this partial implementation to Developer for remaining tool-result,
-approval, personal live/stop and full interaction work. Do not close Task40.
-
-Task40 continuation at base cbcad4c4 adds actual native question/approval/stop/continue
-controls, original group MemberWork controls, bounded redacted tool results and current
-own-chat streaming. Existing original components are reused; standing grants and raw
-owner APIs are not exposed. SDK permission/message inputs now use the same original
-approval/composer components with existing host worker-generation/current-rights gates.
-The new personal HTTP capability test failed at base (1/2) before implementation and
-passed afterward; additional boundary tests cover foreign approvals/workers, retired
-handles, hidden turns, historical parts and stale questions. Host full verification,
-independent Review and deployed three-account/weak-network screenshots remain required.
-
-The continuation also restores answerable group question/approval cards through
-original handlers, exposing only public question fields rather than replyTo/origin.
-Group member-stop tests use actual native membership and reject another owner's Bot.
-Final local interaction checks, build/patch/lint results and outstanding host/browser
-validation are reported at handoff; no candidate recommendation closes this Task.
-
-Task40 host verification at `33e482d6` reported four failures in install, secrets
-and usage suites. All four reproduced locally (28/32). The personal stream observer
-was also installed in legacy mode, shifting the established listener order used by
-those protocol tests. Register it only for explicit shared-workbench mode; keep its
-purpose/Session guards. The new mode-boundary regression fails without that fix;
-affected suites plus personal-workbench coverage now pass 38/38. Final host full
-verification and independent Review remain required; no deployed acceptance is claimed.
-
-Review return at `846378bf` reproduced current-part navigation leaving the live
-conversation read-only; picker and explicit current-part links now normalize to the
-live route (defect regression red→green). Human Markdown/mentions reuse original
-PersonMessage. Attachment-only messages, scoped image preview/file download and
-native file/image sends use public DSH attachment/Agent APIs with current-user checks.
-The new human/attachment render test fails against the base bundle and passes on the
-working build. Boundary tests cover foreign IDs, batch validation, historical reads,
-revocation during admission and late download callbacks. Final host verification,
-independent Review and real-service screenshots/weak-network acceptance remain open.
-
-Review return at `bde2cf7c` reproduced native composer remount/focus loss on same-route
-refresh. The mounted regression now uses bounded boolean DOM-identity diagnostics
-(the former object diff exhausted memory before reporting failure) and reproduces
-red at that source. Native roots now update in place within the same scoped route and
-source, retaining input, cursor and focus; navigation/revocation still dispose them.
-Mounted personal/public/private/room regressions cover retained sends and scope teardown.
-No resource limit was raised. Exact-candidate host verification, independent Review
-and deployed three-account/weak-network/screenshot acceptance remain separate gates.
-
-### Service and native compatibility invariants
-
-The shared service retains legacy delivery/Chief/schedule/delegation entrypoints,
-native personal/room/attachment paths and retained roots. Live status must use actual
-native activity. A completed Chief deferral is waiting-human, not an active execution
-claim. SDK-owned jobs accept only their fenced SDK callback, including the window
-before worker registration; dormant native events cannot consume them.
-
-Preserve SDK failure attribution and accept historical exit only with matching
-worker/generation/Project/Attempt/role/resource and released worker/lease proofs.
-Interruptions may resume the same allocated pre-candidate Attempt only after all
-registered occupancy releases, preserving clean/dirty drafts and admitted integration
-sources. Explicit returns/rework retain their own isolation. Operator dependency
-migration uses the complete deployed graph, proves release first, backs up untracked
-caches outside the checkout and preserves HEAD/index/status and source identity.
-
-API guides distinguish derived views, stored lifecycle, actual evidence, fixtures,
-ordinary consultation and impactful Tasks. Historical candidate SHAs and reports
-remain in [the archive](docs/history/2026-11-02-collaboration-implementation.md);
-neither prior-parent verification nor a document update is current integration,
-deployment, independent Review or Owner acceptance.
+Earlier S1 integration evidence is [archived verbatim](docs/history/2026-11-03-service-integration.md). Original frontend Task40/PR48 remains separate work: preserve its original UI/functions and healthy execution; backend source convergence does not authorize merge, deployment or UI takeover.
 
 ### Publish the service snapshot in the upstream repository — 2026-11-02
 
@@ -599,7 +280,7 @@ Session or rollback to older context. Definition snapshots are shared by digest,
 current rights still revoke execution, failed unused preparations release their
 pins, and model input follows a durable-save/cancellation barrier. Existing
 Harness/lease/Workflow services remain authoritative. Adapter capability inspection
-reports native Task-role continuation as pending; no new real-provider validation,
+reports exact native Task-role resume with committed activation/quiescence; actual DSH deterministic return/context coverage is recorded separately from real-provider validation. No
 public service protocol, SQL transaction, deployment or frontend change is claimed.
 
 
@@ -647,3 +328,7 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 ### 2026-11-03 — Transactional state (#2182)
 
 Opt-in SQL retains the original Store/services and saves domain facts plus Effects atomically. JSON becomes a newer-version migration guard, with verified import/recovery and offline export/rollback; no dual writable snapshots. Histories are normalized and large immutable payloads hash-referenced. Routine state updates/views make no additional model calls or Project-position changes. Full-state hydration/scanning remains; storage growth is distinct from #2177 context budgets. No live migration or provider-loop claim.
+
+Composition checkpoint: current role governance/native exit, bounded context and canonical Task waits now share one execution chain. Native input fences logical role/physical worker separately; Task requirement revision changes stop the old Attempt through existing pool release. Actual composed/native acceptance and remaining API/storage compatibility are still under verification, not deployment.
+
+SQLite composition now has an actual DSH native return probe: canonical Chief intake, persisted activation/exit, original role context and single-resource handoff are read from committed SQL snapshots. Inference remains deterministic; no production migration or full-provider workflow acceptance is claimed.

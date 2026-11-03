@@ -181,3 +181,5 @@ including false/zero values. Before sending, it offers the exact final message t
 the host's optional execution.checkInput budget/generation fence. Refusal prevents
 send and uses the existing failure/release path; SDK dispatch retains its original
 host adapter. No graph, task-pool or UI replacement is introduced.
+
+#2184 fixes native lifecycle input delivery: structured inputs use JSON rather than implicit [object Object] conversion, preserving handoff IDs/evidence and false/zero values. Distinct returned handoffs therefore produce distinct content for the existing delivery deduplicator, while an exact repeated dispatch remains stable. The regression uses the original plugin lifecycle seam; the real DSH native-pool probe reproduces and guards same-Session return delivery. No alternate Workflow or scheduler is introduced.

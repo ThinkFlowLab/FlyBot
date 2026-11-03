@@ -135,3 +135,9 @@ not have SQLite. This issue's PR stacks on #2179/4826723cc and adds SQL storage 
 migration only. It does not merge upstream main, deploy, change control-plane/UI or
 claim real-provider parallel Task development validation. Public event/receipt and
 history service boundaries remain #2185; legacy entrypoint cutover remains #2186.
+
+## Composed native lifecycle verification
+
+The actual DSH native pool return probe also runs with `stateStorage: sqlite`. Its read side loads committed snapshots through a separate read-only SQLite connection, proving canonical Chief admission, native activation intent, retained Task-role context/parts, physical exit proofs and nonoverlapping resource release persist across role handoffs. It uses deterministic model transport and actual code/host tests, not provider inference or production migration. JSON remains the default. The dev probe's `--sqlite` flag is verification tooling; deployment documentation remains #2189.
+
+State maps have no semantic insertion order. The probe resolves the previous Attempt through the successor's `feedback.previousAttemptId`; SQLite map iteration exposed an invalid earlier assertion that assumed the first UUID record was oldest. Immutable history arrays preserve explicit positions. No domain fact or history was lost by that diagnostic failure.

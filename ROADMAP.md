@@ -19,7 +19,12 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 ## Backend convergence — 2026-11-02
 
-Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 starts with repository relations and Owner closure; role-governance acceptance remains tracked.
+Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 includes repository relations, Owner closure and Chief-proposed/Owner-or-Maintainer-approved role governance. Execution integration for custom/retired roles remains in #2184; ancestor changes must propagate through the PR stack before final compatibility acceptance.
+
+Original #2184 follow-up adds native Task-role restoration metadata, cancellation/quiescence
+proofs and canonical-pool cwd retention. Custom-role verification now has direct artifact/SDK contract regressions; finish current-rights
+in-flight stop/reconcile and real-provider native acceptance before propagating the
+execution ancestor through collaboration/context/Task/state/API branches.
 
 ## Active fork roadmap — 2026-10-31
 
@@ -459,3 +464,7 @@ New shared Tasks have Chief admission and versioned requirements. Existing Task/
 #2179 follow-up: Chief dependency waivers/substitutions retain exact outcome versions and explicit judgement evidence. Accepted child code enters the existing durable integration gates before parent execution; source admission is not merging or parent acceptance. Actual Git multi-parent sealing tests use deterministic child acceptance fixtures. Full real-provider parallel collaboration and native physical restoration remain pending.
 
 #2182 implements opt-in transactional SQLite through the existing Store, exact-identity migration, process-death commit tests and recoverable offline rollback. Retain configured Chief semantic decisions while routine facts/queries remain deterministic. Public scoped event/receipt service #2185, legacy entrypoint cutover #2186 and final real deployment/README #2189 remain subsequent stages; current production state is unchanged.
+
+Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
+
+Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.

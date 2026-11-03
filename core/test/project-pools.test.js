@@ -519,3 +519,65 @@ test('a sealed parent resumes through one successor Attempt while retaining its 
   assert.notEqual(f.task.status, 'accepted')
   await f.rt.projectEffects.close()
 })
+
+
+test('a retired source can finish its frozen active claim but cannot receive new offers', async () => {
+  const f = setup(); await f.admit(); const claim = await f.claim()
+  const roles = f.rt.projectAgents.deliveryDefinitions().roles
+  const index = roles.findIndex(row => row.role === 'developer'), retired = roles.splice(index, 1)[0]
+  f.rt.state.projectRetiredRoles = { 'p:developer': { ...retired, projectId: 'p', retiredAt: 1 } }
+  await f.pool.decide('task', claim, { action: 'handoff', to: 'p:tester', reason: 'Complete original responsibility and request actual testing' })
+  assert.equal(f.completed[0].role, 'developer')
+  assert.equal(f.task.collaboration.botId, 'p:tester')
+  const tester = await f.pool.claim('task', 'p:tester')
+  await assert.rejects(f.pool.decide('task', tester, { action: 'return', to: 'p:developer', reason: 'Cannot hand off to an inactive role' }), /Target/)
+})
+test('queued work for a retired role becomes visibly blocked without reassignment or a new worker', async () => {
+  const f = setup(); await f.admit()
+  const roles = f.rt.projectAgents.deliveryDefinitions().roles
+  roles.splice(roles.findIndex(row => row.role === 'developer'), 1)
+  assert.equal(await f.claim(), null)
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.botId, 'p:developer')
+  assert.match(f.task.collaboration.block.reason, /Chief must explicitly/)
+  assert.equal(f.task.collaboration.claim, undefined)
+})
+
+test('host execution revocation fences the exact claim before stopping and never infers exit or reassigns', async () => {
+  const f = setup(); await f.admit(); const token = await f.claim()
+  f.task.collaboration.claim.workerId = 'worker'
+  const events = []
+  f.rt.save = async () => { events.push('saved') }
+  f.adapter.release = async workerId => { events.push('stop'); assert.equal(workerId, 'worker'); assert.equal(f.task.collaboration.claim.status, 'revoked'); assert.equal(events[0], 'saved'); return false }
+  assert.equal(await f.pool.revokeExecution('task', 'stale-claim', 'Wrong worker'), false)
+  assert.equal(await f.pool.revokeExecution('task', token.id, 'Role resource permission revoked'), true)
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.claim.exitConfirmed, false)
+  assert.equal(f.task.collaboration.history.length, 1)
+  assert.equal(await f.pool.revokeExecution('task', token.id, 'Repeated observation'), false)
+  await assert.rejects(f.pool.decide('task', token, { action: 'handoff', to: 'p:tester', reason: 'Stale callback' }), /stale/)
+})
+
+test('a role retired while source exit is inspected cannot acquire a new handoff claim', async () => {
+  const f = setup(); await f.admit()
+  f.task.collaboration.history[0].sourceExecution = { workerId: 'old-worker', exitConfirmed: false }
+  f.adapter.release = async () => {
+    const roles = f.rt.projectAgents.deliveryDefinitions().roles
+    roles.splice(roles.findIndex(role => role.role === 'developer'), 1)
+    return true
+  }
+  assert.equal(await f.claim(), null)
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.claim, undefined)
+  assert.match(f.task.collaboration.block.reason, /retired/)
+})
+
+test('a completed turn from the old requirement version cannot transfer or split the revised Task', async () => {
+  const f = setup(); f.task.projectTask = { requirements: { revision: 1 } }
+  await f.admit(); const token = await f.claim()
+  let stops = 0; f.adapter.release = async () => { stops++; return true }
+  f.task.projectTask.requirements.revision++
+  await assert.rejects(f.pool.decide('task', token, { action: 'transfer', to: 'p:tester', reason: 'Late old-plan response' }), /requirements.*changed/)
+  assert.equal(stops, 0)
+  assert.equal(f.task.collaboration.history.length, 1)
+})
