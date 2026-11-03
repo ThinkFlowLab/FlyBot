@@ -12,7 +12,7 @@ function projections(state) {
   const rows = new Map()
   for (const row of Object.values(state.projects ?? {})) {
     if (!row?.id) continue
-    const data = { id: row.id, name: text(row.name), status: row.status, goal: text(row.goal), scope: text(row.scope), repository: row.repository ?? null, roleDefinitionRevision: own(state.projectAgentDefinitions, row.id)?.revision ?? 0 }
+    const data = { id: row.id, name: text(row.name), status: row.status, goal: text(row.goal), scope: text(row.scope), repository: row.repository ?? null, roleDefinitionRevision: own(state.projectAgentDefinitions, row.id)?.revision ?? 1 }
     rows.set(`project:${row.id}`, { projectId: row.id, entityType: 'project', id: row.id, data, fingerprint: hash([data, row.roles ?? {}, row.repositories ?? []]) })
   }
   for (const row of Object.values(state.tasks ?? {})) {

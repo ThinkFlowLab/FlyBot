@@ -763,3 +763,7 @@ Seen 1× (actual SQLite native return probe). Two valid Attempts survived, but U
 ### 2026-11-03 — New execution adapters need committed read-model coverage
 
 Seen 1× (native projection regressions). A correct native stop/binding is insufficient if queries/events still report only SDK workers. Reuse actual activation/exit proofs, distinguish current catalog from frozen definition, hide host details and reference large definitions instead of repeating them. Keep private personal proposals separate from public governance proposals.
+
+### 2026-11-03 — Read-model lookups must not materialize domain facts
+
+Seen 1× (actual SQLite API regression). A Task query requested full delivery definitions, creating an unsaved default role catalog. A later Task command persisted it and emitted an unrelated Project change. Return deterministic legacy defaults without mutation and use committed raw catalogs for metadata; keep materialization in explicit writes.

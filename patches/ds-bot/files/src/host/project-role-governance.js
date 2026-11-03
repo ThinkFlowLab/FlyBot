@@ -16,7 +16,7 @@ export function createProjectRoleGovernance(rt, ports) {
   const previousSets = new Map()
   rt.projectEffects?.register('role.governance', { run: effect => ({ proposalId: effect.payload.proposalId ?? null, changeId: effect.payload.changeId ?? null, status: 'durable-role-record' }) })
   const committed = token => Boolean(token && rt.projectEffects?.intentCommitted(token))
-  function visibleSet(projectId, current = ports.definitionSet(projectId)) {
+  function visibleSet(projectId, current = ports.readDefinitionSet ? ports.readDefinitionSet(projectId) : ports.definitionSet(projectId)) {
     if (!current.changeEffect || committed(current.changeEffect)) return current
     const previous = previousSets.get(projectId)
     if (!previous) throw fail('Role definition change is not committed', 'bot/conflict')

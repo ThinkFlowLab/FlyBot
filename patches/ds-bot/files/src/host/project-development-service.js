@@ -86,7 +86,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
-    botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 0, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
+    botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
     contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
@@ -114,7 +114,7 @@ export function createDevelopmentService(rt) {
   }
   function view(task, actor) {
     rt.requireProjectAccess(actor, task.projectId)
-    const result = taskView(rt.state, task, { activity: rt.activityView?.() ?? {}, roleCatalog: rt.projectAgents?.deliveryDefinitions(task.projectId), isIntentCommitted: token => Boolean(rt.projectEffects?.intentCommitted(token)) })
+    const result = taskView(rt.state, task, { activity: rt.activityView?.() ?? {}, roleCatalog: rt.projectRoleGovernance?.visibleSet(task.projectId) ?? ownEntry(rt.state.projectAgentDefinitions ?? {}, task.projectId), isIntentCommitted: token => Boolean(rt.projectEffects?.intentCommitted(token)) })
     const allowed = action => rt.projectCan(actor, task.projectId, action, task)
     if (result.phase === 'published' || result.phase === 'failed') { if (allowed('create') && allowed('task-write')) result.nextActions.push('task.run') }
     if (result.queueId && ['queued', 'blocked'].includes(result.phase) && allowed('task-write')) result.nextActions.push('queue.cancel')

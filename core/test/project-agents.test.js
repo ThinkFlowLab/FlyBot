@@ -899,3 +899,13 @@ test('versioned role queries and Owner approval reuse original governance and re
   const roles = await rt.projectEndpoint('project-development', { ...query, name: 'roles' }, bob)
   assert.ok(roles.result.roles.some(row => row.role === 'analyst' && row.policyRole === 'reviewer'))
 })
+
+test('reading an implicit legacy role catalog does not materialize or mutate Project facts', async t => {
+  const { rt } = await setup(t)
+  if (rt.state.projectAgentDefinitions) delete rt.state.projectAgentDefinitions.p1
+  const before = JSON.stringify(rt.state.projectAgentDefinitions ?? {})
+  const response = await rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'query', name: 'roles', projectId: 'p1', payload: {} }, bob)
+  assert.equal(response.result.revision, 1)
+  assert.equal(response.result.roles.length, 4)
+  assert.equal(JSON.stringify(rt.state.projectAgentDefinitions ?? {}), before)
+})
