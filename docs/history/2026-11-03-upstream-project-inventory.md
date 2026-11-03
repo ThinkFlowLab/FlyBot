@@ -57,3 +57,4 @@ authorization gates pass). Every Bot still writes as the one shared `Birfy` iden
   here) and the self-hosted Bot Social server used by the social plugin. The fork
   `Birfy/FlyBot` is an archive: nothing merges into it.
 
+End of preserved historical inventory. Active governing and automation boundaries remain in PROJECT.md.
