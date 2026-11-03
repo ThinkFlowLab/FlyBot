@@ -574,6 +574,18 @@ test('dormant native end cannot consume an SDK Chief job before worker registrat
   assert.equal(rt.state.projectAgents[original.public.id].lastRequest.phase, 'completed')
 })
 
+test('a safe personal agent can recommend closure without a Task or Owner confirmation authority', async t => {
+  const { rt } = await setup(t)
+  const mine = await get(rt, bob)
+  await message(rt, bob, 'private', 'Recommend closing this project if appropriate')
+  const before = Object.keys(rt.state.tasks).length
+  const result = await rt.projectAgents.suggestClosure(rt.botOf(mine.mine.botId), { reason: 'Record final results and ask Owner' })
+  assert.equal(result.request.requestedBy, bob.memberId)
+  assert.equal(result.request.personalAgentId, mine.mine.personalAgentId)
+  assert.equal(Object.keys(rt.state.tasks).length, before)
+  assert.equal(rt.readProject('p1').status, 'active')
+})
+
 test('resident Chief role proposals require separate Owner approval and cannot be forged by private Bots or HTTP fields', async t => {
   const { rt } = await setup(t), initial = await get(rt, alice)
   await message(rt, bob, 'public', 'Suggest an additional analysis role')

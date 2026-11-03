@@ -1,5 +1,14 @@
 # FlyBot — Roadmap
 
+## Agent connection authorization — 2026-11-03
+
+#2183 adds scoped agent credentials over the existing member-session HTTP channel,
+reuses per-participation safe/watch grants, and persists Task-origin provenance.
+Owner's closure confirmation remains personal; native/external personal agents may
+suggest closure without a Task. Real TCP contract tests are separate from actual
+provider adapters/login. Full operation receipts/events and transaction migration
+remain #2185/#2182; runtime cancellation remains #2184. No live rollout.
+
 ## Independent personal-agent foundation — 2026-11-02
 
 #2170 introduces user-owned identities, per-Project participation/default routing,

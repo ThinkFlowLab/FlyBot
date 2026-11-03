@@ -175,6 +175,7 @@ export function install(rt) {
     return { participation: structuredClone(row), agent: structuredClone(agent) }
   }
   rt.personalAgents = { migrate, ensure, agentOf, defaultParticipation, requireParticipation,
+    participationFor: (agentId, projectId) => Object.values(participations()).find(row => row.agentId === agentId && row.projectId === projectId),
     carrierId: (projectId, ownerId) => defaultParticipation(projectId, ownerId)?.carrierId ?? legacyId(projectId, ownerId),
     endpoint(endpoint, body, actor) {
       if (!endpoints.has(endpoint)) return undefined

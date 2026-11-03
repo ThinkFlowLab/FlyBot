@@ -1489,6 +1489,7 @@ export function install(rt) {
         }
         defaultContract(task)
         rt.projects?.stampTask(task, body)
+        if (actor?.personalAgentCredentialId) task.personalAgentSource = rt.personalAgentAuth.source(actor, task.projectId)
         rt.projects?.validateTask(task, body)
         if (task.projectId) {
           const kind = body.projectTaskKind ?? 'code'

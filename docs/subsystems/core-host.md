@@ -958,3 +958,7 @@ Project convergence #2171 routes repository/closure operations through channel/a
 ## Independent personal-agent integration
 
 Personal-agent endpoint dispatch and load migration reuse the existing store and channel. Private identity reads are allowed on a read-only host, writes are refused. No additional listener, credentials, scheduler or background worker is introduced.
+
+## Scoped connection integration
+
+Personal-agent connection authentication (#2183) installs after authz and wraps the existing authenticator/Project policy. It introduces no listener or timer. Task publication stamps authenticated agent provenance; browser and agent connections remain separate. See [contract](personal-agent-auth.md).

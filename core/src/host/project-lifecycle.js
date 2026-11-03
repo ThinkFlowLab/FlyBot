@@ -102,8 +102,11 @@ export function install(rt) {
       return { repositories: list(id).map(row => ({ ...row })) }
     }
     if (endpoint === 'project-close-request') {
-      if (!['owner', 'maintainer'].includes(role)) throw fail('Project access denied: suggest closure', 'bot/forbidden')
-      const request = { id: `close-request-${randomBytes(16).toString('hex')}`, projectId: id, requestedBy: actor.memberId, reason: text(body.reason, 'Closure reason', 4000), createdAt: Date.now() }
+      const carrier = ownEntry(state.projectAgents ?? {}, actor.personalAgentSuggestionId)
+      const nativeProxy = carrier?.visibility === 'private' && carrier.memberId === actor.memberId && carrier.projectId === id && carrier.personalAgentId
+      if (nativeProxy) rt.personalAgents.requireParticipation(carrier)
+      if (!['owner', 'maintainer'].includes(role) && !actor.personalAgentCredentialId && !nativeProxy) throw fail('Project access denied: suggest closure', 'bot/forbidden')
+      const request = { id: `close-request-${randomBytes(16).toString('hex')}`, projectId: id, requestedBy: actor.memberId, ...(actor.personalAgentCredentialId || nativeProxy ? { personalAgentId: actor.personalAgentCredentialId ? actor.agentId : carrier.personalAgentId } : {}), reason: text(body.reason, 'Closure reason', 4000), createdAt: Date.now() }
       project.closeRequests ??= []
       project.closeRequests.push(request)
       try { await rt.save() }

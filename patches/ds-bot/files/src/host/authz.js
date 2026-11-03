@@ -58,7 +58,7 @@ const SESSION_TARGETED = new Set(['earlier', 'send', 'answer-question', 'dismiss
 // Task channel names. Requester checks live on the record in tasks.js; listing them
 // here keeps a future `task-*` from auto-allowing for any signed-in actor (#111).
 const TASK_ENDPOINTS = new Set([
-  'personal-agent-history', 'personal-agent-create', 'personal-agent-read', 'personal-agent-list', 'personal-agent-join', 'personal-agent-default', 'personal-agent-participations', 'personal-agent-leave', 'personal-agent-retire',
+  'personal-agent-token-create', 'personal-agent-token-list', 'personal-agent-token-revoke', 'personal-agent-delegation-set', 'personal-agent-propose-task', 'personal-agent-history', 'personal-agent-create', 'personal-agent-read', 'personal-agent-list', 'personal-agent-join', 'personal-agent-default', 'personal-agent-participations', 'personal-agent-leave', 'personal-agent-retire',
   'tasks', 'task-create', 'task-update', 'task-accept', 'task-start', 'task-return', 'task-accept-result', 'task-send-back', 'task-cancel',
   'task-wait-input', 'task-answer-input',
   // Saving a workflow definition writes `workflows/<id>.json` in the workspace (#1272 step 3): the

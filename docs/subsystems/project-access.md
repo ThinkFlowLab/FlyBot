@@ -248,5 +248,9 @@ Project convergence #2171 adds closed as a read-only lifecycle: authorized membe
 
 Independent personal-agent endpoints enforce their own current-user ownership and current membership on join/default selection. Watch grant validation also checks a linked carrier participation so retirement cannot keep using delegated rights.
 
+## Scoped connection integration
+
+Agent connection authority intersects current human Project role, explicit credential scopes, active participation and the existing safe/watch mandate. Scope filtering applies to Project listings and reads, not only commands; body identity and default routing do not grant rights.
+
 
 #2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.

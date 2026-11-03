@@ -25,7 +25,7 @@ export function createProjectDelegations(rt, { principal = principalChecker(rt) 
   function validateGrant(actor) {
     const grant = ownEntry(grants(), actor?.watchGrantId)
     const member = ownEntry(rt.state.members, actor?.memberId)
-    if (!grant || grant.status !== 'active' || grant.memberId !== actor.memberId || grant.generation !== actor.watchGeneration || !member || member.status === 'disabled' || grant.subject !== (member.platform?.subject ?? member.id) || grant.issuer !== (member.platform?.issuer ?? 'local')) throw refuse('Watch delegation has been revoked or its principal changed')
+    if (!grant || grant.status !== 'active' || grant.memberId !== actor.memberId || actor.agentId && actor.agentId !== grant.agentId || grant.generation !== actor.watchGeneration || !member || member.status === 'disabled' || grant.subject !== (member.platform?.subject ?? member.id) || grant.issuer !== (member.platform?.issuer ?? 'local')) throw refuse('Watch delegation has been revoked or its principal changed')
     const carrier = ownEntry(rt.state.projectAgents ?? {}, grant.agentId)
     if (carrier) rt.personalAgents?.requireParticipation(carrier)
     return grant
@@ -45,11 +45,13 @@ export function createProjectDelegations(rt, { principal = principalChecker(rt) 
     return actor
   }
   async function mode(body, actor) {
-    if (actor.watchGrantId) throw refuse('Only the signed-in human can change their delegation mode')
+    if (actor.watchGrantId || actor.agentId || actor.chiefJobId) throw refuse('Only the signed-in human can change their delegation mode')
     const projectId = String(body.projectId ?? '')
     rt.requireProjectAccess(actor, projectId)
     if (!['safe', 'watch'].includes(body.mode)) throw refuse('Agent mode must be safe or watch')
-    const agentId = rt.projectAgents.privateIdentity(projectId, actor.memberId)
+    const participation = body.personalAgentId ? rt.personalAgents.participationFor(body.personalAgentId, projectId) : null
+    if (body.personalAgentId && (!participation || participation.ownerId !== actor.memberId || participation.status !== 'active' || rt.personalAgents.agentOf(body.personalAgentId)?.status !== 'active')) throw refuse('Active personal-agent participation is required')
+    const agentId = participation?.carrierId ?? rt.projectAgents.privateIdentity(projectId, actor.memberId)
     const old = forAgent(agentId)
     if (body.mode === 'watch') {
       const member = ownEntry(rt.state.members, actor.memberId)
