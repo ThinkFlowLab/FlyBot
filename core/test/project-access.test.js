@@ -220,7 +220,7 @@ test('board summaries retain authorized cards without full audit payloads', asyn
 
 test('queue recovery reaches live HTTP manager checks and cannot borrow a forged body identity', async t => {
   const rt = await setup(t)
-  rt.state.tasks.queued = { id: 'queued', projectId: 'p1', requesterId: 'bob', status: 'open' }
+  rt.state.tasks.queued = { id: 'queued', projectId: 'p1', requesterId: 'bob', status: 'open', projectTaskKind: 'decision' }
   rt.state.projectQueue = { q: { id: 'q', projectId: 'p1', taskId: 'queued', memberId: 'bob', status: 'blocked', requestId: 'original', reason: 'Missing dependencies' } }
   rt.state.projectAttempts = { busy1: { projectId: 'p1', status: 'running', id: 'busy1' }, busy2: { projectId: 'p1', status: 'running', id: 'busy2' } }
   rt.projectScheduler = createProjectScheduler(rt, { preflight: async () => ({}) })
