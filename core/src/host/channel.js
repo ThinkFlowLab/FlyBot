@@ -224,7 +224,16 @@ export function install(rt) {
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
   // auth-whoami is a read of the already-resolved actor; invite/redeem/revoke/remove-member write.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows'])
+  // The screens a second window still draws are reads of the same team: every Projects view
+  // (`projects`, `project-read`, `project-board`, `project-team`, `project-of`, `project-decision`,
+  // and the assistant memory `project-memory`), the task boards (`tasks`), the folder rows and
+  // browser (`folders`, `folder-list`) and the connector row's app sign-in state
+  // (`connector-app-status`). Each handler only reads; the write beside it (`project-create`,
+  // `project-bind`, `task-create`, `folder-pick`, `connector-connect`, ...) stays out, so a missing
+  // read here is an empty screen, never a change made through the reading window.
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
+    'tasks', 'projects', 'project-read', 'project-board', 'project-team', 'project-of', 'project-decision', 'project-memory',
+    'folders', 'folder-list', 'connector-app-status'])
 
   // A chat reference chip names a Session whose snapshot rides to every recipient of
   // the message, so the author must be able to read what they share (#53, #106).
