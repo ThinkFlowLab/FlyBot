@@ -1,7 +1,7 @@
 // One application boundary over existing Project services; no second executor/store.
 import { ownEntry } from './store.js'
 import { createCommandReceipts } from './project-command-receipts.js'
-import { taskContractView, taskProvenance, taskDetailView, attemptMetadataView, taskHistorySource, sourcePage } from './project-service-views.js'
+import { executionMetadataView, taskContractView, taskProvenance, taskDetailView, attemptMetadataView, taskHistorySource, sourcePage } from './project-service-views.js'
 import { createHash } from 'node:crypto'
 import { taskOutcome } from './project-task-lifecycle.js'
 import { inspectionFacts } from './project-chief-control.js'
@@ -15,6 +15,7 @@ const sameTask = (row, task) => Boolean(row && row.projectId === task.projectId 
 const roles = new Set(['chief', 'developer', 'tester', 'reviewer'])
 const operations = Object.freeze({
   'consultation.reply': 'project-consultation-reply', 'consultation.ask': 'project-consultation-ask', 'consultation.get': 'project-consultation-get', 'consultation.list': 'project-consultation-list',
+  'roles': 'project-roles', 'role.proposals': 'project-role-proposals', 'role.decide': 'project-role-decision',
   'handoff.get': 'project-handoff-get', 'handoff.list': 'project-handoff-list',
   'task.propose': 'task-create', 'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
@@ -30,12 +31,12 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
 
-export function taskView(state, task, { activity = {} } = {}) {
+export function taskView(state, task, { activity = {}, roleCatalog, isIntentCommitted = () => false } = {}) {
   const c = task.collaboration
   const candidate = ownEntry(state.projectAttempts ?? {}, task.deliveryAttemptId)
   const attempt = sameTask(candidate, task) ? candidate : null
@@ -43,15 +44,21 @@ export function taskView(state, task, { activity = {} } = {}) {
   const claim = c?.claim
   const worker = ownEntry(state.projectHarnessWorkers ?? {}, claim?.workerId)
   const sdk = sameTask(worker, task) || worker && attempt && worker.projectId === task.projectId && worker.attemptId === attempt.id ? worker : null
+  const nativeCandidate = ownEntry(state.projectNativeWorkers ?? {}, claim?.workerId)
+  const nativeWorker = sameTask(nativeCandidate, task) ? nativeCandidate : null
+  const executionView = executionMetadataView(state, sdk ?? nativeWorker)
+  const nativeActivated = nativeWorker && isIntentCommitted(nativeWorker.activationEffect)
   const native = ownEntry(state.bots ?? {}, claim?.workerId)
   const nativeActive = native?.projectId === task.projectId && (!attempt || native.attemptId === attempt.id) && activity[claim?.workerId]
   const execution = attempt?.runId ? ownEntry(state.projectExecutions ?? {}, attempt.runId) : null
   const run = sameTask(execution, task) ? execution : null
-  const currentRole = (state.projectAgentDefinitions?.[task.projectId]?.roles ?? []).find(row => row.id === c?.botId)?.role ?? (c?.botId?.startsWith(`${task.projectId}:`) && roles.has(c.botId.slice(task.projectId.length + 1)) ? c.botId.slice(task.projectId.length + 1) : null)
+  const catalog = roleCatalog ?? state.projectAgentDefinitions?.[task.projectId]
+  const currentRole = (catalog?.roles ?? []).find(row => row.id === c?.botId)?.role ?? claim?.role ?? Object.values(state.projectRetiredRoles ?? {}).find(row => row.projectId === task.projectId && row.id === c?.botId)?.role ?? (c?.botId?.startsWith(`${task.projectId}:`) && roles.has(c.botId.slice(task.projectId.length + 1)) ? c.botId.slice(task.projectId.length + 1) : null)
   let phase = 'published', waitingFor = null, reason = null
   if (task.status === 'accepted') phase = 'accepted'
   else if (task.status === 'cancelled' || c?.status === 'cancelled' || attempt?.status === 'cancelled') phase = 'cancelled'
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
+  else if (nativeWorker?.status === 'stopping' || nativeWorker?.status === 'stop-unconfirmed') { phase = nativeWorker.status === 'stopping' ? 'stopping' : 'blocked'; waitingFor = 'worker-exit'; reason = c?.block?.reason ?? null }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
   else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = 'awaiting-chief'; waitingFor = 'admission' }
   else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
@@ -59,9 +66,10 @@ export function taskView(state, task, { activity = {} } = {}) {
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
   else if (queue) { phase = queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
   else if (c?.status === 'queued') { phase = 'queued'; waitingFor = 'role' }
+  else if (c?.status === 'claimed' && executionView?.exitConfirmed) { phase = 'stopping'; waitingFor = 'handoff' }
   else if (c?.status === 'claimed') {
     if (sdk?.status === 'waiting-input') { phase = 'awaiting-input'; waitingFor = 'owner' }
-    else if (claim?.status === 'active' && (sdk?.status === 'running' || !sdk && nativeActive)) phase = 'running'
+    else if (claim?.status === 'active' && (sdk?.status === 'running' || !sdk && nativeActive && (!nativeWorker || nativeActivated))) phase = 'running'
     else { phase = 'starting'; waitingFor = 'execution' }
   }
   else if (task.projectTask?.block && task.status === 'blocked') { phase = 'blocked'; waitingFor = 'chief'; reason = task.projectTask.block.reason }
@@ -78,10 +86,10 @@ export function taskView(state, task, { activity = {} } = {}) {
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
-    botId: c?.botId ?? null, currentRole, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
+    botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 0, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
     contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
-    executionGeneration: sdk?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
+    executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
     evidence: { tests: tests ? { sha: tests.sha, sha256: tests.sha256, passed: tests.passed === true, current: Boolean(sha && tests.sha === sha) } : null,
       review: review ? { sha: review.sha, verdict: review.verdict, current: Boolean(sha && review.sha === sha) } : null },
@@ -91,7 +99,7 @@ export function taskView(state, task, { activity = {} } = {}) {
 
 export function createDevelopmentService(rt) {
   const receipts = rt.projectEffects ? createCommandReceipts(rt) : null
-  const management = new Set(['attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
+  const management = new Set(['role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
   const readCommand = new Set(['agent.mode', 'consultation.ask', 'consultation.reply'])
   const actionFor = name => ['task.propose', 'proposal.publish', 'comment.publish'].includes(name) ? 'create' : management.has(name) ? 'configure' : readCommand.has(name) ? 'read' : name === 'task.accept' || name === 'task.reject' ? 'accept' : 'task-write'
 
@@ -106,7 +114,7 @@ export function createDevelopmentService(rt) {
   }
   function view(task, actor) {
     rt.requireProjectAccess(actor, task.projectId)
-    const result = taskView(rt.state, task, { activity: rt.activityView?.() ?? {} })
+    const result = taskView(rt.state, task, { activity: rt.activityView?.() ?? {}, roleCatalog: rt.projectAgents?.deliveryDefinitions(task.projectId), isIntentCommitted: token => Boolean(rt.projectEffects?.intentCommitted(token)) })
     const allowed = action => rt.projectCan(actor, task.projectId, action, task)
     if (result.phase === 'published' || result.phase === 'failed') { if (allowed('create') && allowed('task-write')) result.nextActions.push('task.run') }
     if (result.queueId && ['queued', 'blocked'].includes(result.phase) && allowed('task-write')) result.nextActions.push('queue.cancel')
@@ -120,16 +128,20 @@ export function createDevelopmentService(rt) {
     return result
   }
   function attemptView(attempt) {
-    const policy = row => row ? { version: row.version, role: row.role, commit: row.commit, profile: row.profile, sha256: row.sha256 } : null
-    const session = row => {
-      const { context, policy: rules, ...rest } = row
-      return { ...rest, policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256, ...(context.budget ? { budget: context.budget, usage: context.usage } : {}) } : null }
+    const policy = row => row ? { version: row.version, role: row.role, policyRole: row.policyRole ?? row.role, commit: row.commit, profile: row.profile, sha256: row.sha256 } : null
+    const session = (row, section = 'roleSessions') => {
+      const { context, policy: rules } = row
+      const keys = ['id', 'projectId', 'taskId', 'attemptId', 'role', 'policyRole', 'logicalSessionId', 'definitionRef', 'definitionRevision', 'definitionKey', 'generation', 'poolClaimId', 'status', 'botId', 'sessionId', 'backendSessionId']
+      return { ...Object.fromEntries(keys.filter(key => row[key] !== undefined).map(key => [key, structuredClone(row[key])])),
+        execution: row.execution ? { harness: row.execution.harness, model: row.execution.model ?? null, resourceIds: (row.execution.resourceIds ?? []).slice(0, 20) } : null,
+        definitionSource: { query: 'attempt.context', attemptId: attempt.id, section },
+        policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256, ...(context.budget ? { budget: context.budget, usage: context.usage } : {}) } : null }
     }
     const { roleSessions, roleSessionHistory, rolePolicies } = attempt
     return structuredClone({ ...attemptMetadataView(attempt),
-      ...(roleSessions ? { roleSessions: Object.fromEntries(Object.entries(roleSessions).map(([key, row]) => [key, session(row)])) } : {}),
-      ...(roleSessionHistory ? { roleSessionHistory: roleSessionHistory.slice(-3).map(session), roleSessionHistoryPage: { total: roleSessionHistory.length, shown: Math.min(3, roleSessionHistory.length), source: { query: 'attempt.context', attemptId: attempt.id, section: 'roleSessionHistory' } } } : {}),
-      ...(rolePolicies ? { rolePolicies: Object.fromEntries(Object.entries(rolePolicies).map(([key, row]) => [key, policy(row)])) } : {}),
+      ...(roleSessions ? { roleSessions: Object.fromEntries(Object.entries(roleSessions).slice(0, 32).map(([key, row]) => [key, session(row)])) } : {}),
+      ...(roleSessionHistory ? { roleSessionHistory: roleSessionHistory.slice(-3).map(row => session(row, 'roleSessionHistory')), roleSessionHistoryPage: { total: roleSessionHistory.length, shown: Math.min(3, roleSessionHistory.length), source: { query: 'attempt.context', attemptId: attempt.id, section: 'roleSessionHistory' } } } : {}),
+      ...(rolePolicies ? { rolePolicies: Object.fromEntries(Object.entries(rolePolicies).slice(0, 32).map(([key, row]) => [key, policy(row)])) } : {}),
       contextRef: { query: 'attempt.context', attemptId: attempt.id, sections: ['roleSessions', 'roleSessionHistory', 'rolePolicies'] } })
   }
   function detail(body, actor) {
@@ -184,6 +196,7 @@ export function createDevelopmentService(rt) {
     if (endpoint === 'project-scheduled-task') return rt.projectScheduledTasks.endpoint(body, actor)
     if (endpoint === 'project-agent-mode') return rt.projectDelegations.mode(body, actor)
     if (endpoint === 'project-execution-input') return rt.projectHarness.input(body, actor)
+    if (['project-roles', 'project-role-proposals', 'project-role-decision'].includes(endpoint)) return rt.projectAgents.endpoint(endpoint, body, actor)
     if (endpoint === 'project-agent-proposal-apply') return rt.projectAgents.endpoint(endpoint, body, actor)
     if (endpoint === 'project-task-detail') return detail(body, actor)
     if (['project-consultation-reply', 'project-consultation-ask', 'project-consultation-get', 'project-consultation-list'].includes(endpoint)) return rt.projectAgents.consultation(endpoint, body, actor)
@@ -213,7 +226,7 @@ export function createDevelopmentService(rt) {
     if (body.payload?.projectId !== undefined && body.payload.projectId !== projectId) throw failure('Payload belongs to another Project', 'bot/forbidden')
     // These targets have their own authority in the existing services, but the
     // envelope must also reject a target in another Project the actor can access.
-    for (const [key, table] of [['proposalId', rt.state.projectAgentProposals], ['workerId', rt.state.projectHarnessWorkers]]) {
+    for (const [key, table] of [['proposalId', ['role.decide', 'role.proposals'].includes(name) ? rt.state.projectRoleProposals : rt.state.projectAgentProposals], ['workerId', rt.state.projectHarnessWorkers]]) {
       if (args[key] === undefined) continue
       const target = ownEntry(table ?? {}, String(args[key]))
       if (!target || target.projectId !== projectId) throw failure('Target is unavailable in this Project', 'bot/forbidden')

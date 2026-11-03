@@ -45,3 +45,15 @@ test('complete current FlyBot repository and subsystem rules fit every developme
     assert.ok(policy.sources.some(source => source.name === 'docs/subsystems/project-access.md'))
   }
 })
+
+
+test('custom logical roles inherit the exact approved capability conventions while default policy bytes stay compatible', () => {
+  const original = assembleRolePolicy({ role: 'developer' })
+  assert.deepEqual(assembleRolePolicy({ role: 'developer', policyRole: 'developer' }), original)
+  const custom = assembleRolePolicy({ role: 'analyst', policyRole: 'reviewer' })
+  assert.equal(custom.role, 'analyst'); assert.equal(custom.policyRole, 'reviewer')
+  assert.ok(custom.text.includes(ROLE_CONVENTIONS.reviewer))
+  assert.equal(verifyRolePolicy(custom, custom.sha256), true)
+  assert.throws(() => assembleRolePolicy({ role: 'analyst', policyRole: 'unapproved' }), /Unknown role/)
+  assert.throws(() => assembleRolePolicy({ role: '</untrusted-role-context>', policyRole: 'reviewer' }), /Unknown role/)
+})

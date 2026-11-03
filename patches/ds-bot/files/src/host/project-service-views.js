@@ -1,3 +1,5 @@
+import { nativeExitConfirmed } from './project-native-sessions.js'
+import { confirmedWorkerExit } from './project-task-sessions.js'
 // Public projections retain references to exact scoped sources; never copy an
 // entire growing lifecycle or caller authentication context into every list row.
 const pick = (row, keys) => Object.fromEntries(keys.filter(key => row?.[key] !== undefined).map(key => [key, structuredClone(row[key])]))
@@ -50,7 +52,7 @@ export function sourcePage(value, body, identity) {
 }
 
 export function attemptMetadataView(attempt) {
-  const result = pick(attempt, ['id', 'protocol', 'projectId', 'taskId', 'workflowId', 'workflowVersion', 'runId', 'status', 'initiatedBy', 'baseSha', 'seedSha', 'candidateSha', 'branch', 'createdAt', 'updatedAt', 'acceptedAt', 'acceptedBy', 'acceptedViaChief', 'cancelRequested', 'supersededBy'])
+  const result = pick(attempt, ['id', 'protocol', 'projectId', 'taskId', 'workflowId', 'workflowVersion', 'runId', 'status', 'initiatedBy', 'baseSha', 'seedSha', 'candidateSha', 'branch', 'createdAt', 'updatedAt', 'acceptedAt', 'acceptedBy', 'acceptedViaChief', 'cancelRequested', 'supersededBy', 'roleAssignments'])
   if (attempt.requirement) result.requirement = { ...pick(attempt.requirement, ['repository', 'projectTaskRevision']), ...Object.fromEntries(['title', 'criteria', 'impact', 'scope', 'note'].filter(key => attempt.requirement[key] !== undefined).map(key => [key, short(attempt.requirement[key])])) }
   if (attempt.failure) result.failure = { ...pick(attempt.failure, ['at']), message: short(attempt.failure.message) }
   if (attempt.feedback) result.feedback = { ...pick(attempt.feedback, ['previousAttemptId', 'kind', 'candidateSha']), reason: short(attempt.feedback.reason) }
@@ -58,7 +60,7 @@ export function attemptMetadataView(attempt) {
   if (attempt.publicationBinding) result.publicationBinding = pick(attempt.publicationBinding, ['number', 'repository', 'branch', 'previousSha', 'upstreamSha', 'upstreamRef'])
   if (attempt.integrationInputs) result.integrationInputs = attempt.integrationInputs.slice(0, 20).map(row => pick(row, ['version', 'repository', 'ref', 'sha']))
   if (attempt.workspaces) result.workspaces = Object.fromEntries(Object.entries(attempt.workspaces).slice(0, 32).map(([role, row]) => [role, pick(row, ['id', 'status', 'role', 'resourceId'])]))
-  if (attempt.agentDefinitions) result.agentDefinitions = { revision: attempt.agentDefinitions.revision, roles: (attempt.agentDefinitions.roles ?? []).slice(0, 32).map(row => ({ ...pick(row, ['id', 'role', 'name', 'model']), skills: (row.skills ?? []).slice(0, 20).map(value => short(value, 300)), execution: pick(row.execution, ['harness', 'model', 'resourceIds']) })) }
+  if (attempt.agentDefinitions) result.agentDefinitions = { revision: attempt.agentDefinitions.revision, roles: (attempt.agentDefinitions.roles ?? []).slice(0, 32).map(row => ({ ...pick(row, ['id', 'role', 'policyRole', 'name', 'model']), skills: (row.skills ?? []).slice(0, 20).map(value => short(value, 300)), execution: pick(row.execution, ['harness', 'model', 'resourceIds']) })) }
   function evidence(row) { return { ...pick(row, ['sha', 'sha256', 'passed', 'verdict', 'harness', 'sdkVersion', 'resourceId', 'sessionId', 'model', 'startedAt', 'completedAt']), ...(row.summary ? { summary: short(row.summary) } : {}) } }
   result.evidence = {}
   for (const [key, row] of Object.entries(attempt.evidence ?? {}).slice(0, 32)) {
@@ -69,4 +71,23 @@ export function attemptMetadataView(attempt) {
   result.projectionVersion = 'project-attempt-summary/v1'
   result.preview = true
   return result
+}
+
+// A scoped physical execution fact, not an inference from a missing Bot or PID.
+export function executionMetadataView(state, row) {
+  if (!row) return null
+  const native = Object.hasOwn(state.projectNativeWorkers ?? {}, row.id)
+  const attempt = state.projectAttempts?.[row.attemptId]
+  const session = [attempt?.roleSessions?.[row.role], ...(attempt?.roleSessionHistory ?? [])].find(value => value?.id === row.sessionKey)
+  const lease = row.leaseId && state.projectResourceLeases?.[row.leaseId]
+  const exit = native ? nativeExitConfirmed(state, row) : confirmedWorkerExit(state, row)
+  return { ...pick(row, ['id', 'role', 'resourceId', 'generation', 'sessionKey', 'logicalSessionId', 'createdAt', 'executionStartedAt', 'releasedAt']),
+    harness: native ? 'flybot' : row.harness ?? null, status: row.status,
+    policyRole: session?.policyRole ?? row.policyRole ?? row.role ?? null,
+    definitionRevision: session?.definitionRevision ?? null,
+    activationEffectId: native ? row.activationEffect?.id ?? null : null,
+    exitConfirmed: Boolean(exit && !state.bots?.[row.id] && (!row.leaseId || lease?.status === 'released')),
+    exitProof: row.releaseProof ? pick(row.releaseProof, ['kind', 'generation', 'at', 'registeredWorkEmpty']) : null,
+    pending: row.pending ? pick(row.pending, ['id', 'kind']) : null,
+    ...(row.pendingWork ? { pendingWork: row.pendingWork.slice(0, 32).map(value => ({ kind: typeof value.kind === 'string' ? value.kind.slice(0, 80) : 'unknown', count: Number.isSafeInteger(value.count) ? value.count : 0 })) } : {}) }
 }

@@ -64,3 +64,38 @@ test('clock rollback cannot create a retention hole; malformed persisted streams
   duplicate.projectServiceEvents.duplicate = rows[0]
   assert.throws(() => restarted.load(duplicate), /gap|duplicate/)
 })
+
+test('committed Project facts include current role revision and native activation/exit facts without host data', () => {
+  const bus = createProjectServiceEvents(), state = seed()
+  state.projectAgentDefinitions = { p: { revision: 1, roles: [] } }
+  state.projectAttempts = { a: { id: 'a', projectId: 'p', taskId: 'task' } }
+  bus.load(state)
+  assert.equal(bus.snapshot('p').project.roleDefinitionRevision, 1)
+  const cursor = bus.snapshot('p').cursor, next = structuredClone(state)
+  next.projectAgentDefinitions.p.revision = 2
+  next.projectNativeWorkers = { native: { id: 'native', projectId: 'p', taskId: 'task', attemptId: 'a', version: 'project-native-worker/v2', role: 'developer', status: 'bound', generation: 2, sessionKey: 'session', sessionId: 'physical', activationEffect: { id: 'activate' }, processScope: { unit: 'HIDDEN_HOST_DETAIL' } } }
+  const pending = bus.prepare(next)
+  assert.equal(bus.query('p', { after: cursor }).events.length, 0)
+  bus.saved(pending)
+  const events = bus.query('p', { after: cursor }).events
+  assert.equal(events.find(row => row.entityType === 'project').data.roleDefinitionRevision, 2)
+  assert.equal(events.find(row => row.entityType === 'execution').data.harness, 'flybot')
+  assert.equal(events.find(row => row.entityType === 'execution').data.activationEffectId, 'activate')
+  assert.equal(JSON.stringify(events).includes('HIDDEN_HOST_DETAIL'), false)
+})
+
+test('committed role approval proposals are public scoped facts without personal proposal contents', () => {
+  const bus = createProjectServiceEvents(), state = seed(); bus.load(state)
+  const cursor = bus.snapshot('p').cursor, next = structuredClone(state)
+  next.projectRoleProposals = { proposal: { id: 'proposal', projectId: 'p', action: 'add', role: 'analyst', status: 'pending', baseRevision: 1, definition: { instructions: 'HIDDEN_DEFINITION' } } }
+  next.projectAgentProposals = { personal: { id: 'personal', projectId: 'p', text: 'HIDDEN_PERSONAL_PROPOSAL' } }
+  const pending = bus.prepare(next); bus.saved(pending)
+  const events = bus.query('p', { after: cursor }).events
+  assert.equal(events.length, 1)
+  assert.equal(events[0].entityType, 'role-proposal')
+  assert.equal(events[0].data.role, 'analyst')
+  assert.equal(JSON.stringify(events).includes('HIDDEN_'), false)
+  const snapshot = bus.snapshot('p', { entityType: 'role-proposal' })
+  assert.deepEqual(snapshot.entities.map(row => row.id), ['proposal'])
+  assert.throws(() => bus.snapshot('p', { entityType: 'private-agent' }), /Unknown public/)
+})

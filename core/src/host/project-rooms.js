@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mentionSpans } from '../shared/mentions.js'
 import { ownEntry, setEntry } from './store.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/forbidden' })
-const roles = ['chief', 'developer', 'tester', 'reviewer']
+const defaultRoles = ['chief', 'developer', 'tester', 'reviewer']
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : ''
 export function createProjectRooms(rt, adapter) {
   const table = () => (rt.state.projectRooms ??= {})
@@ -29,6 +29,7 @@ export function createProjectRooms(rt, adapter) {
   async function endpoint(endpoint, body, actor) {
     const projectId = String(body.projectId ?? '')
     const project = rt.requireProjectAccess(actor, projectId)
+    const roles = adapter.roles?.(projectId) ?? defaultRoles
     if (endpoint === 'project-rooms') return { rooms: Object.values(table()).filter(room => room.projectId === projectId && visible(room, actor)).map(summary) }
     if (endpoint === 'project-room-create') {
       rt.requireProjectAccess(actor, projectId, 'create')

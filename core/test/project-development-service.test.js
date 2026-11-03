@@ -273,3 +273,36 @@ test('durable v1 command replays its confirmed response after generation advance
   await assert.rejects(service.endpoint('project-development', query, { memberId: 'bob' }), /unavailable/)
   await rt.projectEffects.close()
 })
+
+test('native execution views distinguish committed activation, current roles and confirmed release without host internals', () => {
+  const { state } = fixture(), task = state.tasks.t
+  task.deliveryAttemptId = 'a'; task.collaboration = { status: 'claimed', botId: 'p:implementer', generation: 2, history: [], claim: { id: 'claim', workerId: 'w', role: 'implementer', policyRole: 'developer', generation: 2, status: 'active' } }
+  state.projectAgentDefinitions = { p: { revision: 2, roles: [] } }
+  state.projectAttempts.a = { id: 'a', projectId: 'p', taskId: 't', status: 'running', roleSessions: { implementer: { id: 'logical', definitionRevision: 1 } } }
+  state.bots.w = { id: 'w', projectId: 'p', attemptId: 'a' }
+  const worker = { id: 'w', projectId: 'p', taskId: 't', attemptId: 'a', role: 'implementer', sessionKey: 'logical', generation: 2, version: 'project-native-worker/v2', status: 'bound', sessionId: 'physical', bindingKey: 'binding', activationEffect: { id: 'activate' }, processScope: { unit: 'HIDDEN_HOST_DETAIL' }, failure: 'HIDDEN_HOST_DETAIL' }
+  state.projectNativeWorkers = { w: worker }
+  const view = options => taskView(state, task, { activity: { w: 'thinking' }, ...options })
+  assert.equal(view({ isIntentCommitted: () => false }).phase, 'starting')
+  assert.equal(view({ isIntentCommitted: () => true }).phase, 'running')
+  assert.equal(view().currentRole, 'implementer')
+  assert.equal(view().roleDefinitionRevision, 2)
+  assert.equal(view().execution.definitionRevision, 1)
+  assert.equal(JSON.stringify(view()).includes('HIDDEN_HOST_DETAIL'), false)
+  worker.status = 'stop-unconfirmed'
+  assert.equal(view().waitingFor, 'worker-exit')
+  assert.equal(view().execution.exitConfirmed, false)
+  worker.status = 'quiescent'; worker.releaseProof = { kind: 'native-agent-quiescent', registeredWorkEmpty: true, workerId: 'w', sessionId: 'physical', bindingKey: 'binding', generation: 2 }
+  delete state.bots.w
+  assert.equal(view().execution.exitConfirmed, true)
+})
+
+test('attempt lists reference large frozen definitions instead of copying their content into each session', async () => {
+  const { service, rt, state, actor } = fixture(), text = 'frozen persona source '.repeat(20000)
+  state.projectAttempts.a = { id: 'a', projectId: 'p', taskId: 't', roleSessions: { developer: { id: 'session', role: 'developer', definitionRef: 'original-definition', definitionRevision: 1, definition: { instructions: text, resolvedSkills: [{ content: text }] } } } }
+  rt.projectDelivery = { endpoint: async () => ({ task: state.tasks.t, attempts: [state.projectAttempts.a] }) }
+  const result = await service.endpoint('project-task-detail', { taskId: 't' }, actor)
+  assert.ok(JSON.stringify(result).length < 16000)
+  assert.equal(result.attempts[0].roleSessions.developer.definitionRevision, 1)
+  assert.equal(state.projectAttempts.a.roleSessions.developer.definition.instructions, text)
+})

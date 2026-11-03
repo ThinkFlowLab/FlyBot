@@ -156,6 +156,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       do {
         wakeAgain = false
         // One complete pass at a time, including resource reconciliation and dispatch.
+        await rt.projectDelivery?.reconcileExecutions?.()
         await rt.projectResources?.reconcile?.()
         await serial(drain)
         if (rt.projectEffects) await rt.projectEffects.drain()

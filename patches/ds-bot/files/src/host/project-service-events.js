@@ -1,3 +1,4 @@
+import { executionMetadataView } from './project-service-views.js'
 // A committed read model over the original Store. No event reception grants
 // initiative, and private conversations/credentials never enter this projection.
 import { createHash } from 'node:crypto'
@@ -11,7 +12,7 @@ function projections(state) {
   const rows = new Map()
   for (const row of Object.values(state.projects ?? {})) {
     if (!row?.id) continue
-    const data = { id: row.id, name: text(row.name), status: row.status, goal: text(row.goal), scope: text(row.scope), repository: row.repository ?? null }
+    const data = { id: row.id, name: text(row.name), status: row.status, goal: text(row.goal), scope: text(row.scope), repository: row.repository ?? null, roleDefinitionRevision: own(state.projectAgentDefinitions, row.id)?.revision ?? 0 }
     rows.set(`project:${row.id}`, { projectId: row.id, entityType: 'project', id: row.id, data, fingerprint: hash([data, row.roles ?? {}, row.repositories ?? []]) })
   }
   for (const row of Object.values(state.tasks ?? {})) {
@@ -31,13 +32,18 @@ function projections(state) {
       publication: row.pr ? { number: row.pr.number, sha: row.pr.sha } : null, stopping: Boolean(row.cancelRequested) }
     rows.set(`attempt:${row.id}`, { projectId: row.projectId, entityType: 'attempt', id: row.id, data, fingerprint: hash(data) })
   }
-  for (const [namespace, entityType] of [['projectHarnessWorkers', 'execution'], ['projectResourceLeases', 'resource'], ['projectTaskInputs', 'input']]) {
+  for (const row of Object.values(state.projectRoleProposals ?? {})) {
+    if (!row?.projectId || !own(state.projects, row.projectId)) continue
+    const data = { id: row.id, projectId: row.projectId, role: row.role, action: row.action, status: row.status, baseRevision: row.baseRevision, createdAt: row.createdAt ?? null, decisionAt: row.decision?.at ?? null }
+    rows.set(`role-proposal:${row.id}`, { projectId: row.projectId, entityType: 'role-proposal', id: row.id, data, fingerprint: hash(data) })
+  }
+  for (const [namespace, entityType] of [['projectHarnessWorkers', 'execution'], ['projectNativeWorkers', 'execution'], ['projectResourceLeases', 'resource'], ['projectTaskInputs', 'input']]) {
     for (const row of Object.values(state[namespace] ?? {})) {
       const attempt = own(state.projectAttempts, row.attemptId)
       const task = own(state.tasks, row.taskId ?? attempt?.taskId)
       if (!task || task.projectId !== row.projectId || row.chiefRunId || !own(state.projects, row.projectId)) continue
       const data = { id: row.id, projectId: row.projectId, taskId: task.id, attemptId: row.attemptId ?? null, status: row.status,
-        ...(entityType === 'input' ? { kind: row.kind, sha256: row.sha256, deliveries: row.deliveries?.length ?? 0, readConfirmed: row.deliveries?.some(delivery => Boolean(delivery.readAt)) ?? false } : { role: row.role ?? null, resourceId: row.resourceId ?? null, generation: row.generation ?? null, pending: row.pending ? { id: row.pending.id, kind: row.pending.kind } : null }) }
+        ...(entityType === 'execution' ? executionMetadataView(state, row) : entityType === 'input' ? { kind: row.kind, sha256: row.sha256, deliveries: row.deliveries?.length ?? 0, readConfirmed: row.deliveries?.some(delivery => Boolean(delivery.readAt)) ?? false } : { role: row.role ?? null, resourceId: row.resourceId ?? null, generation: row.generation ?? null, pending: row.pending ? { id: row.pending.id, kind: row.pending.kind } : null }) }
       rows.set(`${entityType}:${row.id}`, { projectId: row.projectId, entityType, id: row.id, data, fingerprint: hash(data) })
     }
   }
@@ -114,16 +120,17 @@ export function createProjectServiceEvents({ maxPerProject = 1024, maxAgeMs = 24
     return { version: VERSION, projectId, revision: stream.revision, events: rows.map(row => ({ ...copy(row), cursor: cursor(projectId, stream, row.sequence) })),
       next: cursor(projectId, stream, rows.at(-1)?.sequence ?? sequence), head: cursor(projectId, stream, stream.nextSequence - 1), oldest: cursor(projectId, stream, floor) }
   }
-  function snapshot(projectId, { after, limit = 50, expectedRevision } = {}) {
+  function snapshot(projectId, { after, limit = 50, expectedRevision, entityType = 'task' } = {}) {
     const stream = streamOf(projectId)
+    if (!['task', 'attempt', 'execution', 'resource', 'input', 'role-proposal'].includes(entityType)) throw fail('Unknown public Project snapshot entity type')
     if (after !== undefined && expectedRevision === undefined) throw fail('Continuing a Project snapshot requires its expectedRevision', 'bot/conflict')
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || expectedRevision !== undefined && expectedRevision !== stream.revision) throw fail('Project snapshot changed or page limit is invalid', 'bot/conflict')
-    const rows = [...committed.projections.values()].filter(row => row.projectId === projectId && row.entityType === 'task').sort((a, b) => a.id.localeCompare(b.id))
+    const rows = [...committed.projections.values()].filter(row => row.projectId === projectId && row.entityType === entityType).sort((a, b) => a.id.localeCompare(b.id))
     const index = after === undefined ? -1 : rows.findIndex(row => row.id === after)
-    if (after !== undefined && index < 0) throw fail('Task snapshot cursor is unavailable')
+    if (after !== undefined && index < 0) throw fail('Project snapshot cursor is unavailable')
     const page = rows.slice(index + 1, index + 1 + limit), project = committed.projections.get(`project:${projectId}`)
     return { version: VERSION, project: project ? copy(project.data) : null, revision: stream.revision, cursor: cursor(projectId, stream, stream.nextSequence - 1),
-      tasks: page.map(row => copy(row.data)), next: index + 1 + page.length < rows.length ? page.at(-1).id : null }
+      ...(entityType === 'task' ? { tasks: page.map(row => copy(row.data)) } : { entityType, entities: page.map(row => copy(row.data)) }), next: index + 1 + page.length < rows.length ? page.at(-1).id : null }
   }
   return { load, prepare, saved, query, snapshot }
 }
