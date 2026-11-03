@@ -97,3 +97,6 @@ host verification and the Chromium fixture with prepared `FLYBOT_BROWSER_TOOLS` 
 `FLYBOT_SCREENSHOT_DIR`, then inspect desktop/narrow captures against the supplied
 reference. Actual deployed three-account acceptance is still the operator's separate
 step, followed by Chief judgement; this record does not close Task40.
+
+
+#2171 rooms validate new participants against the committed Project role catalog, including approved custom roles. Retirement preserves room participants and messages for historical reads; new delivery to that role reports a retired-role error without moving its Task or Session.

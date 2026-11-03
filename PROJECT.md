@@ -18,7 +18,7 @@ acceptance are #2183/#2185, compatibility #2186. This is source work, not live r
 
 ## Backend convergence — 2026-11-02
 
-Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Role-governance and remaining convergence issues remain active.
+Project convergence #2171 now adds explicit repository associations and non-destructive Owner double-confirmed closure on the delivery branch. It preserves unfinished Task records and memory; runtime source migration and new behavior are not deployed. Chief role proposals now require separate Maintainer/Owner approval with exact-hash/revision fencing and durable Effects proof; retirement preserves Task/Session and room history. Custom-role physical execution remains #2184 acceptance, and later convergence issues remain active.
 
 ## Fork Project State — 2026-10-31
 

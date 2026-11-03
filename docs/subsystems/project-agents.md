@@ -1,6 +1,8 @@
 ---
 subsystem: project-agents
 owned_paths:
+  - core/src/host/project-role-governance.js
+  - core/test/project-role-governance.test.js
   - core/src/host/project-agents.js
   - core/src/host/project-agent-skills.js
   - core/src/host/project-role-context.js
@@ -363,3 +365,48 @@ completion from the actual bound callback. Native-only execution retains its eve
 ## Independent personal-agent integration
 
 Independent personal identities (#2170) now own per-Project participations/carriers. Legacy IDs and private memory/transcripts remain in place; privateIdentity resolves the selected participation. Native tools validate active participation before and after async authorization. See [personal agents](personal-agents.md).
+
+
+## Project role governance (#2171)
+
+The active catalog starts with Chief, Developer, Tester and Reviewer. Its logical role
+key is distinct from its human permissions and execution `policyRole`. Up to 32 active
+roles can inherit developer/tester/reviewer conventions; only the resident Chief can
+have Chief capability. `deliveryDefinitions` reports the catalog revision for execution
+pinning. Definition changes never replace a Task's already pinned execution context.
+
+A current resident Chief can use `project_agent_role_propose` with
+`{requestId,action:add|update|remove,role,reason,fields}`. The host derives Project,
+initiating human and actual delegation; no HTTP actor fields grant Chief authority.
+A validated scheduled Chief result can instead include up to four `roleProposals`.
+Both paths only publish a pending durable proposal. Chief cannot approve itself,
+including through an Owner's watch grant. A private agent with current full watch
+permission retains that human's approval authority; safe agents cannot approve.
+
+`project-roles {projectId}` returns bounded catalog metadata. Add `role` for exact
+JSON source pages (`offset`, `limit` up to 16000, optional `expectedSha256`).
+`project-role-proposals {projectId,limit,after}` pages pending/decided metadata;
+`proposalId` selects an exact proposal and proposed definition. Current Project
+members can read these shared role records. Approval uses
+`project-role-decision {projectId,proposalId,expectedSha256,requestId,decision}`
+with `approve|reject`; only current Maintainer/Owner configure authority is accepted.
+Approval requires the published body hash and unchanged base catalog revision,
+revalidates Skills/memory/resource references, then commits the decision and catalog
+change with an Effects marker. Exact repeated decisions do not advance revision.
+Direct human `project-agent-definition` updates retain the same validation/audit
+boundary and invalidate older pending proposals. Instructions exceeding 12000
+characters fail explicitly instead of being silently truncated.
+
+Pending or failed commits are not execution-visible. After failed saves, queued
+snapshots settle before rollback so an already committed decision is not undone or
+an uncommitted approval resurrected. Histories live in `projectRoleChanges`, proposals
+in `projectRoleProposals`, and retired definitions in `projectRetiredRoles`, separate
+from the small active catalog. Removing Chief is refused. Retirement preserves Task
+ownership, worker/Session records and room history; it does not transfer initiative,
+stop a process or claim exit. A later approved add of the same key inherits its last
+retired capability/conventions unless the proposal explicitly changes them. New room
+messages to a retired role fail visibly; historical rooms remain readable.
+
+These governance tests use real host APIs/Store plus deterministic Bot carriers and
+Effects fault fixtures, not a real model. Custom-role physical execution and in-flight
+revocation acceptance remain in #2184; this catalog alone does not prove that loop.

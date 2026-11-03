@@ -247,3 +247,6 @@ Project convergence #2171 adds closed as a read-only lifecycle: authorized membe
 ## Independent personal-agent integration
 
 Independent personal-agent endpoints enforce their own current-user ownership and current membership on join/default selection. Watch grant validation also checks a linked carrier participation so retirement cannot keep using delegated rights.
+
+
+#2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.
