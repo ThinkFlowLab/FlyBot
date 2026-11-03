@@ -182,6 +182,14 @@ const withoutQuotes = (text) => String(text ?? '')
   .replace(/"[^"\n]*"/g, ' ')
   .replace(/“[^”\n]*”/g, ' ')
 
+// A body that parses as a conclusion but asks only to lift a stop — no ask to stop of its own. This is the
+// lift that quotes the PASS it answers (#2246 on 2026-11-03); "record only — do not merge" in a PASS is the
+// marker `recordOnlyAt` reads, so it is not one of these.
+const responseOnly = (body) => {
+  const text = withoutQuotes(body)
+  return LIFT_REQUEST.test(text) && !STOP_REQUEST.test(text) && !HOLD_LINE.test(text)
+}
+
 // The stop request still standing, or null. `since` is the timestamp of the conclusion the decision used, in
 // ms; null reads the whole list (no anchor, or one that cannot be read — a guard that cannot find the PASS it
 // judged must not narrow what it refuses).
@@ -195,8 +203,10 @@ export function stopRequestAt(reports, { author, since } = {}) {
     // whichever box it was typed in, and the callers already pass both (`enqueue-guard.mjs:69-71`,
     // `merge-gate.mjs:219-221`). A body carrying a conclusion is the conclusion, not a request:
     // "record only — do not merge" in a PASS is the marker `recordOnlyAt` already reads, and reading it
-    // here too would make every parked PASS its own stop.
-    .filter(({ r }) => !parseReport(r?.body).verdict)
+    // here too would make every parked PASS its own stop. The one exception is the answer to a stop: a
+    // lift that quotes the PASS it answers parses as a conclusion too (#2246 on 2026-11-03), and dropping
+    // it left the guard telling the author to do the one thing its own reader refused to see.
+    .filter(({ r }) => !parseReport(r?.body).verdict || responseOnly(r?.body))
     .filter(({ t }) => after == null || t > after)
     .sort((a, b) => a.t - b.t || a.i - b.i)
   let stop = null

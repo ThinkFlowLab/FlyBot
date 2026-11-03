@@ -1117,3 +1117,46 @@ test('#602 (2026-11-01): an inline stop written before the PASS at this tip is n
   const r = run({ comments: [comment(report(), '2026-11-01T17:35:30Z', { id: 9103 })], reviewComments: [early] })
   assert.equal(r.ok, true, r.reasons.join('; '))
 })
+
+// ---- P-479, 2026-11-03: the lift that answers a hold was itself thrown away. `parseReport` treats a line
+// beginning `Verdict:` below the first line as this body's verdict (#643/#640 keep a quoted block from
+// overwriting a conclusion only when the first line already is one), so a lift comment that quotes the PASS
+// it answers parses as a conclusion, and the stop filter at `enqueue-rules.mjs:199` dropped the whole
+// comment. The guard then told the author to answer the hold on the record — the one thing its own reader
+// refused to see. The filter keeps a conclusion-shaped body when that body also asks to lift the hold; the
+// second case is the counterweight: quoting a PASS without a lift phrase still clears nothing.
+
+test('P-479 (2026-11-03): a lift that quotes the PASS it answers still clears the stop', () => {
+  const lift = note({
+    id: 6596858166,
+    login: 'hugo',
+    body: [
+      'The PASS for this head has landed. You may merge this tip now.',
+      '',
+      '`Verdict: PASS at ' + HEAD + '` names exactly this head.',
+      '',
+      'Written-by: FlyBot Lead',
+    ].join('\n'),
+    at: '2026-11-03T06:15:25Z',
+  })
+  const r = run({
+    comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), lift],
+  })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.equal(r.stopRequest, null, 'the lift is the answer to the stop, so no stop stands')
+})
+
+test('P-479 (2026-11-03): a conclusion-shaped comment without a lift phrase does not clear the stop', () => {
+  const quoted = note({
+    id: 6596858167,
+    login: 'hugo',
+    body: ['The PASS for this head has landed.', '', '`Verdict: PASS at ' + HEAD + '` names exactly this head.'].join('\n'),
+    at: '2026-11-03T06:15:25Z',
+  })
+  const r = run({
+    comments: [comment(report(), '2026-11-03T05:00:00Z', { id: 6596712952 }), note({ id: 6596354014, at: '2026-11-03T05:38:25Z' }), quoted],
+  })
+  assert.equal(r.ok, false, 'a quoted conclusion is not an answer to the hold')
+  assert.match(r.reasons.join('; '), /asks not to merge/)
+  assert.match(r.reasons.join('; '), /6596354014/, 'the refusal still names the stop that stands')
+})
