@@ -1,6 +1,6 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, MarkdownDelegateProvider } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
 import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
@@ -23,6 +23,26 @@ import { turnReasoning } from './turn-reasoning.js'
 // Chat cells
 
 const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied') }, footnotes: t('Footnotes') })
+
+// #2201: a link a person picks inside a bubble belongs to FlyBot's own panel. Left alone the host opens
+// it in its right sidebar — a browser tab this panel's fixed layer covers, so the content area looks
+// blank — and nothing in FlyBot ever sees the click. The link therefore opens a tab in the panel's own
+// browser view (the one the globe button opens) carrying the URL; without the Desktop bridge there is
+// no panel at all, and the page opens in the window itself. An element builder, not a component: the
+// provider sits directly above the text so the bubble keeps one Markdown node, as before.
+function bubbleMarkdown({ actions, subject, ...markdown }) {
+  const openExternalLink = (href) => {
+    if (typeof actions?.browserNewTab === 'function') {
+      // A Bot outside the roster has no panel to put a tab in: browserNewTab answers null, and the
+      // click stays local rather than navigating a tab that is not there.
+      const tabId = actions.browserNewTab(subject)
+      if (tabId !== undefined && tabId !== null && typeof actions.browserNavigate === 'function') void actions.browserNavigate(tabId, href)
+      return
+    }
+    if (typeof window !== 'undefined' && typeof window.open === 'function') window.open(href, '_blank', 'noopener')
+  }
+  return h(MarkdownDelegateProvider, { openExternalLink }, h(MarkdownText, markdown))
+}
 
 // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
 // row, so it lines up with the bubble whether or not reactions hang below it.
@@ -57,7 +77,7 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
         h('div', { className: 'bt-msg-line' },
           lead && last ? lead : null,
           h('div', { className: 'bt-bubble' },
-            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
+            bubbleMarkdown({ text: linkMentions(text, roster.bots, selfId), actions, subject: sessionId, streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
           live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
           key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
@@ -586,7 +606,7 @@ function EarlierParts({ sessionId, roster, actions, useUi }) {
       switch (row.kind) {
         case 'divider': return h(PartLine, { key, time: row.time })
         case 'user': return h('div', { key, className: 'bt-urow' }, h('div', { className: 'bt-ububble' },
-          row.text ? h(MarkdownText, { text: row.text, labels: mdLabels(), variant: 'compact' }) : null,
+          row.text ? bubbleMarkdown({ text: row.text, actions, subject: sessionId, labels: mdLabels(), variant: 'compact' }) : null,
           row.images ? h('span', { className: 'bt-uimages' }, row.images === 1 ? t('1 image') : t('{count} images', { count: row.images })) : null))
         case 'answer': return h(AnsweredCell, { key, node: { data: row } })
         case 'bot': return h(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi })
@@ -974,7 +994,7 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
         return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,
           h('div', { className: 'bt-ububble' },
-          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })),
+          bubbleMarkdown({ text: remoteMessageText(reply.text), actions, subject: reply.botId ?? sessionId, labels: mdLabels(), variant: 'compact' })),
           room?.origin === 'face-to-face' ? h('span', { className: 'bt-lead', title: who || undefined }, h(PersonMark, { name: who || undefined })) : null)
       }
       if (reply.kind === 'failed') {

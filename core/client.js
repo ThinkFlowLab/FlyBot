@@ -6836,6 +6836,17 @@ var import_react10 = require("react");
 var import_react_dom = require("react-dom");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
+function bubbleMarkdown({ actions, subject, ...markdown }) {
+  const openExternalLink = (href) => {
+    if (typeof actions?.browserNewTab === "function") {
+      const tabId = actions.browserNewTab(subject);
+      if (tabId !== void 0 && tabId !== null && typeof actions.browserNavigate === "function") void actions.browserNavigate(tabId, href);
+      return;
+    }
+    if (typeof window !== "undefined" && typeof window.open === "function") window.open(href, "_blank", "noopener");
+  };
+  return (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownDelegateProvider, { openExternalLink }, (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, markdown));
+}
 function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
   const onClick = (event) => {
     const target = mentionTarget(event);
@@ -6867,7 +6878,7 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
           (0, import_react10.createElement)(
             "div",
             { className: "bt-bubble" },
-            (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(text2, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
+            bubbleMarkdown({ text: linkMentions(text2, roster.bots, selfId), actions, subject: sessionId, streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
           ),
           live ? null : (0, import_react10.createElement)(MessageTools, { text: text2, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(key, reactIndex(index), emoji) : void 0, actions })
         ),
@@ -7392,7 +7403,7 @@ function EarlierParts({ sessionId, roster, actions, useUi }) {
           return (0, import_react10.createElement)("div", { key, className: "bt-urow" }, (0, import_react10.createElement)(
             "div",
             { className: "bt-ububble" },
-            row.text ? (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: row.text, labels: mdLabels(), variant: "compact" }) : null,
+            row.text ? bubbleMarkdown({ text: row.text, actions, subject: sessionId, labels: mdLabels(), variant: "compact" }) : null,
             row.images ? (0, import_react10.createElement)("span", { className: "bt-uimages" }, row.images === 1 ? t("1 image") : t("{count} images", { count: row.images })) : null
           ));
         case "answer":
@@ -7765,7 +7776,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           (0, import_react10.createElement)(
             "div",
             { className: "bt-ububble" },
-            (0, import_react10.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: "compact" })
+            bubbleMarkdown({ text: remoteMessageText(reply.text), actions, subject: reply.botId ?? sessionId, labels: mdLabels(), variant: "compact" })
           ),
           room2?.origin === "face-to-face" ? (0, import_react10.createElement)("span", { className: "bt-lead", title: who || void 0 }, (0, import_react10.createElement)(PersonMark, { name: who || void 0 })) : null
         );
