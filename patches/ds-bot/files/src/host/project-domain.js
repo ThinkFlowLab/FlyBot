@@ -49,6 +49,7 @@ export function createProjectDomain(rt) {
   function migrateLegacy() {
     let changed = normalize()
     if (rt.projectLifecycle?.migrate()) changed = true
+    if (rt.personalAgents?.migrate()) changed = true
     for (const [id, projectId] of Object.entries(state.projectRuns)) {
       if (!ownEntry(state.projectExecutions, id)) {
         setEntry(state.projectExecutions, id, { id, projectId, status: 'legacy', source: 'legacy-binding' })

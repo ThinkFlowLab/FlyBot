@@ -5,6 +5,7 @@ import { codePoints } from './text.js'
 import { ownEntry, setEntry } from './store.js'
 import { createProjectDomain } from './project-domain.js'
 import { install as installProjectLifecycle, repositorySpec } from './project-lifecycle.js'
+import { install as installPersonalAgents } from './personal-agents.js'
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -275,6 +276,8 @@ export function install(rt) {
     return project.roles
   }
   const projectEndpoint = async (endpoint, body = {}, actor = null) => {
+    const personal = await rt.personalAgents.endpoint(endpoint, body, actor)
+    if (personal !== undefined) return personal
     const lifecycle = await rt.projectLifecycle.endpoint(endpoint, body, actor)
     if (lifecycle !== undefined) return lifecycle
     const scoped = await rt.projectAccessEndpoint?.(endpoint, body, actor)
@@ -464,4 +467,5 @@ export function install(rt) {
   })
   rt.projects = createProjectDomain(rt)
   installProjectLifecycle(rt)
+  installPersonalAgents(rt)
 }

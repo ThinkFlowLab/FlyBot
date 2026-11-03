@@ -26,6 +26,8 @@ export function createProjectDelegations(rt, { principal = principalChecker(rt) 
     const grant = ownEntry(grants(), actor?.watchGrantId)
     const member = ownEntry(rt.state.members, actor?.memberId)
     if (!grant || grant.status !== 'active' || grant.memberId !== actor.memberId || grant.generation !== actor.watchGeneration || !member || member.status === 'disabled' || grant.subject !== (member.platform?.subject ?? member.id) || grant.issuer !== (member.platform?.issuer ?? 'local')) throw refuse('Watch delegation has been revoked or its principal changed')
+    const carrier = ownEntry(rt.state.projectAgents ?? {}, grant.agentId)
+    if (carrier) rt.personalAgents?.requireParticipation(carrier)
     return grant
   }
   async function validateActor(actor) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 export function agentReply({ body, result }) {
   const system = JSON.stringify(body.system ?? '')
-  const privateAgent = system.includes('private Project agent. Your identity is one human')
+  const privateAgent = system.includes('personal agent participating in this Project through an isolated context') || system.includes('private Project agent. Your identity is one human')
   const chief = system.includes('public Chief of this Project. All messages')
   if (!privateAgent && !chief) return undefined
   if (!result) return [{ type: 'tool_use', id: 'scoped-context', name: 'project_agent_context', input: {} }]

@@ -54,3 +54,13 @@ test('Codex live acceptance requires explicit profile/model and an owned GitHub 
   assert.throws(() => codexSettings(flags.map(value => value === 'owner/fork' ? 'someone-else/fork' : value)), /requires explicit/)
   assert.throws(() => codexSettings(flags.map(value => value === '/private/config' ? 'relative' : value)), /requires explicit/)
 })
+
+test('agent fixture recognizes independent personal identities and retains legacy persona compatibility', async () => {
+  const { agentReply } = await import('../agents.mjs')
+  for (const system of ['You are this human’s personal agent participating in this Project through an isolated context.', 'You are this human’s private Project agent. Your identity is one human in one Project.']) {
+    const body = { system, messages: [{ role: 'user', content: 'Propose a shared task privately' }] }
+    assert.equal(agentReply({ body, result: false })?.[0].name, 'project_agent_context')
+    assert.equal(agentReply({ body, result: true })?.[0].name, 'project_agent_task')
+  }
+  assert.equal(agentReply({ body: { system: 'Unrelated worker', messages: [] }, result: false }), undefined)
+})

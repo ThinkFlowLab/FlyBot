@@ -156,3 +156,11 @@ and revocation assertions remain required. This two-account deterministic-model
 probe does not establish full native personal/group interaction coverage or the
 operator's deployed three-account, real-model and weak-network acceptance. The
 native adapter and component contract lives in [Project workbench](project-workbench.md).
+
+## Independent personal-agent identity
+
+The deterministic agent fixture recognizes the v4 independent-personal-agent persona
+and the legacy per-Project persona. It still exercises scoped context, private Task
+proposal, explicit publication and revoked Session refusal through actual DSH. A
+fixture regression pins both personas; this is model-transport compatibility, not
+real external-provider or paid model acceptance.
