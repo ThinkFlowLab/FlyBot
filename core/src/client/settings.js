@@ -8,7 +8,7 @@ import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon,
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
 import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
-import { useEscape } from './overlay-hooks.js'
+import { useDialogFocus, useEscape } from './overlay-hooks.js'
 import { BotSettingsForm, SwitchRow } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
 import { GroupSettingsForm, NewGroupForm, seatedCount } from './group-settings.js'
@@ -174,6 +174,10 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   const [error, setError] = useState('')
   const close = useCallback(() => actions.closeSettings(), [])
   useEscape(close)
+  // The dialog takes focus when it opens, so Tab starts inside it and Escape reaches it
+  // even when the composer had focus; closing gives that focus back (#2251).
+  const dialog = useRef(null)
+  useDialogFocus(dialog)
   const run = promise => Promise.resolve(promise)
     .then(() => { setError(''); return true })
     .catch(failure => { setError(failure?.message ?? String(failure)); return false })
@@ -209,7 +213,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: '0 20px 8px' } }, error) : null
   return h('div', { className: 'bt-settings-layer', 'data-leaving': leaving || undefined },
     h('div', { className: 'bt-scrim', onMouseDown: close }),
-    h('div', { className: 'bt-settings', role: 'dialog', 'aria-modal': true, 'aria-label': t('FlyBot settings'), 'data-wide': shown === 'usage' ? '' : undefined },
+    h('div', { className: 'bt-settings', role: 'dialog', 'aria-modal': true, 'aria-label': t('FlyBot settings'), 'data-wide': shown === 'usage' ? '' : undefined, tabIndex: -1, ref: dialog },
       h('nav', { ref: nav.box, className: 'bt-settings-nav', 'aria-label': t('Settings pages') },
         h('span', { ref: nav.thumb, className: 'bt-thumb', 'aria-hidden': true }),
         pages.map(([key, text]) => h('button', {

@@ -85,6 +85,7 @@
     "src/client/new-chat.js",
     "src/client/palette.js",
     "src/client/overlays.js",
+    "src/client/overlay-hooks.js",
     "test/mention-rule.test.js",
     "test/looks.test.js",
     "test/user-bubble.test.js",
