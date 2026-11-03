@@ -1378,6 +1378,7 @@ test('new Project Tasks wait for Chief admission and cannot run or lower require
   admitTask(row, { id: 'admit-fixture', projectId: 'p1', taskId: row.id, executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Goal, impact and acceptance checked' })
   const started = await f.start('accepted')
   assert.equal(started.attempt.status, 'running')
+  await assert.rejects(f.rt.projectEndpoint('project-workflow', { projectId: 'p1', operation: 'assign', workflowId: started.attempt.workflowId, taskId: row.id }, bob), /task.run|controller/)
   await complete(f)
   await assert.rejects(f.rt.projectEndpoint('project-task-accept', { attemptId: f.attempt().id }, alice), /Chief/)
 })

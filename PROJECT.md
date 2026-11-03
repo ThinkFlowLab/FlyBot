@@ -290,3 +290,7 @@ Composition checkpoint: current role governance/native exit, bounded context and
 SQLite composition now has an actual DSH native return probe: canonical Chief intake, persisted activation/exit, original role context and single-resource handoff are read from committed SQL snapshots. Inference remains deterministic; no production migration or full-provider workflow acceptance is claimed.
 
 Service composition adds scoped native execution/exit and current-vs-pinned role metadata, role governance aliases, and bounded per-entity committed snapshots. New projections and final six-case DSH/SQLite validation are under current review; none of this branch is deployed.
+
+### 2026-11-03 — Preserve original capabilities (#2186)
+
+Keep personal Chief/Bots, groups, private memories and original Task/Workflow IDs. Shared Project legacy execution requires an identity-bound committed cutover; new dispatch/tracking cannot bypass Chief admission. Associated original groups retain their own history ACL plus current Project access. JSON version4 fences new contracts across SQLite rollback; code downgrades must not erase receipts. No deployment or UI replacement. See docs/subsystems/project-compatibility.md.

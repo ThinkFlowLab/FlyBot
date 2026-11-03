@@ -199,3 +199,7 @@ Project role governance (#2171) separates resident Chief proposals, Maintainer/O
 Native execution (#2184) uses the original Workflow lifecycle and SessionController, with exact Task-role physical bindings and durable quiescence facts. A new ephemeral carrier can restore prior context without reviving a deleted Bot identity; new input is fenced during stopping and resources are never released from Bot absence alone. See [native adapter](subsystems/project-harness.md#native-physical-session-binding-and-quiescence-2184).
 
 The committed service read model now covers native execution and public role-governance facts alongside SDK/Task records. Bounded entity-specific snapshot pages share a Project revision/cursor; live Task queries use committed role catalogs and existing activation/exit proofs. Exact frozen definitions remain referenced sources.
+
+## Original capability compatibility (#2186)
+
+The [compatibility adapter](subsystems/project-compatibility.md) preserves original personal Chief/Bots/groups and Task/Workflow IDs. New Project work enters the existing Chief/Handoff controller; a committed one-time legacy baseline protects old work without treating arbitrary untyped rows as admitted. A physical JSON format fence survives SQLite storage rollback.

@@ -976,3 +976,7 @@ The original Store supports opt-in `stateStorage: sqlite` through the [storage b
 ## Committed interfaces (#2185)
 
 Store builds safe per-Project event projections from each queued immutable snapshot, persists their cursor state with business records/Effects, and publishes the committed cache after rename/COMMIT. Failed saves publish nothing. Public snapshots/events omit private agent/auth/receipt data. Task construction stamps trusted command provenance once through the application context; body actor fields cannot forge it. The [contract](project-service-contracts.md) separates public requests, private receipts, host-only role authority and exact bounded history.
+
+## Project compatibility (#2186)
+
+The [compatibility contract](project-compatibility.md) inventories original entrypoints and persistent IDs. Store records the legacy boundary only after Effects recovery; Task card constructors/drivers respect it. Original personal Chief and group channels stay in use. Associated native groups require both original history ACL and current Project membership, without importing private history.

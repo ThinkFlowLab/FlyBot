@@ -307,7 +307,9 @@ export function createProjectDelivery(rt, { publisher } = {}) {
       attempt.status = 'running'
       if (rt.taskDeliveryState?.(task.id, attempt.id, 'working', 'Delivery started') === false) throw reject('Task ended before delivery started')
       await rt.save()
-      const assigned = await rt.projectEndpoint('project-workflow', { projectId: project.id, operation: 'assign', workflowId: workflow.id, taskId: task.id }, actor)
+      const assigned = task.projectTask
+        ? await rt.assignProjectDeliveryWorkflow(attempt, actor)
+        : await rt.projectEndpoint('project-workflow', { projectId: project.id, operation: 'assign', workflowId: workflow.id, taskId: task.id }, actor)
       if (assigned.ok === false) throw reject(assigned.error)
       const run = assigned.workflows.find(row => row.id === workflow.id)?.run
       attempt.runId = run?.id ?? null

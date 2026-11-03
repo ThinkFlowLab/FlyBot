@@ -3,11 +3,12 @@ FlyBot patch 0002-flybot-api-host on Fei2411/DeepSeek-Bot@2b10c70 (ds-bot/). Gen
 diff --git a/index.js b/index.js
 --- a/index.js
 +++ b/index.js
-@@ -4,9 +4,41 @@
+@@ -4,9 +4,42 @@
  import { join } from 'node:path'
  import * as diagnostics from './src/host/diagnostics.js'
  import * as store from './src/host/store.js'
 +import * as projectEffects from './src/host/project-effects.js'
++import * as projectCompatibility from './src/host/project-compatibility.js'
 +import * as projectInputs from './src/host/project-inputs.js'
 +import * as projectSources from './src/host/project-sources.js'
 +import * as projectExecutionBoundary from './src/host/project-execution-boundary.js'
@@ -80,7 +81,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, projectEffects, projectTaskLifecycle, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
++const MODULES = [diagnostics, store, projectEffects, projectCompatibility, projectTaskLifecycle, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
 
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -699,12 +700,13 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,53 @@
+@@ -1,21 +1,54 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
 -import { mkdirSync, statSync } from 'node:fs'
 +import { install as installProjects } from './project-service.js'
++import { encodeProjectState, decodeProjectState } from './project-state-format.js'
 +import { createProjectStateStorage } from './project-state-storage.js'
 +import { createProjectServiceEvents } from './project-service-events.js'
 +import { constants, mkdirSync, statSync } from 'node:fs'
@@ -862,7 +864,16 @@ diff --git a/src/host/store.js b/src/host/store.js
      let contents
      try {
        contents = await readFile(statePath, 'utf8')
-@@ -87,13 +87,59 @@ export function install(rt) {
+@@ -73,7 +73,7 @@ export function install(rt) {
+     seen = stamp()
+     let parsed
+     try {
+-      parsed = JSON.parse(contents)
++      parsed = decodeProjectState(JSON.parse(contents))
+     } catch (error) {
+       const backup = `${statePath}.broken-${Date.now()}`
+       try {
+@@ -87,13 +87,64 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -878,26 +889,31 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
 +        return undefined
 +      }
-+      stuck = undefined
-+      return parsed
-+    }
+       stuck = undefined
+       return parsed
+     }
+-    stuck = 'saved by a newer DS Bot; update DS Bot'
 +    if (parsed?.version === STATE_VERSION) {
++      if (parsed.projectCompatibility && !rt.sharedProjectMode?.()) {
++        stuck = 'Project compatibility state requires projectWorkbench or controlPlane; preserve the shared access boundary'
++        return undefined
++      }
 +      const problem = ownershipProblem(parsed)
 +      if (problem !== undefined) {
 +        stuck = `malformed ownership: ${problem}`
 +        warn('ds-bot: state %s was refused: %s', statePath, problem)
 +        return undefined
 +      }
-       stuck = undefined
-       return parsed
-     }
--    stuck = 'saved by a newer DS Bot; update DS Bot'
++      stuck = undefined
++      return parsed
++    }
 +    stuck = 'saved by a newer FlyBot; update FlyBot'
      return undefined
    }
 
 +  const validateSqliteState = parsed => {
 +    if (parsed?.version !== STATE_VERSION) throw new Error('Unsupported SQLite state version')
++    if (parsed.projectCompatibility && !rt.sharedProjectMode?.()) throw new Error('Project compatibility state requires projectWorkbench or controlPlane')
 +    const problem = ownershipProblem(parsed)
 +    if (problem !== undefined) throw new Error(`Malformed SQLite ownership: ${problem}`)
 +  }
@@ -968,7 +984,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,18 +161,102 @@ export function install(rt) {
+@@ -161,18 +161,103 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1027,6 +1043,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    if (rt.projectScheduledTasks?.recover()) migrated = true
 +    if (rt.projectChiefControl?.recover()) migrated = true
 +    if (rt.projectEffects?.recover()) migrated = true
++    if (rt.projectCompatibility?.recover()) migrated = true
 +    if (syncDesignatedChief()) migrated = true
      indexSessions()
 +    committedEvents.load(state)
@@ -1168,7 +1185,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        const persistedSnapshot = JSON.stringify(prepared.snapshot, null, 2)
 +        if (storage.sqlite) storage.write(persistedSnapshot)
 +        else {
-+          await writeFile(temp, persistedSnapshot, 'utf8')
++          await writeFile(temp, JSON.stringify(encodeProjectState(prepared.snapshot), null, 2), 'utf8')
 +          ensureLock()
 +          await rename(temp, statePath)
 +        }
@@ -1177,7 +1194,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        state.projectServiceEventStreams = structuredClone(prepared.snapshot.projectServiceEventStreams)
 +        state.projectServiceEvents = structuredClone(prepared.snapshot.projectServiceEvents)
          seen = stamp()
-+        await journal?.record(persistedSnapshot)
++        await journal?.record(JSON.stringify(encodeProjectState(prepared.snapshot), null, 2))
          rt.capabilitiesStateSaved?.()
        } catch (error) {
 -        await unlink(temp).catch(() => {})

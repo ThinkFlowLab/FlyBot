@@ -183,3 +183,7 @@ send and uses the existing failure/release path; SDK dispatch retains its origin
 host adapter. No graph, task-pool or UI replacement is introduced.
 
 #2184 fixes native lifecycle input delivery: structured inputs use JSON rather than implicit [object Object] conversion, preserving handoff IDs/evidence and false/zero values. Distinct returned handoffs therefore produce distinct content for the existing delivery deduplicator, while an exact repeated dispatch remains stable. The regression uses the original plugin lifecycle seam; the real DSH native-pool probe reproduces and guards same-Session return delivery. No alternate Workflow or scheduler is introduced.
+
+## Canonical Project cutover (#2186)
+
+The original onWrite hook also refuses canonical Project Tasks if shared mode is disabled, preventing a new contract from reentering legacy auto-ingest. Original personal/legacy Workflow behavior and IDs remain. Explicit Project Workflow delivery uses the host current-Attempt port; pools remain the new Project default.

@@ -195,7 +195,7 @@ export function createProjectTaskLifecycle(rt) {
     return task
   }
   function requireExecutable(task) {
-    if (!task.projectTask) return // Historical Tasks keep their original admission record.
+    if (!task.projectTask) { rt.projectCompatibility?.requireLegacy(task); return }
     const row = contract(task)
     if (row.admission.status !== 'accepted') throw fail('Project Task requires Chief admission')
     if (row.wait && ['waiting', 'ready'].includes(row.wait.status)) throw fail('Project Task is waiting for child results')

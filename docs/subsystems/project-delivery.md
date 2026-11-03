@@ -542,3 +542,7 @@ The pool host release adapter now delegates to one physical-exit query for SDK a
 Current canonical execution is revalidated through one authority helper before new input and by the existing scheduler before resource reconciliation/new dispatch. Revocation reuses the pool lifecycle stop, with an exact claim fence, visible blocked reason and confirmed-exit requirement. Role snapshots retain conventions while current rights constrain their use.
 
 Composed #2179 execution checks include the canonical Task requirement revision. Chief revision invalidates an old Attempt for further execution; the existing pool stop retains the logical Session and requires actual exit before routing a successor Attempt. This covers scope/impact changes as well as changed title/criteria, and complements existing stale-evidence checks at sealing/publication. Custom Developer-capability parent roles also use the existing child-source admission and workspace producer mapping.
+
+## Original Workflow compatibility (#2186)
+
+Explicit canonical Workflow delivery assigns only through the private exact-current-Attempt access port, preserving the original graph, quota and Run evidence. Public assign cannot create a parallel canonical execution. Pre-cutover Task IDs, parents, artifacts and active recovery remain authoritative. See [compatibility](project-compatibility.md).

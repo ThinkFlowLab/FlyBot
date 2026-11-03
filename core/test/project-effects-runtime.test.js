@@ -34,7 +34,7 @@ test('real store rename acknowledges the same handoff/claim before any external 
   assert.equal(f.executed(), 1)
   assert.equal(f.dispatched(), 1)
   const disk = JSON.parse(readFileSync(join(f.home, 'state.json'), 'utf8'))
-  assert.equal(Object.values(disk.projectEffects)[0].status, 'done')
+  assert.equal(Object.values(disk.projectEffects).find(row => row.taskId === 'task' && row.payload.handoffId === disk.tasks.task.collaboration.currentHandoffId).status, 'done')
   assert.equal(disk.tasks.task.collaboration.claim.workerId, 'controlled-worker')
   const result = await f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'query', name: 'effects', projectId: 'p', payload: { taskId: 'task' } }, { memberId: 'owner-1' })
   assert.equal(result.result.effects[0].committed, true)
@@ -43,6 +43,7 @@ test('real store rename acknowledges the same handoff/claim before any external 
 
 test('failed real handoff commit rolls back its offer and cannot be rescued by a timer', async t => {
   const f = await fixture(t), save = f.rt.save
+  const before = Object.keys(f.rt.state.projectEffects).sort()
   f.rt.save = async () => { throw Error('Injected write failure') }
   await assert.rejects(f.rt.projectPools.admit({ id: 'attempt', taskId: 'task' }, { memberId: 'owner-1' }), /write failure/)
   f.rt.save = save
@@ -50,7 +51,7 @@ test('failed real handoff commit rolls back its offer and cannot be rescued by a
   assert.equal(f.executed(), 0)
   assert.equal(f.dispatched(), 0)
   assert.equal(f.rt.state.tasks.task.collaboration.history.length, 0)
-  assert.equal(Object.keys(f.rt.state.projectEffects).length, 0)
+  assert.deepEqual(Object.keys(f.rt.state.projectEffects).sort(), before)
 })
 
 test('v1 Task input commits the inbox and notify intent before returning and creates no Task or worker', async t => {

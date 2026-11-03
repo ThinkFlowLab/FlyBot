@@ -95,7 +95,7 @@ export function install(rt) {
     // they had: retiring stops the delivery, it invents no new state.
     if (retiredBot(bot)) return []
     return Object.values(rt.state.tasks ?? {}).filter((task) => {
-      if (task.projectTask || task.ownerBotId !== botId || task.waitingFor === 'input') return false
+      if (task.projectTask || rt.projectCompatibility && !rt.projectCompatibility.legacyAllowed(task) || task.ownerBotId !== botId || task.waitingFor === 'input') return false
       // An item with a role and no claimer belongs to the room, not to this Bot: the enqueuer
       // must not be woken for its own item (#1247). A claimed one names the member and is
       // driven above like any other card.
@@ -299,7 +299,7 @@ export function install(rt) {
   async function offerQueue() {
     const byRoomRole = new Map()
     for (const task of Object.values(rt.state.tasks ?? {})) {
-      if (task.projectTask || !task?.queueRole || task.claimedBy || task.status !== 'open') continue
+      if (task.projectTask || rt.projectCompatibility && !rt.projectCompatibility.legacyAllowed(task) || !task?.queueRole || task.claimedBy || task.status !== 'open') continue
       const roomId = task.origin?.roomId
       const room = roomId ? rt.roomOf(roomId) : undefined
       if (roomId && (!room || room.origin === 'face-to-face')) continue
