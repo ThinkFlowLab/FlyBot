@@ -68,3 +68,37 @@ test('row context menu renders the structure entry\'s menuItems', async () => {
   await items[0][1]()
   assert.deepEqual(notes, ['done'])
 })
+
+test('#2238: the row-menu contract carries the window\'s read-only flag', async () => {
+  const { pluginItems } = await import('../src/client/flybot-registry.js')
+  const { readFileSync } = await import('node:fs')
+  const bot = { id: 'b', name: 'B' }
+  const actions = { notify: () => {} }
+  const seen = []
+  const structure = { menuItems: ({ readOnly }) => { seen.push(readOnly); return [{ id: 'x', label: 'X', run: () => {} }] } }
+  // A window that holds the team read-only (a non-empty sentence) says so.
+  assert.equal(pluginItems(structure, bot, actions, { readOnly: 'The team is open in another window.' }).length, 1)
+  assert.deepEqual(seen, [true])
+  // The rule is the workflow list's (workflows.js): only a string whose trim() is non-empty is read-only.
+  seen.length = 0
+  const writable = [undefined, '', '   ', null, 0, false, true, 1, ['x']]
+  for (const readOnly of writable) pluginItems(structure, bot, actions, { readOnly })
+  assert.deepEqual(seen, writable.map(() => false))
+  // Backward compatible: the three-argument call, and an entry that ignores the flag, both still render.
+  seen.length = 0
+  assert.equal(pluginItems(structure, bot, actions).length, 1)
+  assert.deepEqual(seen, [false])
+  assert.equal(pluginItems({ menuItems: ({ bot: b }) => [{ id: 'y', label: 'Y ' + b.id, run: () => {} }] }, bot, actions, { readOnly: 'ro' }).length, 1)
+  // A throwing menuItems still only logs.
+  const errors = []
+  const original = console.error
+  console.error = (...args) => errors.push(args)
+  try {
+    assert.deepEqual(pluginItems({ menuItems: () => { throw new Error('x') } }, bot, actions, { readOnly: 'ro' }), [])
+    assert.deepEqual(pluginItems({ menuItems: () => { throw new Error('x') } }, bot, actions), [])
+  } finally { console.error = original }
+  assert.equal(errors.length, 2)
+  // Both menu call sites hand the roster through.
+  const menu = readFileSync(new URL('../src/client/context-menu.js', import.meta.url), 'utf8')
+  assert.equal(menu.match(/pluginItems\(structure, bot, actions, roster\)/g)?.length, 2)
+})

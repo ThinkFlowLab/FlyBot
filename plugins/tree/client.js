@@ -214,9 +214,11 @@ window.__ModuleLoader__.load({
      * The right-click menu item for a tree node, shown when social.canInvite(bot.id) is
      * true: one "Copy invite link" (bare URL). The invite with instructions stays in the
      * Bot's Sharing section, so the menu does not offer two copies of the same invite (#173).
+     * A read-only window is never offered it: social.createInvite is a write the host would
+     * refuse with `bot/read-only`, so the item would only paint a failure (#2238).
      */
     function makeMenuItems(flybot) {
-      return function menuItems({ bot }) {
+      return function menuItems({ bot, readOnly }) {
         const id = bot?.id
         let can = false
         try { can = Boolean(id) && socialOf(flybot)?.canInvite?.(id) === true } catch { can = false }
@@ -224,7 +226,7 @@ window.__ModuleLoader__.load({
           {
             id: 'copy-invite',
             label: 'Copy invite link',
-            visible: can,
+            visible: can && readOnly !== true,
             run: async () => {
               const result = await copyInvite(flybot, id, 'link')
               if (result.tone === 'error') throw new Error(`Could not copy the invite link: ${result.text}`)

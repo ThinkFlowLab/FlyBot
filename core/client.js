@@ -2112,11 +2112,12 @@ function botTree(bots, mainId, parentOf) {
   const walk = (bot, depth) => ({ bot, depth, children: (kids.get(bot.id) ?? []).map((child) => walk(child, depth + 1)) });
   return [walk(main, 0)];
 }
-function pluginItems(structure, bot, actions) {
+function pluginItems(structure, bot, actions, roster) {
   if (typeof structure?.menuItems !== "function") return [];
+  const readOnly = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   let items;
   try {
-    items = structure.menuItems({ bot });
+    items = structure.menuItems({ bot, readOnly });
   } catch (error) {
     console.error("flybot: menuItems failed", error);
     return [];
@@ -19411,7 +19412,7 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
     [
       [t("Bot settings"), GearIcon, () => actions.openSettings("bots", bot.id)]
     ],
-    pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]),
+    pluginItems(structure, bot, actions, roster).map(([label, run]) => [label, LinkIcon, run]),
     [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(currentPart(bot))]]
   ] : [
     [
@@ -19430,7 +19431,7 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
       bot && !isMainBot ? [t("Make Main Bot"), StarLineIcon, () => actions.setMain(bot.id, true)] : null,
       bot && isMainBot && mainCount > 1 ? [t("Remove Main Bot role"), StarLineIcon, () => actions.setMain(bot.id, false)] : null
     ],
-    bot ? pluginItems(structure, bot, actions).map(([label, run]) => [label, LinkIcon, run]) : [],
+    bot ? pluginItems(structure, bot, actions, roster).map(([label, run]) => [label, LinkIcon, run]) : [],
     [[t("Copy conversation ID"), CopyIcon, () => navigator.clipboard?.writeText(bot ? currentPart(bot) : menu.id)]],
     [
       isMainBot ? null : [t("Hide from sidebar"), HideIcon, () => actions.setFlags(menu.id, { hidden: true })],

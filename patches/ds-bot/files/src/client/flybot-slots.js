@@ -6,8 +6,9 @@
 //   flybot.sidebar.section  { id, order, component({ roster, actions, call }) }   below the Bot list
 //   flybot.sidebar.structure { id, order, parentOf(botId), include?(botId), menuItems?, nodeActions? }   the Bot list becomes one tree under the Main Bot;
 //     include(botId) === false hides that Bot from the default list (e.g. tree-archived);
-//                            menuItems({ bot }) → [{ id, label, visible, run({ bot }) }] adds items to a Bot's right-click
-//                            menu (visible false hides one; a string from run shows as a toast; a throw as the error toast);
+//                            menuItems({ bot, readOnly }) → [{ id, label, visible, run({ bot }) }] adds items to a Bot's right-click
+//                            menu (`readOnly` is true only in a read-only window, so no item offers a write the host refuses;
+//                            visible false hides one; a string from run shows as a toast; a throw as the error toast);
 //                            nodeActions({ bot }) is drawn after each tree row
 //   flybot.composer.mention { id, order, candidates(query, { sessionId, roster, call }) → rows }   rows in the "@" menu
 //   flybot.bot.details      { id, order, component({ bot, roster, call }) }        in a Bot's settings
