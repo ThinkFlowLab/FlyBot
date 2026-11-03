@@ -251,3 +251,6 @@ Independent personal-agent endpoints enforce their own current-user ownership an
 ## Scoped connection integration
 
 Agent connection authority intersects current human Project role, explicit credential scopes, active participation and the existing safe/watch mandate. Scope filtering applies to Project listings and reads, not only commands; body identity and default routing do not grant rights.
+
+
+#2171 exposes project-roles/project-role-proposals as current-member reads and project-role-decision as a configure operation. The domain service independently checks exact proposal hash, current Maintainer/Owner authority and Chief self-approval restrictions after gateway admission.

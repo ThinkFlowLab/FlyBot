@@ -466,3 +466,6 @@ The restricted gateway admits independent personal-agent registration/read/parti
 ## Scoped connection integration
 
 The restricted gateway exposes scoped personal-agent credential/delegation/proposal endpoints over the existing HTTP transport. Credential provisioning remains human-only; external requests cannot fall through to generic host or private-agent APIs.
+
+
+#2171 adds role catalog/proposal/decision endpoints to the existing restricted gateway allowlist. Reads preserve Project scope; decisions keep configure authorization in the domain service. No control-plane or frontend replacement is introduced.
