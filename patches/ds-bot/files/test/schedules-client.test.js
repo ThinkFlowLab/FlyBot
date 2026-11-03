@@ -813,3 +813,31 @@ test('P-457: a read-only details line offers no Add one, and a writable one does
   const writable = render(ScheduleSummary({ bot: { id: 'b1' }, roster: ROSTER, actions }))
   assert.deepEqual(buttonsOf(writable).map(labelOf), ['No scheduled tasks yet. Add one'], 'a writable details line keeps its Add one')
 })
+
+// P-482: after #2246 the same "locked, no tasks" state drew three shapes — ScheduleSummary hid
+// the whole block, RoomSchedules drew nothing, and a Bot's card kept its "Scheduled tasks"
+// heading over an empty body (TaskList returns null with no rows, and a locked card adds no row).
+// A locked card with no tasks now draws nothing; the writable card and a locked card with tasks
+// stay as they are.
+const sectionsOf = tree => all(tree).filter(node => node.type === 'section')
+
+test('P-482: a locked Bot card with no tasks draws no bare "Scheduled tasks" heading', () => {
+  seeded.push({ available: true, tasks: [] })
+  const locked = render(BotSchedules({ bot: { id: 'b1' }, roster: LOCKED_ROSTER, actions: scheduleActions() }))
+  assert.equal(sectionsOf(locked).length, 0, `a locked zero-task card still draws a section, saw ${text(locked).join('|')}`)
+  assert.ok(!text(locked).includes('Scheduled tasks'), `a locked zero-task card still says "Scheduled tasks", saw ${text(locked).join('|')}`)
+  // The same fixture in a writable window is the control: the rule is the lock, not an empty list.
+  seeded.push({ available: true, tasks: [] })
+  const writable = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: scheduleActions() }))
+  assert.equal(sectionsOf(writable).length, 1, 'a writable zero-task card keeps its section')
+  assert.ok(text(writable).includes('Scheduled tasks'), 'a writable zero-task card keeps its heading')
+  assert.ok(buttonsOf(writable).map(labelOf).includes('New task'), 'a writable zero-task card keeps the New task row')
+})
+
+test('P-482: a locked Bot card with tasks keeps the heading and the rows', () => {
+  seeded.push({ available: true, tasks: [ACTIVE] })
+  const locked = render(BotSchedules({ bot: { id: 'b1' }, roster: LOCKED_ROSTER, actions: scheduleActions() }))
+  assert.equal(sectionsOf(locked).length, 1, 'the rule must not hide a locked card that has tasks')
+  assert.ok(text(locked).includes('Scheduled tasks'), 'the heading stays with tasks')
+  assert.ok(text(locked).includes('Briefing'), 'the task row stays')
+})

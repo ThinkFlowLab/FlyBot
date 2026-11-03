@@ -447,6 +447,11 @@ export function BotSchedules({ bot, roster, actions }) {
   }
   if (view === null) return null
   const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
+  // A locked card with no tasks drew the heading over an empty body: it adds no row, and
+  // TaskList draws nothing without one. The details line hides this whole block in that state
+  // (#2232, P-457), so the settings card says nothing either. The Automation-tasks-off branch
+  // below is a different state and keeps its hint and button.
+  if (locked && view.available && tasks.length === 0) return null
   return h('section', { className: 'bt-set-section' },
     h('h3', null, t('Scheduled tasks')),
     !view.available
