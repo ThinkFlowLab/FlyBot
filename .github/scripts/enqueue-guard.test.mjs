@@ -1432,6 +1432,18 @@ test('#2291 n1-n4: a negation further back than the lift still clears the hold',
   }
 })
 
+test('#2291 n5-n7: a time or sequencing phrase further back than the lift still clears', () => {
+  for (const [i, body, at] of [
+    [5, 'After the fix, all green. CI is green. You may merge this tip now.', '2026-11-03T09:45:00Z'],
+    [6, 'It should be fine. Tests are green. You may merge this tip now.', '2026-11-03T09:45:01Z'],
+    [7, 'Following the merge, all green. You may merge this tip now.', '2026-11-03T09:45:02Z'],
+  ]) {
+    const r = ordinaryYes(body, at)
+    assert.equal(r.ok, true, `n${i} is an ordinary yes: ${r.reasons.join('; ')}`)
+    assert.equal(r.stopRequest, null, `n${i} clears the hold`)
+  }
+})
+
 test('#2287: a conditional lift with no hold wording of its own keeps the hold', () => {
   const conditional = note({
     id: 6597499999,
