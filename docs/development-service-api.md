@@ -118,7 +118,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | execution.boundary | taskId? | 当前权限/仓库/资源/Harness边界及readiness；不运行测试/不授予权限 |
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定和证据；读 |
-| attempt.log | attemptId、role? | 限定Attempt的原封存日志完整文本（当前未分页）；读，不给原始宿主文件读取权限 |
+| attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
 | chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
 | effects | taskId?、limit?:1..200 | 已提交意图/执行/等待/失败摘要；私有command结果限当前主体 |
 | command.receipt | commandRequestId、commandName? | 当前独立主体的幂等回执/commit状态/结果引用 |
@@ -127,7 +127,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | events | after?、limit?:1..100 | 当前Project已提交变更页、next cursor；默认100项 |
 | compatibility | offset?、limit?:1..100 | 旧工作baseline计数/hash/提交状态，当前contract/legacy/held/active计数和引用页；默认50项 |
 
-字符串源页offset按字符而非UTF-8字节；把返回SHA256带入下一页，变更则重新读源。Task/Attempt列表是摘要，不能用preview代替验收证据。attempt.log目前返回原封存完整文本，受网关响应上限约束；不要把它当成已实现分页的通用上下文读取。
+字符串源页offset按字符而非UTF-8字节；把返回SHA256带入下一页，变更则重新读源。Task/Attempt列表是摘要，不能用preview代替验收证据。attempt.log的offset/limit按UTF-8字节计，使用返回nextOffset续读，边界不会切断字符；每次仍流式验证完整封存源哈希。
 TaskView.phase包括published/awaiting-chief/queued/starting/running/awaiting-input/blocked/stopping/accepted/cancelled等；waitingFor/reason解释等待对象。
 Worker已登记不等于已运行；进程或Bot消失不等于退出；角色目录当前revision与执行固定revision分别展示。
 
@@ -218,3 +218,5 @@ Accept: text/event-stream
 原public Bot人设/长期记忆可授权查看，个人代理/Chief私有记忆不会因此公开。具体保留对象和回退限制见[兼容盘点](subsystems/project-compatibility.md)。
 
 Task requirements accept optional repository (owner/name or null). An admitted explicit selection cannot be overridden by task.run. Cross-repository child outputs are references, not permission to merge into another repository. Repository-free decision Tasks currently execute on local resources.
+
+project-agent-history保留messages字段，默认最近50条，limit为1..100。cursor绑定用户/代理作用域与历史前缀快照；新消息追加不破坏旧游标，原消息变化则拒绝。超长记录仅返回预览及sourceRef，带messageIndex/cursor/expectedSha256与textOffset/textLimit（上限4000字符）可逐页取回原始JSON。nextCursor向后，previousCursor查询更早历史；完整记录不删除。

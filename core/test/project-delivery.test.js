@@ -1624,3 +1624,21 @@ test('a repository-free decision Task prepares a scoped workspace and records ve
   assert.equal(attempt.status, 'accepted')
   assert.equal(f.task.completedBy.decisionId, 'decision-accepted')
 })
+
+
+test('sealed Attempt logs are bounded UTF-8 pages with exact hash and stale-cursor refusal', async t => {
+  const f = await setup(t)
+  await f.start('paged-log')
+  const a = f.attempt(), text = '日志😀\n'.repeat(20000), path = join(f.home, 'large-sealed.log')
+  writeFileSync(path, text)
+  a.evidence.tests = { log: path, sha256: createHash('sha256').update(text).digest('hex'), sha: 'a'.repeat(40) }
+  const first = await f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id, limit: 64 }, alice)
+  assert.ok(Buffer.byteLength(first.text) <= 64)
+  assert.equal(first.text.includes('�'), false)
+  assert.ok(first.nextOffset > 0)
+  const next = await f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id, offset: first.nextOffset, limit: 64, expectedSha256: first.sha256 }, alice)
+  assert.equal(next.offset, first.nextOffset)
+  await assert.rejects(f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id, expectedSha256: '0'.repeat(64) }, alice), /changed|stale/)
+  writeFileSync(path, text + 'tampered')
+  await assert.rejects(f.rt.projectEndpoint('project-attempt-log', { attemptId: a.id }, alice), /changed|stale/)
+})

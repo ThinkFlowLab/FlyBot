@@ -909,3 +909,23 @@ test('reading an implicit legacy role catalog does not materialize or mutate Pro
   assert.equal(response.result.roles.length, 4)
   assert.equal(JSON.stringify(rt.state.projectAgentDefinitions ?? {}), before)
 })
+
+
+test('legacy agent history is bounded, snapshot cursors survive append and reject mutation or another private scope', async t => {
+  const { rt } = await setup(t), view = await get(rt, alice)
+  const rows = Array.from({ length: 200 }, (_, n) => ({ id: `m${n}`, kind: 'agent', text: 'message-' + n, at: n }))
+  rows[0].context = { text: 'large-context'.repeat(20000) }
+  rt.state.projectAgentTranscripts[view.mine.id] = rows
+  const page = await rt.projectEndpoint('project-agent-history', { projectId: 'p1', offset: 0, limit: 2 }, alice)
+  assert.equal(page.messages.length, 2)
+  assert.ok(Buffer.byteLength(JSON.stringify(page)) < 65536)
+  assert.equal(page.messages[0].sourceRef.messageIndex, 0)
+  assert.ok(page.nextCursor)
+  rows.push({ id: 'appended', kind: 'agent', text: 'new' })
+  const next = await rt.projectEndpoint('project-agent-history', { projectId: 'p1', cursor: page.nextCursor, limit: 2 }, alice)
+  assert.equal(next.messages[0].id, 'm2')
+  assert.equal(next.total, 200)
+  await assert.rejects(rt.projectEndpoint('project-agent-history', { projectId: 'p1', cursor: page.nextCursor }, bob), /scope|cursor/)
+  rows[0].text = 'edited'
+  await assert.rejects(rt.projectEndpoint('project-agent-history', { projectId: 'p1', cursor: page.nextCursor }, alice), /changed|stale/)
+})

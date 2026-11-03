@@ -5,6 +5,8 @@ owned_paths:
 
   - core/src/host/project-role-governance.js
   - core/test/project-role-governance.test.js
+  - core/src/host/project-history-pages.js
+  - core/test/project-history-pages.test.js
   - core/src/host/project-agents.js
   - core/src/host/project-agent-skills.js
   - core/src/host/project-role-context.js
@@ -482,3 +484,7 @@ revocation acceptance remain in #2184; this catalog alone does not prove that lo
 Execution integration now preserves approved custom role keys through actual Workspaces, role-policy sources and artifact verification. Capability classes choose inherited conventions and SDK readOnly behavior; they do not grant human authority. A retired role can finish its already acquired frozen claim and explicitly hand off to an active target. Queued retired-role work becomes blocked with a Chief-routing reason; retirement never silently selects a replacement. New claims/offers to retired roles remain refused.
 
 Versioned service aliases `roles`, `role.proposals` and `role.decide` reuse the same catalog/proposals/Owner-Maintainer decision service. The latter retains exact-hash/configure/Chief self-approval checks and command receipt replay; it cannot grant HTTP callers Chief proposal authority.
+
+## Bounded legacy history (#2292)
+
+project-agent-history defaults to the latest50 messages (limit1–100), retaining messages/busy/agent/live keys. Offset/cursor pages use a scope-bound prefix hash; appends preserve the snapshot, edits invalidate it. Message arrays fit30kB, oversized records are previews with sourceRef; messageIndex/textOffset/textLimit retrieve exact JSON source in4000-character pages. Agent metadata and live previews are bounded; all original transcripts remain stored. Cursors grant no access and private histories always resolve from the current actor.
