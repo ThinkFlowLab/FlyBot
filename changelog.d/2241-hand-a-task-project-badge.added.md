@@ -1,0 +1,1 @@
+Hand a task to a Workflow now names each lane's Project on its target row, so two Workflows that share a name but belong to different Projects are told apart before a card is handed over; a lane with no Project draws no badge (#2241).

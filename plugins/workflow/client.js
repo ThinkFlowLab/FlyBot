@@ -1414,7 +1414,10 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'wf-btn wf-danger', onClick: onConfirm }, tr('Delete')))))
     }
 
-    function AssignModal({ workflows, tasks, tasksStatus, tasksError, error, roster, workflowId, onClose, onConfirm, onRetry }) {
+    function AssignModal({ workflows, tasks, tasksStatus, tasksError, error, projects, roster, workflowId, onClose, onConfirm, onRetry }) {
+      // #2241: two lanes drawn from different Projects read the same inside this dialog, so the
+      // target row repeats the badge the list row already draws — the same `projects` listing.
+      const projectName = (id) => (projects ?? []).find(project => project.id === id)?.name ?? ''
       const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
       const [target, setTarget] = useState(workflowId || workflows[0]?.id || '')
       // #1457: the dialog opens before loadTasks() answers, so the first client render can have no
@@ -1464,7 +1467,9 @@ window.__ModuleLoader__.load({
               },
                 h('span', { className: 'wf-tgt-thumb' }, h(MiniFlowchart, { workflow: item, roster, compact: true })),
                 h('span', null,
-                  h('span', { className: 'wf-t1' }, item.name, h('span', { className: 'wf-badge' }, tr('Workflow'))),
+                  h('span', { className: 'wf-t1' }, item.name,
+                    h('span', { className: 'wf-badge' }, tr('Workflow')),
+                    projectName(item.projectId) ? h('span', { className: 'wf-proj' }, projectName(item.projectId)) : null),
                   h('span', { className: 'wf-chain' }, item.chain)),
                 h('span', { className: 'wf-rad' }))),
               bots.map(bot => h('button', {
@@ -2293,7 +2298,7 @@ window.__ModuleLoader__.load({
           onRematch: rematchTask,
         })) : null,
         assignOpen ? portal(h(AssignModal, {
-          workflows, tasks, tasksStatus, tasksError, error, roster, workflowId: openId || workflows[0]?.id,
+          workflows, tasks, tasksStatus, tasksError, error, projects, roster, workflowId: openId || workflows[0]?.id,
           // #2237: this dialog owns its refusal, so closing it drops the sentence rather than
           // leaving it on the page for the next open to inherit.
           onClose: () => { setAssignOpen(false); setError('') }, onConfirm: confirmAssign, onRetry: loadTasks,

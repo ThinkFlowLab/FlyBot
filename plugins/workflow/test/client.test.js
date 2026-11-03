@@ -4137,3 +4137,81 @@ test('#2237: re-opening the assign dialog after a refusal starts clean', async (
     view.unmount()
   })
 })
+
+// #2241: inside Hand a task to a Workflow two lanes from different Projects looked exactly alike —
+// the target row carried the name and the chain, never the Project the list row already draws
+// (`wf-proj`, from the same `projects` listing).
+const P450_LANES = [
+  { ...delivery(), id: 'lane-alpha', name: 'Lane A', projectId: 'project-alpha' },
+  { ...delivery(), id: 'lane-beta', name: 'Lane B', projectId: 'project-beta' },
+  { ...delivery(), id: 'lane-plain', name: 'Lane C' },
+]
+const P450_PROJECTS = [{ id: 'project-alpha', name: 'Alpha' }, { id: 'project-beta', name: 'Beta' }]
+
+async function withLaneHost(fn) {
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel === 'tasks'
+      ? [ASSIGN_TASK]
+      : channel === 'projects' ? { projects: P450_PROJECTS } : []),
+  }
+  try { return await fn() } finally { globalThis.__flybot__ = prev }
+}
+
+function laneCall() {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: P450_LANES, templates: [] }
+    return { ok: true, workflows: P450_LANES }
+  }
+  return { call, calls }
+}
+
+const targetsOf = tree => findAll(tree, node => String(node.props?.className ?? '').split(' ').includes('wf-tgt'))
+
+test('#2241: the Hand a task dialog names each lane\'s Project', async () => {
+  const { call } = laneCall()
+  await withLaneHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    assert.ok(dialog, 'the assign dialog opens')
+    const names = targetsOf(dialog).map(textOf)
+    assert.equal(names.length, 3, `one target per lane, saw ${names.join(' | ')}`)
+    assert.ok(names[0].includes('Alpha'), `the first lane names its Project, saw ${names[0]}`)
+    assert.ok(names[1].includes('Beta'), `the second lane names its Project, saw ${names[1]}`)
+    view.unmount()
+  })
+})
+
+test('#2241: a lane with no Project carries no Project badge', async () => {
+  const { call } = laneCall()
+  await withLaneHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    const names = targetsOf(dialog).map(textOf)
+    assert.equal(names[2].includes('Alpha'), false, `an unassigned lane names no other Project, saw ${names[2]}`)
+    assert.equal(names[2].includes('Beta'), false, `an unassigned lane names no other Project, saw ${names[2]}`)
+    assert.equal(findAll(dialog, node => String(node.props?.className ?? '').split(' ').includes('wf-proj')).length, 2, 'only the two lanes that have a Project draw the badge')
+    view.unmount()
+  })
+})
+
+test('#2241: picking a lane still posts the same assign body', async () => {
+  const { call, calls } = laneCall()
+  await withLaneHost(async () => {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const dialog = await openAssign(view)
+    targetsOf(dialog)[0].props.onClick()
+    await settle()
+    assignOf(dialogOf(view)).props.onClick()
+    await settle()
+    const posts = calls.filter(item => item.name === 'workflow/assign')
+    assert.equal(posts.length, 1, 'one assign is posted')
+    assert.deepEqual(posts[0].body, { workflowId: 'lane-alpha', taskId: 'task-live-1', title: 'Real board card one' }, 'the submit body is unchanged')
+    view.unmount()
+  })
+})
