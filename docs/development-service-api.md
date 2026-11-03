@@ -62,9 +62,11 @@ receipt区分completed、running、unknown、completion-pending-commit；unknown
 | auth-whoami / auth-revoke | {} → 当前身份 / 撤销结果 | 本次会话；注销不等于停止Task |
 | auth-invite / auth-redeem | 邀请{} / 兑换{token,displayName?} → 邀请/成员会话 | 原生认证；首次邀请仅私有操作者入口，后续需已登录邀请人 |
 | personal-agent-create | name、kind:internal或external；外部另需provider、HTTPS endpoint → agent | 本人；外部descriptor初始未验证，不声称已接入特定产品 |
-| personal-agent-list / personal-agent-read | limit?/after? / agentId → 本人身份列表/身份 | 本人；不公开私有carrier历史 |
+| personal-agent-list / personal-agent-read | limit?:1..200、after? / agentId → 本人身份列表/身份 | 本人；不公开私有carrier历史 |
 | personal-agent-join / personal-agent-default | agentId、projectId → participation | 本人且当前项目成员；默认路由不授予权限 |
-| personal-agent-participations / personal-agent-history | agentId；分页按原接口 → 当前参与/原历史 | 本人；历史保留原ID |
+| personal-agent-participations | limit?:1..200、after? → 本人的参与列表 | 本人；独立参与ID |
+| personal-agent-history | agentId、projectId、offset?、limit?:1..100 → 私有历史页和nextOffset | 本人；历史保留原ID |
+| personal-agent-propose-task | projectId、title、criteria、projectTaskKind、requestId；impact?/scope? → 私有proposal | FBA连接；等待人类授权，显式影响/范围保留到原Task |
 | personal-agent-leave / personal-agent-retire | agentId，leave另需projectId → 状态 | 撤销对应连接/委托能力，保留历史 |
 | personal-agent-token-create | agentId、projectIds:string[]、ttlSeconds?:60..2592000 → 一次性原始token及metadata | 本人；存储只留hash，token限当前活跃参与Project |
 | personal-agent-token-list / personal-agent-token-revoke | agentId / credentialId → metadata/撤销 | 本人；不重新返回原始token |
@@ -138,14 +140,14 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | consultation.ask | text；agentId? | 私有咨询receipt，异步答案；本人，不创建Task |
 | consultation.reply | consultationId、text；publish?、agentId? | 私有回答；显式publish且有权才进入原Task输入，安全代理仍需授权 |
 | role.decide | proposalId、expectedSha256、decision:approve/reject | 管；精确批准Chief提案，不能由提案Chief借Owner身份自批 |
-| task.propose | title、criteria、impact；scope/projectTaskKind/botId? | 创建唯一Task并提交Chief intake；当前成员发布权限；kind仅code/decision/release |
+| task.propose | title；criteria/impact接纳前必需；scope/projectTaskKind/botId? | 创建唯一Task并提交Chief intake；当前成员发布权限；kind仅code/decision/release |
 | task.change.request | taskId、action:revise/cancel/reopen、reason；revise可带requirements | 写；仅请求Chief判断，不立即改承诺/关闭Task |
 | task.run | taskId | 写；未接纳则waitingFor:chief；接纳后原配额/资源队列，不是强制绕过Chief |
 | task.accept | attemptId | 旧兼容交付的人工验收；管；新Task最终关闭仍由Chief |
 | task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
 | attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
 | attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
-| attempt.integration-bind | attemptId及受信集成目标字段 | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
+| attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
 | queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
 | queue.retry | queueId | 管；重验原始发起人、要求和资源；不是换请求人借权 |
@@ -160,7 +162,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | source.disable | subscriptionId | 管；保留已提交输入/游标，停止后续拉取 |
 | source.poll | threadId | 管；复用原来源拉取，重复事件按版本去重 |
 | effect.retry | effectId | 管；只恢复耗尽失败的原Effect，不重置已完成动作 |
-| comment.publish | 原目标及text等评论参数 | 当前项目与个人GitHub授权；不借Owner或环境凭据 |
+| comment.publish | issueNumber:正整数、text:1..10000字符；scope仅personal | 当前项目与个人GitHub授权；不借Owner或环境凭据 |
 
 复杂原生字段/证据前置的完整规范：[Task](subsystems/project-task-lifecycle.md)、[Handoff/任务池](subsystems/project-pools.md)、[输入](subsystems/project-inputs.md)、[来源](subsystems/project-sources.md)、[Chief/定时任务](subsystems/project-chief-control.md)、[交付](subsystems/project-delivery.md)、[GitHub](subsystems/project-github-read.md)。
 Role的get-context、accept/return/transfer/complete/split/Chief裁定走已绑定Task-role执行通道，宿主校验完整claim/代次/退出与证据。
