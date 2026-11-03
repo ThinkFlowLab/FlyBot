@@ -1,0 +1,1 @@
+**Hand a task to a Workflow** keeps the picked card in the twelve it draws after the card list is folded again: a card picked past the twelfth is drawn first, so the rows never hide the card its confirm button is about to send. The count row and the assignment it sends are unchanged. ([#2257](https://github.com/ThinkFlowLab/FlyBot/issues/2257))
