@@ -119,6 +119,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定和证据；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
+| release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
 | chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
 | effects | taskId?、limit?:1..200 | 已提交意图/执行/等待/失败摘要；私有command结果限当前主体 |
 | command.receipt | commandRequestId、commandName? | 当前独立主体的幂等回执/commit状态/结果引用 |
@@ -149,6 +150,8 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
 | attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
+| release.request | attemptId、tag、sha、mode?:observe/publish、name?、notes? | 管；默认只观察，publish是显式发布授权 |
+| release.reconcile | attemptId | 管；仅核对已有外部结果，不重复发布 |
 | queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
 | queue.retry | queueId, targetRole? | 管；重验原始发起人、要求和资源；不是换请求人借权 |
 | chief.inspect | taskId? | 管；一次原Chief巡检/裁定工作，不增框架轮询器 |

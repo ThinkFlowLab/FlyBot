@@ -67,3 +67,5 @@ init during active service and unsupported storage startup without changing the
 guard. Its offline dependency fixture is separate from the manual fresh-home
 init/install/start/restart acceptance. Neither is a real-provider developer loop,
 production rollout, remote HTTPS deployment or browser/desktop acceptance.
+
+#2292 adds typed Release operations to the existing service; the complete documented contract and source-matched guard now enumerate25 queries/28 commands. Source deployment and command-line entry stay unchanged.

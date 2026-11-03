@@ -19,8 +19,8 @@ test('public API tables enumerate the actual complete command/query contracts', 
   const commandText = api.split('## v1命令')[1].split('## Execution')[0]
   assert.deepEqual(rows(queryText), [...queries].sort())
   assert.deepEqual(rows(commandText), operations.filter(name => !queries.includes(name)).sort())
-  assert.equal(queries.length, 24); assert.equal(rows(commandText).length, 26)
-  for (const name of ['README.md', 'README.zh.md']) assert.match(read(name), /24查询\/26命令/)
+  assert.equal(queries.length, 25); assert.equal(rows(commandText).length, 28)
+  for (const name of ['README.md', 'README.zh.md']) assert.match(read(name), /25查询\/28命令/)
 })
 
 test('quickstart JSON, shell syntax and local documentation links stay usable', () => {
