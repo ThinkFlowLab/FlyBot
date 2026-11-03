@@ -12,6 +12,7 @@ import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReview
 import { roleContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
 import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
+import { reconcileExecutionAuthority } from './project-execution-authority.js'
 import { executionExitConfirmed } from './project-execution-exit.js'
 import { createProjectNativeSessions, nativeExitConfirmed } from './project-native-sessions.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
@@ -976,11 +977,11 @@ export function createProjectDelivery(rt, { publisher } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {
   rt.projectDelivery = createProjectDelivery(rt)
-  rt.ctx.on('agent/pre-step', (payload, next) => rt.projectDelivery.nativeSessions.admitStep(payload.agent) ? next() : Promise.resolve({ kind: 'reject' }))
+  rt.ctx.on('agent/pre-step', async (payload, next) => await rt.projectDelivery.nativeSessions.validateStep(payload.agent) ? next() : { kind: 'reject' })
   rt.taskNeedsDelivery = task => Boolean(task?.projectId && ownEntry(rt.config.projectRepositories ?? {}, rt.readProject(task.projectId)?.repository))
 }

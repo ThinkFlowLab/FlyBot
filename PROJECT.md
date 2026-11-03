@@ -32,7 +32,7 @@ Project convergence #2171 now adds explicit repository associations and non-dest
 Native execution convergence #2184 now adds matching physical Session bindings and observed
 Agent quiescence before Bot removal/resource release. Role retirement/capability changes
 cannot restart pinned execution under stale authority. Deterministic runtime acceptance
-and real-provider Task loops remain separate; this work is not deployed. Custom-role artifact verification and SDK capability policy now have actual Git/host-test and subprocess contract coverage. Verified supervisor exit now supports native prior-host recovery; unmanaged/unknown exit stays held. In-flight revocation and real-provider native continuation remain active acceptance. Native activation now requires committed Effects proof and pre-step admission. The actual DSH native return loop now passes with deterministic inference, retained prior conversation and one resource.
+and real-provider Task loops remain separate; this work is not deployed. Custom-role artifact verification and SDK capability policy now have actual Git/host-test and subprocess contract coverage. Verified supervisor exit now supports native prior-host recovery; unmanaged/unknown exit stays held. Canonical in-flight role/resource revocation now reuses current authority checks and the existing pool stop/scheduler; unknown exit retains capacity. Composed-stack acceptance and real-provider native continuation remain active acceptance. Native activation now requires committed Effects proof and pre-step admission. The actual DSH native return loop now passes with deterministic inference, retained prior conversation and one resource.
 
 ## Fork Project State — 2026-10-31
 

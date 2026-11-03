@@ -484,3 +484,6 @@ Native host creation now prepares the exact context binding, invokes the existin
 
 
 The pool host release adapter now delegates to one physical-exit query for SDK and native execution, requiring actual recorded proof and released leases before initiative can move. Native stop follows current parts and known subagent work, and supervisor recovery updates the exact historical/current role Session physical ID. Missing Bot records alone cannot advance a Task.
+
+
+Current canonical execution is revalidated through one authority helper before new input and by the existing scheduler before resource reconciliation/new dispatch. Revocation reuses the pool lifecycle stop, with an exact claim fence, visible blocked reason and confirmed-exit requirement. Role snapshots retain conventions while current rights constrain their use.

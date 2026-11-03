@@ -1,6 +1,8 @@
 ---
 subsystem: project-harness
 owned_paths:
+  - core/src/host/project-execution-authority.js
+  - core/test/project-execution-authority.test.js
   - core/src/host/project-execution-exit.js
   - core/test/project-execution-exit.test.js
   - core/src/host/project-native-sessions.js
@@ -345,3 +347,16 @@ Capacity may be released from an actually verified legacy supervisor fact while
 context restoration still refuses an unknown binding. Reconciliation respects actual
 host epoch rather than PID equality and preserves an already confirmed nested release.
 Tests inject manager observations; they do not claim a real systemd restart acceptance.
+
+
+## In-flight authority (#2184)
+
+Native bind/activate and canonical SDK start/input use the same current execution-authority check: exact Task/Attempt/claim/generation, current initiating human/delegation, committed role catalog and actual Resource binding. Frozen persona/Skills/model stay frozen; current capability/Harness/resource revocations limit that context. A removed role may finish only its exact retained active claim under archived conventions; it cannot acquire fresh work or borrow another retired identity. An implicit native host cannot bypass a newly explicit resource pool.
+
+The existing serialized scheduler checks ongoing canonical role Sessions before resource reconciliation and new dispatch; no new timer is installed. Native pre-step also checks current authority for the bound Agent/child lineage and asynchronously requests the existing pool stop so it never waits for its own idle inside pre-step. SDK safe next-turn feedback and human input/permission responses revalidate before writing frames. Already running SDK operations stop cooperatively via the existing acknowledgement + process-exit contract; this does not assert retroactive prevention of an external operation already executed.
+
+`projectPools.revokeExecution` is a private host seam, not a new public task endpoint. It fences the exact claim, persists a blocked reason, then invokes the same lifecycle release used for member revocation. Unknown exit keeps occupancy and prevents reassignment; a late result cannot move a revoked claim. Chief's configured inspection can observe and route the blocked Task after existing exit/authority gates; this path does not impersonate a human or automatically close a Task. Tests cover native step, existing scheduler wiring, stale claim, current catalog, prepared and live real SDK subprocesses using an explicit deterministic worker fixture. They do not imply a new real-provider workflow acceptance.
+
+When a physical native Session is resumed under a fresh carrier, ongoing checks select only the current host/live bound record, never an earlier historical binding for that same Session ID. SDK human input checks both initiating authority and the sending actor again after any awaited validation. These two boundaries have failure regressions; the actual DSH return probe reproduced the former and passes after correction.
+
+Current operator disabling of a Resource or removal of its Harness support also requests the same confirmed stop; it cannot be bypassed by a retained role grant. Live deterministic SDK subprocess regression covers both role-pool removal and operator disable.

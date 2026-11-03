@@ -422,3 +422,5 @@ and external command receipts remain dependent acceptance; no live-provider or d
 claim from controlled process tests. README/API rewrite remains last (#2189).
 
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
+
+Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.

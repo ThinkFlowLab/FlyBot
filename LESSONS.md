@@ -711,3 +711,7 @@ Use one proof query at the initiative boundary too. Native Agent idle also exclu
 background jobs: stop/query registered work across earlier parts and child lineage,
 and preserve unknown occupancy until it settles. After restart reuse exact supervisor
 facts without auto-resuming an old worker or confusing a reused PID with ownership.
+
+### 2026-11-03 — Preserve context and recheck current authority separately
+
+Seen 1× (native pre-step and existing scheduler regressions). Admission-time rights do not cover role/resource revocation during a long execution. Reuse one live authority check and the existing pool stop/acknowledgement contract. Keep frozen persona/model for continuation, permit only the retained active retired-role claim, and do not await an Agent's idle inside its own pre-step hook. A resumed physical Session also exists in history: select its current live carrier for authorization. Recheck the actual human sender after awaiting the initiating authority.

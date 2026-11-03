@@ -2,7 +2,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { captureProcessScope, priorScopeExited, supervisorProofMatches } from './project-process-proof.js'
 import { ownEntry, setEntry } from './store.js'
-import { taskSession, taskSessionId, roleDefinitionKey, pinTaskRoleDefinition } from './project-task-sessions.js'
+import { requireExecutionAuthority } from './project-execution-authority.js'
+import { taskSession, taskSessionId, roleDefinitionKey } from './project-task-sessions.js'
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const refuse = message => Object.assign(new Error(message), { code: 'bot/context-resume' })
 const clone = value => structuredClone(value)
@@ -34,26 +35,7 @@ export function createProjectNativeSessions(rt, { priorExit = priorScopeExited, 
     if (last.harness !== 'flybot' || !row || row.logicalSessionId !== logical.id || row.projectId !== session.projectId || row.taskId !== session.taskId || row.role !== session.role || last.key !== key || row.bindingKey !== key || last.sessionId !== row.sessionId || !nativeExitConfirmed(rt.state, row) || row.leaseId && lease?.status !== 'released' || rt.botOf(row.id)) throw refuse('Latest native Task-role Session is incompatible or its execution has not confirmed release; a fresh Session is forbidden')
     return { logical, key, row }
   }
-  async function authority(session) {
-    if (rt.readOnly?.() !== undefined) throw refuse('Native execution lost its writable host authority')
-    const task = ownEntry(rt.state.tasks ?? {}, session.taskId)
-    if (!task || task.projectId !== session.projectId) throw refuse('Native Task scope changed')
-    if (session.poolClaimId) {
-      const claim = task.collaboration?.claim
-      if (task.deliveryAttemptId !== session.attemptId || claim?.id !== session.poolClaimId || claim.generation !== session.generation || claim.status !== 'active') throw refuse('Native execution claim changed before binding')
-      const actor = { memberId: task.collaboration.initiatedBy }
-      rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
-      await rt.projectDelegations?.background(actor.memberId, task.collaboration.sourceSessionId)
-      rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
-      if (task.collaboration.claim !== claim || claim.status !== 'active' || task.collaboration.generation !== session.generation) throw refuse('Native execution claim was revoked during binding')
-    }
-    if (session.definitionRef) {
-      const frozen = ownEntry(rt.state.projectRoleDefinitionSnapshots ?? {}, session.definitionRef)
-      if (!frozen) throw refuse('Native role definition is unavailable')
-      pinTaskRoleDefinition(rt.state, session, frozen.definition, session.definitionRevision, rt.projectAgents?.deliveryDefinitions(session.projectId))
-    }
-    if (session.resourceLease) rt.projectResources?.requireBinding(session.projectId, session.resourceLease)
-  }
+  const authority = session => requireExecutionAuthority(rt, session)
   async function bind(session, workspace, botId) {
     await authority(session)
     const bot = rt.botOf(botId)
@@ -182,7 +164,19 @@ export function createProjectNativeSessions(rt, { priorExit = priorScopeExited, 
     }
     return false
   }
-  const api = { previous, activate, admitsAgent, admitStep: agent => admitsAgent(agent, true), currentHost: botId => Boolean(rt.botOf(botId) && ownEntry(rt.state.projectNativeWorkers ?? {}, botId)?.hostEpoch === hostEpoch), async bind(session, workspace, botId) {
+  const api = { previous, activate, admitsAgent, async validateStep(agent) {
+      if (!api.admitStep(agent)) return false
+      const row = Object.values(rows()).find(value => value.hostEpoch === hostEpoch && value.status === 'bound' && rt.botOf(value.id) && value.knownSessionIds?.includes(agent.session.id))
+      if (!row) return true
+      const session = ownEntry(rt.state.projectAttempts ?? {}, row.attemptId)?.roleSessions?.[row.role]
+      if (!session?.poolClaimId) return true
+      try { await authority(session); return api.admits(row.id) }
+      catch (error) {
+        // Do not wait for this same Agent to become idle inside its pre-step hook.
+        void rt.projectPools?.revokeExecution(row.taskId, session.poolClaimId, String(error.message).slice(0, 1000)).catch(failure => rt.warn('Execution revocation: %s', failure.message))
+        return false
+      }
+    }, admitStep: agent => admitsAgent(agent, true), currentHost: botId => Boolean(rt.botOf(botId) && ownEntry(rt.state.projectNativeWorkers ?? {}, botId)?.hostEpoch === hostEpoch), async bind(session, workspace, botId) {
       const key = taskSessionId(session.projectId, session.taskId, session.role)
       if (binding.has(key)) throw refuse('Native Task-role binding is already in progress')
       binding.add(key)

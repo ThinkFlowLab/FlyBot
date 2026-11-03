@@ -245,3 +245,18 @@ test('queued work for a retired role becomes visibly blocked without reassignmen
   assert.match(f.task.collaboration.block.reason, /Chief must explicitly/)
   assert.equal(f.task.collaboration.claim, undefined)
 })
+
+test('host execution revocation fences the exact claim before stopping and never infers exit or reassigns', async () => {
+  const f = setup(); await f.admit(); const token = await f.claim()
+  f.task.collaboration.claim.workerId = 'worker'
+  const events = []
+  f.rt.save = async () => { events.push('saved') }
+  f.adapter.release = async workerId => { events.push('stop'); assert.equal(workerId, 'worker'); assert.equal(f.task.collaboration.claim.status, 'revoked'); assert.equal(events[0], 'saved'); return false }
+  assert.equal(await f.pool.revokeExecution('task', 'stale-claim', 'Wrong worker'), false)
+  assert.equal(await f.pool.revokeExecution('task', token.id, 'Role resource permission revoked'), true)
+  assert.equal(f.task.collaboration.status, 'blocked')
+  assert.equal(f.task.collaboration.claim.exitConfirmed, false)
+  assert.equal(f.task.collaboration.history.length, 1)
+  assert.equal(await f.pool.revokeExecution('task', token.id, 'Repeated observation'), false)
+  await assert.rejects(f.pool.decide('task', token, { action: 'handoff', to: 'p:tester', reason: 'Stale callback' }), /stale/)
+})

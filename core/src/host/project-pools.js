@@ -236,15 +236,23 @@ export function createProjectPools(rt) {
       }
     }
   }
+  async function revokeExecution(taskId, claimId, reason) {
+    const task = taskOf(taskId), c = task.collaboration
+    if (!c || c.claim?.id !== claimId || c.claim.status !== 'active') return false
+    const claim = c.claim
+    c.status = 'blocked'; ++c.generation; c.block = { reason, at: Date.now() }
+    claim.status = 'revoked'
+    await rt.save()
+    if (claim.workerId) { try { claim.exitConfirmed = await adapter.release(claim.workerId) } catch { claim.exitConfirmed = false } }
+    await rt.save()
+    return true
+  }
   async function revokePrincipal(projectId, memberId) {
     for (const task of Object.values(rt.state.tasks)) {
       const c = task.collaboration
       if (task.projectId !== projectId || c?.initiatedBy !== memberId || !['queued', 'claimed'].includes(c.status)) continue
-      c.status = 'blocked'; ++c.generation; c.block = { reason: 'Initiating human authority was revoked', at: Date.now() }
-      if (c.claim) c.claim.status = 'revoked'
-      await rt.save()
-      if (c.claim?.workerId) { try { c.claim.exitConfirmed = await adapter.release(c.claim.workerId) } catch { c.claim.exitConfirmed = false } }
-      await rt.save()
+      if (c.claim?.status === 'active') await revokeExecution(task.id, c.claim.id, 'Initiating human authority was revoked')
+      else { c.status = 'blocked'; ++c.generation; c.block = { reason: 'Initiating human authority was revoked', at: Date.now() }; await rt.save() }
     }
   }
   async function validateClosure(taskId, actor, evidence) {
@@ -335,7 +343,7 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
-    claim: (id, botId) => serial(() => claim(id, botId)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal, validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
+    claim: (id, botId) => serial(() => claim(id, botId)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
   rt.projectPools = createProjectPools(rt)

@@ -249,3 +249,51 @@ test('native drain includes idle subagent jobs and earlier context parts before 
   await f.service.stop('bot1')
   assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), true)
 })
+
+test('actual native pre-step refuses revoked role rights while retaining the original role context', async () => {
+  const f = fixture(), revoked = []
+  const role = { id: 'p:developer', ...structuredClone(f.session.definition), toolPolicy: { shell: true }, execution: { harness: 'flybot', resourceIds: [] } }
+  const task = f.rt.state.tasks.t
+  task.deliveryAttemptId = 'a'; task.collaboration = { initiatedBy: 'owner', generation: 1, claim: { id: 'claim', botId: role.id, role: 'developer', generation: 1, status: 'active' } }
+  f.session.poolClaimId = 'claim'
+  f.rt.requireProjectAccess = () => {}
+  f.rt.projectAgents = { deliveryDefinitions: () => ({ revision: 1, roles: [role] }) }
+  f.rt.projectPools = { async revokeExecution(...args) { revoked.push(args) } }
+  f.rt.state.projectAttempts = { a: { roleSessions: { developer: f.session } } }
+  f.rt.selfOf = id => id === f.agent.session.id ? 'bot1' : undefined
+  Object.assign(f.session, pinTaskRoleDefinition(f.rt.state, f.session, role, 1, f.rt.projectAgents.deliveryDefinitions()))
+  await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.activate(f.session, 'bot1')
+  const check = agent => f.service.validateStep ? f.service.validateStep(agent) : f.service.admitStep(agent)
+  assert.equal(await check(f.agent), true)
+  role.toolPolicy.shell = false
+  assert.equal(await check(f.agent), false)
+  assert.equal(revoked.length, 1)
+  assert.deepEqual(revoked[0].slice(0, 2), ['t', 'claim'])
+  assert.match(revoked[0][2], /revoked/)
+  assert.equal(f.session.definition.instructions, 'Original convention')
+})
+
+test('native ongoing authority follows the live carrier when a resumed physical Session also appears in history', async () => {
+  const f = fixture()
+  f.rt.selfOf = id => id === f.agent.session.id ? (f.rt.state.bots.bot2 ? 'bot2' : 'bot1') : undefined
+  const role = { id: 'p:developer', ...structuredClone(f.session.definition), execution: { harness: 'flybot', resourceIds: [] } }
+  f.rt.projectAgents = { deliveryDefinitions: () => ({ revision: 1, roles: [role] }) }
+  Object.assign(f.session, pinTaskRoleDefinition(f.rt.state, f.session, role, 1, f.rt.projectAgents.deliveryDefinitions()))
+  f.session.poolClaimId = 'old-claim'
+  f.rt.state.tasks.t.deliveryAttemptId = 'a'; f.rt.state.tasks.t.collaboration = { initiatedBy: 'owner', generation: 1, claim: { id: 'old-claim', botId: role.id, role: 'developer', generation: 1, status: 'active' } }
+  f.rt.requireProjectAccess = () => {}
+  f.rt.state.projectAttempts = { a: { roleSessions: { developer: f.session } } }
+  await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.activate(f.session, 'bot1')
+  assert.equal(await f.service.validateStep(f.agent), true)
+  await f.service.stop('bot1'); delete f.rt.state.bots.bot1
+  const session = { ...f.session, id: 'role-2', attemptId: 'a2', generation: 2, poolClaimId: 'new-claim', status: 'prepared' }
+  const task = f.rt.state.tasks.t
+  task.deliveryAttemptId = 'a2'; task.collaboration = { initiatedBy: 'owner', generation: 2, claim: { id: session.poolClaimId, botId: role.id, role: 'developer', generation: 2, status: 'active' } }
+  f.rt.requireProjectAccess = () => {}
+  f.rt.state.projectAttempts.a2 = { roleSessions: { developer: session } }
+  f.rt.state.bots.bot2 = { id: 'bot2', workspaceId: 'w2', attemptId: 'a2' }
+  await f.service.bind(session, { ...f.workspace, id: 'w2', attemptId: 'a2' }, 'bot2')
+  await f.service.activate(session, 'bot2')
+  assert.equal(f.rt.state.projectNativeWorkers.bot1.sessionId, f.rt.state.projectNativeWorkers.bot2.sessionId)
+  assert.equal(await f.service.validateStep(f.agent), true)
+})

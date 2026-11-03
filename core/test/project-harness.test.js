@@ -178,7 +178,7 @@ test('busy SDK queues feedback until a safe next turn in the same worker, thread
   const session = rt.projectDelivery.sessionFor()
   session.poolClaimId = 'claim'
   const task = rt.state.tasks.t
-  task.status = 'working'
+  task.status = 'working'; task.deliveryAttemptId = session.attemptId; session.generation = 2
   task.collaboration = { status: 'claimed', generation: 2, botId: 'p:developer', currentHandoffId: 'h', initiatedBy: 'owner', claim: { id: 'claim', generation: 2, botId: 'p:developer', status: 'active' } }
   rt.projects = { requireActive() {} }
   rt.projectEffects = createProjectEffects(rt); installProjectInputs(rt)
@@ -234,7 +234,7 @@ createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line)
 
 test('safe SDK input turns are bounded and excess feedback remains for the next responsible Bot', async t => {
   const {rt,harness,cwd}=await fixture(t),session=rt.projectDelivery.sessionFor(),task=rt.state.tasks.t
-  session.poolClaimId='bounded-claim';task.status='working'
+  session.poolClaimId='bounded-claim';task.status='working';task.deliveryAttemptId=session.attemptId;session.generation=2
   task.collaboration={status:'claimed',generation:2,botId:'p:developer',initiatedBy:'owner',claim:{id:session.poolClaimId,generation:2,botId:'p:developer',status:'active'}}
   rt.projects={requireActive(){}};rt.projectEffects=createProjectEffects(rt);installProjectInputs(rt)
   rt.save=async()=>{rt.projectEffects.saved(rt.projectEffects.capture())}
@@ -278,7 +278,7 @@ write({type:'completed',sessionId:'bounded-thread',text:'OUTPUT handoff: '+JSON.
 
 async function taskInputFixture(t, workerSource) {
   const f=await fixture(t),{rt,harness}=f,session=rt.projectDelivery.sessionFor(),task=rt.state.tasks.t
-  session.poolClaimId='idle-claim';task.status='working'
+  session.poolClaimId='idle-claim';task.status='working';task.deliveryAttemptId=session.attemptId;session.generation=2
   task.collaboration={status:'claimed',generation:2,botId:'p:developer',initiatedBy:'owner',claim:{id:session.poolClaimId,generation:2,botId:'p:developer',status:'active'}}
   rt.projects={requireActive(){}};rt.projectEffects=createProjectEffects(rt);installProjectInputs(rt);rt.projectHarness=harness
   rt.save=async()=>{const proof=rt.projectEffects.capture();await writeFile(join(rt.home,'inbox.json'),JSON.stringify(rt.state));rt.projectEffects.saved(proof)}
@@ -422,4 +422,74 @@ test('SDK sandbox policy follows pinned capability while custom logical role ide
       assert.equal(f.rt.state.projectTaskSessions[row.logicalSessionId].role, role)
     })
   }
+})
+
+test('an actual prepared SDK subprocess receives no start after its role resource is revoked', async t => {
+  const { pinTaskRoleDefinition } = await import('../src/host/project-task-sessions.js')
+  const { rt, harness, cwd } = await fixture(t), session = rt.projectDelivery.sessionFor()
+  const task = rt.state.tasks.t
+  session.poolClaimId = 'revoked-start'; session.generation = 2; task.deliveryAttemptId = session.attemptId
+  task.collaboration = { initiatedBy: 'owner', generation: 2, claim: { id: session.poolClaimId, generation: 2, status: 'active', botId: 'p:developer', role: 'developer' } }
+  const role = { id: 'p:developer', ...session.definition, execution: { harness: 'codex', resourceIds: ['r'] } }
+  const catalog = { revision: 1, roles: [role] }
+  rt.projectAgents = { deliveryDefinitions: () => catalog }
+  Object.assign(session, pinTaskRoleDefinition(rt.state, session, role, 1, catalog))
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Do not execute after revocation' })
+  task.collaboration.claim.workerId = id
+  role.execution.resourceIds = []
+  await assert.rejects(harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] }), /revoked/)
+  const row = rt.state.projectHarnessWorkers[id]
+  assert.equal(row.executionStartedAt, null)
+  assert.equal(row.status, 'prepared')
+  await harness.release(id)
+  assert.equal(row.releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+})
+
+test('existing pool revocation stops an actual live SDK worker before resource release after role rights change', async t => {
+  for (const revocation of ['role-resource', 'operator-disable']) await t.test(revocation, async t => {
+  const { pinTaskRoleDefinition } = await import('../src/host/project-task-sessions.js')
+  const { reconcileExecutionAuthority } = await import('../src/host/project-execution-authority.js')
+  const { createProjectPools } = await import('../src/host/project-pools.js')
+  const { rt, harness, cwd } = await fixture(t), session = rt.projectDelivery.sessionFor(), task = rt.state.tasks.t
+  session.poolClaimId = 'live-revoke'; session.generation = 2; task.deliveryAttemptId = session.attemptId
+  task.collaboration = { status: 'claimed', initiatedBy: 'owner', generation: 2, claim: { id: session.poolClaimId, generation: 2, status: 'active', botId: 'p:developer', role: 'developer' } }
+  const role = { id: 'p:developer', ...session.definition, execution: { harness: 'codex', resourceIds: ['r'] } }
+  const catalog = { revision: 1, roles: [role] }
+  rt.projectAgents = { deliveryDefinitions: () => catalog }
+  rt.state.projectAttempts = { [session.attemptId]: { roleSessions: { developer: session } } }
+  Object.assign(session, pinTaskRoleDefinition(rt.state, session, role, 1, catalog))
+  rt.projectPools = createProjectPools(rt)
+  rt.projectPools.connect({ release: id => harness.release(id) })
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Current Task' })
+  session.botId = id; task.collaboration.claim.workerId = id
+  await harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] })
+  for (let n = 0; n < 200 && rt.state.projectHarnessWorkers[id].status !== 'waiting-input'; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
+  if (revocation === 'role-resource') role.execution.resourceIds = []
+  else rt.config.projectResources.r.disabled = true
+  await reconcileExecutionAuthority(rt)
+  assert.equal(task.collaboration.status, 'blocked')
+  assert.equal(task.collaboration.claim.status, 'revoked')
+  assert.equal(task.collaboration.claim.exitConfirmed, true)
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+  assert.equal(harness.hasController(id), false)
+  })
+})
+
+test('SDK human input rechecks the sending actor after awaited initiator authorization', async t => {
+  const { rt, harness, task, id } = await taskInputFixture(t, `
+import {createInterface} from 'node:readline';const write=v=>process.stdout.write(JSON.stringify(v)+'\\n');write({type:'ready',sdk:{codex:'0.166.0'}});
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);return;}
+if(m.type==='start')write({type:'completed',sessionId:'input-actor-thread',text:'Need clarification'});
+});`)
+  await harness.dispatch({ botId: id, taskId: task.id, brief: 'Current Task', outputs: [{ name: 'handoff' }] })
+  for (let n = 0; n < 200 && rt.state.projectHarnessWorkers[id].status !== 'waiting-input'; n++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
+  let senderAllowed = true
+  rt.requireProjectAccess = actor => { if (actor.memberId !== 'owner' && !senderAllowed) throw Error('Sending member was removed') }
+  rt.projectDelegations = { async background() { senderAllowed = false } }
+  await assert.rejects(harness.input({ workerId: id, generation: rt.state.projectHarnessWorkers[id].generation, text: 'Late unauthorized input' }, { memberId: 'sender' }), /Sending member was removed/)
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
 })

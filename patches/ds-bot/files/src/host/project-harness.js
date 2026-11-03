@@ -8,6 +8,7 @@ import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
 import { fileDigest } from './project-resource-workspaces.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
 import { ownEntry, setEntry } from './store.js'
+import { requireExecutionAuthority } from './project-execution-authority.js'
 import { taskSession, backendBindingKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/harness' })
 const sha = text => createHash('sha256').update(text).digest('hex')
@@ -178,6 +179,7 @@ export function createProjectHarness(rt) {
             if (claim?.id === session.poolClaimId && claim.status === 'active' && task.collaboration.generation === claim.generation) {
               const next = await rt.projectInputs?.prepare(task.id, claim, { next: true })
               if (next?.inputs.length) {
+                await requireExecutionAuthority(rt, session)
                 row.backendSessionId = event.sessionId; session.backendSessionId = event.sessionId
                 control.inputBatch = next; control.safeInputTurns = (control.safeInputTurns ?? 0) + 1
                 row.safeInputTurns = control.safeInputTurns
@@ -271,6 +273,7 @@ export function createProjectHarness(rt) {
       const next = await rt.projectInputs?.prepare(task.id, claim, { next: true })
       if (!next?.inputs.length) return { woken: false }
       if (active.get(row.id) !== control || task.collaboration.claim !== claim || task.collaboration.generation !== claim.generation || claim.status !== 'active' || row.status !== 'waiting-input' || row.pending?.kind !== 'message' || lease.status === 'released') return { woken: false }
+      await requireExecutionAuthority(rt, control.session)
       rt.requireProjectAccess(actor, task.projectId, 'task-write', task)
       control.inputBatch = next; control.safeInputTurns = (control.safeInputTurns ?? 0) + 1
       row.safeInputTurns = control.safeInputTurns; row.status = 'running'; delete row.pending
@@ -289,6 +292,7 @@ export function createProjectHarness(rt) {
     if (!control || control.closed || !['prepared', 'idle'].includes(row.status)) throw refuse('SDK worker is unavailable or already dispatched')
     const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
     if (!lease || lease.generation !== row.generation || lease.status === 'released') throw refuse('SDK callback lease is stale')
+    if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
     control.outputs = (step.outputs ?? []).map(port => port.name)
     control.inputBatch = step.inputs?.taskInbox
     const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
@@ -302,6 +306,7 @@ export function createProjectHarness(rt) {
       await saved
       if (typeof before === 'number' && queued <= before) throw refuse('SDK dispatch did not commit a state snapshot')
       const currentLease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+      if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
       if (active.get(row.id) !== control || control.closed || row.status !== 'running' || currentLease?.generation !== row.generation || currentLease.status === 'released') throw refuse('SDK dispatch was superseded before input delivery')
     } catch (error) {
       if (row.status === 'running') row.status = 'idle'
@@ -384,7 +389,9 @@ export function createProjectHarness(rt) {
     if (!row || !control) throw refuse('Execution Session is unavailable')
     const task = ownEntry(rt.state.tasks, row.taskId)
     rt.requireProjectAccess(actor, row.projectId, 'task-write', task)
-    if (row.status !== 'waiting-input' || body.generation !== row.generation) throw refuse('Execution input is stale')
+    if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
+    rt.requireProjectAccess(actor, row.projectId, 'task-write', task)
+    if (row.status !== 'waiting-input' || control.closed || body.generation !== row.generation) throw refuse('Execution input is stale')
     if (row.pending.kind === 'permission') {
       rt.requireProjectAccess(actor, row.projectId, 'configure')
       if (body.requestId !== row.pending.id) throw refuse('Permission request is stale')
