@@ -43,7 +43,7 @@ export function createProjectReleases(rt, { projectOf, providerFactory = setting
     if (!row || row.id !== effect.payload.releaseId) throw new EffectCancelled('Release request changed')
     let settings
     try { settings = await authority(attempt, task, row) }
-    catch (error) { row.status = 'revoked'; row.result = 'Current authority or execution binding is unavailable'; await rt.save(); throw new EffectCancelled(row.result) }
+    catch { row.status = 'revoked'; row.result = 'Current authority or execution binding is unavailable'; await rt.save(); throw new EffectCancelled(row.result) }
     const save = () => rt.projectEffects.persist({ id: effect.id, generation: effect.generation })
     const provider = providerFactory(settings), authorize = async () => {
       try { return await authority(attempt, task, row) }
