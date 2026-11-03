@@ -644,3 +644,13 @@ but arbitration continue left claim active while Task was blocked. Operator sour
 admission correctly refused. Mark only that completed Chief claim waiting-human;
 retain actual exit/lease checks and every other claim. A regression reproduces the
 old active label and verifies Task/Attempt/generation and blocked state survive.
+
+
+### 2026-11-03 — Public Chief cannot borrow its approver's identity
+
+Seen 1× (role governance regression). A public Chief turn can carry an Owner's
+watch delegation for existing task operations. That is not permission to approve
+its own role changes. Check the logical carrier as well as current human rights;
+keep separate private full-watch approval and Chief proposal authority. Changes
+stay invisible until the exact Effects intent is committed. A retired role keeps
+its history and does not silently move Tasks or invent worker exit evidence.
