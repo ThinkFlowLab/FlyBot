@@ -1688,3 +1688,12 @@ test('publication recovery pins the original App identity and preserves evidence
   await assert.rejects(f.rt.projectEffects.perform({ kind: 'github.publish', key: 'connection-change-probe', projectId: 'p1', taskId: f.task.id, payload: { attemptId: attempt.id, candidateSha: attempt.candidateSha, initiatedBy: 'owner-1' } }), /connection changed/)
   assert.equal(f.published.length, count); assert.equal(attempt.evidence.tests.passed, true); assert.equal(attempt.pr.sha, attempt.candidateSha)
 })
+
+test('publication revalidates operator repository capability before any provider operation', async t => {
+  const f = await setup(t); await f.start('app-repository-fence'); await complete(f)
+  const attempt = f.attempt()
+  f.rt.config.projectRepositories['example/demo'].allowedProjectOwnerIds = []
+  f.rt.projectDelivery = createProjectDelivery(f.rt)
+  await assert.rejects(f.rt.projectEffects.perform({ kind: 'github.publish', key: 'repository-revoked-probe', projectId: 'p1', taskId: f.task.id, payload: { attemptId: attempt.id, candidateSha: attempt.candidateSha, initiatedBy: 'owner-1' } }), /not provisioned/)
+  assert.equal(attempt.evidence.tests.passed, true); assert.equal(f.published.length, 1)
+})

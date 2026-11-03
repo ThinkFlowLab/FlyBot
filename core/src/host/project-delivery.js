@@ -70,12 +70,13 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
   const taskOf = id => ownEntry(state.tasks, String(id ?? ''))
   const projectOf = (id, attempt) => { const project = rt.projects.repository.get(id, { includeDeleted: true }); return attempt ? attemptProject(rt, project, attempt) : project }
   const settingsOf = project => repositorySettings(rt, project)
-  const publisherOf = (project, authorize) => publisher ?? githubPublisher(projectGithubSettings(rt, project), { authorize })
+  const publisherOf = (project, authorize) => { settingsOf(project); return publisher ?? githubPublisher(projectGithubSettings(rt, project), { authorize }) }
   const releases = createProjectReleases(rt, { projectOf, ...(releaseProvider ? { providerFactory: () => releaseProvider } : {}) })
   async function validatePublication(effect, context) {
       const attempt = ownEntry(attempts(), effect.payload.attemptId), task = taskOf(effect.taskId)
       if (attempt?.publicationCredential && attempt.publicationCredential !== githubCredentialBinding(projectGithubSettings(rt, projectOf(attempt.projectId, attempt)), attempt.requirement.repository ?? projectOf(attempt.projectId, attempt).repository)) throw new EffectCancelled('Publication GitHub connection changed; reconcile with the original identity')
       if (!attempt || attempt.projectId !== effect.projectId || task?.deliveryAttemptId !== attempt.id || attempt.candidateSha !== effect.payload.candidateSha || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested) throw new EffectCancelled('Publication candidate was stopped, superseded or ended')
+      settingsOf(projectOf(attempt.projectId, attempt))
       try {
         await rt.projectDelegations?.background(effect.payload.initiatedBy, task.collaboration?.sourceSessionId)
         rt.requireProjectAccess({ memberId: effect.payload.initiatedBy }, effect.projectId, 'task-write', task)
@@ -590,6 +591,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     const project = projectOf(attempt.projectId, attempt)
     const check = async () => {
       if (authorize) await authorize()
+      settingsOf(projectOf(attempt.projectId, attempt))
       if (attempt.cancelRequested || taskOf(attempt.taskId)?.deliveryAttemptId !== attempt.id) throw reject('Publication Task changed')
       if (attempt.publicationCredential && attempt.publicationCredential !== githubCredentialBinding(projectGithubSettings(rt, projectOf(attempt.projectId, attempt)), project.repository)) throw reject('Publication GitHub connection changed')
     }
