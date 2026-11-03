@@ -21,7 +21,10 @@ const h = (type, props, ...children) => ({ type, props: { ...props, children } }
 const OFF = { available: false, tasks: [] }
 // States handed out in order before the defaults, to render a page with tasks or a row being edited.
 const seeded = []
-const react = { createElement: h, Fragment: Symbol('F'), useEffect() {}, useLayoutEffect() {}, useState: v => [seeded.length > 0 ? seeded.shift() : v === null ? OFF : v, () => {}], useMemo: f => f(), useRef: current => ({ current }), useCallback: f => f, useSyncExternalStore: (_s, get) => get() }
+// The values handed to a state setter: this stub never re-renders, so a test reads what a refusal
+// tried to say instead of waiting for a frame (#2232). Tests that read it clear it first.
+const sets = []
+const react = { createElement: h, Fragment: Symbol('F'), useEffect() {}, useLayoutEffect() {}, useState: v => [seeded.length > 0 ? seeded.shift() : v === null ? OFF : v, next => { sets.push(next) }], useMemo: f => f(), useRef: current => ({ current }), useCallback: f => f, useSyncExternalStore: (_s, get) => get() }
 const module = { exports: {} }
 runInNewContext(outputFiles[0].text, {
   module, exports: module.exports, document: { hidden: false }, navigator: { language: 'en' }, localStorage: { getItem: () => null, setItem() {} },
@@ -642,4 +645,139 @@ test('#2112: the Bot details line says the list is narrowed, not that none exist
   const lines = text(card)
   assert.ok(!lines.includes('No scheduled tasks yet. Add one'), lines.join('|'))
   assert.ok(lines.some(line => /you can see/.test(line) && /Add one/.test(line)), lines.join('|'))
+})
+
+// #2232 (P-451): a read-only window drew the whole scheduled-task write surface — the Quiet hours
+// toggle and window inputs, New task, Edit, Copy, Pause/Resume and Delete — and the host refuses
+// every one of them, while a refused Pause/Resume/Delete said nothing at all and two visible
+// refusal lines carried no role. The lock is read the way the rest of the client reads it.
+const LOCK = 'Another FlyBot window has this home open; this window is read-only.'
+const LOCKED_ROSTER = { ...ROSTER, readOnly: LOCK }
+const WRITE_LABELS = ['Turn on', 'Turn off', 'Save window', 'New task', 'Edit', 'Copy to another Bot or group chat', 'Pause', 'Resume', 'Delete task', 'Retry']
+const labelOf = node => text(node).join(' ').trim() || String(node.props?.['aria-label'] ?? '')
+const writeControls = tree => all(tree).filter(node => node.type === 'button' && WRITE_LABELS.includes(labelOf(node)))
+const fieldControls = tree => all(tree).filter(node => ['form', 'input', 'select', 'textarea'].includes(node.type))
+const alertsOf = tree => all(tree).filter(node => node.props?.role === 'alert')
+// Typed actions: every write the page can wire, so a missing one cannot hide a control.
+const scheduleActions = (extra = {}) => ({
+  ...spy(),
+  schedules: async () => ({ available: true, tasks: [ACTIVE] }),
+  scheduleCreate: async () => OFF, scheduleUpdate: async () => OFF,
+  schedulePause: async () => OFF, scheduleResume: async () => OFF,
+  scheduleDelete: async () => OFF, scheduleRetry: async () => OFF,
+  setPrefs: async () => ({}),
+  ...extra,
+})
+const tick = () => new Promise(resolve => setImmediate(resolve))
+
+test('#2232: a read-only window draws no scheduled-task write control', () => {
+  const view = { available: true, tasks: [ACTIVE], quietHours: QUIET }
+  seeded.push(view)
+  const locked = render(SchedulesPage({ roster: LOCKED_ROSTER, actions: scheduleActions(), start: null }))
+  const labels = writeControls(locked).map(labelOf)
+  assert.deepEqual(labels, [], `a read-only window offers no scheduled-task write, saw ${labels.join(',')}`)
+  assert.deepEqual(fieldControls(locked).map(node => node.type), [], 'and no write form, input or select')
+  // The read half stays: the task is listed and the quiet-hours state is still stated.
+  assert.ok(text(locked).includes('Briefing'), 'the task is still listed')
+  assert.ok(text(locked).includes('On, 22:00–07:00'), 'the quiet-hours state is still shown')
+  // The Settings header owns the one read-only sentence; this page draws no second copy (#2199).
+  assert.ok(!text(locked).some(line => line === LOCK), 'the page draws no second read-only sentence')
+  // The control: the same page in a writable window draws the whole surface, so the empty list is
+  // the lock and not a page that failed to render.
+  seeded.push(view)
+  const writable = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions(), start: null }))
+  const drawn = writeControls(writable).map(labelOf).sort()
+  assert.deepEqual(drawn, ['Copy to another Bot or group chat', 'Delete task', 'Edit', 'New task', 'Pause', 'Save window', 'Turn off'], `a writable window keeps every write, saw ${drawn.join(',')}`)
+  assert.equal(fieldControls(writable).filter(node => node.type === 'input' && node.props.type === 'time').length, 2, 'the quiet-hours window keeps its two inputs')
+})
+
+test('#2232: a refused Pause, Resume or Delete says the host sentence in that row, once', async () => {
+  const sentence = 'bot/read-only: this window is read-only'
+  const cases = [
+    ['Pause', ACTIVE, false, 'schedulePause', button => text(button).includes('Pause')],
+    ['Resume', PAUSED, false, 'scheduleResume', button => text(button).includes('Resume')],
+    ['Delete', ACTIVE, true, 'scheduleDelete', button => button.props?.['aria-label'] === 'Click again to delete'],
+  ]
+  for (const [name, task, confirming, action, pick] of cases) {
+    sets.length = 0
+    const actions = { ...spy(), [action]: async () => { throw new Error(sentence) } }
+    // BotSchedules states in order: view, editing, copying, confirming, busy, rowError.
+    seeded.push({ available: true, tasks: [task] }, null, null, confirming, false, '')
+    const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+    const button = buttonsOf(card).find(pick)
+    assert.ok(button, `${name} is drawn`)
+    button.props.onClick()
+    await tick()
+    assert.ok(sets.includes(sentence), `${name}: the host sentence reaches the row, saw ${JSON.stringify(sets)}`)
+    // The row draws it in the alert slot it already had, and only once.
+    seeded.push({ available: true, tasks: [task] }, null, null, false, false, sentence)
+    const shown = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+    const alerts = alertsOf(shown)
+    assert.equal(alerts.length, 1, `${name}: exactly one alert in the row, saw ${alerts.length}`)
+    assert.ok(text(alerts[0]).join(' ').includes(sentence), `${name}: the alert carries the host's own sentence`)
+  }
+})
+
+test('#2232: a successful Pause speaks nothing and the page reads the host view again', async () => {
+  sets.length = 0
+  const next = { available: true, tasks: [{ ...ACTIVE, status: 'paused' }] }
+  const actions = { ...spy(), schedulePause: async () => next }
+  seeded.push({ available: true, tasks: [ACTIVE] }, null, null, false, false, '')
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  buttonsOf(card).find(button => text(button).includes('Pause')).props.onClick()
+  await tick()
+  assert.ok(!sets.some(value => typeof value === 'string' && value !== ''), `a success says nothing, saw ${JSON.stringify(sets)}`)
+  // `onView` published the host's answer: the next render reads it, and it carries no alert.
+  const after = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  assert.ok(text(after).includes('Paused'), 'the row shows the host view after the pause')
+  assert.equal(alertsOf(after).length, 0, 'no alert after a successful pause')
+})
+
+test('#2232: a failed row keeps its Retry alert, in the same slot', () => {
+  const sentence = 'SERVER 503: upstream busy'
+  const failed = { ...ACTIVE, lastRun: { at: Date.now(), result: 'failed', reason: sentence } }
+  // view, editing, copying, confirming, busy, rowError
+  seeded.push({ available: true, tasks: [failed] }, null, null, false, false, sentence)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: spy() }))
+  const alerts = alertsOf(card)
+  assert.equal(alerts.length, 1, 'one alert on a failed row')
+  assert.ok(text(alerts[0]).join(' ').includes(sentence), 'and it carries the sentence')
+})
+
+test('#2232: Quiet hours and the form announce a refusal, not only print it', async () => {
+  const sentence = 'bot/read-only: this window is read-only'
+  // The Quiet hours save: the sentence reaches the error state, and that line is an alert.
+  sets.length = 0
+  const quietView = { available: true, tasks: [], quietHours: { on: false } }
+  seeded.push(quietView)
+  const refused = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions({ setPrefs: async () => { throw new Error(sentence) } }), start: null }))
+  buttonsOf(refused).find(button => text(button).includes('Turn on')).props.onClick()
+  await tick()
+  assert.ok(sets.includes(sentence), `Quiet hours: the sentence reaches the card, saw ${JSON.stringify(sets)}`)
+  // SchedulesPage states in order: view, adding, editing, quiet busy, quiet error.
+  seeded.push(quietView, false, null, false, sentence)
+  const quietShown = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions(), start: null }))
+  const quietAlerts = alertsOf(quietShown)
+  assert.equal(quietAlerts.length, 1, 'one alert on the Quiet hours card')
+  assert.ok(text(quietAlerts[0]).join(' ').includes(sentence))
+
+  // The create form: the refusal lands in the error state, and that line is an alert too.
+  sets.length = 0
+  const formActions = scheduleActions({ scheduleCreate: async () => { throw new Error(sentence) } })
+  seeded.push({ available: true, tasks: [] })
+  const page = render(SchedulesPage({ roster: ROSTER, actions: formActions, start: 'b1' }))
+  const form = all(page).find(node => node.type === 'form')
+  assert.ok(form, 'the new-task form is open')
+  form.props.onSubmit({ preventDefault() {} })
+  await tick()
+  assert.ok(sets.includes(sentence), `form: the sentence reaches the form, saw ${JSON.stringify(sets)}`)
+  const start = formStart(ACTIVE)
+  seeded.push(
+    { available: true, tasks: [] }, true, null, false, '', '22:00', '07:00',
+    'b1', start.title, start.prompt, start.kind, start.at, start.time, start.weekdays, start.count, start.unit, false, sentence,
+  )
+  const formShown = render(SchedulesPage({ roster: ROSTER, actions: formActions, start: 'b1' }))
+  const formAlerts = alertsOf(formShown)
+  assert.equal(formAlerts.length, 1, 'one alert on the form')
+  assert.ok(text(formAlerts[0]).join(' ').includes(sentence))
 })

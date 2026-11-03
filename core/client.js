@@ -13247,9 +13247,12 @@ function lastRunText(run) {
       return t("Last run {time}", { time });
   }
 }
-function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
+var lockedWindow = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
+function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
   const [confirming, setConfirming] = (0, import_react25.useState)(false);
   const [busy, setBusy] = (0, import_react25.useState)(false);
+  const [rowError, setRowError] = (0, import_react25.useState)("");
+  const refuse = (error) => setRowError(hostText(error?.message ?? String(error)));
   (0, import_react25.useEffect)(() => {
     if (!confirming) return void 0;
     const timer = setTimeout(() => setConfirming(false), 3e3);
@@ -13261,26 +13264,38 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
       return;
     }
     setBusy(true);
-    void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false));
+    setRowError("");
+    void actions.scheduleDelete(task.sessionId, task.id).then((next) => {
+      setBusy(false);
+      setRowError("");
+      onView(next);
+    }, (error) => {
+      setBusy(false);
+      refuse(error);
+    });
   };
   const toggle = () => {
     setBusy(true);
+    setRowError("");
     const step = task.status === "paused" ? actions.scheduleResume : actions.schedulePause;
     void step(task.sessionId, task.id).then((next) => {
       setBusy(false);
+      setRowError("");
       onView(next);
-    }, () => setBusy(false));
+    }, (error) => {
+      setBusy(false);
+      refuse(error);
+    });
   };
-  const [retryError, setRetryError] = (0, import_react25.useState)("");
   const retry = () => {
     setBusy(true);
-    setRetryError("");
+    setRowError("");
     void actions.scheduleRetry(task.sessionId, task.id).then((next) => {
       setBusy(false);
       onView(next);
     }, (error) => {
       setBusy(false);
-      setRetryError(hostText(error?.message ?? String(error)));
+      refuse(error);
     });
   };
   const room2 = task.roomId ? roster.roomsById[task.roomId] : void 0;
@@ -13298,14 +13313,16 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster }) {
       (0, import_react25.createElement)("span", { className: "bt-set-hint" }, [timingText(task), room2 ? t("in {name}", { name: room2.name }) : ""].filter(Boolean).join(" · ")),
       task.prompt && task.prompt !== task.title ? (0, import_react25.createElement)("span", { className: "bt-task-prompt" }, task.prompt) : null,
       last ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": failed || void 0 }, last) : null,
-      retryError ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, retryError) : null
+      rowError ? (0, import_react25.createElement)("span", { className: "bt-task-last", "data-failed": "", role: "alert" }, rowError) : null
     ),
     (0, import_react25.createElement)("span", { className: "bt-task-next" }, nextText(task)),
-    failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
-    onEdit ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react25.createElement)(PencilIcon)) : null,
-    onCopy ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react25.createElement)(DuplicateIcon)) : null,
-    stoppable ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
-    (0, import_react25.createElement)("button", {
+    // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
+    // disabling: a disabled button still says this window can do it.
+    !locked && failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
+    !locked && onEdit ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react25.createElement)(PencilIcon)) : null,
+    !locked && onCopy ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react25.createElement)(DuplicateIcon)) : null,
+    !locked && stoppable ? (0, import_react25.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,
+    locked ? null : (0, import_react25.createElement)("button", {
       type: "button",
       className: "bt-mini bt-task-remove",
       "data-confirm": confirming || void 0,
@@ -13441,7 +13458,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
         ) : null
       )
     ),
-    error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
+    error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
     (0, import_react25.createElement)(
       "div",
       { className: "bt-set-row bt-task-foot" },
@@ -13468,7 +13485,7 @@ function AutomationOff({ actions }) {
     (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openPlugins(actions) }, t("Open Plugins"))
   );
 }
-function QuietHoursCard({ view, actions }) {
+function QuietHoursCard({ view, actions, locked }) {
   const quiet = view.quietHours ?? { on: false };
   const [busy, setBusy] = (0, import_react25.useState)(false);
   const [error, setError] = (0, import_react25.useState)("");
@@ -13507,7 +13524,7 @@ function QuietHoursCard({ view, actions }) {
           (0, import_react25.createElement)("span", { className: "bt-bs-label" }, quiet.on ? t("On, {from}–{to}", { from: quiet.from, to: quiet.to }) : t("Off")),
           (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A new or edited task cannot be due inside the window. It never mutes a task that already exists."))
         ),
-        (0, import_react25.createElement)("button", {
+        locked ? null : (0, import_react25.createElement)("button", {
           type: "button",
           className: "bt-soft bt-soft-sm",
           disabled: busy,
@@ -13515,7 +13532,7 @@ function QuietHoursCard({ view, actions }) {
           onClick: () => save(quiet.on ? { on: false } : { on: true, from, to })
         }, quiet.on ? t("Turn off") : t("Turn on"))
       ),
-      quiet.on ? (0, import_react25.createElement)(
+      quiet.on && !locked ? (0, import_react25.createElement)(
         "div",
         { className: "bt-set-row bt-bs-row" },
         (0, import_react25.createElement)("span", { className: "bt-set-copy" }, (0, import_react25.createElement)("span", { className: "bt-bs-label" }, t("Window"))),
@@ -13528,7 +13545,7 @@ function QuietHoursCard({ view, actions }) {
           (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy, onClick: () => save({ on: true, from, to }) }, t("Save window"))
         )
       ) : null,
-      error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint" }, error)) : null,
+      error ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
       quiet.on && unchecked ? (0, import_react25.createElement)("div", { className: "bt-set-row" }, (0, import_react25.createElement)("span", { className: "bt-set-hint" }, t("A repeat or cron task can still run inside quiet hours, because DSH decides its next run. FlyBot says so here rather than claiming a silence it cannot keep."))) : null
     )
   );
@@ -13537,6 +13554,7 @@ function SchedulesPage({ roster, actions, start }) {
   const view = useSchedules(actions);
   const [adding, setAdding] = (0, import_react25.useState)(Boolean(start));
   const [editing, setEditing] = (0, import_react25.useState)(null);
+  const locked = lockedWindow(roster);
   const refused = schedulesReadFailure(view?.readFailure);
   if (refused !== null) return (0, import_react25.createElement)("div", { className: "bt-set-hint bt-danger", role: "status" }, refused);
   if (view === null) return (0, import_react25.createElement)("div", { className: "bt-set-hint" }, t("Loading…"));
@@ -13555,8 +13573,10 @@ function SchedulesPage({ roster, actions, start }) {
     ...roster.rooms.map((room2) => [room2.id, (0, import_react25.createElement)(RoomAvatar, { room: room2, roster, size: 18 }), room2.name, view.tasks.filter((task) => task.botId === void 0 && task.roomId === room2.id)])
   ].filter(([, , , tasks]) => tasks.length > 0);
   return [
-    (0, import_react25.createElement)(QuietHoursCard, { key: "quiet", view, actions }),
-    adding ? (0, import_react25.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react25.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
+    (0, import_react25.createElement)(QuietHoursCard, { key: "quiet", view, actions, locked }),
+    // A locked window draws no create control and opens no form (#2232): the header already says
+    // why, and a button the host refuses is the defect this page had.
+    locked ? null : adding ? (0, import_react25.createElement)(TaskForm, { key: "form", roster, actions, start, onDone: shown, onCancel: () => setAdding(false) }) : (0, import_react25.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react25.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-with-icon", onClick: () => {
       setEditing(null);
       setAdding(true);
     } }, (0, import_react25.createElement)(PlusIcon), t("New task"))),
@@ -13564,15 +13584,15 @@ function SchedulesPage({ roster, actions, start }) {
       "section",
       { key: id, className: "bt-set-section" },
       (0, import_react25.createElement)("h3", { className: "bt-task-head" }, avatar, name),
-      (0, import_react25.createElement)(TaskList, { tasks, editing, roster, actions, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
+      (0, import_react25.createElement)(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) })
     ))
   ];
 }
-function TaskList({ tasks, editing, roster, actions, onEdit, onDone, onCancel, extra = [] }) {
-  const open = editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
+function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
+  const open = !locked && editing ? tasks.find((task) => task.id === editing.id && task.sessionId === editing.sessionId) : void 0;
   const [copying, setCopying] = (0, import_react25.useState)(null);
   const source = copying ? tasks.find((task) => task.id === copying.id && task.sessionId === copying.sessionId) : void 0;
-  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react25.createElement)(TaskRow, { key: task.id, task, actions, roster, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
+  const rows = tasks.filter((task) => task !== open && task !== source).map((task) => (0, import_react25.createElement)(TaskRow, { key: task.id, task, actions, roster, locked, onView: publish, onEdit, onCopy: actions.scheduleCreate ? setCopying : void 0 }));
   return (0, import_react25.createElement)(
     import_react25.Fragment,
     null,
@@ -13620,6 +13640,7 @@ function CopyRow({ task, roster, actions, onView, onCancel }) {
 function BotSchedules({ bot, roster, actions }) {
   const view = useSchedules(actions);
   const [editing, setEditing] = (0, import_react25.useState)(null);
+  const locked = lockedWindow(roster);
   const refused = schedulesReadFailure(view?.readFailure);
   if (refused !== null) {
     return (0, import_react25.createElement)(
@@ -13653,7 +13674,8 @@ function BotSchedules({ bot, roster, actions }) {
       editing,
       roster,
       actions,
-      onEdit: setEditing,
+      locked,
+      onEdit: locked ? void 0 : setEditing,
       onDone: (next) => {
         publish(next);
         setEditing(null);
