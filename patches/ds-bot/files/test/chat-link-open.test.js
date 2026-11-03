@@ -18,9 +18,9 @@ const all = (node, out = []) => {
 
 // The platform's Markdown scope: the nearest provider hands the link handler down, and the anchor
 // MarkdownText draws calls it exactly as the real one does on a plain HTTP(S) click.
-const delegate = { openExternalLink: undefined }
-function MarkdownDelegateProvider({ openExternalLink, children }) {
-  delegate.openExternalLink = openExternalLink
+const delegate = { openExternalLink: undefined, openFile: undefined, fileImages: undefined }
+function MarkdownDelegateProvider({ openExternalLink, openFile, fileImages, children }) {
+  Object.assign(delegate, { openExternalLink, openFile, fileImages })
   return children
 }
 const LINK = /\]\((https?:\/\/[^)\s]+)\)/
@@ -163,13 +163,30 @@ test('#2201: the click does not depend on the details panel being open or closed
   }
 })
 
-test('#2201: a Bot outside the roster gets no tab and the click does not throw', () => {
+test('#2201: a Bot outside the roster gets no tab and the page opens in the window once', () => {
+  opened.length = 0
   const p = panelHarness()
   const actions = { browserNewTab: p.browserNewTab, browserNavigate: p.browserNavigate }
   const tree = expand(h(Bubbles, { texts: ['[x](https://example.com/b)'], roster: ROSTER, selfId: 'ghost', actions, sessionId: 'ghost', useUi: p.useUi }))
-  assert.doesNotThrow(() => clickLink(tree), 'a missing tab is skipped, not navigated')
+  let href
+  assert.doesNotThrow(() => { href = clickLink(tree) }, 'a missing tab falls back instead of throwing')
   assert.deepEqual(p.calls, [['tab', 'ghost']], 'no navigation is attempted when browserNewTab answers null')
   assert.equal(p.panel.view, 'details', 'the panel is left where it was')
+  // Exactly one window: a fallback here and another in the host would open the page twice.
+  assert.deepEqual(opened, [[href, '_blank', 'noopener']], 'the page opens in the window exactly once')
+})
+
+test('#2201: a room bubble targets the Bot that spoke, not the room id', () => {
+  // GroupMessage renders Bubbles with the room as sessionId and the speaking Bot as selfId; the
+  // room id is not a Bot, so browserNewTab(room) answers null and the click would go nowhere.
+  opened.length = 0
+  const p = panelHarness()
+  const actions = { browserNewTab: p.browserNewTab, browserNavigate: p.browserNavigate }
+  const tree = expand(h(Bubbles, { texts: ['[x](https://example.com/room)'], roster: ROSTER, selfId: 'b1', actions, sessionId: 'room-1', useUi: p.useUi }))
+  const href = clickLink(tree)
+  assert.deepEqual(p.calls, [['tab', 'b1'], ['navigate', 't1', href]], 'the tab opens for the Bot whose message carried the link')
+  assert.equal(p.tabs.get('t1'), href, 'the tab carries the URL')
+  assert.deepEqual(opened, [], 'nothing falls back to the window when the panel opened the link')
 })
 
 test('#2201: without the Desktop bridge the page opens in the window itself', () => {
@@ -177,5 +194,29 @@ test('#2201: without the Desktop bridge the page opens in the window itself', ()
   const actions = {}
   const tree = expand(h(Bubbles, { texts: ['[x](https://example.com/a)'], roster: ROSTER, selfId: 'b1', actions, sessionId: 'b1', useUi: (read) => read({ details: null, view: 'details' }) }))
   const href = clickLink(tree)
-  assert.deepEqual(opened, [[href, '_blank', 'noopener']], 'the link opens in the window when there is no panel')
+  assert.deepEqual(opened, [[href, '_blank', 'noopener']], 'the link opens in the window, exactly once')
+})
+
+test('#2201: the bubble keeps the host\'s file opener and image resolver', () => {
+  // The nearest MarkdownDelegateProvider replaces the enclosing capabilities, so a provider that
+  // carried only openExternalLink dropped openFile (a local `[x](path#L12)` link rendered as plain
+  // text instead of a chip) and fileImages (local images). Bubbles is where the host hands them
+  // over; the delegate it builds must carry both on to MarkdownText.
+  const openFile = (path) => { throw new Error(`not called here: ${path}`) }
+  const fileImages = { resolve: (path) => `/media/${path}`, labels: { open: 'Open', loading: 'Loading', failed: 'Failed', dialog: 'Image', close: 'Close' } }
+  const p = panelHarness()
+  const actions = { browserNewTab: p.browserNewTab, browserNavigate: p.browserNavigate }
+  expand(h(Bubbles, { texts: ['[x](https://example.com/a)'], roster: ROSTER, selfId: 'b1', actions, sessionId: 'b1', useUi: p.useUi, openFile, fileImages }))
+  assert.equal(delegate.openFile, openFile, 'the delegate carries the host\'s openFile, so local file links stay chips')
+  assert.equal(delegate.fileImages, fileImages, 'the delegate carries the host\'s fileImages, so local images keep previewing')
+})
+
+test('#2201: a tab with no navigation falls back to the window instead of doing nothing', () => {
+  opened.length = 0
+  const p = panelHarness()
+  const actions = { browserNewTab: p.browserNewTab }
+  const tree = expand(h(Bubbles, { texts: ['[x](https://example.com/c)'], roster: ROSTER, selfId: 'b1', actions, sessionId: 'b1', useUi: p.useUi }))
+  let href
+  assert.doesNotThrow(() => { href = clickLink(tree) }, 'a tab without browserNavigate does not throw')
+  assert.deepEqual(opened, [[href, '_blank', 'noopener']], 'the page still opens, exactly once')
 })
