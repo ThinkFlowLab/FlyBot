@@ -28,10 +28,10 @@ execution ancestor through collaboration/context/Task/state/API branches.
 
 ## Active fork roadmap — 2026-10-31
 
-Backend delivery branch `delivery/ai-centric-development-service` consolidates S1–S6 at1811e3b8f.
-Use the root README for login, direct API operations and isolated setup. This
-documentation handoff does not complete original frontend #41 acceptance or merge
-any staged PR; standalone process packaging/OpenAPI remain outside this branch.
+The earlier delivery snapshot at1811e3b8f consolidated S1–S6. Current persistent
+source deployment and API use follow the root README and #2189; OpenAPI remains
+unprovided. Backend delivery does not complete original frontend #41 acceptance
+or merge staged PRs.
 
 S6/#55 integrates current service stages with original native frontend work and
 adds repeatable isolated fault/replay acceptance. Actual PR feedback→original Task→
@@ -199,24 +199,9 @@ outcome is recorded in [`decisions/`](decisions/README.md) with its evidence, pa
 dissent. A stage moving from "not started" to "active" is itself a decision, not an edit alone.
 
 
-### M7.2 — 2026-10-31
-
-M7.1 PR #26 passed full verify and actual DSH context/lifecycle checks. M7.2 implementation on feat/m7-resource-pools adds resource capabilities/leases and real local+Docker execution probes; integration acceptance with SDKs remains in M7.5.
-
-
-### M7.3 checkpoint — 2026-10-31
-
-M7.2 PR #27 passed full verify and the opt-in actual local/Docker resource probe. M7.3 adapters are in progress; the implementation PR remains draft until remaining integration and real authorized SDK acceptance are complete; Chief now uses a host-validated scoped action bridge.
-
-
-### M7.4 — 2026-10-31
-
-M7.3 PR #28 passed full verify at 034d86c, remains draft pending authenticated acceptance. M7.4 implementation supplies Owner runtime configuration/probes/private PTY and strengthens positive worker-stop confirmation; M7.5 cross-resource delivery and final acceptance remain next.
-
-
-### M7.5 — 2026-10-31
-
-M7 implementation PRs: #26 role Sessions, #27 resource pools, #28 official SDK Harnesses, #29 Owner setup, #30 handoff/integration. Full verify passed #26–#29 tips; final #30 validation/report is recorded in its PR. Real authenticated SDK/browser mixed-resource acceptance remains pending dedicated authorized profiles; M8 continuous CI/review and M9 persistent dogfood operations remain later work.
+Completed M7.2–M7.5 implementation checkpoints are retained verbatim in
+[the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
+role/resource/Session contracts and outstanding acceptance remain below and in the active roadmap.
 
 ### M7 validation update — 2026-11-01
 
