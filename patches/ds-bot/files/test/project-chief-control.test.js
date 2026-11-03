@@ -211,3 +211,29 @@ test('protected Chief callback can judge a cancelled dependency without closing 
   assert.equal(f.accepted(), 0)
   await f.rt.projectEffects.close()
 })
+
+
+test('validated Chief completion can publish bounded role proposals but cannot apply role changes', async () => {
+  const f = await controlFixture(), calls = []
+  f.rt.projectAgents.proposeRoleForJob = async (actor, proposal) => {
+    assert.equal(actor.chiefJobId, f.request.runId)
+    calls.push(proposal)
+    return { proposal: { id: 'pending-role-proposal' } }
+  }
+  const result = f.result(), body = JSON.parse(result.text)
+  body.decisions = []
+  body.roleProposals = [{ action: 'add', role: 'analyst', reason: 'Investigate architecture', fields: { policyRole: 'reviewer' }, requestId: 'untrusted-id' }]
+  result.text = JSON.stringify(body)
+  await f.request.onResult(result)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].requestId, `chief-role-${f.request.runId}-0`)
+  assert.deepEqual(f.rt.state.projectExecutions[f.request.runId].roleProposalIds, ['pending-role-proposal'])
+  assert.equal(f.accepted(), 0)
+  const g = await controlFixture()
+  g.rt.projectAgents.proposeRoleForJob = async () => { throw Error('Must not publish') }
+  const invalid = g.result(), parsed = JSON.parse(invalid.text)
+  parsed.roleProposals = Array.from({ length: 5 }, () => ({})); invalid.text = JSON.stringify(parsed)
+  await g.request.onResult(invalid)
+  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'failed')
+  assert.match(g.rt.state.projectExecutions[g.request.runId].failure, /bounded array/)
+})

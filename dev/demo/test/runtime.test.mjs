@@ -70,3 +70,20 @@ test('real DSH delivery queue enforces quota before allocation and rechecks memb
   assert.ok(report.checks.includes('confirmed worker release before workspace cleanup'))
   assert.deepEqual(readdirSync(directory), [])
 })
+
+test('real DSH resumes native Task-role context after a pool return and serializes a single resource', { timeout: 150_000 }, t => {
+  const directory = mkdtempSync(join(tmpdir(), 'flybot-native-pool-runtime-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, [resolve(import.meta.dirname, '../run.mjs'), '--native-pools'], {
+    encoding: 'utf8', timeout: 140_000, env: { ...process.env, TMPDIR: directory, M0_REPORT: '' },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.milestone, '2184-native-pools')
+  assert.equal(report.runtime, 'actual DSH')
+  assert.ok(report.checks.includes('prior conversation present only in retained context'))
+  assert.ok(report.checks.includes('native quiescence and single-resource release before downstream execution'))
+  assert.ok(report.checks.includes('Chief arbitration inbox without fake closure'))
+  assert.ok(report.notRun.includes('real model'))
+  assert.deepEqual(readdirSync(directory), [], 'Disposable native workers, profiles and worktrees must be removed')
+})

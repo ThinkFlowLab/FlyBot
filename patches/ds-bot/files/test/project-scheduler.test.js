@@ -186,3 +186,12 @@ test('queue recovery rechecks original requester authority and refuses terminal 
   state.projectAttempts.active = { id: 'active', taskId: 'one', status: 'running' }
   await assert.rejects(scheduler.retry({ queueId: 'q' }, { memberId: 'owner-1' }), /active Attempt/)
 })
+
+test('the existing scheduler checks in-flight execution authority before resource release and new dispatch', async () => {
+  const { rt, scheduler } = fixture(), calls = []
+  rt.projectDelivery.reconcileExecutions = async () => { calls.push('authority') }
+  rt.projectResources = { async reconcile() { calls.push('resources') } }
+  rt.projectPools = { async pump() { calls.push('dispatch') } }
+  await scheduler.wake()
+  assert.deepEqual(calls, ['authority', 'resources', 'dispatch'])
+})

@@ -216,7 +216,7 @@ test('managed delivery definitions and role/model snapshots cannot be edited or 
   const attempt = fixture.attempt()
   assert.equal(attempt.workflowDefinition.nodes[0].model, 'fixture/model')
   for (const operation of ['graph', 'set-model', 'concurrency', 'reset', 'delete']) await assert.rejects(fixture.rt.projectEndpoint('project-workflow', { projectId: 'p1', workflowId: attempt.workflowId, operation, nodes: [] }, alice), /immutable/)
-  assert.equal(attempt.workflowVersion, 'project-delivery/v6')
+  assert.equal(attempt.workflowVersion, 'project-delivery/v7')
 })
 
 
@@ -1526,4 +1526,50 @@ test('a parent cannot seal skipped or subsequently invalidated child integration
   f.children[0].status = 'open'
   await assert.rejects(f.rt.projectDelivery.completePoolRole({ task: f.task, claim: f.claim, role: 'developer', outputs: {} }), /invalidated|unresolved|child/i)
   assert.equal(f.attempt.candidateSha, undefined)
+})
+
+test('approved custom role capabilities preserve logical identities while sealing testing and reviewing real code', async t => {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  const original = f.rt.projectAgents.deliveryDefinitions('p1')
+  const names = { developer: 'implementer', tester: 'validator', reviewer: 'auditor' }
+  // Governance approval is tested through real host APIs separately. This fixture
+  // starts from an approved catalog and exercises the actual artifact controller.
+  for (const [policyRole, role] of Object.entries(names)) {
+    const definition = structuredClone(original.roles.find(row => row.role === policyRole))
+    delete definition.memory; delete definition.resolvedSkills; delete definition.definitionRevision
+    f.rt.state.projectAgentDefinitions.p1.roles.push({ ...definition, id: `p1:${role}`, role, policyRole, name: role })
+  }
+  ++f.rt.state.projectAgentDefinitions.p1.revision
+  await f.start('custom-role-artifacts')
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id]
+  const prepare = async (policyRole, generation) => {
+    const role = names[policyRole], definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === role)
+    await f.rt.projectDelivery.preparePoolRole(task, { id: `custom-${role}`, attemptId: attempt.id, generation }, definition)
+    return role
+  }
+  const dev = await prepare('developer', 1)
+  const workspace = attempt.workspaces[dev]
+  assert.equal(workspace.role, 'implementer')
+  const backup = { ...structuredClone(f.rt.state.projectAgentDefinitions.p1.roles.find(row => row.role === 'implementer')), id: 'p1:backup', role: 'backup' }
+  f.rt.state.projectAgentDefinitions.p1.roles.push(backup); ++f.rt.state.projectAgentDefinitions.p1.revision
+  f.rt.config.projectRepositories['example/demo'].requiredRolePolicySources = { backup: ['MISSING.md'] }
+  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'bad-backup', attemptId: attempt.id, generation: 2 }, f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'backup')), /Required role policy source is missing/)
+  assert.equal(attempt.roleAssignments.developer, 'implementer', 'Failed preparation cannot replace the actual artifact producer')
+  assert.match(attempt.roleSessions[dev].policy.text, /Never invent passing tests/)
+  writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: dev, outputs: { implementation: 'Correct addition' } })
+  assert.equal(attempt.evidence.implementation.sha, attempt.candidateSha)
+  const tester = await prepare('tester', 2)
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: tester, outputs: { tests: 'Request actual configured host checks' } })
+  assert.equal(attempt.evidence.tests.passed, true)
+  const reviewer = await prepare('reviewer', 3)
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: reviewer, outputs: { review: JSON.stringify({ commit: attempt.candidateSha, verdict: 'approve', summary: 'Fixture candidate recommendation, not signed forge review' }) } })
+  assert.equal(attempt.evidence.review.sha, attempt.candidateSha)
+  assert.equal(attempt.pr.sha, attempt.candidateSha)
+  assert.deepEqual(attempt.roleAssignments, names)
+  assert.equal(attempt.evidence.implementation.logicalRole, dev)
+  assert.equal(attempt.evidence.tests.logicalRole, tester)
+  assert.equal(attempt.evidence.review.logicalRole, reviewer)
+  for (const role of Object.values(names)) assert.equal(attempt.roleSessions[role].logicalSessionId, Object.values(f.rt.state.projectTaskSessions).find(row => row.role === role).id)
 })

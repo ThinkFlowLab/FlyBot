@@ -1,6 +1,13 @@
 ---
 subsystem: project-harness
 owned_paths:
+  - core/src/host/project-execution-authority.js
+  - core/test/project-execution-authority.test.js
+  - core/src/host/project-execution-exit.js
+  - core/test/project-execution-exit.test.js
+  - core/src/host/project-native-sessions.js
+  - core/test/project-native-sessions.test.js
+  - core/test/project-native-exit.test.js
   - core/src/host/project-task-sessions.js
   - core/test/project-task-sessions.test.js
   - core/src/host/project-git-sandbox.js
@@ -261,3 +268,105 @@ before send, with current claim/role/lease/authority and post-save fences. Codex
 tool history limit is configured separately from SDK compaction; Claude generic
 output control remains runtime-managed. These limits do not claim precise current
 SDK-window occupancy from aggregate usage. See [context contract](project-context.md).
+
+## Native physical Session binding and quiescence (#2184)
+
+The original Workflow lifecycle still owns native Bot creation, dispatch and removal.
+Its registered-Workspace host adapter now records `projectNativeWorkers` and a
+`native-session/v1` binding on the existing Task-role logical Session. This is adapter
+metadata, not a second executor. A fresh ephemeral Bot may bind only the latest exact
+native physical Session after prior execution is quiescent, the old Bot is gone and
+its resource lease is released. Project/Task/role, cwd, model, definition fingerprint
+and resource must match. New native parts retain previous segments; tombstoned Bot
+IDs are never resurrected. A saved legacy native Session without a trusted binding
+fails with explicit recovery instead of silently starting over.
+
+Removal first fences new input, requests cancellation through the existing resolved
+DSH Agent, and awaits `whenIdle()` before recording `native-agent-quiescent` with
+worker, latest physical Session, binding key and generation. Bot absence and a bare
+`exited` flag are not proof. A stop failure keeps visible `stop-unconfirmed` state and
+capacity held. A process-local host epoch prevents accidentally resuming an unknown
+old-host worker merely to cancel it. Quiescence survives restart as a recorded fact;
+unknown old-host executions still require actual prior-exit reconciliation. No timeout
+fabricates exit. Stop acknowledgement alone cannot release a native lease.
+
+Native continuation rechecks the live pool claim, initiating human/delegation, role
+permissions and resource before and after asynchronous Session loading. Overlapping
+binds for one Task-role cannot attach two carriers. Canonical pool rework may retain
+the same physical worktree only after matching native quiescence and released leases;
+legacy DAG workspace rules remain separate. Existing Task definitions remain pinned,
+but a removed role or changed execution capability cannot restart under stale rights.
+Approved custom role keys have distinct logical Session IDs; default-role fingerprints
+remain compatible while a nondefault capability class participates in the fingerprint.
+
+Actual DSH delivery acceptance checks all three native roles' quiescence proofs before
+removal, actual code edits/host tests, and credential refusal; inference is deterministic.
+Factory tests cover exact restoration/parts, concurrency, stale claims, model/cwd changes
+and unknown exit. They do not establish a real-provider canonical pool return loop.
+Custom-role artifact verification, native crash reconciliation, in-flight capability
+revocation and the final composed service acceptance remain tracked under #2184.
+The capability query now advertises native Task-role resume and native-agent-quiescence exit confirmation for exact supported bindings; unknown exit still refuses continuation.
+
+
+Approved custom roles now pin `policyRole` on their Session and SDK worker record. Native/SDK Workspace ownership accepts an approved capability while preserving logical role identity. Codex writable roots and SDK readOnly derive from the pinned capability, not a literal Bot name. Repository source overrides prefer the logical role and otherwise inherit its capability's complete rules; the custom policy hash records both, while default policy bytes remain compatible. SDK subprocess contract tests inspect actual transmitted readOnly settings for a custom Developer and Reviewer; they are deterministic workers, not provider execution.
+
+
+The actual DSH `--native-pools` probe now executes Developer → Tester return → original Developer → Tester → Chief inbox with one native resource. It verifies a fresh carrier restores the same physical Session/cwd and a marker present only in the prior conversation, two real code revisions, configured host tests and nonoverlapping released leases. Exact restoration explicitly unarchives the prior Session through the existing Workspace registry after the new binding is saved; DSH otherwise rejects archived Sessions before their first model step. The unused fresh carrier Session remains managed/tombstoned. Inference is deterministic; Chief closure/provider/forge completion are not claimed.
+
+
+Native activation is separate from provisional binding. After the original Session bind
+records the native resource worker, `native.activate` stages and persists an Effects
+marker with the exact Task/Attempt/Session/binding/generation. Only confirmed commit
+allows input or lifts archive admission. A resolving noncommitting save is not evidence;
+its regression leaves the old Session archived and native input fenced. The existing
+DSH pre-step hook also rejects unactivated, previous-host-epoch, stopping/released or
+read-only native work, including startup/inbox paths that bypass ordinary delivery.
+Unrelated personal Chief/group Bots retain their original admission behavior. No new
+executor or polling timer is involved. Current-role in-flight abort/reconciliation and
+unknown old-host exit remain separate tracked acceptance.
+
+
+## Physical exit and host recovery (#2184)
+
+The actual pool host adapter now asks the shared execution-exit checker after release;
+a missing Bot/unknown worker alone cannot transfer execution authority. SDK facts use
+the existing confirmed-worker-exit contract plus a released lease. Native facts use the
+matching quiescence record and released lease, or a persisted verified supervisor
+process-group exit for a legacy lease. Physical exit does not invent recoverable context.
+
+New `project-native-worker/v2` records capture the existing host process scope even
+without an explicit resource. Normal exit requests all registered work to stop, waits
+for Agent idle, and checks Workspace activity for current/earlier context parts and
+known subagent Sessions. Idle-child background jobs still block release. Native pre-step
+admission follows durable subagent lineage and records its Session IDs; an obsolete or
+unactivated ancestor cannot resume through a child. Missing legacy execution bindings
+are fenced, while ordinary personal Chiefs/groups retain their original behavior.
+Registered work still stopping leaves bounded kind/count facts and held capacity;
+no timeout fabricates exit. The existing Task/Chief retry path can recheck after actual
+work has settled. This is registered-platform work proof in the trusted host profile,
+not a claim of adversarial OS isolation.
+
+For a previous host epoch, native stop never resumes an old Agent to infer safety.
+It reuses `priorScopeExited` with the exact recorded systemd control-group/invocation
+and validates lease/worker/generation before and after inspection. Matching proof
+preserves latest context parts and updates the exact Attempt role Session metadata.
+Unknown/unmanaged groups, missing/latest context or changed binding remain held.
+Capacity may be released from an actually verified legacy supervisor fact while
+context restoration still refuses an unknown binding. Reconciliation respects actual
+host epoch rather than PID equality and preserves an already confirmed nested release.
+Tests inject manager observations; they do not claim a real systemd restart acceptance.
+
+
+## In-flight authority (#2184)
+
+Native bind/activate and canonical SDK start/input use the same current execution-authority check: exact Task/Attempt/claim/generation, current initiating human/delegation, committed role catalog and actual Resource binding. Frozen persona/Skills/model stay frozen; current capability/Harness/resource revocations limit that context. A removed role may finish only its exact retained active claim under archived conventions; it cannot acquire fresh work or borrow another retired identity. An implicit native host cannot bypass a newly explicit resource pool.
+
+The existing serialized scheduler checks ongoing canonical role Sessions before resource reconciliation and new dispatch; no new timer is installed. Native pre-step also checks current authority for the bound Agent/child lineage and asynchronously requests the existing pool stop so it never waits for its own idle inside pre-step. SDK safe next-turn feedback and human input/permission responses revalidate before writing frames. Already running SDK operations stop cooperatively via the existing acknowledgement + process-exit contract; this does not assert retroactive prevention of an external operation already executed.
+
+`projectPools.revokeExecution` is a private host seam, not a new public task endpoint. It fences the exact claim, persists a blocked reason, then invokes the same lifecycle release used for member revocation. Unknown exit keeps occupancy and prevents reassignment; a late result cannot move a revoked claim. Chief's configured inspection can observe and route the blocked Task after existing exit/authority gates; this path does not impersonate a human or automatically close a Task. Tests cover native step, existing scheduler wiring, stale claim, current catalog, prepared and live real SDK subprocesses using an explicit deterministic worker fixture. They do not imply a new real-provider workflow acceptance.
+
+When a physical native Session is resumed under a fresh carrier, ongoing checks select only the current host/live bound record, never an earlier historical binding for that same Session ID. SDK human input checks both initiating authority and the sending actor again after any awaited validation. These two boundaries have failure regressions; the actual DSH return probe reproduced the former and passes after correction.
+
+Current operator disabling of a Resource or removal of its Harness support also requests the same confirmed stop; it cannot be bypassed by a retained role grant. Live deterministic SDK subprocess regression covers both role-pool removal and operator disable.
+
+Native input budgeting fences the actual `claim.workerId` against the temporary carrier; `claim.botId` identifies the logical role and is not a physical worker. This distinction is covered by both the scoped input regression and actual DSH native return probe.

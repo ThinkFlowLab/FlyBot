@@ -170,3 +170,9 @@ Project Tasks may split independent children after actual source exit, preservin
 
 
 #2179 follow-up: After adjudicated child results, continuation reuses the original logical role. An unsealed Attempt remains; a sealed candidate requires one successor Attempt seeded from that candidate. Replay reuses the recorded successor and stable children-wait Handoff. Claiming records the wait as resumed, preserving its original released claim reference.
+
+#2184 records logical role and pinned capability class on a claim. Active targets alone can receive new offers/claims; a removed queued target becomes blocked with a Chief-routing reason while its Task/initiative/history remain intact. An already acquired source may finish its retained frozen claim after retirement, then explicitly hand off to an active target. Developer-capability destinations use existing rework semantics even when named differently. Artifact responsibilities stay in the existing Attempt's roleAssignments; no new queue or scheduler is added.
+
+Composition with #2184 rechecks the committed target role after asynchronous source-exit confirmation, before claiming. Retirement during inspection leaves the original Task blocked for Chief routing; it cannot acquire a new execution claim from the earlier catalog snapshot.
+
+Canonical claims retain the admitted requirement revision. Decision admission rechecks that revision before and after awaited authorization, including transfer/split decisions that do not seal an artifact. Older claims can use their actual Attempt snapshot revision. A late old-plan response cannot transfer initiative or create children for revised requirements.
