@@ -11,7 +11,11 @@
     ".github/scripts/policy-sign.mjs",
     ".github/scripts/enqueue-guard.mjs",
     ".github/scripts/enqueue-rules.mjs",
+    ".github/scripts/gate-check.mjs",
     ".github/workflows/test.yml",
+    ".github/workflows/merge-gate.yml",
+    ".github/workflows/enqueue-guard.yml",
+    ".github/workflows/docker.yml",
     "policy/"
   ]
 }

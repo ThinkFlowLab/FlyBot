@@ -8,7 +8,7 @@
       "guarantee": "The cheapest layer that can catch a defect: it must be deterministic and hermetic — no network, no model, no wall-clock or calendar dependence, no ordering between files.",
       "mustNot": "Reach the network, call a model, read the clock, or depend on a machine's home directory.",
       "budget": "The whole layer under 10 minutes on a cold runner. A suite that cannot fit is either split or moved up, not added.",
-      "command": "node .github/scripts/testing-layers.mjs --check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && npm --prefix plugins/workflow test && node --test \".github/scripts/*.test.mjs\" && npm run test:interop"
+      "command": "node .github/scripts/testing-layers.mjs --check && npm --prefix core test && npm --prefix plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && npm --prefix plugins/workflow test && node --test \".github/scripts/*.test.mjs\" \"policy/*.test.mjs\" && npm run test:interop"
     },
     "L2": {
       "name": "merge",
@@ -77,9 +77,10 @@
       "id": "scripts",
       "layer": "L1",
       "paths": [
-        ".github/scripts/*.test.mjs"
+        ".github/scripts/*.test.mjs",
+        "policy/*.test.mjs"
       ],
-      "command": "node --test \".github/scripts/*.test.mjs\"",
+      "command": "node --test \".github/scripts/*.test.mjs\" \"policy/*.test.mjs\"",
       "note": "The repository's own gates: risk tier, review gate, merge gate, enqueue guard, changelog, labels, and this manifest's check."
     },
     {

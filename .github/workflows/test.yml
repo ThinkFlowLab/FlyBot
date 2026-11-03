@@ -137,7 +137,7 @@ jobs:
       - name: The self-test catalog page matches docs/self-test.json (#782)
         run: node scripts/self-test-catalog.mjs --check
       - name: Tests of the repo scripts (risk tier, labels)
-        run: node --test ".github/scripts/*.test.mjs"
+        run: node --test ".github/scripts/*.test.mjs" "policy/*.test.mjs"
       - name: Offline cross-runtime harness (no network or model)
         run: npm run test:interop
       - name: Changelog has an Unreleased section and well-formed fragments (changelog.d/)
