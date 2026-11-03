@@ -1422,6 +1422,7 @@ export function install(rt) {
         poolResult(row) { return plugin === 'flybot-workflow' ? rt.projectDevelopment.roleResult(row) : false },
         spawn(spec) { return plugin === 'flybot-workflow' ? rt.projectHarness?.spawn(spec) : null },
         dispatch(step) { return plugin === 'flybot-workflow' ? rt.projectHarness?.dispatch(step) : null },
+        checkInput(step) { return plugin === 'flybot-workflow' ? rt.projectHarness?.checkNativeInput(step) : null },
         release(id) { return plugin === 'flybot-workflow' ? rt.projectHarness?.release(id) : false },
         onResult(fn) { return plugin === 'flybot-workflow' ? rt.projectHarness?.onResult(fn) : () => {} },
       },

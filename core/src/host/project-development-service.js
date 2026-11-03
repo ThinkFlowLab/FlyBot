@@ -111,7 +111,7 @@ export function createDevelopmentService(rt) {
     const policy = row => row ? { version: row.version, role: row.role, commit: row.commit, profile: row.profile, sha256: row.sha256 } : null
     const session = row => {
       const { context, policy: rules, ...rest } = row
-      return { ...rest, policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256 } : null }
+      return { ...rest, policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256, ...(context.budget ? { budget: context.budget, usage: context.usage } : {}) } : null }
     }
     const { roleSessions, roleSessionHistory, rolePolicies, ...rest } = attempt
     return structuredClone({ ...rest,
@@ -229,7 +229,8 @@ export function createDevelopmentService(rt) {
     // Trusted host ports. Public HTTP never accepts role tokens or model results.
     roleResult: row => rt.projectPools.result(row),
     roleCommand(body) {
-      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate', 'handoff.accept', 'handoff.offer'].includes(body.name)) throw failure('Unsupported role command')
+      if (body?.version !== DEVELOPMENT_PROTOCOL || !stableId(body.requestId) || !['claim', 'handoff', 'return', 'transfer', 'complete', 'arbitrate', 'handoff.accept', 'handoff.offer', 'role.memory.record'].includes(body.name)) throw failure('Unsupported role command')
+      if (body.name === 'role.memory.record') return rt.projectPools.remember(body.taskId, body.claim, { ...body.payload, requestId: body.requestId })
       if (body.name === 'handoff.accept') return rt.projectPools.accept(body.taskId, body.botId, body.handoffId, body.requestId)
       if (body.name === 'handoff.offer') return rt.projectPools.decide(body.taskId, body.claim, { ...body.payload, requestId: body.requestId })
       if (body.name === 'claim') return rt.projectPools.claim(body.taskId, body.botId)

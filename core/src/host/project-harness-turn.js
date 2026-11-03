@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 export async function runHarnessTurn(request, { emit, permission, signal, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
   let text = '', completed = false, sessionId = request.sessionId ?? null, usage = null
   if (request.harness === 'codex') {
+    const toolOutputTokens = request.toolOutputTokens ?? 2000
+    if (!Number.isSafeInteger(toolOutputTokens) || toolOutputTokens < 1 || toolOutputTokens > 10_000_000) throw new Error('Invalid Codex tool output budget')
     const { Codex } = await loadCodex()
     const denyScript = fileURLToPath(new URL('./project-harness-deny-tool.mjs', import.meta.url))
     const quote = value => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('$', '\\$').replaceAll('`', '\\`')}"`
@@ -19,7 +21,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, loadCo
     const inlineToml = value => value && typeof value === 'object' ? '{' + Object.entries(value).map(([key, child]) => `${JSON.stringify(key)}=${inlineToml(child)}`).join(',') + '}' : JSON.stringify(value)
     const rawPolicy = request.noTools ? [] : ['permissions.flybot-role=' + inlineToml(processPolicy.permissions['flybot-role'])]
     const configPolicy = request.noTools ? {} : { ...processPolicy, permissions: { 'flybot-role': { extends: processPolicy.permissions['flybot-role'].extends, network: processPolicy.permissions['flybot-role'].network } } }
-    const client = new Codex({ env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy } })
+    const client = new Codex({ env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy, tool_output_token_limit: toolOutputTokens } })
     const options = { workingDirectory: request.cwd, model: request.model, approvalPolicy: 'never', additionalDirectories: roots, webSearchMode: 'disabled',
       ...(request.noTools ? { sandboxMode: 'read-only', networkAccessEnabled: false } : {}) }
     const thread = sessionId ? client.resumeThread(sessionId, options) : client.startThread(options)

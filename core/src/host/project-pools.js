@@ -2,6 +2,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
 import { taskSessionId } from './project-task-sessions.js'
+import { stageRoleSummary, rollbackRoleSummary, stageExecutionMemory, rollbackExecutionMemory, roleMemoryView } from './project-context-memory.js'
 import { EffectDeferred, EffectCancelled } from './project-effects.js'
 export const POOL_PROTOCOL = 'project-handoff/v1'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/handoff' })
@@ -20,7 +21,7 @@ function contextReference(state, task, role) {
     .filter(session => session?.projectId === task.projectId && session.taskId === task.id && session.role === role)
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
   const session = sessions.at(-1)
-  return { logicalSessionId: session?.logicalSessionId ?? logicalSessionId, sessionId: session?.id ?? null,
+  return { logicalSessionId: session?.logicalSessionId ?? logicalSessionId, sessionId: session?.id ?? null, workSummaryRef: logical?.workSummaryRef ? clone(logical.workSummaryRef) : null,
     definitionRef: session?.definitionRef ?? logical?.definitionRef ?? null, definitionRevision: session?.definitionRevision ?? null }
 }
 // A projection over the original durable receipt, not another workflow/store.
@@ -104,7 +105,7 @@ export function createProjectPools(rt) {
     if (!checked.ok) throw refuse(`Handoff refused (${checked.code}): ${checked.reason}`)
     return { fromRole, trustedEvidence }
   }
-  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration, summary }) {
+  async function offer(task, { from, to, reason, requestId, attemptId, evidence = [], purpose = 'work', expectedGeneration, summary, experience }) {
     if (!adapter) throw refuse('Handoff execution adapter is unavailable')
     reason = reasonOf(reason)
     const c = task.collaboration, target = targetOf(task.projectId, to)
@@ -122,13 +123,33 @@ export function createProjectPools(rt) {
     row.predecessorId = c.currentHandoffId ?? null
     row.summary = summary ?? { completed: '', next: reason }
     if (sourceClaim) row.sourceExecution = clone(sourceClaim)
+    const workSummary = sourceClaim?.status === 'completed' && fromRole !== 'chief' ? stageRoleSummary(rt.state, { task, claim: sourceClaim, role: fromRole, summary: row.summary, receiptId: row.id }) : null
+    if (workSummary?.changed) row.workSummaryRef = clone(workSummary.logical.workSummaryRef)
+    const learned = []
+    if (experience !== undefined) {
+      try {
+        if (!sourceClaim || !Array.isArray(experience) || experience.length > 3) throw refuse('Role experience needs at most three scoped notes')
+        for (const [index, note] of experience.entries()) learned.push(stageExecutionMemory(rt.state, { ...note, task, claim: sourceClaim, role: fromRole, requestId: `handoff-memory-${index}` }))
+        row.memoryRefs = learned.map(candidate => ({ id: candidate.id, revision: candidate.row.revision, classification: candidate.row.classification }))
+      } catch (error) {
+        for (const candidate of learned.reverse()) rollbackExecutionMemory(rt.state, candidate)
+        learned.length = 0
+        row.memoryIssue = { code: error.code ?? 'bot/context-resume', reason: error.message, retainedPrevious: true }
+      }
+    }
     row.contextRefs = { source: contextReference(rt.state, task, fromRole), target: contextReference(rt.state, task, target.role) }
     const before = rt.projectEffects ? { collaboration: clone(c), handoff: task.handoff, question: task.chiefQuestion } : null
-    const input = rt.projectInputs?.stageHandoff(task, row)
-    if (input) row.inputId = input.row.id
-    let intent
-    try { intent = dispatchIntent(task, row) }
-    catch (error) { if (input?.created) rt.projectInputs.discardHandoff(input.row.id); throw error }
+    let input, intent
+    try {
+      input = rt.projectInputs?.stageHandoff(task, row)
+      if (input) row.inputId = input.row.id
+      intent = dispatchIntent(task, row)
+    } catch (error) {
+      if (input?.created) rt.projectInputs.discardHandoff(input.row.id)
+      rollbackRoleSummary(rt.state, workSummary)
+      for (const candidate of [...learned].reverse()) rollbackExecutionMemory(rt.state, candidate)
+      throw error
+    }
     c.generation = row.generation
     c.history.push(row); c.botId = to; c.status = target.role === 'chief' ? 'arbitration' : 'queued'; c.currentHandoffId = row.id; delete c.claim
     if (c.block) { row.resolvedBlock = clone(c.block); delete c.block }
@@ -137,6 +158,8 @@ export function createProjectPools(rt) {
     try { if (intent) await rt.projectEffects.persist(intent); else await rt.save() }
     catch (error) {
       if (intent && rt.projectEffects.discardUncommitted(intent)) {
+        rollbackRoleSummary(rt.state, workSummary)
+        for (const candidate of [...learned].reverse()) rollbackExecutionMemory(rt.state, candidate)
         if (input?.created) rt.projectInputs.discardHandoff(input.row.id)
         for (const key of Object.keys(c)) delete c[key]
         Object.assign(c, before.collaboration)
@@ -243,10 +266,29 @@ export function createProjectPools(rt) {
     c.usage.tokens = (c.usage.tokens ?? 0) + (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
     if ((next.policyRole ?? next.role) === 'developer' && c.kind === 'code') c.attemptId = await adapter.rework?.({ task, claim, reason }) ?? c.attemptId
     try {
-      return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation, summary })
+      return await offer(task, { from: claim.botId, to: next.id, reason, requestId: decision.requestId ?? claim.id, attemptId: c.attemptId, evidence: decision.evidence ?? [], purpose: action, expectedGeneration: claim.generation, summary, experience: decision.memory })
     } catch (error) {
       c.status = 'blocked'; c.block = { reason: error.message, at: Date.now() }; await rt.save(); throw error
     }
+  }
+  async function remember(taskId, token, body) {
+    if (rt.readOnly?.() !== undefined) throw refuse('Role memory is read-only')
+    const task = taskOf(taskId), claim = await current(task, token), role = targetOf(task.projectId, claim.botId).role
+    const candidate = stageExecutionMemory(rt.state, { ...body, task, claim, role })
+    let intent
+    try {
+      intent = rt.projectEffects?.stage({ kind: 'context.memory', key: `${claim.id}:${body.requestId}`, projectId: task.projectId, taskId, payload: { memoryId: candidate.id, revision: candidate.row.revision } })
+      if (intent) await rt.projectEffects.persist(intent)
+      else {
+        const before = rt.savesQueued?.(), saved = rt.save(), queued = rt.savesQueued?.()
+        await saved
+        if (typeof before === 'number' && queued <= before) throw refuse('Role memory did not commit a state snapshot')
+      }
+    } catch (error) {
+      if (!intent || rt.projectEffects.discardUncommitted(intent)) rollbackExecutionMemory(rt.state, candidate)
+      throw error
+    }
+    return { memory: roleMemoryView(candidate.row), already: !candidate.changed, authority: 'none' }
   }
   function available(projectId, botId, actor) {
     rt.requireProjectAccess(actor, projectId); targetOf(projectId, botId)
@@ -445,10 +487,11 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
-    claim: (id, botId) => serial(() => claim(id, botId)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
+    claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
   rt.projectPools = createProjectPools(rt)
+  rt.projectEffects?.register('context.memory', { run: effect => ({ ...effect.payload, status: 'memory-version-committed' }) })
   rt.projectEffects?.register('pool.dispatch', {
     async validate(effect, context) {
       const task = ownEntry(rt.state.tasks, effect.taskId), c = task?.collaboration

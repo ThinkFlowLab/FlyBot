@@ -13,6 +13,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-03 — Budget tool results and exact execution input
+
+Seen 1× (large-history regression). A bounded initial context does not bound a
+context tool returning every Task or note. Return a scoped index and hash/cursor
+pages, preserve required constraints, and preflight the exact native/SDK input.
+Aggregate SDK usage is not a measurement of current window occupancy. Structured
+native handoff input must remain JSON rather than `[object Object]`.
+
 ### 2026-11-02 — Additional approved merge inputs need a host contract
 
 Seen 1×. A published upstream already in the old candidate does not imply there
@@ -645,6 +653,8 @@ admission correctly refused. Mark only that completed Chief claim waiting-human;
 retain actual exit/lease checks and every other claim. A regression reproduces the
 old active label and verifies Task/Attempt/generation and blocked state survive.
 
+2026-11-03 Seen 1×: a resident native Session may retain its system definition after bot metadata changes. Put each current job protocol/facts in the actual turn input; keep prior context historical and preserve the Session. The explicit Task scope fence caught stale-job output during #2179 admission verification.
+
 
 ### 2026-11-03 — Public Chief cannot borrow its approver's identity
 
@@ -719,3 +729,7 @@ Seen 1× (native pre-step and existing scheduler regressions). Admission-time ri
 ### 2026-11-03 — Revalidate handoff targets after exit inspection
 
 Seen 1× (composed role governance/contract regression). Confirming an old source exit yields to concurrent governance. Re-read the committed destination before acquiring a new claim; retirement keeps the Task blocked instead of authorizing a stale role.
+
+### 2026-11-03 — Logical role IDs are not execution carrier IDs
+
+Seen 1× (composed actual DSH native input failure). A canonical claim keeps the logical Bot in botId and the temporary executor in workerId. Context input fences must compare the carrier with workerId; conflating them sends healthy work to Chief admission failure before any execution.

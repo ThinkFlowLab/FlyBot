@@ -176,4 +176,10 @@ Fork M7.3 lifecycle first offers spawn/dispatch/release to the host SDK adapter,
 Repair R3 (#36): Project task pools now enforce the existing pure handoff validator via the trusted host adapter and reuse spawn/dispatch/release and result interception. New Project deliveries do not instantiate a static Workflow graph. `projectDispatch: workflow` retains explicit legacy graph execution and fixtures. See [pool contract](project-pools.md).
 
 
+Project native dispatch preserves structured handoff/Task-inbox inputs as JSON,
+including false/zero values. Before sending, it offers the exact final message to
+the host's optional execution.checkInput budget/generation fence. Refusal prevents
+send and uses the existing failure/release path; SDK dispatch retains its original
+host adapter. No graph, task-pool or UI replacement is introduced.
+
 #2184 fixes native lifecycle input delivery: structured inputs use JSON rather than implicit [object Object] conversion, preserving handoff IDs/evidence and false/zero values. Distinct returned handoffs therefore produce distinct content for the existing delivery deduplicator, while an exact repeated dispatch remains stable. The regression uses the original plugin lifecycle seam; the real DSH native-pool probe reproduces and guards same-Session return delivery. No alternate Workflow or scheduler is introduced.

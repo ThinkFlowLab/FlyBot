@@ -65,3 +65,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 - [Project Sources](project-sources.md) — S4 scoped GitHub Thread subscriptions, revision replay and current-Task feedback.
 - [Execution boundary](project-execution-boundary.md) — S5 trusted private profile, current authority and honest capability preflight.
 - [Service acceptance](service-acceptance.md) — S6 isolated recovery matrix and separately recorded real Source/SDK handoffs.
+
+- [Project context](project-context.md) — scoped budgets, working summaries, memory versions and bounded exact-source reads.

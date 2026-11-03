@@ -325,6 +325,38 @@ test('an interrupted acceptance exposes a fenced initiative and recovery cause',
   assert.match(view.failure.reason, /restarted/)
 })
 
+test('a failed handoff commit retains the previous Task-role summary and its version history', async () => {
+  const { readRoleSummary } = await import('../src/host/project-context-memory.js')
+  const f = setup(); await f.admit()
+  const first = await f.claim()
+  await f.pool.decide('task', first, { action: 'transfer', to: 'p:tester', reason: 'Check the original approach', completed: 'Original developer progress' })
+  const previous = readRoleSummary(f.rt.state, 'p', 'task', 'developer')
+  const tester = await f.pool.claim('task', 'p:tester')
+  await f.pool.decide('task', tester, { action: 'return', to: 'p:developer', reason: 'Need another focused change' })
+  const returned = await f.claim()
+  f.rt.projectEffects = { stage: () => ({ id: 'uncommitted', generation: 1 }), persist: async () => { throw new Error('Disk commit failed') }, discardUncommitted: () => true }
+  await assert.rejects(f.pool.decide('task', returned, { action: 'transfer', to: 'p:tester', reason: 'Retry after another change', completed: 'New progress cannot commit' }), /commit failed/)
+  const retained = readRoleSummary(f.rt.state, 'p', 'task', 'developer')
+  assert.equal(retained.sha256, previous.sha256)
+  assert.equal(retained.revision, previous.revision)
+  assert.equal(f.rt.state.projectRoleMemory[retained.id].versions.length, 0)
+})
+
+test('active roles can record bounded unverified experience without changing initiative or human facts', async () => {
+  const f = setup(); await f.admit(); const token = await f.claim()
+  const body = { requestId: 'learn-one', factKey: 'negative-case', text: 'The missing boundary case should be checked independently' }
+  const learned = await f.pool.remember('task', token, body)
+  assert.equal(learned.memory.classification, 'inference')
+  assert.equal(learned.authority, 'none')
+  assert.equal(f.task.collaboration.claim.id, token.id)
+  assert.equal((await f.pool.remember('task', token, body)).already, true)
+  await assert.rejects(f.pool.remember('task', token, { ...body, classification: 'fact' }), /verified/)
+  const next = await f.pool.decide('task', token, { action: 'transfer', to: 'p:tester', reason: 'Check this candidate', memory: [{ factKey: 'test-input', text: 'A failed local test is not evidence of a passing host test', classification: 'unresolved' }] })
+  assert.equal(next.memoryRefs.length, 1)
+  assert.equal(next.memoryRefs[0].classification, 'unresolved')
+  await assert.rejects(f.pool.remember('task', token, { ...body, requestId: 'stale' }), /stale/)
+})
+
 
 test('a retired source can finish its frozen active claim but cannot receive new offers', async () => {
   const f = setup(); await f.admit(); const claim = await f.claim()

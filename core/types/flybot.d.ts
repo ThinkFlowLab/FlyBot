@@ -390,6 +390,8 @@ export interface FlyBot {
       poolResult(result: { botId: string; ok: boolean; text: string }): Promise<boolean> | false
       spawn(spec: Record<string, unknown>): Promise<string | null> | undefined
       dispatch(step: Record<string, unknown>): Promise<unknown> | undefined
+      /** Exact native input preflight; does not grant execution or replace the existing dispatcher. */
+      checkInput?(step: { botId: string; taskId: string; text: string }): Promise<unknown> | undefined
       release(id: string): Promise<boolean> | undefined
       onResult(fn: (result: { botId: string; ok: boolean; text: string }) => unknown): (() => void) | undefined
     }

@@ -711,6 +711,118 @@ test('a busy native watch defers its committed notification without exhausting r
   assert.equal(effect.waitingFor, 'agent')
 })
 
+test('role memory updates deduplicate facts, preserve uncertainty/history and archive without losing source records', async t => {
+  const { rt } = await setup(t)
+  const base = { projectId: 'p1', role: 'developer', factKey: 'build/runtime', text: 'Use the checked Node runtime', classification: 'fact', source: { kind: 'human', reference: 'Approved runtime decision' } }
+  const first = await rt.projectEndpoint('project-role-memory-write', base, alice)
+  const same = await rt.projectEndpoint('project-role-memory-write', base, alice)
+  assert.equal(same.memory.id, first.memory.id)
+  assert.equal(same.memory.revision, 1)
+  const revised = await rt.projectEndpoint('project-role-memory-write', { ...base, text: 'Runtime choice needs a new check', classification: 'unresolved', expectedRevision: 1 }, alice)
+  assert.equal(revised.memory.id, first.memory.id)
+  assert.equal(revised.memory.revision, 2)
+  assert.equal(revised.memory.versions[0].classification, 'fact')
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, expectedRevision: 1 }, alice), /revision/)
+  const archived = await rt.projectEndpoint('project-role-memory-write', { ...base, memoryId: first.memory.id, text: revised.memory.text, classification: 'unresolved', status: 'archived', expectedRevision: 2 }, alice)
+  assert.equal(archived.memory.status, 'archived')
+  assert.equal(archived.memory.versions.length, 2)
+  assert.equal(archived.memory.source.reference, base.source.reference)
+  await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'chief', memoryRefs: [] }, alice)
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, classification: 'permission' }, alice), /classification/)
+  await assert.rejects(rt.projectEndpoint('project-role-memory-write', { ...base, projectId: 'p2', memoryId: first.memory.id }, alice), /scope/)
+})
+
+test('private memory retention is separate from its bounded default view', async t => {
+  const { rt } = await setup(t)
+  for (let index = 0; index < 105; index++) await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: `Private record ${index}` }, alice)
+  const agent = (await get(rt, alice)).mine
+  assert.equal(rt.state.projectAgentMemory[agent.id].length, 105)
+  assert.equal(rt.state.projectAgentMemory[agent.id][0].text, 'Private record 0')
+  const view = await get(rt, alice)
+  assert.equal(view.privateMemory.length, 100)
+  assert.equal(view.privateMemoryHistory.total, 105)
+  assert.equal(JSON.stringify(await get(rt, bob)).includes('Private record 0'), false)
+})
+
+test('context tools keep large histories bounded and read exact private sources only within their own participation', async t => {
+  const { rt } = await setup(t)
+  const mine = (await get(rt, alice)).mine
+  await message(rt, alice)
+  rt.config.projectContext = { defaults: { readChars: 2200 } }
+  for (let index = 0; index < 80; index++) rt.state.tasks[`context-task-${index}`] = { id: `context-task-${index}`, projectId: 'p1', title: index === 79 ? 'Focused active repair' : 'Historical repair', criteria: 'Retain every original requirement. '.repeat(100), status: 'open', requesterId: alice.memberId, ownerBotId: mine.botId }
+  for (let index = 0; index < 30; index++) await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: `Scoped private experience ${index} `.repeat(40) }, alice)
+  const result = await rt.projectAgents.context(rt.botOf(mine.botId))
+  assert.ok(JSON.stringify(result).length <= 2200)
+  assert.ok(result.retrieval.omitted.tasks > 0)
+  const index = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task-index', query: 'Focused' } })
+  assert.ok(index.contextPage.text.includes('context-task-79'))
+  let offset = 0, sha256, raw = '', pages = 0
+  for (;;) {
+    const source = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task', id: 'context-task-79', offset, ...(sha256 ? { sha256 } : {}) } })
+    assert.ok(JSON.stringify(source).length <= 2200)
+    raw += source.contextPage.text; sha256 = source.contextPage.sha256; pages++
+    if (source.contextPage.nextOffset === null) break
+    assert.ok(source.contextPage.nextOffset > offset)
+    assert.ok(pages < 30)
+    offset = source.contextPage.nextOffset
+  }
+  assert.equal(JSON.parse(raw).criteria, rt.state.tasks['context-task-79'].criteria)
+  const peer = (await get(rt, bob)).mine
+  await rt.projectEndpoint('project-agent-memory-write', { projectId: 'p1', text: 'Peer private content' }, bob)
+  const peerNote = rt.state.projectAgentMemory[peer.id][0]
+  await assert.rejects(rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'private-memory', id: peerNote.id } }), /unavailable/)
+  const note = rt.state.projectAgentMemory[mine.id][0]
+  const owned = await rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'private-memory', id: note.id } })
+  assert.ok(owned.contextPage.text.includes('Scoped private experience 0'))
+  rt.state.tasks.foreign = { id: 'foreign', projectId: 'p2', title: 'Other project source' }
+  await assert.rejects(rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest: { kind: 'task', id: 'foreign' } }), /another Project/)
+})
+
+test('bounded source reads keep public messages/knowledge and memory revisions in the active Project', async t => {
+  const { rt } = await setup(t)
+  const mine = (await get(rt, alice)).mine
+  await message(rt, alice)
+  rt.state.projectAgentTranscripts['public-p1'] = [{ id: 'public-msg', kind: 'user', text: 'Explicit public discussion', at: 1 }]
+  await rt.projectEndpoint('project-knowledge-write', { projectId: 'p1', text: 'Published current fact' }, alice)
+  const fact = rt.state.projectKnowledge.p1[0]
+  const memory = (await rt.projectEndpoint('project-role-memory-write', { projectId: 'p1', role: 'developer', text: 'Original role fact', source: { kind: 'human', reference: 'Original decision' } }, alice)).memory
+  await rt.projectEndpoint('project-role-memory-write', { projectId: 'p1', role: 'developer', memoryId: memory.id, text: 'Revised role fact', source: { kind: 'human', reference: 'Reviewed follow-up' } }, alice)
+  const read = sourceRequest => rt.projectAgents.context(rt.botOf(mine.botId), { sourceRequest })
+  assert.match((await read({ kind: 'public-message', id: 'public-msg' })).contextPage.text, /Explicit public discussion/)
+  assert.match((await read({ kind: 'knowledge', id: fact.id })).contextPage.text, /Published current fact/)
+  assert.match((await read({ kind: 'role-memory', id: memory.id })).contextPage.text, /Revised role fact/)
+  assert.match((await read({ kind: 'role-memory', id: memory.id, revision: 1 })).contextPage.text, /Original role fact/)
+  await assert.rejects(read({ kind: 'role-memory', id: memory.id, revision: 99 }), /unavailable/)
+  await assert.rejects(read({ kind: 'unknown' }), /Unknown/)
+  rt.state.projectRoleMemory.foreign = { id: 'foreign', projectId: 'p2', role: 'developer', text: 'Foreign public note' }
+  await assert.rejects(read({ kind: 'role-memory', id: 'foreign' }), /another Project/)
+})
+
+test('resident native Chief receives fresh job facts in each turn instead of relying on a cached system prompt', async t => {
+  const { rt } = await setup(t)
+  const { public: chief } = await get(rt, alice)
+  const sessionId = rt.state.projectAgents[chief.id].sessionId
+  const sends = [], originalDeliver = rt.deliver
+  rt.projectChiefControl.validateActor = async () => {} // This test isolates native context delivery, not Chief authorization.
+  rt.deliver = async args => { sends.push({ ...args, system: rt.botOf(chief.botId).systemPrompt }); return originalDeliver(args) }
+  for (const index of [1, 2]) {
+    let completed = false
+    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
+    const sent = sends.at(-1)
+    assert.match(sent.text, new RegExp(`FRESH_JOB_${index}`))
+    assert.match(sent.text, /Judge only this current job/)
+    assert.equal(sent.sessionId, sessionId)
+    assert.equal(sent.system.includes(`FRESH_JOB_${index}`), false, 'Task-specific facts must not become a cached system definition')
+    rt.projectAgents.onEvent({ id: sessionId }, { type: 'assistant/message', data: { turn: 1, message: { content: [{ type: 'text', text: '{}' }] } } })
+    rt.projectAgents.onEvent({ id: sessionId }, { type: 'turn/end', data: { turn: 1 } })
+    for (let pass = 0; pass < 100 && rt.projectAgents.chiefBusy('p1'); pass++) await new Promise(resolve => setTimeout(resolve, 5))
+    assert.equal(completed, true)
+    assert.equal(rt.projectAgents.chiefBusy('p1'), false)
+  }
+  assert.equal(sends.length, 2)
+  assert.equal(rt.state.projectAgents[chief.id].sessionId, sessionId)
+})
+
 test('resident Chief role proposals require separate Owner approval and cannot be forged by private Bots or HTTP fields', async t => {
   const { rt } = await setup(t), initial = await get(rt, alice)
   await message(rt, bob, 'public', 'Suggest an additional analysis role')

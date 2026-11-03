@@ -102,3 +102,13 @@ test('read-only Codex verification grants only the host-bound scratch directory 
   assert.deepEqual(observed[1].additionalDirectories, [])
   assert.equal(observed[0].env.TMPDIR, scratchDirectory)
 })
+
+test('Codex tool history has a host-selected limit without replacing SDK compaction or Session identity', async () => {
+  const observed = []
+  await runHarnessTurn({ ...request, sessionId: 'kept-thread', toolOutputTokens: 1536 }, { emit() {}, loadCodex: codex([{ type: 'turn.completed' }], value => observed.push(value)) })
+  assert.equal(observed[0].config.tool_output_token_limit, 1536)
+  assert.equal(observed[0].config.model_auto_compact_token_limit, undefined)
+  assert.equal(observed[0].config.model_context_window, undefined)
+  assert.equal(observed[1].id, 'kept-thread')
+  for (const limit of [0, -1, 1.5, '1536']) await assert.rejects(runHarnessTurn({ ...request, toolOutputTokens: limit }, { loadCodex: async () => { throw new Error('Must validate before loading SDK') } }), /output budget/)
+})

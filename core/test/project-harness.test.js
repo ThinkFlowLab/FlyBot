@@ -400,6 +400,37 @@ test('Harness capability inspection distinguishes SDK support, native limitation
   assert.throws(() => harnessCapabilities('unknown'), /Unknown/)
 })
 
+test('the actual SDK profile budget rejects oversized input before starting a backend Session', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  rt.config.projectContext = { models: { 'test-model': { windowTokens: 4000, outputTokens: 500, toolTokens: 500, protocolTokens: 300 } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Keep the contract' })
+  await assert.rejects(harness.dispatch({ botId: id, taskId: 't', brief: 'Mandatory current input '.repeat(1000), outputs: [{ name: 'implementation' }] }), { code: 'bot/context-budget' })
+  assert.equal(rt.state.projectHarnessWorkers[id].executionStartedAt, null)
+  assert.equal(rt.state.projectHarnessWorkers[id].backendSessionId, undefined)
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Use a bounded next step', outputs: [{ name: 'implementation' }] })
+  assert.equal((await result).ok, true)
+  assert.equal(rt.state.projectHarnessWorkers[id].inputUsage.withinBudget, true)
+})
+
+test('native input budget checks the exact role and message with a durable generation fence', async () => {
+  const { createContextBudget } = await import('../src/host/project-context-budget.js')
+  const budget = createContextBudget({ defaults: { windowTokens: 4000, outputTokens: 500, toolTokens: 500, protocolTokens: 300 } })
+  const claim = { id: 'claim', generation: 2, status: 'active', botId: 'p:developer', workerId: 'native' }
+  const session = { id: 's', projectId: 'p', taskId: 't', role: 'developer', generation: 2, poolClaimId: 'claim', botId: 'native', status: 'bound', context: { budget } }
+  let saves = 0
+  const rt = { state: { bots: { native: { id: 'native', attemptId: 'a', systemPrompt: 'Mandatory role convention' } }, tasks: { t: { projectId: 'p', collaboration: { initiatedBy: 'owner', generation: 2, claim } } }, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', status: 'running', roleSessions: { developer: session } } } }, config: {},
+    save: async () => { saves++ }, savesQueued: () => saves, projects: { requireActive() {} }, requireProjectAccess() {}, projectDelegations: { background: async () => {} } }
+  rt.botOf = id => rt.state.bots[id]
+  const harness = createProjectHarness(rt)
+  assert.equal((await harness.checkNativeInput({ botId: 'native', taskId: 't', text: 'Current Task input' })).checked, true)
+  await assert.rejects(harness.checkNativeInput({ botId: 'native', taskId: 't', text: 'Large mandatory input'.repeat(1000) }), { code: 'bot/context-budget' })
+  await assert.rejects(harness.checkNativeInput({ botId: 'native', taskId: 'foreign', text: 'Wrong scope' }), /scope/)
+  rt.save = async () => { saves++; claim.status = 'revoked' }
+  await assert.rejects(harness.checkNativeInput({ botId: 'native', taskId: 't', text: 'Raced input' }), /superseded/)
+  assert.equal(session.inputUsage.withinBudget, true)
+})
+
 test('SDK sandbox policy follows pinned capability while custom logical role identity remains distinct', async t => {
   for (const [role, policyRole, readOnly] of [['implementer', 'developer', false], ['auditor', 'reviewer', true]]) {
     await t.test(role, async t => {

@@ -156,6 +156,13 @@ execution. Safe suggestions require explicit user publication, while watch answe
 use ordinary Task input admission. Chief retains Task initiative and decides whether
 the answer resolves the block. See [consultation protocol](project-agents.md).
 
+
+#2177 snapshots meaningful Chief decisions into separate scoped working topics on
+the existing persistent public carrier. Summaries retain original Task constraints,
+uncertainty and source evidence; later turns retrieve a bounded relevant subset.
+A summary failure records contextIssue and preserves the previous summary without
+erasing a decision already applied through the original gates. No new timer is added.
+
 Validated Chief completion accepts up to four role proposals alongside Task decisions. The host supplies stable run-scoped proposal keys and current Chief-job authority; proposals cannot apply role changes. A malformed proposal list fails the job rather than granting configuration rights.
 
 

@@ -1,5 +1,6 @@
 // Complete, versioned role conventions. Repository text is guidance, never authority.
 import { createHash } from 'node:crypto'
+import { checkContextPrompt } from './project-context-budget.js'
 export const ROLE_POLICY_VERSION = 'project-role-policy/v1'
 export const ROLE_POLICY_MAX_BYTES = 384_000
 export const ROLE_POLICY_FILES = Object.freeze({
@@ -71,5 +72,7 @@ export function checkDevelopmentEvidence(policy, paths) {
 // Assemble after Workflow prompt cleaning, from the host-owned Session snapshot.
 export function roleExecutionPrompt(prompt, session, continuedPolicyHash) {
   if (session?.policy) verifyRolePolicy(session.policy, session.context.sources.policy?.sha256)
-  return [prompt, session?.policy?.sha256 === continuedPolicyHash ? `Continue the bound Task-role thread. Previously supplied complete policy remains ${continuedPolicyHash}; current candidate and requirements below supersede earlier execution facts. A prior review is never evidence for a changed candidate.` : session?.policy?.text, session?.context?.text, session?.context?.archivePath ? `Exact scoped context archive: ${session.context.archivePath}; SHA256 ${session.context.archiveSha256}. Read necessary sources with bounded output before acting on missing knowledge or attached role memory.` : null].filter(Boolean).join('\n\n')
+  const text = [prompt, session?.policy?.sha256 === continuedPolicyHash ? `Continue the bound Task-role thread. Previously supplied complete policy remains ${continuedPolicyHash}; current candidate and requirements below supersede earlier execution facts. A prior review is never evidence for a changed candidate.` : session?.policy?.text, session?.context?.text, session?.context?.archivePath ? `Exact scoped context archive: ${session.context.archivePath}; SHA256 ${session.context.archiveSha256}. Read necessary sources with bounded output before acting on missing knowledge or attached role memory.` : null].filter(Boolean).join('\n\n')
+  if (session?.context?.budget) checkContextPrompt(text, session.context.budget)
+  return text
 }

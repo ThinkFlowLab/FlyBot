@@ -474,6 +474,12 @@ drafts, original prepared contexts and Attempt evidence remain untouched. SDK re
 and unknown-exit recovery follow [the Harness contract](project-harness.md).
 
 
+#2177 builds role context with the actual resource/model budget, mandatory Project
+and current Task constraints, the role's own working summary, and bounded relevant
+memory. Fixed persona/skills remain pinned; summary/memory data cannot alter rights.
+Task-role summary references and input-usage metadata survive returns. Native and
+SDK input preflights fail before inference if required input cannot fit.
+
 Native Sessions now use the existing Task-role binding service through projectDelivery.nativeSessions. Canonical pool worktrees can be retained across Attempts only after exact native quiescence and released leases; original DAG workspace behavior remains compatible. Definition capability changes and removed roles block stale restart instead of inheriting authority.
 
 

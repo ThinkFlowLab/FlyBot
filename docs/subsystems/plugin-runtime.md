@@ -185,3 +185,10 @@ submit pool results. No new public event authority is introduced; see
 ## Durable Task inbox integration (S3)
 
 S3’s existing pool lifecycle adapter prepares a durable Task inbox before dispatch, forwards it in step inputs and records only adapter acceptance afterward. It retains the original Workflow/native/SDK lifecycle and current-claim authority. See [Task inputs](project-inputs.md).
+
+
+Workflow execution adds optional checkInput({botId,taskId,text}) for exact native
+input preflight. Only the existing workflow scope reaches the host check; other
+plugins receive null. Old hosts may omit it. The check grants no Task/Project
+rights and creates no scheduler; failed budget/current-generation/save validation
+prevents send. The published FlyBot type declares the additive optional seam.

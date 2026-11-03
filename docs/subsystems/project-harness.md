@@ -261,6 +261,14 @@ committed Effects (#2182), parent resumption (#2179), and final real-task valida
 remain explicit acceptance work. No second executor or scheduler is introduced.
 
 
+#2177 resolves the actual selected resource/profile's context budget before dispatch,
+checks full SDK input before its durable-start barrier, and records inputUsage.
+Native Workflow checks its exact input text through optional execution.checkInput
+before send, with current claim/role/lease/authority and post-save fences. Codex's
+tool history limit is configured separately from SDK compaction; Claude generic
+output control remains runtime-managed. These limits do not claim precise current
+SDK-window occupancy from aggregate usage. See [context contract](project-context.md).
+
 ## Native physical Session binding and quiescence (#2184)
 
 The original Workflow lifecycle still owns native Bot creation, dispatch and removal.
@@ -360,3 +368,5 @@ The existing serialized scheduler checks ongoing canonical role Sessions before 
 When a physical native Session is resumed under a fresh carrier, ongoing checks select only the current host/live bound record, never an earlier historical binding for that same Session ID. SDK human input checks both initiating authority and the sending actor again after any awaited validation. These two boundaries have failure regressions; the actual DSH return probe reproduced the former and passes after correction.
 
 Current operator disabling of a Resource or removal of its Harness support also requests the same confirmed stop; it cannot be bypassed by a retained role grant. Live deterministic SDK subprocess regression covers both role-pool removal and operator disable.
+
+Native input budgeting fences the actual `claim.workerId` against the temporary carrier; `claim.botId` identifies the logical role and is not a physical worker. This distinction is covered by both the scoped input regression and actual DSH native return probe.

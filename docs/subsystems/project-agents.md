@@ -417,6 +417,16 @@ and external agents consume their own mailbox without an invented provider trans
 An Effects attempt or SDK send is not a read/handling receipt. External responses
 still need a connected client; no official grok/dots integration is claimed.
 
+
+#2177 routes native context tools through the shared [context budget and memory
+contract](project-context.md). Public/private source reads are bounded, hash/cursor
+bound and currently authorized. Public role facts support versioned dedupe/archive;
+execution experience remains unverified and cannot overwrite human facts. Private
+notes retain history while default views remain bounded. Native Chief topic memory
+continues to use the original own-Bot store, with paged scoped adapter reads.
+
+Native resident Chief jobs now send the current protocol and scoped facts in each turn request. They keep a stable role system definition instead of relying on replacement of a cached system prompt. The full native input is budget checked and actor/delegation authority is revalidated before dispatch; the same resident Session remains in use.
+
 ## Project role governance (#2171)
 
 The active catalog starts with Chief, Developer, Tester and Reviewer. Its logical role

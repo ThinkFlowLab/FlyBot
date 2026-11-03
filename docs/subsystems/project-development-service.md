@@ -181,3 +181,9 @@ Task and owned-participation checks. Safe external agents may ask questions or s
 private advice; publishing an answer requires human approval or current watch rights.
 Role `handoff.offer/accept` are trusted host ports, never public commands. See
 [pool contracts](project-pools.md) and [consultations](project-agents.md).
+
+
+Attempt views now include context budget/usage metadata without injecting full source
+archives into a default response. Trusted role.memory.record is an execution port,
+not a public command or permission. Its bounded experience remains unverified and
+scoped to the current claim. Detailed source/context reads retain existing auth.

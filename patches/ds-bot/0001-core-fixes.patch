@@ -4852,7 +4852,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      }
    }
 
-@@ -1378,8 +1378,60 @@ export function install(rt) {
+@@ -1378,8 +1378,62 @@ export function install(rt) {
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
 
@@ -4890,13 +4890,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +  }
 +
 +  // Project adapters bind the Bot themselves; this seam never resolves team/other scopes.
-+  function botMemoryRecall(botId, { topic, query } = {}) {
++  function botMemoryRecall(botId, { topic, query, offset = 0, limit = 40 } = {}) {
 +    if (rt.botOf(botId) === undefined) throw new Error('That Bot is gone')
 +    const parsed = topicArg(topic)
 +    if (parsed.error) throw new Error(parsed.error)
 +    const files = loadScope(ownScope(botId)).filter(file => parsed.topic === undefined || file.topic === parsed.topic)
-+    const entries = allEntries(files)
-+    return { ...memoryDigest(botId), entries: (query ? matchEntries(entries, String(query).slice(0, 200)) : entries).slice(0, 40).map(entry => ({ text: entry.text, meta: entry.meta ?? {}, topic: entry.file.topic ?? null })) }
++    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 40) throw new Error('Invalid own-memory page')
++    const entries = allEntries(files), matched = query ? matchEntries(entries, String(query).slice(0, 200)) : entries
++    return { ...memoryDigest(botId), total: matched.length, offset, nextOffset: offset + limit < matched.length ? offset + limit : null,
++      entries: matched.slice(offset, offset + limit).map(entry => ({ text: entry.text, meta: entry.meta ?? {}, topic: entry.file.topic ?? null })) }
 +  }
 +  function botMemoryRemember(botId, { text, topic, replace } = {}, source = {}) {
 +    const bot = rt.botOf(botId)

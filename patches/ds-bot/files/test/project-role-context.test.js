@@ -86,3 +86,38 @@ test('retrieval pages bind immutable source hashes and refuse unknown sources', 
   result.archive.knowledge[0].text='tampered'
   assert.throws(()=>readContextArchive(result,[{kind:'knowledge',id:'one'}]),/changed/)
 })
+
+test('configured budgets retrieve relevant memory without growing indexes or discarding mandatory constraints', async () => {
+  const { createContextBudget, countContextTokens } = await import('../src/host/project-context-budget.js')
+  const budget = createContextBudget({ defaults: { windowTokens: 14000, outputTokens: 1000, toolTokens: 1000, protocolTokens: 500, memoryTokens: 900, knowledgeTokens: 1500 } })
+  const memory = Array.from({ length: 1000 }, (_, i) => ({ id: `m-${i}`, text: `Past unrelated experience ${i}`.repeat(20), at: i }))
+  memory[0].text = 'SQLite migration must retain previous transaction evidence'
+  const knowledge = Array.from({ length: 100 }, (_, i) => ({ id: `k-${i}`, text: 'Unrelated historical note '.repeat(20), at: i }))
+  knowledge.push({ id: 'relevant', text: 'SQLite migration uses one authoritative store', at: 0 })
+  const result = roleContext({ projectId: 'p', role: 'developer', definition: { instructions: 'Keep all role permissions' }, requirement: { title: 'SQLite migration', criteria: 'Retain the original rollback evidence' }, memory, knowledge, retrieval: true, budget })
+  assert.ok(countContextTokens(result.text, budget) <= budget.inputTokens)
+  assert.ok(result.text.includes('Keep all role permissions'))
+  assert.ok(result.text.includes('Retain the original rollback evidence'))
+  assert.ok(result.text.includes('SQLite migration must retain'))
+  assert.ok(result.text.includes('one authoritative store'))
+  assert.equal(result.archive.memory.length, 1000)
+  assert.equal(result.budget.windowTokens, 14000)
+  assert.equal(result.usage.withinBudget, true)
+  assert.ok(result.usage.layers.memory <= 900)
+  assert.ok(result.usage.layers.knowledge <= 1500)
+  assert.equal(result.usage.retrieval.omittedMemory > 0, true)
+  assert.throws(() => roleContext({ projectId: 'p', role: 'developer', definition: { instructions: 'MANDATORY'.repeat(2000) }, retrieval: true, budget }), { code: 'bot/context-budget' })
+})
+
+test('fixed policy consumes the same budget and bounded archive reads share the reserved tool result space', async () => {
+  const { createContextBudget, countContextTokens } = await import('../src/host/project-context-budget.js')
+  const budget = createContextBudget({ defaults: { windowTokens: 7000, outputTokens: 500, toolTokens: 1000, protocolTokens: 500, readChars: 3000 } })
+  const policy = assembleRolePolicy({ role: 'developer', sources: [], requiredFiles: [] })
+  const input = { projectId: 'p', role: 'developer', definition: { instructions: 'Read exact evidence' }, knowledge: [{ id: 'long', text: 'Long public source'.repeat(1000) }], retrieval: true, budget }
+  const result = roleContext(input)
+  const pages = readContextArchive(result, [{ kind: 'knowledge', id: 'long' }, { kind: 'index', id: 'knowledge' }], { projectId: 'p', role: 'developer' })
+  assert.ok(countContextTokens(JSON.stringify(pages), budget) <= budget.reserved.toolTokens)
+  assert.ok(pages[0].nextOffset < 3000)
+  assert.throws(() => readContextArchive(result, [{ kind: 'knowledge', id: 'long' }], { projectId: 'other', role: 'developer' }), /scope/)
+  assert.throws(() => roleContext({ ...input, policy: { ...policy, text: policy.text.repeat(3) } }), { code: 'bot/context-budget' })
+})

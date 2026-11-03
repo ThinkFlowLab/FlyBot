@@ -422,6 +422,24 @@ provider sessions. SDK process/HTTP tests and real-provider acceptance remain di
 Native restoration/context bounds, transaction events and parent waits stay on their
 original dependent issues; no control-plane, deployment or frontend changes.
 
+
+### Context/memory convergence — 2026-11-03 (#2177)
+
+Unify model/Harness context budgeting and bounded source tools across persistent
+Chief and temporary roles. Unknown capacity stays explicit; full rules/current
+constraints remain required, retrieval yields before overflow, and native/SDK input
+is checked before delivery. Working summaries use original public role-memory
+records with exact source/evidence/uncertainty, separate resident Chief topics and
+rollback of uncommitted staging. Facts have source/classification/version/archive;
+role-authored experience cannot declare facts or overwrite human control. Private
+notes retain history under bounded views. Codex tool history has an explicit cap;
+SDK compaction remains runtime-managed, without claiming aggregate usage is current
+window pressure. No new memory platform, executor or timer. Native Task-role physical
+restore2184 and normalized SQL storage2182 remain separate acceptance; real SDK
+verification must name exact runtime source hashes, not borrow deterministic tests.
+
+#2177 follow-up: validate two sequential native Chief jobs against fresh per-turn facts while retaining the same resident Session; dependent Task admission runtime acceptance remains #2179.
+
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
 
 Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.

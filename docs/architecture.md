@@ -172,6 +172,8 @@ host may retain. Sealing preserves the resolved staged tree and trusted ancestry
 it does not grant SDK shared-ref access, replace a PR or substitute for verification.
 
 
+The [shared context contract](subsystems/project-context.md) separates fixed role rules, retrieved memory, working summaries and original sources, with configured model/Harness envelopes and original native/SDK lifecycle management.
+
 Project role governance (#2171) separates resident Chief proposals, Maintainer/Owner decisions, the current revisioned role catalog, and archived definitions/audit. Durable Effects proof gates visible changes; logical role keys and execution capability classes remain distinct. See [role governance](subsystems/project-agents.md#project-role-governance-2171).
 
 
