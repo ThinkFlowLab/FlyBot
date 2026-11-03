@@ -1310,7 +1310,42 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
        index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
        group.map(([label, Icon, run, danger]) => h('button', {
          key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,
-@@ -92,3 +92,4 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -67,28 +67,34 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+   }, [menu.x, menu.y])
+   const agent = roster.agentsById[menu.kind === 'agent' ? menu.id : menu.agentId]
+   if (agent === undefined) return null
++  // A window that holds the team read-only draws none of the writes the host refuses (#2232, #2253).
++  const locked = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
+   const groups = menu.kind === 'agent'
+     ? [
+         [
+-          [agent.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })],
++          locked ? null : [agent.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })],
+         ],
+         [
+-          [t('Remove DSH Agent'), TrashIcon, () => actions.removeAgent(agent.id), true],
++          locked ? null : [t('Remove DSH Agent'), TrashIcon, () => actions.removeAgent(agent.id), true],
+         ],
+       ]
+     : [
+         [
+-          [t('Rename'), PencilIcon, () => actions.beginAgentRename(menu.id)],
++          locked ? null : [t('Rename'), PencilIcon, () => actions.beginAgentRename(menu.id)],
+         ],
+         [
+-          [t('Archive'), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true],
++          locked ? null : [t('Archive'), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true],
+         ],
+       ]
++  // Every row here writes, so a read-only window has no menu to draw at all.
++  const shown = groups.map(group => group.filter(Boolean)).filter(group => group.length > 0)
++  if (shown.length === 0) return null
+   return h('div', { ref, className: 'bt-menu', role: 'menu', 'aria-label': menu.kind === 'agent' ? 'DSH Agent' : t('Session actions'), style: place, 'data-leaving': leaving || undefined },
+-    groups.map((group, index) => h(Fragment, { key: index },
++    shown.map((group, index) => h(Fragment, { key: index },
+       index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
+       group.map(([label, Icon, run, danger]) => h('button', {
+         key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,
          onClick: () => { actions.closeMenu(); void Promise.resolve(run()).catch(error => console.warn('[ds-bot]', error)) },
        }, h(Icon), label)))))
  }

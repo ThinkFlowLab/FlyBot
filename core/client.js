@@ -19515,25 +19515,28 @@ function AgentMenu({ menu, roster, actions, leaving }) {
   }, [menu.x, menu.y]);
   const agent = roster.agentsById[menu.kind === "agent" ? menu.id : menu.agentId];
   if (agent === void 0) return null;
+  const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   const groups = menu.kind === "agent" ? [
     [
-      [agent.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })]
+      locked ? null : [agent.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })]
     ],
     [
-      [t("Remove DSH Agent"), TrashIcon, () => actions.removeAgent(agent.id), true]
+      locked ? null : [t("Remove DSH Agent"), TrashIcon, () => actions.removeAgent(agent.id), true]
     ]
   ] : [
     [
-      [t("Rename"), PencilIcon, () => actions.beginAgentRename(menu.id)]
+      locked ? null : [t("Rename"), PencilIcon, () => actions.beginAgentRename(menu.id)]
     ],
     [
-      [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
+      locked ? null : [t("Archive"), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true]
     ]
   ];
+  const shown = groups.map((group) => group.filter(Boolean)).filter((group) => group.length > 0);
+  if (shown.length === 0) return null;
   return (0, import_react43.createElement)(
     "div",
     { ref, className: "bt-menu", role: "menu", "aria-label": menu.kind === "agent" ? "DSH Agent" : t("Session actions"), style: place, "data-leaving": leaving || void 0 },
-    groups.map((group, index) => (0, import_react43.createElement)(
+    shown.map((group, index) => (0, import_react43.createElement)(
       import_react43.Fragment,
       { key: index },
       index > 0 ? (0, import_react43.createElement)("div", { className: "bt-menu-sep", role: "separator" }) : null,
