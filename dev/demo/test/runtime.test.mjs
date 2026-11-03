@@ -87,3 +87,20 @@ test('real DSH resumes native Task-role context after a pool return and serializ
   assert.ok(report.notRun.includes('real model'))
   assert.deepEqual(readdirSync(directory), [], 'Disposable native workers, profiles and worktrees must be removed')
 })
+
+test('actual DSH native return persists Task-role activation, release and continuation through SQLite', { timeout: 150_000 }, t => {
+  const directory = mkdtempSync(join(tmpdir(), 'flybot-native-sqlite-runtime-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, [resolve(import.meta.dirname, '../run.mjs'), '--native-pools', '--sqlite'], {
+    encoding: 'utf8', timeout: 140_000, env: { ...process.env, TMPDIR: directory, M0_REPORT: '' },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.storage, 'sqlite')
+  assert.equal(report.runtime, 'actual DSH')
+  assert.ok(report.checks.includes('actual Chief admission before native pool allocation'))
+  assert.ok(report.checks.includes('same Task and original physical role Session'))
+  assert.ok(report.checks.includes('native quiescence and single-resource release before downstream execution'))
+  assert.ok(report.notRun.includes('real model'))
+  assert.deepEqual(readdirSync(directory), [], 'Disposable SQLite state, workers and worktrees must be removed')
+})

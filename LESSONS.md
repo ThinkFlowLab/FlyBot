@@ -665,6 +665,10 @@ Seen 1× while implementing #2179. Reusing old group aggregation would accept ca
 
 #2179 integration regression: `git rev-parse MERGE_HEAD` returns only the first parent of an octopus merge. Validate every bounded registered MERGE_HEAD entry before sealing; an admitted first source cannot conceal an unapproved second parent. Preserve the staged index on rejection.
 
+### 2026-11-03 — Migration must distinguish unfinished import from missing current data
+
+An interrupted prepared SQL migration may recover its verified import; an active database that disappears must fail closed, not silently revive the old import. Publish a newer-version JSON guard before initialization, validate one authority, and retain a fenced resumable rollback marker across partial moves. A transaction commit must precede Effects acknowledgement without a fallible post-commit read masking that proof.
+
 
 ### 2026-11-03 — Public Chief cannot borrow its approver's identity
 
@@ -747,3 +751,7 @@ Seen 1× (composed actual DSH native input failure). A canonical claim keeps the
 ### 2026-11-03 — Fence old-plan decisions as well as external effects
 
 Seen 1× (late Task requirement response regression). Stopping on the next scheduler pass alone leaves a window for an old turn to transfer/split. Bind current claims to the Task requirement revision and recheck after authorization; use actual old Attempt snapshot revisions for compatible prior claims. Keep publication evidence fences too.
+
+### 2026-11-03 — State maps do not encode chronology
+
+Seen 1× (actual SQLite native return probe). Two valid Attempts survived, but UUID-key SQL iteration put the successor first and an insertion-order assertion compared it to itself. Use persisted predecessor references for chronology; preserve explicit history positions. Storage order must not decide current execution or evidence.

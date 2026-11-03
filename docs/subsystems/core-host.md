@@ -968,3 +968,7 @@ Personal-agent connection authentication (#2183) installs after authz and wraps 
 New shared Project Task construction is reused through a trusted unsaved staging seam for parallel children. Project contract transitions go through the internal delivery capability; generic board transitions and the legacy task driver cannot take over admission or final judgement. Persisted pre-contract personal/group Tasks retain their original behavior.
 
 A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.
+
+## Transactional persistence (#2182)
+
+The original Store supports opt-in `stateStorage: sqlite` through the [storage bridge](project-state-storage.md). It retains the same runtime objects, save chain, Project services and home lock, and acknowledges Effects after actual SQL COMMIT. Locked JSON remains the default until selected; after migration the newer-version JSON guard fences old writers and SQL remains authoritative across configuration omission. Invalid migration never creates a fresh empty team. No extra model call or periodic task is introduced.

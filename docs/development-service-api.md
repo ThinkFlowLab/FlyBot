@@ -537,3 +537,13 @@ resumePoint. Public HTTP cannot supply a role claim. Parent Task views report
 parent performs its own integration and final verification. For lifecycle fields,
 current limitations and compatibility, see
 [Project Task lifecycle](subsystems/project-task-lifecycle.md).
+
+## Persistence configuration (#2182)
+
+Plugin configuration `stateStorage: sqlite` selects the original Store's SQL backend
+(Node.js22.18+, tested22.22.3). Project commands, authorization and query envelopes
+remain unchanged; state and Effects share one commit. Existing JSON remains default
+until migrated. Runtime storage diagnostics/change IDs are internal ports, not a
+public raw-database API or authenticated event feed. See the [migration/rollback
+contract](subsystems/project-state-storage.md). Public bounded receipts/events are
+completed separately in #2185; simplified full deployment instructions remain #2189.

@@ -34,7 +34,7 @@ export function nativePoolModel() {
   }
   return { observed, reply }
 }
-export async function checkNativePools({ api, saved, waitFor, repository, model }) {
+export async function checkNativePools({ api, saved, waitFor, repository, model, storage = 'json' }) {
   const invitation = await api('auth-invite')
   const human = await api('auth-redeem', { token: invitation.token, displayName: 'Native pool owner' })
   const call = (endpoint, body = {}) => api(endpoint, body, human.sessionToken)
@@ -68,6 +68,12 @@ export async function checkNativePools({ api, saved, waitFor, repository, model 
   assert.ok(model.observed.resumedContext)
   assert.equal(model.observed.developerTurns, 2); assert.equal(model.observed.testerTurns, 2)
   assert.ok(Object.values(snapshot.projectNativeWorkers).every(row => row.status === 'quiescent' && row.releaseProof?.kind === 'native-agent-quiescent'))
+  for (const row of Object.values(snapshot.projectNativeWorkers)) {
+    const activation = snapshot.projectEffects[row.activationEffect.id]
+    assert.equal(activation.kind, 'native.activate')
+    assert.equal(activation.payload.workerId, row.id)
+    assert.equal(activation.payload.sessionId, row.sessionId)
+  }
   const leases = Object.values(snapshot.projectResourceLeases).filter(row => row.projectId === project.id).sort((a, b) => a.createdAt - b.createdAt)
   assert.equal(leases.length, 4)
   assert.ok(leases.every(row => row.status === 'released' && row.releaseProof?.kind === 'native-agent-quiescent'))
@@ -75,12 +81,14 @@ export async function checkNativePools({ api, saved, waitFor, repository, model 
   const current = snapshot.projectAttempts[snapshot.tasks[task.id].deliveryAttemptId]
   assert.equal(current.evidence.tests.passed, true)
   assert.equal(current.evidence.tests.sha, current.candidateSha)
-  assert.notEqual(attempts[0].candidateSha, current.candidateSha)
+  const previous = attempts.find(row => row.id === current.feedback.previousAttemptId)
+  assert.ok(previous, 'The successor points to its actual prior Attempt independently of map ordering')
+  assert.notEqual(previous.candidateSha, current.candidateSha)
   assert.notEqual(snapshot.tasks[task.id].status, 'accepted', 'Chief has not adjudicated completion')
   assert.match(readFileSync(join(repository, 'code.mjs'), 'utf8'), /a-b/, 'The base repository stays intact')
   await call('project-attempt-stop', { attemptId: current.id })
   for (const attempt of attempts) await call('project-attempt-cleanup', { attemptId: attempt.id })
-  return { milestone: '2184-native-pools', runtime: 'actual DSH', model: 'deterministic mock',
+  return { milestone: '2184-native-pools', runtime: 'actual DSH', storage, model: 'deterministic mock',
     checks: ['actual Chief admission before native pool allocation', 'native per-Bot pool return/handoff', 'same Task and original physical role Session', 'fresh carrier identities and same cwd', 'prior conversation present only in retained context', 'actual two code revisions and configured host tests', 'native quiescence and single-resource release before downstream execution', 'Chief arbitration inbox without fake closure', 'disposable cleanup'],
     notRun: ['real model', 'Reviewer and forge publication in this continuation probe', 'Chief acceptance', 'native crash recovery'] }
 }

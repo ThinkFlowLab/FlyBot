@@ -13,6 +13,7 @@ import { serveWorkbench } from './serve.mjs'
 import { checkWorkbench } from './workbench.mjs'
 import { checkQueue, provisionQueueGate } from './queue.mjs'
 import { agentReply, checkAgents } from './agents.mjs'
+import { openSqliteState } from '../../core/src/host/project-state-sqlite.js'
 import { checkDelivery, deliveryReply, provisionDeliveryFixture } from './delivery.mjs'
 import { checkShared } from './shared.mjs'
 import { verifyArtifact } from './artifact.mjs'
@@ -45,6 +46,7 @@ async function waitFor(read, label, milliseconds = 90_000) {
 
 async function main() {
   const nativePools = process.argv.includes('--native-pools')
+  const sqlite = process.argv.includes('--sqlite')
   const nativeModel = nativePools ? nativePoolModel() : null
   const agents = process.argv.includes('--agents')
   const serve = process.argv.includes('--workbench-serve')
@@ -110,7 +112,7 @@ async function main() {
       ...(workbench && !live ? { projectResources: { 'demo-local': { type: 'local', root: directory, profileRoot: join(directory, 'private-sdk-profiles'), capacity: 2,
         allowedProjectOwnerIds: ['owner-1'], adminMemberIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'fixture-sdk-probe', baseUrl: 'http://127.0.0.1:1' } } } } } } : {}), ...(workbench ? { projectDemoMode: realModel ? 'real-provider' : 'deterministic-fixture' } : {}),
       ...(shared ? { controlPlane: { origin: shared.origin, ownerSubject: shared.ownerSubject } } : {}),
-      ...(delivery ? { projectDispatch: nativePools ? 'pools' : 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: queueGate?.command ?? (live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs']), allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
+      ...(sqlite ? { stateStorage: 'sqlite' } : {}), ...(delivery ? { projectDispatch: nativePools ? 'pools' : 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: queueGate?.command ?? (live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs']), allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
     writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 })
   }
   const child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
@@ -119,7 +121,12 @@ async function main() {
   let childError
   child.on('error', error => { childError = error })
   const statePath = join(home, 'bot/state.json')
-  const saved = () => existsSync(statePath) ? json(statePath) : null
+  const saved = () => {
+    if (!existsSync(statePath)) return null
+    if (!sqlite) return json(statePath)
+    const database = openSqliteState({ path: join(home, 'bot/state.sqlite'), readOnly: true })
+    try { return database.read() } finally { database.close() }
+  }
   const teamWorkspace = join(home, 'bot/workspace')
   let keep = false
   const stop = signal => {
@@ -179,7 +186,7 @@ async function main() {
       return
     }
     if (nativePools) {
-      console.log(JSON.stringify(await checkNativePools({ api, saved, waitFor, repository: workspace, model: nativeModel })))
+      console.log(JSON.stringify(await checkNativePools({ api, saved, waitFor, repository: workspace, model: nativeModel, storage: sqlite ? 'sqlite' : 'json' })))
       return
     }
     if (delivery) {

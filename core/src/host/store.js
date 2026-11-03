@@ -2,6 +2,7 @@
 // host on the same data from writing it, and the indexes that map a Session to the Bot
 // or group chat it belongs to.
 import { install as installProjects } from './project-service.js'
+import { createProjectStateStorage } from './project-state-storage.js'
 import { constants, mkdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -56,8 +57,11 @@ export function install(rt) {
   let stopped = false
   // mtime and size of the state.json this host last read or wrote.
   let seen = ''
+  let storage
   const stamp = () => {
     try {
+      const current = storage?.stamp()
+      if (current !== null && current !== undefined) return current
       const { mtimeMs, size } = statSync(statePath)
       return `${mtimeMs}:${size}`
     } catch {
@@ -79,6 +83,7 @@ export function install(rt) {
     }
   }
   const readOnly = () => {
+    if (storage?.sqlite && lockBroken) return 'SQLite state requires an intact exclusive home lock; fix locking and reload.'
     if (stuck !== undefined) return `The Bot team file ${statePath} could not be read (${stuck}). FlyBot does not change it; fix or move the file and reload.`
     if (holder === undefined) return undefined
     const where = holder.pid ? `pid ${holder.pid}${holder.host ? ` on ${holder.host}` : ''}` : 'unknown process'
@@ -161,7 +166,7 @@ export function install(rt) {
     return undefined
   }
 
-  const readFileState = async () => {
+  const readJsonState = async () => {
     let contents
     try {
       contents = await readFile(statePath, 'utf8')
@@ -219,6 +224,30 @@ export function install(rt) {
     }
     stuck = 'saved by a newer FlyBot; update FlyBot'
     return undefined
+  }
+
+  const validateSqliteState = parsed => {
+    if (parsed?.version !== STATE_VERSION) throw new Error('Unsupported SQLite state version')
+    const problem = ownershipProblem(parsed)
+    if (problem !== undefined) throw new Error(`Malformed SQLite ownership: ${problem}`)
+  }
+  storage = createProjectStateStorage({ home, statePath, mode: config.stateStorage, validate: validateSqliteState,
+    ensureWriter() { if (lockBroken || holder !== undefined || !lock.owns()) throw Object.assign(new Error('SQLite state needs the current exclusive home lock'), { code: 'ELOCKLOST' }) } })
+  const readFileState = async () => {
+    try {
+      const result = await storage.read({ writer: holder === undefined && !lockBroken, readLegacy: readJsonState })
+      if (result.sqlite) { stuck = undefined; seen = stamp() }
+      return result.state
+    } catch (error) {
+      stuck = error.message; seen = stamp()
+      warn('ds-bot: durable state was refused: %s', error)
+      return undefined
+    }
+  }
+  const initializeStorage = () => {
+    if (holder !== undefined || stuck !== undefined) return false
+    try { return storage.initialize(state) }
+    catch (error) { stuck = error.message; warn('ds-bot: SQLite migration was refused: %s', error); return false }
   }
 
   // Fill `state` from the saved file and bring an older team up to date. Returns the
@@ -405,7 +434,8 @@ export function install(rt) {
     if (holder !== undefined) warn('ds-bot: %s', readOnly())
     const { migrated, stale } = adopt(await readFileState())
     if (holder !== undefined) return
-    if (migrated && stuck === undefined) {
+    const initialized = initializeStorage()
+    if ((migrated || initialized) && stuck === undefined) {
       // A failed write must not poison `loaded`: the migrated state stays in
       // memory and the next save() writes it.
       try {
@@ -438,6 +468,7 @@ export function install(rt) {
         announceTakeover(previous)
         warnedReadOnly = false
         adopt(await readFileState())
+        initializeStorage()
         return
       }
     } else if (!lockBroken && !lock.owns()) {
@@ -451,11 +482,12 @@ export function install(rt) {
         // written while no host held it.
         warnedReadOnly = false
         adopt(await readFileState())
+        initializeStorage()
         return
       }
       warn('ds-bot: %s', readOnly())
     }
-    if ((stuck !== undefined || holder !== undefined) && stamp() !== seen) adopt(await readFileState())
+    if ((stuck !== undefined || holder !== undefined) && stamp() !== seen) { adopt(await readFileState()); initializeStorage() }
   }
 
   const warnReadOnly = () => {
@@ -526,9 +558,12 @@ export function install(rt) {
           }
         }
         ensureLock()
-        await writeFile(temp, snapshot, 'utf8')
-        ensureLock()
-        await rename(temp, statePath)
+        if (storage.sqlite) storage.write(snapshot)
+        else {
+          await writeFile(temp, snapshot, 'utf8')
+          ensureLock()
+          await rename(temp, statePath)
+        }
         rt.projectEffects?.saved(effectSnapshot)
         seen = stamp()
         await journal?.record(snapshot)
@@ -571,7 +606,7 @@ export function install(rt) {
 
   ctx.effect(() => () => {
     stopped = true
-    return writing.finally(() => lock.release())
+    return writing.finally(() => { try { storage.close() } finally { lock.release() } })
   }, 'ds-bot: state lock')
 
   const botOf = id => (id === undefined ? undefined : ownEntry(state.bots, id))
@@ -658,6 +693,7 @@ export function install(rt) {
 
   Object.assign(rt, {
     state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
+    stateStorage: { status: () => storage.status(), changes: options => storage.changes(options) },
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
