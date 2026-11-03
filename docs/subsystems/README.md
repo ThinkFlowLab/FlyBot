@@ -67,3 +67,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 - [Service acceptance](service-acceptance.md) — S6 isolated recovery matrix and separately recorded real Source/SDK handoffs.
 
 - [Project context](project-context.md) — scoped budgets, working summaries, memory versions and bounded exact-source reads.
+
+- [Project Task lifecycle](project-task-lifecycle.md) — Chief admission, requirement versions, child waits and original-role continuation.

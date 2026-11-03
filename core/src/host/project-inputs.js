@@ -187,6 +187,11 @@ export function createProjectInputs(rt) {
     if (pending(task).some(row => row.kind !== 'handoff' && !allowed.has(row.id))) throw refuse('Task still has unhandled inputs; current role or Chief must acknowledge them before closure')
   }
   return { publish: (body, actor) => serial(() => publish(body, actor)), list, stageHandoff,
+    stageRequirements(task, audit) {
+      if (audit.executorRole !== 'chief' || audit.taskId !== task.id || audit.projectId !== task.projectId || !audit.runId) throw refuse('Scoped Chief requirements decision required')
+      return stage(task, { kind: 'chief-decision', eventId: audit.id, revision: task.projectTask.requirements.revision }, JSON.stringify(task.projectTask.requirements), 'requirements-change')
+    },
+    discardRequirements(id) { const row = ownEntry(rows(), id); if (row?.source.kind === 'chief-decision' && !row.deliveries.length) delete rows()[id] },
     // Internal Source adapter only; public input.publish cannot set provenance.
     stageExternal(task, source, text) {
       if (source?.kind !== 'github' || !source.memberId || typeof text !== 'string' || !text.length || text.length > 4000 || ended(task)) throw refuse('Invalid active external Task input')

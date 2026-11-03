@@ -467,5 +467,11 @@ The restricted gateway admits independent personal-agent registration/read/parti
 
 The restricted gateway exposes scoped personal-agent credential/delegation/proposal endpoints over the existing HTTP transport. Credential provisioning remains human-only; external requests cannot fall through to generic host or private-agent APIs.
 
+## Project Task lifecycle convergence (#2179)
+
+Project execution quota excludes a parent waiting for independently admitted children only when all parent leases and ephemeral workers have released. Any unknown occupancy continues to count. New Task run requests return waitingFor:chief before repository preflight or allocation if Chief has not admitted their requirements.
+
+The legacy Workflow gateway now also excludes Chief control jobs from execution quota. A real DSH admission probe reproduced a first delivery failing while its Chief intake was still finishing; the shared quota regression protects both the gateway and scheduler.
+
 
 #2171 adds role catalog/proposal/decision endpoints to the existing restricted gateway allowlist. Reads preserve Project scope; decisions keep configure authorization in the domain service. No control-plane or frontend replacement is introduced.

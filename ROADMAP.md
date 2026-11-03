@@ -440,6 +440,14 @@ verification must name exact runtime source hashes, not borrow deterministic tes
 
 #2177 follow-up: validate two sequential native Chief jobs against fresh per-turn facts while retaining the same resident Session; dependent Task admission runtime acceptance remains #2179.
 
+### 2026-11-03 — Project Task contract (#2179)
+
+New shared Tasks have Chief admission and versioned requirements. Existing Task/pool/Effects records carry independent child proposals, a released parent wait and one stable resume Handoff; child failure/cancellation never satisfies a wait. Original parent role context and workspaces are retained. Raw legacy board transitions cannot bypass the new contract, while persisted pre-contract Tasks keep their original semantics. Chief callback, rollback, exit and duplicate-resume tests are distinct from real-provider full child integration acceptance; native restore2184, storage2182 and public event/receipt2185 dependencies remain open. README simplification2189 remains last.
+
+#2179 retains legacy Workflow delivery compatibility while requiring Chief admission for new Tasks on either path. Chief runtime quota is independent of execution slots; waiting parent lease state remains authoritative. Full real-provider child integration and native physical restoration are still dependency acceptance, not implied by deterministic runtime tests.
+
+#2179 follow-up: Chief dependency waivers/substitutions retain exact outcome versions and explicit judgement evidence. Accepted child code enters the existing durable integration gates before parent execution; source admission is not merging or parent acceptance. Actual Git multi-parent sealing tests use deterministic child acceptance fixtures. Full real-provider parallel collaboration and native physical restoration remain pending.
+
 Native prior-host reconciliation now reuses verified supervisor process-group facts; native v2 registered-work/lineage and shared adapter-exit regressions guard against premature initiative transfer. In-flight current-rights abort and composed-stack acceptance remain active.
 
 Canonical ongoing role/resource authority checks now reuse native step/SDK input and the existing scheduler + pool stop. Frozen role context remains stable; current revoked rights stop execution, with unknown exit held. Compose descendants and verify parent Task resume/API projections next.

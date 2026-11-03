@@ -45,13 +45,17 @@ export async function checkNativePools({ api, saved, waitFor, repository, model 
   assert.equal((await call('project-resource-environment-check', { projectId: project.id, resourceId: 'native-local' })).status, 'ready')
   for (const role of ['chief', 'developer', 'tester', 'reviewer']) await call('project-agent-definition', { projectId: project.id, role, model: route, ...(role === 'chief' ? {} : { execution: { harness: 'flybot', resourceIds: ['native-local'] } }) })
   const botId = saved().projects[project.id].chief.botId
-  const task = await call('task-create', { botId, projectId: project.id, title: 'Fix addition with explicit native continuation', criteria: 'Addition passes actual configured tests and native role context survives a return' })
-  const started = await call('project-task-run', { taskId: task.id, requestId: 'native-pool-continuation' })
-  assert.equal(started.attempt.protocol, 'project-handoff/v1')
+  const task = await call('task-create', { botId, projectId: project.id, title: 'Fix addition with explicit native continuation', impact: 'Repair Project addition behavior while preserving original role context', criteria: 'Addition passes actual configured tests and native role context survives a return' })
+  const requested = await call('project-task-run', { taskId: task.id, requestId: 'native-pool-continuation' })
+  assert.equal(requested.waitingFor, 'chief')
+  assert.equal(Object.values(saved().projectAttempts).filter(row => row.taskId === task.id).length, 0)
+  await call('project-chief-configure', { projectId: project.id, enabled: true, inspection: { enabled: false } })
+  const started = await waitFor(() => Object.values(saved().projectAttempts).find(row => row.taskId === task.id), 'actual Chief admission before native pool allocation')
+  assert.equal(started.protocol, 'project-handoff/v1')
   await waitFor(() => {
     const current = saved().tasks[task.id]?.collaboration
     if (current?.status === 'blocked') throw new Error('Native pool blocked: ' + current.block?.reason)
-    return current?.status === 'arbitration'
+    return current?.botId === project.id + ':chief' && ['arbitration', 'chief-working'].includes(current.status)
   }, 'native Developer → Tester → original Developer → Tester → Chief pool', 90_000)
   const snapshot = saved(), attempts = Object.values(snapshot.projectAttempts).filter(row => row.taskId === task.id)
   const developer = Object.values(snapshot.projectTaskSessions).find(row => row.taskId === task.id && row.role === 'developer')
@@ -77,6 +81,6 @@ export async function checkNativePools({ api, saved, waitFor, repository, model 
   await call('project-attempt-stop', { attemptId: current.id })
   for (const attempt of attempts) await call('project-attempt-cleanup', { attemptId: attempt.id })
   return { milestone: '2184-native-pools', runtime: 'actual DSH', model: 'deterministic mock',
-    checks: ['native per-Bot pool return/handoff', 'same Task and original physical role Session', 'fresh carrier identities and same cwd', 'prior conversation present only in retained context', 'actual two code revisions and configured host tests', 'native quiescence and single-resource release before downstream execution', 'Chief arbitration inbox without fake closure', 'disposable cleanup'],
+    checks: ['actual Chief admission before native pool allocation', 'native per-Bot pool return/handoff', 'same Task and original physical role Session', 'fresh carrier identities and same cwd', 'prior conversation present only in retained context', 'actual two code revisions and configured host tests', 'native quiescence and single-resource release before downstream execution', 'Chief arbitration inbox without fake closure', 'disposable cleanup'],
     notRun: ['real model', 'Reviewer and forge publication in this continuation probe', 'Chief acceptance', 'native crash recovery'] }
 }

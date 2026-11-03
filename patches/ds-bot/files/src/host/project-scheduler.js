@@ -5,6 +5,13 @@ import { preflightRepository } from './project-repository-policy.js'
 const ACTIVE = new Set(['queued', 'running', 'working', 'paused', 'legacy'])
 const error = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 
+export function releasedParentWait(state, attemptId) {
+  const attempt = ownEntry(state.projectAttempts ?? {}, attemptId), task = ownEntry(state.tasks ?? {}, attempt?.taskId)
+  return Boolean(task?.collaboration?.status === 'waiting-children' &&
+    !Object.values(state.projectResourceLeases ?? {}).some(lease => lease.attemptId === attemptId && lease.status !== 'released') &&
+    !Object.values(state.bots ?? {}).some(bot => bot.ephemeral && bot.attemptId === attemptId))
+}
+
 export function createProjectScheduler(rt, { preflight = preflightRepository } = {}) {
   const { state } = rt
   const entries = () => (state.projectQueue ??= {})
@@ -18,6 +25,9 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     for (const attempt of Object.values(state.projectAttempts ?? {})) if (attempt.projectId === projectId && ['preparing', 'running'].includes(attempt.status)) keys.add(attempt.id)
     for (const bot of Object.values(state.bots)) if (bot.projectId === projectId && bot.ephemeral && bot.attemptId) keys.add(bot.attemptId)
     for (const lease of Object.values(state.projectResourceLeases ?? {})) if (lease.projectId === projectId && lease.role !== 'chief' && lease.status !== 'released' && lease.attemptId) keys.add(lease.attemptId)
+    for (const key of [...keys]) {
+      if (releasedParentWait(state, key)) keys.delete(key)
+    }
     return keys.size
   }
   const quota = project => project.quota?.maxConcurrent ?? 2
@@ -45,6 +55,12 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     if (!task?.projectId) throw error('Unknown Project Task')
     const project = rt.requireProjectAccess(actor, task.projectId, 'create')
     rt.requireProjectAccess(actor, project.id, 'task-write', task)
+    if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) {
+      const token = rt.projectTaskLifecycle.stageIntake(task)
+      if (token) await rt.projectEffects.persist(token)
+      return { admission: structuredClone(task.projectTask.admission), waitingFor: 'chief' }
+    }
+    rt.projectTaskLifecycle?.requireExecutable(task)
     await preflight(rt, project)
     if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId)) throw error('A run needs a stable requestId')
     const requestKey = createHash('sha256').update(`${project.id}\n${task.id}\n${body.requestId}`).digest('hex')

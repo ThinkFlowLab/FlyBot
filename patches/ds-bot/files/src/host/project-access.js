@@ -1,4 +1,5 @@
 // Project-scoped human authorization. Instance-wide and private Bot APIs keep their own gates.
+import { releasedParentWait } from './project-scheduler.js'
 import { createHash, randomBytes } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
 import { roleOf, rolesOf } from '../shared/project-policy.js'
@@ -38,7 +39,7 @@ export function install(rt) {
     defaultBranch: project.defaultBranch ?? 'main', workDir: project.workDir ?? null,
     status: project.status, createdAt: project.createdAt, updatedAt: project.updatedAt,
     role: roleOf(project, actor?.memberId), quota: project.quota ?? { maxConcurrent: 2 } })
-  const activeRuns = id => Object.values(state.projectExecutions ?? {}).filter(run => run.projectId === id && ['running', 'queued', 'paused', 'working'].includes(run.status))
+  const activeRuns = id => Object.values(state.projectExecutions ?? {}).filter(run => run.projectId === id && run.kind !== 'chief-control' && !releasedParentWait(state, run.attemptId) && ['running', 'queued', 'paused', 'working'].includes(run.status))
   function safeDetail(id, actor) {
     const detail = rt.projects.detail(id, actor)
     return { ...detail, project: safeProject(detail.project, actor), permissions: {
@@ -79,6 +80,7 @@ export function install(rt) {
       const task = ownEntry(state.tasks, String(body.taskId ?? ''))
       if (!task || task.projectId !== id) throw refusal('A Project Run needs a Task from this Project')
       rt.requireProjectAccess(actor, id, 'task-write', task)
+      rt.projectTaskLifecycle?.requireExecutable(task)
       payload = { workflowId: item.id, taskId: task.id, title: task.title, brief: task.note ?? task.title, projectId: id, callerBotId: project.chief?.botId }
       const existing = activeRuns(id).find(run => run.taskId === task.id)
       if (existing) {

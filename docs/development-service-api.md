@@ -517,3 +517,23 @@ fb_dev command chief.inspect '{"taskId":"TASK_ID"}' 'inspect-001'
 尤其 comment.publish 需要个人身份，示例中的假 ID 不可直接调用；本次文档补充不会为实服开启值守、
 发布任务、改变巡检、重试 PR 或停止正在运行的工作。代码基线的完整/专项结果记录在 README，
 不能当作后续文档提交的全量业务测试结果。
+
+## Project Task convergence (#2179)
+
+New shared Task creation accepts `impact` and `scope` in addition to title/criteria.
+Its Project contract starts proposed; `task.run` returns `waitingFor: "chief"`
+until Chief admission. No Attempt is allocated by that pending request.
+
+`project-development` command `task.change.request` takes
+`payload:{taskId,action:"revise|cancel|reopen",reason,requirements?}` and the usual
+stable envelope requestId. It returns a Chief run reference and `applied:false`;
+it grants no direct revision, cancellation or reopening. `requirements` accepts
+only title, criteria, impact and scope on a revision suggestion. Only a validated
+Chief callback applies it. Reusing a requestId with a changed intent is refused.
+
+Trusted role commands may return `split` with independent children, a reason and
+resumePoint. Public HTTP cannot supply a role claim. Parent Task views report
+`waitingFor:"children"`; child results remain explicitly unintegrated until the
+parent performs its own integration and final verification. For lifecycle fields,
+current limitations and compatibility, see
+[Project Task lifecycle](subsystems/project-task-lifecycle.md).

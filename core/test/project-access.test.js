@@ -63,8 +63,9 @@ test('members create shared Tasks but cannot accept deliveries or update someone
   await assert.rejects(rt.taskEndpoint('task-update', { id: own.id, title: 'Foreign change' }, bob), /cannot|Only|denied/)
   rt.state.tasks[task.id].status = 'result-ready'
   await assert.rejects(rt.taskEndpoint('task-accept-result', { id: task.id }, bob), /denied/)
-  await rt.taskEndpoint('task-accept-result', { id: task.id }, alice)
-  assert.equal(rt.state.tasks[task.id].status, 'accepted')
+  await assert.rejects(rt.taskEndpoint('task-accept-result', { id: task.id }, alice), /Project delivery acceptance/)
+  assert.equal(rt.state.tasks[task.id].status, 'result-ready')
+  assert.equal(rt.state.tasks[task.id].projectTask.admission.status, 'proposed')
 })
 
 test('membership removal immediately revokes existing actor and task access while preserving work', async t => {
@@ -113,15 +114,19 @@ test('Workflow gateway isolates projects, serializes quota admission and makes d
   const snapshot = await rt.projectEndpoint('project-workflow', { projectId: 'p1' }, bob)
   assert.deepEqual(snapshot.workflows.map(row => row.name), ['Shared graph'])
   await assert.rejects(create('p1', bob, 'Forbidden'), /access denied/)
-  const first = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'First' }, bob)
-  const second = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Second' }, bob)
+  const first = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'First', criteria: 'First result verified', impact: 'First Project change' }, bob)
+  const second = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Second', criteria: 'Second result verified', impact: 'Second Project change' }, bob)
   await rt.projectEndpoint('project-quota', { id: 'p1', maxConcurrent: 1 }, alice)
   const start = taskId => rt.projectEndpoint('project-workflow', { projectId: 'p1', operation: 'assign', workflowId: graph.id, taskId }, bob)
+  await assert.rejects(start(first.id), /Chief admission/)
+  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
+  for (const task of [first, second]) admitTask(rt.state.tasks[task.id], { id: 'admit-' + task.id, taskId: task.id, projectId: 'p1', executorRole: 'chief', runId: 'chief-fixture', initiatedBy: alice.memberId, reason: 'Scoped requirements fixture' })
+  rt.state.projectExecutions['chief-job'] = { id: 'chief-job', projectId: 'p1', kind: 'chief-control', status: 'running' }
   const results = await Promise.allSettled([start(first.id), start(second.id)])
   assert.equal(results.filter(row => row.status === 'fulfilled').length, 1)
   assert.match(results.find(row => row.status === 'rejected').reason.message, /quota/)
   assert.equal((await start(first.id)).already, true)
-  assert.equal(Object.values(rt.state.projectExecutions).filter(run => run.status === 'running').length, 1)
+  assert.equal(Object.values(rt.state.projectExecutions).filter(run => run.kind !== 'chief-control' && run.status === 'running').length, 1)
   assert.equal(rt.authorize(bob, 'flybot/workflow/state', {}).ok, false)
   await assert.rejects(rt.projectEndpoint('project-workflow', { projectId: 'p1', operation: 'create', name: 'Ambient credentials', nodes: [{ id: 'x', tools: ['github'] }] }, alice), /credentials/)
 })
@@ -239,7 +244,7 @@ test('development v1 reaches HTTP authorization, preserves legacy details and re
   const query = { version: 'project-development/v1', kind: 'query', name: 'task', projectId: 'p1', payload: { taskId: task.id } }
   const result = await rt.testHttp('project-development', query)
   assert.equal(result.ok, true, JSON.stringify(result.error))
-  assert.equal(result.value.result.task.phase, 'published')
+  assert.equal(result.value.result.task.phase, 'awaiting-chief')
   assert.deepEqual(result.value.result.task.nextActions, [])
   assert.equal((await rt.projectEndpoint('project-task-detail', { taskId: task.id }, bob)).view.taskId, task.id)
   const wrongProject = await rt.testHttp('project-development', { ...query, projectId: 'p2' })
@@ -251,4 +256,12 @@ test('development v1 reaches HTTP authorization, preserves legacy details and re
   assert.equal((await rt.testHttp('project-development', { ...query, kind: 'command', name: 'task.run', requestId: 'r' })).error.code, 'bot/read-only')
   rt.state.projects.p1.roles.members = []
   assert.equal((await rt.testHttp('project-development', query)).error.code, 'bot/forbidden')
+})
+
+
+test('Project execution principal is server-derived rather than the caller session field', async t => {
+  const rt = await setup(t)
+  const task = await rt.taskEndpoint('task-create', { botId: 'a', projectId: 'p1', title: 'Scoped admission', criteria: 'Principal remains scoped', impact: 'Project correctness', sessionId: 'forged-session' }, { ...bob, sessionId: 'authenticated-session' })
+  assert.equal(rt.state.tasks[task.id].projectTask.executionRequester.memberId, bob.memberId)
+  assert.equal(rt.state.tasks[task.id].projectTask.executionRequester.sessionId, 'authenticated-session')
 })

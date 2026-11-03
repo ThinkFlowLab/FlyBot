@@ -357,6 +357,169 @@ test('active roles can record bounded unverified experience without changing ini
   await assert.rejects(f.pool.remember('task', token, { ...body, requestId: 'stale' }), /stale/)
 })
 
+async function projectTaskFixture() {
+  const { createTaskContract, admitTask, install: installTaskLifecycle } = await import('../src/host/project-task-lifecycle.js')
+  const { createProjectEffects } = await import('../src/host/project-effects.js')
+  const f = setup()
+  f.rt.projectPools = f.pool
+  createTaskContract(f.task, { impact: 'Restore the Project build' })
+  admitTask(f.task, { id: 'admit', projectId: 'p', taskId: 'task', executorRole: 'chief', runId: 'chief-run', initiatedBy: 'owner', reason: 'Requirements checked' })
+  f.rt.projectEffects = createProjectEffects(f.rt)
+  f.rt.save = async () => { f.rt.projectEffects.saved(f.rt.projectEffects.capture()) }
+  f.rt.projectEffects.register('pool.dispatch', { run: async () => ({}) })
+  installTaskLifecycle(f.rt)
+  f.rt.readProject = () => ({ id: 'p', chief: { botId: 'chief-carrier' } })
+  let count = 0
+  f.prepared = () => count
+  f.rt.prepareProjectTask = body => {
+    const row = { ...body, id: 'child-' + ++count, status: 'open', requesterId: 'owner' }
+    createTaskContract(row, body)
+    return row
+  }
+  return f
+}
+
+test('split releases the parent, blocks on Chief child results and resumes its original role exactly once', async () => {
+  const f = await projectTaskFixture()
+  await f.admit()
+  const claim = await f.claim()
+  f.task.collaboration.claim.workerId = 'source-worker'
+  let released = 0
+  f.adapter.release = async () => { ++released; return true }
+  const decision = { action: 'split', reason: 'Two independent validation goals', requestId: 'split-1', resumePoint: 'Integrate both verified results', children: [
+    { title: 'Check parser', criteria: 'Parser cases pass', impact: 'Correct parser behavior' },
+    { title: 'Check formatter', criteria: 'Formatter cases pass', impact: 'Correct formatter behavior' },
+  ] }
+  const split = await f.pool.decide('task', claim, decision)
+  assert.equal(released, 1)
+  assert.equal(f.task.collaboration.status, 'waiting-children')
+  assert.equal(f.task.collaboration.claim.exitConfirmed, true)
+  assert.equal(f.rt.state.projectTaskSessions[Object.keys(f.rt.state.projectTaskSessions)[0]].workSummaryRef.revision, 1)
+  assert.deepEqual((await f.pool.decide('task', claim, decision)).childTaskIds, split.childTaskIds)
+  assert.equal(f.prepared(), 2)
+  await assert.rejects(f.claim(), /waiting for child/)
+  const children = split.childTaskIds.map(id => f.rt.state.tasks[id])
+  assert.ok(children.every(row => row.projectTask.admission.status === 'proposed'))
+  children[0].status = 'accepted'; children[0].completedBy = { kind: 'chief', decisionId: 'close-1' }
+  children[1].status = 'cancelled'
+  assert.equal(f.rt.projectTaskLifecycle.stageDependencyResume(children[0]), null)
+  children[1].status = 'accepted'; children[1].completedBy = { kind: 'chief', decisionId: 'close-2' }
+  const resume = f.rt.projectTaskLifecycle.stageDependencyResume(children[1])
+  await f.rt.projectEffects.persist(resume)
+  const [first, duplicate] = await Promise.all([f.pool.resumeChildren('task', 'split-1'), f.pool.resumeChildren('task', 'split-1')])
+  assert.equal(first.id, duplicate.id)
+  assert.equal(f.task.collaboration.history.filter(row => row.purpose === 'children-completed').length, 1)
+  assert.equal(f.task.collaboration.botId, 'p:developer')
+  assert.notEqual(f.task.status, 'accepted')
+  const resumed = await f.claim()
+  assert.equal(resumed.attemptId, claim.attemptId)
+  assert.notEqual(resumed.id, claim.id)
+  f.rt.projectEffects.close()
+})
+
+test('unknown exit and uncommitted split cannot authorize child execution or erase prior summary', async () => {
+  const f = await projectTaskFixture()
+  await f.admit()
+  const claim = await f.claim()
+  f.task.collaboration.claim.workerId = 'source-worker'
+  const decision = { action: 'split', reason: 'Parallel checks', requestId: 'failed-split', resumePoint: 'Integration', children: [
+    { title: 'Child validation', criteria: 'Independent cases pass', impact: 'Project correctness' },
+  ] }
+  f.adapter.release = async () => false
+  await assert.rejects(f.pool.decide('task', claim, decision), /unconfirmed/)
+  assert.equal(Object.keys(f.rt.state.tasks).length, 1)
+  assert.equal(f.task.collaboration.claim.status, 'active')
+  f.adapter.release = async () => true
+  f.rt.save = async () => { throw new Error('Disk unavailable') }
+  await assert.rejects(f.pool.decide('task', claim, decision), /Disk unavailable/)
+  assert.equal(Object.keys(f.rt.state.tasks).length, 1)
+  assert.equal(f.task.projectTask.wait, undefined)
+  assert.equal(Object.values(f.rt.state.projectTaskSessions).some(row => row.workSummaryRef), false)
+  assert.equal(Object.values(f.rt.state.projectEffects).some(row => row.kind === 'task.intake'), false)
+  assert.notEqual(f.task.status, 'accepted')
+  f.rt.projectEffects.close()
+})
+
+test('restart replays committed child completion into one parent Handoff without reusing the old claim', async () => {
+  const f = await projectTaskFixture()
+  await f.admit(); const oldClaim = await f.claim()
+  const split = await f.pool.decide('task', oldClaim, { action: 'split', reason: 'Independent validation', requestId: 'restart-split', resumePoint: 'Integrate verified result', children: [
+    { title: 'Check an independent invariant', criteria: 'Invariant verified', impact: 'Project correctness' },
+  ] })
+  const child = f.rt.state.tasks[split.childTaskIds[0]]
+  child.status = 'accepted'; child.completedBy = { kind: 'chief', decisionId: 'close-child' }
+  const token = f.rt.projectTaskLifecycle.stageDependencyResume(child)
+  await f.rt.projectEffects.persist(token)
+  const saved = structuredClone(f.rt.state)
+  await f.rt.projectEffects.close()
+  const g = await projectTaskFixture()
+  g.rt.state = saved
+  g.rt.projectEffects.recover(); g.pool.recover(); await g.rt.save()
+  await Promise.all([g.rt.projectEffects.drain(), g.rt.projectEffects.drain()])
+  const parent = g.rt.state.tasks.task
+  assert.equal(parent.collaboration.status, 'queued')
+  assert.equal(parent.collaboration.history.filter(row => row.purpose === 'children-completed').length, 1)
+  const resumed = await g.claim()
+  assert.notEqual(resumed.id, oldClaim.id)
+  await assert.rejects(g.pool.decide('task', oldClaim, { action: 'complete', reason: 'Late result after split' }), /idempotency|stale/)
+  assert.equal(parent.collaboration.claim.id, resumed.id)
+  await g.rt.projectEffects.close()
+})
+
+test('cancelled child asks Chief to review the parent plan once without falsely satisfying the dependency', async () => {
+  const f = await projectTaskFixture()
+  await f.admit(); const claim = await f.claim()
+  const split = await f.pool.decide('task', claim, { action: 'split', reason: 'Independent work', requestId: 'review-wait', resumePoint: 'Integrate actual child outcome', children: [
+    { title: 'Child goal', criteria: 'Actual result verified', impact: 'Project correctness' },
+  ] })
+  const child = f.rt.state.tasks[split.childTaskIds[0]]
+  assert.equal(f.rt.projectTaskLifecycle.stageDependencyResume(child), null, 'A new proposed child is not an exceptional reopening')
+  child.status = 'cancelled'; child.projectTask.results.push({ status: 'cancelled', decision: { id: 'cancelled-child', action: 'cancel' } })
+  let requests = 0
+  f.rt.state.projectChiefPolicies = { p: { enabled: true } }
+  f.rt.projectChiefControl = { request: async (projectId, kind, source, taskId) => { assert.equal(projectId, 'p'); assert.equal(kind, 'dependency-review'); assert.equal(taskId, 'task'); assert.equal(source.childTaskId, child.id); ++requests; return { id: 'review-parent' } } }
+  const token = f.rt.projectTaskLifecycle.stageDependencyResume(child)
+  assert.equal(f.rt.state.projectEffects[token.id].kind, 'task.dependency-review')
+  await f.rt.projectEffects.persist(token)
+  await f.rt.projectEffects.drain()
+  await f.rt.projectEffects.persist(f.rt.projectTaskLifecycle.stageDependencyResume(child))
+  await f.rt.projectEffects.drain()
+  assert.equal(requests, 1)
+  assert.equal(f.task.projectTask.dependencies[0].status, 'waiting')
+  assert.equal(f.task.collaboration.status, 'waiting-children')
+  assert.equal(child.status, 'cancelled')
+  await f.rt.projectEffects.close()
+})
+
+test('a sealed parent resumes through one successor Attempt while retaining its logical role continuation', async () => {
+  const f = await projectTaskFixture()
+  await f.admit()
+  const claim = await f.claim()
+  const split = await f.pool.decide('task', claim, { action: 'split', reason: 'Independent validation goal', requestId: 'sealed-split', resumePoint: 'Integrate the accepted result', children: [{ title: 'Validate independent module', criteria: 'Module result accepted', impact: 'Validate the Project module' }] })
+  const child = f.rt.state.tasks[split.childTaskIds[0]]
+  child.status = 'accepted'; child.completedBy = { kind: 'chief', decisionId: 'accepted-independent-result' }
+  f.rt.projectTaskLifecycle.stageDependencyResume(child)
+  f.rt.state.projectAttempts = { [claim.attemptId]: { id: claim.attemptId, taskId: 'task', candidateSha: 'a'.repeat(40) } }
+  let successors = 0
+  f.adapter.rework = async () => {
+    ++successors
+    const next = { id: 'successor', taskId: 'task', feedback: { previousAttemptId: claim.attemptId } }
+    f.rt.state.projectAttempts[next.id] = next
+    f.rt.state.projectAttempts[claim.attemptId].supersededBy = next.id
+    f.task.deliveryAttemptId = next.id
+    return next.id
+  }
+  const first = await f.pool.resumeChildren('task', 'sealed-split')
+  assert.equal((await f.pool.resumeChildren('task', 'sealed-split')).id, first.id)
+  assert.equal(successors, 1)
+  assert.equal(first.attemptId, 'successor')
+  assert.equal(first.to, 'p:developer')
+  assert.equal(f.task.collaboration.attemptId, 'successor')
+  assert.equal(f.rt.state.projectAttempts[claim.attemptId].candidateSha, 'a'.repeat(40))
+  assert.notEqual(f.task.status, 'accepted')
+  await f.rt.projectEffects.close()
+})
+
 
 test('a retired source can finish its frozen active claim but cannot receive new offers', async () => {
   const f = setup(); await f.admit(); const claim = await f.claim()
@@ -407,4 +570,14 @@ test('a role retired while source exit is inspected cannot acquire a new handoff
   assert.equal(f.task.collaboration.status, 'blocked')
   assert.equal(f.task.collaboration.claim, undefined)
   assert.match(f.task.collaboration.block.reason, /retired/)
+})
+
+test('a completed turn from the old requirement version cannot transfer or split the revised Task', async () => {
+  const f = setup(); f.task.projectTask = { requirements: { revision: 1 } }
+  await f.admit(); const token = await f.claim()
+  let stops = 0; f.adapter.release = async () => { stops++; return true }
+  f.task.projectTask.requirements.revision++
+  await assert.rejects(f.pool.decide('task', token, { action: 'transfer', to: 'p:tester', reason: 'Late old-plan response' }), /requirements.*changed/)
+  assert.equal(stops, 0)
+  assert.equal(f.task.collaboration.history.length, 1)
 })

@@ -478,7 +478,7 @@ test('an actual prepared SDK subprocess receives no start after its role resourc
 })
 
 test('existing pool revocation stops an actual live SDK worker before resource release after role rights change', async t => {
-  for (const revocation of ['role-resource', 'operator-disable']) await t.test(revocation, async t => {
+  for (const revocation of ['role-resource', 'operator-disable', 'requirements-revision']) await t.test(revocation, async t => {
   const { pinTaskRoleDefinition } = await import('../src/host/project-task-sessions.js')
   const { reconcileExecutionAuthority } = await import('../src/host/project-execution-authority.js')
   const { createProjectPools } = await import('../src/host/project-pools.js')
@@ -488,7 +488,8 @@ test('existing pool revocation stops an actual live SDK worker before resource r
   const role = { id: 'p:developer', ...session.definition, execution: { harness: 'codex', resourceIds: ['r'] } }
   const catalog = { revision: 1, roles: [role] }
   rt.projectAgents = { deliveryDefinitions: () => catalog }
-  rt.state.projectAttempts = { [session.attemptId]: { roleSessions: { developer: session } } }
+  rt.state.projectAttempts = { [session.attemptId]: { roleSessions: { developer: session }, requirement: { projectTaskRevision: 1 } } }
+  if (revocation === 'requirements-revision') task.projectTask = { requirements: { revision: 1 } }
   Object.assign(session, pinTaskRoleDefinition(rt.state, session, role, 1, catalog))
   rt.projectPools = createProjectPools(rt)
   rt.projectPools.connect({ release: id => harness.release(id) })
@@ -498,7 +499,8 @@ test('existing pool revocation stops an actual live SDK worker before resource r
   for (let n = 0; n < 200 && rt.state.projectHarnessWorkers[id].status !== 'waiting-input'; n++) await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
   if (revocation === 'role-resource') role.execution.resourceIds = []
-  else rt.config.projectResources.r.disabled = true
+  else if (revocation === 'operator-disable') rt.config.projectResources.r.disabled = true
+  else task.projectTask.requirements.revision++
   await reconcileExecutionAuthority(rt)
   assert.equal(task.collaboration.status, 'blocked')
   assert.equal(task.collaboration.claim.status, 'revoked')

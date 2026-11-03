@@ -193,3 +193,93 @@ TaskView from stored lifecycle, actual records from fixture validation and ordin
 questions from impactful Tasks. This does not change runtime, enable watch or add UI.
 
 
+
+
+## Additional preserved Task-branch integration narrative
+
+Follow-up local check used the required harness loader:
+`cd core && node --import ./test/harness-resolve.mjs --test test/project-agents.test.js test/project-harness.test.js`
+passed 40/40 on the staged merge draft. The earlier plain-node failure was a loader
+invocation error, not a missing prepared dependency. Full verify, smoke, independent
+Review and deployed acceptance are Not run for this draft.
+
+Task40 adds a CSS/JS readiness barrier (defect tests 0/2 → 2/2) and mounts the scoped
+composer from original composer.js for Project agents and personal conversations.
+The original dictation hook is reused with disposal; captured chat handles retain
+scope revocation. A base-bundle composer test fails because the capability is absent;
+current native render/client/asset checks pass 27/27. These are local draft checks,
+not host full verification, independent Review or deployed three-account acceptance.
+
+The room composer now shares that native mount and existing registered-document
+IDs, while personal groups restrict mention choices to their visible members.
+Actual native workText labels render scoped live tool names. Final focused UI
+checks pass 33/33. Full verify was attempted during editing and is not valid final
+verification; a later process-control/result request was refused by sandbox
+loopback policy. Request actual configured host verification through Tester, then
+return this partial implementation to Developer for remaining tool-result,
+approval, personal live/stop and full interaction work. Do not close Task40.
+
+Task40 continuation at base cbcad4c4 adds actual native question/approval/stop/continue
+controls, original group MemberWork controls, bounded redacted tool results and current
+own-chat streaming. Existing original components are reused; standing grants and raw
+owner APIs are not exposed. SDK permission/message inputs now use the same original
+approval/composer components with existing host worker-generation/current-rights gates.
+The new personal HTTP capability test failed at base (1/2) before implementation and
+passed afterward; additional boundary tests cover foreign approvals/workers, retired
+handles, hidden turns, historical parts and stale questions. Host full verification,
+independent Review and deployed three-account/weak-network screenshots remain required.
+
+The continuation also restores answerable group question/approval cards through
+original handlers, exposing only public question fields rather than replyTo/origin.
+Group member-stop tests use actual native membership and reject another owner's Bot.
+Final local interaction checks, build/patch/lint results and outstanding host/browser
+validation are reported at handoff; no candidate recommendation closes this Task.
+
+Task40 host verification at `33e482d6` reported four failures in install, secrets
+and usage suites. All four reproduced locally (28/32). The personal stream observer
+was also installed in legacy mode, shifting the established listener order used by
+those protocol tests. Register it only for explicit shared-workbench mode; keep its
+purpose/Session guards. The new mode-boundary regression fails without that fix;
+affected suites plus personal-workbench coverage now pass 38/38. Final host full
+verification and independent Review remain required; no deployed acceptance is claimed.
+
+Review return at `846378bf` reproduced current-part navigation leaving the live
+conversation read-only; picker and explicit current-part links now normalize to the
+live route (defect regression red→green). Human Markdown/mentions reuse original
+PersonMessage. Attachment-only messages, scoped image preview/file download and
+native file/image sends use public DSH attachment/Agent APIs with current-user checks.
+The new human/attachment render test fails against the base bundle and passes on the
+working build. Boundary tests cover foreign IDs, batch validation, historical reads,
+revocation during admission and late download callbacks. Final host verification,
+independent Review and real-service screenshots/weak-network acceptance remain open.
+
+Review return at `bde2cf7c` reproduced native composer remount/focus loss on same-route
+refresh. The mounted regression now uses bounded boolean DOM-identity diagnostics
+(the former object diff exhausted memory before reporting failure) and reproduces
+red at that source. Native roots now update in place within the same scoped route and
+source, retaining input, cursor and focus; navigation/revocation still dispose them.
+Mounted personal/public/private/room regressions cover retained sends and scope teardown.
+No resource limit was raised. Exact-candidate host verification, independent Review
+and deployed three-account/weak-network/screenshot acceptance remain separate gates.
+
+### Service and native compatibility invariants
+
+The shared service retains legacy delivery/Chief/schedule/delegation entrypoints,
+native personal/room/attachment paths and retained roots. Live status must use actual
+native activity. A completed Chief deferral is waiting-human, not an active execution
+claim. SDK-owned jobs accept only their fenced SDK callback, including the window
+before worker registration; dormant native events cannot consume them.
+
+Preserve SDK failure attribution and accept historical exit only with matching
+worker/generation/Project/Attempt/role/resource and released worker/lease proofs.
+Interruptions may resume the same allocated pre-candidate Attempt only after all
+registered occupancy releases, preserving clean/dirty drafts and admitted integration
+sources. Explicit returns/rework retain their own isolation. Operator dependency
+migration uses the complete deployed graph, proves release first, backs up untracked
+caches outside the checkout and preserves HEAD/index/status and source identity.
+
+API guides distinguish derived views, stored lifecycle, actual evidence, fixtures,
+ordinary consultation and impactful Tasks. Historical candidate SHAs and reports
+remain in [the archive](docs/history/2026-11-02-collaboration-implementation.md);
+neither prior-parent verification nor a document update is current integration,
+deployment, independent Review or Owner acceptance.

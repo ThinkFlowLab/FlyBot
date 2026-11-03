@@ -655,6 +655,16 @@ old active label and verifies Task/Attempt/generation and blocked state survive.
 
 2026-11-03 Seen 1×: a resident native Session may retain its system definition after bot metadata changes. Put each current job protocol/facts in the actual turn input; keep prior context historical and preserve the Session. The explicit Task scope fence caught stale-job output during #2179 admission verification.
 
+### 2026-11-03 — A child result is neither parent completion nor integration
+
+Seen 1× while implementing #2179. Reusing old group aggregation would accept cancelled children and close the parent automatically. Project waits require Chief-adjudicated child outcomes and keep an explicit parent integration continuation. Releasing workers must also free the parent execution quota; an unknown lease still consumes it. Resuming the old claim must not manufacture a second source work-summary revision for the same completed execution.
+
+#2179 acceptance review: compare the complete requirements revision, not just title/criteria, before closing a candidate. A scope-only change still invalidates old evidence. A failed Attempt blocks the new Task commitment; it cannot silently become a terminal Task failure.
+
+#2179 policy-budget regression: active memory plus historical progress reports exceeded the existing complete-role-policy budget. Retain active invariants, archive dated candidate/run narratives with a source link, and preserve their full text. Do not raise the context ceiling, silently truncate required guidance, or reuse archived test counts as current evidence.
+
+#2179 integration regression: `git rev-parse MERGE_HEAD` returns only the first parent of an octopus merge. Validate every bounded registered MERGE_HEAD entry before sealing; an admitted first source cannot conceal an unapproved second parent. Preserve the staged index on rejection.
+
 
 ### 2026-11-03 — Public Chief cannot borrow its approver's identity
 
@@ -733,3 +743,7 @@ Seen 1× (composed role governance/contract regression). Confirming an old sourc
 ### 2026-11-03 — Logical role IDs are not execution carrier IDs
 
 Seen 1× (composed actual DSH native input failure). A canonical claim keeps the logical Bot in botId and the temporary executor in workerId. Context input fences must compare the carrier with workerId; conflating them sends healthy work to Chief admission failure before any execution.
+
+### 2026-11-03 — Fence old-plan decisions as well as external effects
+
+Seen 1× (late Task requirement response regression). Stopping on the next scheduler pass alone leaves a window for an old turn to transfer/split. Bind current claims to the Task requirement revision and recheck after authorization; use actual old Attempt snapshot revisions for compatible prior claims. Keep publication evidence fences too.

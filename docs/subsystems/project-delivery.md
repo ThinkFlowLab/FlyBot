@@ -3,6 +3,10 @@ subsystem: project-delivery
 owned_paths:
   - core/src/host/project-test-diagnostics.js
   - core/test/project-test-diagnostics.test.js
+  - core/src/host/project-child-inputs.js
+  - core/test/project-child-inputs.test.js
+  - core/src/host/project-merge-heads.js
+  - core/test/project-merge-heads.test.js
   - core/src/host/project-delivery.js
   - core/src/host/project-delivery-template.js
   - core/src/host/project-github.js
@@ -480,6 +484,47 @@ memory. Fixed persona/skills remain pinned; summary/memory data cannot alter rig
 Task-role summary references and input-usage metadata survive returns. Native and
 SDK input preflights fail before inference if required input cannot fit.
 
+## Project Task lifecycle convergence (#2179)
+
+New Project Tasks require accepted Chief admission before allocation. New-contract completion rejects human acceptance before changing Attempt state; legacy persisted Tasks retain human acceptance. Parent split waits preserve the active Attempt/workspace and role binding for later integration. Child candidate references are not automatically approved integration sources or evidence that their code was merged.
+
+Attempts pin the complete Project requirements revision, including impact/scope. A scope-only change invalidates old completion evidence even if title and criteria are unchanged. Rework after a revision creates a successor with the new requirements snapshot, retaining the prior version and logical Task-role Session.
+
+A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.
+
+
+## Accepted child sources (#2179)
+
+A code parent resuming an adjudicated parallel wait obtains sources through the
+host's private pre-input port, before resource reservation or worker registration.
+It requires the exact current active, unstarted claim, live initiating authority,
+confirmed exit of every related parent Attempt, and current Chief-accepted child
+outcomes. Code evidence must name the same candidate in implementation, passing
+host-test and approving Review records. Cross-repository results stay references;
+only same-repository code is admitted for integration. Qualitative Chief waivers
+remain judgements and cannot manufacture a candidate or passing test evidence.
+
+`integration.child-refs` commits through the existing Effects outbox before creating
+immutable, compare-and-set operator references to already registered Git objects.
+`integration.admit` records the wait ID, source fingerprint and original result
+references. The private port does not grant configure permission to public callers,
+does not advance its own reserved claim generation and preserves the working tree
+and index. Public operator admission retains its existing configure and writer-exit
+gates. A failed durable intent cannot create source refs; a moved ref is never
+silently overwritten. Inputs are bounded to twenty, accommodating sixteen child
+sources plus existing operator inputs. No network fetch or ambient credential is
+introduced by child admission.
+
+A source reference is not merged code. Before sealing or acceptance, the parent
+must retain current dependency outcomes and their committed source admission. The
+actual staged tree must include every required input's ancestry. The host reads
+**all** bounded MERGE_HEAD records, including octopus merges, from the registered
+Git metadata; unknown additional parents, duplicate/malformed data, symlinks and
+foreign worktree metadata are refused. Resource-clone inspection uses its live
+resource binding. Git regression tests exercise actual multi-parent merges and
+exact tree/parent sealing; their child acceptance records and publisher are explicit
+deterministic fixtures, not a real-provider full collaboration claim.
+
 Native Sessions now use the existing Task-role binding service through projectDelivery.nativeSessions. Canonical pool worktrees can be retained across Attempts only after exact native quiescence and released leases; original DAG workspace behavior remains compatible. Definition capability changes and removed roles block stale restart instead of inheriting authority.
 
 
@@ -493,3 +538,5 @@ The pool host release adapter now delegates to one physical-exit query for SDK a
 
 
 Current canonical execution is revalidated through one authority helper before new input and by the existing scheduler before resource reconciliation/new dispatch. Revocation reuses the pool lifecycle stop, with an exact claim fence, visible blocked reason and confirmed-exit requirement. Role snapshots retain conventions while current rights constrain their use.
+
+Composed #2179 execution checks include the canonical Task requirement revision. Chief revision invalidates an old Attempt for further execution; the existing pool stop retains the logical Session and requires actual exit before routing a successor Attempt. This covers scope/impact changes as well as changed title/criteria, and complements existing stale-evidence checks at sealing/publication. Custom Developer-capability parent roles also use the existing child-source admission and workspace producer mapping.

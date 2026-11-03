@@ -15,6 +15,7 @@ export async function requireExecutionAuthority(rt, session) {
     if (ownEntry(rt.state.tasks ?? {}, session.taskId) !== task) throw refuse('Execution Task scope changed')
     if (claim && (task.collaboration?.initiatedBy !== memberId || task.collaboration.sourceSessionId !== sourceSessionId || task.deliveryAttemptId !== session.attemptId || task.collaboration?.claim !== claim || claim.id !== session.poolClaimId || claim.generation !== session.generation || task.collaboration.generation !== session.generation || claim.status !== 'active')) throw refuse(afterAwait ? 'Execution claim was revoked during authority validation' : 'Execution claim changed before execution')
     if (session.poolClaimId && !claim) throw refuse('Execution claim is unavailable')
+    if (task.projectTask && attempt?.requirement?.projectTaskRevision !== task.projectTask.requirements.revision) throw refuse('Execution requirements version changed; stop the old Attempt before resuming')
     if (['accepted', 'cancelled'].includes(task.status)) throw refuse('Execution Task has ended')
     if (rt.readOnly?.() !== undefined) throw refuse('Execution lost its writable host authority')
   }

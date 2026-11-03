@@ -427,6 +427,13 @@ continues to use the original own-Bot store, with paged scoped adapter reads.
 
 Native resident Chief jobs now send the current protocol and scoped facts in each turn request. They keep a stable role system definition instead of relying on replacement of a cached system prompt. The full native input is budget checked and actor/delegation authority is revalidated before dispatch; the same resident Session remains in use.
 
+## Project Task lifecycle convergence (#2179)
+
+Project Task proposals carry explicit impact and scope fields alongside title and criteria. Publishing authorized work does not itself admit it to execution: the resident Chief must validate its requirements first. Consultation remains outside Task creation.
+
+
+#2179 follow-up: Finishing a Chief job wakes the existing Project scheduler after its scoped prompt restoration, delegation removal and state save. This is an event-driven wakeup, not a new scheduler or hardcoded inspection timer.
+
 ## Project role governance (#2171)
 
 The active catalog starts with Chief, Developer, Tester and Reviewer. Its logical role

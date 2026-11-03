@@ -155,3 +155,7 @@ SDK continuation under this controlled task, not a full Chief/pool run, an obser
 compaction event, an exact provider context-window measurement, or native restoration.
 
 Sequential native Chief jobs must receive current facts in their actual turn input, not only bot.systemPrompt metadata that an already running Session may cache. A two-job regression checks current facts, stable system definition, same Session and completed delegation cleanup. This is a deterministic adapter regression; real DSH admission coverage is tracked by dependent #2179.
+
+## Project Task lifecycle convergence (#2179)
+
+Project Task context carries the current versioned requirements, its own parent continuation and child result references. These are Task data under the same complete-input budget; an accepted child reference does not imply integration. The parent reads its original role work summary rather than a child role transcript.

@@ -266,7 +266,7 @@ export function createProjectAgents(rt) {
     if (existingTask) return structuredClone(existingTask)
     const projectTaskKind = body.projectTaskKind ?? 'code'
     if (!['code', 'decision', 'release'].includes(projectTaskKind)) throw refuse('Unknown impactful Task kind')
-    const fields = { title, criteria: clean(body.criteria, 2000), note: clean(body.note, 2000), projectTaskKind }
+    const fields = { title, criteria: clean(body.criteria, 2000), note: clean(body.note, 2000), impact: clean(body.impact, 2000), scope: clean(body.scope, 2000), projectTaskKind }
     if (!canPublish) {
       const row = { id: `proposal-${randomUUID()}`, projectId: agent.projectId, memberId: actor.memberId, fields, requestKey, createdAt: Date.now() }
       setEntry(proposals(), row.id, row)
@@ -363,7 +363,7 @@ export function createProjectAgents(rt) {
     await rt.save()
     const finish = async result => {
       try { if (delegations.get(agent.id)?.id !== delegation.id || delegation.revoked) throw refuse('Chief execution was revoked'); await onResult({ ...result, executionEvidence: { ...result.executionEvidence, chiefRunId: runId, carrierGeneration: agent.carrierGeneration } }); agent.lastRequest.phase = result.ok ? 'completed' : 'failed' }
-      finally { restorePrompt(); if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); await rt.save() }
+      finally { restorePrompt(); if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); await rt.save(); rt.projectScheduler?.wake() }
     }
     delegation.finishChiefJob = finish
     try {
@@ -790,7 +790,7 @@ export function install(rt) {
     ['project_agent_roles', { role: { type: 'string' }, offset: { type: 'number' }, expectedSha256: { type: 'string' } }, 'Read the current Project role catalog or one bounded exact role-definition source.', async (args, bot) => { const current = await rt.projectAgents.actorOf(bot); return rt.projectRoleGovernance.catalog({ ...args, projectId: current.agent.projectId }, current.actor) }],
     ['project_agent_role_propose', { requestId: { type: 'string', required: true }, action: { type: 'string', required: true }, role: { type: 'string', required: true }, reason: { type: 'string', required: true }, fields: { type: 'object', properties: {}, additionalProperties: true } }, 'Resident Chief proposes add/update/remove of a role. A separate current Maintainer/Owner must approve; this tool cannot apply or approve it.', async (args, bot) => rt.projectAgents.proposeRole(bot, args)],
     ['project_agent_memory', { text: { type: 'string', required: true } }, 'Save a private user/project note; never publish it.', async (args, bot) => rt.projectAgents.memory(bot, args.text)],
-    ['project_agent_task', { title: { type: 'string', required: true }, criteria: { type: 'string' }, note: { type: 'string' }, projectTaskKind: { type: 'string', description: 'code, decision or release; ordinary questions are conversation handoffs' } }, 'Propose a Task privately, or create from the current public request.', async (args, bot) => rt.projectAgents.task(bot, args)],
+    ['project_agent_task', { title: { type: 'string', required: true }, criteria: { type: 'string' }, impact: { type: 'string' }, scope: { type: 'string' }, note: { type: 'string' }, projectTaskKind: { type: 'string', description: 'code, decision or release; ordinary questions are conversation handoffs' } }, 'Propose a Task privately, or create from the current public request.', async (args, bot) => rt.projectAgents.task(bot, args)],
     ['project_agent_suggest_closure', { reason: { type: 'string', required: true } }, 'Recommend Project closure without creating a Task or granting closure rights. The Owner must personally double-confirm.', async (args, bot) => rt.projectAgents.suggestClosure(bot, args)],
     ['project_agent_consultations', { operation: { type: 'string' }, consultationId: { type: 'string' }, requestId: { type: 'string' }, text: { type: 'string' }, publish: { type: 'boolean' } }, 'Read your own Chief questions or reply. Safe answers remain private until human approval; watch replies enter the existing Task inbox.', async (args, bot) => rt.projectAgents.agentConsultations(bot, args)],
     ['project_agent_chief', { text: { type: 'string', required: true }, requestId: { type: 'string', required: true } }, 'Ask Chief an ordinary question without creating a Task. The answer returns to this private conversation.', async (args, bot) => rt.projectAgents.askChief(bot, args)],

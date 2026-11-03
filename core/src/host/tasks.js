@@ -15,6 +15,7 @@
 // A returned result may also be cancelled before acceptance. Cancelled and failed
 // are terminal, and accepted is reachable only from result-ready. A cancelled or
 // failed task never becomes accepted. Records keep pointers and a summary, not transcripts.
+import { taskOutcome } from './project-task-lifecycle.js'
 import { randomBytes } from 'node:crypto'
 import { columnOf, compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
 import { retiredBot } from './store.js'
@@ -269,7 +270,9 @@ export function install(rt) {
     task.updatedAt = stamp()
     task.actors.push({ status: task.status, at: task.updatedAt, ...(actor?.memberId ? { memberId: actor.memberId } : {}), ...extra })
   }
+  const projectTransitions = new WeakSet()
   function transition(task, to, actor, extra) {
+    if (task.projectTask && !projectTransitions.has(task)) throw forbidden('Use the Project Task lifecycle; Chief owns admission and final judgement')
     if (!TRANSITIONS[task.status]?.includes(to)) throw stale(`a task that is ${task.status} cannot become ${to}`)
     if (waitingForInput(task) && to !== 'blocked') {
       delete task.waitingFor
@@ -286,11 +289,21 @@ export function install(rt) {
     const attempt = ownEntry(state.projectAttempts ?? {}, attemptId)
     if (!task || !attempt || task.deliveryAttemptId !== attemptId || attempt.taskId !== taskId || attempt.projectId !== task.projectId) throw forbidden('Delivery transition ownership mismatch')
     if (task.status === 'cancelled' || task.status === 'accepted') return false
+    if (task.projectTask && status === 'accepted' && !actor?.chiefJobId) throw forbidden('Only Chief adjudicates Project Task completion')
+    projectTransitions.add(task)
+    try {
     if (status === 'working') {
+      if (task.projectTask?.block?.kind === 'attempt') delete task.projectTask.block
       if (task.status === 'failed') { task.status = 'open'; record(task, actor, { by: 'new delivery Attempt', attemptId }) }
       if (task.status === 'open') transition(task, 'claimed', actor, { attemptId })
       if (task.status !== 'working') transition(task, 'working', actor, { attemptId })
     } else if (status === 'failed') {
+      if (task.projectTask) {
+        task.projectTask.block = { kind: 'attempt', attemptId, reason, at: Date.now() }
+        task.status = 'blocked'
+        record(task, actor, { attemptId, by: 'Attempt failed; Task commitment remains open', why: reason })
+        return true
+      }
       if (task.status === 'result-ready') transition(task, 'working', actor, { attemptId })
       if (task.status !== 'failed') transition(task, 'failed', actor, { attemptId, why: reason })
     } else if (status === 'result-ready') {
@@ -303,6 +316,7 @@ export function install(rt) {
       task.progress = 100
     } else throw invalid('Unknown delivery transition')
     return true
+    } finally { projectTransitions.delete(task) }
   }
 
   const prune = () => {
@@ -374,6 +388,7 @@ export function install(rt) {
     const { claimCue, ...row } = task
     return {
       ...row,
+      ...(task.projectId && ownEntry(state.tasks, task.id) === task ? { outcome: taskOutcome(state, task) } : {}),
       actors: [...task.actors ?? []],
       ...(botRecord(task.ownerBotId)?.name ? { ownerBotName: botRecord(task.ownerBotId).name } : {}),
       ...(parent?.title ? { parentTitle: parent.title } : {}),
@@ -384,6 +399,7 @@ export function install(rt) {
   // is working (or blocked / result-ready), Done is accepted. Reverse moves and a
   // blocked wait are refused: the wait has its own resume.
   function applyColumn(task, column, actor, by) {
+    if (task.projectTask && column === 'done') throw forbidden('Only Chief adjudicates Project Task completion')
     if (!column || columnOf(task) === column) return false
     if (task.status === 'blocked') throw stale('A blocked task stays put until its wait is cleared')
     if (task.status === 'cancelled' || task.status === 'failed') throw stale(`a task that is ${task.status} cannot become ${column}`)
@@ -1367,6 +1383,11 @@ export function install(rt) {
   rt.taskBotDeleted = (botId, why = 'the responsible Bot was deleted') => {
     for (const task of Object.values(store())) {
       if (!ACTIVE.has(task.status) || (task.ownerBotId !== botId && task.workBotId !== botId)) continue
+      if (task.projectTask) {
+        task.projectTask.carrierNotice = { botId, reason: why, at: Date.now() }
+        record(task, null, { by: 'Project Task carrier removed; business commitment retained' })
+        continue
+      }
       transition(task, 'failed', null, { why })
       // Deletion is another door a child ends through; its overall card must not stay working.
       settleOverall(task)
@@ -1414,6 +1435,47 @@ export function install(rt) {
   }
   rt.taskCanCreate = assertCreate
 
+  // Trusted staging seam: the same Task constructor, without publication or saving.
+  rt.prepareProjectTask = (body, actor) => {
+    const botId = String(body.botId ?? '')
+    assertCreate(body, actor)
+    const roomId = body.roomId ? String(body.roomId) : undefined
+    const requesterId = requesterOf(actor)
+    const task = {
+      id: `task-${randomBytes(8).toString('hex')}`,
+      status: 'open',
+      createdAt: stamp(),
+      updatedAt: stamp(),
+      requesterId,
+      ownerBotId: botId,
+      // workBotId is the specialist on the exchange; assigned with #55 wiring (#111).
+      title: readTitle(body.title),
+      ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: body.criteria.slice(0, 2000) } : {}),
+      origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },
+      actors: [{ status: 'open', at: stamp(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
+    }
+    defaultContract(task)
+    rt.projects?.stampTask(task, body)
+    if (actor?.personalAgentCredentialId) task.personalAgentSource = rt.personalAgentAuth.source(actor, task.projectId)
+    rt.projects?.validateTask(task, body)
+    if (task.projectId) {
+      const kind = body.projectTaskKind ?? 'code'
+      if (!['code', 'decision', 'release'].includes(kind)) throw invalid('Unknown Project Task kind')
+      task.projectTaskKind = kind
+      if (rt.sharedProjectMode?.()) {
+        rt.projectTaskLifecycle?.prepare(task, body)
+        if (task.projectTask) task.projectTask.executionRequester = { memberId: actor.memberId, sessionId: actor.sessionId ?? null }
+      }
+    }
+    writeContract(task, body)
+    const { progress } = applyFields(task, body)
+    const column = readColumn(body.column)
+    applyColumn(task, column, actor)
+    if (column === 'done' && progress === undefined) task.progress = 100
+    rt.projects?.stampTask(task)
+    return task
+  }
+
   // ---------------------------------------------------------------- channel API
   rt.taskEndpoint = async function taskEndpoint(endpoint, body, actor) {
     if (rt.sharedProjectMode?.()) {
@@ -1426,7 +1488,7 @@ export function install(rt) {
     }
 
     const deliveryTask = find(body.id)
-    if (deliveryTask && (deliveryTask.deliveryAttemptId || rt.taskNeedsDelivery?.(deliveryTask)) && ['task-accept-result', 'task-send-back'].includes(endpoint)) throw forbidden('Use commit-specific Project delivery acceptance')
+    if (deliveryTask && (deliveryTask.projectTask || deliveryTask.deliveryAttemptId || rt.taskNeedsDelivery?.(deliveryTask)) && ['task-accept-result', 'task-send-back'].includes(endpoint)) throw forbidden('Use commit-specific Project delivery acceptance')
     switch (endpoint) {
       case 'tasks': {
         const botId = body.botId ? String(body.botId) : ''
@@ -1470,39 +1532,9 @@ export function install(rt) {
         return shown.sort((a, b) => a.createdAt - b.createdAt).map(view)
       }
       case 'task-create': {
-        const botId = String(body.botId ?? '')
-        assertCreate(body, actor)
-        const roomId = body.roomId ? String(body.roomId) : undefined
-        const requesterId = requesterOf(actor)
-        const task = {
-          id: `task-${randomBytes(8).toString('hex')}`,
-          status: 'open',
-          createdAt: stamp(),
-          updatedAt: stamp(),
-          requesterId,
-          ownerBotId: botId,
-          // workBotId is the specialist on the exchange; assigned with #55 wiring (#111).
-          title: readTitle(body.title),
-          ...(typeof body.criteria === 'string' && body.criteria.trim() !== '' ? { criteria: body.criteria.slice(0, 2000) } : {}),
-          origin: { ...(roomId ? { roomId } : {}), ...(body.sessionId ? { sessionId: String(body.sessionId) } : {}) },
-          actors: [{ status: 'open', at: stamp(), ...(actor?.memberId ? { memberId: actor.memberId } : {}) }],
-        }
-        defaultContract(task)
-        rt.projects?.stampTask(task, body)
-        if (actor?.personalAgentCredentialId) task.personalAgentSource = rt.personalAgentAuth.source(actor, task.projectId)
-        rt.projects?.validateTask(task, body)
-        if (task.projectId) {
-          const kind = body.projectTaskKind ?? 'code'
-          if (!['code', 'decision', 'release'].includes(kind)) throw invalid('Unknown Project Task kind')
-          task.projectTaskKind = kind
-        }
-        writeContract(task, body)
-        const { progress } = applyFields(task, body)
-        const column = readColumn(body.column)
-        applyColumn(task, column, actor)
-        if (column === 'done' && progress === undefined) task.progress = 100
-        rt.projects?.stampTask(task)
+        const task = rt.prepareProjectTask(body, actor)
         store()[task.id] = task
+        rt.projectTaskLifecycle?.stageIntake(task)
         prune()
         await save()
         await routeOpenTask(task, 'create')
@@ -1513,6 +1545,7 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         if (!mayUpdate(task, actor)) throw forbidden('Only the requester or the Bot\'s owner may update this task')
         rt.projects?.validateTask(task, body)
+        if (task.projectTask && ['title', 'criteria', 'impact', 'scope'].some(key => body[key] !== undefined && body[key] !== (key === 'title' || key === 'criteria' ? task[key] : task.projectTask.requirements[key]))) throw forbidden('Project requirements changes need Chief confirmation')
         writeContract(task, body)
         const { progress } = applyFields(task, body)
         const column = readColumn(body.column)

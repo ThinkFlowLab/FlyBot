@@ -5,6 +5,17 @@ import { join } from 'node:path'
 
 export function deliveryReply({ body, result, tools }) {
   const system = JSON.stringify(body.system ?? '')
+  const current = body.messages?.findLast(message => message.role === 'user')?.content
+  const currentText = typeof current === 'string' ? current : (current ?? []).map(block => block.text ?? '').join('\n')
+  if (currentText.includes('You are the resident Project Chief, performing')) {
+    const source = currentText.match(/<untrusted-role-context>\n([\s\S]*?)\n<\/untrusted-role-context>/)?.[1]
+    assert.ok(source, 'Chief fixture must read the actual scoped context')
+    const tasks = JSON.parse(source).projectFacts.tasks
+    const decisions = tasks.map(task => ({ taskId: task.taskId,
+      action: task.taskContract?.admission.status === 'proposed' ? 'admit' : 'continue',
+      reason: 'Deterministic fixture checked explicit Task goal, impact and acceptance; this is not real-model judgement.' }))
+    return [{ type: 'text', text: JSON.stringify({ summary: 'Scoped Chief fixture assessment', decisions }) }]
+  }
   const developer = system.includes('Implement the task in your assigned worktree')
   const tester = system.includes('Inspect the implementation in your assigned worktree')
   const reviewer = system.includes('Independently review the candidate diff')
@@ -55,10 +66,13 @@ export async function checkDelivery({ api, call, saved, waitFor, repository, git
     const { memory } = await ownerCall('project-role-memory-write', { projectId: project.id, role, text: 'Published role memory marker: record actual evidence', source: { kind: 'human', reference: 'runtime fixture publication' } })
     await ownerCall('project-agent-definition', { projectId: project.id, role, memoryRefs: [memory.id] })
   }
-  const task = await ownerCall('task-create', { botId, projectId: project.id, title: githubRepository ? '[Demo artifact M3] Fix addition in isolated worktrees' : 'Fix addition', criteria: githubRepository ? 'Addition must pass the provisioned cases. Integration artifact: deterministic model transport, no independent code-review PASS and no production deployment.' : 'add(2,3) must equal 5. M71_CONTEXT_CHECK' })
-  const started = await ownerCall('project-task-run', { taskId: task.id, requestId: 'delivery-runtime-1' })
-  assert.equal(started.attempt.status, 'running', started.attempt.failure?.message)
-  const id = started.attempt.id
+  const task = await ownerCall('task-create', { botId, projectId: project.id, title: githubRepository ? '[Demo artifact M3] Fix addition in isolated worktrees' : 'Fix addition', impact: 'Repair Project addition behavior', criteria: githubRepository ? 'Addition must pass the provisioned cases. Integration artifact: deterministic model transport, no independent code-review PASS and no production deployment.' : 'add(2,3) must equal 5. M71_CONTEXT_CHECK' })
+  const proposed = await ownerCall('project-task-run', { taskId: task.id, requestId: 'delivery-runtime-1' })
+  assert.equal(proposed.waitingFor, 'chief')
+  assert.equal(Object.values(saved().projectAttempts).length, 0)
+  await ownerCall('project-chief-configure', { projectId: project.id, enabled: true, inspection: { enabled: false } })
+  const started = await waitFor(() => Object.values(saved().projectAttempts).find(row => row.taskId === task.id), 'actual Chief admission before delivery allocation')
+  const id = started.id
   const attempt = await waitFor(() => {
     const row = saved().projectAttempts[id]
     return row && (row.status === 'failed' || row.status === 'waiting-acceptance') ? row : null
@@ -82,17 +96,16 @@ export async function checkDelivery({ api, call, saved, waitFor, repository, git
     assert.equal(attempt.status, 'waiting-acceptance', attempt.failure?.message)
     assert.equal(attempt.pr.sha, attempt.candidateSha)
     await waitFor(() => saved().projectExecutions[attempt.runId]?.status === 'done', 'published delivery Run completion')
-    await ownerCall('project-task-accept', { attemptId: id })
-    assert.equal(saved().tasks[task.id].status, 'accepted')
+    assert.equal((await call('project-task-accept', { attemptId: id }, alice.sessionToken)).ok, false, 'New Task completion requires Chief judgement')
   } else {
     assert.match(attempt.failure.message, /credential/)
     assert.equal(attempt.pr, undefined)
-    assert.equal(saved().tasks[task.id].status, 'failed')
+    assert.equal(saved().tasks[task.id].status, 'blocked')
     assert.equal((await call('project-task-accept', { attemptId: id }, alice.sessionToken)).ok, false)
   }
   assert.match(readFileSync(join(repository, 'code.mjs'), 'utf8'), /a-b/, 'base repository is unchanged')
   if (!githubRepository) {
-    const duplicate = await ownerCall('project-task-run', { taskId: task.id, requestId: 'delivery-runtime-1' })
+    const duplicate = await ownerCall('project-task-run', { taskId: task.id, requestId: 'chief-' + saved().tasks[task.id].projectTask.admission.decisions.at(-1).id })
     assert.equal(duplicate.already, true)
     await waitFor(() => saved().projectExecutions[attempt.runId]?.status === 'failed', 'failed canonical delivery Run')
   }
@@ -100,8 +113,8 @@ export async function checkDelivery({ api, call, saved, waitFor, repository, git
   const remaining = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: repository, encoding: 'utf8' })
   assert.equal((remaining.match(/^worktree /gm) ?? []).length, 1)
   return { milestone: 'M3', runtime: 'actual DSH', model: 'deterministic mock',
-    checks: ['actual native quiescence proof before removal', 'model-visible role memory and repository context', 'temporary role Sessions released', 'isolated role worktrees', 'actual code edit', 'independent configured tests', 'commit-specific reviewer output',
-      ...(githubRepository ? ['real GitHub PR head verified', 'authorized human acceptance'] : ['missing GitHub credential blocks publication/acceptance', 'duplicate start idempotent']), 'registered worktrees cleaned'],
+    checks: ['actual Chief admission precedes allocation', 'actual native quiescence proof before removal', 'model-visible role memory and repository context', 'temporary role Sessions released', 'isolated role worktrees', 'actual code edit', 'independent configured tests', 'commit-specific reviewer output',
+      ...(githubRepository ? ['real GitHub PR head verified', 'human acceptance cannot bypass Chief'] : ['missing GitHub credential blocks publication/acceptance', 'duplicate start idempotent']), 'registered worktrees cleaned'],
     ...(githubRepository ? { pr: attempt.pr } : {}),
     notRun: ['real model', ...(!githubRepository ? ['real GitHub publication'] : []), 'browser acceptance'] }
 }

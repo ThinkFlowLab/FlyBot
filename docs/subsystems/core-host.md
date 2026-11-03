@@ -962,3 +962,9 @@ Personal-agent endpoint dispatch and load migration reuse the existing store and
 ## Scoped connection integration
 
 Personal-agent connection authentication (#2183) installs after authz and wraps the existing authenticator/Project policy. It introduces no listener or timer. Task publication stamps authenticated agent provenance; browser and agent connections remain separate. See [contract](personal-agent-auth.md).
+
+## Project Task lifecycle convergence (#2179)
+
+New shared Project Task construction is reused through a trusted unsaved staging seam for parallel children. Project contract transitions go through the internal delivery capability; generic board transitions and the legacy task driver cannot take over admission or final judgement. Persisted pre-contract personal/group Tasks retain their original behavior.
+
+A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.

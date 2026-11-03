@@ -165,6 +165,12 @@ proposal, explicit publication and revoked Session refusal through actual DSH. A
 fixture regression pins both personas; this is model-transport compatibility, not
 real external-provider or paid model acceptance.
 
+## Admission and compatibility checks
+
+Project delivery and quota probes now create proposed Tasks and exercise actual native Chief intake before any Attempt allocation. Deterministic model replies read the real scoped Task contract. Queue checks observe automatic Chief-admitted starts, duplicate queue requests and membership revocation; no test-only admission bypass is installed. The base Workflow probe waits for its persisted terminal checkpoint after asynchronous worker cleanup. These are real DSH runtime checks with deterministic inference, not real-provider Task judgement.
+
+Quota assertions use an operator-owned verification gate in the disposable test directory. The host opens each gate only after observing the next admitted queue item; no framework scheduling delay, hardcoded model sleep or test-only admission bypass creates the overlap.
+
 
 #2184 extends the original actual-DSH delivery probe to inspect persisted native-agent-quiescent proofs for Developer, Tester and Reviewer before removal. It keeps deterministic inference and the existing real code edit, configured host tests, missing-credential refusal and disposable cleanup assertions; this is not a real-provider or canonical return-loop acceptance.
 

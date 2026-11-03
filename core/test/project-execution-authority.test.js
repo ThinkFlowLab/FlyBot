@@ -76,3 +76,12 @@ test('operator disabled resources and removed Harness capability stop retained e
   resource.disabled = false; resource.harnesses = ['flybot']
   await assert.rejects(requireExecutionAuthority(f.rt, f.session), /resource.*revoked/)
 })
+
+test('a changed canonical Task requirement version revokes its old Attempt before more execution', async () => {
+  const f = fixture()
+  f.task.projectTask = { requirements: { revision: 1 } }
+  f.rt.state.projectAttempts.a.requirement = { projectTaskRevision: 1 }
+  await requireExecutionAuthority(f.rt, f.session)
+  f.task.projectTask.requirements.revision++
+  await assert.rejects(requireExecutionAuthority(f.rt, f.session), /requirements.*changed/)
+})
