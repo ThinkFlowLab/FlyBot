@@ -317,6 +317,73 @@ async function openDrawer(graph, roster = { bots: [] }) {
   return { view, calls, nodeAt, canvas }
 }
 
+// #2142 gave the Settings canvas's wires a hit target and a name; the drawer's own
+// Read-only plane kept `aria-hidden` strokes with nothing to point at (#2422).
+async function openReadOnlyFlow(graph, roster = { bots: [] }) {
+  const calls = []
+  const call = async (name) => {
+    calls.push({ name })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster, call, actions: {} })
+  await settle()
+  findAll(view.tree, node => node.type === 'button' && textOf(node).includes(graph.name))[0].props.onClick()
+  button(view.tree, 'Flow').props.onClick()
+  return { view, calls }
+}
+const wireLayer = view => findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-wires'))[0]
+const wireHits = view => findAll(wireLayer(view), node => node.type === 'path' && node.props?.['data-hit'] === '1')
+const wireStrokes = view => findAll(wireLayer(view), node => node.type === 'path' && node.props?.['data-wire'] !== undefined)
+const wireNamed = (view, name) => wireHits(view).find(node => accessibleName(node) === name)
+
+test('the read-only run flowchart names every wire and gives each one a hit target of its own (#2422)', async () => {
+  const { view } = await openReadOnlyFlow(delivery())
+  const layer = wireLayer(view)
+  assert.ok(layer, 'the read-only run flowchart draws no wire layer')
+  assert.notEqual(layer.props?.['aria-hidden'], true, 'the wire layer is hidden from a reader')
+  assert.equal(layer.props?.role, 'group', 'the wire layer is not a named group')
+  assert.equal(layer.props?.['aria-label'], 'Connections', 'the wire layer carries no name')
+  const hits = wireHits(view)
+  const strokes = wireStrokes(view)
+  assert.ok(strokes.length >= 6, `only ${strokes.length} wires are drawn`)
+  assert.equal(hits.length, strokes.length, 'a drawn wire carries no hit path of its own')
+  for (const hit of hits) {
+    const name = accessibleName(hit)
+    assert.match(name, /→/, `a wire is named ${JSON.stringify(name)}`)
+    assert.equal(hit.props?.role, 'img', 'a hit path is not an image a reader can reach')
+    assert.ok(findAll(hit, node => node.type === 'title').length > 0, `${name} carries no <title>`)
+  }
+  const names = hits.map(accessibleName)
+  assert.ok(names.includes('Reviewer + Tester → Deployer'), `${names.join(', ')} never names the wire into Deployer`)
+  assert.ok(names.includes('Coder → Reviewer + Tester'), `${names.join(', ')} never names the wire out of Coder`)
+  view.unmount()
+})
+
+test('pointing at one wire in the read-only flowchart picks it out and lets the others recede (#2422)', async () => {
+  const { view } = await openReadOnlyFlow(delivery())
+  wireNamed(view, 'Reviewer + Tester → Deployer').props.onPointerEnter()
+  const active = wireHits(view).filter(node => node.props?.['data-active'] === '')
+  assert.equal(active.length, 1, `${active.length} wires answer the pointer`)
+  assert.equal(accessibleName(active[0]), 'Reviewer + Tester → Deployer')
+  assert.equal(wireHits(view).filter(node => node.props?.['data-dim'] === '').length, wireHits(view).length - 1, 'the other wires did not recede')
+  const painted = wireStrokes(view).filter(node => node.props?.['data-active'] === '')
+  assert.equal(painted.length, 1, 'the pointed wire is not painted as the pointed one')
+  wireNamed(view, 'Reviewer + Tester → Deployer').props.onPointerLeave()
+  assert.equal(wireHits(view).filter(node => node.props?.['data-active'] === '' || node.props?.['data-dim'] === '').length, 0, 'the pointer left the layer pointed')
+  view.unmount()
+})
+
+test('a read-only run flowchart commits nothing when a wire is pointed at (#2422)', async () => {
+  const { view, calls } = await openReadOnlyFlow(delivery())
+  const hit = wireHits(view)[0]
+  hit.props.onPointerEnter()
+  wireHits(view)[0].props.onClick?.({ stopPropagation() {} })
+  wireHits(view)[0].props.onPointerLeave()
+  assert.deepEqual(calls.filter(item => item.name !== 'workflow/state'), [], 'pointing at a wire wrote to the workflow')
+  view.unmount()
+})
+
 test('dragging the rightmost node moves it on screen inside the frame the drag started with (#1575)', async () => {
   const nodes = [
     { id: 'left', name: 'Left', role: '', x: 0, y: 100 },

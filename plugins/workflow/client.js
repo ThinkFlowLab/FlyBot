@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
 
     const ZH = {
       Workflows: 'Workflows',
+      Connections: '连线',
       New: '新建',
       Project: '项目',
       Unassigned: '未归属',
@@ -970,24 +971,28 @@ window.__ModuleLoader__.load({
             const target = targets[0]
             const x = source.x
             if ((source.line ?? 0) >= fromLast && (target.line ?? 0) <= 0) {
-              wires.push({ key, kind: 'step', d: `M ${x} ${source.top + source.h} L ${x} ${target.top}`, arrow: true })
+              wires.push({ key, kind: 'step', from: [source.id], to: [target.id], d: `M ${x} ${source.top + source.h} L ${x} ${target.top}`, arrow: true })
               return
             }
             const marks = sourceMarks(source)
             const rise = targetMarks(target)
             if (marks.at(-1)[0] !== rise[0][0]) marks.push([rise[0][0], busY])
             marks.push(...rise.slice(1))
-            wires.push({ key, kind: 'step', d: pathOf(marks), arrow: true })
+            wires.push({ key, kind: 'step', from: [source.id], to: [target.id], d: pathOf(marks), arrow: true })
             return
           }
           const xs = sources.concat(targets).map(box => box.x)
           let minX = Math.min(...xs)
           const maxX = Math.max(...xs)
           if (sources.some(box => (box.line ?? 0) < fromLast)) minX = Math.min(minX, downX)
+          const targetIds = targets.map(box => box.id)
           const parts = sources.map(box => pathOf(sourceMarks(box)))
           if (maxX - minX >= 0.5) parts.push(`M ${minX} ${busY} L ${maxX} ${busY}`)
-          wires.push({ key: `${key}|bus`, kind: sources.length > 1 ? 'join' : 'fork', d: parts.join(' '), arrow: false })
-          for (const box of targets) wires.push({ key: `${key}|${box.id}`, kind: 'drop', d: pathOf(targetMarks(box)), arrow: true })
+          wires.push({ key: `${key}|bus`, kind: sources.length > 1 ? 'join' : 'fork', from: sources.map(box => box.id), to: targetIds, d: parts.join(' '), arrow: false })
+          for (const box of targets) {
+            const feeders = group.edges.filter(edge => edge.to === box.id).map(edge => edge.from)
+            wires.push({ key: `${key}|${box.id}`, kind: 'drop', from: feeders.length ? feeders : sources.map(source => source.id), to: [box.id], d: pathOf(targetMarks(box)), arrow: true })
+          }
         })
       }
       skips.forEach(({ edge, from, to }, k) => {
@@ -1013,6 +1018,8 @@ window.__ModuleLoader__.load({
         wires.push({
           key: `${edge.from}>${edge.to}|${edge.loop ? 'loop' : 'skip'}`,
           kind: edge.loop || to.row <= from.row ? 'loop' : 'skip',
+          from: [edge.from],
+          to: [edge.to],
           d: pathOf(marks),
           arrow: true,
         })
@@ -1333,16 +1340,42 @@ window.__ModuleLoader__.load({
 
     function FlowView({ workflow, layout, status, roster }) {
       const nodes = workflow.nodes ?? []
-      return h('div', { className: 'wf-plane wf-flow-view', 'data-plane': '1', style: { height: layout.height, width: layout.width } },
-        h('svg', { className: 'wf-wires', 'aria-hidden': true, ...wireSvgProps(layout.height, layout.width) },
-          h('defs', null,
-            h('marker', { id: 'wf-flow-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' },
-              h('path', { d: 'M0 1 9 5 0 9z', className: 'wf-arrow' }))),
-          layout.wires.map(wire => h('path', {
+      // P-395/#2422: the wire the pointer is on. It is pointer state only — a
+      // Read-only plane commits nothing — and it is what lets one stroke of two
+      // that share a port be pointed at while the rest recede.
+      const [pointedWire, setPointedWire] = useState(null)
+      const nameOf = id => nodes.find(node => node.id === id)?.name ?? id
+      // A join wire stands for every edge in its bus, so it is named by both ends.
+      const nameWire = wire => `${(wire.from ?? []).map(nameOf).join(' + ')} → ${(wire.to ?? []).map(nameOf).join(' + ')}`
+      // Each route is a named image with a 10px transparent hit path of its own:
+      // two wires that land on one port are one stroke to the eye, so pointing at
+      // one has to be a hit test on that route, not on the drawn line.
+      const wirePaths = layout.wires.map(wire => {
+        const active = pointedWire === wire.key
+        const dim = pointedWire !== null && !active
+        const marks = { 'data-key': wire.key, 'data-active': active ? '' : undefined, 'data-dim': dim ? '' : undefined }
+        const label = nameWire(wire)
+        return [
+          h('path', {
             key: wire.key, d: wire.d, 'data-wire': wire.kind,
             className: wire.kind === 'loop' ? 'wf-wire-loop' : undefined,
             markerEnd: wire.arrow ? 'url(#wf-flow-arrow)' : undefined,
-          }))),
+            ...marks,
+          }),
+          h('path', {
+            key: `${wire.key}:hit`, className: 'wf-wire-hit', d: wire.d, ...marks,
+            'data-hit': '1', role: 'img', 'aria-label': label,
+            onPointerEnter: () => setPointedWire(wire.key),
+            onPointerLeave: () => setPointedWire(current => (current === wire.key ? null : current)),
+          }, h('title', null, label)),
+        ]
+      })
+      return h('div', { className: 'wf-plane wf-flow-view', 'data-plane': '1', style: { height: layout.height, width: layout.width } },
+        h('svg', { className: 'wf-wires', role: 'group', 'aria-label': tr('Connections'), ...wireSvgProps(layout.height, layout.width) },
+          h('defs', null,
+            h('marker', { id: 'wf-flow-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' },
+              h('path', { d: 'M0 1 9 5 0 9z', className: 'wf-arrow' }))),
+          wirePaths),
         layout.frames.map(frame => h('div', {
           key: frame.key, className: 'wf-par wf-abs',
           style: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
@@ -2517,6 +2550,9 @@ window.__ModuleLoader__.load({
 .wf-flow-view .wf-plabel{width:max-content;box-sizing:border-box;white-space:normal}
 .wf-flow-view .wf-wires path{stroke-linejoin:round}
 .wf-flow-view .wf-wires path.wf-wire-loop{stroke-dasharray:4 3}
+.wf-flow-view .wf-wires .wf-wire-hit{pointer-events:stroke;stroke:transparent;stroke-width:10;fill:none}
+.wf-flow-view .wf-wires path[data-active]{stroke:var(--bt-accent,#4d6bfe);stroke-width:2.4}
+.wf-flow-view .wf-wires path[data-dim]{opacity:.16}
 .wf-flow-view .wf-arrow{fill:var(--bt-ink-3,#9a9a9a);stroke:none}
 .wf-palette{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:min(100%,360px);margin:0 auto 4px;padding:10px 12px;border:1px dashed var(--bt-line,rgba(20,20,20,.14));border-radius:12px;background:var(--bt-card,#fff)}
 .wf-palette-hint{margin:0;font-size:11.5px;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:center;line-height:1.4}
