@@ -1262,6 +1262,8 @@ const ZH = {
   'Last run {time}': '上次运行 {time}',
   'Last run {time} · Stopped': '上次运行 {time} · 已停止',
   'Last run {time} · Failed: {reason}': '上次运行 {time} · 失败：{reason}',
+  'Runs with {names}': '运行时带上 {names}',
+  'Runs with no connectors': '运行时不带任何连接器',
   'Run the task once now': '现在运行一次这个任务',
   'DSH could not deliver it': 'DSH 没能送达',
   'Resume the task first': '请先继续这个任务',
