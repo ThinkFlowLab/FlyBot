@@ -63,7 +63,7 @@ export function attemptMetadataView(attempt) {
   if (attempt.evidence?.tests?.preparation) result.environment = pick(attempt.evidence.tests.preparation, ['id', 'status', 'executor', 'workspaceId', 'resourceId', 'identitySha256', 'sha256'])
   if (attempt.workspaces) result.workspaces = Object.fromEntries(Object.entries(attempt.workspaces).slice(0, 32).map(([role, row]) => [role, pick(row, ['id', 'status', 'role', 'resourceId', 'materialization'])]))
   if (attempt.agentDefinitions) result.agentDefinitions = { revision: attempt.agentDefinitions.revision, roles: (attempt.agentDefinitions.roles ?? []).slice(0, 32).map(row => ({ ...pick(row, ['id', 'role', 'policyRole', 'name', 'model']), skills: (row.skills ?? []).slice(0, 20).map(value => short(value, 300)), execution: pick(row.execution, ['harness', 'model', 'resourceIds']) })) }
-  function evidence(row) { return { ...pick(row, ['sha', 'sha256', 'passed', 'status', 'reason', 'executor', 'testsStarted', 'exitConfirmed', 'verdict', 'harness', 'sdkVersion', 'resourceId', 'sessionId', 'model', 'startedAt', 'completedAt']), ...(row.summary ? { summary: short(row.summary) } : {}) } }
+  function evidence(row) { return { ...pick(row, ['sha', 'sha256', 'passed', 'status', 'stage', 'reason', 'executor', 'testsStarted', 'exitConfirmed', 'verdict', 'harness', 'sdkVersion', 'resourceId', 'sessionId', 'model', 'startedAt', 'completedAt']), ...(row.summary ? { summary: short(row.summary) } : {}) } }
   result.evidence = {}
   for (const [key, row] of Object.entries(attempt.evidence ?? {}).slice(0, 32)) {
     if (key === 'execution') result.evidence.execution = Object.fromEntries(Object.entries(row).slice(0, 32).map(([role, value]) => [role, evidence(value)]))

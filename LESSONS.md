@@ -835,3 +835,9 @@ Seen 1× (group dispatch and Bot tracking reproduced the bypass). Capture existi
 ### 2026-11-03 — Validate the composed external proposal, not just its private receipt
 
 Seen 1× (production-entry FBA regression). Legacy external proposals preserved title/criteria but dropped canonical impact/scope, leaving the approved action unable to carry its original requirements to Chief. Preserve explicit fields in both the private intent hash and published original Task; test actual authenticated HTTP approval/watch/revoke. Successful startup also requires actual Store writability, not only a Harness login URL.
+
+### 2026-11-04 — Runner invocation is not runner readiness (Seen 1×)
+
+`npm test` can start and exit 127 without loading Vitest. Preserve command-start
+facts, classify runner startup separately, and strip inherited NODE_TEST_CONTEXT
+so independent Node assertions cannot silently skip under the test harness.

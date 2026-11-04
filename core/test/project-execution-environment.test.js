@@ -18,6 +18,12 @@ test('environment outcomes retain non-success and separate dependency, assertion
   assert.equal(executionOutcome({ killed: true }, '', { remote: true }).exitConfirmed, false)
   assert.equal(executionOutcome({ code: 'ECONNRESET' }, '', { remote: true }).status, 'execution-unknown')
   assert.equal(executionOutcome({ code: 37 }, '', { stage: 'preparation' }).status, 'environment-blocked')
+  for (const output of ['sh: 1: vitest: not found', '/bin/sh: vitest: command not found']) {
+    assert.equal(executionOutcome({ code: 127 }, output).status, 'environment-blocked')
+    assert.equal(executionOutcome({ code: 127 }, output).stage, 'runner-startup')
+  }
+  assert.equal(executionOutcome({ code: 127 }, '').reason, 'test-runner-unavailable')
+  assert.equal(executionOutcome({ code: 1 }, 'AssertionError: expected true to be false').status, 'assertion-failed')
 })
 test('dependency contract rejects escaping paths, arbitrary network modes and malformed commands', () => {
   for (const spec of [{ lockFiles: ['../package-lock.json'] }, { npmCachePath: '/owner/cache' }, { tools: [{ argv: 'npm --version' }] }, { network: 'full-access' }, { timeoutMs: 0 }, { arbitraryAuthority: true }]) assert.throws(() => dependencyEnvironmentCheck(spec), { code: 'bot/repository-config' })

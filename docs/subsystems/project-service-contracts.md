@@ -140,3 +140,7 @@ Operation names scope requestId, so different operations may reuse a key. When a
 #2325 adds inspect/integrate purpose to scoped approved input metadata and sanitized workspace materialization facts (base/seed/expected/actual SHA). No private paths, key material or workspace contents are added to Attempt projections.
 
 #2334 includes verification status/reason/executor/testsStarted/exitConfirmed in Attempt summaries. Hash-bound attempt.context also serves testHistory and preparationFailures; attempt.log.environmentRole selects registered preparation evidence without accepting a filesystem path. API components document EnvironmentPreparation and TestVerification; role SDK observations remain advisory.
+
+TestVerification.stage distinguishes preparation, runner-startup and tests. The
+optional field is present in Attempt summaries, Chief facts and source context;
+legacy records may omit it. testsStarted describes configured-command invocation.

@@ -4587,6 +4587,14 @@
           "reason": {
             "type": "string"
           },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "preparation",
+              "runner-startup",
+              "tests"
+            ]
+          },
           "testsStarted": {
             "type": "boolean"
           },
@@ -30583,7 +30591,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -30661,7 +30669,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -30822,7 +30830,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       }
     },
     {
@@ -32710,7 +32718,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -32818,7 +32826,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -32925,7 +32933,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -33019,7 +33027,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -33113,7 +33121,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -33222,7 +33230,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       }
     },
     {
@@ -33797,7 +33805,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       }
     },
     {
@@ -33897,7 +33905,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       }
     },
     {
@@ -43639,7 +43647,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -43732,7 +43740,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -43824,7 +43832,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -43916,7 +43924,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -44295,7 +44303,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -44371,7 +44379,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273"
+        "sha256": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -44679,7 +44687,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -44777,7 +44785,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -44853,7 +44861,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff"
+        "sha256": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -45717,7 +45725,7 @@
       "core/src/host/project-agents.js": "9edc8a4af53347b2b14d5f26b739a7f6683a4767358b86e520ddcfea1162fa9c",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
-      "core/src/host/project-chief-control.js": "6bc492f92f46142a208149ea54cdc11cdcdd3c48c8f825c1e780fed98a2d9aff",
+      "core/src/host/project-chief-control.js": "58f96d2f25aa925e806b00e547e6eefcaf99549d5d5d71abe99e77abecc7a65e",
       "core/src/host/project-chief-lifecycle.js": "e854d2fb22b4ea5041ea63a7f072f5af61863c9703ed063b82d0858a15129c68",
       "core/src/host/project-chief-protocol.js": "a09d85e04171b22625d3eed131dd6a5227dc1a946ad39d8a59f017bb75f71936",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
@@ -45731,14 +45739,14 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
-      "core/src/host/project-delivery.js": "12a4f42aaec09dc79580f73f15c2787fc65c1a4f085de65c73cddaf317be0273",
+      "core/src/host/project-delivery.js": "0e2de57798d9d121ccd1e6b93466fe791cd9baa41b5ae59ac52fd76fa7ad0890",
       "core/src/host/project-development-service.js": "857847e416da641c8699a2c02e4c02b80ca448fcd908cdc0192cc7cf6aefdf2b",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
       "core/src/host/project-execution-boundary.js": "9e7afe568024e19517a3d5430a0483a6ea5e2c910a53de056d83db3896d3eb16",
       "core/src/host/project-execution-capacity.js": "751b48e26f6ed1ad4c000337174b39ab4c113c494cbb7bd5a2a8369cbae10aa4",
-      "core/src/host/project-execution-environment.js": "26c68a7a5d456d6287081ef9f3edaf487327ef3b7bb23b35fa159003d8f0458c",
+      "core/src/host/project-execution-environment.js": "bab932919fe2aa6ef9cae2021c3f1b3ffc365b6a9ebb6663ce2a70bf61b5360c",
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
       "core/src/host/project-git-sandbox.js": "b579b01dcce0708275e9f735d08932481369803382b8f7d24af69639608d724f",
@@ -45772,7 +45780,7 @@
       "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "5eb689249adccf55440d196c7e4b17e0e0f0232c8338bc1b3ea3abc0e3d84146",
+      "core/src/host/project-service-views.js": "5d04f3e21e27d85697de1aba8e009ab3ad19234b1d18796fa2a1f7f302ed7fbc",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
       "core/src/host/project-state-format.js": "4838b344439e585287fdc25ef15cea44d7aff4199c7a380ebbfa8cfcdf24f678",

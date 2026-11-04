@@ -627,3 +627,13 @@ client does not prove its container command exited.
 Existing hash-bound pages expose attempt.context testHistory/preparationFailures;
 attempt.log environmentRole selects the latest preparation for a registered role,
 mutually exclusive with execution role. No caller filesystem path is accepted.
+
+#2334 updated acceptance: shell exit127, `vitest: not found` and `command not found`
+are environment-blocked with reason test-runner-unavailable and stage runner-startup.
+`testsStarted=true` means the configured process was invoked, never that assertions
+ran. Preparation failure has testsStarted=false/stage=preparation; other configured
+verification is stage=tests. Remove the upstream NODE_TEST_CONTEXT marker from the
+independent execution environment so nested Node tests execute real assertions.
+Actual missing-runner npm tests and an explicit local runner fixture delegating to
+Node assertions verify clean→prepare→same-candidate retry; the latter is not installed
+Vitest or live npm-ci/provider acceptance.
