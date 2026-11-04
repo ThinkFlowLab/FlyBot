@@ -30276,7 +30276,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "32a74bc4ce86bf171ee6500f3a25374c2e9fd147c1c6a586f9a2cdc90b114f7f"
+        "sha256": "e206c7c6bbb63c3c74808ad2496ff0ca70f89ebc3ab08f9055805c1126f3a4f7"
       }
     },
     {
@@ -30354,7 +30354,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "32a74bc4ce86bf171ee6500f3a25374c2e9fd147c1c6a586f9a2cdc90b114f7f"
+        "sha256": "e206c7c6bbb63c3c74808ad2496ff0ca70f89ebc3ab08f9055805c1126f3a4f7"
       }
     },
     {
@@ -43439,7 +43439,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "32a74bc4ce86bf171ee6500f3a25374c2e9fd147c1c6a586f9a2cdc90b114f7f"
+        "sha256": "e206c7c6bbb63c3c74808ad2496ff0ca70f89ebc3ab08f9055805c1126f3a4f7"
       },
       "aliasOf": "development.query.handoff.get"
     },
@@ -43515,7 +43515,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "32a74bc4ce86bf171ee6500f3a25374c2e9fd147c1c6a586f9a2cdc90b114f7f"
+        "sha256": "e206c7c6bbb63c3c74808ad2496ff0ca70f89ebc3ab08f9055805c1126f3a4f7"
       },
       "aliasOf": "development.query.handoff.list"
     },
@@ -46007,7 +46007,7 @@
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "4b825e7e509d0a9a0279ee7a70d1de383378a1892b7822dc7d478bd46de21c00",
-      "core/src/host/project-pools.js": "32a74bc4ce86bf171ee6500f3a25374c2e9fd147c1c6a586f9a2cdc90b114f7f",
+      "core/src/host/project-pools.js": "e206c7c6bbb63c3c74808ad2496ff0ca70f89ebc3ab08f9055805c1126f3a4f7",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "85f4ed03f5191b842ca899b712c99177c059658d43a66e8ddeedc1c06eafcdea",
       "core/src/host/project-receipt-correction.js": "7162d771d2e28fb4f55af6d492d9b9dc18c9e96f7fbacf660b84c551281ec167",

@@ -400,7 +400,7 @@ export function createProjectPools(rt) {
     try {
       await adapter.correct({ task, claim: clone(claim), workerId: claim.workerId, prompt, round: token.round })
       return { status: 'dispatched', round: token.round, proposalSha256: correction.proposal.sha256 }
-    } catch (error) {
+    } catch {
       correction.status = 'transport-incomplete'; correction.failure = 'Original correction transport did not confirm dispatch; inspect its evidence before recovery'
       task.collaboration.status = 'blocked'; task.collaboration.block = { reason: correction.failure, waitingFor: 'chief-recovery', at: Date.now() }; await rt.save()
       return { status: correction.status, round: token.round }
