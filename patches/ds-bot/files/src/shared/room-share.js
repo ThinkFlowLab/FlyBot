@@ -212,11 +212,23 @@ export function parseRoomShare(text) {
   if (at < 0) return undefined
   const start = raw.indexOf('{', at)
   if (start < 0) return undefined
+  // A chat line's text is a JSON string inside the object, so a brace in what someone typed is a
+  // character, not structure: the scan tracks strings and escapes, or one `{` would end the object
+  // early and drop the whole envelope (#855 reads the same tail this way).
   let depth = 0
   let end = -1
+  let inString = false
+  let escaped = false
   for (let i = start; i < raw.length; i += 1) {
     const ch = raw[i]
-    if (ch === '{') depth += 1
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth += 1
     else if (ch === '}') {
       depth -= 1
       if (depth === 0) { end = i; break }
