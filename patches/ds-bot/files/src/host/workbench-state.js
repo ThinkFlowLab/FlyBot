@@ -39,7 +39,7 @@ export function install(rt) {
     const repository = await repositoryReadiness(rt, project)
     const activity = rt.activityView?.() ?? {}
     if (body.view === 'summary') return {
-      projectId: id, quota: project.quota ?? { maxConcurrent: 2 }, activeSlots: rt.projectScheduler.slots(id), repository,
+      projectId: id, quota: project.quota ?? { maxConcurrent: 2 }, activeSlots: rt.projectScheduler.slots(id), capacity: rt.projectScheduler.capacity?.(id) ?? null, repository,
       queue: Object.values(rt.state.projectQueue ?? {}).filter(row => row.projectId === id && ['waiting', 'blocked'].includes(row.status)).map(({ id, taskId, status, reason }) => ({ id, taskId, status, reason })),
       taskExecution: Object.values(rt.state.tasks).filter(task => task.projectId === id).map(task => taskExecutionStatus(rt.state, task, { activity })),
       metrics: deliveryMetrics(rt.state, id),
@@ -51,7 +51,7 @@ export function install(rt) {
     const host = { scope: 'shared-host-process', rssBytes: process.memoryUsage().rss, cpuPercent: elapsedMicros >= 100_000 ? percent : null, cpuSampleMs: elapsedMicros / 1000,
       cpuLimit: null, memoryLimitBytes: null, gpu: null, reason: 'Per-Project CPU/memory limits and GPU pools are not reported by the current platform API' }
     cpu = nowCpu; measured = now
-    return { projectId: id, quota: project.quota ?? { maxConcurrent: 2 }, activeSlots: rt.projectScheduler.slots(id),
+    return { projectId: id, quota: project.quota ?? { maxConcurrent: 2 }, activeSlots: rt.projectScheduler.slots(id), capacity: rt.projectScheduler.capacity?.(id) ?? null,
       queue: Object.values(rt.state.projectQueue ?? {}).filter(entry => entry.projectId === id).map(entry => structuredClone(entry)), workers,
       workspaces: Object.values(rt.state.projectWorkspaces ?? {}).filter(workspace => workspace.projectId === id),
       harnessWorkers: Object.values(rt.state.projectHarnessWorkers ?? {}).filter(row => row.projectId === id && (row.visibility !== 'private' || row.memberId === actor.memberId) && (!row.roomId || (() => { const room = ownEntry(rt.state.projectRooms ?? {}, row.roomId); return room?.projectId === id && (!room.memberIds.length || room.memberIds.includes(actor.memberId)) })())).map(({ eventLog: _log, sealedLog: _sealedLog, cwd: _cwd, ...row }) => structuredClone(row)),

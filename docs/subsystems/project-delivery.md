@@ -566,3 +566,6 @@ Publication now selects either credential provider through the existing broker, 
 ## Workspace baseline and explicit inputs — #2325
 
 #2325 validates the actual checkout of every newly materialized/reused workspace against candidate/seed/base precedence, records materialization facts and transfers missing pinned base/upstream objects to resource clones. A changed baseline cannot overwrite an unsealed draft: explicit committed input admission permits preserved-draft integration. Rework retains same-Task approved input admissions. Inputs may be purpose=inspect (object availability only) or integrate (default, must be proven merged before sealing). Chief route/return can select exact refs/SHAs from its scoped operator-source snapshot through the original admission/Effects boundary; this does not fetch arbitrary remote URLs or grant credentials.
+
+
+#2328 carries an unadmitted capacityWait into a successor Attempt during controlled rework. The previous Attempt remains historical; the new claim must regain project capacity before execution. In-place continuation retains the same Attempt and workspace.

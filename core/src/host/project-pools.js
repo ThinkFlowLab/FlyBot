@@ -152,6 +152,7 @@ export function createProjectPools(rt) {
       }
     }
     row.contextRefs = { source: contextReference(rt.state, task, fromRole), target: contextReference(rt.state, task, target.role) }
+    await rt.projectScheduler?.captureWait?.(task)
     const before = rt.projectEffects ? { collaboration: clone(c), handoff: task.handoff, question: task.chiefQuestion } : null
     let input, intent
     try {
@@ -238,7 +239,10 @@ export function createProjectPools(rt) {
     definition = definitions(task.projectId).roles.find(row => row.id === botId)
     if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
     if (Object.values(rt.state.tasks).some(row => row.collaboration?.claim?.botId === botId && row.collaboration.claim.status === 'active')) return null
-    if (adapter.ready && !adapter.ready({ task, definition })) return null
+    if (adapter.ready && !await adapter.ready({ task, definition })) return null
+    if (rt.projectScheduler?.admitPool && !await rt.projectScheduler.admitPool(task, definition)) return null
+    await authority(task)
+    if (c.generation !== expectedGeneration || c.status !== 'queued' || c.botId !== botId) return null
     const receipt = c.history.find(row => row.id === c.currentHandoffId)
     if (!receipt || receipt.status !== 'pending') throw refuse('Task has no pending handoff receipt')
     const limit = rt.config.projectHandoff?.quota?.steps
@@ -523,6 +527,7 @@ export function createProjectPools(rt) {
       if (existing && existing.id !== c.attemptId && existing.feedback?.previousAttemptId === c.attemptId && rt.state.projectAttempts[c.attemptId]?.supersededBy === existing.id) c.attemptId = existing.id
       else c.attemptId = await adapter.rework?.({ task, claim: c.claim, reason: `Integrate adjudicated child results: ${wait.resumePoint}` }) ?? c.attemptId
     }
+    await rt.projectScheduler?.captureWait?.(task, { kind: 'children', id: wait.id })
     const previous = wait.status
     wait.status = 'queued'
     try {

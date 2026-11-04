@@ -110,3 +110,6 @@ JSON/SQLite回退保留新代码格式守卫、ID和已完成Effects，**不是�
 [测试分层](testing-layers.md)区分单元、真实DSH/本机HTTP持久化、真实SDK与完整模型开发闭环。确定性测试供应商只出现在测试里，启动工具不创建mock模型或样例仓库。
 
 项目自动化可选择 gh-cli 或 App installation，个人操作保留独立用户授权；配置步骤、最小权限和恢复方法见 [GitHub自动化](github-automation.md)。
+
+
+#2328：`project-resources` 的 `capacity` 区分 `activeSlots`、`waitingInput`、`waitingResume`、`exitUnknown`。`occupied` 是资源租约占用；已确认退出的输入等待可释放项目槽位，退出未知仍占槽。输入到达后由 Chief 决定恢复，原队列按项目配额、资源和权限重新准入；不要通过新建重复 Task 绕过等待。

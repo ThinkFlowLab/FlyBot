@@ -13,6 +13,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — Releasing a slot requires re-admission and lock ordering (Seen 1×)
+
+A suspended Attempt still has a Run; filter both using the same trusted exit facts.
+Resume through the original quota queue before claiming. Never await queue drain
+inside the pool lock: new-task drain can itself need that lock. Save acknowledgement
+must precede dispatch; input receipt alone is neither resumption nor exit proof.
+
+
 ### 2026-11-04 — Protocol errors are feedback, not business decisions (Seen 1×)
 
 A missing routing field stalled an otherwise configured pool. Validate the whole

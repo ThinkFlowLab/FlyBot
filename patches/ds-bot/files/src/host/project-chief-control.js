@@ -165,6 +165,7 @@ export function createProjectChiefControl(rt) {
       if (task.collaboration) { task.collaboration.status = 'blocked'; task.collaboration.block = { reason, chiefDecisionId: audit.id, at: Date.now() } }
       if (task.collaboration?.claim?.chiefRunId === run.id) task.collaboration.claim.status = 'waiting-human'
       task.chiefQuestion = { decisionId: audit.id, reason, at: Date.now() }
+      await rt.projectScheduler?.captureWait?.(task)
       task.chiefQuestion.recipient = rt.projectAgents.contactUser?.(task, { id: audit.id, reason, requiresHuman: decision.requiresHuman === true }, actor) ?? { kind: 'human', memberId: task.collaboration?.initiatedBy ?? actor.memberId }
     } else if (decision.action === 'close') {
       rt.projectTaskLifecycle?.requireCompletedDependencies(task)

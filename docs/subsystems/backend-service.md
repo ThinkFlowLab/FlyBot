@@ -120,3 +120,6 @@ transport. Source API changes require deliberate catalog and guide review.
 
 
 #2327 documents correctionBudget and typed Chief correction/run history in OpenAPI. The actual production-entry HTTP/runtime regression injects malformed admission in two flows, verifies feedback-driven correction and retains restart/auth/private-consultation coverage. Its model is deterministic; it is not a paid SDK acceptance run.
+
+
+#2328 documents CapacityState/CapacityWait and durable resume QueueEntry metadata in the existing OpenAPI. project-resources exposes the same capacity predicates used for admission; continuation cancellation remains a Chief/Task operation.
