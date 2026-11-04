@@ -30510,7 +30510,7 @@
       "notes": "Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d43f9b08dd02901b11a14197c888af3581f1d7bf27925eb80839672ebed7ace6"
+        "sha256": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256"
       }
     },
     {
@@ -34622,7 +34622,7 @@
       "notes": "Host derives source, recipient and claim. Persisted/delivered does not mean read or handled.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d43f9b08dd02901b11a14197c888af3581f1d7bf27925eb80839672ebed7ace6"
+        "sha256": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256"
       }
     },
     {
@@ -46002,7 +46002,7 @@
       "core/src/host/project-harness-turn.js": "77b137b906444858326049d62d66b2f3299f06048f2451aa9b2a61d4154e018e",
       "core/src/host/project-harness.js": "db8aa73099164cb395625d833b13fa443f238d5083eaeab63917847338c66685",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
-      "core/src/host/project-inputs.js": "d43f9b08dd02901b11a14197c888af3581f1d7bf27925eb80839672ebed7ace6",
+      "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",

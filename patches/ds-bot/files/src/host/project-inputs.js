@@ -19,6 +19,7 @@ export function createProjectInputs(rt) {
   const taskOf = id => { const task = ownEntry(rt.state.tasks, id); if (!task?.projectId) throw refuse('Unknown Project Task'); return task }
   const writable = () => { if (rt.readOnly?.() !== undefined) throw refuse('Task inbox is read-only') }
   const authorized = (row, task) => {
+    if (row.sourceAuthorityRevoked === true) return false
     if (!['human', 'github'].includes(row.source.kind)) return true
     try { rt.requireProjectAccess({ memberId: row.source.memberId }, task.projectId, 'task-write', task); return true } catch { return false }
   }
@@ -157,6 +158,7 @@ export function createProjectInputs(rt) {
       } else await rt.save()
     } catch (error) {
       if (!token || rt.projectEffects.discardUncommitted(token)) for (const item of undo.reverse()) if (item.object[item.key] === item.after) { if (item.before === undefined) delete item.object[item.key]; else item.object[item.key] = item.before }
+      for (const { allowed } of plans) for (const { row } of allowed.values()) if (row.status === 'accepted' && row.sourceAuthorityRevoked) { row.status = 'cancelled'; row.cancellation = 'Source Project membership was revoked' }
       throw error
     }
   }
@@ -252,7 +254,7 @@ export function createProjectInputs(rt) {
       for (const row of pending(task).filter(row => row.kind === 'handoff' && row.source.eventId === handoffId)) { row.status = 'handled'; row.routingReceipt = { chiefDecisionId: decisionId, at: Date.now(), proof: 'validated-chief-routing-decision' } }
     },
     revokeSource(projectId, memberId) {
-      for (const row of Object.values(rt.state.projectTaskInputs ?? {})) if (row.projectId === projectId && ['human', 'github'].includes(row.source.kind) && row.source.memberId === memberId && row.status === 'accepted') { row.status = 'cancelled'; row.cancelledAt = Date.now(); row.cancellation = 'Source Project membership was revoked' }
+      for (const row of Object.values(rt.state.projectTaskInputs ?? {})) if (row.projectId === projectId && ['human', 'github'].includes(row.source.kind) && row.source.memberId === memberId) { row.sourceAuthorityRevoked = true; if (row.status === 'accepted') { row.status = 'cancelled'; row.cancelledAt = Date.now(); row.cancellation = 'Source Project membership was revoked' } }
     },
     finishHandoff(taskId, claim) {
       const task = taskOf(taskId); current(task, claim)

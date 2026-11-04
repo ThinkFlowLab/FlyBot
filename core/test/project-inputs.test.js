@@ -275,3 +275,16 @@ test('foreign inputs, historical batches, revoked sources and changed bodies nev
   const old = structuredClone(f.claim); f.rt.state.tasks.t.collaboration.claim = { ...old, id: 'new' }
   await assert.rejects(f.rt.projectInputs.validateReceipt('t', old, good), error => error.receiptFeedback.kind === 'stale-claim' && !error.receiptFeedback.correctable)
 })
+
+test('revocation while a receipt save fails cannot resurrect the old input on rollback or later regrant', async () => {
+  const f = fixture(); await f.rt.projectInputs.publish(input(), actor)
+  const batch = await f.rt.projectInputs.prepare('t', f.claim), row = Object.values(f.rt.state.projectTaskInputs)[0]
+  const receipt = { batchId: batch.batchId, read: [row.id], handled: [row.id] }
+  const save = f.rt.save
+  f.rt.save = async () => { f.rt.projectInputs.revokeSource('p', 'owner'); throw new Error('disk failed during revocation') }
+  await assert.rejects(f.rt.projectInputs.acknowledge('t', f.claim, receipt), /disk failed/)
+  assert.equal(row.status, 'cancelled'); assert.equal(row.deliveries[0].readAt, undefined)
+  f.rt.save = save
+  await assert.rejects(f.rt.projectInputs.acknowledge('t', f.claim, receipt), error => error.receiptFeedback.kind === 'source-revoked' && !error.receiptFeedback.correctable)
+  assert.equal(f.rt.projectInputs.pending('t').length, 0)
+})
