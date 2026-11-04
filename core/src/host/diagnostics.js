@@ -237,12 +237,14 @@ export function install(rt) {
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
       // report must not compress both into "another dsh holds the team".
       readOnly: readOnly ? clean(cut(readOnly, 200).text) : undefined,
-      // The writer is opened before the lock is asked for, so in a window another dsh keeps
-      // read-only `save()` returns before `journal.record()` and no line is written at all;
-      // claiming `recording` there promises a line the file will not get. A journal that
+      // The writer opens on the first save that got past `writable()` (#2351), so a window that
+      // has not saved yet never read or repaired the file: `recording` there promises a line
+      // nobody asked for, and `opened: false` says so instead. A window another dsh keeps
+      // read-only says that, because it never reaches that first save either. A journal that
       // genuinely stopped keeps its own reason, which is the fault a report is usually for.
       stateJournal: journal === undefined ? undefined
-        : journal.recording ? (readOnly ? 'paused (this window is read-only)' : 'recording')
+        : journal.recording ? (readOnly ? 'paused (this window is read-only)'
+          : journal.opened === false ? 'not started (opens with the first save)' : 'recording')
           : `stopped (${clean(journal.because)})`,
     }
   }

@@ -2167,7 +2167,7 @@ diff --git a/test/store.test.js b/test/store.test.js
    rt.state.prefs.marker = 'not saved'
    await rt.save()
    assert.equal(fs.readFileSync(statePath, 'utf8'), original)
-@@ -247,6 +247,44 @@ test('a read-only host resolves awaited saves without writing', async (t) => {
+@@ -247,6 +247,92 @@ test('a read-only host resolves awaited saves without writing', async (t) => {
    assert.equal(fs.readFileSync(statePath, 'utf8'), ownerState)
  })
  
@@ -2207,6 +2207,54 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  second.rt.state.prefs.marker = 'not saved'
 +  await second.rt.save()
 +  assert.deepEqual(fs.readFileSync(path), before, 'a refused save leaves the journal bytes alone')
++})
++
++// A home that already holds a saved team, so loading a fresh host is only a read: with no
++// state.json, load() saves the file itself and that first save would open the writer.
++async function savedHome(t) {
++  const home = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
++  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const first = runtime(t, undefined, { home })
++  await first.rt.load()
++  await first.rt.save()
++  await first.dispose()
++  return home
++}
++
++// The writer opens on the first save, so until then nothing was read, folded or repaired:
++// `recording: true` alone promises lines the file was never asked for. `opened` says which of
++// the two states a reader is looking at, and reading it never opens the writer — that is the
++// write the lazy open exists to avoid.
++test('the state journal says it has not started until the first save opens it (#2373)', async (t) => {
++  const home = await savedHome(t)
++  const { rt, warnings } = runtime(t, undefined, { home, config: { stateJournal: true } })
++  assert.deepEqual(rt.journal.status(), { recording: true, opened: false })
++  await rt.load()
++  assert.deepEqual(rt.journal.status(), { recording: true, opened: false }, 'loading a saved team opens nothing')
++  assert.equal(fs.existsSync(join(home, 'journal')), false, 'a host that never saved creates no journal folder')
++  await rt.save()
++  assert.deepEqual(rt.journal.status(), { recording: true, opened: true }, 'the first save opens the writer')
++  assert.equal(fs.existsSync(join(home, 'journal', 'state.jsonl')), true)
++  assert.equal(warnings.length, 0, 'a journal that opened cleanly warns about nothing')
++})
++
++// A journal that refuses is only found out by the first save, which is the first read of the
++// file: before it, the honest answer is still "not started", not a stop that never happened.
++test('a journal that refuses on the first save has only then stopped (#2373)', async (t) => {
++  const home = await savedHome(t)
++  const target = join(home, 'neighbour.txt')
++  fs.writeFileSync(target, 'PRIVATE LINE\n')
++  fs.mkdirSync(join(home, 'journal'), { recursive: true })
++  fs.symlinkSync(target, join(home, 'journal', 'state.jsonl'))
++  const { rt, warnings } = runtime(t, undefined, { home, config: { stateJournal: true } })
++  await rt.load()
++  assert.deepEqual(rt.journal.status(), { recording: true, opened: false }, 'loading the host reads no journal')
++  await rt.save()
++  const status = rt.journal.status()
++  assert.equal(status.opened, true, 'the first save opens the writer')
++  assert.equal(status.recording, false, 'a journal that refuses does not record')
++  assert.match(status.because, /not a plain file/)
++  assert.equal(warnings.length, 1, 'a refused start-up is warned once')
 +})
 +
  test('dispose waits for a pending save and prevents later writes', async (t) => {

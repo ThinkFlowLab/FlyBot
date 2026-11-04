@@ -784,7 +784,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,63 @@
+@@ -1,21 +1,66 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
@@ -848,7 +848,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    ? {
 +        path: journalPath,
 +        record: (snapshot) => (journalWriter ??= openJournal({ path: journalPath, warn })).record(snapshot),
-+        status: () => journalWriter?.status() ?? { recording: true },
++        // Until that first save there is no writer to answer: `opened: false` says the journal was
++        // never read, so `recording` cannot promise a line this host never asked for. Reading the
++        // status opens nothing — opening here would be the write the lazy open avoids (#2351).
++        status: () => (journalWriter === undefined ? { recording: true, opened: false } : { ...journalWriter.status(), opened: true }),
 +      }
 +    : undefined
  
