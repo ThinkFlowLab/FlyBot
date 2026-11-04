@@ -19,6 +19,8 @@ const f = (m, id, k) => m.bots.get(id)?.fields['flybot-tree']?.[k]
 const sp = (m, id) => m.bots.get(id)?.systemPrompt
 const outsider = (m, name = 'Outsider') => m.flybot.bot.create({ name })
 const make = async (m, parent, name) => (await m.call(parent, 'create_child_bot', { name, role_description: `${name} stuff` })).created?.id
+// What archive_bot does to the tree fields (core/src/host/roster.js): retire, hide, keep history.
+const retire = (m, id) => m.flybot.scope('flybot-tree').fields.set(id, 'retired', true)
 
 test('manifest follows dsh plugin conventions', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)))
@@ -80,6 +82,61 @@ test('removing a former root re-attaches its children to the current root', asyn
   const parentless = [...m.bots.values()].filter(bot => bot.fields['flybot-tree']?.parent == null)
   assert.deepEqual(parentless.map(bot => bot.name), ['Chief2'], 'one root, not a forest')
   assert.deepEqual((await m.call(chief2, 'list_children')).children.map(c => c.name).sort(), ['Life', 'Work'])
+})
+
+test('a retired Bot leaves the tree and its children re-attach to its parent', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  const dev = await make(m, work, 'Dev')
+  retire(m, work)
+  assert.equal(m.tree.snapshot()[work], undefined, 'a retired Bot is not a tree node')
+  assert.equal(m.tree.isMember(work), false, 'a retired Bot is not a tree member')
+  assert.deepEqual((await m.call(m.root, 'list_children')).children.map(c => c.name), ['Dev'])
+  assert.equal(f(m, dev, 'parent'), m.root, 'the child moved up instead of staying under a retired Bot')
+  assert.match(sp(m, dev), /Chief → Dev/)
+  assert.doesNotMatch(sp(m, dev), /Work/)
+  assert.match(sp(m, m.root), /- Dev: Dev stuff/, 'the root lists the moved child')
+  assert.doesNotMatch(sp(m, m.root), /- Work: Work stuff/, 'the root no longer lists the retired Bot')
+})
+
+test('retiring a Bot keeps its grandchildren under their own parent', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  const dev = await make(m, work, 'Dev')
+  const junior = await make(m, dev, 'Junior')
+  retire(m, work)
+  assert.equal(f(m, dev, 'parent'), m.root)
+  assert.equal(f(m, junior, 'parent'), dev, 'a grandchild keeps its parent')
+  assert.match(sp(m, junior), /Chief → Dev → Junior/)
+})
+
+test('a retired root with no Main adopts a fresh Root instead of pointing a child at itself', async () => {
+  const m = await setup()
+  const work = await make(m, m.root, 'Work')
+  const life = await make(m, m.root, 'Life')
+  // Synthetic state: the core keeps at least one Main, so this is the imported/edge case.
+  m.bots.get(m.root).isMain = false
+  retire(m, m.root)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const roots = Object.entries(m.tree.snapshot()).filter(([, n]) => n.root)
+  assert.equal(roots.length, 1, 'exactly one root')
+  const [rootId] = roots[0]
+  assert.notEqual(rootId, m.root)
+  for (const [id, node] of Object.entries(m.tree.snapshot())) {
+    assert.notEqual(node.parent, id, `${node.name} is not its own parent`)
+  }
+  for (const id of [work, life]) {
+    assert.equal(f(m, id, 'parent'), rootId, 'the orphan went under the new Root')
+  }
+})
+
+test('retiring a child frees a maxChildren slot', async () => {
+  const m = await setup({ maxChildren: 1 })
+  const a = await make(m, m.root, 'A')
+  const refused = await m.call(m.root, 'create_child_bot', { name: 'B', role_description: 'b' })
+  assert.match(refused.error, /maxChildren=1/)
+  retire(m, a)
+  assert.ok(await make(m, m.root, 'B'), 'the freed slot is reusable')
 })
 
 test('a rename made in the core reaches the tree prompts on the next turn', async () => {

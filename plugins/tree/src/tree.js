@@ -24,9 +24,14 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   const listeners = new Set()
   const load = createLoadTracker({ now })
 
+  // archive_bot retires a Bot (core roster writes fields['flybot-tree'].retired = true): it is out
+  // of the tree, so the slot is free again and the default list hides it. Its children are handed
+  // to its own parent by detachRetired below, the way deletion already does (#2430).
+  const isRetired = id => fb.getField(id, 'retired') === true
   function snapshot() {
     const nodes = {}
     for (const b of fb.listBots()) {
+      if (isRetired(b.id)) continue
       const role = fb.getField(b.id, 'treeRole')
       const parent = fb.getField(b.id, 'parent')
       if (role === undefined && parent === undefined) continue
@@ -267,8 +272,8 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     return { moved: bot.id, name: bot.name, from, to: parent.id }
   }
 
-  // A tree member has treeRole (or parent; the root's parent is null/absent).
-  const isMember = id => typeof id === 'string' && (fb.getField(id, 'treeRole') !== undefined || fb.getField(id, 'parent') !== undefined)
+  // A tree member has treeRole (or parent; the root's parent is null/absent) and is not retired.
+  const isMember = id => typeof id === 'string' && !isRetired(id) && (fb.getField(id, 'treeRole') !== undefined || fb.getField(id, 'parent') !== undefined)
   const parentOf = id => fb.getField(id, 'parent') ?? null
   const isRoot = id => isMember(id) && (fb.getField(id, 'treeRole') === ROOT_ROLE || fb.getField(id, 'parent') == null)
   // The root of the tree a member is in (itself for a root); undefined for a non-member. A cycle stops at the walk's end.
@@ -290,8 +295,57 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   }
 
   const emit = change => { for (const fn of listeners) fn(change) }
+  /**
+   * A retired Bot leaves the tree (archive_bot writes `retired: true`). Its children move up to its
+   * own parent, the way onBotRemoved does for deletion: left under a retired Bot they would be a
+   * dangling subtree the root cannot list and cannot message (#2430). A retired root hands its
+   * children to the current Main, so `parent: null` cannot turn them into roots.
+   *
+   * The new parent is resolved before any parent is written. adoptChief() repairs and refreshes the
+   * tree, so running it while the children are still orphans records a role-based re-attachment this
+   * move then overwrites (undo answers "moved again since") and can leave a level over maxChildren
+   * until the second repair. Resolve first, assign once, repair once.
+   */
+  function detachRetired(botId) {
+    if (typeof botId !== 'string') return
+    const up = fb.getField(botId, 'parent') ?? null
+    const kids = fb.listBots().filter(b => b.id !== botId && fb.getField(b.id, 'parent') === botId && !isRetired(b.id))
+    if (kids.length === 0) { organizer.repair(); refreshAll(); return }
+    if (up !== null) {
+      for (const child of kids) fb.setField(child.id, 'parent', up)
+      organizer.repair()
+      refreshAll()
+      return
+    }
+    const chief = findChief()
+    if (!chief) {
+      // No Main to adopt (the core keeps one; this is an imported/edge state). ensureRoot() runs
+      // before anything moves: only then is there a Root to hand the children to, and none of them is
+      // read as the root that already exists — which used to leave one pointing at itself.
+      void ensureRoot().then((root) => {
+        if (typeof root !== 'string') return
+        for (const child of kids) fb.setField(child.id, 'parent', root)
+        organizer.repair()
+        refreshAll()
+      }).catch(error => warn('flybot-tree: could not re-root after %s was retired: %s', botId, error?.message ?? error))
+      return
+    }
+    // A retired root's children become Chief's children. Chief's own record is adopted inside
+    // adoptChief(); assigning it here too would point it at itself for that instant.
+    for (const child of kids) if (child.id !== chief.id) fb.setField(child.id, 'parent', chief.id)
+    if (!adoptChief()) { organizer.repair(); refreshAll() }
+  }
   function onFieldChange(change) {
-    if (!change || !TREE_KEYS.has(change.key)) return
+    if (!change) return
+    // Retirement changes membership without touching parent/treeRole, so it is handled here rather
+    // than ignored with the other fields the tree does not own (#2430).
+    if (change.key === 'retired') {
+      if (change.value === true && change.prev !== true) detachRetired(change.botId)
+      else refreshAll()
+      emit(change)
+      return
+    }
+    if (!TREE_KEYS.has(change.key)) return
     emit(change)
   }
   /**
