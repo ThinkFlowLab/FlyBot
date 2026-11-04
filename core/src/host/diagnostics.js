@@ -5,7 +5,7 @@
 // credential-like strings and the home folder before it is kept and again before it is
 // shown, because the report is meant for a public issue.
 import { readFileSync } from 'node:fs'
-import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { arch, homedir, platform, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -83,7 +83,10 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   const recent = entries.slice(-REPORT_ENTRIES)
   // The journal is only mentioned while the host runs one: an off journal is not a fact about
   // this host, and a stopped one is exactly what a report about a bug it was meant to catch misses.
-  const journal = facts.stateJournal === undefined ? [] : ['', `state journal: ${facts.stateJournal}`]
+  // Its file follows in the same shape (#2388): the sentence says whether the host records, and
+  // this line says what the file it records into is, or that there is none yet.
+  const journalFile = facts.journalFile === undefined ? [] : ['', `journal file: ${facts.journalFile}`]
+  const journal = facts.stateJournal === undefined ? [] : ['', `state journal: ${facts.stateJournal}`, ...journalFile]
   // The log's own line, in the journal's shape (#2134): a host whose log is off says nothing, and
   // every other bundle gets the one fact the recent errors cannot show — whether they were written.
   const log = facts.diagnosticsLog === undefined ? [] : ['', `diagnostics log: ${facts.diagnosticsLog}`]
@@ -234,7 +237,29 @@ export function install(rt) {
     }))
   }
 
-  const facts = () => {
+  // The journal's file, named without opening it (#2388). `lstat` answers what the name is: a
+  // missing file is the next save's to create, a plain file of this host's own has a size and a
+  // last write time worth reporting, and a link or a file with a second name is bytes that are
+  // not this host's to read — so the answer is a sentence in every case, never a throw, and no
+  // read permission is needed for a file that would otherwise have to be opened.
+  const NOT_PLAIN = 'not a plain file (nothing is read or written)'
+  // A path is cleaned with this host's own home, not the process's: a machine shows `~/.dsh/...`
+  // and a test's temporary home shows `~/...`, so no report carries the folder a person lives in.
+  const cleanPath = text => cleanText(text, { home, redact: rt.redactSecrets })
+  const journalFile = async (path) => {
+    if (path === undefined) return undefined
+    try {
+      const kind = await fileKind(path)
+      if (kind === 'absent') return 'none yet'
+      if (kind !== 'real') return NOT_PLAIN
+      const info = await lstat(path)
+      return `${cleanPath(path)} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`
+    } catch {
+      return NOT_PLAIN
+    }
+  }
+
+  const facts = async () => {
     const bots = Object.values(rt.state.bots)
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
     const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
@@ -261,6 +286,10 @@ export function install(rt) {
         : journal.recording ? (readOnly ? 'paused (this window is read-only)'
           : journal.opened === false ? 'not started (opens with the first save)' : 'recording')
           : `stopped (${clean(journal.because)})`,
+      // The file that sentence is about, in the same shape (#2388): the path with the home as `~`
+      // and its size and last write time, `none yet` before the first save creates it, or the one
+      // sentence for a leaf this host would not read. A host without the journal says nothing.
+      journalFile: journal === undefined ? undefined : await journalFile(rt.journal.path),
       // Where those errors are kept is the other half of that sentence, in the same shape: a host
       // with the log off says nothing (#2134), a host whose appends land says so, and a refused
       // leaf or a failed append names its own reason — the words stderr already used, never the
@@ -291,7 +320,7 @@ export function install(rt) {
     const list = await entries()
     const client = sanitizeClient(body.client)
     const clientEntries = sanitizeClientEntries(body.clientErrors)
-    const hostFacts = facts()
+    const hostFacts = await facts()
     return {
       facts: hostFacts,
       entries: list.slice(-50).reverse(),

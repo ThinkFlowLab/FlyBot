@@ -350,6 +350,102 @@ test('a state journal that has not opened says it starts with the first save (#2
   assert.equal(held.facts.stateJournal, 'paused (this window is read-only)')
 })
 
+// #2388: `state journal:` answers whether the host is recording, and reads the same on a host
+// whose file is a few hundred bytes and on one whose leaf another programme replaced with a link.
+// The report names the file instead — the path with the home as `~`, its size, and when it was
+// last written — or says why there is nothing to name. `lstat` only: a report that read the file
+// would need a permission it must not ask for, and would touch what it describes.
+test('the report names the journal file, its size and when it was last written (#2388)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const path = join(home, 'journal', 'state.jsonl')
+  const journal = openJournal({ path, warn: () => {} })
+  await journal.record(stateText({ version: 2, revision: 1 }))
+  const info = lstatSync(path)
+
+  const report = await host(home, { journal, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(report.facts.journalFile, `~/journal/state.jsonl (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, /^journal file: ~\/journal\/state\.jsonl \(\d+ bytes, last written \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\)$/m)
+  assert.ok(report.markdown.includes('state journal: recording\n\njournal file: '), 'the file line is its own paragraph right after the journal sentence')
+  assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
+})
+
+// A journal that has not saved yet has no file to name, and naming it must not create one.
+test('a journal with no file yet says so, and the report keeps its journal sentence (#2388)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const path = join(home, 'journal', 'state.jsonl')
+  const journal = openJournal({ path, warn: () => {} })
+
+  const report = await host(home, { journal, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(report.facts.journalFile, 'none yet')
+  assert.match(report.markdown, /^journal file: none yet$/m)
+  assert.match(report.markdown, /^state journal: /m, 'the journal sentence keeps its own line')
+  assert.equal(existsSync(path), false, 'naming the file creates nothing')
+})
+
+// A link and a second name both read as a file to a reader; a report may quote neither, because
+// the bytes are not this host's own and the read would be the touch it must not make.
+test('a journal leaf that is a link or a second name is named as not a plain file (#2388)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'journal'), { recursive: true })
+  const kept = '{"seq":1,"op":"base"}\n'
+
+  const target = join(elsewhere, 'someone-else.jsonl')
+  writeFileSync(target, kept)
+  const linked = join(home, 'journal', 'state.jsonl')
+  symlinkSync(target, linked)
+  const stub = { status: () => ({ recording: true }) }
+  const linkedReport = await host(home, { journal: { ...stub, path: linked }, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(linkedReport.facts.journalFile, 'not a plain file (nothing is read or written)')
+  assert.match(linkedReport.markdown, /^journal file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(readFileSync(target, 'utf8'), kept, 'the file behind the link keeps its bytes')
+
+  const plain = join(home, 'journal', 'plain.jsonl')
+  const shared = join(home, 'journal', 'shared.jsonl')
+  writeFileSync(plain, kept)
+  linkSync(plain, shared)
+  const hardReport = await host(home, { journal: { ...stub, path: shared }, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(hardReport.facts.journalFile, 'not a plain file (nothing is read or written)')
+  assert.match(hardReport.markdown, /^journal file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(readFileSync(plain, 'utf8'), kept, 'the other name keeps its bytes')
+  assert.equal(hardReport.markdown.includes(home), false, 'the line never carries the home folder')
+})
+
+// The line belongs to the journal paragraph (#2134): a host without a journal says nothing.
+test('a host with no journal says nothing about a journal file (#2388)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const report = await host(home, { config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(report.facts.journalFile, undefined)
+  assert.doesNotMatch(report.markdown, /journal file:/)
+  assert.doesNotMatch(report.markdown, /state journal:/)
+})
+
+// The proof that the line never reads: a zero-byte file with no read bit still answers its size
+// and last write time, which `readFile` could not do here at all.
+test('a journal file the report may not read still answers its size and time (#2388)', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root reads a file without its read bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const path = join(home, 'journal', 'state.jsonl')
+  mkdirSync(join(home, 'journal'), { recursive: true })
+  writeFileSync(path, '')
+  chmodSync(path, 0o000)
+  const info = lstatSync(path)
+  assert.throws(() => readFileSync(path), /EACCES/, 'this file cannot be read at all')
+
+  const report = await host(home, { journal: { path, status: () => ({ recording: true }) }, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(report.facts.journalFile, `~/journal/state.jsonl (0 bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, /^journal file: ~\/journal\/state\.jsonl \(0 bytes, last written .+\)$/m)
+})
+
 // #2383: the report is what a user hands over, and it never said that this host's own log file
 // could not be written. The reason was already computed for stderr (`fileFailed`, `refusedLeaf`)
 // and never reached `facts()`/`reportMarkdown()`, so a support bundle showed the recent errors
