@@ -296,7 +296,7 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
   const toName = cleanPeerName(held.toOwner) || (chat ? friendBotOwner(chat) : ownerNameOf({ handle: held.to })) || held.to || t('a friend')
   return h('div', { className: 'bt-held-reply', 'data-state': held.status, 'data-held': isApprovalWaiting(held.status) ? '' : undefined },
     children,
-    closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions }) : null)
+    closing ? h(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions, roster }) : null)
 }
 
 // A friend's line that Bot Social attests the friend typed themselves, or another person's own

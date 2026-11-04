@@ -549,7 +549,13 @@ export interface FlyBotConfig {
 
 export interface SidebarSectionProps { roster: any; actions: any; call: FlyBotCall }
 export interface BotDetailsProps { bot: any; roster: any; call: FlyBotCall }
-export interface ApprovalCardProps { approval: Approval; decide(decision: 'approve' | 'reject'): Promise<void>; call: FlyBotCall }
+export interface ApprovalCardProps {
+  approval: Approval
+  decide(decision: 'approve' | 'reject'): Promise<void>
+  call: FlyBotCall
+  /** True only in a window that holds the team read-only (#2310): `flybot/decide` is a write the host refuses there, so a card can hide its decision buttons instead of drawing one that can only fail. */
+  readOnly?: boolean
+}
 export interface MentionRow { name: string; value: string; description?: string; icon?: string; section?: string }
 export type FlyBotCall = (endpoint: string, payload?: unknown) => Promise<any>
 
