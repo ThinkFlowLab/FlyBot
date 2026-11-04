@@ -12,9 +12,10 @@
 //                            nodeActions({ bot }) is drawn after each tree row
 //   flybot.composer.mention { id, order, candidates(query, { sessionId, roster, call }) → rows }   rows in the "@" menu
 //   flybot.bot.details      { id, order, component({ bot, roster, call }) }        in a Bot's settings
-//   flybot.approvals        { id, order, component({ approval, decide, call }) }   custom card for a held send
+//   flybot.approvals        { id, order, component({ approval, decide, call, readOnly }) }   custom card for a held send
 //                            `inline: true` with `policy`: instead, the buttons drawn on a held reply's own bubble in the
-//                            chat (#418), component({ held, decide, call, actions }); held = { id, by, status, to, toName, from }
+//                            chat (#418), component({ held, decide, call, actions, readOnly }); held = { id, by, status, to, toName, from }
+//                            `readOnly` is true only in a read-only window, so a card can hide a decision the host refuses (#2310)
 //   flybot.room.overview    { id, order, component({ room, roster, actions, call }) }  top of a group's overview
 //   flybot.room.members     { id, order, component({ room, roster, actions, call, host }) }  rows at the foot of a local group's
 //                            Members card (#876: Invite by link); `host(endpoint, payload)` calls a core endpoint, which `call` cannot
@@ -41,10 +42,11 @@ import { friendBotOwner, friendBotTitle, isListedRemoteChat, remoteMentionLabel 
 import { registry as baseRegistry } from './flybot-registry.js'
 import { BotAvatar, BotMark, lookOf } from './mark.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from './room-invite-preview.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
 import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
+import { lockedWindow } from './schedules.js'
 import { isMainOf } from './sources.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
@@ -265,6 +267,8 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
   const docks = useSlot('flybot.session.dock')
   const claimed = useClaimed()
   const roster = typeof useRoster === 'function' ? useRoster(value => value) : undefined
+  // #2310: `decide` is not a read, so a locked window draws no decision at all (#2232's predicate).
+  const locked = lockedWindow(roster)
   const [pending, setPending] = useState([])
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -324,7 +328,7 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
     cards.length > 0 ? h('div', { className: 'bt-flybot-approvals', role: 'region', 'aria-label': t('Messages waiting for your approval') },
       cards.map((approval) => {
         const custom = entries.find(entry => entry.inline !== true && (entry.policy === undefined || entry.policy === approval.by))
-        if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call } }))
+        if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call, readOnly: locked === true } }))
         const failed = approval.status === 'failed'
         const waiting = isApprovalWaiting(approval.status)
         return h('div', { key: approval.id, className: 'bt-flybot-approval', title: approval.reason ?? undefined },
@@ -338,12 +342,14 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
             ? h('ul', { className: 'bt-flybot-approval-files', 'aria-label': t('Attached files') }, approval.request.attachments.map((file, index) =>
               h('li', { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? h('div', { className: 'bt-flybot-approval-path' }, file.path) : null)))
             : null,
-          h('div', { className: 'bt-flybot-approval-actions' },
-            // #968: `noRetry` (the dock's spelling of a terminal failure) and `retry: false` (the bubble's)
-            // are one rule, asked here through the shared predicate.
-            failed && canRetry(approval) ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'retry') }, t('Retry')) : null,
-            waiting ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'reject') }, t('Reject')) : null,
-            waiting ? h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy === approval.id, onClick: () => decide(approval.id, 'approve') }, t('Approve')) : null))
+          locked
+            ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+            : h('div', { className: 'bt-flybot-approval-actions' },
+              // #968: `noRetry` (the dock's spelling of a terminal failure) and `retry: false` (the bubble's)
+              // are one rule, asked here through the shared predicate.
+              failed && canRetry(approval) ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'retry') }, t('Retry')) : null,
+              waiting ? h('button', { type: 'button', disabled: busy === approval.id, onClick: () => decide(approval.id, 'reject') }, t('Reject')) : null,
+              waiting ? h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy === approval.id, onClick: () => decide(approval.id, 'approve') }, t('Approve')) : null))
       }).concat(error ? [h('div', { key: 'error', className: 'bt-flybot-approval-error', role: 'alert' }, error)] : [])) : null)
 }
 
