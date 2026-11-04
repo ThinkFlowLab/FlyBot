@@ -507,14 +507,15 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
   function integrationBlockers(attempt, permit, retiringClaim) {
     const chief = row => row?.kind === 'chief-control' && row.projectId === attempt.projectId
     const claim = taskOf(attempt.taskId)?.collaboration?.claim, ownChiefRun = permit?.[chiefInputPermit]
+    const currentChief = row => ownChiefRun && row.projectId === attempt.projectId && row.role === 'chief' && row.chiefRunId === ownChiefRun && Number.isSafeInteger(row.chiefInvocation) && row.chiefInvocation === state.projectExecutions?.[ownChiefRun]?.invocation
     const blockers = []
     if (claim?.status === 'active' && claim !== retiringClaim && !(ownChiefRun && claim.chiefRunId === ownChiefRun && claim.botId === `${attempt.projectId}:chief`)) blockers.push({ kind: 'claim-active', claimId: claim.id, action: 'attempt.reconcile-exit after result and exit reconciliation' })
     if (claim?.retirement && !rt.projectEffects?.intentCommitted(claim.retirement.effect)) blockers.push({ kind: 'claim-retirement-uncommitted', claimId: claim.id })
     for (const row of Object.values(state.projectExecutions ?? {})) if (chief(row) && row.status === 'running' && row.id !== ownChiefRun) blockers.push({ kind: 'chief-running', runId: row.id })
-    for (const row of Object.values(state.projectResourceLeases ?? {})) if ((row.attemptId === attempt.id || chief(state.projectExecutions?.[row.attemptId])) && (row.status !== 'released' || row.preparation && row.preparation.exitConfirmed === false)) blockers.push({ kind: row.preparation?.exitConfirmed === false ? 'preparation-exit-unknown' : 'lease-not-released', leaseId: row.id })
+    for (const row of Object.values(state.projectResourceLeases ?? {})) if (!currentChief(row) && (row.attemptId === attempt.id || chief(state.projectExecutions?.[row.chiefRunId ?? row.attemptId])) && (row.status !== 'released' || row.preparation && row.preparation.exitConfirmed === false)) blockers.push({ kind: row.preparation?.exitConfirmed === false ? 'preparation-exit-unknown' : 'lease-not-released', leaseId: row.id })
     // Old released Chief turns never owned this workspace. Unknown current workers stay held.
     for (const row of Object.values(state.projectHarnessWorkers ?? {})) {
-      const relevant = !(ownChiefRun && row.role === 'chief' && row.chiefRunId === ownChiefRun) && (row.attemptId === attempt.id || row.projectId === attempt.projectId && row.chiefRunId && (row.status !== 'released' || row.chiefRunId === claim?.chiefRunId))
+      const relevant = !currentChief(row) && (row.attemptId === attempt.id || row.projectId === attempt.projectId && row.chiefRunId && (row.status !== 'released' || row.chiefRunId === claim?.chiefRunId))
       if (relevant && !confirmedWorkerExit(state, row)) blockers.push({ kind: 'worker-exit-unknown', workerId: row.id })
     }
     for (const row of Object.values(state.bots ?? {})) if (row.ephemeral && row.attemptId === attempt.id) blockers.push({ kind: 'native-worker-present', workerId: row.id })

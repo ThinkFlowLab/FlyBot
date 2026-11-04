@@ -689,3 +689,5 @@ Role context labels exact host test SHA/hash/command and native log source separ
 ## Chief failure is not acceptance failure (#2393)
 
 Existing candidate/tests/Review/merge evidence survives a Chief execution fault. Closure refusals identify actual criteria/evidence fields. Explicit Chief reconcile-exit reuses the same #2375 verifier/retirement and excludes only its authenticated current inspection; it does not retire its own live claim or select a downstream role. Existing sealed-candidate resumeVerification remains authoritative.
+
+The authenticated Chief exclusion matches Project, role, run and invocation on both worker and lease. It never discharges an old invocation, another Chief or the current coordinator itself.
