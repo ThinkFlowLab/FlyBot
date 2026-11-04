@@ -20041,10 +20041,10 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         (0, import_react44.createElement)("span", { className: "bt-subhead-title" }, bot ? t("Settings") : t("Group settings")),
         hasStrip ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close details"), onClick: close }, (0, import_react44.createElement)(CloseIcon))
       ),
+      errorLine,
       (0, import_react44.createElement)(
         "div",
         { key: "set-body", className: "bt-drawer-body bt-set-body", "data-move": move },
-        errorLine,
         bot && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : bot ? (0, import_react44.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react44.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
       )
     ];

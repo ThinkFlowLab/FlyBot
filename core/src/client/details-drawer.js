@@ -280,12 +280,16 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
   }
   const errorLine = error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, error) : null
   if ((bot || room) && view === 'settings' && !(bot?.remote)) {
+    // #2194/#2385: the refused-write line is a sibling of the scrolling box, above it — the shape
+    // `settings.js` already uses for the Settings dialog. A press at the bottom of this page must
+    // write its answer where it can be seen, not at the top of the box it just scrolled past.
     return [
       h('div', { key: 'head', className: 'bt-subhead', 'data-move': move },
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Back to details'), onClick: () => setView('overview') }, h(ChevronLeftIcon)),
         h('span', { className: 'bt-subhead-title' }, bot ? t('Settings') : t('Group settings')),
         hasStrip ? null : h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon))),
-      h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move }, errorLine,
+      errorLine,
+      h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move },
         bot && lockedWindow(roster)
           ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
           : bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
