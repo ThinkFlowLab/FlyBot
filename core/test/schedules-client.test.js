@@ -36,7 +36,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText, schedulesReadFailure } = module.exports
+const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText, schedulesReadFailure, reachText } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -840,4 +840,48 @@ test('P-482: a locked Bot card with tasks keeps the heading and the rows', () =>
   assert.equal(sectionsOf(locked).length, 1, 'the rule must not hide a locked card that has tasks')
   assert.ok(text(locked).includes('Scheduled tasks'), 'the heading stays with tasks')
   assert.ok(text(locked).includes('Briefing'), 'the task row stays')
+})
+
+// #2323: a schedule's reach is the Bot's reach at the moment the task fires, not a copy stored
+// with the task, so its row says which connectors an unattended run would carry. A room task has
+// no single Bot's switch, so it says nothing: drawing one would state a falsehood.
+const CONNECTORS = [
+  { id: 'github', name: 'GitHub', state: 'connected' },
+  { id: 'composio', name: 'Composio', state: 'connected' },
+]
+const reachRoster = bot => ({ bots: [bot], rooms: [], byId: { [bot.id]: bot }, roomsById: {}, connectors: CONNECTORS })
+const reachLines = roster => {
+  seeded.push({ available: true, tasks: [ACTIVE] }, null)
+  return text(render(BotSchedules({ bot: { id: 'b1' }, roster, actions: spy() })))
+}
+// The reach is the last segment of the row's one hint line, beside the timing.
+const reachOf = lines => lines.find(line => line.startsWith('Runs with ')) ?? ''
+
+test('#2323 a: two connected connectors and no per-Bot record read as both', () => {
+  assert.equal(reachOf(reachLines(reachRoster({ id: 'b1', name: 'B' }))), 'Runs with GitHub, Composio')
+})
+
+test('#2323 b: a connector turned off for this Bot drops out of the sentence', () => {
+  const lines = reachLines(reachRoster({ id: 'b1', name: 'B', connectors: { composio: false } }))
+  assert.equal(reachOf(lines), 'Runs with GitHub')
+  assert.ok(!lines.join('|').includes('Composio'), 'a switched-off connector is not named')
+})
+
+test('#2323 c: every connected connector off reads as no connectors', () => {
+  assert.equal(reachOf(reachLines(reachRoster({ id: 'b1', name: 'B', connectors: { github: false, composio: false } }))), 'Runs with no connectors')
+})
+
+test('#2323 d: a sender connector never appears in the sentence', () => {
+  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [...CONNECTORS, { id: 'feishu', name: 'Feishu', state: 'connected', kind: 'sender' }] }
+  const lines = reachLines(roster)
+  assert.equal(reachOf(lines), 'Runs with GitHub, Composio')
+  assert.ok(!lines.join('|').includes('Feishu'), 'a sender has neither tools nor a way in')
+})
+
+test('#2323 e: a room task says nothing about reach', () => {
+  const roomTask = { id: 'r1', sessionId: 'room-1', roomId: 'room-1', title: 'Team', kind: 'daily', status: 'active' }
+  assert.equal(reachText(roomTask, reachRoster({ id: 'b1', name: 'B' })), '')
+  seeded.push({ available: true, tasks: [roomTask] })
+  const lines = text(render(RoomSchedules({ room: { id: 'room-1', name: 'Team room', origin: 'group' }, actions: spy() })))
+  assert.ok(!lines.some(line => line.startsWith('Runs with')), lines.join('|'))
 })

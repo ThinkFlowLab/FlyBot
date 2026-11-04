@@ -1,0 +1,1 @@
+A scheduled task's row now says which connectors its unattended run will carry, in the words of the Bot's own switches at the moment it fires: turning Composio on for that Bot changes what a task written weeks ago uses, and the row names it instead of the owner learning after the fact ([#2323](https://github.com/ThinkFlowLab/FlyBot/issues/2323)).

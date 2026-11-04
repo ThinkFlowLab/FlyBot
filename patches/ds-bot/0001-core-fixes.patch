@@ -1455,7 +1455,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Once, {time}': '一次，{time}',
    'Every day at {time}': '每天 {time}',
    'Every {days} at {time}': '每{days} {time}',
-@@ -784,8 +784,24 @@ const ZH = {
+@@ -784,8 +784,26 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1463,6 +1463,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Last run {time}': '上次运行 {time}',
 +  'Last run {time} · Stopped': '上次运行 {time} · 已停止',
 +  'Last run {time} · Failed: {reason}': '上次运行 {time} · 失败：{reason}',
++  'Runs with {names}': '运行时带上 {names}',
++  'Runs with no connectors': '运行时不带任何连接器',
 +  'Run the task once now': '现在运行一次这个任务',
 +  'DSH could not deliver it': 'DSH 没能送达',
 +  'Resume the task first': '请先继续这个任务',
@@ -2232,7 +2234,7 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js
-@@ -1,22 +1,32 @@
+@@ -1,22 +1,33 @@
  // Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
  // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 -// sends its prompt to the Bot's chat when it is due.
@@ -2248,6 +2250,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
++import { connectedConnectors, isOn } from './connector-bots.js'
  
  const POLL_MS = 30_000
  
@@ -2325,7 +2328,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      case 'every': return everyText(task.everySeconds)
      case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
      case 'weekly': {
-@@ -70,11 +70,38 @@ export function timingText(task) {
+@@ -70,11 +70,51 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -2338,8 +2341,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const at = instant(task.scheduledAt)
 +  return at === '' ? timingText(task) : t('Next: {time}', { time: at })
 +}
- 
--function TaskRow({ task, actions, onView, showBot, roster }) {
++
 +// The last run, in one line: when, and how it went (src/host/schedules.js).
 +export function lastRunText(run) {
 +  if (run === undefined || !Number.isFinite(run.at)) return ''
@@ -2352,10 +2354,24 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  }
 +}
 +
++// What an unattended run carries (#2323): the Bot's reach at the moment the task fires, not a copy
++// stored with the task, so turning a connector on today changes what a task written weeks ago will
++// use. A room task (no `botId`) has no single Bot's switch, and a Bot the roster no longer carries
++// says nothing rather than guessing. `connectedConnectors` drops a sender and a webhook-only
++// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use.
++export function reachText(task, roster) {
++  if (!task?.botId) return ''
++  const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find(entry => entry.id === task.botId)
++  if (bot === undefined) return ''
++  const names = connectedConnectors(roster).filter(connector => isOn(bot, connector.id)).map(connector => connector.name)
++  return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
++}
++
 +// The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
 +// the sentence, and this page draws no write the host would refuse.
 +export const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
-+
+ 
+-function TaskRow({ task, actions, onView, showBot, roster }) {
 +function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
@@ -2366,7 +2382,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    useEffect(() => {
      if (!confirming) return undefined
      const timer = setTimeout(() => setConfirming(false), 3000)
-@@ -83,17 +83,43 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -83,17 +83,46 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
    const remove = () => {
      if (!confirming) { setConfirming(true); return }
      setBusy(true)
@@ -2390,6 +2406,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    }
    const room = task.roomId ? roster.roomsById[task.roomId] : undefined
 -  return h('div', { className: 'bt-set-row bt-task', 'data-done': task.status === 'active' ? undefined : '', 'data-busy': busy || undefined },
++  // The hint reads as one line: timing, the room, then the reach. Each part stays its own string so
++  // the timing half is still exactly what `timingText` answers (#1651).
++  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reachText(task, roster)].filter(Boolean)
 +  const stoppable = task.status === 'active' || task.status === 'paused'
 +  const failed = task.lastRun?.result === 'failed'
 +  const last = lastRunText(task.lastRun)
@@ -2397,8 +2416,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      showBot ? h(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
      h('span', { className: 'bt-set-copy' },
        h('span', { className: 'bt-task-title' }, task.title),
-       h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
+-      h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
 -      task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null),
++      h('span', { className: 'bt-set-hint' }, hint.flatMap((part, index) => (index === 0 ? [part] : [' · ', part]))),
 +      task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null,
 +      last ? h('span', { className: 'bt-task-last', 'data-failed': failed || undefined }, last) : null,
 +      rowError ? h('span', { className: 'bt-task-last', 'data-failed': '', role: 'alert' }, rowError) : null),

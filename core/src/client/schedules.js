@@ -10,6 +10,7 @@ import { BotAvatar, RoomAvatar } from './mark.js'
 import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
 import { Segmented } from './motion.js'
 import { dateLocale, hostText, t } from './i18n.js'
+import { connectedConnectors, isOn } from './connector-bots.js'
 
 const POLL_MS = 30_000
 
@@ -117,6 +118,19 @@ export function lastRunText(run) {
   }
 }
 
+// What an unattended run carries (#2323): the Bot's reach at the moment the task fires, not a copy
+// stored with the task, so turning a connector on today changes what a task written weeks ago will
+// use. A room task (no `botId`) has no single Bot's switch, and a Bot the roster no longer carries
+// says nothing rather than guessing. `connectedConnectors` drops a sender and a webhook-only
+// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use.
+export function reachText(task, roster) {
+  if (!task?.botId) return ''
+  const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find(entry => entry.id === task.botId)
+  if (bot === undefined) return ''
+  const names = connectedConnectors(roster).filter(connector => isOn(bot, connector.id)).map(connector => connector.name)
+  return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
+}
+
 // The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
 // the sentence, and this page draws no write the host would refuse.
 export const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
@@ -154,6 +168,9 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locke
       .then((next) => { setBusy(false); onView(next) }, (error) => { setBusy(false); refuse(error) })
   }
   const room = task.roomId ? roster.roomsById[task.roomId] : undefined
+  // The hint reads as one line: timing, the room, then the reach. Each part stays its own string so
+  // the timing half is still exactly what `timingText` answers (#1651).
+  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reachText(task, roster)].filter(Boolean)
   const stoppable = task.status === 'active' || task.status === 'paused'
   const failed = task.lastRun?.result === 'failed'
   const last = lastRunText(task.lastRun)
@@ -161,7 +178,7 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locke
     showBot ? h(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
     h('span', { className: 'bt-set-copy' },
       h('span', { className: 'bt-task-title' }, task.title),
-      h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
+      h('span', { className: 'bt-set-hint' }, hint.flatMap((part, index) => (index === 0 ? [part] : [' · ', part]))),
       task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt' }, task.prompt) : null,
       last ? h('span', { className: 'bt-task-last', 'data-failed': failed || undefined }, last) : null,
       rowError ? h('span', { className: 'bt-task-last', 'data-failed': '', role: 'alert' }, rowError) : null),
