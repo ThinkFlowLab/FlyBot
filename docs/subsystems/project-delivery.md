@@ -681,3 +681,7 @@ an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps
 ## Explicit successor continuation (#2377)
 
 `attempt.continuation-state` returns an exited current Attempt snapshot. Explicit `task.run.continuation` chooses continue or latest using previousAttemptId/generation/expectedWorkspace. Continue revalidates and retains original seed, base and durable integration admissions; latest retains draft lineage and requires ordinary integrate admission when the new checkout conflicts. Cancelled Attempts remain cancelled; successors get fresh test/Review evidence. Missing draft choice fails before creating a successor. An original pool Effect commits the intent before filesystem work.
+
+## Readable verification artifacts (#2378)
+
+Role context labels exact host test SHA/hash/command and native log source separately from SDK-executed checks or GitHub CI. SDK receives its own hash-verified transfer through the existing resource scratch. Tests/Review still require the immutable host candidate/source and original evidence gates; input.publish text and artifact readability cannot grant acceptance.

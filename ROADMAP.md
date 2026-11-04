@@ -1,6 +1,9 @@
 # FlyBot — Roadmap
 
 
+#2378: enable explicit Actions reads/download hosts and retrievable exact-SHA test artifacts; real installed-App/private-repository acceptance remains separate.
+
+
 #2375: retire proven exited responsibility before fresh integration admission; source/isolated tests remain separate from live recovery.
 
 #2377: continue the verified original seed or explicitly integrate a new baseline; no silent draft reset or cancelled Attempt revival.
@@ -178,27 +181,9 @@ exit retains capacity. Real-provider parallel/restart/migration/UI and Release
 operational acceptance remain distinct pending evidence under #2292. Previously
 deferred multi-repository automation is not reactivated by this recovery work.
 
-Updated #2334 acceptance adds actual npm missing-vitest/127 classification and
-clean/prepare/same-candidate retest coverage; it remains a source/test follow-up,
-not live npm ci provisioning or production Vitest acceptance.
-
-#2338: bounded input receipt correction in the original Task-role/Chief context,
-with all-plan preflight, immutable business evidence and explicit incomplete
-recovery. Tests distinguish deterministic role transport and actual SDK execution
-with a local provider fixture from paid-model/live project acceptance.
-
-#2347 adds bounded inspection/stop reconciliation, explicit recovery facts and
-same-Attempt Tester/Reviewer continuation. Real disposable unmanaged DSH restart
-reaches a later original scheduled inspection with deterministic inference; paid
-model/live-instance acceptance stays separate. Legacy missing namespace evidence
-requires exact operator corroboration, never a guessed worker release.
-
-#2331: authorized host merge follows Reviewer approval through original broker/
-Effects, with Draft ready, configured CI/review/queue and unknown-write recovery.
-Runtime merge is opt-in per repository/base; contributor delivery still follows
-Owner-authorized CI/merge scope and does not authorize a deployment.
-
-#2342: scoped operations consultation, original-message notification reminders,
-configurable compensation schedules and current-state reply fences. Disposable
-DSH/HTTP acceptance separates deterministic Chief/native/external protocol evidence
-from paid-model judgement, actual host repair and production rollout.
+Current reliability guarantees: environment attribution is separate from code
+verification; receipt correction retains context and evidence; recovery retains
+exact exit and scope fences; configured host merge is separate from Chief closure;
+operations replies are input, not implicit recovery. Historical acceptance notes
+are [preserved verbatim](docs/history/2026-11-04-reliability-memory-checkpoints.md).
+Real provider/App/SDK, deployment and UI acceptance remain separate from fixtures.

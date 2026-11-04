@@ -1,6 +1,8 @@
 ---
 subsystem: project-harness
 owned_paths:
+  - core/src/host/project-review-evidence.js
+  - core/test/project-review-evidence.test.js
   - core/src/host/project-execution-authority.js
   - core/test/project-execution-authority.test.js
   - core/src/host/project-execution-exit.js
@@ -489,3 +491,7 @@ safe profile IDs omit secrets/paths and preserve generated directories and Task-
 binding keys. Typed SDK authentication errors become authRequired for that profile;
 raw provider error text is excluded from evidence. No credential copying, OAuth
 manager, automatic role choice or change to SDK sandbox policy.
+
+## Reviewer evidence (#2378)
+
+Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives a size/hash-verified current host test log in its existing scratch via resource upload, with source SHA/command/executor. Recheck authority/source after transfer. The candidate remains read-only; scratch logs are reference data and cannot replace the immutable host record. Native context points to the same host artifact contract.

@@ -150,3 +150,13 @@ test('a tool command reporting its own authentication failure does not invalidat
   const result = await runHarnessTurn(request,{emit(){},loadCodex:codex([{type:'thread.started',thread_id:'tool-scope'},{type:'item.completed',item:{type:'command_execution',exit_code:1,aggregated_output:'refresh_token_reused in a tool integration'}},{type:'turn.completed'}])})
   assert.equal(result.sessionId,'tool-scope')
 })
+
+test('Reviewer App network remains limited to GitHub and explicitly selected download hosts', async () => {
+  const observed = []
+  await runHarnessTurn({ ...request, readOnly: true, roleGithub: { downloadHosts: ['productionresultssa1.blob.core.windows.net'] } }, { emit() {}, loadCodex: codex([{ type: 'thread.started', thread_id: 'network' }, { type: 'turn.completed' }], value => observed.push(value)) })
+  const network = observed[0].config.permissions['flybot-role'].network
+  assert.equal(network.mode, 'limited'); assert.equal(network.domains['api.github.com'], 'allow')
+  assert.equal(network.domains['productionresultssa1.blob.core.windows.net'], 'allow')
+  assert.equal(network.domains['example.com'], undefined)
+  assert.equal(network.allow_local_binding, false)
+})

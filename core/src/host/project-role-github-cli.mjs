@@ -36,7 +36,9 @@ export function validateRoleCommand(scope, tool, args) {
     return 'git'
   }
   if (tool !== 'gh' || args.some(arg => /^(?:--hostname(?:=|$)|--admin(?:=|$)|--repo=|-R.)/.test(arg))) throw failure()
+  if (['pr', 'run'].includes(args[0]) && /^https?:/.test(args[2] ?? '') && !args[2].startsWith(`https://github.com/${scope.repository}/`)) throw failure()
   for (const flag of ['--repo', '-R']) { if (args.some((arg, index) => arg === flag && args[index + 1] !== scope.repository)) throw failure() }
+  if (args[0] === 'run' && ['view', 'list'].includes(args[1])) return 'gh'
   if (args[0] === 'pr' && ['view', 'diff', 'checks', 'list'].includes(args[1])) return 'gh'
   if (args[0] === 'pr' && scope.policyRole === 'developer' && ['create', 'edit'].includes(args[1])) {
     if (args[1] === 'create' && scope.number) throw failure()
@@ -57,6 +59,10 @@ export function validateRoleCommand(scope, tool, args) {
     if (scope.policyRole === 'tester' && suffix === 'check-runs' && fields.head_sha === scope.candidateSha && fields.external_id === scope.sha256) return 'gh'
   }
   throw failure()
+}
+export function githubCommandFailure(error, stage) {
+  const text = String(error.stderr ?? error.message ?? '').slice(0, 16000)
+  return error.code === 'ENOENT' ? 'tool-unavailable' : /HTTP 401|Bad credentials|authentication required/i.test(text) ? 'authentication-required' : /HTTP 403|Resource not accessible by integration|insufficient permission/i.test(text) ? 'app-permission-denied' : /HTTP 404|repository not found|could not resolve to a/i.test(text) ? 'repository-or-object-unavailable' : /blocked-by-allowlist|could not resolve|network.*unreachable|proxy.*(?:refused|denied)|connection refused|ENETUNREACH|ECONNREFUSED/i.test(text) ? 'network-unavailable' : stage === 'credential' ? 'credential-unavailable' : 'command-failed'
 }
 export async function main(file, tool, args) {
   let secret, stage = 'scope'
@@ -125,5 +131,5 @@ export async function main(file, tool, args) {
     stage = 'execute'
     const result = await exec(tool, options, { env, timeout: 120000, maxBuffer: 2 * 1024 * 1024 })
     process.stdout.write(secret ? result.stdout.split(secret).join('[REDACTED]') : result.stdout); process.stderr.write(secret ? result.stderr.split(secret).join('[REDACTED]') : result.stderr)
-  } catch (error) { if (error.code === 'ENOENT') process.stderr.write(`${tool}: command not found; provision the selected resource tool\n`); process.stderr.write(`Role GitHub ${tool} command failed (${stage}/${Number.isInteger(error.code) || ['ENOENT', 'EPERM', 'EACCES', 'ECONNREFUSED', 'ENETUNREACH', 'credential-transport', 'credential-denied', 'credential-response', 'role-scope'].includes(error.code) ? error.code : 'refused'}); no credential or private response is logged\n`); process.exitCode = 1 }
+  } catch (error) { if (error.code === 'ENOENT') process.stderr.write(`${tool}: command not found; provision the selected resource tool\n`); process.stderr.write(`Role GitHub ${tool} command failed (${githubCommandFailure(error, stage)}/${stage}/${Number.isInteger(error.code) || ['ENOENT', 'EPERM', 'EACCES', 'ECONNREFUSED', 'ENETUNREACH', 'credential-transport', 'credential-denied', 'credential-response', 'role-scope'].includes(error.code) ? error.code : 'refused'}); no credential or private response is logged\n`); process.exitCode = 1 }
 }

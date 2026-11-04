@@ -24411,6 +24411,14 @@
               "project"
             ]
           },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "includeStatuses": {
+            "type": "boolean"
+          },
           "threadKind": {
             "type": "string",
             "enum": [
@@ -24547,8 +24555,18 @@
             "type": "number"
           },
           "pagination": {
-            "const": "bounded-first-page",
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "bounded-first-page",
+              "bounded-page"
+            ]
+          },
+          "page": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "sourceSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           },
           "data": {
             "$ref": "#/components/schemas/JsonValue"
@@ -32733,7 +32751,7 @@
       "notes": "Read continuation facts even after cancellation. task.run selects a successor, never revives the cancelled Attempt.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -32815,7 +32833,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -32893,7 +32911,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -34942,7 +34960,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35050,7 +35068,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35157,7 +35175,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35251,7 +35269,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35355,7 +35373,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35465,7 +35483,7 @@
       "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -35574,7 +35592,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       }
     },
     {
@@ -36631,7 +36649,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7"
+        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
       }
     },
     {
@@ -42939,7 +42957,7 @@
       "notes": "Only current default repository; bounded upstream GitHub projection. data varies by operation and is external untrusted JSON. Native FBA gate currently requires watch.",
       "implementation": {
         "path": "core/src/host/project-github-read.js",
-        "sha256": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943"
+        "sha256": "d54785b17e60ab5a18b00223e65de0b352a00e25e5d69ba2f7633b5193e04e02"
       }
     },
     {
@@ -45996,7 +46014,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -46089,7 +46107,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -46181,7 +46199,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -46273,7 +46291,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -46662,7 +46680,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -46738,7 +46756,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
+        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -47594,7 +47612,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7"
+        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -48100,7 +48118,7 @@
       "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
-      "core/src/host/project-codex-config.js": "57a6d5c0b535aabfd4d1fc93f03aec26681429a4933ec8b72f4c496dd14df2f5",
+      "core/src/host/project-codex-config.js": "6f7f72c41719aea1be8a35688618801e954efcc23537835a9d527f74492030c9",
       "core/src/host/project-command-receipts.js": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52",
       "core/src/host/project-compatibility.js": "4ab65df4a237fb55ea2c68396bd180bb0a9ed4c42dc63444ce4ef0869c8988bc",
       "core/src/host/project-consultations.js": "9d29e800689a82d10f989133e8bb5d2462c0ea627852902aeaffad90a830e652",
@@ -48109,7 +48127,7 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9",
+      "core/src/host/project-delivery.js": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2",
       "core/src/host/project-development-service.js": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
@@ -48120,15 +48138,15 @@
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
       "core/src/host/project-git-sandbox.js": "7874051423251c3f561f5f611ad2e27a855cc2c0f57d820262e9e9c057f02b3b",
-      "core/src/host/project-github-app.js": "d2cf077873271125c0ad78acde8c1cb039261a4a9229964a4117d1a72081c3ca",
+      "core/src/host/project-github-app.js": "f2d1855cb3f203a7c515dec8d40826c805f62d5257837df60201d50e75cd9812",
       "core/src/host/project-github-connections.js": "276fb2ed2d0b7d003e8702d02fd26eb8507af4113e03599600f3217897eae76a",
       "core/src/host/project-github-merge.js": "aa1c31931f46f8214db097e6b06efccb197da522c2e397ac67570040fc6d682b",
-      "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
+      "core/src/host/project-github-read.js": "d54785b17e60ab5a18b00223e65de0b352a00e25e5d69ba2f7633b5193e04e02",
       "core/src/host/project-github-role-artifacts.js": "a4c04ad7e7d7cac2f1f82a42535f6255e97a5985b4492641e1af64ce26266d1c",
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
       "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
-      "core/src/host/project-harness-turn.js": "3e24454593f8c12284fbe96a7c1b3ecb31d7774815fc0d4c2f5d332457d46400",
-      "core/src/host/project-harness.js": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7",
+      "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
+      "core/src/host/project-harness.js": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
@@ -48145,10 +48163,11 @@
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
       "core/src/host/project-resources.js": "9a267001af697abdcdd9d3dd3e06e97d9e3042b77e6e31cb781ca57a4ada5920",
+      "core/src/host/project-review-evidence.js": "da3f72d2cefcf725c19f590e926ce391af36d45df97163b0d4a07699cef5ceb9",
       "core/src/host/project-reviewed-merge.js": "f34db330ee71cf9459bf88c26ce38aba57b46974225566a62253309dcc3dca2a",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
-      "core/src/host/project-role-github.js": "0fe150099efc6200fa8eb82e9c1ba04becd3bc905f4a144570094f744281cff4",
+      "core/src/host/project-role-github.js": "3f66e09f5995b8b8a1542f75f0a988b331a3a6867525e38820aea1a68e2d85d1",
       "core/src/host/project-role-governance.js": "fe9ca70113666b0223f55b9225890609c5a1e7ddcb9b6105a3dc0edc3b2ef005",
       "core/src/host/project-role-policy.js": "ba90bf8dcba9f4a2d659f62948b6437d739ee40e2d839cd213181731c4dab8a5",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
