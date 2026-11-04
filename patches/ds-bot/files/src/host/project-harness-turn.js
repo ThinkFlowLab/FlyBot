@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { validateCodexConfiguration } from './project-codex-config.js'
 // One real SDK turn. The host owns Workflow completion and acceptance, never this driver.
 export async function runHarnessTurn(request, { emit, permission, signal, validateCodex = validateCodexConfiguration, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
+  const toolsDisabled = request.noTools || request.protocolCorrection === true
   let text = '', completed = false, sessionId = request.sessionId ?? null, usage = null
   if (request.harness === 'codex') {
     const toolOutputTokens = request.toolOutputTokens ?? 2000
@@ -10,7 +11,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     const denyScript = fileURLToPath(new URL('./project-harness-deny-tool.mjs', import.meta.url))
     const quote = value => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('$', '\\$').replaceAll('`', '\\`')}"`
     const connectorPolicy = { remote_plugin: false, skill_mcp_dependency_install: false }
-    const chiefConfig = request.noTools ? { features: { ...connectorPolicy, shell_tool: false }, tools: { view_image: false }, apps: { _default: { enabled: false } },
+    const chiefConfig = toolsDisabled ? { features: { ...connectorPolicy, shell_tool: false }, tools: { view_image: false }, apps: { _default: { enabled: false } },
       hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: `node ${quote(denyScript)}` }] }] } } : { features: connectorPolicy }
     // Raw network denial also denies Unix pipe lifecycle syscalls in CLI 0.166,
     // breaking Node child_process despite a successful child exit. The limited
@@ -22,7 +23,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     const inlineToml = value => value && typeof value === 'object' ? '{' + Object.entries(value).map(([key, child]) => `${JSON.stringify(key)}=${inlineToml(child)}`).join(',') + '}' : JSON.stringify(value)
     const rawPolicy = request.noTools ? [] : ['permissions.flybot-role=' + inlineToml(processPolicy.permissions['flybot-role'])]
     const configPolicy = request.noTools ? {} : { ...processPolicy, permissions: { 'flybot-role': { extends: processPolicy.permissions['flybot-role'].extends, network: processPolicy.permissions['flybot-role'].network } } }
-    const clientOptions = { env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy, tool_output_token_limit: toolOutputTokens } }
+    const clientOptions = { env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy, features: { ...chiefConfig.features, ...configPolicy.features, ...(toolsDisabled ? { shell_tool: false } : {}) }, tool_output_token_limit: toolOutputTokens } }
     const validated = await validateCodex({ ...request, signal }, clientOptions)
     if (validated.capability) await emit({ type: 'configuration-checked', harness: 'codex', capability: validated.capability })
     const client = new Codex({ ...clientOptions, codexPathOverride: validated.codexPathOverride, env: validated.env })
@@ -48,10 +49,10 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
       settingSources: [], mcpServers: {}, persistSession: true,
       ...(sessionId ? { resume: sessionId } : {}), maxTurns: request.probe ? 1 : 30, maxBudgetUsd: request.maxBudgetUsd ?? 1,
       permissionMode: 'default',
-      tools: request.noTools ? [] : request.readOnly ? ['Read', 'Glob', 'Grep', 'Bash'] : ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
-      hooks: request.noTools ? { PreToolUse: [{ hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Use FlyBot scoped action proposals only' } })] }] } : {},
+      tools: toolsDisabled ? [] : request.readOnly ? ['Read', 'Glob', 'Grep', 'Bash'] : ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
+      hooks: toolsDisabled ? { PreToolUse: [{ hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Use FlyBot scoped action proposals only' } })] }] } : {},
       canUseTool: async (name, input, options) => {
-        if (request.noTools) return { behavior: 'deny', message: 'Generic Chief tools are disabled' }
+        if (toolsDisabled) return { behavior: 'deny', message: 'Generic Chief tools are disabled' }
         const answer = await permission({ name, input, requestId: options.requestId ?? options.toolUseID })
         return answer.allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'FlyBot operator refused this action' }
       },

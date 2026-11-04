@@ -196,3 +196,8 @@ false and retains occupancy. Claim failure is auditable and may return to Chief 
 confirmed cleanup; neither empty workerId nor Task failure alone proves exit.
 
 #2346 keeps typed context-resume admission facts on the original claim/handoff. Proven unstarted binding failure uses the existing abort path; unknown exit is held. Chief receives facts without an implicit destination. See [Task-role recovery](../task-session-recovery.md).
+
+#2338 preflights receipt plans before release/completion and dispatches bounded
+receipt-only corrections through existing Effects, preserving the claim and
+frozen business intent. Exhaustion remains visible to Chief; no fixed escalation.
+See [receipt correction](project-inputs.md#invalid-receipt-correction-2338).

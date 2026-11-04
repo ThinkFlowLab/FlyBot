@@ -192,3 +192,7 @@ input preflight. Only the existing workflow scope reaches the host check; other
 plugins receive null. Old hosts may omit it. The check grants no Task/Project
 rights and creates no scheduler; failed budget/current-generation/save validation
 prevents send. The published FlyBot type declares the additive optional seam.
+
+#2338 extends the original Workflow pool adapter with same-worker receipt correction.
+SDK uses the existing input channel; native uses the original idle Agent Session
+and tool guard. No plugin gains independent Task admission or completion authority.

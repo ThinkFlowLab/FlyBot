@@ -44,12 +44,17 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture({ modern = false, dependency = false } = {}) {
+async function controlFixture({ modern = false, dependency = false, withInputs = false } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
   const roles = ['chief', 'developer', 'tester', 'reviewer'].map(role => ({ id: `p:${role}`, role }))
   const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; request.capturedInvocation = rt.state.projectExecutions[args.runId].invocation; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
+  if (withInputs) {
+    const { createProjectEffects } = await import('../src/host/project-effects.js'), { install } = await import('../src/host/project-inputs.js')
+    rt.projectEffects = createProjectEffects(rt); rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture()); install(rt)
+    await rt.projectInputs.publish({ projectId: 'p', taskId: 't', requestId: 'receipt-fixture', text: 'Verify the accepted behavior' }, { memberId: 'owner' })
+  }
   let control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
   if (modern) {
     const { createProjectEffects } = await import('../src/host/project-effects.js')
@@ -439,4 +444,23 @@ test('scheduled reminder coalescing and policy changes never re-authorize stale 
   await f.control.pump(); assert.equal(b.status, 'cancelled')
   const reference = await f.control.scheduled({ row: { id: 's', revision: 99, projectId: 'p', config: { prompt: 'Changed' } }, delivery: { id: 'old' } })
   assert.equal(reference.runId, a.id)
+})
+
+
+test('Chief receipt protocol correction precedes all role proposals and Task effects', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  let proposals = 0; f.rt.projectAgents.proposeRoleForJob = async () => { ++proposals; return { proposal: { id: 'proposal' } } }
+  const initial = f.request, body = JSON.parse(f.result({ inputReceipts: { batchId: 'typo', read: [], handled: [] } }).text)
+  body.roleProposals = [{ action: 'add', role: 'designer', reason: 'Review UI' }]
+  await initial.onResult({ ...f.result(), text: JSON.stringify(body) })
+  assert.equal(run.status, 'correction-pending', run.failure); assert.equal(proposals, 0); assert.equal(f.accepted(), 0)
+  assert.equal(run.correction.feedback[0].receiptFeedback.kind, 'snapshot-schema')
+  await f.control.pump()
+  assert.equal(f.request.projectId, initial.projectId)
+  assert.match(f.request.prompt, /inputReceipts/)
+  const batch = f.request.projectFacts.tasks[0].taskInbox
+  await f.request.onResult(f.result({ inputReceipts: { batchId: batch.batchId, read: batch.inputs.map(row => row.id), handled: batch.inputs.map(row => row.id) } }))
+  assert.equal(run.status, 'done', run.failure); assert.equal(f.accepted(), 1)
+  assert.equal(run.correction.status, 'resolved'); assert.equal(proposals, 0)
+  await f.rt.projectEffects.close()
 })

@@ -207,7 +207,7 @@ and unknown leases while digesting only proven released history. Dated UI drafts
 asset measurements and test reports remain in [the archive](docs/history/2026-11-02-collaboration-implementation.md).
 
 ### Task-scoped SDK context and resident Chief memory — 2026-11-01
-Owner requires a resident Chief with durable Project memory and one logical Session per Task/role. Codex/Claude own their supported conversation persistence and automatic compaction; FlyBot does not inject a second model-history compactor. SDK role rework reuses a confirmed released Task-role cwd/thread under the same principal/resource/profile/model/persona binding, while preserving separate immutable Attempt/claim/log/test/Review evidence. Changed or incompatible bindings expose an explicit context-resume problem and retain history; they cannot silently start a fresh conversation. Chief memory uses the original own-Bot MEMORY.md/topics/journal, never global team or private-user memory. Context admission keeps current bounded facts and hash-bound full source archives for scoped retrieval. Backend changes are foreground work; frontend Task40/PR48 resumes through FlyBot after validation.
+The original implementation checkpoint is [preserved verbatim](docs/history/2026-11-04-context-implementation-checkpoint.md). Current contracts and acceptance follow.
 
 Keep Chief durable memory and one logical Session per Task/role. SDKs retain their
 supported persistence/compaction; FlyBot keeps bounded facts and exact binding/exit
@@ -314,3 +314,7 @@ Task execution pins its associated repository independently of Project defaults;
 #2334 follow-up (updated issue): shell 127 / missing test runners are environment
 blockers. testsStarted records command invocation; stage distinguishes runner startup
 from preparation and tests. Nested Node test markers do not enter host verification.
+
+#2338 preflights input receipts before host side effects and returns correctable
+errors to the original role/Chief Session. Frozen proposals, bounded tool-free
+correction and durable receipts preserve work; stale/revoked input stays denied.

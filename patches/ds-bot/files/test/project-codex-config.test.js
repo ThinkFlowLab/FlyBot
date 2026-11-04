@@ -107,3 +107,29 @@ if (process.env.FLYBOT_TEST_CODEX_SDK_URL && process.env.FLYBOT_TEST_CODEX_EXECU
     assert.equal(events.filter(row => row.type === 'configuration-checked').length, 2)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
 })
+
+if (process.env.FLYBOT_TEST_CODEX_SDK_URL && process.env.FLYBOT_TEST_CODEX_EXECUTABLE) test('actual SDK receipt-only correction resumes its thread with shell disabled and retained business history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'flybot-sdk-receipt-'))
+  let count = 0, historySeen = false, shellDisabled = false
+  const home = join(root, 'home'), cwd = join(root, 'candidate'), scratch = join(root, 'scratch')
+  const server = createServer(async (request, response) => {
+    let raw = ''; for await (const chunk of request) raw += chunk
+    const body = JSON.parse(raw); ++count
+    if (count === 2) { historySeen = raw.includes('receipt-original-business-result'); shellDisabled = !(body.tools ?? []).some(tool => tool.name === 'exec_command' || tool.name === 'shell' || tool.name === 'shell_command') }
+    const item = { id: 'message_' + count, type: 'message', role: 'assistant', content: [{ type: 'output_text', text: count === 1 ? 'receipt-original-business-result' : 'OUTPUT handoff: {"correctionOf":"original","inputReceipts":[]}' }] }
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    for (const event of [{ type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response: { id: 'response_' + count, status: 'completed', output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }]) response.write('data: ' + JSON.stringify(event) + '\n\n')
+    response.end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    await Promise.all([home, cwd, scratch].map(path => mkdir(path))); await exec('git', ['init', '-q', cwd]); await writeFile(join(cwd, 'candidate.txt'), 'original-work')
+    const executable = process.env.FLYBOT_TEST_CODEX_EXECUTABLE, sdkUrl = process.env.FLYBOT_TEST_CODEX_SDK_URL
+    const request = { harness: 'codex', cwd, model: 'fixture-model', prompt: 'Return the original business result', readOnly: false, scratchDirectory: scratch, env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: scratch }, config: { model_provider: 'fixture', model_providers: { fixture: { name: 'fixture', base_url: `http://127.0.0.1:${server.address().port}`, wire_api: 'responses', requires_openai_auth: false } } } }
+    const ports = { signal: AbortSignal.timeout(30_000), emit() {}, loadCodex: () => import(sdkUrl), validateCodex: (request, options) => validateCodexConfiguration(request, options, { executable }) }
+    const original = await runHarnessTurn(request, ports)
+    const corrected = await runHarnessTurn({ ...request, sessionId: original.sessionId, protocolCorrection: true, prompt: 'Correct only the input receipt; preserve prior work' }, ports)
+    assert.equal(corrected.sessionId, original.sessionId); assert.equal(historySeen, true); assert.equal(shellDisabled, true); assert.equal(count, 2)
+    assert.match(corrected.text, /correctionOf/); assert.equal(await readFile(join(cwd, 'candidate.txt'), 'utf8'), 'original-work')
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
+})

@@ -637,3 +637,8 @@ independent execution environment so nested Node tests execute real assertions.
 Actual missing-runner npm tests and an explicit local runner fixture delegating to
 Node assertions verify clean→prepare→same-candidate retry; the latter is not installed
 Vitest or live npm-ci/provider acceptance.
+
+#2338 validates receipt protocol before role release or host completion. A receipt
+patch never repeats code/testing/review or replaces a frozen business output.
+[Input correction](project-inputs.md#invalid-receipt-correction-2338) records the
+original evidence and post-failure reconciliation boundaries.

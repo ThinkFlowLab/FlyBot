@@ -1,6 +1,7 @@
 ---
 subsystem: project-inputs
 owned_paths:
+  - core/src/host/project-receipt-correction.js
   - core/src/host/project-inputs.js
   - core/test/project-inputs.test.js
 ---
@@ -134,3 +135,41 @@ schema-aware reconciliation, not blind restoration of older code or state.
 ## Project Task lifecycle convergence (#2179)
 
 Chief-confirmed requirement revisions become requirements-change inputs with Chief-decision provenance in the same existing inbox. Notification uses the original postcommit input.notify effect. Uncommitted input staging is discarded on confirmed rollback; a changed requirement version invalidates old delivery acceptance.
+
+
+## Invalid receipt correction (#2338)
+
+Role receipts are preflighted before worker release, host completion/tests/review
+or downstream routing. Schema/unknown-batch/uninjected-ID/handled-not-read errors
+carry `input-receipt-feedback/v1`: exact current Task/claim/generation, field,
+correctability and at most8 injected manifests (IDs/hashes only, never bodies).
+Foreign/historical batch, foreign Task, stale claim/snapshot, revoked source and
+changed content remain denials, without foreign manifests or automatic remapping.
+A valid multi-batch declaration validates every batch before any acknowledgement.
+Acknowledgement and its `input.receipt` Effect commit together; uncommitted failure
+rolls back only its own unchanged fields. An acknowledged rename remains committed.
+
+Correctable role output freezes the original business proposal in a private,
+hash-checked archive (maximum64KiB). The original claim stores only the reference,
+up to5 feedback records and a bounded correction counter. Existing Effects deliver
+`input.correction` to the original worker/Session; no new Task or role is admitted.
+The role returns `OUTPUT handoff: {"correctionOf":"<proposal SHA256>",
+"inputReceipts":{...}}` (or up to8 receipt batches). Only receipts are replaced;
+the original business action/outputs/evidence stay frozen. Tools are disabled for
+this narrow turn. All live authority, input and claim gates run again. New inputs
+remain pending and cannot be declared handled merely by correcting another batch.
+
+`projectHandoff.inputCorrectionBudget` defaults to2, range0–4. Original execution
+timeout and evidence budgets still apply. Duplicate original completions do not
+spend another round; SDK correction frames bind a turn ID and backend Session.
+A committed dispatch marker prevents blind resend after ambiguous transport.
+Exhaustion/transport failure is an explicit incomplete state for Chief judgement,
+never an automatic human consultation or fixed next role. Restart preserves the
+proposal and feedback but fences the old claim; recovery must confirm exit and
+reconcile context, never replay the business proposal from an expired receipt.
+
+Chief uses the same bounded feedback constructor and its existing resident-Session
+correction mechanism. All receipt plans are checked before proposals or Task effects.
+A corrected response declares the current snapshot explicitly; no old batch is
+silently translated. Candidate-stage evidence already produced by an SDK stays
+immutable and is not re-recorded as a second execution during receipt correction.

@@ -240,3 +240,38 @@ test('a closing Effect engine cannot leave a phantom admitted input', async () =
   await assert.rejects(f.rt.projectInputs.publish(input(),actor),/not writable/)
   assert.equal(Object.keys(f.rt.state.projectTaskInputs).length,0)
 })
+
+test('receipt preflight exposes only current manifests and save failure never consumes a declaration', async () => {
+  const f = fixture(); await f.rt.projectInputs.publish(input(), actor)
+  const batch = await f.rt.projectInputs.prepare('t', f.claim), row = Object.values(f.rt.state.projectTaskInputs)[0]
+  const good = { batchId: batch.batchId, read: [row.id], handled: [row.id] }
+  for (const [receipt, kind] of [[{ ...good, batchId: 'typo' }, 'unknown-batch'], [{ ...good, read: [] }, 'handled-not-read'], [{ ...good, read: ['unseen'], handled: [] }, 'uninjected-input']]) {
+    await assert.rejects(f.rt.projectInputs.validateReceipt('t', f.claim, receipt), error => {
+      assert.equal(error.receiptFeedback.kind, kind); assert.equal(error.receiptFeedback.correctable, true)
+      assert.deepEqual(error.receiptFeedback.batches[0], { batchId: batch.batchId, inputs: [{ id: row.id, sha256: row.sha256 }] })
+      assert.ok(!JSON.stringify(error.receiptFeedback).includes(row.text)); return true
+    })
+  }
+  assert.equal(row.status, 'accepted'); assert.equal(row.deliveries[0].readAt, undefined)
+  await f.rt.projectInputs.validateReceipt('t', f.claim, good)
+  f.fail(true); await assert.rejects(f.rt.projectInputs.acknowledge('t', f.claim, good), /disk failed/)
+  assert.equal(row.status, 'accepted'); assert.equal(row.deliveries[0].readAt, undefined)
+  f.fail(false); await f.rt.projectInputs.acknowledge('t', f.claim, good)
+  assert.equal(row.status, 'handled')
+  await f.rt.projectInputs.acknowledge('t', f.claim, good)
+  assert.equal(row.status, 'handled')
+})
+
+test('foreign inputs, historical batches, revoked sources and changed bodies never become correctable grants', async () => {
+  const f = fixture(); await f.rt.projectInputs.publish(input(), actor)
+  const batch = await f.rt.projectInputs.prepare('t', f.claim), row = Object.values(f.rt.state.projectTaskInputs)[0]
+  f.rt.state.projectTaskInputs.foreign = { ...structuredClone(row), id: 'foreign', taskId: 'other', text: 'foreign private content' }
+  await assert.rejects(f.rt.projectInputs.validateReceipt('t', f.claim, { batchId: batch.batchId, read: ['foreign'], handled: [] }), error => error.receiptFeedback.kind === 'foreign-input' && !error.receiptFeedback.correctable && error.receiptFeedback.batches.length === 0)
+  const good = { batchId: batch.batchId, read: [row.id], handled: [] }
+  row.text += 'tampered'
+  await assert.rejects(f.rt.projectInputs.validateReceipt('t', f.claim, good), error => error.receiptFeedback.kind === 'content-changed' && !error.receiptFeedback.correctable)
+  row.text = input().text; f.rt.projectInputs.revokeSource('p', 'owner')
+  await assert.rejects(f.rt.projectInputs.validateReceipt('t', f.claim, good), error => error.receiptFeedback.kind === 'source-revoked' && !error.receiptFeedback.correctable)
+  const old = structuredClone(f.claim); f.rt.state.tasks.t.collaboration.claim = { ...old, id: 'new' }
+  await assert.rejects(f.rt.projectInputs.validateReceipt('t', old, good), error => error.receiptFeedback.kind === 'stale-claim' && !error.receiptFeedback.correctable)
+})

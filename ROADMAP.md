@@ -173,3 +173,8 @@ deferred multi-repository automation is not reactivated by this recovery work.
 Updated #2334 acceptance adds actual npm missing-vitest/127 classification and
 clean/prepare/same-candidate retest coverage; it remains a source/test follow-up,
 not live npm ci provisioning or production Vitest acceptance.
+
+#2338: bounded input receipt correction in the original Task-role/Chief context,
+with all-plan preflight, immutable business evidence and explicit incomplete
+recovery. Tests distinguish deterministic role transport and actual SDK execution
+with a local provider fixture from paid-model/live project acceptance.

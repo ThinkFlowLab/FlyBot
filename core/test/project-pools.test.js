@@ -633,3 +633,56 @@ test('resumed pool claims cannot bypass project admission or spend a claim gener
   assert.equal(claim.status, 'active'); assert.equal(checks, 2)
   await assert.rejects(f.pool.decide('task', { ...claim, generation: generation - 1 }, { action: 'complete', reason: 'late callback' }), /stale/)
 })
+
+for (const role of ['developer', 'tester', 'reviewer']) test(role + ' invalid receipt returns to the same claim before release or host completion, then applies the frozen proposal once', async t => {
+  const { mkdtemp, rm } = await import('node:fs/promises'), { tmpdir } = await import('node:os'), { join } = await import('node:path')
+  const { createProjectEffects } = await import('../src/host/project-effects.js'), { install: inputs } = await import('../src/host/project-inputs.js')
+  const f = setup(); f.rt.home = await mkdtemp(join(tmpdir(), 'flybot-receipt-'))
+  t.after(() => rm(f.rt.home, { recursive: true, force: true }))
+  f.rt.projectEffects = createProjectEffects(f.rt); f.rt.save = async () => f.rt.projectEffects.saved(f.rt.projectEffects.capture())
+  for (const kind of ['pool.dispatch', 'context.summary', 'input.correction']) f.rt.projectEffects.register(kind, { run: () => ({}) })
+  inputs(f.rt)
+  await f.admit()
+  f.task.collaboration.botId = 'p:' + role; f.task.collaboration.history[0].to = 'p:' + role
+  const claim = await f.pool.claim('task', 'p:' + role); f.task.collaboration.claim.workerId = 'original-worker'
+  const batch = await f.rt.projectInputs.prepare('task', claim), id = batch.inputs[0].id
+  let releases = 0, correctionPrompt
+  f.adapter.release = async () => { releases++; return true }
+  f.adapter.correct = async args => { correctionPrompt = args }
+  const original = { action: 'handoff', to: 'p:chief', reason: 'Actual work complete', outputs: { candidate: 'original evidence' }, inputReceipts: { batchId: 'typo', read: [id], handled: [id] } }
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify(original) })
+  assert.equal(releases, 0, 'Invalid receipt must not release the original worker'); assert.equal(f.completed.length, 0, 'Invalid receipt must not run host completion')
+  const state = f.task.collaboration.claim.inputCorrection
+  assert.equal(state.status, 'pending')
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify(original) })
+  assert.equal(state.round, 1, 'duplicate original completion consumes no correction round')
+  await f.pool.correct(Object.values(f.rt.state.projectEffects).find(row => row.kind === 'input.correction'))
+  assert.equal(correctionPrompt.workerId, 'original-worker'); assert.equal(correctionPrompt.claim.id, claim.id)
+  assert.match(correctionPrompt.prompt, /Tools are disabled/)
+  if (role === 'reviewer') {
+    await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify({ correctionOf: state.proposal.sha256, inputReceipts: { batchId: 'still-wrong', read: [id], handled: [] } }) })
+    assert.equal(f.task.collaboration.claim.inputCorrection.round, 2)
+  }
+  const patch = { correctionOf: state.proposal.sha256, inputReceipts: { batchId: batch.batchId, read: [id], handled: [id] } }
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify(patch) })
+  assert.equal(f.completed.length, 1); assert.deepEqual(f.completed[0].outputs, original.outputs)
+  assert.equal(releases, 1); assert.equal(f.task.collaboration.history[0].execution.inputCorrection.status, 'resolved')
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify(patch) })
+  assert.equal(f.completed.length, 1)
+})
+
+test('receipt correction budget exhaustion preserves original context and leaves Chief judgement without creating a consultation', async t => {
+  const { mkdtemp, rm } = await import('node:fs/promises'), { tmpdir } = await import('node:os'), { join } = await import('node:path')
+  const f = setup(); f.rt.home = await mkdtemp(join(tmpdir(), 'flybot-receipt-exhausted-'))
+  t.after(() => rm(f.rt.home, { recursive: true, force: true }))
+  f.rt.config.projectHandoff = { inputCorrectionBudget: 0 }
+  await f.admit(); const claim = await f.claim(); f.task.collaboration.claim.workerId = 'original-worker'
+  f.rt.projectInputs = { validateReceipt() { throw Object.assign(new Error('Wrong receipt'), { receiptFeedback: { kind: 'unknown-batch', field: 'batchId', correctable: true } }) } }
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: ' + JSON.stringify({ action: 'handoff', to: 'p:tester', reason: 'Actual work done', inputReceipts: {} }) })
+  assert.equal(f.task.collaboration.claim.id, claim.id); assert.equal(f.task.collaboration.claim.inputCorrection.status, 'exhausted')
+  assert.equal(f.task.collaboration.status, 'blocked'); assert.equal(f.task.collaboration.block.waitingFor, 'chief-recovery')
+  assert.equal(f.task.chiefQuestion, undefined); assert.equal(f.completed.length, 0)
+  await f.pool.result({ botId: 'original-worker', ok: true, text: 'OUTPUT handoff: {}' })
+  assert.equal(f.task.collaboration.claim.inputCorrection.round, 1, 'late output cannot revive exhausted execution')
+  assert.equal(f.task.collaboration.history.length, 1)
+})

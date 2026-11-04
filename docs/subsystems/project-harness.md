@@ -452,3 +452,9 @@ existing admission/activation fences. Context mismatch is structured feedback fo
 Chief; original context and unknown-exit capacity stay protected. Proven pre-start
 failure reuses #2336 rollback. No automatic human escalation or business routing.
 See [recovery details and validation boundaries](../task-session-recovery.md).
+
+#2338 adds capability-advertised receipt-only continuation in the same SDK thread.
+Correction turns disable tools while preserving the role filesystem profile;
+sealed execution logs/result hashes remain original. Stale turn frames are ignored.
+Native correction waits for the original Agent to idle and denies business tools.
+See [receipt contract](project-inputs.md#invalid-receipt-correction-2338).

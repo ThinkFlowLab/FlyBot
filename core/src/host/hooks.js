@@ -1407,6 +1407,17 @@ export function install(rt) {
               if (result?.ok === false) throw new Error(result.code ?? 'Pool dispatch failed')
               if (taskInbox?.inputs.length && !rt.state.projectHarnessWorkers?.[workerId]) await rt.projectInputs.transport(task.id, claim, taskInbox.batchId, { kind: 'adapter-written', sha256: createHash('sha256').update(JSON.stringify(taskInbox)).digest('hex') })
             },
+            async correct(input) {
+              const sdk = await rt.projectHarness?.correctInput(input)
+              if (sdk) return sdk
+              if (typeof rt.ctx.tools?.guard !== 'function') throw new Error('Native receipt correction requires the tool guard')
+              const sessionId = rt.chatOf(input.workerId), agent = sessionId && await rt.resolveAgent(sessionId)
+              if (!agent || agent.session?.id !== sessionId || typeof agent.whenIdle !== 'function') throw new Error('Original native receipt Session is unavailable')
+              await agent.whenIdle()
+              const c = input.task.collaboration
+              if (rt.chatOf(input.workerId) !== sessionId || c.claim?.id !== input.claim.id || c.generation !== input.claim.generation || c.claim.inputCorrection?.round !== input.round || c.claim.inputCorrection?.status !== 'pending') throw new Error('Native receipt correction was superseded')
+              return lifecycle.dispatch({ botId: input.workerId, taskId: input.task.id, brief: input.prompt, inputs: {}, outputs: [{ name: 'handoff', required: true }] })
+            },
             async release(id) {
               await lifecycle.release(id)
               return rt.projectDelivery.exitConfirmed(id)

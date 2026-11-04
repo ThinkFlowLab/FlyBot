@@ -112,25 +112,53 @@ export function createProjectInputs(rt) {
     }
     await rt.save(); return true
   }
-  async function acknowledge(taskId, claim, receipts) {
-    if (receipts === undefined) return
+  function receiptError(task, claim, kind, field, message, correctable = true, manifest) {
+    const batches = manifest ?? [...new Set(Object.values(rt.state.projectTaskInputs ?? {}).filter(row => row.taskId === task.id && row.projectId === task.projectId && row.version === INPUT_PROTOCOL).flatMap(row => row.deliveries.filter(d => d.claimId === claim?.id && d.generation === claim?.generation && d.botId === claim?.botId).map(d => d.batchId)))].slice(0, 8).map(batchId => ({ batchId, inputs: deliveryRows(task, claim, batchId).filter(({ row }) => ['accepted', 'handled'].includes(row.status) && authorized(row, task)).map(({ row }) => ({ id: row.id, sha256: row.sha256 })) }))
+    return Object.assign(refuse(message), { receiptFeedback: { version: 'input-receipt-feedback/v1', kind, field, correctable, taskId: task.id, claimId: claim?.id ?? null, generation: claim?.generation ?? null, batches: correctable ? batches : [], sideEffects: 'receipt rejected before acknowledgement; no read/handled declaration applied' } })
+  }
+  function acknowledgementPlan(taskId, claim, receipts) {
+    if (receipts === undefined) return []
     writable()
-    const task = taskOf(taskId); current(task, claim)
+    const task = taskOf(taskId)
+    try { current(task, claim) } catch { throw receiptError(task, claim, 'stale-claim', 'claim', 'Task input claim is stale', false) }
     const batches = Array.isArray(receipts) ? receipts : [receipts]
-    if (!batches.length || batches.length > 8) throw refuse('Input acknowledgement needs one to eight injected batches')
-    const plans = batches.map(receipt => {
-      if (!receipt || typeof receipt.batchId !== 'string' || !Array.isArray(receipt.read) || !Array.isArray(receipt.handled) || receipt.read.length > 2 || receipt.handled.length > 2) throw refuse('Input acknowledgement needs the injected batch and bounded read/handled IDs')
-      const allowed = new Map(deliveryRows(task, claim, receipt.batchId).map(pair => [pair.row.id, pair]))
-      if (![...receipt.read, ...receipt.handled].every(id => typeof id === 'string' && allowed.has(id)) || !receipt.handled.every(id => receipt.read.includes(id))) throw refuse('Input receipt is outside the current injected batch')
-      if (receipt.read.some(id => !['accepted', 'handled'].includes(allowed.get(id).row.status) || !authorized(allowed.get(id).row, task))) throw refuse('Input was cancelled or source authority was revoked')
-      for (const id of receipt.read) verify(allowed.get(id).row)
+    if (!batches.length || batches.length > 8) throw receiptError(task, claim, 'schema', 'inputReceipts', 'Input acknowledgement needs one to eight injected batches')
+    return batches.map(receipt => {
+      if (!receipt || typeof receipt.batchId !== 'string' || !Array.isArray(receipt.read) || !Array.isArray(receipt.handled) || receipt.read.length > 2 || receipt.handled.length > 2) throw receiptError(task, claim, 'schema', 'inputReceipts', 'Input acknowledgement needs the injected batch and bounded read/handled IDs')
+      const selected = deliveryRows(task, claim, receipt.batchId), allowed = new Map(selected.map(pair => [pair.row.id, pair]))
+      if (!selected.length) {
+        const historical = Object.values(rt.state.projectTaskInputs ?? {}).some(row => row.deliveries?.some(d => d.batchId === receipt.batchId))
+        throw receiptError(task, claim, historical ? 'stale-or-foreign-batch' : 'unknown-batch', 'batchId', 'Input receipt is outside the current injected batch', !historical)
+      }
+      for (const id of [...receipt.read, ...receipt.handled]) if (typeof id !== 'string' || !allowed.has(id)) {
+        const source = typeof id === 'string' && ownEntry(rt.state.projectTaskInputs ?? {}, id)
+        throw receiptError(task, claim, source && (source.taskId !== task.id || source.projectId !== task.projectId) ? 'foreign-input' : 'uninjected-input', 'read/handled', 'Input receipt is outside the current injected batch', !source || source.taskId === task.id && source.projectId === task.projectId)
+      }
+      if (!receipt.handled.every(id => receipt.read.includes(id))) throw receiptError(task, claim, 'handled-not-read', 'handled', 'Input receipt is outside the current injected batch: handled must be a subset of read')
+      if (receipt.read.some(id => !['accepted', 'handled'].includes(allowed.get(id).row.status) || !authorized(allowed.get(id).row, task))) throw receiptError(task, claim, 'source-revoked', 'read', 'Input was cancelled or source authority was revoked', false)
+      for (const id of receipt.read) { try { verify(allowed.get(id).row) } catch { throw receiptError(task, claim, 'content-changed', 'sha256', 'Task input content changed after acceptance', false) } }
       return { receipt, allowed }
     })
+  }
+  async function acknowledge(taskId, claim, receipts) {
+    const plans = acknowledgementPlan(taskId, claim, receipts)
+    if (!plans.length) return
+    const undo = [], task = taskOf(taskId)
+    const change = (object, key, value) => { undo.push({ object, key, before: object[key], after: value }); object[key] = value }
     for (const { receipt, allowed } of plans) {
-      for (const id of receipt.read) { const { delivery } = allowed.get(id); delivery.readAt ??= Date.now(); delivery.readProof = 'current-role-declaration' }
-      for (const id of receipt.handled) { const { row, delivery } = allowed.get(id); row.status = 'handled'; delivery.handledAt ??= Date.now(); delivery.handledProof = 'validated-current-role-decision' }
+      for (const id of receipt.read) { const { delivery } = allowed.get(id); if (delivery.readAt === undefined) change(delivery, 'readAt', Date.now()); change(delivery, 'readProof', 'current-role-declaration') }
+      for (const id of receipt.handled) { const { row, delivery } = allowed.get(id); change(row, 'status', 'handled'); if (delivery.handledAt === undefined) change(delivery, 'handledAt', Date.now()); change(delivery, 'handledProof', 'validated-current-role-decision') }
     }
-    await rt.save()
+    let token
+    try {
+      if (rt.projectEffects) {
+        token = rt.projectEffects.stage({ kind: 'input.receipt', key: digest([claim.id, claim.generation, receipts]), projectId: task.projectId, taskId, payload: { claimId: claim.id, generation: claim.generation, receiptSha256: digest(receipts) } })
+        await rt.projectEffects.persist(token)
+      } else await rt.save()
+    } catch (error) {
+      if (!token || rt.projectEffects.discardUncommitted(token)) for (const item of undo.reverse()) if (item.object[item.key] === item.after) { if (item.before === undefined) delete item.object[item.key]; else item.object[item.key] = item.before }
+      throw error
+    }
   }
   async function prepareChief(snapshot, run) {
     writable()
@@ -157,11 +185,18 @@ export function createProjectInputs(rt) {
     if (receipts === undefined) return null
     writable()
     const task = taskOf(taskId)
-    if (ended(task) || run.projectId !== task.projectId || saved.taskId !== task.id || (task.collaboration?.generation ?? 0) !== saved.generation || !saved.taskInbox || receipts?.batchId !== saved.taskInbox.batchId || !Array.isArray(receipts.read) || !Array.isArray(receipts.handled) || receipts.read.length > 2 || receipts.handled.length > 2) throw refuse('Chief input receipt is outside its current snapshot')
+    if (ended(task) || run.projectId !== task.projectId || saved.taskId !== task.id || (task.collaboration?.generation ?? 0) !== saved.generation) throw receiptError(task, null, 'stale-snapshot', 'snapshot', 'Chief input receipt is outside its current snapshot', false)
+    const feedback = (kind, field, message, correctable = true) => receiptError(task, null, kind, field, message, correctable, saved.taskInbox ? [{ batchId: saved.taskInbox.batchId, inputs: saved.taskInbox.inputs.map(({ id, sha256 }) => ({ id, sha256 })) }] : [])
+    if (!saved.taskInbox || receipts?.batchId !== saved.taskInbox.batchId || !Array.isArray(receipts.read) || !Array.isArray(receipts.handled) || receipts.read.length > 2 || receipts.handled.length > 2) throw feedback('snapshot-schema', 'inputReceipts', 'Chief input receipt is outside its current snapshot')
     const manifest = new Map(saved.taskInbox.inputs.map(row => [row.id, row.sha256]))
     const selected = new Map(Object.values(rt.state.projectTaskInputs ?? {}).filter(row => row.projectId === task.projectId && row.taskId === task.id && manifest.get(row.id) === row.sha256 && ['accepted', 'handled'].includes(row.status) && authorized(row, task)).map(row => [row.id, { row, delivery: row.deliveries.find(d => d.batchId === receipts.batchId && d.chiefRunId === run.id && d.generation === saved.generation) }]).filter(([, pair]) => pair.delivery))
-    if (![...receipts.read, ...receipts.handled].every(id => typeof id === 'string' && selected.has(id)) || !receipts.handled.every(id => receipts.read.includes(id))) throw refuse('Chief acknowledged an input outside its injected snapshot')
-    for (const id of receipts.read) verify(selected.get(id).row)
+    for (const id of [...receipts.read, ...receipts.handled]) if (typeof id !== 'string' || !selected.has(id)) {
+      const row = typeof id === 'string' && ownEntry(rt.state.projectTaskInputs ?? {}, id)
+      const foreign = row && (row.taskId !== task.id || row.projectId !== task.projectId), revoked = row && (!authorized(row, task) || row.status === 'cancelled')
+      throw feedback(foreign ? 'foreign-input' : revoked ? 'source-revoked' : 'uninjected-input', 'read/handled', 'Chief acknowledged an input outside its injected snapshot', !foreign && !revoked)
+    }
+    if (!receipts.handled.every(id => receipts.read.includes(id))) throw feedback('handled-not-read', 'handled', 'Chief acknowledged an input outside its injected snapshot: handled must be read')
+    for (const id of receipts.read) { try { verify(selected.get(id).row) } catch { throw feedback('content-changed', 'sha256', 'Task input content changed after acceptance', false) } }
     return { taskId, projectId: task.projectId, generation: saved.generation, runId: run.id, receipts: clone(receipts), selected, committed: false }
   }
   function commitChiefPlan(plan) {
@@ -225,12 +260,15 @@ export function createProjectInputs(rt) {
     },
     discardHandoff(id) { const row = ownEntry(rows(), id); if (row?.kind === 'handoff' && !row.deliveries.length) delete rows()[id] },
     prepare: (taskId, claim, options) => serial(() => prepare(taskId, claim, options)), transport: (taskId, claim, batch, signal) => serial(() => transport(taskId, claim, batch, signal)),
+    validateReceipt: (taskId, claim, receipts) => serial(() => { acknowledgementPlan(taskId, claim, receipts); return true }),
+    validateChiefReceipt: chiefPlan,
     acknowledge: (taskId, claim, receipts) => serial(() => acknowledge(taskId, claim, receipts)),
     prepareChief: (snapshot, run) => serial(() => prepareChief(snapshot, run)), acknowledgeChief: (taskId, saved, run, receipts) => serial(() => acknowledgeChief(taskId, saved, run, receipts)), requireHandled,
     pending(taskId) { return pending(taskOf(taskId)).filter(row => row.kind !== 'handoff').map(row => metadata(row, taskOf(taskId))) } }
 }
 export function install(rt) {
   rt.projectInputs = createProjectInputs(rt)
+  rt.projectEffects.register('input.receipt', { run: row => ({ ...row.payload, status: 'declared' }) })
   rt.projectEffects.register('input.inbox', { run: row => ({ batchId: row.payload.batchId, status: 'durable-inbox' }) })
   rt.projectEffects.register('input.notify', {
     async validate(row) {
