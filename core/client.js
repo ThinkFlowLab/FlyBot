@@ -1740,6 +1740,12 @@ var isHighSurrogate = (code) => code >= 55296 && code <= 56319;
 var isLowSurrogate = (code) => code >= 56320 && code <= 57343;
 var codePointStart = (text2, at) => at > 0 && isLowSurrogate(text2.charCodeAt(at)) && isHighSurrogate(text2.charCodeAt(at - 1)) ? at - 1 : at;
 var codePointEnd = (text2, end) => end > 0 && isHighSurrogate(text2.charCodeAt(end - 1)) && isLowSurrogate(text2.charCodeAt(end)) ? end - 1 : end;
+var fits = (text2, max) => {
+  const value = String(text2);
+  let n = 0;
+  for (let i = 0; i < value.length; n += 1) i += value.codePointAt(i) > 65535 ? 2 : 1;
+  return n <= max;
+};
 var cut = (text2, max) => {
   const flat = String(text2).toWellFormed();
   return { text: flat.slice(0, codePointEnd(flat, max)), cut: flat.length > max };

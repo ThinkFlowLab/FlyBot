@@ -1,7 +1,7 @@
 // Pure text helpers shared by the host modules: message text, names, model refs,
 // cutting and estimating text, and the clock format of chat anchors.
 import { COLORS, EXTRA_COLORS, LEGACY_COLORS, OWN_CHAT_LINE_MAX } from './constants.js'
-import { codePointEnd, codePointStart, cut } from '../shared/text-boundary.js'
+import { codePointEnd, codePointStart, cut, fits } from '../shared/text-boundary.js'
 
 export { cut }
 
@@ -44,7 +44,7 @@ export const codePoints = (text) => {
 
 // The part of a long message around the first match, so a search hit stays visible.
 export const excerpt = (text, wanted, max = OWN_CHAT_LINE_MAX) => {
-  if (text.length <= max) return text
+  if (fits(text, max)) return text
   const found = wanted === '' ? 0 : Math.max(0, text.toLowerCase().indexOf(wanted) - 120)
   const at = codePointStart(text, found)
   return `${at > 0 ? '…' : ''}${text.slice(at, codePointEnd(text, at + max))}…`
@@ -58,7 +58,7 @@ export const estimateTokens = (text) => {
 }
 // #1918: the reason is optional — a caller with nothing to add gets "… (cut)", never
 // "… (cut; undefined)"; a caller that gives one keeps "… (cut; <reason>)" byte for byte.
-export const clip = (text, max, rest) => (text.length > max ? `${text.slice(0, codePointEnd(text, max))}… (cut${rest === undefined ? '' : `; ${rest}`})` : text)
+export const clip = (text, max, rest) => (fits(text, max) ? text : `${text.slice(0, codePointEnd(text, max))}… (cut${rest === undefined ? '' : `; ${rest}`})`)
 
 export const createClock = (timeZone) => {
   const clockFormat = new Intl.DateTimeFormat('en-CA', {

@@ -1136,7 +1136,7 @@ diff --git a/client.js b/client.js
      if (!REFUSALS.has(code)) {
        noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
        markNoted(error);
-@@ -1097,6 +1097,400 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,406 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -1145,6 +1145,12 @@ diff --git a/client.js b/client.js
 +var isLowSurrogate = (code) => code >= 56320 && code <= 57343;
 +var codePointStart = (text2, at) => at > 0 && isLowSurrogate(text2.charCodeAt(at)) && isHighSurrogate(text2.charCodeAt(at - 1)) ? at - 1 : at;
 +var codePointEnd = (text2, end) => end > 0 && isHighSurrogate(text2.charCodeAt(end - 1)) && isLowSurrogate(text2.charCodeAt(end)) ? end - 1 : end;
++var fits = (text2, max) => {
++  const value = String(text2);
++  let n = 0;
++  for (let i = 0; i < value.length; n += 1) i += value.codePointAt(i) > 65535 ? 2 : 1;
++  return n <= max;
++};
 +var cut = (text2, max) => {
 +  const flat = String(text2).toWellFormed();
 +  return { text: flat.slice(0, codePointEnd(flat, max)), cut: flat.length > max };
@@ -1876,7 +1882,6 @@ diff --git a/client.js b/client.js
    }
    return spans;
  }
--
 +function unmatchedMentions(text2, bots, { references = [] } = {}) {
 +  const value = String(text2 ?? "");
 +  const skip = [
@@ -1924,7 +1929,7 @@ diff --git a/client.js b/client.js
 +  }
 +  return stripFence(out).replace(/\s+/g, " ").trim();
 +}
-+
+ 
  // src/client/text.js
  var MENTION_ORIGIN = "https://bots.local/";
 -function linkMentions(text, bots, selfId) {
@@ -2170,7 +2175,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,970 +1624,2058 @@ function usageOf(list, ids) {
+@@ -1624,969 +1624,2057 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -2439,11 +2444,15 @@ diff --git a/client.js b/client.js
 -    };
 -    animation.oncancel = () => {
 -      if (!node.getAnimations().some((other) => other.id === "bt-morph" && other !== animation)) delete node.dataset.morph;
+-    };
+-  });
 +function isAgentSession(roster, cache, sessionId) {
 +  if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
 +  if (roster.ready) return roster.agentOf[sessionId] !== void 0;
 +  return cache.has(sessionId);
-+}
+ }
+-function useLinger(value, ms) {
+-  const [kept, setKept] = (0, import_react.useState)(value);
 +function countCards(state, sessionId, callIds, delta) {
 +  const own = { ...state[sessionId] };
 +  for (const callId of callIds) {
@@ -2460,7 +2469,9 @@ diff --git a/client.js b/client.js
 +var botState = (running, activity, alert) => running ? STATES.includes(activity) ? activity : "working" : alert ? "alert" : "idle";
 +var toolState = (name) => /^(message_bot|stop_bot|create_bot|update_bot|create_group|update_group|delete_group|post_to_group)$/.test(name) ? "sending" : /search|fetch|browse|read|grep|glob|list|recall/i.test(name) ? "searching" : "working";
 +function useGaze(ref, enabled) {
-+  (0, import_react.useEffect)(() => {
+   (0, import_react.useEffect)(() => {
+-    if (value) {
+-      setKept(value);
 +    if (!enabled) return void 0;
 +    let frame = 0;
 +    let point = null;
@@ -2472,8 +2483,7 @@ diff --git a/client.js b/client.js
 +      const clamp = (value) => Math.max(-1, Math.min(1, value));
 +      node.style.setProperty("--bt-gx", clamp((point.x - box.left - box.width / 2) / 160).toFixed(2));
 +      node.style.setProperty("--bt-gy", clamp((point.y - box.top - box.height / 2) / 160).toFixed(2));
-     };
--  });
++    };
 +    const onMove = (event) => {
 +      point = { x: event.clientX, y: event.clientY };
 +      if (!frame) frame = requestAnimationFrame(place);
@@ -2491,9 +2501,7 @@ diff --git a/client.js b/client.js
 +      document.documentElement.removeEventListener("pointerleave", onLeave);
 +    };
 +  }, [enabled]);
- }
--function useLinger(value, ms) {
--  const [kept, setKept] = (0, import_react.useState)(value);
++}
 +var FIDGETS = ["hop", "sway", "stretch", "look"];
 +function BotMark({ bot, look: given, size = 36, state = "idle", live = false, gaze = false, pokeable = false, label }) {
 +  const look = given ?? (bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot));
@@ -2573,9 +2581,7 @@ diff --git a/client.js b/client.js
 +function useSettled(state) {
 +  const prev = (0, import_react.useRef)(state);
 +  const [settled, setSettled] = (0, import_react.useState)(false);
-   (0, import_react.useEffect)(() => {
--    if (value) {
--      setKept(value);
++  (0, import_react.useEffect)(() => {
 +    const was = prev.current;
 +    prev.current = state;
 +    if (state !== "idle") {
@@ -4291,7 +4297,6 @@ diff --git a/client.js b/client.js
 -.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
 -.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
 -.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
--.bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
 +// src/client/styles.js
 +var SHELL_CSS = `
 +body{--bt-ink:#141414;--bt-ink-2:rgba(20,20,20,.6);--bt-ink-3:rgba(20,20,20,.36);--bt-bubble:#eeeeee;--bt-sidebar:#f7f7f7;--bt-main:#fcfcfc;--bt-line:rgba(20,20,20,.08);--bt-line-2:rgba(20,20,20,.15);--bt-line-weak:rgba(20,20,20,.1);--bt-hover:rgba(119,119,119,.09);--bt-active:rgba(119,119,119,.17);--bt-card:#ffffff;--bt-accent:#4d6bfe;--bt-green:#00c972;--bt-star:#ff9800;--bt-user:#070707;--bt-user-ink:#fcfcfc;--bt-tag-bg:rgba(20,20,20,.06);--bt-tag-ink:rgba(20,20,20,.56)}
@@ -5160,10 +5165,9 @@ diff --git a/client.js b/client.js
 +.bt-panel-view>[data-move=out]{animation:bt-page-out ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
 +.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(2){animation-delay:25ms}
 +.bt-panel-view>:is([data-move=in],[data-move=out]):nth-child(n+3){animation-delay:50ms}
-+.bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
+ .bt-panel-view>.bt-drawer-body[data-move=tab]{animation:bt-veil-in .2s ease-out}
  .bt-drawer-name-input{animation:bt-veil-in .16s ease-out}
  .bt-pop-in{display:inline-flex;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
- :is(.bt-soft,.bt-send,.bt-icon-btn,.bt-settings-close,.bt-mini,.bt-tab,.bt-nc-send,.bt-avedit-tab,.bt-shape,.bt-pick,.bt-swatch,.bt-palette-clear){transition:background-color .12s ease,color .12s ease,border-color .12s ease,opacity .12s ease,${spring(SPRING_TAP, "scale")}}
 @@ -2597,9 +2597,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  `;
  var CONVERSATION_CSS = `
