@@ -8,7 +8,7 @@ import { useEscape } from './overlay-hooks.js'
 import { BotSettingsForm } from './bot-settings.js'
 import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
 import { ModelMenu, modelOf } from './model-menu.js'
-import { FolderMenu } from './folder-menu.js'
+import { FolderMenu, folderName } from './folder-menu.js'
 import { MemoryRow } from './memory-panel.js'
 import { RoomSchedules, ScheduleSummary, lockedWindow } from './schedules.js'
 import { Segmented, useGlide, useMorph } from './motion.js'
@@ -51,6 +51,35 @@ function PermissionRow({ bot, roster, actions, run }) {
         title: option.description, onClick: () => pick(option.value),
         className: DANGER.has(option.value) ? 'bt-perm-danger' : undefined,
       }, PERMISSION_LABELS[option.value] ? t(PERMISSION_LABELS[option.value]) : option.name))))
+}
+
+// P-547: a locked window refuses the overview's writes, not its reading. The model, permission and
+// folder cards kept their writer's form or vanished whole, so their saved values went with the
+// controls; here each keeps its title and its value as plain text — the shape the name above
+// already has (#2391: the value stays, the control goes) — and no menu, preset or button is drawn.
+function ReadOnlyOverview({ bot, roster }) {
+  const shown = modelOf(bot, roster)
+  const models = roster.models ?? []
+  const catalog = roster.permissions
+  const preset = catalog?.options?.find(option => option.value === (bot.permission ?? catalog?.defaultPreset))
+  const folder = bot.workDir ?? ''
+  return h(Fragment, null,
+    h('div', { key: 'model', className: 'bt-drawer-model' },
+      h('div', { className: 'bt-section-title' }, t('Model')),
+      h('div', { className: 'bt-model-copy bt-readonly-value', title: shown?.ref },
+        h('span', { className: 'bt-model-name' }, shown?.name ?? t('Not set')),
+        shown ? h('span', { className: 'bt-model-provider' }, shown.served || models.length === 0
+          ? shown.provider
+          : t('{provider} · not available', { provider: shown.provider })) : null)),
+    preset ? h('div', { key: 'permission', className: 'bt-drawer-model' },
+      h('div', { className: 'bt-section-title' }, t('Permissions')),
+      h('div', { className: 'bt-model-copy bt-readonly-value' },
+        h('span', { className: 'bt-model-name' }, PERMISSION_LABELS[preset.value] ? t(PERMISSION_LABELS[preset.value]) : preset.name))) : null,
+    h('div', { key: 'folder', className: 'bt-drawer-model' },
+      h('div', { className: 'bt-section-title' }, t('Working folder')),
+      h('div', { className: 'bt-model-copy bt-readonly-value', title: folder || undefined },
+        h('span', { className: 'bt-model-name' }, folder ? folderName(folder) : t('Team workspace')),
+        folder ? h('span', { className: 'bt-model-provider' }, folder) : null)))
 }
 
 function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) {
@@ -379,9 +408,11 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
       ] : null,
       bot && !bot.remote && tab === 'details' ? [
         // P-542/P-487: the overview's own model, permission and folder entries are writes too, and a
-        // locked window refuses every one of them. Say so once at the top and draw the read half only;
-        // the name above is already text, and the settings gear still opens the page that explains it.
+        // locked window refuses every one of them. Say so once at the top and draw the read half only,
+        // which is the values themselves (P-547) — the name above is already text, and the settings
+        // gear still opens the page that explains the window.
         lockedWindow(roster) ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? h(ReadOnlyOverview, { key: 'read', bot, roster }) : null,
         lockedWindow(roster) ? null : h('div', { key: 'model', className: 'bt-drawer-model' },
           h('div', { className: 'bt-section-title' }, t('Model')),
           h(ModelMenu, { bot, roster, actions, run, wide: true }),
