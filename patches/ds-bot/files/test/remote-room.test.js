@@ -4021,3 +4021,27 @@ test('#2009: a group with a chosen name sends its seated guests nothing for a hu
   assert.equal(joins.get(CODER.handle) ?? 0, 0, 'a human leave sends nothing either')
   assert.equal(titles.length, 0, 'and no Session is renamed for a chosen name')
 })
+
+test('#1605: an open face room a home is a member of is never left hidden', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const spec = {
+    roomId: 'frm_1605',
+    localId: 'face-1605',
+    status: 'open',
+    startedAt: '2026-11-04T10:00:00.000Z',
+    localBots: [{ id: 'spec-a', handle: '@writer.alice.home', name: 'Writer A' }],
+    members: [
+      { handle: '@writer.alice.home', displayName: 'Writer', ownerName: 'Alice', published: false },
+      { handle: '@coder.bob.home', displayName: 'Coder', ownerName: 'Bob', published: false },
+    ],
+  }
+  const room = await rt.upsertFaceRoom(spec)
+  assert.equal(room.face.status, 'open')
+  // A row hidden by an earlier state is still this home's room: the open snapshot has to show it,
+  // because `social/face-rooms` already lists it and the sidebar is the only way into it.
+  room.hidden = true
+  await rt.upsertFaceRoom(spec)
+  assert.equal(room.hidden, undefined)
+  assert.equal(room.face.status, 'open')
+})
