@@ -1,6 +1,6 @@
 import { sdkAuthenticationFailure, authenticationError } from './project-harness-auth.js'
 import { fileURLToPath } from 'node:url'
-import { validateCodexConfiguration } from './project-codex-config.js'
+import { validateCodexConfiguration, roleGithubDomains } from './project-codex-config.js'
 // One real SDK turn. The host owns Workflow completion and acceptance, never this driver.
 async function executeHarnessTurn(request, { emit, permission, signal, validateCodex = validateCodexConfiguration, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
   const toolsDisabled = request.noTools || request.protocolCorrection === true
@@ -20,7 +20,7 @@ async function executeHarnessTurn(request, { emit, permission, signal, validateC
     const roots = !request.readOnly && !request.noTools ? request.writableRoots ?? [] : []
     const processPolicy = request.noTools ? {} : { default_permissions: 'flybot-role', features: { ...connectorPolicy, network_proxy: true },
       permissions: { 'flybot-role': { extends: request.readOnly ? ':read-only' : ':workspace', filesystem: { ':tmpdir': 'write', ...(request.scratchDirectory ? { [request.scratchDirectory]: 'write' } : {}), ...(request.roleGithub && request.githubAuthDirectory ? { [request.githubAuthDirectory]: 'write' } : {}), ...Object.fromEntries(roots.map(path => [path, 'write'])) },
-        network: { enabled: true, mode: 'limited', domains: request.roleGithub ? Object.fromEntries(['github.com', 'api.github.com', 'objects.githubusercontent.com', 'codeload.github.com', ...(request.roleGithub.downloadHosts ?? [])].map(host => [host, 'allow'])) : {}, unix_sockets: {}, allow_local_binding: false, allow_upstream_proxy: false, dangerously_allow_non_loopback_proxy: false, dangerously_allow_all_unix_sockets: false } } } }
+        network: { enabled: true, mode: 'limited', domains: roleGithubDomains(request.roleGithub), unix_sockets: {}, allow_local_binding: false, allow_upstream_proxy: false, dangerously_allow_non_loopback_proxy: false, dangerously_allow_all_unix_sockets: false } } } }
     const inlineToml = value => value && typeof value === 'object' ? '{' + Object.entries(value).map(([key, child]) => `${JSON.stringify(key)}=${inlineToml(child)}`).join(',') + '}' : JSON.stringify(value)
     const rawPolicy = request.noTools ? [] : ['permissions.flybot-role=' + inlineToml(processPolicy.permissions['flybot-role'])]
     const configPolicy = request.noTools ? {} : { ...processPolicy, permissions: { 'flybot-role': { extends: processPolicy.permissions['flybot-role'].extends, network: processPolicy.permissions['flybot-role'].network } } }

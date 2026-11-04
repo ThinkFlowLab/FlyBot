@@ -73,6 +73,7 @@ function cli(executable, args, { env, cwd, signal, rpc = false }) {
   })
 }
 
+export const roleGithubDomains = scope => scope ? Object.fromEntries(['github.com', 'api.github.com', 'objects.githubusercontent.com', 'codeload.github.com', ...(scope.downloadHosts ?? [])].map(host => [host, 'allow'])) : {}
 export async function validateCodexConfiguration(request, options, { executable, pathDirectory } = codexExecutable()) {
   const declared = options.configOverrides.find(value => value.startsWith('permissions.flybot-role='))
   if (!request.noTools && (!declared || /":tmp"\s*=/.test(declared))) throw failure('permission-profile-mismatch')
@@ -92,7 +93,7 @@ export async function validateCodexConfiguration(request, options, { executable,
     // layers establish a conflict. Never log their values or credential material.
     if (!Array.isArray(resolved.layers) || resolved.layers.some(layer => Object.hasOwn(layer.config ?? {}, 'sandbox_mode') || Object.hasOwn(layer.config ?? {}, 'sandbox_workspace_write')) || resolved.config?.default_permissions !== 'flybot-role') throw failure('legacy-sandbox-conflict')
     const profile = resolved.config?.permissions?.['flybot-role']
-    if (profile?.extends !== (request.readOnly ? ':read-only' : ':workspace') || profile.filesystem?.[':tmpdir'] !== 'write' || Object.keys(profile.filesystem ?? {}).some(key => key.startsWith(':') && key !== ':tmpdir') || profile.network?.mode !== 'limited' || !sameRules(profile.network?.domains, request.roleGithub ? { 'github.com': 'allow', 'api.github.com': 'allow' } : {}) || !sameRules(profile.network?.unix_sockets, {}) || resolved.config?.features?.network_proxy !== true) throw failure('permission-profile-mismatch')
+    if (profile?.extends !== (request.readOnly ? ':read-only' : ':workspace') || profile.filesystem?.[':tmpdir'] !== 'write' || Object.keys(profile.filesystem ?? {}).some(key => key.startsWith(':') && key !== ':tmpdir') || profile.network?.mode !== 'limited' || !sameRules(profile.network?.domains, roleGithubDomains(request.roleGithub)) || !sameRules(profile.network?.unix_sockets, {}) || resolved.config?.features?.network_proxy !== true) throw failure('permission-profile-mismatch')
   }
   return { codexPathOverride: executable, env, capability: { kind: 'codex-cli-config/v1', version: '0.166.0', profile: request.noTools ? 'chief-read-only' : 'flybot-role', modelInvoked: false } }
 }
